@@ -47,8 +47,7 @@ namespace AIRefactored.AI.Helpers
                 panic.TriggerPanic();
 
 #if UNITY_EDITOR
-                string name = cache.Bot?.Profile?.Info?.Nickname ?? "Unknown";
-                Debug.Log($"[AIRefactored-Panic] Bot {name} triggered individual panic.");
+                Debug.Log($"[AIRefactored-Panic] Bot {GetBotName(cache)} triggered individual panic.");
 #endif
             }
         }
@@ -72,11 +71,18 @@ namespace AIRefactored.AI.Helpers
                     panic.TriggerPanic();
 
 #if UNITY_EDITOR
-                    string name = cache.Bot?.Profile?.Info?.Nickname ?? "Unknown";
-                    Debug.Log($"[AIRefactored-Panic] Group member {name} entered panic.");
+                    Debug.Log($"[AIRefactored-Panic] Group member {GetBotName(cache)} entered panic.");
 #endif
                 }
             }
+        }
+
+        /// <summary>
+        /// Utility to format the name of a bot for logging/debug.
+        /// </summary>
+        private static string GetBotName(BotComponentCache cache)
+        {
+            return cache?.Bot?.Profile?.Info?.Nickname ?? "Unknown";
         }
     }
 }

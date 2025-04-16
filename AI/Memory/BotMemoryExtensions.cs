@@ -16,13 +16,13 @@ namespace AIRefactored.AI.Memory
         /// </summary>
         public static void FallbackTo(this BotOwner bot, Vector3 fallbackPosition)
         {
-            if (bot == null || fallbackPosition == Vector3.zero)
+            if (bot == null || fallbackPosition == Vector3.zero || bot.IsDead)
                 return;
 
-            bot.GoToPoint(fallbackPosition, true);
+            bot.GoToPoint(fallbackPosition, slowAtTheEnd: true);
 
 #if UNITY_EDITOR
-            Debug.Log($"[AIRefactored] Bot {bot.Profile?.Info?.Nickname} performing fallback to {fallbackPosition}");
+            Debug.Log($"[AIRefactored-Memory] Bot {bot.Profile?.Info?.Nickname ?? "unknown"} performing fallback to {fallbackPosition}");
 #endif
         }
 
@@ -31,23 +31,26 @@ namespace AIRefactored.AI.Memory
         /// </summary>
         public static void ForceMoveTo(this BotOwner bot, Vector3 position)
         {
-            if (bot == null)
+            if (bot == null || bot.IsDead)
                 return;
 
-            bot.GoToPoint(position, true);
+            bot.GoToPoint(position, slowAtTheEnd: true);
 
 #if UNITY_EDITOR
-            Debug.Log($"[AIRefactored] Bot {bot.Profile?.Info?.Nickname} forced move to {position}");
+            Debug.Log($"[AIRefactored-Memory] Bot {bot.Profile?.Info?.Nickname ?? "unknown"} forced move to {position}");
 #endif
         }
 
         /// <summary>
-        /// Triggers reevaluation of cover behavior. Placeholder for more advanced threat/position logic.
+        /// Triggers reevaluation of cover behavior. Placeholder for future threat & position systems.
         /// </summary>
         public static void ReevaluateCurrentCover(this BotOwner bot)
         {
+            if (bot == null || bot.IsDead)
+                return;
+
 #if UNITY_EDITOR
-            Debug.Log($"[AIRefactored] Bot {bot.Profile?.Info?.Nickname} reevaluating cover behavior");
+            Debug.Log($"[AIRefactored-Memory] Bot {bot.Profile?.Info?.Nickname ?? "unknown"} reevaluating cover behavior");
 #endif
         }
 
@@ -56,8 +59,11 @@ namespace AIRefactored.AI.Memory
         /// </summary>
         public static void SetCautiousSearchMode(this BotOwner bot)
         {
+            if (bot == null || bot.IsDead)
+                return;
+
 #if UNITY_EDITOR
-            Debug.Log($"[AIRefactored] Bot {bot.Profile?.Info?.Nickname} using cautious search mode");
+            Debug.Log($"[AIRefactored-Memory] Bot {bot.Profile?.Info?.Nickname ?? "unknown"} using cautious search mode");
 #endif
         }
 
@@ -66,8 +72,11 @@ namespace AIRefactored.AI.Memory
         /// </summary>
         public static void SetCombatAggressionMode(this BotOwner bot)
         {
+            if (bot == null || bot.IsDead)
+                return;
+
 #if UNITY_EDITOR
-            Debug.Log($"[AIRefactored] Bot {bot.Profile?.Info?.Nickname} using combat aggression mode");
+            Debug.Log($"[AIRefactored-Memory] Bot {bot.Profile?.Info?.Nickname ?? "unknown"} using combat aggression mode");
 #endif
         }
     }

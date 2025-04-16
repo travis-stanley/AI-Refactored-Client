@@ -17,21 +17,23 @@ namespace AIRefactored.AI.Helpers
             if (lightTransform == null || botHeadTransform == null)
                 return false;
 
-            Vector3 directionToLight = (lightTransform.position - botHeadTransform.position).normalized;
+            Vector3 directionToLight = lightTransform.position - botHeadTransform.position;
             float angle = Vector3.Angle(botHeadTransform.forward, directionToLight);
             return angle < angleThreshold;
         }
 
         /// <summary>
         /// Calculates the relative intensity factor of a flashlight hitting the bot's face.
+        /// Result is 1.0 if directly in front, 0.0 if fully behind.
         /// </summary>
         public static float GetFlashIntensityFactor(Transform lightTransform, Transform botHeadTransform)
         {
             if (lightTransform == null || botHeadTransform == null)
                 return 0f;
 
-            Vector3 dirToLight = (lightTransform.position - botHeadTransform.position).normalized;
-            return Mathf.Clamp01(Vector3.Dot(botHeadTransform.forward, dirToLight));
+            Vector3 toLight = lightTransform.position - botHeadTransform.position;
+            float dot = Vector3.Dot(botHeadTransform.forward, toLight.normalized);
+            return Mathf.Clamp01(dot);
         }
 
         /// <summary>
@@ -42,9 +44,27 @@ namespace AIRefactored.AI.Helpers
             if (source == null || target == null)
                 return false;
 
-            Vector3 directionToTarget = (target.position - source.position).normalized;
-            float angle = Vector3.Angle(source.forward, directionToTarget);
+            Vector3 toTarget = target.position - source.position;
+            float angle = Vector3.Angle(source.forward, toTarget);
             return angle < angleThreshold;
+        }
+
+        /// <summary>
+        /// Calculates a visibility score based on angle + distance to allow advanced thresholding.
+        /// </summary>
+        public static float CalculateFlashScore(Transform lightTransform, Transform botHeadTransform, float maxDistance = 20f)
+        {
+            if (lightTransform == null || botHeadTransform == null)
+                return 0f;
+
+            Vector3 toLight = lightTransform.position - botHeadTransform.position;
+            float distance = toLight.magnitude;
+            float dot = Vector3.Dot(botHeadTransform.forward, toLight.normalized);
+
+            float angleScore = Mathf.Clamp01(dot);
+            float distanceFalloff = 1f - Mathf.Clamp01(distance / maxDistance);
+
+            return angleScore * distanceFalloff;
         }
     }
 }

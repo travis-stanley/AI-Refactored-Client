@@ -17,7 +17,7 @@ namespace AIRefactored.AI.Memory
         public string Id = "default";
 
         /// <summary>
-        /// Human-readable label (for debug overlays or logging).
+        /// Human-readable label (for debug overlays or logs).
         /// </summary>
         public string NameZone = "Zone";
 
@@ -29,7 +29,28 @@ namespace AIRefactored.AI.Memory
         /// <summary>
         /// The spawn points explicitly assigned to this zone.
         /// </summary>
-        public List<ISpawnPoint> SpawnPoints = new();
+        public List<ISpawnPoint> SpawnPoints { get; private set; } = new();
+
+        /// <summary>
+        /// Optional runtime zone assigned (e.g. from sync system).
+        /// </summary>
+        public string? CurrentZone { get; private set; }
+
+        /// <summary>
+        /// Assign a new zone ID to this bot.
+        /// </summary>
+        public void AssignZone(string zoneId)
+        {
+            if (!string.IsNullOrEmpty(zoneId))
+            {
+                CurrentZone = zoneId;
+            }
+        }
+
+        /// <summary>
+        /// Whether this bot currently has a dynamic zone assigned.
+        /// </summary>
+        public bool HasZone() => !string.IsNullOrEmpty(CurrentZone);
 
         /// <summary>
         /// Optional logic injected via Harmony (intentionally empty).
@@ -40,16 +61,11 @@ namespace AIRefactored.AI.Memory
         }
 
         /// <summary>
-        /// Optional: Current runtime zone assigned (by teammates, sync, etc.).
+        /// Debug summary string.
         /// </summary>
-        public string? CurrentZone { get; private set; }
-
-        /// <summary>
-        /// Assign a new zone ID to this bot.
-        /// </summary>
-        public void AssignZone(string zoneId)
+        public override string ToString()
         {
-            CurrentZone = zoneId;
+            return $"[Zone:{Id}] {NameZone} ({Role}) → Assigned: {CurrentZone ?? "None"} | Points: {SpawnPoints.Count}";
         }
     }
 }

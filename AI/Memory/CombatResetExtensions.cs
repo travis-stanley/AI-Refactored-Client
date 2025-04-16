@@ -1,4 +1,5 @@
 ﻿using EFT;
+using UnityEngine;
 
 namespace AIRefactored.AI.Memory
 {
@@ -12,17 +13,21 @@ namespace AIRefactored.AI.Memory
         /// </summary>
         public static void RestoreCombatAggression(this BotOwner bot)
         {
-            if (bot == null || bot.Memory == null)
+            if (bot == null || bot.Memory == null || bot.IsDead)
                 return;
 
-            // Signal bot is no longer panicking
+            // Signal bot is no longer in passive or fleeing mode
             bot.Memory.IsPeace = false;
 
-            // Trigger immediate re-engagement behavior
+            // Re-engage if enemy is known
             bot.Memory.AttackImmediately = true;
 
-            // Optional: force an update of the current state
+            // Refresh current combat state
             bot.Memory.CheckIsPeace();
+
+#if UNITY_EDITOR
+            Debug.Log($"[AIRefactored-Combat] Bot {bot.Profile?.Info?.Nickname ?? "unknown"} restored to combat aggression.");
+#endif
         }
     }
 }

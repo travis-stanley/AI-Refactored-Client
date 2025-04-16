@@ -3,7 +3,6 @@
 using System;
 using System.Collections.Generic;
 using System.IO;
-using AIRefactored.AI;
 using AIRefactored.Core;
 using Comfort.Common;
 using EFT;
@@ -20,28 +19,24 @@ namespace AIRefactored.AI.Hotspots
             public List<Vector3> positions = new();
         }
 
-        private enum CombatState
-        {
-            Patrol,
-            Investigate,
-            Attack,
-            Fallback
-        }
-
         private class HotspotSession
         {
             private readonly BotOwner _bot;
             private readonly List<HotspotData> _route;
+            private readonly bool _isGuardian;
+            private readonly float _defendRadius = 8f;
+
             private int _hotspotIndex;
             private int _positionIndex;
             private float _nextSwitchTime;
-            private CombatState _state = CombatState.Patrol;
             private float _lastHitTime = -999f;
 
-            public HotspotSession(BotOwner bot, List<HotspotData> route)
+            public HotspotSession(BotOwner bot, List<HotspotData> route, bool isGuardian)
             {
                 _bot = bot;
                 _route = route;
+                _isGuardian = isGuardian;
+
                 _hotspotIndex = 0;
                 _positionIndex = 0;
                 _nextSwitchTime = Time.time + GetSwitchInterval();
@@ -74,31 +69,31 @@ namespace AIRefactored.AI.Hotspots
             private void OnDamaged(EBodyPart part, float dmg, DamageInfoStruct info)
             {
                 _lastHitTime = Time.time;
-                _state = CombatState.Investigate;
             }
 
             public void Update()
             {
-                if (_bot == null || _bot.IsDead)
+                if (_bot == null || _bot.IsDead || _route.Count == 0)
                     return;
 
-                float dist = Vector3.Distance(_bot.Position, CurrentTarget());
+                Vector3 currentTarget = _route[_hotspotIndex].positions[_positionIndex];
+                float dist = Vector3.Distance(_bot.Position, currentTarget);
 
                 if (_bot.Memory?.GoalEnemy != null)
                 {
-                    _state = CombatState.Attack;
                     _bot.Sprint(true);
                     return;
                 }
 
-                if (_state == CombatState.Investigate && Time.time - _lastHitTime > 10f)
+                if (_isGuardian)
                 {
-                    _state = CombatState.Patrol;
+                    if (dist > _defendRadius)
+                        _bot.GoToPoint(currentTarget, false);
+
+                    return; // Guardians stay near their hotspot
                 }
 
-                if (_state == CombatState.Fallback)
-                    return;
-
+                // Wanderer patrol logic
                 if (Time.time >= _nextSwitchTime || dist < 2f)
                 {
                     MoveNext();
@@ -146,14 +141,14 @@ namespace AIRefactored.AI.Hotspots
                 if (bot == null || bot.IsDead || bot.AIData == null)
                     continue;
 
-                if (!_botSessions.TryGetValue(bot, out var session))
+                if (!_botSessions.ContainsKey(bot))
                 {
-                    session = AssignHotspot(bot);
+                    var session = AssignHotspot(bot);
                     if (session != null)
                         _botSessions[bot] = session;
                 }
 
-                session?.Update();
+                _botSessions[bot]?.Update();
             }
         }
 
@@ -162,66 +157,71 @@ namespace AIRefactored.AI.Hotspots
             if (!Singleton<GameWorld>.Instantiated || Singleton<GameWorld>.Instance == null)
                 return null;
 
-            string map = Singleton<GameWorld>.Instance.LocationId;
+            string map = Singleton<GameWorld>.Instance.LocationId.ToLowerInvariant();
 
             if (!_hotspotsByMap.TryGetValue(map, out var hotspots) || hotspots.Count == 0)
                 return null;
 
-            var profileId = bot.Profile?.Id;
-            var personality = profileId != null ? BotRegistry.Get(profileId) : null;
+            var side = bot.Profile?.Info?.Side;
+            bool isScav = side == EPlayerSide.Savage;
+            bool isGuardian = isScav && UnityEngine.Random.value < 0.4f;
 
-            bool isPmc = bot.Profile.Info.Side == EPlayerSide.Bear || bot.Profile.Info.Side == EPlayerSide.Usec;
-
-            // Manual LINQ-free filtering
-            List<HotspotData> eligible = new();
-            foreach (var hs in hotspots)
+            if (isGuardian)
             {
-                if (isPmc || (personality != null && personality.Personality == PersonalityType.Dumb))
-                    eligible.Add(hs);
+                var defend = hotspots[UnityEngine.Random.Range(0, hotspots.Count)];
+                return new HotspotSession(bot, new List<HotspotData> { defend }, true);
             }
 
-            if (eligible.Count == 0)
-                return null;
-
+            // Wanderer or PMC logic
             int routeLength = UnityEngine.Random.Range(1, 3);
-            List<HotspotData> patrolRoute = new();
+            List<HotspotData> route = new();
             HashSet<int> used = new();
-            while (patrolRoute.Count < routeLength && used.Count < eligible.Count)
+
+            while (route.Count < routeLength && used.Count < hotspots.Count)
             {
-                int idx = UnityEngine.Random.Range(0, eligible.Count);
-                if (!used.Contains(idx))
+                int i = UnityEngine.Random.Range(0, hotspots.Count);
+                if (!used.Contains(i))
                 {
-                    used.Add(idx);
-                    patrolRoute.Add(eligible[idx]);
+                    used.Add(i);
+                    route.Add(hotspots[i]);
                 }
             }
 
-            return new HotspotSession(bot, patrolRoute);
-        }
-
-        public void ReloadHotspots()
-        {
-            _hotspotsByMap.Clear();
-            LoadAllHotspots();
+            return new HotspotSession(bot, route, false);
         }
 
         private void LoadAllHotspots()
         {
             string fullPath = Path.Combine(Application.dataPath, HOTSPOT_FOLDER);
             if (!Directory.Exists(fullPath))
+                fullPath = Path.Combine("BepInEx", "plugins", "AIRefactored", HOTSPOT_FOLDER);
+
+            if (!Directory.Exists(fullPath))
+            {
+                Debug.LogWarning($"[AIRefactored] Hotspot folder not found: {fullPath}");
                 return;
+            }
 
             string[] files = Directory.GetFiles(fullPath, "*.json");
             for (int i = 0; i < files.Length; i++)
             {
-                string json = File.ReadAllText(files[i]);
-                var data = JsonConvert.DeserializeObject<Dictionary<string, List<HotspotData>>>(json);
-                if (data == null) continue;
+                try
+                {
+                    string json = File.ReadAllText(files[i]);
+                    var data = JsonConvert.DeserializeObject<Dictionary<string, List<HotspotData>>>(json);
+                    if (data == null)
+                        continue;
 
-                foreach (var kvp in data)
-                    _hotspotsByMap[kvp.Key] = kvp.Value;
+                    foreach (var kvp in data)
+                        _hotspotsByMap[kvp.Key] = kvp.Value;
+                }
+                catch (Exception ex)
+                {
+                    Debug.LogError($"[AIRefactored] Failed to load hotspot file {files[i]}: {ex.Message}");
+                }
             }
         }
+
         public static Vector3 GetRandomHotspot(BotOwner bot)
         {
             var role = bot.Profile?.Info?.Settings?.Role ?? WildSpawnType.assault;
@@ -231,12 +231,11 @@ namespace AIRefactored.AI.Hotspots
             if (hotspots == null || hotspots.Points.Count == 0)
             {
                 Debug.LogWarning($"[HotspotSystem] No hotspots found for {map} ({role})");
-                return bot.Position + UnityEngine.Random.insideUnitSphere * 5f; // fallback
+                return bot.Position + UnityEngine.Random.insideUnitSphere * 5f;
             }
 
             int index = UnityEngine.Random.Range(0, hotspots.Points.Count);
             return hotspots.Points[index];
         }
-
     }
 }

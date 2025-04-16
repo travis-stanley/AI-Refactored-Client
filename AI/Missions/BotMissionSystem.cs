@@ -9,6 +9,10 @@ using EFT.InventoryLogic;
 using EFT.Communications;
 using AIRefactored.AI.Core;
 using AIRefactored.AI.Groups;
+using AIRefactored.AI.Perception;
+using AIRefactored.AI.Hotspots;
+using AIRefactored.AI.Memory;
+using AIRefactored.AI.Combat;
 
 namespace AIRefactored.AI.Missions
 {
@@ -16,6 +20,7 @@ namespace AIRefactored.AI.Missions
     {
         private BotOwner? _bot;
         private BotGroupSyncCoordinator? _group;
+        private CombatStateMachine? _combat;
         private Vector3 _currentObjective;
         private MissionType _missionType;
 
@@ -33,9 +38,6 @@ namespace AIRefactored.AI.Missions
         private const float SQUAD_COHESION_RANGE = 10f;
 
         private readonly List<LootableContainer> _lootContainers = new();
-        private readonly List<Vector3> _hotZones = new();
-        private readonly List<Vector3> _questZones = new();
-
         private readonly System.Random _rng = new();
 
         public enum MissionType { Loot, Fight, Quest }
@@ -44,7 +46,8 @@ namespace AIRefactored.AI.Missions
         {
             _bot = bot ?? throw new ArgumentNullException(nameof(bot));
             _group = _bot.GetPlayer?.GetComponent<BotGroupSyncCoordinator>();
-            CacheMapZones();
+            _combat = _bot.GetPlayer?.GetComponent<CombatStateMachine>();
+            CacheLootZones();
 
             if (!_forcedMission)
                 PickMission();
@@ -59,6 +62,9 @@ namespace AIRefactored.AI.Missions
         private void Update()
         {
             if (_bot == null || _bot.GetPlayer == null || !_bot.GetPlayer.HealthController.IsAlive)
+                return;
+
+            if (_combat != null && _combat.IsInCombatState())
                 return;
 
             if (_waitForGroup && !IsGroupAligned())
@@ -76,19 +82,12 @@ namespace AIRefactored.AI.Missions
             }
         }
 
-        private void CacheMapZones()
+        private void CacheLootZones()
         {
             _lootContainers.Clear();
-            _hotZones.Clear();
-            _questZones.Clear();
 
             foreach (var container in GameObject.FindObjectsOfType<LootableContainer>())
                 _lootContainers.Add(container);
-
-            foreach (var zone in GameObject.FindObjectsOfType<BotZone>())
-                _hotZones.Add(zone.transform.position);
-
-            _questZones.AddRange(_hotZones);
         }
 
         private void PickMission()
@@ -125,7 +124,7 @@ namespace AIRefactored.AI.Missions
                 {
                     _fightComplete = true;
                     _missionType = MissionType.Quest;
-                    _currentObjective = GetRandomZone(MissionType.Quest);
+                    _currentObjective = HotspotSystem.GetRandomHotspot(_bot); // ✅ Replaces static zone
                     _bot.GoToPoint(_currentObjective, false);
                 }
             }
@@ -144,7 +143,7 @@ namespace AIRefactored.AI.Missions
 
             foreach (var point in GameObject.FindObjectsOfType<ExfiltrationPoint>())
             {
-                if (point.Status != EExfiltrationStatus.RegularMode)
+                if (point == null || point.Status != EExfiltrationStatus.RegularMode)
                     continue;
 
                 float dist = Vector3.Distance(_bot.Position, point.transform.position);
@@ -174,13 +173,15 @@ namespace AIRefactored.AI.Missions
                 Say(EPhraseTrigger.OnLoot);
                 _bot.Mover?.Stop();
                 Invoke(nameof(ResumeMovement), 4f);
+                return;
             }
 
             if (_readyToExtract && _missionType == MissionType.Quest)
             {
                 Say(EPhraseTrigger.MumblePhrase);
                 _bot?.Deactivate();
-                _bot?.GetPlayer?.gameObject.SetActive(false);
+                if (_bot?.GetPlayer != null)
+                    _bot.GetPlayer.gameObject.SetActive(false);
             }
         }
 
@@ -210,13 +211,13 @@ namespace AIRefactored.AI.Missions
 
         private float EstimateContainerValue(LootableContainer container)
         {
-            float total = 0f;
             if (container?.ItemOwner?.RootItem == null)
                 return 0f;
 
+            float total = 0f;
             foreach (var item in container.ItemOwner.RootItem.GetAllItems())
             {
-                if (item?.Template?.Weight > 0)
+                if (item?.Template?.CreditsPrice > 0)
                     total += item.Template.CreditsPrice;
             }
 
@@ -225,17 +226,18 @@ namespace AIRefactored.AI.Missions
 
         private Vector3 GetRandomZone(MissionType type)
         {
-            List<Vector3> list = type switch
+            // Only Fight still uses hotzones directly
+            if (type == MissionType.Fight)
             {
-                MissionType.Fight => _hotZones,
-                MissionType.Quest => _questZones,
-                _ => new List<Vector3>()
-            };
+                var zones = GameObject.FindObjectsOfType<BotZone>();
+                if (zones.Length > 0)
+                {
+                    var randomZone = zones[_rng.Next(0, zones.Length)];
+                    return randomZone.transform.position;
+                }
+            }
 
-            if (list.Count == 0)
-                return _bot?.Position ?? Vector3.zero;
-
-            return list[_rng.Next(0, list.Count)];
+            return _bot?.Position ?? Vector3.zero;
         }
 
         private bool IsGroupAligned()
@@ -284,6 +286,7 @@ namespace AIRefactored.AI.Missions
             int count = 0;
             foreach (var item in backpack.GetAllItems())
             {
+                if (item == null) continue;
                 count++;
                 if (count >= 40)
                     return true;

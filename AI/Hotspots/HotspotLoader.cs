@@ -31,6 +31,11 @@ namespace AIRefactored.AI.Hotspots
             string basePath = Path.Combine(Application.dataPath, HOTSPOT_FOLDER);
             if (!Directory.Exists(basePath))
             {
+                basePath = Path.Combine("BepInEx", "plugins", "AIRefactored", HOTSPOT_FOLDER);
+            }
+
+            if (!Directory.Exists(basePath))
+            {
                 Debug.LogWarning($"[AIRefactored] Hotspot folder not found: {basePath}");
                 return;
             }
@@ -51,6 +56,10 @@ namespace AIRefactored.AI.Hotspots
                     {
                         Points = data.hotspots
                     };
+
+#if UNITY_EDITOR
+                    Debug.Log($"[AIRefactored] Loaded {data.hotspots.Count} hotspots for map '{map}'");
+#endif
                 }
                 catch (Exception ex)
                 {

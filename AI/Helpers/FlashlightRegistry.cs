@@ -13,6 +13,9 @@ namespace AIRefactored.AI.Helpers
     {
         private static readonly List<Light> _activeLights = new();
 
+        private const float INTENSITY_THRESHOLD = 1.5f;
+        private const float ANGLE_THRESHOLD = 60f; // Spotlights narrower than this are likely tactical
+
         /// <summary>
         /// Scans all active Light components in the scene and caches valid spotlights.
         /// </summary>
@@ -20,15 +23,30 @@ namespace AIRefactored.AI.Helpers
         {
             _activeLights.Clear();
 
-            foreach (var light in GameObject.FindObjectsOfType<Light>())
+            foreach (var light in Object.FindObjectsOfType<Light>())
             {
-                if (light.enabled && light.type == LightType.Spot && light.intensity >= 1.5f)
+                if (IsTacticalFlashlight(light))
                 {
                     _activeLights.Add(light);
                 }
             }
 
+#if UNITY_EDITOR
+            Debug.Log($"[AIRefactored-FlashlightRegistry] Found {_activeLights.Count} valid tactical flashlights.");
+#endif
+
             return _activeLights;
+        }
+
+        /// <summary>
+        /// Determines whether a light qualifies as a tactical flashlight.
+        /// </summary>
+        private static bool IsTacticalFlashlight(Light light)
+        {
+            return light.enabled &&
+                   light.type == LightType.Spot &&
+                   light.intensity >= INTENSITY_THRESHOLD &&
+                   light.spotAngle <= ANGLE_THRESHOLD;
         }
 
         /// <summary>

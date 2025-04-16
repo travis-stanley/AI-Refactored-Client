@@ -57,7 +57,7 @@ namespace AIRefactored.AI.Perception
 
         private void ScanForTargets(float range, float ambientLight)
         {
-            if (_bot?.EnemiesController == null)
+            if (_bot?.EnemiesController == null || _bot.BotsGroup == null)
                 return;
 
             Vector3 botEye = _bot.Position + Vector3.up * 1.5f;
@@ -77,13 +77,13 @@ namespace AIRefactored.AI.Perception
 
                 if (Physics.Raycast(botEye, toTarget.normalized, out RaycastHit hit, range))
                 {
-                    if (hit.transform != player.transform)
+                    if (hit.transform != player.Transform.Original)
                         continue;
 
                     if (!CanSeeClearly(hit.point, ambientLight))
                         continue;
 
-                    bool added = _bot.BotsGroup?.AddEnemy(player, EBotEnemyCause.addPlayer) ?? false;
+                    bool added = _bot.BotsGroup.AddEnemy(player, EBotEnemyCause.addPlayer);
                     if (added)
                     {
 #if UNITY_EDITOR
@@ -99,17 +99,17 @@ namespace AIRefactored.AI.Perception
             if (ambient < DarknessThreshold)
                 return false;
 
-            Ray ray = new Ray(_bot!.Position + Vector3.up * 1.5f, target - (_bot.Position + Vector3.up * 1.5f));
-            if (Physics.Raycast(ray, out RaycastHit hit, MaxSightDistance))
-            {
-                string tag = hit.collider.tag.ToLower();
-                string mat = hit.collider.sharedMaterial?.name.ToLower() ?? "";
+            Vector3 origin = _bot!.Position + Vector3.up * 1.5f;
+            Vector3 dir = (target - origin).normalized;
 
-                // Block visibility through opaque surfaces
-                if (tag.Contains("wall") || tag.Contains("glass") || mat.Contains("concrete") || mat.Contains("metal"))
+            if (Physics.Raycast(origin, dir, out RaycastHit hit, MaxSightDistance))
+            {
+                string tag = hit.collider.tag.ToLowerInvariant();
+                string mat = hit.collider.sharedMaterial?.name.ToLowerInvariant() ?? "";
+
+                if (tag.Contains("wall") || tag.Contains("glass") || mat.Contains("metal") || mat.Contains("concrete"))
                     return false;
 
-                // Block through dense foliage
                 if (tag.Contains("bush") || mat.Contains("foliage") || mat.Contains("leaf"))
                     return false;
 

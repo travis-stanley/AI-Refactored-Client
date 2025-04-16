@@ -54,26 +54,28 @@ namespace AIRefactored.AI.Combat
 
             float time = Time.time;
 
-            // Forced attack
-            if (_bot.Memory.GoalEnemy != null)
+            // === Forced combat state ===
+            if (_bot.Memory?.GoalEnemy != null)
             {
                 _state = CombatState.Attack;
                 _bot.Sprint(true);
                 return;
             }
 
-            // Forced fallback if suppressed
+            // === Forced fallback from suppression ===
             if (_suppress?.IsSuppressed() == true)
             {
-                _state = CombatState.Fallback;
-                if (!_fallbackPosition.HasValue)
+                if (_state != CombatState.Fallback)
                 {
-                    Vector3 dir = -_bot.LookDirection.normalized;
-                    _fallbackPosition = _bot.Position + dir * 5f;
+                    _state = CombatState.Fallback;
+                    _fallbackPosition = _bot.Position - _bot.LookDirection.normalized * 5f;
+
+                    if (_bot.BotTalk != null)
+                        _bot.BotTalk.TrySay(EPhraseTrigger.OnBeingHurt);
                 }
             }
 
-            // Fallback behavior
+            // === Handle fallback movement ===
             if (_state == CombatState.Fallback)
             {
                 if (_fallbackPosition.HasValue)
@@ -92,32 +94,34 @@ namespace AIRefactored.AI.Combat
                 return;
             }
 
-            // Investigate state timeout
+            // === Investigate → timeout back to patrol ===
             if (_state == CombatState.Investigate && time - _lastHitTime > InvestigateCooldown)
             {
                 _state = CombatState.Patrol;
             }
 
-            // Investigate triggered by sound
+            // === Sound-based investigation ===
             if (_profile != null && _cache.LastHeardTime + 4f > time && _state == CombatState.Patrol && _profile.Caution > 0.6f)
             {
                 _state = CombatState.Investigate;
                 _lastHitTime = time;
+
+                if (_bot.BotTalk != null)
+                    _bot.BotTalk.TrySay(EPhraseTrigger.NeedHelp);
             }
 
-            // Patrol → Hotspot
+            // === Patrol movement ===
             if (_state == CombatState.Patrol && time >= _switchCooldown)
             {
                 Vector3 target = HotspotSystem.GetRandomHotspot(_bot);
                 _bot.GoToPoint(target, slowAtTheEnd: true);
-
                 _switchCooldown = time + Random.Range(15f, 45f);
 
                 if (_bot.BotTalk != null && Random.value < 0.25f)
                     _bot.BotTalk.TrySay(EPhraseTrigger.GoForward);
             }
 
-            // Investigate = scan
+            // === Investigate jitter scan ===
             if (_state == CombatState.Investigate)
             {
                 Vector3 jitter = Random.insideUnitSphere * InvestigateScanRadius;
@@ -152,6 +156,14 @@ namespace AIRefactored.AI.Combat
 
             if (_bot?.BotTalk != null)
                 _bot.BotTalk.TrySay(EPhraseTrigger.OnLostVisual);
+        }
+
+        /// <summary>
+        /// Returns true if bot is in an active combat-interrupting state.
+        /// </summary>
+        public bool IsInCombatState()
+        {
+            return _state == CombatState.Attack || _state == CombatState.Fallback || _state == CombatState.Investigate;
         }
     }
 }

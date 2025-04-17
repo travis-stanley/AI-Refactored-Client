@@ -62,6 +62,9 @@ namespace AIRefactored.AI.Combat
 
         #region Panic Triggers
 
+        /// <summary>
+        /// Externally forces panic if conditions are safe to do so.
+        /// </summary>
         public void TriggerPanic()
         {
             if (_bot == null || IsHumanPlayer())
@@ -72,6 +75,9 @@ namespace AIRefactored.AI.Combat
                 StartPanic(now);
         }
 
+        /// <summary>
+        /// Checks if current bot state warrants panic.
+        /// </summary>
         private bool ShouldTriggerPanic()
         {
             if (_cache?.FlashGrenade?.IsFlashed() == true)
@@ -85,6 +91,9 @@ namespace AIRefactored.AI.Combat
 
         #region Panic Behavior
 
+        /// <summary>
+        /// Begins panic behavior and paths to fallback cover.
+        /// </summary>
         private void StartPanic(float now)
         {
             if (_bot == null || _cache == null)
@@ -98,7 +107,7 @@ namespace AIRefactored.AI.Combat
 
             if (Physics.Raycast(_bot.Position, fallbackDir, out RaycastHit hit, 8f))
             {
-                fallbackPos = hit.point - fallbackDir * 1f;
+                fallbackPos = hit.point - fallbackDir;
             }
 
             if (_cache.PathCache != null)
@@ -106,7 +115,6 @@ namespace AIRefactored.AI.Combat
                 var path = BotCoverRetreatPlanner.GetCoverRetreatPath(_bot, fallbackDir, _cache.PathCache);
                 if (path.Count > 0)
                     fallbackPos = path[path.Count - 1];
-
             }
 
             BotMovementHelper.SmoothMoveTo(_bot, fallbackPos, allowSlowEnd: false, cohesionScale: 1f);
@@ -120,6 +128,9 @@ namespace AIRefactored.AI.Combat
             }
         }
 
+        /// <summary>
+        /// Ends panic and restores normal memory state.
+        /// </summary>
         private void EndPanic(float now)
         {
             _isPanicking = false;
@@ -128,11 +139,13 @@ namespace AIRefactored.AI.Combat
             _bot?.Memory?.CheckIsPeace();
         }
 
-
         #endregion
 
-        #region Helper
+        #region Helpers
 
+        /// <summary>
+        /// True if the associated player is a human, not an AI.
+        /// </summary>
         private bool IsHumanPlayer()
         {
             return _bot?.GetPlayer != null && !_bot.GetPlayer.IsAI;

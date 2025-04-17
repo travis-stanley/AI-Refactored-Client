@@ -13,6 +13,10 @@ using AIRefactored.AI.Optimization;
 
 namespace AIRefactored.AI.Combat
 {
+    /// <summary>
+    /// Controls the bot's high-level state in combat, including Patrol, Investigate, Attack, and Fallback.
+    /// Responds to suppression, hearing, hits, and enemy visibility.
+    /// </summary>
     public class CombatStateMachine : MonoBehaviour
     {
         #region Enums
@@ -63,11 +67,11 @@ namespace AIRefactored.AI.Combat
                 return;
 
             if (_bot.GetPlayer != null && !_bot.GetPlayer.IsAI)
-                return; // 🛑 Ignore human-controlled players (e.g., FIKA coop)
+                return;
 
             float time = Time.time;
 
-            // === Engage: Enemy in sight ===
+            // === ATTACK STATE ===
             if (_bot.Memory?.GoalEnemy != null)
             {
                 _state = CombatState.Attack;
@@ -75,36 +79,14 @@ namespace AIRefactored.AI.Combat
                 return;
             }
 
-            // === Suppression fallback ===
+            // === SUPPRESSION FALLBACK ===
             if (_suppress?.IsSuppressed() == true && _state != CombatState.Fallback)
             {
-                _state = CombatState.Fallback;
-                _fallbackPosition = null;
-                _bot.BotTalk?.TrySay(EPhraseTrigger.OnBeingHurt);
-
-                float cohesion = 1.0f;
-                var personality = BotRegistry.Get(_bot.ProfileId);
-                if (personality != null)
-                    cohesion = Mathf.Lerp(0.6f, 1.2f, personality.Cohesion);
-
-                if (_cache.PathCache != null)
-                {
-                    Vector3 threatDir = _bot.LookDirection.normalized;
-                    List<Vector3> path = BotCoverRetreatPlanner.GetCoverRetreatPath(_bot, threatDir, _cache.PathCache);
-                    if (path.Count > 0)
-                    {
-                        _fallbackPosition = path[path.Count - 1];
-                        BotMovementHelper.SmoothMoveTo(_bot, _fallbackPosition.Value, allowSlowEnd: false, cohesionScale: cohesion);
-                    }
-                }
-                else
-                {
-                    _fallbackPosition = _bot.Position - _bot.LookDirection.normalized * 5f;
-                    BotMovementHelper.SmoothMoveTo(_bot, _fallbackPosition.Value, allowSlowEnd: false, cohesionScale: cohesion);
-                }
+                TriggerSuppressedFallback();
+                return;
             }
 
-            // === Handle fallback movement ===
+            // === FALLBACK HANDLING ===
             if (_state == CombatState.Fallback && _fallbackPosition.HasValue)
             {
                 float dist = Vector3.Distance(_bot.Position, _fallbackPosition.Value);
@@ -120,13 +102,13 @@ namespace AIRefactored.AI.Combat
                 return;
             }
 
-            // === Investigate → Timeout back to patrol ===
+            // === INVESTIGATE TIMEOUT ===
             if (_state == CombatState.Investigate && time - _lastHitTime > InvestigateCooldown)
             {
                 _state = CombatState.Patrol;
             }
 
-            // === Sound-based suspicion triggers investigation ===
+            // === SOUND-BASED INVESTIGATION ===
             if (_profile != null &&
                 _cache.LastHeardTime + 4f > time &&
                 _state == CombatState.Patrol &&
@@ -137,7 +119,7 @@ namespace AIRefactored.AI.Combat
                 _bot.BotTalk?.TrySay(EPhraseTrigger.NeedHelp);
             }
 
-            // === Patrol movement ===
+            // === PATROL ===
             if (_state == CombatState.Patrol && time >= _switchCooldown)
             {
                 Vector3 target = HotspotSystem.GetRandomHotspot(_bot);
@@ -148,7 +130,7 @@ namespace AIRefactored.AI.Combat
                     _bot.BotTalk?.TrySay(EPhraseTrigger.GoForward);
             }
 
-            // === Investigate jitter scanning ===
+            // === INVESTIGATE SCANNING ===
             if (_state == CombatState.Investigate)
             {
                 Vector3 jitter = Random.insideUnitSphere * InvestigateScanRadius;
@@ -162,15 +144,58 @@ namespace AIRefactored.AI.Combat
 
         #endregion
 
+        #region Fallback Logic
+
+        /// <summary>
+        /// Triggers fallback when suppressed — with path planning or direction escape.
+        /// </summary>
+        private void TriggerSuppressedFallback()
+        {
+            _state = CombatState.Fallback;
+            _fallbackPosition = null;
+
+            _bot?.BotTalk?.TrySay(EPhraseTrigger.OnBeingHurt);
+
+            float cohesion = 1.0f;
+            var personality = BotRegistry.Get(_bot!.ProfileId);
+            if (personality != null)
+                cohesion = Mathf.Lerp(0.6f, 1.2f, personality.Cohesion);
+
+            if (_cache!.PathCache != null)
+            {
+                Vector3 threatDir = _bot.LookDirection.normalized;
+                List<Vector3> path = BotCoverRetreatPlanner.GetCoverRetreatPath(_bot, threatDir, _cache.PathCache);
+                if (path.Count > 0)
+                {
+                    _fallbackPosition = path[path.Count - 1];
+                    BotMovementHelper.SmoothMoveTo(_bot, _fallbackPosition.Value, false, cohesion);
+                }
+            }
+
+            if (!_fallbackPosition.HasValue)
+            {
+                _fallbackPosition = _bot.Position - _bot.LookDirection.normalized * 5f;
+                BotMovementHelper.SmoothMoveTo(_bot, _fallbackPosition.Value, false, cohesion);
+            }
+        }
+
+        #endregion
+
         #region Public API
 
+        /// <summary>
+        /// Notifies the state machine of a combat hit.
+        /// </summary>
         public void NotifyDamaged()
         {
             _lastHitTime = Time.time;
             _state = CombatState.Investigate;
-            _bot?.BotTalk?.TrySay(EPhraseTrigger.MumblePhrase);
+            _bot?.BotTalk?.TrySay(EPhraseTrigger.OnBeingHurt);
         }
 
+        /// <summary>
+        /// External fallback trigger with position override.
+        /// </summary>
         public void TriggerFallback(Vector3 position)
         {
             _fallbackPosition = position;
@@ -178,6 +203,9 @@ namespace AIRefactored.AI.Combat
             _bot?.BotTalk?.TrySay(EPhraseTrigger.OnLostVisual);
         }
 
+        /// <summary>
+        /// Returns true if bot is in combat behavior state.
+        /// </summary>
         public bool IsInCombatState()
         {
             return _state == CombatState.Attack || _state == CombatState.Fallback || _state == CombatState.Investigate;

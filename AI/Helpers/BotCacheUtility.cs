@@ -15,6 +15,9 @@ namespace AIRefactored.AI.Helpers
     {
         #region Component Access
 
+        /// <summary>
+        /// Tries to get a specific component attached to the bot GameObject.
+        /// </summary>
         public static bool TryGet<T>(BotComponentCache cache, out T? result) where T : class
         {
             result = null;
@@ -25,6 +28,9 @@ namespace AIRefactored.AI.Helpers
             return result != null;
         }
 
+        /// <summary>
+        /// Attempts to retrieve the panic handler component for a bot.
+        /// </summary>
         public static bool TryGetPanicComponent(BotComponentCache cache, out BotPanicHandler? panic)
         {
             panic = null;
@@ -35,6 +41,9 @@ namespace AIRefactored.AI.Helpers
             return panic != null;
         }
 
+        /// <summary>
+        /// Gets the BotComponentCache from a player reference, if present.
+        /// </summary>
         public static BotComponentCache? GetCache(Player player)
         {
             return player?.GetComponent<BotComponentCache>();
@@ -44,6 +53,9 @@ namespace AIRefactored.AI.Helpers
 
         #region Lookup & Metadata
 
+        /// <summary>
+        /// Retrieves the assigned personality profile from a cache.
+        /// </summary>
         public static BotPersonalityProfile? GetPersonality(BotComponentCache cache)
         {
             if (cache?.Bot?.ProfileId == null)
@@ -52,6 +64,9 @@ namespace AIRefactored.AI.Helpers
             return BotRegistry.Get(cache.Bot.ProfileId);
         }
 
+        /// <summary>
+        /// Returns the bot's display name and faction side.
+        /// </summary>
         public static string GetBotName(BotComponentCache cache)
         {
             if (cache?.Bot?.Profile?.Info == null)
@@ -66,6 +81,9 @@ namespace AIRefactored.AI.Helpers
 
         #region Visibility & Position
 
+        /// <summary>
+        /// Returns the Transform representing the bot's head position.
+        /// </summary>
         public static Transform? Head(BotComponentCache cache)
         {
             if (cache?.Bot?.MainParts?.TryGetValue(BodyPartType.head, out var headPart) == true)
@@ -75,6 +93,9 @@ namespace AIRefactored.AI.Helpers
             return null;
         }
 
+        /// <summary>
+        /// Returns the transform the bot uses for forward-facing calculations.
+        /// </summary>
         public static Transform? GetLookTransform(BotComponentCache cache)
         {
             return cache?.Bot?.Fireport?.Original;
@@ -84,13 +105,17 @@ namespace AIRefactored.AI.Helpers
 
         #region Query Utilities
 
+        /// <summary>
+        /// Returns all currently active bots in the scene with alive BotOwners.
+        /// </summary>
         public static IEnumerable<BotComponentCache> AllActiveBots()
         {
             var results = new List<BotComponentCache>();
             var all = Object.FindObjectsOfType<BotComponentCache>();
 
-            foreach (var cache in all)
+            for (int i = 0; i < all.Length; i++)
             {
+                var cache = all[i];
                 if (cache != null && cache.Bot != null && !cache.Bot.IsDead)
                 {
                     results.Add(cache);
@@ -104,11 +129,17 @@ namespace AIRefactored.AI.Helpers
 
         #region Human Checks
 
+        /// <summary>
+        /// Checks if a given Player is a human-controlled character.
+        /// </summary>
         public static bool IsHumanPlayer(Player? player)
         {
             return player != null && !player.IsAI;
         }
 
+        /// <summary>
+        /// Checks if a given BotOwner is actually controlled by a human (e.g., Coop/FIKA).
+        /// </summary>
         public static bool IsHumanPlayer(BotOwner? bot)
         {
             return bot?.GetPlayer != null && !bot.GetPlayer.IsAI;

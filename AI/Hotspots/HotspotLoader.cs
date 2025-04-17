@@ -26,8 +26,14 @@ namespace AIRefactored.AI.Hotspots
 
         #region Public API
 
+        /// <summary>
+        /// Enables or disables debug logging.
+        /// </summary>
         public static void EnableDebugLogs(bool enabled) => _debugLog = enabled;
 
+        /// <summary>
+        /// Loads all hotspot files from the configured folder into memory.
+        /// </summary>
         public static void LoadAll()
         {
             if (_loaded)
@@ -66,6 +72,9 @@ namespace AIRefactored.AI.Hotspots
             _loaded = true;
         }
 
+        /// <summary>
+        /// Retrieves the hotspot set for the current map and filters it for the given bot role.
+        /// </summary>
         public static HotspotSet? GetHotspotsForCurrentMap(WildSpawnType role)
         {
             if (!_loaded)
@@ -75,6 +84,9 @@ namespace AIRefactored.AI.Hotspots
             return _cache.TryGetValue(mapId, out var set) ? set.FilteredForRole(role) : null;
         }
 
+        /// <summary>
+        /// Clears all loaded hotspots and reloads them from disk.
+        /// </summary>
         public static void Reload()
         {
             _loaded = false;
@@ -85,12 +97,18 @@ namespace AIRefactored.AI.Hotspots
                 Debug.Log("[AIRefactored] Hotspot data reloaded.");
         }
 
+        /// <summary>
+        /// Returns all loaded hotspot sets.
+        /// </summary>
         public static IReadOnlyDictionary<string, HotspotSet> GetAll() => _cache;
 
         #endregion
 
         #region Internal Helpers
 
+        /// <summary>
+        /// Resolves the file system path to the hotspot folder.
+        /// </summary>
         private static string ResolveHotspotPath()
         {
             string fallbackPath = Path.Combine("BepInEx", "plugins", "AIRefactored", HOTSPOT_FOLDER);
@@ -107,6 +125,9 @@ namespace AIRefactored.AI.Hotspots
     /// </summary>
     public class HotspotSet
     {
+        /// <summary>
+        /// The list of 3D world positions representing hotspots.
+        /// </summary>
         public List<Vector3> Points = new();
 
         /// <summary>
@@ -114,10 +135,13 @@ namespace AIRefactored.AI.Hotspots
         /// </summary>
         public HotspotSet FilteredForRole(WildSpawnType role)
         {
-            // TODO: Implement actual filtering if roles differ
+            // TODO: Implement role-specific filtering logic
             return this;
         }
 
+        /// <summary>
+        /// Parses a JSON file into a HotspotSet.
+        /// </summary>
         public static HotspotSet? FromJson(string json)
         {
             try
@@ -135,6 +159,9 @@ namespace AIRefactored.AI.Hotspots
             }
         }
 
+        /// <summary>
+        /// Internal format for reading hotspot JSON files.
+        /// </summary>
         private class HotspotFile
         {
             public List<Vector3> hotspots = new();

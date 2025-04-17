@@ -38,7 +38,7 @@ namespace AIRefactored.AI.Combat
                 return;
 
             if (_bot.GetPlayer != null && !_bot.GetPlayer.IsAI)
-                return; // 🛑 Human/FIKA players are excluded
+                return; // 🛑 Skip real players or FIKA clients
 
             _lastCheckTime = Time.time + CheckInterval;
 
@@ -50,10 +50,10 @@ namespace AIRefactored.AI.Combat
 
         #endregion
 
-        #region External Trigger
+        #region External Triggers
 
         /// <summary>
-        /// Called externally by panic systems to start escalation timer.
+        /// Called externally by panic systems to begin monitoring escalation.
         /// </summary>
         public void NotifyPanicTriggered()
         {
@@ -63,8 +63,60 @@ namespace AIRefactored.AI.Combat
 
         #endregion
 
-        #region Escalation Logic
+        #region Escalation Trigger Logic
 
+        /// <summary>
+        /// Evaluates threat context and returns true if escalation should occur.
+        /// </summary>
+        private bool ShouldEscalate()
+        {
+            return PanicElapsed() || HasMultipleEnemies() || SquadHasCasualties();
+        }
+
+        /// <summary>
+        /// True if bot has been in a panic state longer than threshold.
+        /// </summary>
+        private bool PanicElapsed()
+        {
+            return _panicStartTime > 0f && (Time.time - _panicStartTime) > PanicDurationThreshold;
+        }
+
+        /// <summary>
+        /// True if bot is tracking two or more enemies.
+        /// </summary>
+        private bool HasMultipleEnemies()
+        {
+            var enemies = _bot.EnemiesController?.EnemyInfos;
+            return enemies != null && enemies.Count >= 2;
+        }
+
+        /// <summary>
+        /// True if enough squadmates have died to justify tactical escalation.
+        /// </summary>
+        private bool SquadHasCasualties()
+        {
+            var group = _bot.BotsGroup;
+            if (group == null || group.MembersCount <= 1)
+                return false;
+
+            int dead = 0;
+            for (int i = 0; i < group.MembersCount; i++)
+            {
+                var member = group.Member(i);
+                if (member == null || member.IsDead)
+                    dead++;
+            }
+
+            return dead >= Mathf.CeilToInt(group.MembersCount * 0.4f);
+        }
+
+        #endregion
+
+        #region Escalation Execution
+
+        /// <summary>
+        /// Applies runtime tuning changes for vision, aggression, and weapon control.
+        /// </summary>
         private void EscalateBot()
         {
             _hasEscalated = true;
@@ -77,6 +129,9 @@ namespace AIRefactored.AI.Combat
             ApplyEscalationTuning();
         }
 
+        /// <summary>
+        /// Applies internal tuning overrides for perception and combat response.
+        /// </summary>
         private void ApplyEscalationTuning()
         {
             var settings = _bot.Settings?.FileSettings;
@@ -105,43 +160,6 @@ namespace AIRefactored.AI.Combat
             }
 
             Debug.Log($"[AIRefactored-Tuning] {_bot.Profile?.Info?.Nickname} → runtime recoil, vision, and sprint tuning escalated.");
-        }
-
-        #endregion
-
-        #region Escalation Triggers
-
-        private bool ShouldEscalate()
-        {
-            return PanicElapsed() || HasMultipleEnemies() || SquadHasCasualties();
-        }
-
-        private bool PanicElapsed()
-        {
-            return _panicStartTime > 0f && (Time.time - _panicStartTime) > PanicDurationThreshold;
-        }
-
-        private bool HasMultipleEnemies()
-        {
-            var enemies = _bot.EnemiesController?.EnemyInfos;
-            return enemies != null && enemies.Count >= 2;
-        }
-
-        private bool SquadHasCasualties()
-        {
-            var group = _bot.BotsGroup;
-            if (group == null || group.MembersCount <= 1)
-                return false;
-
-            int dead = 0;
-            for (int i = 0; i < group.MembersCount; i++)
-            {
-                var member = group.Member(i);
-                if (member == null || member.IsDead)
-                    dead++;
-            }
-
-            return dead >= Mathf.CeilToInt(group.MembersCount * 0.4f);
         }
 
         #endregion

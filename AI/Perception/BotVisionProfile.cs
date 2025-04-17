@@ -1,32 +1,34 @@
-﻿namespace AIRefactored.AI.Perception
+﻿#nullable enable
+
+namespace AIRefactored.AI.Perception
 {
     /// <summary>
-    /// Defines light sensitivity, adaptation rate, and visual suppression response for bot types.
-    /// Used by the BotPerceptionSystem to simulate human-like vision modulation.
+    /// Defines light sensitivity, adaptation rate, and suppression vision penalties for bots.
+    /// Used by <see cref="BotPerceptionSystem"/> to simulate human-like vision response.
     /// </summary>
-    public class BotVisionProfile
+    public sealed class BotVisionProfile
     {
         #region Vision Modulation
 
         /// <summary>
-        /// Multiplier applied to vision range recovery (e.g. how fast bot regains sight after flash).
+        /// Multiplier applied to visual range recovery. Higher = faster recovery from flash effects.
         /// </summary>
-        public float AdaptationSpeed = 1.5f;
+        public float AdaptationSpeed { get; set; } = 1.5f;
 
         /// <summary>
-        /// Maximum blindness penalty a bot can experience from flash exposure.
+        /// Maximum visual impairment caused by flash blindness (0 = no effect, 1 = fully blind).
         /// </summary>
-        public float MaxBlindness = 1.0f;
+        public float MaxBlindness { get; set; } = 1.0f;
 
         /// <summary>
-        /// How sensitive the bot is to bright light sources (e.g. flares, flashlights).
+        /// Sensitivity to intense lighting such as flares or flashlights. Affects blindness scaling.
         /// </summary>
-        public float LightSensitivity = 1.0f;
+        public float LightSensitivity { get; set; } = 1.0f;
 
         /// <summary>
-        /// Suppression-based vision penalty multiplier (e.g. how vision is reduced under stress).
+        /// Vision penalty factor during suppression. Higher = greater reduction under fire.
         /// </summary>
-        public float AggressionResponse = 1.0f;
+        public float AggressionResponse { get; set; } = 1.0f;
 
         #endregion
     }

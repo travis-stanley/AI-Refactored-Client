@@ -18,6 +18,7 @@ namespace AIRefactored.AI.Helpers
         /// <param name="lightTransform">The light's transform in world space.</param>
         /// <param name="botHeadTransform">The transform representing the bot's head orientation.</param>
         /// <param name="angleThreshold">Maximum angle (in degrees) to be considered blinding.</param>
+        /// <returns>True if the light is within the blinding angle.</returns>
         public static bool IsBlindingLight(Transform lightTransform, Transform botHeadTransform, float angleThreshold = 30f)
         {
             if (lightTransform == null || botHeadTransform == null)
@@ -32,6 +33,9 @@ namespace AIRefactored.AI.Helpers
         /// Calculates the forward-facing intensity factor of a flashlight.
         /// Value is 1.0 when directly in front, 0.0 when behind.
         /// </summary>
+        /// <param name="lightTransform">The light source.</param>
+        /// <param name="botHeadTransform">The bot head transform.</param>
+        /// <returns>Dot product factor clamped between 0 and 1.</returns>
         public static float GetFlashIntensityFactor(Transform lightTransform, Transform botHeadTransform)
         {
             if (lightTransform == null || botHeadTransform == null)
@@ -49,6 +53,10 @@ namespace AIRefactored.AI.Helpers
         /// <summary>
         /// Determines whether a source is facing toward a target within a given angle threshold.
         /// </summary>
+        /// <param name="source">Transform to check facing from.</param>
+        /// <param name="target">Target position to face.</param>
+        /// <param name="angleThreshold">Angle threshold in degrees.</param>
+        /// <returns>True if source is facing the target.</returns>
         public static bool IsFacingTarget(Transform source, Transform target, float angleThreshold = 30f)
         {
             if (source == null || target == null)
@@ -68,8 +76,9 @@ namespace AIRefactored.AI.Helpers
         /// Used to determine flash effectiveness in bot vision systems.
         /// </summary>
         /// <param name="lightTransform">The light source transform.</param>
-        /// <param name="botHeadTransform">The bot head transform.</param>
+        /// <param name="botHeadTransform">The bot's head transform.</param>
         /// <param name="maxDistance">Maximum effective range for flash effect falloff.</param>
+        /// <returns>A float score (0-1) representing flash visibility strength.</returns>
         public static float CalculateFlashScore(Transform lightTransform, Transform botHeadTransform, float maxDistance = 20f)
         {
             if (lightTransform == null || botHeadTransform == null)

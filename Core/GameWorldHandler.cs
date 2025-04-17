@@ -8,46 +8,68 @@ using UnityEngine;
 namespace AIRefactored.Core
 {
     /// <summary>
-    /// Utility for safe access to the current GameWorld, map name, player proximity, and teammate logic.
-    /// Supports both local and Coop/FIKA multiplayer compatibility.
+    /// Provides safe access to the active <see cref="ClientGameWorld"/>, map metadata,
+    /// main player position, alive players list, and team proximity checks.
+    /// Supports both local play and FIKA/Coop multiplayer modes.
     /// </summary>
     public static class GameWorldHandler
     {
+        #region Cache
+
         private static Vector3 _cachedPlayerPosition = Vector3.zero;
         private static float _lastUpdateTime = -1f;
         private const float CacheRefreshRate = 0.1f;
 
-        private static ClientGameWorld? CachedWorld => Singleton<ClientGameWorld>.Instantiated ? Singleton<ClientGameWorld>.Instance : null;
+        /// <summary>
+        /// Retrieves the current instantiated ClientGameWorld instance (if available).
+        /// </summary>
+        private static ClientGameWorld? CachedWorld =>
+            Singleton<ClientGameWorld>.Instantiated
+                ? Singleton<ClientGameWorld>.Instance
+                : null;
+
+        #endregion
+
+        #region World Access
 
         /// <summary>
-        /// Gets the current ClientGameWorld if available.
+        /// Returns the current <see cref="ClientGameWorld"/> if available.
         /// </summary>
         public static ClientGameWorld? Get() => CachedWorld;
 
         /// <summary>
-        /// Returns the current map identifier or "unknown".
+        /// Gets the current map's internal name or "unknown" if unavailable.
         /// </summary>
         public static string GetCurrentMapName()
         {
             return CachedWorld?.MainPlayer?.Location ?? "unknown";
         }
 
+        #endregion
+
+        #region Main Player Access
+
         /// <summary>
-        /// Tries to get the main player’s position (cached for performance).
+        /// Attempts to retrieve the main player's current position with default caching interval.
         /// </summary>
+        /// <param name="position">Out parameter to hold the player’s position.</param>
+        /// <returns>True if the main player was found and alive; otherwise, false.</returns>
         public static bool TryGetMainPlayerPosition(out Vector3 position)
         {
             return TryGetMainPlayerPosition(out position, CacheRefreshRate);
         }
 
         /// <summary>
-        /// Tries to get the main player's position, optionally bypassing cache delay with a custom refresh interval.
+        /// Attempts to retrieve the main player's position with a custom refresh rate for caching.
         /// </summary>
+        /// <param name="position">Out parameter for the player’s position.</param>
+        /// <param name="refreshRate">Minimum seconds between cache updates.</param>
+        /// <returns>True if the main player is alive and position was updated or retrieved from cache.</returns>
         public static bool TryGetMainPlayerPosition(out Vector3 position, float refreshRate)
         {
             position = Vector3.zero;
-            var player = CachedWorld?.MainPlayer;
 
+            var player = CachedWorld?.MainPlayer;
             if (player == null || !player.HealthController.IsAlive)
                 return false;
 
@@ -62,7 +84,8 @@ namespace AIRefactored.Core
         }
 
         /// <summary>
-        /// Returns distance to the main player or float.MaxValue if not found.
+        /// Calculates distance from the given position to the main player.
+        /// Returns float.MaxValue if the player is not found.
         /// </summary>
         public static float DistanceToMainPlayer(Vector3 worldPos)
         {
@@ -72,15 +95,20 @@ namespace AIRefactored.Core
         }
 
         /// <summary>
-        /// Checks if the given world position is within a range of the main player.
+        /// Returns true if the given world position is within a certain range of the main player.
         /// </summary>
         public static bool IsWithinPlayerRange(Vector3 position, float range)
         {
             return DistanceToMainPlayer(position) <= range;
         }
 
+        #endregion
+
+        #region World Players
+
         /// <summary>
-        /// Returns a list of all alive players in the current game world.
+        /// Retrieves a list of all currently alive players in the ClientGameWorld.
+        /// Includes both AI and human players.
         /// </summary>
         public static List<Player> GetAllAlivePlayers()
         {
@@ -99,9 +127,16 @@ namespace AIRefactored.Core
             return players;
         }
 
+        #endregion
+
+        #region Teammate Proximity
+
         /// <summary>
-        /// Checks if any player in the given group is within a radius of the target position.
+        /// Returns true if any alive player in the specified group is within the given radius of a position.
         /// </summary>
+        /// <param name="position">Target world position to test.</param>
+        /// <param name="radius">Distance radius to check.</param>
+        /// <param name="groupId">Optional group identifier (null-safe).</param>
         public static bool IsNearTeammate(Vector3 position, float radius, string? groupId = null)
         {
             if (string.IsNullOrEmpty(groupId))
@@ -119,5 +154,7 @@ namespace AIRefactored.Core
 
             return false;
         }
+
+        #endregion
     }
 }

@@ -32,6 +32,9 @@ namespace AIRefactored.AI.Groups
 
         #region Unity Events
 
+        /// <summary>
+        /// Registers this bot with the team tracker on start.
+        /// </summary>
         private void Start()
         {
             _bot = GetComponent<BotOwner>();
@@ -43,6 +46,9 @@ namespace AIRefactored.AI.Groups
             }
         }
 
+        /// <summary>
+        /// Deregisters this bot on destroy.
+        /// </summary>
         private void OnDestroy()
         {
             if (_bot != null && _bot.GetPlayer?.IsAI == true)
@@ -51,13 +57,16 @@ namespace AIRefactored.AI.Groups
             }
         }
 
+        /// <summary>
+        /// Periodic squad logic updates.
+        /// </summary>
         private void Update()
         {
             if (_bot == null || _bot.IsDead || string.IsNullOrEmpty(_groupId))
                 return;
 
             if (_bot.GetPlayer == null || !_bot.GetPlayer.IsAI)
-                return; // 🛑 Human players (Coop/FIKA) are excluded
+                return;
 
             updateTimer += Time.deltaTime;
             if (updateTimer < updateInterval)
@@ -76,6 +85,9 @@ namespace AIRefactored.AI.Groups
 
         #region Behavior Logic
 
+        /// <summary>
+        /// Maintains proper spacing between squadmates to avoid bunching or straggling.
+        /// </summary>
         private void HandleSquadSpacing()
         {
             List<BotOwner> group = BotTeamTracker.GetGroup(_groupId!);
@@ -110,6 +122,9 @@ namespace AIRefactored.AI.Groups
             }
         }
 
+        /// <summary>
+        /// Automatically opens nearby locked or shut doors to maintain group mobility.
+        /// </summary>
         private void TryUnlockNearbyDoors()
         {
             if (_bot?.Mover == null)

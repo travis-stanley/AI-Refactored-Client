@@ -16,8 +16,9 @@ namespace AIRefactored.AI.Combat
 
         private BotOwner? _bot;
         private float _suppressionStartTime = -99f;
-        private const float SuppressionDuration = 2.0f;
         private bool _isSuppressed = false;
+
+        private const float SuppressionDuration = 2.0f;
 
         #endregion
 
@@ -38,7 +39,9 @@ namespace AIRefactored.AI.Combat
                 return;
 
             if (Time.time - _suppressionStartTime > SuppressionDuration)
+            {
                 _isSuppressed = false;
+            }
         }
 
         #endregion
@@ -48,7 +51,7 @@ namespace AIRefactored.AI.Combat
         /// <summary>
         /// Triggers suppression logic and evasive sprinting away from the source direction.
         /// </summary>
-        /// <param name="from">Position of threat (e.g. gunfire or explosion).</param>
+        /// <param name="from">Optional position of threat (e.g. gunfire or explosion).</param>
         public void TriggerSuppression(Vector3? from = null)
         {
             if (_isSuppressed || _bot == null || IsHumanPlayer())
@@ -65,7 +68,7 @@ namespace AIRefactored.AI.Combat
 
             if (Physics.Raycast(_bot.Position, direction, out var hit, 6f))
             {
-                fallback = hit.point - direction * 1f;
+                fallback = hit.point - direction;
             }
 
             _bot.Sprint(true);
@@ -81,22 +84,27 @@ namespace AIRefactored.AI.Combat
         }
 
         /// <summary>
-        /// External trigger interface for suppression based on incoming direction.
+        /// Public trigger interface for suppression reaction.
         /// </summary>
+        /// <param name="source">The origin of the suppressive action (e.g. gunfire).</param>
         public void ReactToSuppression(Vector3 source)
         {
             TriggerSuppression(source);
         }
 
         /// <summary>
-        /// Returns whether bot is currently suppressed.
+        /// Indicates whether bot is currently suppressed.
         /// </summary>
+        /// <returns>True if in suppression state.</returns>
         public bool IsSuppressed() => _isSuppressed;
 
         #endregion
 
         #region Helpers
 
+        /// <summary>
+        /// Checks if the entity is a human player (not AI).
+        /// </summary>
         private bool IsHumanPlayer()
         {
             return _bot?.GetPlayer != null && !_bot.GetPlayer.IsAI;

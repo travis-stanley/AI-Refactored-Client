@@ -1,4 +1,6 @@
-﻿using UnityEngine;
+﻿#nullable enable
+
+using UnityEngine;
 
 namespace AIRefactored.AI.Components
 {
@@ -38,6 +40,9 @@ namespace AIRefactored.AI.Components
 
         #region Unity Events
 
+        /// <summary>
+        /// Updates deafness recovery over time.
+        /// </summary>
         private void Update()
         {
             if (_recoveryTimeLeft > 0f)

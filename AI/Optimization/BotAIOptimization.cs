@@ -12,7 +12,13 @@ namespace AIRefactored.AI.Optimization
     /// </summary>
     public class BotAIOptimization
     {
+        #region State
+
         private readonly Dictionary<string, bool> _optimizationApplied = new();
+
+        #endregion
+
+        #region Public API
 
         /// <summary>
         /// Applies and logs optimization diagnostics for the given bot if not already applied.
@@ -38,6 +44,7 @@ namespace AIRefactored.AI.Optimization
         /// <summary>
         /// Resets the optimization flag for the given bot, allowing reapplication.
         /// </summary>
+        /// <param name="botOwner">The bot to reset.</param>
         public void ResetOptimization(BotOwner botOwner)
         {
             if (!IsAIBot(botOwner))
@@ -45,6 +52,10 @@ namespace AIRefactored.AI.Optimization
 
             _optimizationApplied[botOwner.Profile.Id] = false;
         }
+
+        #endregion
+
+        #region Private Helpers
 
         /// <summary>
         /// Returns true if the bot is AI-controlled and not a human or FIKA Coop player.
@@ -91,5 +102,7 @@ namespace AIRefactored.AI.Optimization
             var role = bot.Profile.Info.Settings.Role;
             Debug.Log($"[AIRefactored-Aggression] {bot.Profile.Info.Nickname} → Role = {role}");
         }
+
+        #endregion
     }
 }

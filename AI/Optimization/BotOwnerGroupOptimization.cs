@@ -24,10 +24,7 @@ namespace AIRefactored.AI.Optimization
             for (int i = 0; i < botOwners.Count; i++)
             {
                 var bot = botOwners[i];
-                if (!IsAIBot(bot))
-                    continue;
-
-                if (bot?.Profile == null || bot.Settings?.FileSettings?.Mind == null)
+                if (!IsAIBot(bot) || bot?.Profile == null || bot.Settings?.FileSettings?.Mind == null)
                     continue;
 
                 var profile = BotRegistry.Get(bot.Profile.Id);
@@ -38,17 +35,17 @@ namespace AIRefactored.AI.Optimization
 
                 // === Group Cohesion Enhancements ===
 
-                // Increase found-distance radius for tightly packed squads
+                // Expand enemy detection radius if bot is less cohesive (more independent)
                 mind.DIST_TO_FOUND_SQRT = Mathf.Lerp(300f, 600f, 1f - profile.Cohesion);
 
-                // Scale friend-kill aggression sensitivity based on aggression level
+                // Scale aggression toward teammate killers based on personality
                 mind.FRIEND_AGR_KILL = Mathf.Clamp(
                     mind.FRIEND_AGR_KILL + profile.AggressionLevel * 0.15f,
                     0f,
                     1f
                 );
 
-                // Reduce enemy visible angle to simulate more focused awareness
+                // Narrow cone of visual detection to simulate more attentive scanning
                 mind.ENEMY_LOOK_AT_ME_ANG = Mathf.Clamp(
                     mind.ENEMY_LOOK_AT_ME_ANG - profile.Cohesion * 5f,
                     5f,

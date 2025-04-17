@@ -41,8 +41,9 @@ namespace AIRefactored.AI.Helpers
         #region Panic Triggers
 
         /// <summary>
-        /// Triggers panic behavior for a single bot.
+        /// Triggers panic behavior for a single bot if valid and AI-controlled.
         /// </summary>
+        /// <param name="cache">Bot's component cache.</param>
         public static void Trigger(BotComponentCache cache)
         {
             if (cache == null || BotCacheUtility.IsHumanPlayer(cache.Bot))
@@ -57,13 +58,15 @@ namespace AIRefactored.AI.Helpers
         /// <summary>
         /// Triggers panic behavior for all bots in the specified group.
         /// </summary>
+        /// <param name="group">List of bot component caches in the group.</param>
         public static void TriggerGroup(List<BotComponentCache> group)
         {
             if (group == null || group.Count == 0)
                 return;
 
-            foreach (var cache in group)
+            for (int i = 0; i < group.Count; i++)
             {
+                var cache = group[i];
                 if (cache == null || BotCacheUtility.IsHumanPlayer(cache.Bot))
                     continue;
 

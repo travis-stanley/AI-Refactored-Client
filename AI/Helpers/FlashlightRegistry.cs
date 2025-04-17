@@ -13,6 +13,9 @@ namespace AIRefactored.AI.Helpers
     {
         #region Cached Lights
 
+        /// <summary>
+        /// Internal list of valid lights cached per frame.
+        /// </summary>
         private static readonly List<Light> _activeLights = new();
 
         /// <summary>
@@ -37,8 +40,10 @@ namespace AIRefactored.AI.Helpers
         {
             _activeLights.Clear();
 
-            foreach (var light in Object.FindObjectsOfType<Light>())
+            var sceneLights = Object.FindObjectsOfType<Light>();
+            for (int i = 0; i < sceneLights.Length; i++)
             {
+                var light = sceneLights[i];
                 if (IsTacticalFlashlight(light))
                 {
                     _activeLights.Add(light);

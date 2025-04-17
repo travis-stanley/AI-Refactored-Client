@@ -6,7 +6,8 @@ using UnityEngine;
 namespace AIRefactored.Core
 {
     /// <summary>
-    /// Determines whether this client instance is the host in a FIKA or SPT environment.
+    /// Determines whether the current client instance is acting as host (FIKA GroupLeader or SPT singleplayer).
+    /// Used for logic requiring authoritative control or host-only operations.
     /// </summary>
     public static class HostDetector
     {
@@ -19,7 +20,8 @@ namespace AIRefactored.Core
         #region Public API
 
         /// <summary>
-        /// Returns true if this client instance is considered the host (GroupLeader or SPT singleplayer).
+        /// Returns true if this instance is the host (FIKA GroupLeader or SPT offline).
+        /// Caches the result after the first evaluation.
         /// </summary>
         public static bool IsHost()
         {

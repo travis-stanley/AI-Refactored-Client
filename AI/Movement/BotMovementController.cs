@@ -12,6 +12,10 @@ using AIRefactored.AI.Helpers;
 
 namespace AIRefactored.AI.Movement
 {
+    /// <summary>
+    /// Handles tactical room clearing, ambush behavior, and group movement.
+    /// Controls bot movement in confined spaces, leaning, scanning, door interaction, and fallback positioning.
+    /// </summary>
     public class BotMovementController : MonoBehaviour
     {
         #region Fields
@@ -83,7 +87,7 @@ namespace AIRefactored.AI.Movement
 
         #endregion
 
-        #region Movement Decision Routine
+        #region Decision Routine
 
         private IEnumerator DecisionRoutine()
         {
@@ -132,7 +136,7 @@ namespace AIRefactored.AI.Movement
 
         #endregion
 
-        #region Room Clearing
+        #region Room Searching
 
         private bool TryRoomSearchFlow()
         {
@@ -150,7 +154,7 @@ namespace AIRefactored.AI.Movement
                 return true;
             }
 
-            Vector3 toTarget = (target - _bot.Position);
+            Vector3 toTarget = target - _bot.Position;
             float sqrDist = toTarget.sqrMagnitude;
 
             if (sqrDist > 4f)
@@ -180,7 +184,7 @@ namespace AIRefactored.AI.Movement
 
         #endregion
 
-        #region Suppression / Ambush
+        #region Suppression / Ambush Detection
 
         private bool TrySuppressOrAmbush()
         {
@@ -200,7 +204,7 @@ namespace AIRefactored.AI.Movement
 
         #endregion
 
-        #region Tilt Peeking
+        #region Tactical Peeking
 
         private IEnumerator PeekWithTilt(Vector3 target)
         {
@@ -226,7 +230,7 @@ namespace AIRefactored.AI.Movement
 
         #endregion
 
-        #region Door Stack & Breach
+        #region Door Breaching
 
         private IEnumerator DoorStackBreach(Door door, Vector3 roomTarget)
         {
@@ -238,7 +242,8 @@ namespace AIRefactored.AI.Movement
             {
                 foreach (var mate in members)
                 {
-                    if (mate != null && mate != _bot && (mate.Position - door.transform.position).sqrMagnitude < 9f)
+                    if (mate != null && mate != _bot &&
+                        (mate.Position - door.transform.position).sqrMagnitude < 9f)
                         squadCount++;
                 }
             }
@@ -258,7 +263,7 @@ namespace AIRefactored.AI.Movement
 
         #endregion
 
-        #region Tactical Scan Pause
+        #region Corner Scan Pause
 
         private IEnumerator CornerScanPause()
         {

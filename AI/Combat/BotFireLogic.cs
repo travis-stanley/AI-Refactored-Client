@@ -12,6 +12,9 @@ using AIRefactored.AI.Optimization;
 
 namespace AIRefactored.AI.Combat
 {
+    /// <summary>
+    /// Controls bot fire behavior, including fire mode, accuracy under fire, and panic retreat logic.
+    /// </summary>
     public class BotFireLogic
     {
         #region Fields
@@ -38,12 +41,21 @@ namespace AIRefactored.AI.Combat
 
         #endregion
 
+        #region Constructor
+
         public BotFireLogic(BotOwner botOwner)
         {
             _botOwner = botOwner;
             _cache = botOwner.GetComponent<BotComponentCache>();
         }
 
+        #endregion
+
+        #region Main Logic
+
+        /// <summary>
+        /// Main update loop for deciding fire mode, accuracy, and suppression behavior.
+        /// </summary>
         public void UpdateShootingBehavior()
         {
             if (_botOwner?.Memory?.GoalEnemy == null || _botOwner.WeaponManager?.CurrentWeapon == null || !_botOwner.IsAI)
@@ -102,13 +114,21 @@ namespace AIRefactored.AI.Combat
             shootData.Shoot();
         }
 
+        #endregion
+
         #region Engagement Logic
 
+        /// <summary>
+        /// Calculates the max engagement range based on bot personality and weapon.
+        /// </summary>
         private float GetEffectiveEngageRange(Weapon weapon, BotPersonalityProfile profile)
         {
             return Mathf.Min(profile.EngagementRange, EstimateWeaponRange(weapon), ENGAGE_LIMIT);
         }
 
+        /// <summary>
+        /// Estimates effective weapon range based on name.
+        /// </summary>
         private float EstimateWeaponRange(Weapon weapon)
         {
             string? name = weapon.Template?.Name;
@@ -126,11 +146,17 @@ namespace AIRefactored.AI.Combat
             return 60f;
         }
 
+        /// <summary>
+        /// Checks if the weapon supports the desired fire mode.
+        /// </summary>
         private bool SupportsFireMode(Weapon weapon, Weapon.EFireMode mode)
         {
             return Array.Exists(weapon.WeapFireType, f => f == mode);
         }
 
+        /// <summary>
+        /// Changes fire mode if needed.
+        /// </summary>
         private void TrySetFireMode(BotWeaponInfo info, Weapon.EFireMode mode)
         {
             if (info.weapon.SelectedFireMode != mode)
@@ -141,6 +167,9 @@ namespace AIRefactored.AI.Combat
 
         #region Accuracy + Cadence
 
+        /// <summary>
+        /// Applies scatter penalty during combat based on profile and suppression.
+        /// </summary>
         private void ApplyScatter(GClass592 core, bool underFire, BotPersonalityProfile profile)
         {
             float suppressionFactor = underFire ? 1f - profile.AccuracyUnderFire : 0f;
@@ -151,11 +180,17 @@ namespace AIRefactored.AI.Combat
                 core.ScatteringPerMeter = MAX_SCATTER;
         }
 
+        /// <summary>
+        /// Gradually reduces inaccuracy over time if firing continuously.
+        /// </summary>
         private void RecoverAccuracy(GClass592 core)
         {
             core.ScatteringPerMeter *= SCATTER_RECOVERY;
         }
 
+        /// <summary>
+        /// Returns the delay before the bot will decide to fire again.
+        /// </summary>
         private float GetBurstCadence(BotPersonalityProfile profile)
         {
             float baseDelay = Mathf.Lerp(0.8f, 0.3f, profile.AggressionLevel);
@@ -165,8 +200,11 @@ namespace AIRefactored.AI.Combat
 
         #endregion
 
-        #region Suppression/Panic Overrides
+        #region Suppression + Retreat Logic
 
+        /// <summary>
+        /// Determines whether bot can ignore suppression and push through.
+        /// </summary>
         private bool CanOverrideSuppression(BotPersonalityProfile profile, bool isUnderFire)
         {
             return isUnderFire && (
@@ -176,11 +214,17 @@ namespace AIRefactored.AI.Combat
             );
         }
 
+        /// <summary>
+        /// Determines if bot should panic and initiate a retreat.
+        /// </summary>
         private bool ShouldPanic(BotPersonalityProfile profile, bool isUnderFire)
         {
             return isUnderFire && GetBotHealthRatio() <= profile.RetreatThreshold;
         }
 
+        /// <summary>
+        /// Returns current bot health ratio.
+        /// </summary>
         private float GetBotHealthRatio()
         {
             var hc = _botOwner.GetPlayer?.HealthController;
@@ -199,6 +243,9 @@ namespace AIRefactored.AI.Combat
             return Mathf.Clamp01(totalCurrent / totalMax);
         }
 
+        /// <summary>
+        /// Attempts to path to fallback cover when panicking.
+        /// </summary>
         private void RetreatToSafety(BotPersonalityProfile profile)
         {
             if (Time.time < _lastRetreatTime + RETREAT_COOLDOWN)

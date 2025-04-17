@@ -1,5 +1,6 @@
 ﻿#nullable enable
 
+using System;
 using System.Diagnostics;
 
 namespace AIRefactored.AI
@@ -7,8 +8,8 @@ namespace AIRefactored.AI
     #region Enums
 
     /// <summary>
-    /// Defines all supported bot personality archetypes used in AIRefactored.
-    /// Each personality influences different aspects of tactical behavior.
+    /// Defines archetypal AI personalities used in AIRefactored.
+    /// Each type influences tactical, behavioral, and decision-making traits.
     /// </summary>
     public enum PersonalityType
     {
@@ -38,7 +39,7 @@ namespace AIRefactored.AI
     }
 
     /// <summary>
-    /// Defines a preferred mission type for behavior-driven bot objectives.
+    /// Represents the preferred mission objective bias used by bots to guide strategic decisions.
     /// </summary>
     public enum MissionBias
     {
@@ -51,8 +52,8 @@ namespace AIRefactored.AI
     #endregion
 
     /// <summary>
-    /// AI personality profile used throughout AIRefactored to configure bot tactical behavior,
-    /// perception response, team cohesion, and risk tolerance.
+    /// Defines a full personality configuration for AI bots, including behavior flags,
+    /// tactical parameters, suppression response, and mission preferences.
     /// </summary>
     [DebuggerDisplay("{Personality} Aggro={AggressionLevel}, Acc={Accuracy}, Chaos={ChaosFactor}")]
     public class BotPersonalityProfile
@@ -60,12 +61,12 @@ namespace AIRefactored.AI
         #region Identity
 
         /// <summary>
-        /// Primary personality archetype label (used for debugging and generation).
+        /// Primary archetype defining this personality's behavioral baseline.
         /// </summary>
         public PersonalityType Personality { get; set; } = PersonalityType.Balanced;
 
         /// <summary>
-        /// Optional mission preference to influence movement, targeting, or goal logic.
+        /// Preferred mission objective style for this personality.
         /// </summary>
         public MissionBias PreferredMission { get; set; } = MissionBias.Random;
 
@@ -73,85 +74,131 @@ namespace AIRefactored.AI
 
         #region Core Tactical Behavior
 
-        /// <summary>Max preferred distance for engagements (in meters).</summary>
+        /// <summary>
+        /// Preferred maximum combat engagement range (in meters).
+        /// </summary>
         public float EngagementRange { get; set; } = 80f;
 
-        /// <summary>Base aim precision rating (0.0 to 1.0).</summary>
+        /// <summary>
+        /// Accuracy rating (0.0 = wildly inaccurate, 1.0 = precise).
+        /// </summary>
         public float Accuracy { get; set; } = 0.7f;
 
-        /// <summary>Priority for repositioning when exposed (0.0 to 1.0).</summary>
+        /// <summary>
+        /// Likelihood to reposition or flank under exposure (0.0 = never, 1.0 = always).
+        /// </summary>
         public float RepositionPriority { get; set; } = 0.8f;
 
-        /// <summary>Willingness to push or flank under uncertainty (0.0 to 1.0).</summary>
+        /// <summary>
+        /// Willingness to risk encounters or push objectives (0.0 = extremely cautious, 1.0 = reckless).
+        /// </summary>
         public float RiskTolerance { get; set; } = 0.5f;
 
-        /// <summary>Stickiness to teammates (0.0 solo → 1.0 squad cohesion).</summary>
+        /// <summary>
+        /// Loyalty to group and spacing behavior (0.0 = solo, 1.0 = squad cohesion).
+        /// </summary>
         public float Cohesion { get; set; } = 0.75f;
 
-        /// <summary>General hostility and combat bias (0.0 passive → 1.0 aggressive).</summary>
+        /// <summary>
+        /// Tendency to initiate combat or push offensively (0.0 = passive, 1.0 = aggressive).
+        /// </summary>
         public float AggressionLevel { get; set; } = 0.6f;
 
         #endregion
 
         #region Perception & Suppression Tuning
 
-        /// <summary>Likelihood to investigate sounds or avoid ambushes.</summary>
+        /// <summary>
+        /// Bot's caution level — affects sound investigation, cover usage, and peeking.
+        /// </summary>
         public float Caution { get; set; } = 0.5f;
 
-        /// <summary>Probability to flinch or hesitate under fire.</summary>
+        /// <summary>
+        /// Likelihood to flinch or hesitate when shot at (0.0 = fearless, 1.0 = very jumpy).
+        /// </summary>
         public float FlinchThreshold { get; set; } = 0.4f;
 
-        /// <summary>Reaction sensitivity to suppression events.</summary>
+        /// <summary>
+        /// How easily bot enters suppressed state (0.0 = immune, 1.0 = very sensitive).
+        /// </summary>
         public float SuppressionSensitivity { get; set; } = 0.4f;
 
         #endregion
 
         #region Advanced Behavior Modulation
 
-        /// <summary>Bias to take flanking paths during combat.</summary>
+        /// <summary>
+        /// Bias toward taking alternate flanking paths in tactical movement.
+        /// </summary>
         public float FlankBias { get; set; } = 0.5f;
 
-        /// <summary>Health-based fallback threshold (0.0 always fights → 1.0 retreats early).</summary>
+        /// <summary>
+        /// At what damage threshold the bot will fall back (0.0 = never retreats, 1.0 = retreats early).
+        /// </summary>
         public float RetreatThreshold { get; set; } = 0.3f;
 
-        /// <summary>How often bot uses suppressive fire instead of aiming directly.</summary>
+        /// <summary>
+        /// Preference for suppressive fire over accurate shots.
+        /// </summary>
         public float SuppressiveFireBias { get; set; } = 0.2f;
 
-        /// <summary>How much this bot communicates with teammates (0.0 = silent).</summary>
+        /// <summary>
+        /// Communication tendency with squad members (0.0 = silent, 1.0 = highly vocal).
+        /// </summary>
         public float CommunicationLevel { get; set; } = 0.6f;
 
-        /// <summary>Introduces unpredictability to timing and reactions.</summary>
+        /// <summary>
+        /// Introduces random behavior and reaction delay (0.0 = predictable, 1.0 = chaotic).
+        /// </summary>
         public float ChaosFactor { get; set; } = 0.0f;
 
-        /// <summary>Accuracy penalty while under fire or panic.</summary>
+        /// <summary>
+        /// Penalty to bot accuracy when panicked or under fire.
+        /// </summary>
         public float AccuracyUnderFire { get; set; } = 0.4f;
 
         #endregion
 
         #region Behavior Modifiers (Flags)
 
-        /// <summary>Bot intentionally acts stupid or unpredictable.</summary>
+        /// <summary>
+        /// Bot acts unintelligently and erratically (low coordination or decision-making).
+        /// </summary>
         public bool IsDumb { get; set; } = false;
 
-        /// <summary>Bot avoids all danger and retreats early.</summary>
+        /// <summary>
+        /// Bot is fear-prone, prefers retreating and avoiding fights.
+        /// </summary>
         public bool IsFearful { get; set; } = false;
 
-        /// <summary>Bot prefers static positions and rarely moves.</summary>
+        /// <summary>
+        /// Bot prefers holding position and rarely advances.
+        /// </summary>
         public bool IsCamper { get; set; } = false;
 
-        /// <summary>Bot ignores fear, flinching, and pushes aggressively.</summary>
+        /// <summary>
+        /// Bot ignores fear, pushes enemies, and enters panic charge behavior.
+        /// </summary>
         public bool IsFrenzied { get; set; } = false;
 
-        /// <summary>Bot prefers ambush and low-audio profiles.</summary>
+        /// <summary>
+        /// Bot uses stealth, ambushes, and avoids detection.
+        /// </summary>
         public bool IsSilentHunter { get; set; } = false;
 
-        /// <summary>Bot follows squad behavior strictly.</summary>
+        /// <summary>
+        /// Bot strictly supports team objectives and communication.
+        /// </summary>
         public bool IsTeamPlayer { get; set; } = false;
 
-        /// <summary>Bot exhibits cruel or aggressive emotional behavior.</summary>
+        /// <summary>
+        /// Bot exhibits hostile emotional bias, such as cruelty or overkill.
+        /// </summary>
         public bool IsSadistic { get; set; } = false;
 
-        /// <summary>Bot refuses to retreat even in dangerous situations.</summary>
+        /// <summary>
+        /// Bot will not retreat under any circumstance (high stubbornness).
+        /// </summary>
         public bool IsStubborn { get; set; } = false;
 
         #endregion

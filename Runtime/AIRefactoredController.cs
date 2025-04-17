@@ -6,7 +6,8 @@ using BepInEx.Logging;
 namespace AIRefactored.Runtime
 {
     /// <summary>
-    /// Central controller for AIRefactored. Manages initialization and global AI subsystems.
+    /// Global runtime controller for AIRefactored. Manages one-time setup of subsystems
+    /// and holds persistent references for mod lifecycle coordination.
     /// </summary>
     public class AIRefactoredController : MonoBehaviour
     {
@@ -20,9 +21,10 @@ namespace AIRefactored.Runtime
         #region Initialization
 
         /// <summary>
-        /// Initializes the AIRefactored controller and global managers.
+        /// Initializes the global controller and prevents destruction across scenes.
+        /// Will not reinitialize if already present.
         /// </summary>
-        /// <param name="logger">BepInEx logger instance for diagnostics.</param>
+        /// <param name="logger">Logger instance used for mod diagnostics and status.</param>
         public static void Initialize(ManualLogSource logger)
         {
             _logger = logger;
@@ -34,7 +36,7 @@ namespace AIRefactored.Runtime
             _instance = obj.AddComponent<AIRefactoredController>();
             DontDestroyOnLoad(obj);
 
-            _logger.LogInfo("[AIRefactored] ✅ Global controller initialized.");
+            _logger?.LogInfo("[AIRefactored] ✅ Global controller initialized.");
         }
 
         #endregion

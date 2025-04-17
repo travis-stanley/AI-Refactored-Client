@@ -8,13 +8,16 @@ using AIRefactored.AI.Core;
 namespace AIRefactored.AI.Perception
 {
     /// <summary>
-    /// Maps EFT WildSpawnTypes to default vision response profiles.
-    /// Optionally overrides with personality-based scaling if available.
+    /// Provides default and personality-adjusted vision profiles for each <see cref="WildSpawnType"/>.
+    /// Used to determine how a bot visually adapts, is blinded, and reacts to suppression or light.
     /// </summary>
     public static class BotVisionProfiles
     {
-        #region Fields
+        #region Presets
 
+        /// <summary>
+        /// Fallback profile used when no match is found or bot is invalid.
+        /// </summary>
         private static readonly BotVisionProfile Default = new()
         {
             AdaptationSpeed = 1.0f,
@@ -23,6 +26,9 @@ namespace AIRefactored.AI.Perception
             MaxBlindness = 1.0f
         };
 
+        /// <summary>
+        /// Predefined profiles for each WildSpawnType.
+        /// </summary>
         private static readonly Dictionary<WildSpawnType, BotVisionProfile> Profiles = new()
         {
             { WildSpawnType.assault, new() { AdaptationSpeed = 0.75f, LightSensitivity = 1.2f, AggressionResponse = 0.9f, MaxBlindness = 1.1f }},
@@ -53,18 +59,21 @@ namespace AIRefactored.AI.Perception
 
         #endregion
 
-        #region Public API
+        #region API
 
         /// <summary>
-        /// Returns a composite vision profile based on wildspawn role and optional personality traits.
+        /// Returns the appropriate <see cref="BotVisionProfile"/> for a bot.
+        /// Includes base WildSpawnType profile and optional personality scaling.
         /// </summary>
+        /// <param name="bot">The AI-controlled player instance.</param>
+        /// <returns>A composite vision profile.</returns>
         public static BotVisionProfile Get(Player bot)
         {
-            if (bot == null || bot.Profile == null || bot.AIData == null)
+            if (bot?.Profile == null || bot.AIData == null)
                 return Default;
 
-            var role = bot.Profile.Info.Settings?.Role ?? WildSpawnType.assault;
-            var baseProfile = Profiles.TryGetValue(role, out var profile) ? profile : Default;
+            WildSpawnType role = bot.Profile.Info.Settings?.Role ?? WildSpawnType.assault;
+            BotVisionProfile baseProfile = Profiles.TryGetValue(role, out var profile) ? profile : Default;
 
             var owner = bot.GetComponent<AIRefactoredBotOwner>();
             var personality = owner?.PersonalityProfile;

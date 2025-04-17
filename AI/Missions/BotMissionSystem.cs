@@ -17,6 +17,10 @@ using AIRefactored.AI.Combat;
 
 namespace AIRefactored.AI.Missions
 {
+    /// <summary>
+    /// Controls individual bot mission logic for Loot, Fight, and Quest phases.
+    /// Handles routing, group waiting, and extract transitions.
+    /// </summary>
     public class BotMissionSystem : MonoBehaviour
     {
         #region Fields
@@ -24,6 +28,8 @@ namespace AIRefactored.AI.Missions
         private BotOwner? _bot;
         private BotGroupSyncCoordinator? _group;
         private CombatStateMachine? _combat;
+        private BotPersonalityProfile? _personality;
+
         private Vector3 _currentObjective;
         private MissionType _missionType;
 
@@ -39,7 +45,6 @@ namespace AIRefactored.AI.Missions
         private bool _lootComplete = false;
         private bool _fightComplete = false;
 
-        private BotPersonalityProfile? _personality;
         private readonly List<LootableContainer> _lootContainers = new();
         private readonly System.Random _rng = new();
 
@@ -49,6 +54,9 @@ namespace AIRefactored.AI.Missions
 
         #region Initialization
 
+        /// <summary>
+        /// Initializes mission system for a given bot.
+        /// </summary>
         public void Init(BotOwner bot)
         {
             _bot = bot ?? throw new ArgumentNullException(nameof(bot));
@@ -58,6 +66,7 @@ namespace AIRefactored.AI.Missions
             _group = _bot.GetPlayer?.GetComponent<BotGroupSyncCoordinator>();
             _combat = _bot.GetPlayer?.GetComponent<CombatStateMachine>();
             _personality = BotRegistry.Get(_bot.Profile.Id);
+
             CacheLootZones();
 
             if (!_forcedMission)
@@ -340,8 +349,14 @@ namespace AIRefactored.AI.Missions
         #endregion
     }
 
+    /// <summary>
+    /// Utility for estimating backpack fullness.
+    /// </summary>
     public static class InventoryUtil
     {
+        /// <summary>
+        /// Returns true if the bot's backpack is filled past a threshold.
+        /// </summary>
         public static bool IsBackpackFull(BotOwner bot)
         {
             var inv = bot?.GetPlayer?.Inventory;

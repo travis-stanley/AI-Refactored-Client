@@ -11,8 +11,8 @@ namespace AIRefactored.AI.Memory
     /// </summary>
     public static class BotMemoryStore
     {
-        private static readonly List<DangerZone> _zones = new(64); // Reserve memory up front
-        private static readonly Dictionary<string, HeardSound> _heardSounds = new(64);
+        private static readonly List<DangerZone> _zones = new(64); // Pre-allocated zone buffer
+        private static readonly Dictionary<string, HeardSound> _heardSounds = new(64); // Per-profile auditory memory
 
         private const int MaxZones = 256;
 
@@ -21,20 +21,27 @@ namespace AIRefactored.AI.Memory
         /// <summary>
         /// Adds a danger zone to memory for bots to avoid or react to.
         /// </summary>
+        /// <param name="mapId">Map identifier (e.g. bigmap, factory4_day).</param>
+        /// <param name="position">World position of the threat.</param>
+        /// <param name="type">Type of danger (panic, flash, etc).</param>
+        /// <param name="radius">Effective radius of the threat.</param>
         public static void AddDangerZone(string mapId, Vector3 position, DangerTriggerType type, float radius)
         {
             if (string.IsNullOrEmpty(mapId))
                 return;
 
             if (_zones.Count >= MaxZones)
-                _zones.RemoveAt(0); // FIFO cleanup before adding
+                _zones.RemoveAt(0); // FIFO logic to cap memory usage
 
             _zones.Add(new DangerZone(mapId, position, type, radius));
         }
 
         /// <summary>
         /// Gets all danger zones relevant to a given map.
+        /// Uses pooled list for efficiency.
         /// </summary>
+        /// <param name="mapId">Map ID.</param>
+        /// <returns>List of active zones (rented).</returns>
         public static List<DangerZone> GetZonesForMap(string mapId)
         {
             List<DangerZone> results = ListPool<DangerZone>.Rent();
@@ -49,7 +56,7 @@ namespace AIRefactored.AI.Memory
         }
 
         /// <summary>
-        /// Clears all stored zones.
+        /// Clears all stored zones from memory.
         /// </summary>
         public static void ClearZones()
         {
@@ -63,6 +70,9 @@ namespace AIRefactored.AI.Memory
         /// <summary>
         /// Stores the most recent heard sound position and time for a given bot.
         /// </summary>
+        /// <param name="profileId">Bot's profile ID.</param>
+        /// <param name="position">Sound position.</param>
+        /// <param name="time">Time heard.</param>
         public static void AddHeardSound(string profileId, Vector3 position, float time)
         {
             if (string.IsNullOrEmpty(profileId))
@@ -74,6 +84,9 @@ namespace AIRefactored.AI.Memory
         /// <summary>
         /// Checks if a bot has recently heard a sound.
         /// </summary>
+        /// <param name="profileId">Bot profile ID.</param>
+        /// <param name="sound">Out result.</param>
+        /// <returns>True if sound is found.</returns>
         public static bool TryGetHeardSound(string profileId, out HeardSound sound)
         {
             return _heardSounds.TryGetValue(profileId, out sound);
@@ -82,6 +95,7 @@ namespace AIRefactored.AI.Memory
         /// <summary>
         /// Removes the remembered sound for a bot.
         /// </summary>
+        /// <param name="profileId">Bot profile ID.</param>
         public static void ClearHeardSound(string profileId)
         {
             _heardSounds.Remove(profileId);
@@ -154,6 +168,9 @@ namespace AIRefactored.AI.Memory
     {
         private static readonly Stack<List<T>> _pool = new();
 
+        /// <summary>
+        /// Rents a pooled list. Call Return() when done.
+        /// </summary>
         public static List<T> Rent()
         {
             if (_pool.Count > 0)
@@ -166,6 +183,9 @@ namespace AIRefactored.AI.Memory
             return new List<T>();
         }
 
+        /// <summary>
+        /// Returns a list back to the pool.
+        /// </summary>
         public static void Return(List<T> list)
         {
             list.Clear();

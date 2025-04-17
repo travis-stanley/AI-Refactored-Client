@@ -7,14 +7,21 @@ using AIRefactored.AI.Helpers;
 namespace AIRefactored.AI.Reactions
 {
     /// <summary>
-    /// Detects intense directional light sources (flashlights, flashbangs) and simulates temporary blindness.
-    /// Applies panic and suppression reactions when overexposed.
+    /// Detects intense directional light sources (e.g. flashlights, flashbangs) and simulates temporary blindness.
+    /// Applies suppression and panic responses based on exposure severity and angle.
     /// </summary>
     public class FlashGrenadeComponent : MonoBehaviour
     {
-        #region Fields
+        #region Public Properties
 
+        /// <summary>
+        /// Reference to the associated BotOwner component.
+        /// </summary>
         public BotOwner? Bot { get; private set; }
+
+        #endregion
+
+        #region Private Fields
 
         private float _lastFlashTime = -999f;
         private bool _isBlinded = false;
@@ -27,11 +34,17 @@ namespace AIRefactored.AI.Reactions
 
         #region Unity Lifecycle
 
+        /// <summary>
+        /// Called during MonoBehaviour initialization. Caches BotOwner reference.
+        /// </summary>
         private void Awake()
         {
             Bot = GetComponent<BotOwner>();
         }
 
+        /// <summary>
+        /// Evaluates flashlight exposure and updates blindness status every frame.
+        /// </summary>
         private void Update()
         {
             if (Bot == null || Bot.HealthController == null || !Bot.GetPlayer?.IsAI == true)
@@ -40,9 +53,7 @@ namespace AIRefactored.AI.Reactions
             CheckFlashlightExposure();
 
             if (_isBlinded && Time.time - _lastFlashTime > BlindDuration)
-            {
                 _isBlinded = false;
-            }
         }
 
         #endregion
@@ -50,7 +61,8 @@ namespace AIRefactored.AI.Reactions
         #region Flashlight Detection
 
         /// <summary>
-        /// Scans all active lights to determine if bot is facing a bright spotlight.
+        /// Scans the environment for active spotlights simulating flashlights.
+        /// If bot is facing an intense beam, triggers blindness and suppression logic.
         /// </summary>
         private void CheckFlashlightExposure()
         {
@@ -60,7 +72,7 @@ namespace AIRefactored.AI.Reactions
             Vector3 botForward = Bot.LookDirection;
             Vector3 botPosition = Bot.Transform.position;
 
-            foreach (var light in GameObject.FindObjectsOfType<Light>())
+            foreach (Light light in GameObject.FindObjectsOfType<Light>())
             {
                 if (!light.enabled || light.type != LightType.Spot || light.intensity < FlashlightMinIntensity)
                     continue;
@@ -81,16 +93,15 @@ namespace AIRefactored.AI.Reactions
         #region Flash Reaction Logic
 
         /// <summary>
-        /// Whether the bot is currently considered blinded.
+        /// Returns whether the bot is currently blinded by a light source.
         /// </summary>
-        public bool IsFlashed()
-        {
-            return _isBlinded;
-        }
+        public bool IsFlashed() => _isBlinded;
 
         /// <summary>
-        /// Applies blind effect and triggers panic/suppression logic.
+        /// Triggers temporary blindness and suppresses bot behavior from a light source.
         /// </summary>
+        /// <param name="duration">Blindness duration in seconds.</param>
+        /// <param name="source">World-space origin of the flash effect.</param>
         public void AddBlindEffect(float duration, Vector3 source)
         {
             if (Bot == null || !Bot.GetPlayer?.IsAI == true)

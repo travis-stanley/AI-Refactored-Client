@@ -28,7 +28,7 @@ namespace AIRefactored.AI.Optimization
         private BotTacticalDeviceController? _tactical;
 
         private float _nextUpdateTime;
-        private const float UpdateInterval = 0.066f; // 66ms = ~15 ticks/sec
+        private const float UpdateInterval = 0.066f; // ~15 ticks/sec
 
         public BotMissionSystem.MissionType? ForcedMissionType { get; set; }
 
@@ -41,7 +41,6 @@ namespace AIRefactored.AI.Optimization
             _bot = GetComponent<BotOwner>();
             _cache = GetComponent<BotComponentCache>();
 
-            // Skip entirely if this is a player (SPT/FIKA Coop)
             if (_bot?.GetPlayer is { IsYourPlayer: true })
             {
                 enabled = false;
@@ -70,7 +69,7 @@ namespace AIRefactored.AI.Optimization
 
         #endregion
 
-        #region AI Tick
+        #region Main Update
 
         private void Update()
         {
@@ -78,6 +77,7 @@ namespace AIRefactored.AI.Optimization
                 return;
 
             float now = Time.time;
+
             if (now < _nextUpdateTime)
             {
                 _tactical?.UpdateTacticalLogic(_bot, _cache);
@@ -91,17 +91,11 @@ namespace AIRefactored.AI.Optimization
             HandleSuppressionReaction();
 
             if (_bot.Memory?.GoalEnemy != null)
-            {
                 TickCombatBehavior();
-            }
             else if (_cache.LastHeardTime + 4f > now)
-            {
                 TickStealthBehavior();
-            }
             else
-            {
                 TickPatrolBehavior();
-            }
 
             _behavior?.Tick(now);
             _tactical?.UpdateTacticalLogic(_bot, _cache);
@@ -109,7 +103,7 @@ namespace AIRefactored.AI.Optimization
 
         #endregion
 
-        #region Flashlight / Suppression
+        #region Flashlight & Suppression
 
         private void HandleFlashExposure()
         {
@@ -152,11 +146,12 @@ namespace AIRefactored.AI.Optimization
 
         #endregion
 
-        #region Behavior Phases
+        #region Behavior Modes
 
         private void TickCombatBehavior()
         {
-            if (_bot?.Memory == null) return;
+            if (_bot?.Memory == null)
+                return;
 
             _bot.Memory.AttackImmediately = true;
 
@@ -166,7 +161,8 @@ namespace AIRefactored.AI.Optimization
 
         private void TickPatrolBehavior()
         {
-            if (_bot?.Memory == null) return;
+            if (_bot?.Memory == null)
+                return;
 
             _bot.Memory.AttackImmediately = false;
             _bot.Memory.IsPeace = true;
@@ -175,7 +171,8 @@ namespace AIRefactored.AI.Optimization
 
         private void TickStealthBehavior()
         {
-            if (_bot?.Memory == null) return;
+            if (_bot?.Memory == null)
+                return;
 
             _bot.Memory.AttackImmediately = false;
             _bot.Memory.IsPeace = false;
@@ -189,7 +186,7 @@ namespace AIRefactored.AI.Optimization
 
         #endregion
 
-        #region Utility
+        #region Utilities
 
         private bool TryGetHeadTransform(out Transform? head)
         {
@@ -210,6 +207,9 @@ namespace AIRefactored.AI.Optimization
             }
         }
 
+        /// <summary>
+        /// Dynamically overrides the mission type at spawn based on map context and bot personality.
+        /// </summary>
         private void TryOverrideMissionBasedOnMap()
         {
             if (_mission == null || _bot == null || _cache?.AIRefactoredBotOwner?.PersonalityProfile == null)
@@ -220,6 +220,7 @@ namespace AIRefactored.AI.Optimization
 
             float lootBias = 1.0f, fightBias = 1.0f, questBias = 1.0f;
 
+            // Map influence
             switch (map)
             {
                 case "factory4_day":
@@ -247,47 +248,30 @@ namespace AIRefactored.AI.Optimization
                     break;
             }
 
+            // Personality influence
             switch (profile.Personality)
             {
                 case PersonalityType.Adaptive:
-                    lootBias += 0.4f;
-                    fightBias += 0.4f;
-                    questBias += 0.4f;
-                    break;
+                    lootBias += 0.4f; fightBias += 0.4f; questBias += 0.4f; break;
                 case PersonalityType.Aggressive:
-                    fightBias += 2.0f;
-                    questBias -= 0.3f;
-                    break;
+                    fightBias += 2.0f; questBias -= 0.3f; break;
                 case PersonalityType.Cautious:
-                    lootBias += 1.2f;
-                    questBias += 0.8f;
-                    fightBias -= 0.6f;
-                    break;
+                    lootBias += 1.2f; questBias += 0.8f; fightBias -= 0.6f; break;
                 case PersonalityType.Defensive:
-                    lootBias += 1.0f;
-                    fightBias += 0.4f;
-                    break;
+                    lootBias += 1.0f; fightBias += 0.4f; break;
                 case PersonalityType.Dumb:
-                    fightBias += 1.0f;
-                    questBias -= 0.4f;
-                    break;
+                    fightBias += 1.0f; questBias -= 0.4f; break;
                 case PersonalityType.Strategic:
-                    questBias += 1.5f;
-                    break;
+                    questBias += 1.5f; break;
                 case PersonalityType.Frenzied:
-                    fightBias += 2.5f;
-                    lootBias -= 0.5f;
-                    break;
+                    fightBias += 2.5f; lootBias -= 0.5f; break;
                 case PersonalityType.Fearful:
-                    lootBias += 1.5f;
-                    fightBias -= 1.0f;
-                    break;
+                    lootBias += 1.5f; fightBias -= 1.0f; break;
                 case PersonalityType.Camper:
-                    questBias += 1.2f;
-                    lootBias += 0.6f;
-                    break;
+                    questBias += 1.2f; lootBias += 0.6f; break;
             }
 
+            // Dynamic stat modifiers
             lootBias += profile.Caution * 0.8f;
             fightBias += profile.AggressionLevel * 1.5f;
             questBias += profile.Caution * 0.6f;
@@ -298,6 +282,7 @@ namespace AIRefactored.AI.Optimization
             if (profile.IsStubborn) fightBias += 0.8f;
             if (profile.ChaosFactor > 0.6f) fightBias += profile.ChaosFactor;
 
+            // Roll decision
             float total = lootBias + fightBias + questBias;
             float roll = Random.Range(0f, total);
 

@@ -21,6 +21,9 @@ namespace AIRefactored.AI.Group
 
         #region Constructor
 
+        /// <summary>
+        /// Creates a new team logic manager for a specific bot.
+        /// </summary>
         public BotTeamLogic(BotOwner bot)
         {
             _bot = bot;
@@ -30,6 +33,9 @@ namespace AIRefactored.AI.Group
 
         #region Team Setup
 
+        /// <summary>
+        /// Filters and sets valid AI teammates from a list of all bots, based on GroupId.
+        /// </summary>
         public void SetTeammates(List<BotOwner> allBots)
         {
             _teammates.Clear();
@@ -63,6 +69,9 @@ namespace AIRefactored.AI.Group
 
         #region Target Sharing
 
+        /// <summary>
+        /// Shares an enemy target with squadmates, updating group memory and enemy lists.
+        /// </summary>
         public void ShareTarget(IPlayer enemy)
         {
             if (enemy == null || string.IsNullOrEmpty(enemy.ProfileId))
@@ -72,9 +81,11 @@ namespace AIRefactored.AI.Group
             if (resolved == null)
                 return;
 
-            foreach (var teammate in _teammates)
+            for (int i = 0; i < _teammates.Count; i++)
             {
+                var teammate = _teammates[i];
                 var teammatePlayer = teammate?.GetPlayer;
+
                 if (teammate == null || teammatePlayer == null || !teammatePlayer.IsAI)
                     continue;
 
@@ -103,6 +114,9 @@ namespace AIRefactored.AI.Group
 
         #region Coordination
 
+        /// <summary>
+        /// Moves the bot toward the average position of the squad, with slight jitter for spacing.
+        /// </summary>
         public void CoordinateMovement()
         {
             var player = _bot.GetPlayer;

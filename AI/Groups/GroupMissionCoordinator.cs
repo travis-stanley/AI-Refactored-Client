@@ -10,11 +10,21 @@ using AIRefactored.AI.Missions;
 
 namespace AIRefactored.AI.Groups
 {
+    /// <summary>
+    /// Assigns shared missions to bot squads and individual AI, based on map and personality profile.
+    /// Supports group-level decision-making for loot, combat, or quest behavior.
+    /// </summary>
     public static class GroupMissionCoordinator
     {
+        #region Fields
+
         private static readonly Dictionary<string, BotMissionSystem.MissionType> _assignedMissions = new();
         private static readonly System.Random _rng = new();
         private static bool _debugLog = true;
+
+        #endregion
+
+        #region Public API
 
         /// <summary>
         /// Enables or disables debug logging at runtime.
@@ -31,7 +41,7 @@ namespace AIRefactored.AI.Groups
         public static BotMissionSystem.MissionType GetMissionForGroup(BotOwner bot)
         {
             if (!IsValidAIBot(bot))
-                return BotMissionSystem.MissionType.Loot; // Default fallback
+                return BotMissionSystem.MissionType.Loot;
 
             string groupId = bot.Profile?.Info?.GroupId ?? string.Empty;
 
@@ -52,7 +62,7 @@ namespace AIRefactored.AI.Groups
         }
 
         /// <summary>
-        /// Overrides mission type for a specific group.
+        /// Overrides mission type for a specific group manually.
         /// </summary>
         public static void ForceMissionForGroup(string groupId, BotMissionSystem.MissionType mission)
         {
@@ -60,6 +70,21 @@ namespace AIRefactored.AI.Groups
                 _assignedMissions[groupId] = mission;
         }
 
+        /// <summary>
+        /// Resets all assigned group missions.
+        /// </summary>
+        public static void Reset()
+        {
+            _assignedMissions.Clear();
+        }
+
+        #endregion
+
+        #region Internal Helpers
+
+        /// <summary>
+        /// Returns a mission for a solo (non-grouped) bot using weighted logic.
+        /// </summary>
         private static BotMissionSystem.MissionType GetSoloBotMission(BotOwner bot)
         {
             var mission = PickWeightedMission(bot);
@@ -72,7 +97,7 @@ namespace AIRefactored.AI.Groups
         }
 
         /// <summary>
-        /// Uses map and bot personality to choose a weighted mission: Loot, Fight, or Quest.
+        /// Picks a mission based on current map and bot personality.
         /// </summary>
         private static BotMissionSystem.MissionType PickWeightedMission(BotOwner bot)
         {
@@ -82,7 +107,7 @@ namespace AIRefactored.AI.Groups
             float fightWeight = 1.0f;
             float questWeight = 1.0f;
 
-            // === Map-based weights ===
+            // === Map-Based Weights ===
             switch (map)
             {
                 case "factory4_day":
@@ -128,7 +153,7 @@ namespace AIRefactored.AI.Groups
                     break;
             }
 
-            // === Personality-based tuning ===
+            // === Personality-Based Weights ===
             var profile = bot?.GetComponent<AIRefactoredBotOwner>()?.PersonalityProfile;
             if (profile != null)
             {
@@ -141,6 +166,7 @@ namespace AIRefactored.AI.Groups
                 if (profile.IsCamper) questWeight += 0.75f;
             }
 
+            // === Weighted Random Roll ===
             float total = lootWeight + fightWeight + questWeight;
             float roll = (float)_rng.NextDouble() * total;
 
@@ -154,19 +180,13 @@ namespace AIRefactored.AI.Groups
         }
 
         /// <summary>
-        /// Resets all assigned group missions.
-        /// </summary>
-        public static void Reset()
-        {
-            _assignedMissions.Clear();
-        }
-
-        /// <summary>
-        /// Ensures only real AI bots are processed — skips all player-controlled characters.
+        /// Returns true if this is a valid AI-controlled bot (non-player).
         /// </summary>
         private static bool IsValidAIBot(BotOwner bot)
         {
             return bot?.GetPlayer != null && bot.GetPlayer.IsAI;
         }
+
+        #endregion
     }
 }

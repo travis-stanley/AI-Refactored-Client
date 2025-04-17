@@ -40,8 +40,8 @@ namespace AIRefactored.AI.Optimization
             string botId = botOwner.Profile.Id;
             string key = botId + "_" + destination.ToString("F2");
 
-            if (_pathCache.ContainsKey(key))
-                return _pathCache[key];
+            if (_pathCache.TryGetValue(key, out var cachedPath))
+                return cachedPath;
 
             var path = BuildNavPath(botOwner.Position, destination);
             _pathCache[key] = path;
@@ -50,7 +50,8 @@ namespace AIRefactored.AI.Optimization
         }
 
         /// <summary>
-        /// Clears all cached paths and used keys (e.g., on death or cleanup).
+        /// Clears all cached paths and transient keys.
+        /// Call this on bot death or squad despawn.
         /// </summary>
         public void ClearCache()
         {
@@ -63,7 +64,8 @@ namespace AIRefactored.AI.Optimization
         #region NavMesh Logic
 
         /// <summary>
-        /// Attempts to build a NavMesh path. Falls back to straight-line if unavailable.
+        /// Attempts to build a NavMesh path between origin and target.
+        /// Returns a simple 2-point fallback path if no NavMesh available.
         /// </summary>
         private List<Vector3> BuildNavPath(Vector3 origin, Vector3 target)
         {
@@ -82,7 +84,7 @@ namespace AIRefactored.AI.Optimization
         #region Cover Weighting
 
         /// <summary>
-        /// Assigns cover weight to a fallback node.
+        /// Registers a fallback point with a cover score for reuse or weighting.
         /// </summary>
         public void RegisterCoverNode(string mapId, Vector3 pos, float score)
         {
@@ -94,12 +96,12 @@ namespace AIRefactored.AI.Optimization
         }
 
         /// <summary>
-        /// Gets cover weight for a fallback node (1.0 = neutral).
+        /// Returns cover weight for a position, defaulting to neutral (1.0) if unknown.
         /// </summary>
         public float GetCoverWeight(string mapId, Vector3 pos)
         {
             string key = mapId + "_" + pos.ToString("F1");
-            return _coverWeights.ContainsKey(key) ? _coverWeights[key] : 1f;
+            return _coverWeights.TryGetValue(key, out var weight) ? weight : 1f;
         }
 
         #endregion
@@ -107,7 +109,8 @@ namespace AIRefactored.AI.Optimization
         #region Squad Sync Logic
 
         /// <summary>
-        /// Broadcasts a fallback decision across squad via memory.
+        /// Broadcasts a panic-based fallback point to squad via danger zone.
+        /// Helps synchronize retreat behavior under fire.
         /// </summary>
         public void BroadcastRetreat(BotOwner botOwner, Vector3 point)
         {
@@ -123,7 +126,7 @@ namespace AIRefactored.AI.Optimization
         #region Helpers
 
         /// <summary>
-        /// Ensures logic only applies to real AI bots (not players or coop-controlled).
+        /// Returns true if this bot is AI and not player- or coop-controlled.
         /// </summary>
         private static bool IsAIBot(BotOwner bot)
         {

@@ -7,21 +7,25 @@ using UnityEngine;
 namespace AIRefactored.AI
 {
     /// <summary>
-    /// Provides runtime personality preset generation and lookup for all bots.
+    /// Provides runtime generation and lookup of bot personality profiles for every <see cref="PersonalityType"/>.
+    /// These presets define how bots behave across combat, navigation, communication, and mission priorities.
     /// </summary>
     public static class BotPersonalityPresets
     {
-        #region Static Preset Cache
+        #region Preset Cache
 
         /// <summary>
-        /// Global preset lookup for each personality type.
+        /// Static dictionary of all generated personality presets by type.
         /// </summary>
         public static readonly Dictionary<PersonalityType, BotPersonalityProfile> Presets;
 
+        /// <summary>
+        /// Static constructor that generates all personality presets at runtime.
+        /// </summary>
         static BotPersonalityPresets()
         {
             Presets = new Dictionary<PersonalityType, BotPersonalityProfile>();
-            foreach (PersonalityType type in Enum.GetValues(typeof(PersonalityType)))
+            foreach (PersonalityType type in (PersonalityType[])Enum.GetValues(typeof(PersonalityType)))
             {
                 Presets[type] = GenerateProfile(type);
             }
@@ -32,10 +36,11 @@ namespace AIRefactored.AI
         #region Preset Generator
 
         /// <summary>
-        /// Generates a personality profile based on the specified personality type.
+        /// Creates a <see cref="BotPersonalityProfile"/> with default values specific to the given personality.
+        /// These values define the bot's AI traits, combat style, and tactical tendencies.
         /// </summary>
-        /// <param name="type">The personality type to generate a profile for.</param>
-        /// <returns>A fully initialized bot personality profile.</returns>
+        /// <param name="type">The desired personality type to generate.</param>
+        /// <returns>Initialized personality profile object with tuned values.</returns>
         public static BotPersonalityProfile GenerateProfile(PersonalityType type)
         {
             var profile = new BotPersonalityProfile

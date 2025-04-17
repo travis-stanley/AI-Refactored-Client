@@ -29,6 +29,8 @@ namespace AIRefactored.AI.Memory
         /// <summary>
         /// Forces the bot to immediately move to a target position.
         /// </summary>
+        /// <param name="bot">The bot to move.</param>
+        /// <param name="position">Target position.</param>
         public static void ForceMoveTo(this BotOwner bot, Vector3 position)
         {
             if (bot == null || bot.IsDead)
@@ -40,6 +42,7 @@ namespace AIRefactored.AI.Memory
         /// <summary>
         /// Placeholder for future dynamic cover reassessment logic.
         /// </summary>
+        /// <param name="bot">The bot to update cover from.</param>
         public static void ReevaluateCurrentCover(this BotOwner bot)
         {
             if (bot == null || bot.IsDead)
@@ -103,17 +106,17 @@ namespace AIRefactored.AI.Memory
             if (bot == null || bot.IsDead || source == null || bot.ProfileId == source.ProfileId)
                 return;
 
-            // Register sound internally with group sound controller (optional use)
+            // Register sound with EFT group controller (optional)
             bot.BotsGroup?.LastSoundsController?.AddNeutralSound(source, source.Position);
 
-            // Store in AIRefactored memory system
+            // Register in AIRefactored memory
             BotMemoryStore.AddHeardSound(bot.ProfileId, source.Position, Time.time);
 
-            // Move cautiously toward sound
+            // Advance cautiously toward source
             Vector3 cautiousAdvance = source.Position + (bot.Position - source.Position).normalized * 3f;
             bot.GoToPoint(cautiousAdvance, slowAtTheEnd: false);
 
-            // Trigger voice line
+            // Optional: voice line trigger
             bot.BotTalk?.TrySay(EPhraseTrigger.OnEnemyShot);
         }
 

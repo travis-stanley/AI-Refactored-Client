@@ -13,9 +13,13 @@ using AIRefactored.AI.Helpers;
 
 namespace AIRefactored.AI.Hotspots
 {
+    /// <summary>
+    /// Handles dynamic patrol, defense, and mission routing based on map-defined hotspots.
+    /// Assigned to each bot during runtime to drive naturalistic movement and behavior loops.
+    /// </summary>
     public class HotspotSystem : MonoBehaviour
     {
-        #region Internal Session
+        #region Internal Session Class
 
         private sealed class HotspotSession
         {
@@ -34,7 +38,6 @@ namespace AIRefactored.AI.Hotspots
                 _bot = bot;
                 _route = route;
                 _isGuardian = isGuardian;
-
                 _hotspotIndex = 0;
                 _positionIndex = 0;
                 _nextSwitchTime = Time.time + GetSwitchInterval();
@@ -97,8 +100,7 @@ namespace AIRefactored.AI.Hotspots
                 BotMovementHelper.SmoothMoveTo(_bot, CurrentTarget());
             }
 
-            private Vector3 CurrentTarget() =>
-                _route[_hotspotIndex].positions[_positionIndex];
+            private Vector3 CurrentTarget() => _route[_hotspotIndex].positions[_positionIndex];
 
             private void MoveNext()
             {
@@ -163,6 +165,9 @@ namespace AIRefactored.AI.Hotspots
 
         #region Assignment Logic
 
+        /// <summary>
+        /// Assigns a route of one or more hotspots to the specified bot.
+        /// </summary>
         private HotspotSession? AssignHotspot(BotOwner bot)
         {
             if (!Singleton<GameWorld>.Instantiated || Singleton<GameWorld>.Instance == null)
@@ -201,6 +206,9 @@ namespace AIRefactored.AI.Hotspots
 
         #region File Loader
 
+        /// <summary>
+        /// Loads all hotspot JSON files from the disk into memory.
+        /// </summary>
         private void LoadAllHotspots()
         {
             string basePath = Path.Combine(Application.dataPath, HOTSPOT_FOLDER);
@@ -243,6 +251,9 @@ namespace AIRefactored.AI.Hotspots
 
         #region External API
 
+        /// <summary>
+        /// Returns a random hotspot location for the current map, based on bot role.
+        /// </summary>
         public static Vector3 GetRandomHotspot(BotOwner bot)
         {
             var role = bot.Profile?.Info?.Settings?.Role ?? WildSpawnType.assault;

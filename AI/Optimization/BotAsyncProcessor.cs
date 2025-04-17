@@ -24,6 +24,9 @@ namespace AIRefactored.AI.Optimization
 
         #region Unity Lifecycle
 
+        /// <summary>
+        /// Delayed start to allow other components to finish setting up the bot before applying tuning.
+        /// </summary>
         private async void Start()
         {
             await Task.Delay((int)(InitDelay * 1000f));
@@ -36,17 +39,23 @@ namespace AIRefactored.AI.Optimization
 
         #region Initialization
 
+        /// <summary>
+        /// Assigns the bot to be processed on delayed startup.
+        /// </summary>
         public void Initialize(BotOwner botOwner)
         {
             _bot = botOwner;
         }
 
+        /// <summary>
+        /// Applies personality-based tuning logic after delayed start.
+        /// </summary>
         public async Task ProcessBotOwnerAsync(BotOwner botOwner)
         {
             if (_hasInitialized || botOwner?.Settings?.FileSettings?.Mind == null)
                 return;
 
-            await Task.Yield(); // Let spawn-related systems complete
+            await Task.Yield(); // Defer logic until spawn frame completes
 
             ApplyPersonalityModifiers(botOwner);
             _hasInitialized = true;
@@ -56,6 +65,9 @@ namespace AIRefactored.AI.Optimization
 
         #region Personality Logic
 
+        /// <summary>
+        /// Adjusts internal mind tuning based on assigned personality traits.
+        /// </summary>
         private void ApplyPersonalityModifiers(BotOwner botOwner)
         {
             var mind = botOwner.Settings.FileSettings.Mind;
@@ -64,7 +76,6 @@ namespace AIRefactored.AI.Optimization
             if (mind == null || personality == null)
                 return;
 
-            // Maintain realism while tuning reactions
             mind.PANIC_RUN_WEIGHT = Mathf.Lerp(0.5f, 2f, personality.RiskTolerance);
             mind.PANIC_SIT_WEIGHT = Mathf.Lerp(10f, 80f, 1f - personality.RiskTolerance);
             mind.DIST_TO_FOUND_SQRT = Mathf.Lerp(200f, 600f, 1f - personality.Cohesion);

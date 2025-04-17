@@ -42,6 +42,9 @@ namespace AIRefactored.AI.Core
 
         #region Unity Lifecycle
 
+        /// <summary>
+        /// Called by Unity during GameObject initialization.
+        /// </summary>
         private void Awake()
         {
             Bot = GetComponent<BotOwner>()!;
@@ -53,7 +56,7 @@ namespace AIRefactored.AI.Core
                 return;
             }
 
-            // Assign default personality if unset
+            // Assign default personality if needed
             if (!HasPersonality() || PersonalityName == "Unknown")
             {
                 var defaultPersonality = GetRandomPersonality();

@@ -8,6 +8,10 @@ using AIRefactored.AI.Memory;
 
 namespace AIRefactored.AI.Groups
 {
+    /// <summary>
+    /// Coordinates group awareness and information sharing between AI squad members.
+    /// Syncs loot targets, extraction targets, and tracks teammate state for cohesion behavior.
+    /// </summary>
     public class BotGroupSyncCoordinator : MonoBehaviour
     {
         #region Fields
@@ -29,6 +33,9 @@ namespace AIRefactored.AI.Groups
 
         #region Initialization
 
+        /// <summary>
+        /// Call manually if not using Start() hook to initialize group tracking.
+        /// </summary>
         public void Init(BotOwner bot)
         {
             _bot = bot;
@@ -41,6 +48,9 @@ namespace AIRefactored.AI.Groups
             RegisterGroupHooks();
         }
 
+        /// <summary>
+        /// Unity Start hook — fallback to initialize group tracking.
+        /// </summary>
         private void Start()
         {
             _bot = GetComponent<BotOwner>();
@@ -53,6 +63,9 @@ namespace AIRefactored.AI.Groups
             RegisterGroupHooks();
         }
 
+        /// <summary>
+        /// Cleans up listeners on destruction.
+        /// </summary>
         private void OnDestroy()
         {
             if (_group != null)
@@ -66,6 +79,9 @@ namespace AIRefactored.AI.Groups
 
         #region Group Hook Registration
 
+        /// <summary>
+        /// Subscribes to group member events and caches current teammates.
+        /// </summary>
         private void RegisterGroupHooks()
         {
             if (_group == null || _bot == null)
@@ -109,6 +125,9 @@ namespace AIRefactored.AI.Groups
 
         #region Update Loop
 
+        /// <summary>
+        /// Periodic update that may sync zones or group states.
+        /// </summary>
         private void Update()
         {
             if (_bot == null || _cache == null || _group == null || Time.time < _nextSyncTime)
@@ -121,33 +140,52 @@ namespace AIRefactored.AI.Groups
             EvaluateGroupZones();
         }
 
+        /// <summary>
+        /// Stub: Evaluate and synchronize squad-level tactical zones.
+        /// </summary>
         private void EvaluateGroupZones()
         {
-            // Stubbed — was previously syncing BotOwnerZone.ZoneId
-            // Could be repurposed to sync movement zones, loot targets, or fallback states
+            // Placeholder for future ZoneID or hotspot target syncing
         }
 
         #endregion
 
         #region Shared Info Distribution
 
+        /// <summary>
+        /// Shares a loot target with squadmates.
+        /// </summary>
         public void BroadcastLootPoint(Vector3 point) => _lastLootPoint = point;
 
+        /// <summary>
+        /// Shares a fallback/extraction target with squadmates.
+        /// </summary>
         public void BroadcastExtractPoint(Vector3 point) => _lastExtractPoint = point;
 
+        /// <summary>
+        /// Retrieves last shared loot position (if any).
+        /// </summary>
         public Vector3? GetSharedLootTarget() => _lastLootPoint;
 
+        /// <summary>
+        /// Retrieves last shared extract/fallback position (if any).
+        /// </summary>
         public Vector3? GetSharedExtractTarget() => _lastExtractPoint;
 
+        /// <summary>
+        /// Gets current AI teammates in this bot's squad.
+        /// </summary>
         public List<BotOwner> GetTeammates()
         {
             _tempList.Clear();
+
             foreach (var kvp in _teammateCaches)
             {
                 var teammate = kvp.Key;
                 if (teammate != null && teammate.GetPlayer?.IsAI == true)
                     _tempList.Add(teammate);
             }
+
             return new List<BotOwner>(_tempList);
         }
 

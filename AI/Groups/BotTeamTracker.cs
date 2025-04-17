@@ -1,4 +1,6 @@
-﻿using System.Collections.Generic;
+﻿#nullable enable
+
+using System.Collections.Generic;
 using EFT;
 using UnityEngine;
 
@@ -23,6 +25,8 @@ namespace AIRefactored.AI.Groups
         /// If the group does not exist, it will be created.
         /// Skips all human players (FIKA or otherwise).
         /// </summary>
+        /// <param name="groupId">Unique group identifier (from EFT profile).</param>
+        /// <param name="bot">The AI BotOwner instance to register.</param>
         public static void Register(string groupId, BotOwner bot)
         {
             if (string.IsNullOrEmpty(groupId) || bot == null)
@@ -47,6 +51,8 @@ namespace AIRefactored.AI.Groups
         /// <summary>
         /// Retrieves all bots in a group, filtering out any human players just in case.
         /// </summary>
+        /// <param name="groupId">The group identifier.</param>
+        /// <returns>List of valid AI BotOwner instances.</returns>
         public static List<BotOwner> GetGroup(string groupId)
         {
             if (string.IsNullOrEmpty(groupId))
@@ -56,9 +62,11 @@ namespace AIRefactored.AI.Groups
                 return new List<BotOwner>();
 
             var result = new List<BotOwner>(list.Count);
-            foreach (var bot in list)
+            for (int i = 0; i < list.Count; i++)
             {
+                var bot = list[i];
                 var player = bot?.GetPlayer;
+
                 if (bot != null && player != null && player.IsAI)
                 {
                     result.Add(bot);
@@ -71,21 +79,27 @@ namespace AIRefactored.AI.Groups
         /// <summary>
         /// Unregisters a bot from all groups it may belong to.
         /// </summary>
+        /// <param name="bot">Bot to remove from tracking.</param>
         public static void Unregister(BotOwner bot)
         {
             if (bot == null)
                 return;
+
+            string? targetKey = null;
 
             foreach (var kvp in _groups)
             {
                 if (kvp.Value.Remove(bot))
                 {
                     if (kvp.Value.Count == 0)
-                    {
-                        _groups.Remove(kvp.Key);
-                    }
+                        targetKey = kvp.Key;
                     break;
                 }
+            }
+
+            if (!string.IsNullOrEmpty(targetKey))
+            {
+                _groups.Remove(targetKey!);
             }
         }
 

@@ -9,17 +9,11 @@ using AIRefactored.AI.Core;
 using AIRefactored.AI.Helpers;
 using AIRefactored.AI.Memory;
 using AIRefactored.AI.Optimization;
-using AIRefactored.AI.Combat;
 
 namespace AIRefactored.AI.Combat
 {
-    /// <summary>
-    /// Controls bot fire behavior, including fire mode, accuracy, suppression response, and panic retreat logic.
-    /// </summary>
     public class BotFireLogic
     {
-        #region Fields
-
         private readonly BotOwner _botOwner;
         private readonly BotComponentCache? _cache;
 
@@ -34,25 +28,19 @@ namespace AIRefactored.AI.Combat
         private float _nextFireDecisionTime = 0f;
         private float _lastRetreatTime = -999f;
 
-        private static readonly Dictionary<string, float> WeaponRanges = new Dictionary<string, float>
+        private static readonly Dictionary<string, float> WeaponRanges = new()
         {
             { "sniper", 120f }, { "marksman", 120f }, { "assault", 90f }, { "rifle", 90f },
             { "smg", 50f }, { "pistol", 35f }, { "shotgun", 40f }
         };
 
-        #endregion
-
-        #region Constructor
+        private static readonly EBodyPart[] BodyParts = (EBodyPart[])Enum.GetValues(typeof(EBodyPart));
 
         public BotFireLogic(BotOwner botOwner)
         {
             _botOwner = botOwner;
             _cache = botOwner.GetComponent<BotComponentCache>();
         }
-
-        #endregion
-
-        #region Main Logic
 
         public void UpdateShootingBehavior()
         {
@@ -112,29 +100,36 @@ namespace AIRefactored.AI.Combat
             shootData.Shoot();
         }
 
-        #endregion
-
-        #region Engagement Logic
-
         private float GetEffectiveEngageRange(Weapon weapon, BotPersonalityProfile profile)
         {
-            return Mathf.Min(profile.EngagementRange, EstimateWeaponRange(weapon), ENGAGE_LIMIT);
+            float weaponRange = EstimateWeaponRange(weapon);
+            return Mathf.Min(profile.EngagementRange, weaponRange, ENGAGE_LIMIT);
         }
 
         private float EstimateWeaponRange(Weapon weapon)
         {
-            string name = weapon.Template?.Name?.ToLowerInvariant() ?? string.Empty;
-            foreach (var pair in WeaponRanges)
+            if (weapon.Template?.Name == null)
+                return 60f;
+
+            string name = weapon.Template.Name.ToLowerInvariant();
+            foreach (var kvp in WeaponRanges)
             {
-                if (name.Contains(pair.Key))
-                    return pair.Value;
+                if (name.Contains(kvp.Key))
+                    return kvp.Value;
             }
+
             return 60f;
         }
 
         private bool SupportsFireMode(Weapon weapon, Weapon.EFireMode mode)
         {
-            return Array.Exists(weapon.WeapFireType, f => f == mode);
+            Weapon.EFireMode[] fireModes = weapon.WeapFireType;
+            for (int i = 0; i < fireModes.Length; i++)
+            {
+                if (fireModes[i] == mode)
+                    return true;
+            }
+            return false;
         }
 
         private void TrySetFireMode(BotWeaponInfo info, Weapon.EFireMode mode)
@@ -142,10 +137,6 @@ namespace AIRefactored.AI.Combat
             if (info.weapon.SelectedFireMode != mode)
                 info.ChangeFireMode(mode);
         }
-
-        #endregion
-
-        #region Accuracy and Fire Cadence
 
         private void ApplyScatter(GClass592 core, bool underFire, BotPersonalityProfile profile)
         {
@@ -170,10 +161,6 @@ namespace AIRefactored.AI.Combat
             return Mathf.Clamp(baseDelay + chaos, 0.25f, 1.2f);
         }
 
-        #endregion
-
-        #region Suppression + Retreat
-
         private bool CanOverrideSuppression(BotPersonalityProfile profile, bool isUnderFire)
         {
             return isUnderFire && (
@@ -193,12 +180,11 @@ namespace AIRefactored.AI.Combat
             var hc = _botOwner.GetPlayer?.HealthController;
             if (hc == null) return 1f;
 
-            float current = 0f;
-            float max = 0f;
+            float current = 0f, max = 0f;
 
-            foreach (EBodyPart part in Enum.GetValues(typeof(EBodyPart)))
+            for (int i = 0; i < BodyParts.Length; i++)
             {
-                var hp = hc.GetBodyPartHealth(part);
+                var hp = hc.GetBodyPartHealth(BodyParts[i]);
                 current += hp.Current;
                 max += hp.Maximum;
             }
@@ -227,7 +213,5 @@ namespace AIRefactored.AI.Combat
             BotMovementHelper.SmoothMoveTo(_botOwner, pos, false, profile.Cohesion);
             _lastRetreatTime = Time.time;
         }
-
-        #endregion
     }
 }

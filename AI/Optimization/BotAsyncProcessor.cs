@@ -3,7 +3,6 @@
 using System.Threading.Tasks;
 using UnityEngine;
 using EFT;
-using AIRefactored.AI;
 using AIRefactored.Core;
 
 namespace AIRefactored.AI.Optimization
@@ -24,9 +23,6 @@ namespace AIRefactored.AI.Optimization
 
         #region Unity Lifecycle
 
-        /// <summary>
-        /// Delayed start to allow other components to finish setting up the bot before applying tuning.
-        /// </summary>
         private async void Start()
         {
             await Task.Delay((int)(InitDelay * 1000f));
@@ -39,17 +35,11 @@ namespace AIRefactored.AI.Optimization
 
         #region Initialization
 
-        /// <summary>
-        /// Assigns the bot to be processed on delayed startup.
-        /// </summary>
         public void Initialize(BotOwner botOwner)
         {
             _bot = botOwner;
         }
 
-        /// <summary>
-        /// Applies personality-based tuning logic after delayed start.
-        /// </summary>
         public async Task ProcessBotOwnerAsync(BotOwner botOwner)
         {
             if (_hasInitialized || botOwner?.Settings?.FileSettings?.Mind == null)
@@ -65,9 +55,6 @@ namespace AIRefactored.AI.Optimization
 
         #region Personality Logic
 
-        /// <summary>
-        /// Adjusts internal mind tuning based on assigned personality traits.
-        /// </summary>
         private void ApplyPersonalityModifiers(BotOwner botOwner)
         {
             var mind = botOwner.Settings.FileSettings.Mind;

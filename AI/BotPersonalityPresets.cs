@@ -6,41 +6,22 @@ using UnityEngine;
 
 namespace AIRefactored.AI
 {
-    /// <summary>
-    /// Provides runtime generation and lookup of bot personality profiles for every <see cref="PersonalityType"/>.
-    /// These presets define how bots behave across combat, navigation, communication, and mission priorities.
-    /// </summary>
     public static class BotPersonalityPresets
     {
-        #region Preset Cache
-
-        /// <summary>
-        /// Static dictionary of all generated personality presets by type.
-        /// </summary>
         public static readonly Dictionary<PersonalityType, BotPersonalityProfile> Presets;
 
-        /// <summary>
-        /// Static constructor that generates all personality presets at runtime.
-        /// </summary>
+        private static readonly PersonalityType[] _types = (PersonalityType[])Enum.GetValues(typeof(PersonalityType));
+
         static BotPersonalityPresets()
         {
-            Presets = new Dictionary<PersonalityType, BotPersonalityProfile>();
-            foreach (PersonalityType type in (PersonalityType[])Enum.GetValues(typeof(PersonalityType)))
+            Presets = new Dictionary<PersonalityType, BotPersonalityProfile>(_types.Length);
+            for (int i = 0; i < _types.Length; i++)
             {
+                PersonalityType type = _types[i];
                 Presets[type] = GenerateProfile(type);
             }
         }
 
-        #endregion
-
-        #region Preset Generator
-
-        /// <summary>
-        /// Creates a <see cref="BotPersonalityProfile"/> with default values specific to the given personality.
-        /// These values define the bot's AI traits, combat style, and tactical tendencies.
-        /// </summary>
-        /// <param name="type">The desired personality type to generate.</param>
-        /// <returns>Initialized personality profile object with tuned values.</returns>
         public static BotPersonalityProfile GenerateProfile(PersonalityType type)
         {
             var profile = new BotPersonalityProfile
@@ -223,7 +204,5 @@ namespace AIRefactored.AI
 
             return profile;
         }
-
-        #endregion
     }
 }

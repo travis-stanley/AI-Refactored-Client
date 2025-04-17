@@ -10,32 +10,15 @@ using UnityEngine;
 
 namespace AIRefactored.AI.Hotspots
 {
-    /// <summary>
-    /// Loads, caches, and filters tactical hotspot zones per map.
-    /// These are used for AI routing, search patterns, and mission planning.
-    /// </summary>
     public static class HotspotLoader
     {
-        #region Fields
-
         private const string HOTSPOT_FOLDER = "hotspots/";
         private static readonly Dictionary<string, HotspotSet> _cache = new();
         private static bool _loaded = false;
         private static bool _debugLog = false;
 
-        #endregion
-
-        #region Public API
-
-        /// <summary>
-        /// Enables or disables debug logging for hotspot load events.
-        /// </summary>
         public static void EnableDebugLogs(bool enabled) => _debugLog = enabled;
 
-        /// <summary>
-        /// Loads all hotspot JSON files from disk into memory.
-        /// Automatically skips already-loaded sets.
-        /// </summary>
         public static void LoadAll()
         {
             if (_loaded)
@@ -74,10 +57,6 @@ namespace AIRefactored.AI.Hotspots
             _loaded = true;
         }
 
-        /// <summary>
-        /// Retrieves the filtered hotspot set for the current map and bot role.
-        /// </summary>
-        /// <param name="role">The bot's WildSpawnType role.</param>
         public static HotspotSet? GetHotspotsForCurrentMap(WildSpawnType role)
         {
             if (!_loaded)
@@ -89,9 +68,6 @@ namespace AIRefactored.AI.Hotspots
                 : null;
         }
 
-        /// <summary>
-        /// Clears all cached data and reloads from disk.
-        /// </summary>
         public static void Reload()
         {
             _loaded = false;
@@ -102,52 +78,45 @@ namespace AIRefactored.AI.Hotspots
                 Debug.Log("[AIRefactored] Hotspot data reloaded.");
         }
 
-        /// <summary>
-        /// Returns all loaded hotspot sets across maps.
-        /// </summary>
         public static IReadOnlyDictionary<string, HotspotSet> GetAll() => _cache;
 
-        #endregion
-
-        #region Internal Helpers
-
-        /// <summary>
-        /// Resolves the file system path to the hotspot directory.
-        /// Checks both data and plugin folders.
-        /// </summary>
         private static string ResolveHotspotPath()
         {
             string fallbackPath = Path.Combine("BepInEx", "plugins", "AIRefactored", HOTSPOT_FOLDER);
             string assetPath = Path.Combine(Application.dataPath, HOTSPOT_FOLDER);
             return Directory.Exists(assetPath) ? assetPath : fallbackPath;
         }
-
-        #endregion
     }
 
-    /// <summary>
-    /// Represents a single map's hotspot set used for AI targeting or movement.
-    /// </summary>
     public class HotspotSet
     {
-        /// <summary>
-        /// List of 3D world positions representing tactical points of interest.
-        /// </summary>
         public List<Vector3> Points = new();
 
-        /// <summary>
-        /// Filters hotspot points by bot role (PMC, Scav, etc.).
-        /// Placeholder implementation (extendable).
-        /// </summary>
         public HotspotSet FilteredForRole(WildSpawnType role)
         {
-            // TODO: Implement role-specific logic (e.g. PMCs prefer objectives, Scavs prefer loot zones)
-            return this;
+            if (Points.Count == 0)
+                return this;
+
+            List<Vector3> filtered = new();
+
+            if (role == WildSpawnType.pmcBEAR || role == WildSpawnType.pmcUSEC)
+            {
+                int count = Mathf.CeilToInt(Points.Count * 0.6f); // Prioritize first 60%
+                filtered.AddRange(Points.GetRange(0, count));
+            }
+            else if (role == WildSpawnType.assault || role == WildSpawnType.cursedAssault)
+            {
+                int skip = Mathf.FloorToInt(Points.Count * 0.4f); // Skip first 40%
+                filtered.AddRange(Points.GetRange(skip, Points.Count - skip));
+            }
+            else
+            {
+                filtered.AddRange(Points);
+            }
+
+            return new HotspotSet { Points = filtered };
         }
 
-        /// <summary>
-        /// Parses hotspot data from a JSON string into a usable set.
-        /// </summary>
         public static HotspotSet? FromJson(string json)
         {
             try
@@ -165,9 +134,6 @@ namespace AIRefactored.AI.Hotspots
             }
         }
 
-        /// <summary>
-        /// Internal representation of JSON structure on disk.
-        /// </summary>
         private class HotspotFile
         {
             public List<Vector3> hotspots = new();

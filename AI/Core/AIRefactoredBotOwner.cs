@@ -11,30 +11,30 @@ namespace AIRefactored.AI.Core
     /// </summary>
     public class AIRefactoredBotOwner : MonoBehaviour
     {
-        #region Public Fields
+        #region Public Properties
 
         /// <summary>
-        /// The underlying EFT BotOwner object.
+        /// The underlying EFT BotOwner instance.
         /// </summary>
         public BotOwner? Bot { get; private set; }
 
         /// <summary>
-        /// Cached internal components for performance and reuse.
+        /// Cached component access for AI subsystems.
         /// </summary>
         public BotComponentCache? Cache { get; private set; }
 
         /// <summary>
-        /// Assigned tactical and psychological profile.
+        /// Current personality profile defining behavior.
         /// </summary>
         public BotPersonalityProfile PersonalityProfile { get; private set; } = new();
 
         /// <summary>
-        /// Label used for personality debug tracking (e.g., Aggressive, Cautious).
+        /// Readable label for debugging or display (e.g. Aggressive, Cautious).
         /// </summary>
         public string PersonalityName { get; private set; } = "Unknown";
 
         /// <summary>
-        /// The zone this bot is assigned to for fallback, patrol, or coordination purposes.
+        /// Tactical zone name used for fallback or patrol logic.
         /// </summary>
         public string AssignedZone { get; private set; } = "unknown";
 
@@ -49,14 +49,14 @@ namespace AIRefactored.AI.Core
 
             if (Bot == null || Cache == null)
             {
-                Debug.LogWarning("[AIRefactoredBotOwner] Missing BotOwner or BotComponentCache!");
+                Debug.LogWarning("[AIRefactored-Owner] ❌ Missing BotOwner or BotComponentCache.");
                 return;
             }
 
-            if (!HasPersonality() || PersonalityName == "Unknown")
+            if (!HasPersonality())
             {
-                var defaultPersonality = GetRandomPersonality();
-                InitProfile(defaultPersonality);
+                var defaultType = GetRandomPersonality();
+                InitProfile(defaultType);
             }
         }
 
@@ -64,6 +64,9 @@ namespace AIRefactored.AI.Core
 
         #region Personality Management
 
+        /// <summary>
+        /// Assigns a named preset profile to the bot.
+        /// </summary>
         public void InitProfile(PersonalityType type)
         {
             if (BotPersonalityPresets.Presets.TryGetValue(type, out var preset))
@@ -75,37 +78,47 @@ namespace AIRefactored.AI.Core
             {
                 PersonalityProfile = BotPersonalityPresets.Presets[PersonalityType.Adaptive];
                 PersonalityName = "Adaptive";
-                Debug.LogWarning($"[AIRefactoredBotOwner] Missing preset for {type}, defaulting to Adaptive.");
+                Debug.LogWarning($"[AIRefactored-Owner] Unknown preset {type}, defaulting to Adaptive.");
             }
         }
 
+        /// <summary>
+        /// Assigns a custom personality object with optional label.
+        /// </summary>
         public void InitProfile(BotPersonalityProfile profile, string name = "Custom")
         {
-            PersonalityProfile = profile ?? new BotPersonalityProfile();
+            PersonalityProfile = profile;
             PersonalityName = name;
         }
 
+        /// <summary>
+        /// Clears the assigned personality and resets to neutral.
+        /// </summary>
         public void ClearPersonality()
         {
             PersonalityProfile = new BotPersonalityProfile();
             PersonalityName = "Cleared";
         }
 
+        /// <summary>
+        /// Returns true if a personality has been assigned.
+        /// </summary>
         public bool HasPersonality()
         {
-            return PersonalityProfile != null && PersonalityName != "Unknown";
+            return PersonalityProfile != null;
         }
 
         #endregion
 
-        #region Zone Management
+        #region Zone Assignment
 
+        /// <summary>
+        /// Sets the tactical zone ID for fallback, patrol, or formation logic.
+        /// </summary>
         public void SetZone(string zoneName)
         {
             if (!string.IsNullOrEmpty(zoneName))
-            {
                 AssignedZone = zoneName;
-            }
         }
 
         #endregion

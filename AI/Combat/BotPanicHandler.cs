@@ -14,14 +14,8 @@ using AIRefactored.Core;
 
 namespace AIRefactored.AI.Combat
 {
-    /// <summary>
-    /// Handles bot panic logic when damaged, blinded, or responding to squad-based danger zones.
-    /// Composure recovers gradually. Personality traits influence resistance to panic.
-    /// </summary>
     public class BotPanicHandler : MonoBehaviour
     {
-        #region Fields
-
         private BotOwner? _bot;
         private BotComponentCache? _cache;
 
@@ -34,11 +28,7 @@ namespace AIRefactored.AI.Combat
         private const float PanicDuration = 3.5f;
         private const float PanicCooldown = 5.0f;
         private const float RecoverySpeed = 0.2f;
-        private const float SquadPanicRadius = 15f;
-
-        #endregion
-
-        #region Unity Lifecycle
+        private const float SquadPanicRadiusSqr = 15f * 15f;
 
         private void Awake()
         {
@@ -78,10 +68,6 @@ namespace AIRefactored.AI.Combat
             }
         }
 
-        #endregion
-
-        #region Damage Trigger
-
         private void OnDamaged(EBodyPart part, float damage, DamageInfoStruct info)
         {
             if (_isPanicking || _bot == null || _cache == null || _bot.IsDead)
@@ -98,10 +84,6 @@ namespace AIRefactored.AI.Combat
             Vector3 threatDir = (_bot.Position - info.HitPoint).normalized;
             StartPanic(now, threatDir);
         }
-
-        #endregion
-
-        #region Panic Triggers
 
         private bool ShouldTriggerPanic()
         {
@@ -130,15 +112,16 @@ namespace AIRefactored.AI.Combat
 
             string mapId = GameWorldHandler.GetCurrentMapName();
             List<BotMemoryStore.DangerZone> zones = BotMemoryStore.GetZonesForMap(mapId);
+            Vector3 botPos = _bot.Position;
 
             for (int i = 0; i < zones.Count; i++)
             {
                 Vector3 zonePos = zones[i].Position;
-                float radius = zones[i].Radius;
+                float sqrDist = (zonePos - botPos).sqrMagnitude;
 
-                if (Vector3.Distance(zonePos, _bot.Position) <= SquadPanicRadius)
+                if (sqrDist <= SquadPanicRadiusSqr)
                 {
-                    retreatDir = (_bot.Position - zonePos).normalized;
+                    retreatDir = (botPos - zonePos).normalized;
                     return true;
                 }
             }
@@ -146,13 +129,10 @@ namespace AIRefactored.AI.Combat
             return false;
         }
 
-        #endregion
-
-        #region Panic Logic
-
         private void StartPanic(float now, Vector3 retreatDir)
         {
-            if (_bot == null) return;
+            if (_bot == null)
+                return;
 
             _isPanicking = true;
             _panicStartTime = now;
@@ -165,8 +145,7 @@ namespace AIRefactored.AI.Combat
             if (path.Count >= 2)
                 _bot.GoToPoint(path[1]);
 
-            string mapId = GameWorldHandler.GetCurrentMapName();
-            BotMemoryStore.AddDangerZone(mapId, _bot.Position, DangerTriggerType.Panic, 0.6f);
+            BotMemoryStore.AddDangerZone(GameWorldHandler.GetCurrentMapName(), _bot.Position, DangerTriggerType.Panic, 0.6f);
 
             _bot.Sprint(true);
             _bot.BotTalk?.TrySay(EPhraseTrigger.OnBeingHurt);
@@ -188,14 +167,7 @@ namespace AIRefactored.AI.Combat
             _composureLevel = Mathf.Clamp01(_composureLevel + deltaTime * RecoverySpeed);
         }
 
-        #endregion
-
-        #region External API
-
-        public float GetComposureLevel()
-        {
-            return _composureLevel;
-        }
+        public float GetComposureLevel() => _composureLevel;
 
         public void TriggerPanic()
         {
@@ -209,15 +181,9 @@ namespace AIRefactored.AI.Combat
             StartPanic(now, -_bot.LookDirection);
         }
 
-        #endregion
-
-        #region Helpers
-
         private bool IsHumanPlayer()
         {
             return _bot?.GetPlayer != null && !_bot.GetPlayer.IsAI;
         }
-
-        #endregion
     }
 }

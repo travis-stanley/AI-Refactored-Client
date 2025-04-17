@@ -11,13 +11,8 @@ using AIRefactored.AI.Groups;
 
 namespace AIRefactored.AI.Behavior
 {
-    /// <summary>
-    /// Handles extended bot behavior such as looting, extracting, and retreating with group coordination.
-    /// </summary>
     public class BotBehaviorEnhancer : MonoBehaviour
     {
-        #region Fields
-
         private BotOwner? _bot;
         private BotComponentCache? _cache;
         private BotGroupSyncCoordinator? _groupSync;
@@ -42,10 +37,6 @@ namespace AIRefactored.AI.Behavior
         private const float RETREAT_RADIUS = 16f;
         private const float MOVE_COOLDOWN = 0.25f;
 
-        #endregion
-
-        #region Initialization
-
         public void Init(BotOwner bot)
         {
             _bot = bot;
@@ -55,20 +46,17 @@ namespace AIRefactored.AI.Behavior
             _profile = _owner?.PersonalityProfile;
 
             _extractPoints = GameObject.FindObjectsOfType<ExfiltrationPoint>();
-            _lootPoints = new List<Transform>();
+            _lootPoints = new List<Transform>(64); // prealloc reasonable capacity
 
             var lootables = GameObject.FindObjectsOfType<LootableContainer>();
-            for (int i = 0; i < lootables.Length; i++)
+            int lootableCount = lootables.Length;
+            for (int i = 0; i < lootableCount; i++)
             {
                 var t = lootables[i].transform;
                 if (t != null)
                     _lootPoints.Add(t);
             }
         }
-
-        #endregion
-
-        #region Tick Loop
 
         public void Tick(float time)
         {
@@ -100,23 +88,20 @@ namespace AIRefactored.AI.Behavior
             TryRetreat();
         }
 
-        #endregion
-
-        #region Loot Logic
-
         private void TryLoot()
         {
             if (_bot == null || _lootPoints == null || _lootPoints.Count == 0)
                 return;
 
+            int count = _lootPoints.Count;
             Transform? best = null;
             float bestScore = 0f;
 
-            for (int i = 0; i < _lootPoints.Count; i++)
+            for (int i = 0; i < count; i++)
             {
                 var loot = _lootPoints[i];
                 float dist = Vector3.Distance(_bot.Position, loot.position);
-                float score = 1f / Mathf.Max(1f, dist);
+                float score = 1f / Mathf.Max(1f, dist); // Closer is better
 
                 if (score > bestScore)
                 {
@@ -131,10 +116,6 @@ namespace AIRefactored.AI.Behavior
                 _groupSync?.BroadcastLootPoint(best.position);
             }
         }
-
-        #endregion
-
-        #region Extraction Logic
 
         private void TryExtract()
         {
@@ -173,14 +154,16 @@ namespace AIRefactored.AI.Behavior
                 return true;
 
             int nearCount = 0;
-            for (int i = 0; i < teammates.Count; i++)
+            int total = teammates.Count;
+
+            for (int i = 0; i < total; i++)
             {
                 var mate = teammates[i];
                 if (mate != null && mate != _bot && Vector3.Distance(mate.Position, _bot!.Position) <= GROUP_RADIUS)
                     nearCount++;
             }
 
-            return nearCount >= Mathf.CeilToInt(teammates.Count * _profile.Cohesion);
+            return nearCount >= Mathf.CeilToInt(total * _profile.Cohesion);
         }
 
         private void BeginExtract(ExfiltrationPoint point)
@@ -190,7 +173,8 @@ namespace AIRefactored.AI.Behavior
             SmoothMoveTo(point.transform.position);
             _bot?.BotTalk?.TrySay(EPhraseTrigger.MumblePhrase);
             _bot?.Deactivate();
-            if (this.isActiveAndEnabled)
+
+            if (isActiveAndEnabled)
                 StartCoroutine(ExtractRoutine(6f));
         }
 
@@ -201,10 +185,6 @@ namespace AIRefactored.AI.Behavior
             if (_bot?.GetPlayer != null)
                 _bot.GetPlayer.gameObject.SetActive(false);
         }
-
-        #endregion
-
-        #region Retreat Logic
 
         private void TryRetreat()
         {
@@ -223,16 +203,21 @@ namespace AIRefactored.AI.Behavior
             }
 
             float ratio = max > 0f ? current / max : 1f;
-            if (ratio >= _profile.RetreatThreshold) return;
+            if (ratio >= _profile.RetreatThreshold)
+                return;
 
-            Vector3 fallback = _bot.Position - _bot.Memory.GoalEnemy?.CurrPosition.normalized * 8f ?? _bot.Position;
+            Vector3 fallback = _bot.Memory.GoalEnemy?.CurrPosition is Vector3 enemyPos
+                ? _bot.Position - enemyPos.normalized * 8f
+                : _bot.Position;
+
             SmoothMoveTo(fallback);
             _groupSync?.BroadcastExtractPoint(fallback);
 
             var squad = _groupSync?.GetTeammates();
             if (squad == null) return;
 
-            for (int i = 0; i < squad.Count; i++)
+            int count = squad.Count;
+            for (int i = 0; i < count; i++)
             {
                 var other = squad[i];
                 if (other != null && other != _bot &&
@@ -244,10 +229,6 @@ namespace AIRefactored.AI.Behavior
                 }
             }
         }
-
-        #endregion
-
-        #region Movement
 
         private void SmoothMoveTo(Vector3 target)
         {
@@ -265,7 +246,5 @@ namespace AIRefactored.AI.Behavior
             _lastMoveCommandTime = Time.time;
             _lastMoveTarget = target;
         }
-
-        #endregion
     }
 }

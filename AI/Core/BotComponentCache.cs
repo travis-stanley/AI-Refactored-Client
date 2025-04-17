@@ -23,12 +23,25 @@ namespace AIRefactored.AI.Core
         /// </summary>
         public BotOwner? Bot { get; internal set; }
 
+        /// <summary> Handles flashbang effects and blind logic. </summary>
         public FlashGrenadeComponent? FlashGrenade { get; private set; }
+
+        /// <summary> Controls panic behavior and retreat triggers. </summary>
         public BotPanicHandler? PanicHandler { get; private set; }
+
+        /// <summary> Handles suppression sprint/retreat behavior. </summary>
         public BotSuppressionReactionComponent? Suppression { get; private set; }
+
+        /// <summary> Central tick and routine processor. </summary>
         public BotAIController? AIController { get; private set; }
+
+        /// <summary> High-level owner wrapper for personality and group logic. </summary>
         public AIRefactoredBotOwner? AIRefactoredBotOwner { get; private set; }
+
+        /// <summary> Handles post-combat logic like looting and extracting. </summary>
         public BotBehaviorEnhancer? BehaviorEnhancer { get; private set; }
+
+        /// <summary> Pathfinding cache for cover, fallback, and group offsets. </summary>
         public BotOwnerPathfindingCache? PathCache { get; private set; }
 
         #endregion
@@ -39,8 +52,6 @@ namespace AIRefactored.AI.Core
         public float BlindUntilTime { get; set; } = 0f;
         public float LastFlashTime { get; set; } = 0f;
 
-        public string? AssignedPersonalityName { get; set; }
-
         #endregion
 
         #region Hearing Tracking
@@ -48,6 +59,10 @@ namespace AIRefactored.AI.Core
         public float LastHeardTime { get; private set; } = -999f;
         public Vector3? LastHeardDirection { get; private set; }
 
+        /// <summary>
+        /// Registers a sound event heard by this bot.
+        /// </summary>
+        /// <param name="source">The world position of the sound.</param>
         public void RegisterHeardSound(Vector3 source)
         {
             if (Bot?.GetPlayer == null || !Bot.GetPlayer.IsAI)
@@ -61,6 +76,9 @@ namespace AIRefactored.AI.Core
 
         #region Properties
 
+        /// <summary>
+        /// True if all essential core AIRefactored modules are present on this bot.
+        /// </summary>
         public bool IsReady =>
             Bot != null &&
             FlashGrenade != null &&
@@ -77,7 +95,7 @@ namespace AIRefactored.AI.Core
             Bot = GetComponent<BotOwner>();
             if (Bot == null)
             {
-                Debug.LogError("[AIRefactored] BotComponentCache missing BotOwner component.");
+                Debug.LogError("[AIRefactored-Cache] ❌ BotComponentCache missing BotOwner!");
                 return;
             }
 

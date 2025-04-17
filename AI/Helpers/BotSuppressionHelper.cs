@@ -1,6 +1,5 @@
 ﻿#nullable enable
 
-using System;
 using System.Reflection;
 using EFT;
 using UnityEngine;
@@ -23,17 +22,11 @@ namespace AIRefactored.AI.Helpers
 
         #region Bot Accessors
 
-        /// <summary>
-        /// Attempts to get the BotOwner from an EFT Player if it's an AI.
-        /// </summary>
         public static BotOwner? GetBotOwner(Player bot)
         {
             return bot.IsAI && bot.AIData is BotOwner owner ? owner : null;
         }
 
-        /// <summary>
-        /// Gets the BotComponentCache from a Player GameObject.
-        /// </summary>
         public static BotComponentCache? GetCache(Player bot)
         {
             return bot.GetComponent<BotComponentCache>();
@@ -43,9 +36,6 @@ namespace AIRefactored.AI.Helpers
 
         #region Suppression Triggers
 
-        /// <summary>
-        /// Uses reflection to flag a bot as being under fire (used for suppression logic).
-        /// </summary>
         public static void TrySetUnderFire(BotOwner owner)
         {
             if (owner == null || BotCacheUtility.IsHumanPlayer(owner) || owner.ShootData == null)
@@ -58,9 +48,6 @@ namespace AIRefactored.AI.Helpers
             LogDebug($"{owner.Profile?.Info?.Nickname ?? "?"} marked under fire.");
         }
 
-        /// <summary>
-        /// Attempts to suppress a bot from an external source (e.g. gunfire).
-        /// </summary>
         public static void TrySuppressBot(Player bot, Vector3 source)
         {
             if (!bot.IsAI || bot.AIData == null || BotCacheUtility.IsHumanPlayer(bot))
@@ -84,9 +71,6 @@ namespace AIRefactored.AI.Helpers
             }
         }
 
-        /// <summary>
-        /// Returns true if a bot is likely to react to suppression due to low vision or ambient light.
-        /// </summary>
         public static bool ShouldTriggerSuppression(Player bot, float visibilityThreshold = 12f, float ambientThreshold = 0.25f)
         {
             var owner = GetBotOwner(bot);

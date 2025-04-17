@@ -22,31 +22,33 @@ namespace AIRefactored
         #region Unity Lifecycle
 
         /// <summary>
-        /// Called automatically by BepInEx when the plugin is loaded.
-        /// Initializes the global controller and bot AI lifecycle systems.
+        /// Called when the AI-Refactored mod is loaded by BepInEx.
         /// </summary>
         private void Awake()
         {
             _logger = Logger;
-            _logger.LogInfo("[AIRefactored] Initializing AIRefactored mod...");
+            _logger.LogInfo("[AIRefactored-Plugin] 🔧 Initializing AI-Refactored mod...");
 
-            // === Core Runtime Setup ===
+            // === Core System Setup ===
             AIRefactoredController.Initialize(_logger);
 
-            // === Bot Lifecycle Bootstrapper ===
+            // === Bot Lifecycle Bootstrap ===
             var bootstrap = new GameObject("AIRefactored.BotInitializer");
             bootstrap.AddComponent<BotInitializer>();
             DontDestroyOnLoad(bootstrap);
 
-            _logger.LogInfo("[AIRefactored] ✅ AIRefactored mod loaded and systems online.");
+            _logger.LogInfo("[AIRefactored-Plugin] ✅ AI-Refactored mod initialized and systems online.");
         }
 
         #endregion
 
-        #region Accessor
+        #region Public Access
 
+        /// <summary>
+        /// Globally accessible logger for use by other components.
+        /// </summary>
         public static ManualLogSource LoggerInstance =>
-            _logger ?? throw new System.NullReferenceException("Logger accessed before Awake() initialized it.");
+            _logger ?? throw new System.NullReferenceException("LoggerInstance accessed before Awake() initialized it.");
 
         #endregion
     }

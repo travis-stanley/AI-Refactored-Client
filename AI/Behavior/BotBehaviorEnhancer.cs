@@ -11,6 +11,10 @@ using AIRefactored.AI.Groups;
 
 namespace AIRefactored.AI.Behavior
 {
+    /// <summary>
+    /// Enhances bot behavior post-combat. Handles coordinated looting, extraction, and fallback behavior.
+    /// Relies on squad cohesion, injury checks, and voice line triggers.
+    /// </summary>
     public class BotBehaviorEnhancer : MonoBehaviour
     {
         private BotOwner? _bot;
@@ -37,6 +41,9 @@ namespace AIRefactored.AI.Behavior
         private const float RETREAT_RADIUS = 16f;
         private const float MOVE_COOLDOWN = 0.25f;
 
+        /// <summary>
+        /// Initializes bot post-combat behavior systems and caches loot/extract locations.
+        /// </summary>
         public void Init(BotOwner bot)
         {
             _bot = bot;
@@ -46,7 +53,7 @@ namespace AIRefactored.AI.Behavior
             _profile = _owner?.PersonalityProfile;
 
             _extractPoints = GameObject.FindObjectsOfType<ExfiltrationPoint>();
-            _lootPoints = new List<Transform>(64); // prealloc reasonable capacity
+            _lootPoints = new List<Transform>(64);
 
             var lootables = GameObject.FindObjectsOfType<LootableContainer>();
             int lootableCount = lootables.Length;
@@ -58,6 +65,9 @@ namespace AIRefactored.AI.Behavior
             }
         }
 
+        /// <summary>
+        /// Called from the main AI tick loop. Manages looting, extraction, fallback.
+        /// </summary>
         public void Tick(float time)
         {
             if (_bot == null || _profile == null || _hasExtracted || _bot.GetPlayer?.HealthController?.IsAlive != true)
@@ -88,20 +98,22 @@ namespace AIRefactored.AI.Behavior
             TryRetreat();
         }
 
+        /// <summary>
+        /// Picks the nearest loot container and moves the bot there.
+        /// </summary>
         private void TryLoot()
         {
             if (_bot == null || _lootPoints == null || _lootPoints.Count == 0)
                 return;
 
-            int count = _lootPoints.Count;
             Transform? best = null;
             float bestScore = 0f;
 
-            for (int i = 0; i < count; i++)
+            for (int i = 0; i < _lootPoints.Count; i++)
             {
                 var loot = _lootPoints[i];
                 float dist = Vector3.Distance(_bot.Position, loot.position);
-                float score = 1f / Mathf.Max(1f, dist); // Closer is better
+                float score = 1f / Mathf.Max(1f, dist); // Favor closer points
 
                 if (score > bestScore)
                 {
@@ -117,6 +129,9 @@ namespace AIRefactored.AI.Behavior
             }
         }
 
+        /// <summary>
+        /// Checks if extraction is viable and begins it if inside range.
+        /// </summary>
         private void TryExtract()
         {
             if (_isExtracting || _bot == null || _extractPoints == null || _profile == null)
@@ -144,6 +159,9 @@ namespace AIRefactored.AI.Behavior
                 SmoothMoveTo(fallback.Value);
         }
 
+        /// <summary>
+        /// Ensures enough squadmates are present before allowing group extraction.
+        /// </summary>
         private bool IsGroupReadyToExtract()
         {
             if (_groupSync == null || _profile == null)
@@ -154,18 +172,19 @@ namespace AIRefactored.AI.Behavior
                 return true;
 
             int nearCount = 0;
-            int total = teammates.Count;
-
-            for (int i = 0; i < total; i++)
+            for (int i = 0; i < teammates.Count; i++)
             {
                 var mate = teammates[i];
                 if (mate != null && mate != _bot && Vector3.Distance(mate.Position, _bot!.Position) <= GROUP_RADIUS)
                     nearCount++;
             }
 
-            return nearCount >= Mathf.CeilToInt(total * _profile.Cohesion);
+            return nearCount >= Mathf.CeilToInt(teammates.Count * _profile.Cohesion);
         }
 
+        /// <summary>
+        /// Simulates extraction success and disables the bot after a delay.
+        /// </summary>
         private void BeginExtract(ExfiltrationPoint point)
         {
             _isExtracting = true;
@@ -186,6 +205,9 @@ namespace AIRefactored.AI.Behavior
                 _bot.GetPlayer.gameObject.SetActive(false);
         }
 
+        /// <summary>
+        /// If health is low and suppressed, triggers fallback and optionally group retreat.
+        /// </summary>
         private void TryRetreat()
         {
             if (_bot == null || _profile == null || !_bot.Memory.IsUnderFire)
@@ -216,8 +238,7 @@ namespace AIRefactored.AI.Behavior
             var squad = _groupSync?.GetTeammates();
             if (squad == null) return;
 
-            int count = squad.Count;
-            for (int i = 0; i < count; i++)
+            for (int i = 0; i < squad.Count; i++)
             {
                 var other = squad[i];
                 if (other != null && other != _bot &&
@@ -230,6 +251,9 @@ namespace AIRefactored.AI.Behavior
             }
         }
 
+        /// <summary>
+        /// Issues a dampened movement command toward a target using aggression-based smoothing.
+        /// </summary>
         private void SmoothMoveTo(Vector3 target)
         {
             if (_bot == null || Time.time < _lastMoveCommandTime + MOVE_COOLDOWN)

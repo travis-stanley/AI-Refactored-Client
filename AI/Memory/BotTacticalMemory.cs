@@ -8,76 +8,101 @@ namespace AIRefactored.AI.Memory
 {
     /// <summary>
     /// Tracks tactical memory for a bot including last investigated locations and enemy sightings.
-    /// Used to prevent redundant checks and support long-term awareness.
+    /// Used to prevent redundant scans and support long-term awareness.
     /// </summary>
     public class BotTacticalMemory : MonoBehaviour
     {
-        #region Investigated Locations
+        #region Constants
 
-        private readonly List<Vector3> _clearedLocations = new List<Vector3>();
         private const float ClearedThreshold = 3.5f;
         private const float MemoryDuration = 60f;
+        private const float EnemyMemoryDuration = 30f;
 
-        private readonly Dictionary<Vector3, float> _clearedTime = new Dictionary<Vector3, float>();
+        #endregion
+
+        #region Location Memory
+
+        private readonly List<Vector3> _clearedLocations = new();
+        private readonly Dictionary<Vector3, float> _clearedTime = new();
 
         /// <summary>
-        /// Returns true if a location has already been investigated recently.
+        /// Returns true if the position has been recently cleared by the bot.
         /// </summary>
         public bool WasRecentlyCleared(Vector3 position)
         {
             float now = Time.time;
+            bool foundRecent = false;
+
             for (int i = _clearedLocations.Count - 1; i >= 0; i--)
             {
                 Vector3 point = _clearedLocations[i];
-                if (Vector3.Distance(point, position) < ClearedThreshold)
+                float lastSeen = _clearedTime.TryGetValue(point, out var ts) ? ts : 0f;
+
+                if (now - lastSeen > MemoryDuration)
                 {
-                    float lastSeen;
-                    if (_clearedTime.TryGetValue(point, out lastSeen))
-                    {
-                        if (now - lastSeen < MemoryDuration)
-                            return true;
-                        else
-                        {
-                            _clearedLocations.RemoveAt(i);
-                            _clearedTime.Remove(point);
-                        }
-                    }
+                    _clearedLocations.RemoveAt(i);
+                    _clearedTime.Remove(point);
+                    continue;
+                }
+
+                if (!foundRecent && Vector3.Distance(point, position) < ClearedThreshold)
+                {
+                    foundRecent = true;
                 }
             }
-            return false;
+
+            return foundRecent;
         }
 
         /// <summary>
-        /// Marks a location as recently investigated.
+        /// Marks a location as recently cleared or investigated.
         /// </summary>
         public void MarkCleared(Vector3 position)
         {
             float now = Time.time;
+
+            for (int i = 0; i < _clearedLocations.Count; i++)
+            {
+                if (Vector3.Distance(_clearedLocations[i], position) < ClearedThreshold)
+                {
+                    _clearedTime[_clearedLocations[i]] = now;
+                    return;
+                }
+            }
+
             _clearedLocations.Add(position);
             _clearedTime[position] = now;
         }
 
         #endregion
 
-        #region Last Known Enemy Position
+        #region Enemy Position Memory
 
         private Vector3? _lastKnownEnemy;
-        private float _enemySeenTime;
+        private float _enemySeenTime = -999f;
 
-        public void RecordEnemyPosition(Vector3 pos)
+        /// <summary>
+        /// Records the last known position of an enemy for investigative use.
+        /// </summary>
+        public void RecordEnemyPosition(Vector3 position)
         {
-            _lastKnownEnemy = pos;
+            _lastKnownEnemy = position;
             _enemySeenTime = Time.time;
         }
 
+        /// <summary>
+        /// Returns the last seen enemy position if recent enough.
+        /// </summary>
         public Vector3? GetLastKnownEnemyPosition()
         {
-            if (_lastKnownEnemy.HasValue && Time.time - _enemySeenTime < 30f)
-                return _lastKnownEnemy;
-
-            return null;
+            return (_lastKnownEnemy.HasValue && Time.time - _enemySeenTime <= EnemyMemoryDuration)
+                ? _lastKnownEnemy
+                : null;
         }
 
+        /// <summary>
+        /// Clears stored enemy position memory.
+        /// </summary>
         public void ClearLastKnownEnemy()
         {
             _lastKnownEnemy = null;

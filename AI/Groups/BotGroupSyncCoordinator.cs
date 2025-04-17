@@ -145,7 +145,7 @@ namespace AIRefactored.AI.Groups
         /// </summary>
         private void EvaluateGroupZones()
         {
-            // Placeholder for future ZoneID or hotspot target syncing
+            // Future implementation: sync squad fallback or investigation zones
         }
 
         #endregion

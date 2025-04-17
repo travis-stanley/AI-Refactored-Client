@@ -19,10 +19,24 @@ namespace AIRefactored.AI.Missions
 {
     /// <summary>
     /// Controls individual bot mission logic for Loot, Fight, and Quest phases.
-    /// Handles routing, group waiting, and extract transitions.
+    /// Handles routing, squad cohesion, loot targeting, and dynamic extraction.
     /// </summary>
     public class BotMissionSystem : MonoBehaviour
     {
+        #region Public Enums
+
+        /// <summary>
+        /// Types of missions a bot can pursue.
+        /// </summary>
+        public enum MissionType
+        {
+            Loot,
+            Fight,
+            Quest
+        }
+
+        #endregion
+
         #region Fields
 
         private BotOwner? _bot;
@@ -48,14 +62,12 @@ namespace AIRefactored.AI.Missions
         private readonly List<LootableContainer> _lootContainers = new();
         private readonly System.Random _rng = new();
 
-        public enum MissionType { Loot, Fight, Quest }
-
         #endregion
 
-        #region Initialization
+        #region Public API
 
         /// <summary>
-        /// Initializes mission system for a given bot.
+        /// Initializes the bot mission controller.
         /// </summary>
         public void Init(BotOwner bot)
         {
@@ -73,16 +85,9 @@ namespace AIRefactored.AI.Missions
                 PickMission();
         }
 
-        private void CacheLootZones()
-        {
-            _lootContainers.Clear();
-            foreach (var container in GameObject.FindObjectsOfType<LootableContainer>())
-            {
-                if (container != null)
-                    _lootContainers.Add(container);
-            }
-        }
-
+        /// <summary>
+        /// Forces a specific mission type instead of dynamic assignment.
+        /// </summary>
         public void SetForcedMission(MissionType mission)
         {
             _missionType = mission;
@@ -91,17 +96,14 @@ namespace AIRefactored.AI.Missions
 
         #endregion
 
-        #region Update Loop
+        #region Unity Lifecycle
 
         private void Update()
         {
             if (_bot == null || _bot.GetPlayer == null || !_bot.GetPlayer.HealthController.IsAlive)
                 return;
 
-            if (_bot.GetPlayer.IsYourPlayer)
-                return;
-
-            if (_combat != null && _combat.IsInCombatState())
+            if (_bot.GetPlayer.IsYourPlayer || (_combat?.IsInCombatState() == true))
                 return;
 
             if (_waitForGroup && !IsGroupAligned())
@@ -121,7 +123,7 @@ namespace AIRefactored.AI.Missions
 
         #endregion
 
-        #region Mission Handling
+        #region Mission Assignment Logic
 
         private void PickMission()
         {
@@ -133,8 +135,8 @@ namespace AIRefactored.AI.Missions
             }
 
             bool isPmc = _bot.Profile.Info.Side == EPlayerSide.Usec || _bot.Profile.Info.Side == EPlayerSide.Bear;
-
             MissionBias bias = _personality.PreferredMission;
+
             _missionType = bias switch
             {
                 MissionBias.Quest => isPmc ? MissionType.Quest : MissionType.Loot,
@@ -165,6 +167,10 @@ namespace AIRefactored.AI.Missions
                 _ => _bot?.Position ?? Vector3.zero
             };
         }
+
+        #endregion
+
+        #region Mission Execution
 
         private void EvaluateMission()
         {
@@ -207,10 +213,6 @@ namespace AIRefactored.AI.Missions
             _waitForGroup = !IsGroupAligned();
         }
 
-        #endregion
-
-        #region Objectives and State
-
         private void OnObjectiveReached()
         {
             if (_missionType == MissionType.Loot && !_isLooting)
@@ -233,6 +235,20 @@ namespace AIRefactored.AI.Missions
         private void ResumeMovement()
         {
             _bot?.GoToPoint(_currentObjective, false);
+        }
+
+        #endregion
+
+        #region Utility Helpers
+
+        private void CacheLootZones()
+        {
+            _lootContainers.Clear();
+            foreach (var container in GameObject.FindObjectsOfType<LootableContainer>())
+            {
+                if (container != null)
+                    _lootContainers.Add(container);
+            }
         }
 
         private Vector3 GetBestLootZone()
@@ -350,13 +366,10 @@ namespace AIRefactored.AI.Missions
     }
 
     /// <summary>
-    /// Utility for estimating backpack fullness.
+    /// Utility for estimating backpack fill for extraction decisions.
     /// </summary>
     public static class InventoryUtil
     {
-        /// <summary>
-        /// Returns true if the bot's backpack is filled past a threshold.
-        /// </summary>
         public static bool IsBackpackFull(BotOwner bot)
         {
             var inv = bot?.GetPlayer?.Inventory;

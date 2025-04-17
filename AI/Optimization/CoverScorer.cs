@@ -1,6 +1,5 @@
 ﻿#nullable enable
 
-using System.Collections.Generic;
 using UnityEngine;
 using EFT;
 
@@ -15,61 +14,57 @@ namespace AIRefactored.AI.Optimization
         private const float MaxScore = 10f;
         private const float MinScore = 1f;
 
-        private static readonly RaycastHit[] _hits = new RaycastHit[8];
-
         /// <summary>
-        /// Evaluates the score of a potential fallback point based on its angle to the threat and surrounding geometry.
+        /// Evaluates the score of a potential fallback point based on geometry and threat direction.
         /// </summary>
-        /// <param name="bot">The bot evaluating fallback.</param>
-        /// <param name="candidate">The candidate cover point.</param>
-        /// <param name="threatDirection">Normalized direction of threat source.</param>
-        /// <returns>Numerical score between 1 and 10. Higher is better.</returns>
         public static float ScoreCoverPoint(BotOwner bot, Vector3 candidate, Vector3 threatDirection)
         {
             float score = 1.0f;
             Vector3 origin = candidate + Vector3.up * 1.5f;
 
-            // Step 1: Wall or object directly behind candidate?
             Vector3 opposite = -threatDirection.normalized;
+
+            // 1. Check for back wall protection
             if (Physics.Raycast(origin, opposite, out var backHit, 3f))
             {
                 if (IsSolid(backHit.collider))
                     score += 3f;
             }
 
-            // Step 2: Is candidate facing an open hallway? Penalize.
+            // 2. Check if exposed to threat direction
             if (!Physics.Raycast(origin, threatDirection, 5f))
                 score -= 2f;
 
-            // Step 3: Check nearby left/right geometry for corner bonus
+            // 3. Bonus for flanking wall geometry
             Vector3 left = Quaternion.Euler(0f, -45f, 0f) * threatDirection;
             Vector3 right = Quaternion.Euler(0f, 45f, 0f) * threatDirection;
 
-            if (Physics.Raycast(origin, left, out var lHit, 2f) && IsSolid(lHit.collider)) score += 1f;
-            if (Physics.Raycast(origin, right, out var rHit, 2f) && IsSolid(rHit.collider)) score += 1f;
+            if (Physics.Raycast(origin, left, out var lHit, 2f) && IsSolid(lHit.collider))
+                score += 1f;
 
-            // Step 4: Distance efficiency — penalize long runs
+            if (Physics.Raycast(origin, right, out var rHit, 2f) && IsSolid(rHit.collider))
+                score += 1f;
+
+            // 4. Distance penalty (too far = risky)
             float dist = Vector3.Distance(bot.Position, candidate);
             if (dist > 12f) score -= 1.5f;
-            if (dist > 18f) score -= 2f;
+            if (dist > 18f) score -= 2.0f;
 
             return Mathf.Clamp(score, MinScore, MaxScore);
         }
 
         /// <summary>
-        /// Returns true if the collider represents solid, non-foliage cover.
+        /// Returns true if the collider is solid, non-transparent, and non-foliage.
         /// </summary>
         private static bool IsSolid(Collider collider)
         {
-            if (collider == null) return false;
+            if (collider == null)
+                return false;
 
             string tag = collider.tag.ToLowerInvariant();
             string mat = collider.sharedMaterial?.name.ToLowerInvariant() ?? "";
 
-            if (tag.Contains("glass") || tag.Contains("foliage") || mat.Contains("leaf") || mat.Contains("bush"))
-                return false;
-
-            return true;
+            return !(tag.Contains("glass") || tag.Contains("foliage") || mat.Contains("leaf") || mat.Contains("bush"));
         }
     }
 }

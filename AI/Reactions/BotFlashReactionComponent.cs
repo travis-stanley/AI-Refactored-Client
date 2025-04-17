@@ -5,6 +5,7 @@ using EFT;
 using AIRefactored.AI.Helpers;
 using AIRefactored.AI.Memory;
 using AIRefactored.AI.Combat;
+using AIRefactored.AI.Core;
 
 namespace AIRefactored.AI.Reactions
 {
@@ -68,7 +69,7 @@ namespace AIRefactored.AI.Reactions
         {
             float now = Time.time;
 
-            if (Bot == null || !Bot.GetPlayer?.IsAI == true || Bot.IsDead)
+            if (Bot == null || Bot.IsDead || !Bot.GetPlayer?.IsAI == true)
                 return;
 
             if (now - _lastTriggerTime < Cooldown)
@@ -98,14 +99,14 @@ namespace AIRefactored.AI.Reactions
         /// </summary>
         private void TriggerFallbackMovement()
         {
-            if (Bot == null || Bot.IsDead || Bot.Mover == null || Bot.Transform == null)
+            if (Bot == null || Bot.IsDead || Bot.Transform == null)
                 return;
 
-            Vector3 fallbackDir = -Bot.LookDirection;
+            Vector3 fallbackDir = -Bot.LookDirection.normalized;
             Vector3 retreat = Bot.Position + fallbackDir * 5f + Random.insideUnitSphere * 1.5f;
             retreat.y = Bot.Position.y;
 
-            Bot.GoToPoint(retreat, slowAtTheEnd: false);
+            BotMovementHelper.SmoothMoveTo(Bot, retreat, allowSlowEnd: false);
         }
 
         /// <summary>
@@ -113,7 +114,10 @@ namespace AIRefactored.AI.Reactions
         /// </summary>
         private void TriggerPanicSync()
         {
-            var player = Bot?.GetPlayer;
+            if (Bot == null)
+                return;
+
+            var player = Bot.GetPlayer;
             if (player == null || !player.IsAI)
                 return;
 

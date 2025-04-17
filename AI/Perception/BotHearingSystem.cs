@@ -64,12 +64,9 @@ namespace AIRefactored.AI.Perception
 
         #region Hearing Logic
 
-        /// <summary>
-        /// Evaluates nearby players and determines if a bot should react to noise.
-        /// </summary>
         private void EvaluateNearbySounds()
         {
-            float caution = _owner.PersonalityProfile?.Caution ?? 0.5f;
+            float caution = _owner?.PersonalityProfile?.Caution ?? 0.5f;
             float effectiveRadius = MaxBaseHearing * Mathf.Lerp(0.5f, 1.5f, caution);
 
             Collider[] hits = Physics.OverlapSphere(_bot!.Position, effectiveRadius, PlayerLayerMask);
@@ -113,9 +110,6 @@ namespace AIRefactored.AI.Perception
             }
         }
 
-        /// <summary>
-        /// Estimates movement loudness based on the player's current locomotion state.
-        /// </summary>
         private float EstimateLoudness(Player player)
         {
             string? stateName = player.MovementContext?.CurrentState?.GetType().Name;
@@ -129,9 +123,6 @@ namespace AIRefactored.AI.Perception
             return 0f;
         }
 
-        /// <summary>
-        /// Applies a deafening effect to the bot based on distance from sound source.
-        /// </summary>
         private void TryApplyDeafness(float distance)
         {
             if (_hearing == null || distance > 30f)
@@ -157,9 +148,6 @@ namespace AIRefactored.AI.Perception
             _hearing.ApplyDeafness(intensity, duration);
         }
 
-        /// <summary>
-        /// Checks line-of-sight to determine if hearing should be reduced.
-        /// </summary>
         private bool HasClearPath(Vector3 source, out float occlusionModifier)
         {
             occlusionModifier = 1f;
@@ -174,9 +162,6 @@ namespace AIRefactored.AI.Perception
             return true;
         }
 
-        /// <summary>
-        /// Issues bot movement and VO line when suspicious sound is heard.
-        /// </summary>
         private void HandleDetectedNoise(Vector3 position)
         {
             if (_bot?.Memory.GoalEnemy != null)
@@ -185,7 +170,7 @@ namespace AIRefactored.AI.Perception
             Vector3 direction = (position - _bot.Position).normalized;
             Vector3 alertPoint = _bot.Position + direction * 3f;
 
-            _bot.GoToPoint(alertPoint, false);
+            BotMovementHelper.SmoothMoveTo(_bot, alertPoint, allowSlowEnd: false);
             _bot.BotTalk?.TrySay(EPhraseTrigger.OnEnemyShot);
         }
 

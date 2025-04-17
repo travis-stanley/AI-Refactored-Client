@@ -3,6 +3,7 @@
 using UnityEngine;
 using EFT;
 using AIRefactored.Core;
+using AIRefactored.AI.Helpers;
 
 namespace AIRefactored.AI.Memory
 {
@@ -18,7 +19,7 @@ namespace AIRefactored.AI.Memory
             if (bot == null || bot.IsDead || fallbackPosition == Vector3.zero)
                 return;
 
-            bot.GoToPoint(fallbackPosition, slowAtTheEnd: true);
+            BotMovementHelper.SmoothMoveTo(bot, fallbackPosition, true, 1f);
         }
 
         public static void ForceMoveTo(this BotOwner bot, Vector3 position)
@@ -26,7 +27,7 @@ namespace AIRefactored.AI.Memory
             if (bot == null || bot.IsDead)
                 return;
 
-            bot.GoToPoint(position, slowAtTheEnd: true);
+            BotMovementHelper.SmoothMoveTo(bot, position, true, 1f);
         }
 
         /// <summary>
@@ -46,9 +47,8 @@ namespace AIRefactored.AI.Memory
 
             if (angleToEnemy < 20f && Vector3.Distance(bot.Position, enemy.CurrPosition) < 25f)
             {
-                // Exposure is too high, force fallback
                 Vector3 fallback = bot.Position - toEnemy.normalized * 5f;
-                bot.GoToPoint(fallback, slowAtTheEnd: true);
+                BotMovementHelper.SmoothMoveTo(bot, fallback, true, 1f);
                 bot.BotTalk?.TrySay(EPhraseTrigger.OnLostVisual);
             }
         }
@@ -98,7 +98,7 @@ namespace AIRefactored.AI.Memory
             BotMemoryStore.AddHeardSound(bot.ProfileId, source.Position, Time.time);
 
             Vector3 cautiousAdvance = source.Position + (bot.Position - source.Position).normalized * 3f;
-            bot.GoToPoint(cautiousAdvance, slowAtTheEnd: false);
+            BotMovementHelper.SmoothMoveTo(bot, cautiousAdvance, false, 1f);
 
             bot.BotTalk?.TrySay(EPhraseTrigger.OnEnemyShot);
         }

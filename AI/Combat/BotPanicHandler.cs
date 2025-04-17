@@ -11,11 +11,18 @@ using AIRefactored.AI.Perception;
 using AIRefactored.AI.Optimization;
 using AIRefactored.AI.Helpers;
 using AIRefactored.Core;
+using UnityEngine.Profiling;
 
 namespace AIRefactored.AI.Combat
 {
+    /// <summary>
+    /// Handles panic behavior for bots, including squad-aware fallback, flash response, and damage triggers.
+    /// Supports composure-based recovery and personality-specific logic.
+    /// </summary>
     public class BotPanicHandler : MonoBehaviour
     {
+        #region Fields
+
         private BotOwner? _bot;
         private BotComponentCache? _cache;
 
@@ -30,43 +37,57 @@ namespace AIRefactored.AI.Combat
         private const float RecoverySpeed = 0.2f;
         private const float SquadPanicRadiusSqr = 15f * 15f;
 
+        #endregion
+
+        #region Unity Lifecycle
+
         private void Awake()
         {
             _bot = GetComponent<BotOwner>();
             _cache = GetComponent<BotComponentCache>();
 
             if (_bot?.GetPlayer?.HealthController is HealthControllerClass health)
+            {
                 health.ApplyDamageEvent += OnDamaged;
+            }
         }
 
         private void Update()
         {
-            if (_bot == null || _cache == null || IsHumanPlayer())
+            if (_bot == null || _cache == null || IsHumanPlayer() || _bot.IsDead)
                 return;
 
             float now = Time.time;
 
-            if (!_isPanicking)
+            if (_isPanicking)
             {
-                RecoverComposure(Time.deltaTime);
-
-                if (now > _lastPanicExitTime + PanicCooldown)
+                if (now - _panicStartTime > PanicDuration)
                 {
-                    if (ShouldTriggerPanic())
-                    {
-                        StartPanic(now, _bot.LookDirection);
-                        return;
-                    }
-
-                    if (CheckNearbySquadDanger(out Vector3 retreatDir))
-                        StartPanic(now, retreatDir);
+                    EndPanic(now);
                 }
+                return;
             }
-            else if (now - _panicStartTime > PanicDuration)
+
+            RecoverComposure(Time.deltaTime);
+
+            if (now <= _lastPanicExitTime + PanicCooldown)
+                return;
+
+            if (ShouldTriggerPanic())
             {
-                EndPanic(now);
+                StartPanic(now, _bot.LookDirection);
+                return;
+            }
+
+            if (CheckNearbySquadDanger(out Vector3 retreatDir))
+            {
+                StartPanic(now, retreatDir);
             }
         }
+
+        #endregion
+
+        #region Panic Triggers
 
         private void OnDamaged(EBodyPart part, float damage, DamageInfoStruct info)
         {
@@ -74,7 +95,7 @@ namespace AIRefactored.AI.Combat
                 return;
 
             var profile = BotRegistry.Get(_bot.ProfileId);
-            if (profile.IsFrenzied || profile.IsStubborn || profile.AggressionLevel > 0.8f)
+            if (profile == null || profile.IsFrenzied || profile.IsStubborn || profile.AggressionLevel > 0.8f)
                 return;
 
             float now = Time.time;
@@ -87,13 +108,14 @@ namespace AIRefactored.AI.Combat
 
         private bool ShouldTriggerPanic()
         {
-            if (_bot == null || _cache == null) return false;
-
-            var profile = BotRegistry.Get(_bot.ProfileId);
-            if (profile.IsFrenzied || profile.IsStubborn)
+            if (_bot == null || _cache == null)
                 return false;
 
-            if (_cache.FlashGrenade != null && _cache.FlashGrenade.IsFlashed())
+            var profile = BotRegistry.Get(_bot.ProfileId);
+            if (profile == null || profile.IsFrenzied || profile.IsStubborn)
+                return false;
+
+            if (_cache.FlashGrenade?.IsFlashed() == true)
                 return true;
 
             var hp = _bot.HealthController.GetBodyPartHealth(EBodyPart.Common);
@@ -103,25 +125,20 @@ namespace AIRefactored.AI.Combat
         private bool CheckNearbySquadDanger(out Vector3 retreatDir)
         {
             retreatDir = Vector3.zero;
-            if (_bot == null || _bot.Profile?.Info?.GroupId == null)
-                return false;
 
-            string groupId = _bot.Profile.Info.GroupId;
-            if (string.IsNullOrEmpty(groupId))
+            if (_bot?.Profile?.Info?.GroupId is not { } groupId || string.IsNullOrEmpty(groupId))
                 return false;
 
             string mapId = GameWorldHandler.GetCurrentMapName();
             List<BotMemoryStore.DangerZone> zones = BotMemoryStore.GetZonesForMap(mapId);
             Vector3 botPos = _bot.Position;
 
-            for (int i = 0; i < zones.Count; i++)
+            foreach (var zone in zones)
             {
-                Vector3 zonePos = zones[i].Position;
-                float sqrDist = (zonePos - botPos).sqrMagnitude;
-
+                float sqrDist = (zone.Position - botPos).sqrMagnitude;
                 if (sqrDist <= SquadPanicRadiusSqr)
                 {
-                    retreatDir = (botPos - zonePos).normalized;
+                    retreatDir = (botPos - zone.Position).normalized;
                     return true;
                 }
             }
@@ -129,31 +146,49 @@ namespace AIRefactored.AI.Combat
             return false;
         }
 
+        #endregion
+
+        #region Panic Execution
+
         private void StartPanic(float now, Vector3 retreatDir)
         {
-            if (_bot == null)
+            if (_bot == null || _cache == null)
                 return;
 
             _isPanicking = true;
             _panicStartTime = now;
             _composureLevel = 0f;
 
-            List<Vector3> path = (_cache?.PathCache != null)
+            var profile = BotRegistry.Get(_bot.ProfileId);
+            float cohesion = profile?.Cohesion ?? 1.0f;
+
+            List<Vector3> path = _cache.PathCache != null
                 ? BotCoverRetreatPlanner.GetCoverRetreatPath(_bot, retreatDir, _cache.PathCache)
                 : new List<Vector3> { _bot.Position + retreatDir * 8f };
 
             if (path.Count >= 2)
-                _bot.GoToPoint(path[1]);
+            {
+                Vector3 target = path[1];
+                BotMovementHelper.SmoothMoveTo(_bot, target, allowSlowEnd: false, cohesionScale: cohesion);
+            }
 
-            BotMemoryStore.AddDangerZone(GameWorldHandler.GetCurrentMapName(), _bot.Position, DangerTriggerType.Panic, 0.6f);
+            BotMemoryStore.AddDangerZone(
+                GameWorldHandler.GetCurrentMapName(),
+                _bot.Position,
+                DangerTriggerType.Panic,
+                0.6f
+            );
 
             _bot.Sprint(true);
             _bot.BotTalk?.TrySay(EPhraseTrigger.OnBeingHurt);
         }
 
+
+
         private void EndPanic(float now)
         {
-            if (_bot == null) return;
+            if (_bot == null)
+                return;
 
             _isPanicking = false;
             _lastPanicExitTime = now;
@@ -166,6 +201,10 @@ namespace AIRefactored.AI.Combat
         {
             _composureLevel = Mathf.Clamp01(_composureLevel + deltaTime * RecoverySpeed);
         }
+
+        #endregion
+
+        #region Public API
 
         public float GetComposureLevel() => _composureLevel;
 
@@ -181,9 +220,15 @@ namespace AIRefactored.AI.Combat
             StartPanic(now, -_bot.LookDirection);
         }
 
+        #endregion
+
+        #region Helpers
+
         private bool IsHumanPlayer()
         {
             return _bot?.GetPlayer != null && !_bot.GetPlayer.IsAI;
         }
+
+        #endregion
     }
 }

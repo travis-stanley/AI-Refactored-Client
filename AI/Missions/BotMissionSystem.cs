@@ -14,30 +14,18 @@ using AIRefactored.AI.Perception;
 using AIRefactored.AI.Hotspots;
 using AIRefactored.AI.Memory;
 using AIRefactored.AI.Combat;
+using AIRefactored.AI.Helpers;
 
 namespace AIRefactored.AI.Missions
 {
-    /// <summary>
-    /// Controls individual bot mission logic for Loot, Fight, and Quest phases.
-    /// Handles routing, squad cohesion, loot targeting, and dynamic extraction.
-    /// </summary>
     public class BotMissionSystem : MonoBehaviour
     {
-        #region Public Enums
-
-        /// <summary>
-        /// Types of missions a bot can pursue.
-        /// </summary>
         public enum MissionType
         {
             Loot,
             Fight,
             Quest
         }
-
-        #endregion
-
-        #region Fields
 
         private BotOwner? _bot;
         private BotGroupSyncCoordinator? _group;
@@ -62,13 +50,6 @@ namespace AIRefactored.AI.Missions
         private readonly List<LootableContainer> _lootContainers = new();
         private readonly System.Random _rng = new();
 
-        #endregion
-
-        #region Public API
-
-        /// <summary>
-        /// Initializes the bot mission controller.
-        /// </summary>
         public void Init(BotOwner bot)
         {
             _bot = bot ?? throw new ArgumentNullException(nameof(bot));
@@ -85,18 +66,11 @@ namespace AIRefactored.AI.Missions
                 PickMission();
         }
 
-        /// <summary>
-        /// Forces a specific mission type instead of dynamic assignment.
-        /// </summary>
         public void SetForcedMission(MissionType mission)
         {
             _missionType = mission;
             _forcedMission = true;
         }
-
-        #endregion
-
-        #region Unity Lifecycle
 
         private void Update()
         {
@@ -121,10 +95,6 @@ namespace AIRefactored.AI.Missions
             }
         }
 
-        #endregion
-
-        #region Mission Assignment Logic
-
         private void PickMission()
         {
             if (_personality == null)
@@ -146,7 +116,7 @@ namespace AIRefactored.AI.Missions
             };
 
             _currentObjective = GetInitialObjective(_missionType);
-            _bot.GoToPoint(_currentObjective, false);
+            BotMovementHelper.SmoothMoveTo(_bot!, _currentObjective, false, 1f);
         }
 
         private MissionType RandomizeMissionType(bool isPmc)
@@ -168,10 +138,6 @@ namespace AIRefactored.AI.Missions
             };
         }
 
-        #endregion
-
-        #region Mission Execution
-
         private void EvaluateMission()
         {
             if (_bot == null || _bot.GetPlayer?.IsYourPlayer == true)
@@ -186,12 +152,12 @@ namespace AIRefactored.AI.Missions
                         Say(EPhraseTrigger.OnFight);
                         _missionType = MissionType.Fight;
                         _currentObjective = GetRandomZone(MissionType.Fight);
-                        _bot.GoToPoint(_currentObjective, false);
+                        BotMovementHelper.SmoothMoveTo(_bot, _currentObjective);
                     }
                     else if (!_lootComplete)
                     {
                         _currentObjective = GetBestLootZone();
-                        _bot.GoToPoint(_currentObjective, false);
+                        BotMovementHelper.SmoothMoveTo(_bot, _currentObjective);
                     }
                     break;
 
@@ -201,7 +167,7 @@ namespace AIRefactored.AI.Missions
                         _fightComplete = true;
                         _missionType = MissionType.Quest;
                         _currentObjective = HotspotSystem.GetRandomHotspot(_bot);
-                        _bot.GoToPoint(_currentObjective, false);
+                        BotMovementHelper.SmoothMoveTo(_bot, _currentObjective);
                     }
                     break;
 
@@ -234,12 +200,9 @@ namespace AIRefactored.AI.Missions
 
         private void ResumeMovement()
         {
-            _bot?.GoToPoint(_currentObjective, false);
+            if (_bot != null)
+                BotMovementHelper.SmoothMoveTo(_bot, _currentObjective, false, 1f);
         }
-
-        #endregion
-
-        #region Utility Helpers
 
         private void CacheLootZones()
         {
@@ -322,7 +285,7 @@ namespace AIRefactored.AI.Missions
 
             if (closest != null)
             {
-                _bot.GoToPoint(closest.transform.position, false);
+                BotMovementHelper.SmoothMoveTo(_bot!, closest.transform.position);
                 Say(EPhraseTrigger.ExitLocated);
             }
             else
@@ -343,7 +306,7 @@ namespace AIRefactored.AI.Missions
             int nearby = 0;
             foreach (var mate in teammates)
             {
-                if (mate != null && Vector3.Distance(mate.Position, _bot.Position) < SQUAD_COHESION_RANGE)
+                if (mate != null && Vector3.Distance(mate.Position, _bot!.Position) < SQUAD_COHESION_RANGE)
                     nearby++;
             }
 
@@ -361,13 +324,8 @@ namespace AIRefactored.AI.Missions
                 Debug.LogWarning($"[AIRefactored-Mission] Voice failed: {ex.Message}");
             }
         }
-
-        #endregion
     }
 
-    /// <summary>
-    /// Utility for estimating backpack fill for extraction decisions.
-    /// </summary>
     public static class InventoryUtil
     {
         public static bool IsBackpackFull(BotOwner bot)

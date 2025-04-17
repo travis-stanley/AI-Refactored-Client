@@ -90,9 +90,6 @@ namespace AIRefactored.AI.Optimization
 
         #region Logic
 
-        /// <summary>
-        /// Captures aggression, caution, and stealth stance from personality.
-        /// </summary>
         private BotStateSnapshot CaptureSnapshot(BotOwner botOwner)
         {
             var profile = BotRegistry.Get(botOwner.ProfileId);
@@ -106,9 +103,6 @@ namespace AIRefactored.AI.Optimization
             );
         }
 
-        /// <summary>
-        /// Updates tactical behavior or fallback positioning based on delta.
-        /// </summary>
         private void UpdateBotOwnerAI(BotOwner botOwner, BotStateSnapshot snapshot)
         {
             if (botOwner == null || botOwner.gameObject == null)
@@ -128,9 +122,6 @@ namespace AIRefactored.AI.Optimization
             }
         }
 
-        /// <summary>
-        /// Moves the bot forward or backward depending on new personality alignment.
-        /// </summary>
         private void ReassignZoneBehavior(BotOwner botOwner, bool? preferForward)
         {
             Vector3 fallback = botOwner.Position + Vector3.back * 5f;
@@ -138,17 +129,14 @@ namespace AIRefactored.AI.Optimization
 
             if (preferForward == true)
             {
-                botOwner.Mover?.GoToPoint(advance, slowAtTheEnd: false, reachDist: 1f);
+                BotMovementHelper.SmoothMoveTo(botOwner, advance, false, 1f);
             }
             else if (preferForward == false)
             {
-                botOwner.Mover?.GoToPoint(fallback, slowAtTheEnd: false, reachDist: 1f);
+                BotMovementHelper.SmoothMoveTo(botOwner, fallback, false, 1f);
             }
         }
 
-        /// <summary>
-        /// Ensures the bot is an AI and not a player/FIKA-controlled entity.
-        /// </summary>
         private static bool IsAIBot(BotOwner bot)
         {
             var player = bot?.GetPlayer;

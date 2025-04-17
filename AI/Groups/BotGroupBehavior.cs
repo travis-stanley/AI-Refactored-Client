@@ -3,6 +3,7 @@
 using System.Collections.Generic;
 using AIRefactored.AI;
 using AIRefactored.AI.Groups;
+using AIRefactored.AI.Helpers;
 using Comfort.Common;
 using EFT;
 using EFT.Interactive;
@@ -21,8 +22,8 @@ namespace AIRefactored.AI.Groups
         private BotOwner? _bot;
         private string? _groupId;
 
-        private float updateTimer = 0f;
-        private const float updateInterval = 1.25f;
+        private float doorTimer = 0f;
+        private const float DoorCheckInterval = 1.25f;
 
         private const float SQUAD_SPACING_MIN = 3f;
         private const float SQUAD_SPACING_MAX = 15f;
@@ -32,9 +33,6 @@ namespace AIRefactored.AI.Groups
 
         #region Unity Events
 
-        /// <summary>
-        /// Registers this bot with the team tracker on start.
-        /// </summary>
         private void Start()
         {
             _bot = GetComponent<BotOwner>();
@@ -46,9 +44,6 @@ namespace AIRefactored.AI.Groups
             }
         }
 
-        /// <summary>
-        /// Deregisters this bot on destroy.
-        /// </summary>
         private void OnDestroy()
         {
             if (_bot != null && _bot.GetPlayer?.IsAI == true)
@@ -57,9 +52,6 @@ namespace AIRefactored.AI.Groups
             }
         }
 
-        /// <summary>
-        /// Periodic squad logic updates.
-        /// </summary>
         private void Update()
         {
             if (_bot == null || _bot.IsDead || string.IsNullOrEmpty(_groupId))
@@ -68,26 +60,23 @@ namespace AIRefactored.AI.Groups
             if (_bot.GetPlayer == null || !_bot.GetPlayer.IsAI)
                 return;
 
-            updateTimer += Time.deltaTime;
-            if (updateTimer < updateInterval)
-                return;
-
-            updateTimer = 0f;
-
             if (_bot.Memory?.GoalEnemy != null)
                 return;
 
             HandleSquadSpacing();
-            TryUnlockNearbyDoors();
+
+            doorTimer += Time.deltaTime;
+            if (doorTimer >= DoorCheckInterval)
+            {
+                TryUnlockNearbyDoors();
+                doorTimer = 0f;
+            }
         }
 
         #endregion
 
         #region Behavior Logic
 
-        /// <summary>
-        /// Maintains proper spacing between squadmates to avoid bunching or straggling.
-        /// </summary>
         private void HandleSquadSpacing()
         {
             List<BotOwner> group = BotTeamTracker.GetGroup(_groupId!);
@@ -108,32 +97,27 @@ namespace AIRefactored.AI.Groups
 
                 if (dist < SQUAD_SPACING_MIN)
                 {
-                    // Avoid overlapping - stagger slightly
                     Vector3 stagger = Random.insideUnitSphere * 1.5f;
                     stagger.y = 0f;
-                    _bot.GoToPoint(_bot.Position + stagger, slowAtTheEnd: true);
+                    BotMovementHelper.SmoothMoveTo(_bot, _bot.Position + stagger, true, 1f);
                 }
                 else if (dist > SQUAD_SPACING_MAX && selfIndex > i)
                 {
-                    // Too far behind - regroup by moving toward midpoint
                     Vector3 midpoint = Vector3.Lerp(_bot.Position, teammate.Position, 0.5f);
-                    _bot.GoToPoint(midpoint, slowAtTheEnd: false);
+                    BotMovementHelper.SmoothMoveTo(_bot, midpoint, false, 1f);
                 }
             }
         }
 
-        /// <summary>
-        /// Automatically opens nearby locked or shut doors to maintain group mobility.
-        /// </summary>
         private void TryUnlockNearbyDoors()
         {
             if (_bot?.Mover == null)
                 return;
 
             Collider[] hits = Physics.OverlapSphere(_bot.Position, LOCKED_DOOR_RADIUS);
-            foreach (var hit in hits)
+            for (int i = 0; i < hits.Length; i++)
             {
-                if (hit.TryGetComponent(out Door door))
+                if (hits[i].TryGetComponent(out Door door))
                 {
                     if (door.DoorState == EDoorState.Shut || door.DoorState == EDoorState.Locked)
                     {

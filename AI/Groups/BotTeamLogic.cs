@@ -1,9 +1,13 @@
 ﻿#nullable enable
 
-using EFT;
 using System.Collections.Generic;
-using UnityEngine;
+using AIRefactored.AI;
+using AIRefactored.AI.Groups;
+using AIRefactored.AI.Helpers;
 using Comfort.Common;
+using EFT;
+using EFT.Interactive;
+using UnityEngine;
 
 namespace AIRefactored.AI.Group
 {
@@ -21,9 +25,6 @@ namespace AIRefactored.AI.Group
 
         #region Constructor
 
-        /// <summary>
-        /// Creates a new team logic manager for a specific bot.
-        /// </summary>
         public BotTeamLogic(BotOwner bot)
         {
             _bot = bot;
@@ -33,9 +34,6 @@ namespace AIRefactored.AI.Group
 
         #region Team Setup
 
-        /// <summary>
-        /// Filters and sets valid AI teammates from a list of all bots, based on GroupId.
-        /// </summary>
         public void SetTeammates(List<BotOwner> allBots)
         {
             _teammates.Clear();
@@ -69,9 +67,6 @@ namespace AIRefactored.AI.Group
 
         #region Target Sharing
 
-        /// <summary>
-        /// Shares an enemy target with squadmates, updating group memory and enemy lists.
-        /// </summary>
         public void ShareTarget(IPlayer enemy)
         {
             if (enemy == null || string.IsNullOrEmpty(enemy.ProfileId))
@@ -115,7 +110,7 @@ namespace AIRefactored.AI.Group
         #region Coordination
 
         /// <summary>
-        /// Moves the bot toward the average position of the squad, with slight jitter for spacing.
+        /// Aligns the bot with the average squad position smoothly, avoiding teleportation or tick-gated motion.
         /// </summary>
         public void CoordinateMovement()
         {
@@ -123,7 +118,7 @@ namespace AIRefactored.AI.Group
             if (player == null || !player.IsAI)
                 return;
 
-            if (_teammates.Count == 0 || _bot.Mover == null || _bot.IsDead)
+            if (_teammates.Count == 0 || _bot.IsDead)
                 return;
 
             Vector3 center = Vector3.zero;
@@ -148,19 +143,15 @@ namespace AIRefactored.AI.Group
             {
                 center /= count;
 
-                Vector3 stagger = Random.insideUnitSphere * 2f;
+                Vector3 stagger = Random.insideUnitSphere * 1.5f;
                 stagger.y = 0f;
 
                 Vector3 regroupPoint = center + stagger;
+                float distance = Vector3.Distance(_bot.Position, regroupPoint);
 
-                if (Vector3.Distance(_bot.Position, regroupPoint) > 4f)
+                if (distance > 2f)
                 {
-                    _bot.Mover.GoToPoint(
-                        regroupPoint,
-                        slowAtTheEnd: false,
-                        reachDist: 1f,
-                        getUpWithCheck: true
-                    );
+                    BotMovementHelper.SmoothMoveTo(_bot, regroupPoint, false, cohesionScale: 1f);
                 }
             }
         }

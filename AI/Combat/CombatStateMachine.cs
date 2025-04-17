@@ -111,9 +111,7 @@ namespace AIRefactored.AI.Combat
                 var adjusted = _squadCoordinator?.ApplyOffsetTo(_lastKnownEnemyPos.Value) ?? _lastKnownEnemyPos.Value;
                 BotMovementHelper.SmoothMoveTo(_bot, adjusted);
                 if (Vector3.Distance(_bot.Position, _lastKnownEnemyPos.Value) < 3f)
-                {
                     _lastKnownEnemyPos = null;
-                }
                 return;
             }
 
@@ -162,8 +160,7 @@ namespace AIRefactored.AI.Combat
 
         private void TriggerSuppressedFallback()
         {
-            if (_bot == null || _cache == null)
-                return;
+            if (_bot == null || _cache == null) return;
 
             _state = CombatState.Fallback;
             _fallbackPosition = null;

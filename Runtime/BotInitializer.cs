@@ -110,6 +110,10 @@ namespace AIRefactored.Runtime
             obj.TryAddComponent<BotHearingSystem>();
             obj.TryAddComponent<BotAsyncProcessor>()?.Initialize(bot);
 
+            // === New Tactical Systems ===
+            obj.TryAddComponent<SquadPathCoordinator>();
+            obj.TryAddComponent<BotTacticalMemory>();
+
             // === Register State Snapshot for Performance
             _stateCache.CacheBotOwnerState(bot);
 
@@ -118,6 +122,7 @@ namespace AIRefactored.Runtime
 
             Debug.Log($"[AIRefactored] 🤖 Bot initialized: {bot.Profile?.Info?.Nickname ?? "???"}");
         }
+
 
         /// <summary>
         /// Applies group-level optimization tuning for squad behavior.

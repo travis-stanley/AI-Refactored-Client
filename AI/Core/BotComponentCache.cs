@@ -62,45 +62,23 @@ namespace AIRefactored.AI.Core
 
         #region Perception State
 
-        /// <summary>
-        /// Indicates whether bot is currently blinded.
-        /// </summary>
         public bool IsBlinded { get; set; } = false;
-
-        /// <summary>
-        /// Time until blindness wears off.
-        /// </summary>
         public float BlindUntilTime { get; set; } = 0f;
-
-        /// <summary>
-        /// Last time bot was flashed (for cooldown and behavioral impact).
-        /// </summary>
         public float LastFlashTime { get; set; } = 0f;
 
-        /// <summary>
-        /// Assigned personality type label (used for debugging and grouping).
-        /// </summary>
         public string? AssignedPersonalityName { get; set; }
 
         #endregion
 
         #region Hearing Tracking
 
-        /// <summary>
-        /// Last time the bot heard a valid sound cue.
-        /// </summary>
         public float LastHeardTime { get; private set; } = -999f;
-
-        /// <summary>
-        /// Direction of last heard sound relative to bot position.
-        /// </summary>
         public Vector3? LastHeardDirection { get; private set; }
 
         /// <summary>
         /// Registers a heard sound source and stores its relative direction and timestamp.
         /// Will not run for human players or Coop/FIKA players.
         /// </summary>
-        /// <param name="source">World position of the heard sound.</param>
         public void RegisterHeardSound(Vector3 source)
         {
             if (Bot == null || Bot.GetPlayer == null || !Bot.GetPlayer.IsAI)
@@ -126,11 +104,8 @@ namespace AIRefactored.AI.Core
 
         #endregion
 
-        #region Unity Events
+        #region Unity Lifecycle
 
-        /// <summary>
-        /// Initializes all attached AIRefactored component references.
-        /// </summary>
         private void Awake()
         {
             Bot = GetComponent<BotOwner>() ?? throw new MissingComponentException("Missing BotOwner on BotComponentCache");

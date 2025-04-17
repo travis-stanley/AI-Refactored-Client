@@ -12,8 +12,8 @@ using AIRefactored.Core;
 namespace AIRefactored.AI.Optimization
 {
     /// <summary>
-    /// Caches pathfinding decisions per bot to avoid redundant calculations.
-    /// Used for fallback routing and tactical NavMesh pathing.
+    /// Caches per-bot NavMesh paths and retreat scoring to avoid redundant computation.
+    /// Also supports scoring fallback cover positions and squad-level broadcast logic.
     /// </summary>
     public class BotOwnerPathfindingCache
     {
@@ -27,10 +27,11 @@ namespace AIRefactored.AI.Optimization
 
         #endregion
 
-        #region Public API
+        #region Path Caching
 
         /// <summary>
-        /// Returns a cached or newly computed path for the given AI bot to the desired destination.
+        /// Returns a cached or newly computed NavMesh path from bot to destination.
+        /// Falls back to a straight-line path if NavMesh fails.
         /// </summary>
         public List<Vector3> GetOptimizedPath(BotOwner botOwner, Vector3 destination)
         {
@@ -50,8 +51,7 @@ namespace AIRefactored.AI.Optimization
         }
 
         /// <summary>
-        /// Clears all cached paths and transient keys.
-        /// Call this on bot death or squad despawn.
+        /// Clears all cached paths and transient state.
         /// </summary>
         public void ClearCache()
         {
@@ -64,8 +64,7 @@ namespace AIRefactored.AI.Optimization
         #region NavMesh Logic
 
         /// <summary>
-        /// Attempts to build a NavMesh path between origin and target.
-        /// Returns a simple 2-point fallback path if no NavMesh available.
+        /// Computes a NavMesh path between two points. Falls back to a 2-point line if invalid.
         /// </summary>
         private List<Vector3> BuildNavPath(Vector3 origin, Vector3 target)
         {
@@ -81,36 +80,34 @@ namespace AIRefactored.AI.Optimization
 
         #endregion
 
-        #region Cover Weighting
+        #region Cover Scoring
 
         /// <summary>
-        /// Registers a fallback point with a cover score for reuse or weighting.
+        /// Stores a weight (desirability) score for a cover point.
         /// </summary>
         public void RegisterCoverNode(string mapId, Vector3 pos, float score)
         {
-            string key = mapId + "_" + pos.ToString("F1");
+            string key = mapId + "_" + RoundVector3ToKey(pos);
             if (!_coverWeights.ContainsKey(key))
-            {
                 _coverWeights[key] = Mathf.Clamp(score, 0.1f, 10f);
-            }
         }
 
         /// <summary>
-        /// Returns cover weight for a position, defaulting to neutral (1.0) if unknown.
+        /// Retrieves cover score for a location, or 1.0 (neutral) if unknown.
         /// </summary>
         public float GetCoverWeight(string mapId, Vector3 pos)
         {
-            string key = mapId + "_" + pos.ToString("F1");
+            string key = mapId + "_" + RoundVector3ToKey(pos);
             return _coverWeights.TryGetValue(key, out var weight) ? weight : 1f;
         }
 
         #endregion
 
-        #region Squad Sync Logic
+        #region Group Broadcasts
 
         /// <summary>
-        /// Broadcasts a panic-based fallback point to squad via danger zone.
-        /// Helps synchronize retreat behavior under fire.
+        /// Broadcasts a fallback position to other bots via squad memory.
+        /// Useful for group panic or shared danger awareness.
         /// </summary>
         public void BroadcastRetreat(BotOwner botOwner, Vector3 point)
         {
@@ -126,12 +123,20 @@ namespace AIRefactored.AI.Optimization
         #region Helpers
 
         /// <summary>
-        /// Returns true if this bot is AI and not player- or coop-controlled.
+        /// Determines if a bot is AI-controlled and not the player or coop.
         /// </summary>
         private static bool IsAIBot(BotOwner bot)
         {
             var player = bot?.GetPlayer;
             return player != null && player.IsAI && !player.IsYourPlayer;
+        }
+
+        /// <summary>
+        /// Rounds a Vector3 to a formatted string key for spatial hashing.
+        /// </summary>
+        private static string RoundVector3ToKey(Vector3 v)
+        {
+            return $"{v.x:F1}_{v.y:F1}_{v.z:F1}";
         }
 
         #endregion

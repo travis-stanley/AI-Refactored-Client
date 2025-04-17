@@ -11,7 +11,8 @@ using UnityEngine;
 namespace AIRefactored.AI.Hotspots
 {
     /// <summary>
-    /// Loads and caches patrol hotspots per map for use in dynamic AI routing and mission planning.
+    /// Loads, caches, and filters tactical hotspot zones per map.
+    /// These are used for AI routing, search patterns, and mission planning.
     /// </summary>
     public static class HotspotLoader
     {
@@ -27,12 +28,13 @@ namespace AIRefactored.AI.Hotspots
         #region Public API
 
         /// <summary>
-        /// Enables or disables debug logging.
+        /// Enables or disables debug logging for hotspot load events.
         /// </summary>
         public static void EnableDebugLogs(bool enabled) => _debugLog = enabled;
 
         /// <summary>
-        /// Loads all hotspot files from the configured folder into memory.
+        /// Loads all hotspot JSON files from disk into memory.
+        /// Automatically skips already-loaded sets.
         /// </summary>
         public static void LoadAll()
         {
@@ -73,19 +75,22 @@ namespace AIRefactored.AI.Hotspots
         }
 
         /// <summary>
-        /// Retrieves the hotspot set for the current map and filters it for the given bot role.
+        /// Retrieves the filtered hotspot set for the current map and bot role.
         /// </summary>
+        /// <param name="role">The bot's WildSpawnType role.</param>
         public static HotspotSet? GetHotspotsForCurrentMap(WildSpawnType role)
         {
             if (!_loaded)
                 LoadAll();
 
             string mapId = Singleton<GameWorld>.Instance?.LocationId?.ToLowerInvariant() ?? "unknown";
-            return _cache.TryGetValue(mapId, out var set) ? set.FilteredForRole(role) : null;
+            return _cache.TryGetValue(mapId, out var set)
+                ? set.FilteredForRole(role)
+                : null;
         }
 
         /// <summary>
-        /// Clears all loaded hotspots and reloads them from disk.
+        /// Clears all cached data and reloads from disk.
         /// </summary>
         public static void Reload()
         {
@@ -98,7 +103,7 @@ namespace AIRefactored.AI.Hotspots
         }
 
         /// <summary>
-        /// Returns all loaded hotspot sets.
+        /// Returns all loaded hotspot sets across maps.
         /// </summary>
         public static IReadOnlyDictionary<string, HotspotSet> GetAll() => _cache;
 
@@ -107,7 +112,8 @@ namespace AIRefactored.AI.Hotspots
         #region Internal Helpers
 
         /// <summary>
-        /// Resolves the file system path to the hotspot folder.
+        /// Resolves the file system path to the hotspot directory.
+        /// Checks both data and plugin folders.
         /// </summary>
         private static string ResolveHotspotPath()
         {
@@ -120,27 +126,27 @@ namespace AIRefactored.AI.Hotspots
     }
 
     /// <summary>
-    /// Represents the hotspot set for a single map.
-    /// Contains all zone locations and potential role filtering.
+    /// Represents a single map's hotspot set used for AI targeting or movement.
     /// </summary>
     public class HotspotSet
     {
         /// <summary>
-        /// The list of 3D world positions representing hotspots.
+        /// List of 3D world positions representing tactical points of interest.
         /// </summary>
         public List<Vector3> Points = new();
 
         /// <summary>
-        /// Optional: filters hotspots based on bot role (PMC, Scav, etc).
+        /// Filters hotspot points by bot role (PMC, Scav, etc.).
+        /// Placeholder implementation (extendable).
         /// </summary>
         public HotspotSet FilteredForRole(WildSpawnType role)
         {
-            // TODO: Implement role-specific filtering logic
+            // TODO: Implement role-specific logic (e.g. PMCs prefer objectives, Scavs prefer loot zones)
             return this;
         }
 
         /// <summary>
-        /// Parses a JSON file into a HotspotSet.
+        /// Parses hotspot data from a JSON string into a usable set.
         /// </summary>
         public static HotspotSet? FromJson(string json)
         {
@@ -160,7 +166,7 @@ namespace AIRefactored.AI.Hotspots
         }
 
         /// <summary>
-        /// Internal format for reading hotspot JSON files.
+        /// Internal representation of JSON structure on disk.
         /// </summary>
         private class HotspotFile
         {

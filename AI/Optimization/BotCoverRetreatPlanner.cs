@@ -14,7 +14,7 @@ namespace AIRefactored.AI.Optimization
 {
     /// <summary>
     /// Computes and caches dynamic retreat paths for bots under threat.
-    /// Evaluates nearby cover using NavMesh sampling and danger zone avoidance.
+    /// Uses NavMesh sampling, danger zone avoidance, squad-based caching, and cover desirability.
     /// </summary>
     public static class BotCoverRetreatPlanner
     {
@@ -40,12 +40,13 @@ namespace AIRefactored.AI.Optimization
         #region Public API
 
         /// <summary>
-        /// Generates a fallback path away from the threat direction using NavMesh + squad-level caching.
+        /// Computes a safe fallback path for a bot under threat using local NavMesh samples.
+        /// Applies squad-level caching and filters danger zones.
         /// </summary>
-        /// <param name="bot">Bot instance under threat.</param>
+        /// <param name="bot">The bot requesting fallback routing.</param>
         /// <param name="threatDir">Direction of incoming threat.</param>
-        /// <param name="pathCache">Bot-local pathing cache.</param>
-        /// <returns>List of Vector3 points forming a retreat path.</returns>
+        /// <param name="pathCache">Bot-local navigation cache (optional, improves reuse).</param>
+        /// <returns>A list of waypoints forming a fallback route. May return origin + direction fallback if no valid NavMesh found.</returns>
         public static List<Vector3> GetCoverRetreatPath(BotOwner bot, Vector3 threatDir, BotOwnerPathfindingCache pathCache)
         {
             if (!IsAIBot(bot) || bot.Transform == null)
@@ -71,7 +72,7 @@ namespace AIRefactored.AI.Optimization
             Vector3 origin = bot.Position;
             Vector3 away = -threatDir.normalized;
 
-            List<Vector3> candidates = new();
+            Dictionary<Vector3, float> candidates = new();
 
             for (int i = 0; i < MaxSamples; i++)
             {
@@ -81,22 +82,25 @@ namespace AIRefactored.AI.Optimization
 
                 if (NavMesh.SamplePosition(probe, out NavMeshHit hit, NavSampleRadius, NavMesh.AllAreas))
                 {
-                    float penalty = GetDangerPenalty(map, hit.position);
+                    float dangerPenalty = GetDangerPenalty(map, hit.position);
                     float sneakBonus = profile?.IsSilentHunter == true ? 0.75f : 1f;
-                    float score = Vector3.Distance(origin, hit.position) * penalty * sneakBonus;
 
-                    // Use Y-component as a scoring proxy for sorting
-                    candidates.Add(hit.position + Vector3.up * (score * 0.01f));
+                    float coverQuality = CoverScorer.ScoreCoverPoint(bot, hit.position, threatDir);
+                    float score = (Vector3.Distance(origin, hit.position) / coverQuality) * dangerPenalty * sneakBonus;
+
+                    if (!candidates.ContainsKey(hit.position))
+                        candidates[hit.position] = score;
                 }
             }
+
 
             if (candidates.Count == 0)
                 return new List<Vector3> { origin + away * RetreatDistance };
 
-            candidates.Sort((a, b) => a.y.CompareTo(b.y)); // Lower = better
-            Vector3 best = candidates[0];
+            // Pick best-scoring candidate
+            Vector3 best = GetLowestScore(candidates);
+            var path = BuildSafePath(origin, best);
 
-            List<Vector3> path = BuildNavPath(origin, new Vector3(best.x, origin.y, best.z));
 
             if (path.Count >= 2)
                 squadCache[squadId] = path;
@@ -109,9 +113,9 @@ namespace AIRefactored.AI.Optimization
         #region Internal Utilities
 
         /// <summary>
-        /// Calculates a nav path between origin and target. Fallbacks to straight line if no path found.
+        /// Computes a valid NavMesh path from origin to target. Falls back to a direct line.
         /// </summary>
-        private static List<Vector3> BuildNavPath(Vector3 origin, Vector3 target)
+        private static List<Vector3> BuildSafePath(Vector3 origin, Vector3 target)
         {
             var navPath = new NavMeshPath();
             if (NavMesh.CalculatePath(origin, target, NavMesh.AllAreas, navPath) &&
@@ -124,7 +128,7 @@ namespace AIRefactored.AI.Optimization
         }
 
         /// <summary>
-        /// Ensures a NavMeshSurface is created for the given map, and builds the navmesh if not yet built.
+        /// Ensures a NavMeshSurface is built for the current map.
         /// </summary>
         private static void EnsureNavMeshAvailable(string mapId)
         {
@@ -142,7 +146,7 @@ namespace AIRefactored.AI.Optimization
         }
 
         /// <summary>
-        /// Returns a penalty multiplier if the candidate position lies within any active danger zones.
+        /// Applies a penalty multiplier for positions inside danger zones.
         /// </summary>
         private static float GetDangerPenalty(string mapId, Vector3 pos)
         {
@@ -152,11 +156,12 @@ namespace AIRefactored.AI.Optimization
                 if (Vector3.Distance(zone.Position, pos) < zone.Radius)
                     return DangerZonePenalty;
             }
+
             return 1f;
         }
 
         /// <summary>
-        /// Returns true if the bot is a valid AI entity and not controlled by a player.
+        /// Returns true if the given bot is an AI (non-player) agent.
         /// </summary>
         private static bool IsAIBot(BotOwner bot)
         {
@@ -165,7 +170,7 @@ namespace AIRefactored.AI.Optimization
         }
 
         /// <summary>
-        /// Clears all cached retreat paths after a configured interval.
+        /// Periodically clears old retreat path memory to avoid stale logic.
         /// </summary>
         private static void ClearExpiredCache()
         {
@@ -174,6 +179,26 @@ namespace AIRefactored.AI.Optimization
                 SquadRetreatCache.Clear();
                 _lastClearTime = Time.time;
             }
+        }
+
+        /// <summary>
+        /// Returns the key in a dictionary with the lowest float score.
+        /// </summary>
+        private static Vector3 GetLowestScore(Dictionary<Vector3, float> dict)
+        {
+            float minScore = float.MaxValue;
+            Vector3 best = Vector3.zero;
+
+            foreach (var kvp in dict)
+            {
+                if (kvp.Value < minScore)
+                {
+                    minScore = kvp.Value;
+                    best = kvp.Key;
+                }
+            }
+
+            return best;
         }
 
         #endregion

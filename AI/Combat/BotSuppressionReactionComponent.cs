@@ -3,22 +3,28 @@
 using UnityEngine;
 using EFT;
 using AIRefactored.AI.Helpers;
+using AIRefactored.AI.Core;
+using AIRefactored.AI.Combat;
 
 namespace AIRefactored.AI.Combat
 {
     /// <summary>
     /// Simulates bot suppression response — evasive movement and flinch retreat under threat.
-    /// Intended to be triggered externally by audio cues or visible fire.
+    /// Suppression duration dynamically scales with composure level.
     /// </summary>
     public class BotSuppressionReactionComponent : MonoBehaviour
     {
         #region Fields
 
         private BotOwner? _bot;
+        private BotComponentCache? _cache;
+
         private float _suppressionStartTime = -99f;
+        private float _currentSuppressionDuration = 2.0f;
         private bool _isSuppressed = false;
 
-        private const float SuppressionDuration = 2.0f;
+        private const float MaxSuppressionDuration = 2.5f;
+        private const float MinSuppressionDuration = 0.6f;
 
         #endregion
 
@@ -27,10 +33,10 @@ namespace AIRefactored.AI.Combat
         private void Awake()
         {
             _bot = GetComponent<BotOwner>();
+            _cache = GetComponent<BotComponentCache>();
+
             if (_bot == null)
-            {
                 Debug.LogError("[AIRefactored] BotSuppressionReactionComponent missing BotOwner!");
-            }
         }
 
         private void Update()
@@ -38,7 +44,7 @@ namespace AIRefactored.AI.Combat
             if (!_isSuppressed || _bot == null || IsHumanPlayer())
                 return;
 
-            if (Time.time - _suppressionStartTime > SuppressionDuration)
+            if (Time.time - _suppressionStartTime > _currentSuppressionDuration)
             {
                 _isSuppressed = false;
             }
@@ -49,9 +55,10 @@ namespace AIRefactored.AI.Combat
         #region Suppression Logic
 
         /// <summary>
-        /// Triggers suppression logic and evasive sprinting away from the source direction.
+        /// Triggers suppression logic and evasive sprinting away from the threat source.
+        /// Duration scales with composure level.
         /// </summary>
-        /// <param name="from">Optional position of threat (e.g. gunfire or explosion).</param>
+        /// <param name="from">Optional position of incoming threat (e.g. gunfire).</param>
         public void TriggerSuppression(Vector3? from = null)
         {
             if (_isSuppressed || _bot == null || IsHumanPlayer())
@@ -60,13 +67,20 @@ namespace AIRefactored.AI.Combat
             _isSuppressed = true;
             _suppressionStartTime = Time.time;
 
+            float composure = 1f;
+            if (_cache?.PanicHandler != null)
+                composure = _cache.PanicHandler.GetComposureLevel();
+
+            // Less composure = longer suppression duration
+            _currentSuppressionDuration = Mathf.Lerp(MaxSuppressionDuration, MinSuppressionDuration, composure);
+
             Vector3 direction = from.HasValue
                 ? (_bot.Position - from.Value).normalized
                 : -_bot.LookDirection.normalized;
 
             Vector3 fallback = _bot.Position + direction * 6f;
 
-            if (Physics.Raycast(_bot.Position, direction, out var hit, 6f))
+            if (Physics.Raycast(_bot.Position, direction, out RaycastHit hit, 6f))
             {
                 fallback = hit.point - direction;
             }
@@ -84,18 +98,17 @@ namespace AIRefactored.AI.Combat
         }
 
         /// <summary>
-        /// Public trigger interface for suppression reaction.
+        /// Public trigger for suppression response.
         /// </summary>
-        /// <param name="source">The origin of the suppressive action (e.g. gunfire).</param>
+        /// <param name="source">The origin of suppressive fire or explosive.</param>
         public void ReactToSuppression(Vector3 source)
         {
             TriggerSuppression(source);
         }
 
         /// <summary>
-        /// Indicates whether bot is currently suppressed.
+        /// Returns true if the bot is currently reacting to suppression.
         /// </summary>
-        /// <returns>True if in suppression state.</returns>
         public bool IsSuppressed() => _isSuppressed;
 
         #endregion
@@ -103,7 +116,7 @@ namespace AIRefactored.AI.Combat
         #region Helpers
 
         /// <summary>
-        /// Checks if the entity is a human player (not AI).
+        /// Checks if bot is controlled by a human.
         /// </summary>
         private bool IsHumanPlayer()
         {

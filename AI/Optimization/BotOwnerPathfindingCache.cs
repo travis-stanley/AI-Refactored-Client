@@ -40,8 +40,8 @@ namespace AIRefactored.AI.Optimization
             string botId = botOwner.Profile.Id;
             string key = botId + "_" + destination.ToString("F2");
 
-            if (_pathCache.TryGetValue(key, out var cached))
-                return cached;
+            if (_pathCache.ContainsKey(key))
+                return _pathCache[key];
 
             var path = BuildNavPath(botOwner.Position, destination);
             _pathCache[key] = path;

@@ -123,24 +123,8 @@ namespace AIRefactored.AI.Groups
 
         private void EvaluateGroupZones()
         {
-            string? myZoneId = _cache?.Zone?.ZoneId;
-            if (string.IsNullOrEmpty(myZoneId) || myZoneId == "unknown")
-                return;
-
-            foreach (var kvp in _teammateCaches)
-            {
-                var teammate = kvp.Key;
-                var teammateCache = kvp.Value;
-
-                if (teammate == null || teammateCache?.Zone == null || teammate.GetPlayer?.IsAI != true)
-                    continue;
-
-                string? otherZoneId = teammateCache.Zone.ZoneId;
-                if (!string.IsNullOrEmpty(otherZoneId) && otherZoneId != myZoneId)
-                {
-                    teammateCache.Zone.AssignZone(myZoneId);
-                }
-            }
+            // Stubbed — was previously syncing BotOwnerZone.ZoneId
+            // Could be repurposed to sync movement zones, loot targets, or fallback states
         }
 
         #endregion

@@ -81,7 +81,6 @@ namespace AIRefactored.AI.Combat
             return hp.HasValue && hp.Value.Current < 25f;
         }
 
-
         #endregion
 
         #region Panic Behavior
@@ -97,8 +96,7 @@ namespace AIRefactored.AI.Combat
             Vector3 fallbackDir = -_bot.LookDirection.normalized;
             Vector3 fallbackPos = _bot.Position + fallbackDir * 8f;
 
-            RaycastHit hit;
-            if (Physics.Raycast(_bot.Position, fallbackDir, out hit, 8f))
+            if (Physics.Raycast(_bot.Position, fallbackDir, out RaycastHit hit, 8f))
             {
                 fallbackPos = hit.point - fallbackDir * 1f;
             }
@@ -108,6 +106,7 @@ namespace AIRefactored.AI.Combat
                 var path = BotCoverRetreatPlanner.GetCoverRetreatPath(_bot, fallbackDir, _cache.PathCache);
                 if (path.Count > 0)
                     fallbackPos = path[path.Count - 1];
+
             }
 
             BotMovementHelper.SmoothMoveTo(_bot, fallbackPos, allowSlowEnd: false, cohesionScale: 1f);
@@ -116,7 +115,7 @@ namespace AIRefactored.AI.Combat
             var world = Singleton<GameWorld>.Instance;
             if (world?.MainPlayer?.Location != null)
             {
-                string mapId = world.MainPlayer.Location; // no ToLowerInvariant() needed unless case-sensitive
+                string mapId = world.MainPlayer.Location;
                 BotMemoryStore.AddDangerZone(mapId, _bot.Position, DangerTriggerType.Panic, 0.6f);
             }
         }
@@ -125,8 +124,10 @@ namespace AIRefactored.AI.Combat
         {
             _isPanicking = false;
             _lastPanicExitTime = now;
-            _bot?.RestoreCombatAggression();
+            _bot?.Memory?.SetLastTimeSeeEnemy();
+            _bot?.Memory?.CheckIsPeace();
         }
+
 
         #endregion
 

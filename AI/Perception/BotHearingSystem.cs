@@ -85,11 +85,11 @@ namespace AIRefactored.AI.Perception
 
                 float distance = Vector3.Distance(_bot.Position, player.Position);
 
-                // Fallback for unknown sound events (e.g., gunfire)
+                // Fallback gunfire awareness
                 if (!player.IsAI && distance < 50f)
                     loudness = Mathf.Max(loudness, FireLoudness);
 
-                // Deafening from loud sources
+                // Deafening effect
                 if (loudness >= 1f)
                     TryApplyDeafness(distance);
 

@@ -2,7 +2,6 @@
 
 using UnityEngine;
 using BepInEx.Logging;
-using AIRefactored.AI.Optimization;
 
 namespace AIRefactored.Runtime
 {
@@ -35,7 +34,6 @@ namespace AIRefactored.Runtime
             _instance = obj.AddComponent<AIRefactoredController>();
             DontDestroyOnLoad(obj);
 
-            BotAIManager.Initialize(logger);
             _logger.LogInfo("[AIRefactored] ✅ Global controller initialized.");
         }
 

@@ -88,6 +88,7 @@ namespace AIRefactored.Runtime
             var cache = bot.gameObject.GetComponent<BotComponentCache>() ?? bot.gameObject.AddComponent<BotComponentCache>();
             cache.Bot = bot;
 
+            // Attach logic modules
             obj.TryAddComponent<BotAIController>();
             obj.TryAddComponent<BotBehaviorEnhancer>()?.Init(bot);
             obj.TryAddComponent<BotMissionSystem>()?.Init(bot);
@@ -97,8 +98,10 @@ namespace AIRefactored.Runtime
             obj.TryAddComponent<BotPanicHandler>();
             obj.TryAddComponent<BotVisionSystem>();
             obj.TryAddComponent<BotHearingSystem>();
-            obj.TryAddComponent<BotOwnerZone>();
             obj.TryAddComponent<BotAsyncProcessor>()?.Initialize(bot);
+
+            // Initialize state cache for AI tuning logic
+            new BotOwnerStateCache().CacheBotOwnerState(bot);
 
             _processed.Add(bot);
             Debug.Log($"[AIRefactored] 🤖 Bot initialized: {bot.Profile?.Info?.Nickname ?? "???"}");

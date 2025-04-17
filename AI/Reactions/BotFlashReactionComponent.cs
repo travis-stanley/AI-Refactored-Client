@@ -25,8 +25,6 @@ namespace AIRefactored.AI.Reactions
         private const float MaxDuration = 5.0f;
         private const float Cooldown = 0.5f;
 
-        private BotOwnerZone? _zone;
-
         #endregion
 
         #region Unity Lifecycle
@@ -34,7 +32,6 @@ namespace AIRefactored.AI.Reactions
         private void Awake()
         {
             Bot = GetComponent<BotOwner>();
-            _zone = GetComponent<BotOwnerZone>();
         }
 
         private void Update()
@@ -86,7 +83,6 @@ namespace AIRefactored.AI.Reactions
             retreat.y = Bot.Position.y;
 
             Bot.GoToPoint(retreat, slowAtTheEnd: false);
-            _zone?.TriggerFallback(retreat);
         }
 
         private void TriggerPanicSync()

@@ -23,7 +23,6 @@ namespace AIRefactored.AI.Core
         public FlashGrenadeComponent? FlashGrenade { get; private set; }
         public BotPanicHandler? PanicHandler { get; private set; }
         public BotSuppressionReactionComponent? Suppression { get; private set; }
-        public BotOwnerZone? Zone { get; private set; }
         public BotAIController? AIController { get; private set; }
         public AIRefactoredBotOwner? AIRefactoredBotOwner { get; private set; }
         public BotBehaviorEnhancer? BehaviorEnhancer { get; private set; }
@@ -80,7 +79,6 @@ namespace AIRefactored.AI.Core
             FlashGrenade = GetComponent<FlashGrenadeComponent>();
             PanicHandler = GetComponent<BotPanicHandler>();
             Suppression = GetComponent<BotSuppressionReactionComponent>();
-            Zone = GetComponent<BotOwnerZone>();
             AIController = GetComponent<BotAIController>();
             AIRefactoredBotOwner = GetComponent<AIRefactoredBotOwner>();
             BehaviorEnhancer = GetComponent<BotBehaviorEnhancer>();

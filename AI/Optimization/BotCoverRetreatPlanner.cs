@@ -80,7 +80,8 @@ namespace AIRefactored.AI.Optimization
             if (candidates.Count == 0)
                 return new List<Vector3> { origin + away * RetreatDistance };
 
-            candidates.Sort((a, b) => a.y.CompareTo(b.y)); // Sort lowest score first
+            candidates.Sort((a, b) => a.y.CompareTo(b.y)); // Lowest score = lowest Y
+
             Vector3 best = candidates[0];
             List<Vector3> path = BuildNavPath(origin, best);
 
@@ -97,12 +98,12 @@ namespace AIRefactored.AI.Optimization
         private static List<Vector3> BuildNavPath(Vector3 origin, Vector3 target)
         {
             var navPath = new NavMeshPath();
-            if (NavMesh.CalculatePath(origin, target, NavMesh.AllAreas, navPath) && navPath.status == NavMeshPathStatus.PathComplete)
+            if (NavMesh.CalculatePath(origin, target, NavMesh.AllAreas, navPath) &&
+                navPath.status == NavMeshPathStatus.PathComplete)
             {
                 return new List<Vector3>(navPath.corners);
             }
 
-            // Fallback to simple two-point path if NavMesh fails
             return new List<Vector3> { origin, target };
         }
 

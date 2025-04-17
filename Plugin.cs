@@ -4,7 +4,6 @@ using BepInEx;
 using BepInEx.Logging;
 using UnityEngine;
 using AIRefactored.Runtime;
-using AIRefactored.AI.Optimization;
 
 namespace AIRefactored
 {
@@ -20,7 +19,6 @@ namespace AIRefactored
 
             // === Core Runtime Setup ===
             AIRefactoredController.Initialize(_logger);
-            BotAIManager.Initialize(_logger);
 
             // === Bot Lifecycle Bootstrapper ===
             var bootstrap = new GameObject("AIRefactored.BotInitializer");

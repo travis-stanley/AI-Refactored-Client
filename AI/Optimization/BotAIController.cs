@@ -80,7 +80,6 @@ namespace AIRefactored.AI.Optimization
             float now = Time.time;
             if (now < _nextUpdateTime)
             {
-                // Still run real-time systems
                 _tactical?.UpdateTacticalLogic(_bot, _cache);
                 return;
             }

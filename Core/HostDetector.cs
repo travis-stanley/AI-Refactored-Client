@@ -1,15 +1,26 @@
-﻿using Fika.Core.Coop.Utils;
+﻿#nullable enable
+
+using Fika.Core.Coop.Utils;
 using UnityEngine;
 
 namespace AIRefactored.Core
 {
     /// <summary>
-    /// Determines whether this client instance is the host, using FIKA or SPT context.
+    /// Determines whether this client instance is the host in a FIKA or SPT environment.
     /// </summary>
     public static class HostDetector
     {
+        #region Fields
+
         private static bool? _isHost;
 
+        #endregion
+
+        #region Public API
+
+        /// <summary>
+        /// Returns true if this client instance is considered the host (GroupLeader or SPT singleplayer).
+        /// </summary>
         public static bool IsHost()
         {
             if (_isHost.HasValue)
@@ -17,33 +28,31 @@ namespace AIRefactored.Core
 
             try
             {
-                // If MatchingType is GroupLeader → we are the host in Coop
                 if (FikaBackendUtils.IsServer)
                 {
-                    Debug.Log("[AI-Refactored] Detected FIKA GroupLeader (host).");
                     _isHost = true;
-                    return true;
+                    Debug.Log("[AI-Refactored] ✅ FIKA host detected (GroupLeader).");
                 }
-
-                // If MatchingType is GroupPlayer → client in Coop
-                if (FikaBackendUtils.IsClient)
+                else if (FikaBackendUtils.IsClient)
                 {
-                    Debug.Log("[AI-Refactored] Detected FIKA GroupPlayer (client).");
                     _isHost = false;
-                    return false;
+                    Debug.Log("[AI-Refactored] 🧍 FIKA client detected (GroupPlayer).");
                 }
-
-                // Fallback → assume offline SPT or unknown type
-                Debug.Log("[AI-Refactored] Detected SPT (Single) or undefined. Defaulting to host.");
-                _isHost = true;
-                return true;
+                else
+                {
+                    _isHost = true;
+                    Debug.Log("[AI-Refactored] 🔄 Defaulting to SPT host.");
+                }
             }
             catch (System.Exception e)
             {
-                Debug.LogError($"[AI-Refactored] HostDetector failed: {e.Message}");
                 _isHost = false;
-                return false;
+                Debug.LogError($"[AI-Refactored] ❌ HostDetector failed: {e.Message}");
             }
+
+            return _isHost.Value;
         }
+
+        #endregion
     }
 }

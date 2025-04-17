@@ -4,43 +4,44 @@ using System.Collections.Generic;
 using BepInEx.Logging;
 using UnityEngine;
 using AIRefactored.AI.Core;
-using AIRefactored.AI.Optimization;
 
 namespace AIRefactored.AI.Optimization
 {
     /// <summary>
-    /// Global runtime AI tick controller. Handles per-frame updates for all bot controllers.
+    /// Global registry for active bot AIRefactored caches. No longer handles ticking — only tracks bots for diagnostics or utility purposes.
     /// </summary>
     public static class BotAIManager
     {
+        #region Fields
+
         private static readonly List<BotComponentCache> _activeBots = new();
         private static readonly List<BotComponentCache> _pendingRemoval = new();
         private static ManualLogSource? _logger;
 
+        #endregion
+
+        #region Initialization
+
         public static void Initialize(ManualLogSource logger)
         {
             _logger = logger;
-#if UNITY_EDITOR
-            _logger.LogInfo("[AIRefactored-AI] BotAIManager initialized.");
-#endif
         }
 
+        #endregion
+
+        #region Registration
+
         /// <summary>
-        /// Registers a bot's AI controller into the global manager.
+        /// Registers a bot cache to the global registry.
         /// </summary>
         public static void Register(BotComponentCache cache)
         {
             if (!_activeBots.Contains(cache))
-            {
                 _activeBots.Add(cache);
-#if UNITY_EDITOR
-                _logger?.LogDebug($"[AIRefactored-AI] Registered bot: {cache.Bot?.Profile?.Info?.Nickname ?? "?"}");
-#endif
-            }
         }
 
         /// <summary>
-        /// Marks a bot for safe removal from the tick system.
+        /// Marks a bot cache for removal.
         /// </summary>
         public static void Unregister(BotComponentCache cache)
         {
@@ -48,29 +49,33 @@ namespace AIRefactored.AI.Optimization
                 _pendingRemoval.Add(cache);
         }
 
+        #endregion
+
+        #region Accessors
+
         /// <summary>
-        /// Ticks all registered bots this frame. Call this from Plugin.Update().
+        /// Returns a read-only list of active bot caches.
         /// </summary>
-        public static void TickAll()
+        public static IReadOnlyList<BotComponentCache> GetAllBots()
         {
-            float now = Time.time;
-
-            // Cleanup
-            for (int i = 0; i < _pendingRemoval.Count; i++)
-            {
-                _activeBots.Remove(_pendingRemoval[i]);
-            }
-            _pendingRemoval.Clear();
-
-            // Tick AI
-            for (int i = 0; i < _activeBots.Count; i++)
-            {
-                var cache = _activeBots[i];
-                if (cache.TryGetComponent(out BotAIController? controller))
-                {
-                    controller.TickAI(now);
-                }
-            }
+            ProcessRemovals();
+            return _activeBots;
         }
+
+        /// <summary>
+        /// Cleans up pending removals.
+        /// </summary>
+        private static void ProcessRemovals()
+        {
+            if (_pendingRemoval.Count == 0)
+                return;
+
+            for (int i = 0; i < _pendingRemoval.Count; i++)
+                _activeBots.Remove(_pendingRemoval[i]);
+
+            _pendingRemoval.Clear();
+        }
+
+        #endregion
     }
 }

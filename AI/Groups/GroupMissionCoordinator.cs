@@ -26,10 +26,14 @@ namespace AIRefactored.AI.Groups
 
         /// <summary>
         /// Returns the shared mission type assigned to a bot's group, or assigns a new one.
+        /// Skips human players.
         /// </summary>
         public static BotMissionSystem.MissionType GetMissionForGroup(BotOwner bot)
         {
-            string groupId = bot?.Profile?.Info?.GroupId ?? string.Empty;
+            if (!IsValidAIBot(bot))
+                return BotMissionSystem.MissionType.Loot; // Default fallback
+
+            string groupId = bot.Profile?.Info?.GroupId ?? string.Empty;
 
             if (string.IsNullOrEmpty(groupId))
                 return GetSoloBotMission(bot);
@@ -78,7 +82,7 @@ namespace AIRefactored.AI.Groups
             float fightWeight = 1.0f;
             float questWeight = 1.0f;
 
-            // === Map-specific weight tuning ===
+            // === Map-based weights ===
             switch (map)
             {
                 case "factory4_day":
@@ -115,6 +119,7 @@ namespace AIRefactored.AI.Groups
                     fightWeight += 2.0f;
                     break;
                 case "sandbox":
+                case "sandbox_high":
                 case "groundzero":
                     lootWeight += 1.0f;
                     break;
@@ -123,7 +128,7 @@ namespace AIRefactored.AI.Groups
                     break;
             }
 
-            // === Personality-driven weight adjustment ===
+            // === Personality-based tuning ===
             var profile = bot?.GetComponent<AIRefactoredBotOwner>()?.PersonalityProfile;
             if (profile != null)
             {
@@ -154,6 +159,14 @@ namespace AIRefactored.AI.Groups
         public static void Reset()
         {
             _assignedMissions.Clear();
+        }
+
+        /// <summary>
+        /// Ensures only real AI bots are processed — skips all player-controlled characters.
+        /// </summary>
+        private static bool IsValidAIBot(BotOwner bot)
+        {
+            return bot?.GetPlayer != null && bot.GetPlayer.IsAI;
         }
     }
 }

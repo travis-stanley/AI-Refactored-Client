@@ -2,66 +2,86 @@
 
 using UnityEngine;
 using EFT;
+using AIRefactored.AI.Helpers;
 
 namespace AIRefactored.AI.Combat
 {
     /// <summary>
-    /// Simulates bot suppression reaction — evasive movement and flinch response under fire.
+    /// Simulates bot suppression response — evasive movement and flinch retreat under threat.
+    /// Intended to be triggered externally by audio cues or visible fire.
     /// </summary>
     public class BotSuppressionReactionComponent : MonoBehaviour
     {
-        public BotOwner Bot { get; private set; } = null!;
+        #region Fields
 
-        private float suppressionStartTime;
+        private BotOwner? _bot;
+        private float _suppressionStartTime = -99f;
         private const float SuppressionDuration = 2.0f;
+        private bool _isSuppressed = false;
 
-        private bool isSuppressed = false;
+        #endregion
+
+        #region Unity Lifecycle
 
         private void Awake()
         {
-            Bot = GetComponent<BotOwner>();
+            _bot = GetComponent<BotOwner>();
+            if (_bot == null)
+            {
+                Debug.LogError("[AIRefactored] BotSuppressionReactionComponent missing BotOwner!");
+            }
         }
 
         private void Update()
         {
-            if (isSuppressed && Time.time - suppressionStartTime > SuppressionDuration)
-            {
-                isSuppressed = false;
-            }
+            if (!_isSuppressed || _bot == null || IsHumanPlayer())
+                return;
+
+            if (Time.time - _suppressionStartTime > SuppressionDuration)
+                _isSuppressed = false;
         }
 
+        #endregion
+
+        #region Suppression Logic
+
         /// <summary>
-        /// Triggers suppression movement and directional retreat.
+        /// Triggers suppression logic and evasive sprinting away from the source direction.
         /// </summary>
+        /// <param name="from">Position of threat (e.g. gunfire or explosion).</param>
         public void TriggerSuppression(Vector3? from = null)
         {
-            if (isSuppressed)
+            if (_isSuppressed || _bot == null || IsHumanPlayer())
                 return;
 
-            suppressionStartTime = Time.time;
-            isSuppressed = true;
+            _isSuppressed = true;
+            _suppressionStartTime = Time.time;
 
-            if (Bot == null)
-                return;
+            Vector3 direction = from.HasValue
+                ? (_bot.Position - from.Value).normalized
+                : -_bot.LookDirection.normalized;
 
-            if (from.HasValue)
+            Vector3 fallback = _bot.Position + direction * 6f;
+
+            if (Physics.Raycast(_bot.Position, direction, out var hit, 6f))
             {
-                Vector3 dir = (Bot.Position - from.Value).normalized;
-                Vector3 evade = Bot.Position + dir * 6f;
-
-                if (Physics.Raycast(Bot.Position, dir, out var hit, 6f))
-                {
-                    evade = hit.point - dir * 1f;
-                }
-
-                Bot.Sprint(true);
-                Bot.GoToPoint(evade, slowAtTheEnd: false);
-
+                fallback = hit.point - direction * 1f;
             }
+
+            _bot.Sprint(true);
+
+            float cohesion = 1.0f;
+            if (BotRegistry.Exists(_bot.ProfileId))
+            {
+                var profile = BotRegistry.Get(_bot.ProfileId);
+                cohesion = Mathf.Lerp(0.6f, 1.2f, profile.Cohesion);
+            }
+
+            BotMovementHelper.SmoothMoveTo(_bot, fallback, allowSlowEnd: false, cohesionScale: cohesion);
         }
 
         /// <summary>
-        /// External suppression interface.
+        /// External trigger interface for suppression based on incoming direction.
         /// </summary>
         public void ReactToSuppression(Vector3 source)
         {
@@ -69,11 +89,19 @@ namespace AIRefactored.AI.Combat
         }
 
         /// <summary>
-        /// Returns whether the bot is currently suppressed.
+        /// Returns whether bot is currently suppressed.
         /// </summary>
-        public bool IsSuppressed()
+        public bool IsSuppressed() => _isSuppressed;
+
+        #endregion
+
+        #region Helpers
+
+        private bool IsHumanPlayer()
         {
-            return isSuppressed;
+            return _bot?.GetPlayer != null && !_bot.GetPlayer.IsAI;
         }
+
+        #endregion
     }
 }

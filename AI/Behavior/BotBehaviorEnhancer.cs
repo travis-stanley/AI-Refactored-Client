@@ -3,6 +3,7 @@
 using System;
 using System.Collections;
 using System.Collections.Generic;
+using System.Reflection;
 using UnityEngine;
 using EFT;
 using EFT.InventoryLogic;
@@ -23,17 +24,20 @@ namespace AIRefactored.AI.Behavior
         private float _lastLootCheck = 0f;
         private float _lastExtractCheck = 0f;
         private float _lastEnemySeenTime = 0f;
+        private float _lastMoveCommandTime = -999f;
+
+        private Vector3? _lastMoveTarget = null;
 
         private bool _isExtracting = false;
         private bool _hasExtracted = false;
 
-        private const float LOOT_RADIUS = 8f;
+        private ExfiltrationPoint[]? _extractPoints;
+        private List<Transform>? _lootPoints;
+
         private const float EXTRACT_RADIUS = 10f;
         private const float GROUP_RADIUS = 12f;
         private const float RETREAT_RADIUS = 16f;
-        private const float BASE_LOOT_COOLDOWN = 8f;
-        private const float BASE_EXTRACT_COOLDOWN = 5f;
-        private const float BASE_CALM_DELAY = 10f;
+        private const float MOVE_COOLDOWN = 0.25f;
 
         public void Init(BotOwner bot)
         {
@@ -42,6 +46,14 @@ namespace AIRefactored.AI.Behavior
             _groupSync = bot.GetComponent<BotGroupSyncCoordinator>();
             _owner = bot.GetComponent<AIRefactoredBotOwner>();
             _profile = _owner?.PersonalityProfile;
+
+            _extractPoints = GameObject.FindObjectsOfType<ExfiltrationPoint>();
+            _lootPoints = new List<Transform>();
+            foreach (var container in GameObject.FindObjectsOfType<LootableContainer>())
+            {
+                if (container.transform != null)
+                    _lootPoints.Add(container.transform);
+            }
         }
 
         public void Tick(float time)
@@ -49,16 +61,18 @@ namespace AIRefactored.AI.Behavior
             if (_bot == null || _profile == null || _hasExtracted || !_bot.GetPlayer?.HealthController?.IsAlive == true)
                 return;
 
+            if (!_bot.GetPlayer.IsAI) return;
+
             if (_bot.Memory.GoalEnemy?.IsVisible == true)
                 _lastEnemySeenTime = time;
 
-            float calmDelay = Mathf.Lerp(BASE_CALM_DELAY, 3f, _profile.Caution);
-            float lootCooldown = Mathf.Lerp(BASE_LOOT_COOLDOWN, 2f, _profile.AggressionLevel);
-            float extractCooldown = Mathf.Lerp(BASE_EXTRACT_COOLDOWN, 1f, _profile.Cohesion);
+            float calmDelay = Mathf.Lerp(10f, 3f, _profile.Caution);
+            float lootCooldown = Mathf.Lerp(8f, 2f, _profile.AggressionLevel);
+            float extractCooldown = Mathf.Lerp(5f, 1f, _profile.Cohesion);
 
             if (time - _lastLootCheck > lootCooldown && time - _lastEnemySeenTime > calmDelay)
             {
-                EvaluateLootClusters();
+                TryLoot();
                 _lastLootCheck = time;
             }
 
@@ -68,102 +82,46 @@ namespace AIRefactored.AI.Behavior
                 _lastExtractCheck = time;
             }
 
-            EvaluateRetreat();
+            TryRetreat();
         }
 
-        private void EvaluateLootClusters()
+        private void TryLoot()
         {
-            UnityEngine.Object[] found = Resources.FindObjectsOfTypeAll(typeof(UnityEngine.Object));
-            Vector3? bestPoint = null;
+            if (_bot == null || _lootPoints == null || _lootPoints.Count == 0)
+                return;
+
+            Transform? best = null;
             float bestScore = 0f;
 
-            for (int i = 0; i < found.Length; i++)
+            foreach (var loot in _lootPoints)
             {
-                var obj = found[i];
-                if (obj == null || obj.GetType().Name != "AILootPointsCluster")
-                    continue;
-
-                var component = obj as Component;
-                if (component == null)
-                    continue;
-
-                var clusterTransform = component.transform;
-
-                var field = obj.GetType().GetField("PatrolPoints");
-                if (field == null)
-                    continue;
-
-                var points = field.GetValue(obj) as IEnumerable;
-                if (points == null)
-                    continue;
-
-                float clusterValue = 0f;
-                foreach (var pt in points)
-                {
-                    var itemTemplateField = pt?.GetType().GetField("Template");
-                    var template = itemTemplateField?.GetValue(pt) as ItemTemplate;
-                    if (template != null)
-                    {
-                        float value = template.CreditsPrice;
-
-                        // Rarity boost for high value or rare items
-                        if (value > 30000)
-                            value *= 2.5f;
-                        else if (value > 15000)
-                            value *= 1.5f;
-
-                        clusterValue += value;
-                    }
-                }
-
-                float dist = Vector3.Distance(_bot!.Position, clusterTransform.position);
-                float score = clusterValue / Mathf.Max(dist, 1f);
+                float value = 1f; // future value scaling
+                float dist = Vector3.Distance(_bot.Position, loot.position);
+                float score = value / Mathf.Max(1f, dist);
 
                 if (score > bestScore)
                 {
                     bestScore = score;
-                    bestPoint = clusterTransform.position;
+                    best = loot;
                 }
             }
 
-            if (bestPoint.HasValue)
-                MoveToLootPoint(bestPoint.Value);
-        }
-
-        private void MoveToLootPoint(Vector3 point)
-        {
-            EnsureDoorOpen(point);
-            _bot?.Mover?.GoToPoint(point, false, 1f);
-            _groupSync?.BroadcastLootPoint(point);
-        }
-
-        private void EnsureDoorOpen(Vector3 point)
-        {
-            if (_bot == null)
-                return;
-
-            Vector3 dir = (point - _bot.Position).normalized;
-            if (Physics.Raycast(_bot.Position, dir, out RaycastHit hit, 2f))
+            if (best != null)
             {
-                if (hit.collider.TryGetComponent(out Door door) && door.DoorState != EDoorState.Open)
-                {
-                    door.Interact(new InteractionResult(EInteractionType.Open));
-                }
+                SmoothMoveTo(best.position);
+                _groupSync?.BroadcastLootPoint(best.position);
             }
         }
 
         private void TryExtract()
         {
-            if (_isExtracting || _bot == null || _profile == null)
+            if (_isExtracting || _bot == null || _extractPoints == null || _profile == null)
                 return;
 
-            if (!IsGroupAlignedForExtract())
-                return;
+            if (!IsGroupReadyToExtract()) return;
 
-            ExfiltrationPoint[] extracts = GameObject.FindObjectsOfType<ExfiltrationPoint>();
-            for (int i = 0; i < extracts.Length; i++)
+            foreach (var point in _extractPoints)
             {
-                var point = extracts[i];
                 if (point.Status != EExfiltrationStatus.RegularMode)
                     continue;
 
@@ -175,43 +133,38 @@ namespace AIRefactored.AI.Behavior
                 }
             }
 
-            Vector3? shared = _groupSync?.GetSharedExtractTarget();
-            if (shared.HasValue)
-                _bot.Mover?.GoToPoint(shared.Value, false, 1f);
+            Vector3? fallback = _groupSync?.GetSharedExtractTarget();
+            if (fallback.HasValue)
+                SmoothMoveTo(fallback.Value);
         }
 
-        private bool IsGroupAlignedForExtract()
+        private bool IsGroupReadyToExtract()
         {
-            var squad = _groupSync?.GetTeammates();
-            if (squad == null || squad.Count <= 1)
+            var teammates = _groupSync?.GetTeammates();
+            if (teammates == null || teammates.Count <= 1)
                 return true;
 
-            int nearby = 0;
-            for (int i = 0; i < squad.Count; i++)
+            int nearCount = 0;
+            foreach (var mate in teammates)
             {
-                var teammate = squad[i];
-                if (teammate != null && teammate != _bot)
-                {
-                    float dist = Vector3.Distance(teammate.Position, _bot.Position);
-                    if (dist < GROUP_RADIUS)
-                        nearby++;
-                }
+                if (mate != null && mate != _bot && Vector3.Distance(mate.Position, _bot.Position) <= GROUP_RADIUS)
+                    nearCount++;
             }
 
-            return nearby >= Mathf.CeilToInt(squad.Count * _profile!.Cohesion);
+            return nearCount >= Mathf.CeilToInt(teammates.Count * _profile!.Cohesion);
         }
 
         private void BeginExtract(ExfiltrationPoint point)
         {
             _isExtracting = true;
             _groupSync?.BroadcastExtractPoint(point.transform.position);
-            _bot.Mover?.GoToPoint(point.transform.position, false, 1f);
-            _bot.BotTalk?.TrySay(EPhraseTrigger.MumblePhrase);
-            _bot.Deactivate();
-            StartCoroutine(ExtractCoroutine(6f));
+            SmoothMoveTo(point.transform.position);
+            _bot?.BotTalk?.TrySay(EPhraseTrigger.MumblePhrase);
+            _bot?.Deactivate();
+            StartCoroutine(ExtractRoutine(6f));
         }
 
-        private IEnumerator ExtractCoroutine(float delay)
+        private IEnumerator ExtractRoutine(float delay)
         {
             yield return new WaitForSeconds(delay);
             _hasExtracted = true;
@@ -219,48 +172,60 @@ namespace AIRefactored.AI.Behavior
                 _bot.GetPlayer.gameObject.SetActive(false);
         }
 
-        private void EvaluateRetreat()
+        private void TryRetreat()
         {
-            if (_profile == null || _bot == null || !_bot.Memory.IsUnderFire)
+            if (_bot == null || _profile == null || !_bot.Memory.IsUnderFire)
                 return;
+
+            var hc = _bot.GetPlayer?.HealthController;
+            if (hc == null) return;
 
             float current = 0f, max = 0f;
             foreach (EBodyPart part in Enum.GetValues(typeof(EBodyPart)))
             {
-                var hp = _bot.GetPlayer!.HealthController.GetBodyPartHealth(part);
+                var hp = hc.GetBodyPartHealth(part);
                 current += hp.Current;
                 max += hp.Maximum;
             }
 
-            if (max <= 0f)
-                return;
+            float ratio = max > 0f ? current / max : 1f;
+            if (ratio >= _profile.RetreatThreshold) return;
 
-            float ratio = current / max;
-            if (ratio < _profile.RetreatThreshold)
+            Vector3 fallback = _bot.Position - _bot.Memory.GoalEnemy.CurrPosition.normalized * 8f;
+            SmoothMoveTo(fallback);
+            _groupSync?.BroadcastExtractPoint(fallback);
+
+            var squad = _groupSync?.GetTeammates();
+            if (squad != null)
             {
-                Vector3 retreat = _bot.Position - _bot.Memory.GoalEnemy.CurrPosition;
-                Vector3 fallback = _bot.Position + retreat.normalized * 10f;
-
-                _bot.Mover?.GoToPoint(fallback, false, 1f);
-                _groupSync?.BroadcastExtractPoint(fallback);
-
-                var teammates = _groupSync?.GetTeammates();
-                if (teammates != null)
+                foreach (var other in squad)
                 {
-                    for (int i = 0; i < teammates.Count; i++)
+                    if (other != null && other != _bot &&
+                        Vector3.Distance(_bot.Position, other.Position) <= RETREAT_RADIUS &&
+                        UnityEngine.Random.value < _profile.Cohesion)
                     {
-                        var other = teammates[i];
-                        if (other != null && other != _bot)
-                        {
-                            float dist = Vector3.Distance(other.Position, _bot.Position);
-                            if (dist < RETREAT_RADIUS && UnityEngine.Random.value < _profile.Cohesion)
-                            {
-                                other.Mover?.GoToPoint(fallback, false, 1f);
-                            }
-                        }
+                        Vector3 retreat = Vector3.Lerp(other.Position, fallback, 0.6f);
+                        other.Mover?.GoToPoint(retreat, false, 1f);
                     }
                 }
             }
+        }
+
+        private void SmoothMoveTo(Vector3 target)
+        {
+            if (_bot == null || Time.time < _lastMoveCommandTime + MOVE_COOLDOWN)
+                return;
+
+            float distance = Vector3.Distance(_bot.Position, target);
+            if (distance < 1.25f)
+                return;
+
+            float damping = Mathf.Lerp(0.25f, 0.65f, _profile?.AggressionLevel ?? 0.5f);
+            Vector3 smoothTarget = Vector3.Lerp(_bot.Position, target, damping);
+
+            _bot.Mover?.GoToPoint(smoothTarget, false, 1f);
+            _lastMoveCommandTime = Time.time;
+            _lastMoveTarget = target;
         }
     }
 }

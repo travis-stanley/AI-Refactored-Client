@@ -8,26 +8,37 @@ using Comfort.Common;
 namespace AIRefactored.AI.Group
 {
     /// <summary>
-    /// Handles coordinated bot behavior such as enemy sharing and squad cohesion.
+    /// Coordinates team behavior for bots in the same squad, including enemy sharing and squad movement cohesion.
     /// </summary>
     public class BotTeamLogic
     {
+        #region Fields
+
         private readonly BotOwner _bot;
         private readonly List<BotOwner> _teammates = new();
+
+        #endregion
+
+        #region Constructor
 
         public BotTeamLogic(BotOwner bot)
         {
             _bot = bot;
         }
 
-        /// <summary>
-        /// Scans and stores teammates from all known bots based on matching GroupId.
-        /// </summary>
+        #endregion
+
+        #region Team Setup
+
         public void SetTeammates(List<BotOwner> allBots)
         {
             _teammates.Clear();
 
-            string? myGroupId = _bot?.GetPlayer?.Profile?.Info?.GroupId;
+            var player = _bot.GetPlayer;
+            if (player == null || !player.IsAI)
+                return;
+
+            string? myGroupId = player.Profile?.Info?.GroupId;
             if (string.IsNullOrEmpty(myGroupId))
                 return;
 
@@ -36,7 +47,11 @@ namespace AIRefactored.AI.Group
                 if (other == null || other == _bot)
                     continue;
 
-                string? otherGroupId = other.GetPlayer?.Profile?.Info?.GroupId;
+                var otherPlayer = other.GetPlayer;
+                if (otherPlayer == null || !otherPlayer.IsAI)
+                    continue;
+
+                string? otherGroupId = otherPlayer.Profile?.Info?.GroupId;
                 if (!string.IsNullOrEmpty(otherGroupId) && otherGroupId == myGroupId)
                 {
                     _teammates.Add(other);
@@ -44,9 +59,10 @@ namespace AIRefactored.AI.Group
             }
         }
 
-        /// <summary>
-        /// Shares a seen enemy with squadmates, adding them to memory and combat state.
-        /// </summary>
+        #endregion
+
+        #region Target Sharing
+
         public void ShareTarget(IPlayer enemy)
         {
             if (enemy == null || string.IsNullOrEmpty(enemy.ProfileId))
@@ -58,7 +74,11 @@ namespace AIRefactored.AI.Group
 
             foreach (var teammate in _teammates)
             {
-                if (teammate == null || teammate.Memory == null || teammate.BotsGroup == null || !teammate.HealthController.IsAlive)
+                var teammatePlayer = teammate?.GetPlayer;
+                if (teammate == null || teammatePlayer == null || !teammatePlayer.IsAI)
+                    continue;
+
+                if (teammate.Memory == null || teammate.BotsGroup == null || !teammate.HealthController.IsAlive)
                     continue;
 
                 bool alreadyTargeting = teammate.Memory.GoalEnemy?.Person?.Id == resolved.Id;
@@ -79,11 +99,16 @@ namespace AIRefactored.AI.Group
             }
         }
 
-        /// <summary>
-        /// Attempts to regroup the bot with teammates by calculating the center of the squad.
-        /// </summary>
+        #endregion
+
+        #region Coordination
+
         public void CoordinateMovement()
         {
+            var player = _bot.GetPlayer;
+            if (player == null || !player.IsAI)
+                return;
+
             if (_teammates.Count == 0 || _bot.Mover == null || _bot.IsDead)
                 return;
 
@@ -93,7 +118,12 @@ namespace AIRefactored.AI.Group
             for (int i = 0; i < _teammates.Count; i++)
             {
                 var teammate = _teammates[i];
-                if (teammate?.GetPlayer != null && teammate.GetPlayer.HealthController.IsAlive)
+                var teammatePlayer = teammate?.GetPlayer;
+
+                if (teammate != null &&
+                    teammatePlayer != null &&
+                    teammatePlayer.IsAI &&
+                    teammatePlayer.HealthController.IsAlive)
                 {
                     center += teammate.Position;
                     count++;
@@ -111,9 +141,16 @@ namespace AIRefactored.AI.Group
 
                 if (Vector3.Distance(_bot.Position, regroupPoint) > 4f)
                 {
-                    _bot.Mover.GoToPoint(regroupPoint, slowAtTheEnd: false, reachDist: 1f, getUpWithCheck: true);
+                    _bot.Mover.GoToPoint(
+                        regroupPoint,
+                        slowAtTheEnd: false,
+                        reachDist: 1f,
+                        getUpWithCheck: true
+                    );
                 }
             }
         }
+
+        #endregion
     }
 }

@@ -11,9 +11,26 @@ namespace AIRefactored.AI.Optimization
     /// </summary>
     public class BotOwnerState
     {
+        #region Properties
+
+        /// <summary>
+        /// Initial aggression coefficient (MIN_START_AGGRESION_COEF).
+        /// </summary>
         public float Aggression { get; }
+
+        /// <summary>
+        /// Distance at which bot spots enemies from being hit (DIST_TO_ENEMY_SPOTTED_ON_HIT).
+        /// </summary>
         public float PerceptionRange { get; }
 
+        #endregion
+
+        #region Constructor
+
+        /// <summary>
+        /// Constructs a snapshot of a bot's current AI aggression and perception tuning values.
+        /// </summary>
+        /// <param name="botOwner">The bot to snapshot.</param>
         public BotOwnerState(BotOwner botOwner)
         {
             if (botOwner?.Settings?.FileSettings?.Mind == null)
@@ -24,11 +41,17 @@ namespace AIRefactored.AI.Optimization
             }
 
             var mind = botOwner.Settings.FileSettings.Mind;
-
             Aggression = mind.MIN_START_AGGRESION_COEF;
             PerceptionRange = mind.DIST_TO_ENEMY_SPOTTED_ON_HIT;
         }
 
+        #endregion
+
+        #region Equality / Hashing
+
+        /// <summary>
+        /// Determines equality based on float tolerances for aggression and perception.
+        /// </summary>
         public override bool Equals(object? obj)
         {
             return obj is BotOwnerState other &&
@@ -36,6 +59,9 @@ namespace AIRefactored.AI.Optimization
                    Math.Abs(PerceptionRange - other.PerceptionRange) < 0.1f;
         }
 
+        /// <summary>
+        /// Generates a hash code based on AI settings.
+        /// </summary>
         public override int GetHashCode()
         {
             unchecked
@@ -46,5 +72,7 @@ namespace AIRefactored.AI.Optimization
                 return hash;
             }
         }
+
+        #endregion
     }
 }

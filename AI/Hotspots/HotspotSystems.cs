@@ -8,18 +8,16 @@ using Comfort.Common;
 using EFT;
 using Newtonsoft.Json;
 using UnityEngine;
+using AIRefactored.AI.Core;
+using AIRefactored.AI.Helpers;
 
 namespace AIRefactored.AI.Hotspots
 {
     public class HotspotSystem : MonoBehaviour
     {
-        private class HotspotData
-        {
-            public string name = string.Empty;
-            public List<Vector3> positions = new();
-        }
+        #region Internal Session
 
-        private class HotspotSession
+        private sealed class HotspotSession
         {
             private readonly BotOwner _bot;
             private readonly List<HotspotData> _route;
@@ -41,10 +39,15 @@ namespace AIRefactored.AI.Hotspots
                 _positionIndex = 0;
                 _nextSwitchTime = Time.time + GetSwitchInterval();
 
-                if (_bot.GetPlayer != null)
+                if (_bot.GetPlayer?.HealthController is HealthControllerClass controller)
                 {
-                    _bot.GetPlayer.HealthController.ApplyDamageEvent += OnDamaged;
+                    controller.ApplyDamageEvent += OnDamaged;
                 }
+            }
+
+            private void OnDamaged(EBodyPart part, float damage, DamageInfoStruct info)
+            {
+                _lastHitTime = Time.time;
             }
 
             private float GetSwitchInterval()
@@ -52,23 +55,13 @@ namespace AIRefactored.AI.Hotspots
                 var id = _bot.Profile?.Id;
                 var personality = id != null ? BotRegistry.Get(id) : null;
 
-                if (personality != null)
+                return personality?.Personality switch
                 {
-                    return personality.Personality switch
-                    {
-                        PersonalityType.Cautious => 180f,
-                        PersonalityType.Dumb => 60f,
-                        PersonalityType.Strategic => 90f,
-                        _ => 120f
-                    };
-                }
-
-                return 120f;
-            }
-
-            private void OnDamaged(EBodyPart part, float dmg, DamageInfoStruct info)
-            {
-                _lastHitTime = Time.time;
+                    PersonalityType.Cautious => 180f,
+                    PersonalityType.Strategic => 90f,
+                    PersonalityType.Dumb => 60f,
+                    _ => 120f
+                };
             }
 
             public void Update()
@@ -76,8 +69,8 @@ namespace AIRefactored.AI.Hotspots
                 if (_bot == null || _bot.IsDead || _route.Count == 0)
                     return;
 
-                Vector3 currentTarget = _route[_hotspotIndex].positions[_positionIndex];
-                float dist = Vector3.Distance(_bot.Position, currentTarget);
+                if (_bot.GetPlayer?.IsYourPlayer == true)
+                    return;
 
                 if (_bot.Memory?.GoalEnemy != null)
                 {
@@ -85,28 +78,27 @@ namespace AIRefactored.AI.Hotspots
                     return;
                 }
 
+                Vector3 target = CurrentTarget();
+                float dist = Vector3.Distance(_bot.Position, target);
+
                 if (_isGuardian)
                 {
                     if (dist > _defendRadius)
-                        _bot.GoToPoint(currentTarget, false);
-
-                    return; // Guardians stay near their hotspot
+                        BotMovementHelper.SmoothMoveTo(_bot, target);
+                    return;
                 }
 
-                // Wanderer patrol logic
                 if (Time.time >= _nextSwitchTime || dist < 2f)
                 {
                     MoveNext();
                     _nextSwitchTime = Time.time + GetSwitchInterval();
                 }
 
-                _bot.GoToPoint(CurrentTarget(), false);
+                BotMovementHelper.SmoothMoveTo(_bot, CurrentTarget());
             }
 
-            private Vector3 CurrentTarget()
-            {
-                return _route[_hotspotIndex].positions[_positionIndex];
-            }
+            private Vector3 CurrentTarget() =>
+                _route[_hotspotIndex].positions[_positionIndex];
 
             private void MoveNext()
             {
@@ -114,17 +106,28 @@ namespace AIRefactored.AI.Hotspots
                 if (_positionIndex >= _route[_hotspotIndex].positions.Count)
                 {
                     _positionIndex = 0;
-                    _hotspotIndex++;
-                    if (_hotspotIndex >= _route.Count)
-                        _hotspotIndex = 0;
+                    _hotspotIndex = (_hotspotIndex + 1) % _route.Count;
                 }
             }
         }
 
+        private class HotspotData
+        {
+            public string name = string.Empty;
+            public List<Vector3> positions = new();
+        }
+
+        #endregion
+
+        #region State
+
+        private const string HOTSPOT_FOLDER = "hotspots/";
         private readonly Dictionary<string, List<HotspotData>> _hotspotsByMap = new();
         private readonly Dictionary<BotOwner, HotspotSession> _botSessions = new();
 
-        private const string HOTSPOT_FOLDER = "hotspots/";
+        #endregion
+
+        #region Unity Lifecycle
 
         private void Start()
         {
@@ -134,23 +137,31 @@ namespace AIRefactored.AI.Hotspots
         private void Update()
         {
             var bots = Singleton<BotsController>.Instance?.Bots?.BotOwners;
-            if (bots == null) return;
+            if (bots == null)
+                return;
 
             foreach (var bot in bots)
             {
                 if (bot == null || bot.IsDead || bot.AIData == null)
                     continue;
 
-                if (!_botSessions.ContainsKey(bot))
+                if (bot.GetPlayer != null && bot.GetPlayer.IsYourPlayer)
+                    continue;
+
+                if (!_botSessions.TryGetValue(bot, out var session))
                 {
-                    var session = AssignHotspot(bot);
+                    session = AssignHotspot(bot);
                     if (session != null)
                         _botSessions[bot] = session;
                 }
 
-                _botSessions[bot]?.Update();
+                session?.Update();
             }
         }
+
+        #endregion
+
+        #region Assignment Logic
 
         private HotspotSession? AssignHotspot(BotOwner bot)
         {
@@ -172,70 +183,81 @@ namespace AIRefactored.AI.Hotspots
                 return new HotspotSession(bot, new List<HotspotData> { defend }, true);
             }
 
-            // Wanderer or PMC logic
             int routeLength = UnityEngine.Random.Range(1, 3);
-            List<HotspotData> route = new();
-            HashSet<int> used = new();
+            var route = new List<HotspotData>();
+            var used = new HashSet<int>();
 
             while (route.Count < routeLength && used.Count < hotspots.Count)
             {
                 int i = UnityEngine.Random.Range(0, hotspots.Count);
-                if (!used.Contains(i))
-                {
-                    used.Add(i);
+                if (used.Add(i))
                     route.Add(hotspots[i]);
-                }
             }
 
             return new HotspotSession(bot, route, false);
         }
 
+        #endregion
+
+        #region File Loader
+
         private void LoadAllHotspots()
         {
-            string fullPath = Path.Combine(Application.dataPath, HOTSPOT_FOLDER);
-            if (!Directory.Exists(fullPath))
-                fullPath = Path.Combine("BepInEx", "plugins", "AIRefactored", HOTSPOT_FOLDER);
+            string basePath = Path.Combine(Application.dataPath, HOTSPOT_FOLDER);
+            if (!Directory.Exists(basePath))
+                basePath = Path.Combine("BepInEx", "plugins", "AIRefactored", HOTSPOT_FOLDER);
 
-            if (!Directory.Exists(fullPath))
+            if (!Directory.Exists(basePath))
             {
-                Debug.LogWarning($"[AIRefactored] Hotspot folder not found: {fullPath}");
+                Debug.LogWarning($"[AIRefactored] Hotspot folder not found: {basePath}");
                 return;
             }
 
-            string[] files = Directory.GetFiles(fullPath, "*.json");
-            for (int i = 0; i < files.Length; i++)
+            string[] files = Directory.GetFiles(basePath, "*.json");
+            foreach (var file in files)
             {
                 try
                 {
-                    string json = File.ReadAllText(files[i]);
+                    string json = File.ReadAllText(file);
                     var data = JsonConvert.DeserializeObject<Dictionary<string, List<HotspotData>>>(json);
+
                     if (data == null)
                         continue;
 
                     foreach (var kvp in data)
-                        _hotspotsByMap[kvp.Key] = kvp.Value;
+                    {
+                        if (!_hotspotsByMap.ContainsKey(kvp.Key))
+                            _hotspotsByMap[kvp.Key] = new List<HotspotData>();
+
+                        _hotspotsByMap[kvp.Key].AddRange(kvp.Value);
+                    }
                 }
                 catch (Exception ex)
                 {
-                    Debug.LogError($"[AIRefactored] Failed to load hotspot file {files[i]}: {ex.Message}");
+                    Debug.LogError($"[AIRefactored] Failed to load hotspot file '{file}': {ex.Message}");
                 }
             }
         }
+
+        #endregion
+
+        #region External API
 
         public static Vector3 GetRandomHotspot(BotOwner bot)
         {
             var role = bot.Profile?.Info?.Settings?.Role ?? WildSpawnType.assault;
-            var map = Singleton<GameWorld>.Instance?.LocationId?.ToLowerInvariant() ?? "unknown";
+            string map = Singleton<GameWorld>.Instance?.LocationId?.ToLowerInvariant() ?? "unknown";
 
-            var hotspots = HotspotLoader.GetHotspotsForCurrentMap(role);
-            if (hotspots == null || hotspots.Points.Count == 0)
+            var set = HotspotLoader.GetHotspotsForCurrentMap(role);
+            if (set == null || set.Points.Count == 0)
             {
-                Debug.LogWarning($"[HotspotSystem] No hotspots found for {map} ({role})");
+                Debug.LogWarning($"[AIRefactored] No hotspots found for {map} ({role})");
                 return bot.Position + UnityEngine.Random.insideUnitSphere * 5f;
             }
 
-            int index = UnityEngine.Random.Range(0, hotspots.Points.Count);
-            return hotspots.Points[index];
+            return set.Points[UnityEngine.Random.Range(0, set.Points.Count)];
         }
+
+        #endregion
     }
 }

@@ -8,13 +8,15 @@ using AIRefactored.AI.Core;
 namespace AIRefactored.AI.Helpers
 {
     /// <summary>
-    /// Triggers panic states in bots, either individually or in squads.
-    /// Used by flashlight, suppression, and perception logic.
+    /// Triggers panic behavior in individual or grouped bots.
+    /// Used by flashlight detection, suppression, and perception systems.
     /// </summary>
     public static class BotPanicUtility
     {
+        #region Component Access
+
         /// <summary>
-        /// Attempts to fetch the BotPanicHandler component from cache.
+        /// Attempts to resolve a BotPanicHandler component from the cache.
         /// </summary>
         public static bool TryGetPanicComponent(BotComponentCache cache, out BotPanicHandler? panic)
         {
@@ -27,62 +29,63 @@ namespace AIRefactored.AI.Helpers
         }
 
         /// <summary>
-        /// Safe alias for TryGetPanicComponent to support legacy helpers.
+        /// Backward-compatible alias for TryGetPanicComponent.
         /// </summary>
         public static bool TryGet(BotComponentCache cache, out BotPanicHandler? panic)
         {
             return TryGetPanicComponent(cache, out panic);
         }
 
+        #endregion
+
+        #region Panic Triggers
+
         /// <summary>
-        /// Triggers panic on a single bot from cache.
+        /// Triggers panic behavior for a single bot.
         /// </summary>
         public static void Trigger(BotComponentCache cache)
         {
-            if (cache == null)
+            if (cache == null || BotCacheUtility.IsHumanPlayer(cache.Bot))
                 return;
 
             if (TryGetPanicComponent(cache, out var panic))
             {
                 panic.TriggerPanic();
-
-#if UNITY_EDITOR
-                Debug.Log($"[AIRefactored-Panic] Bot {GetBotName(cache)} triggered individual panic.");
-#endif
             }
         }
 
         /// <summary>
-        /// Triggers panic on a group of bot caches (e.g., squadmates).
+        /// Triggers panic behavior for all bots in the specified group.
         /// </summary>
         public static void TriggerGroup(List<BotComponentCache> group)
         {
             if (group == null || group.Count == 0)
                 return;
 
-            for (int i = 0; i < group.Count; i++)
+            foreach (var cache in group)
             {
-                var cache = group[i];
-                if (cache == null)
+                if (cache == null || BotCacheUtility.IsHumanPlayer(cache.Bot))
                     continue;
 
                 if (TryGetPanicComponent(cache, out var panic))
                 {
                     panic.TriggerPanic();
-
-#if UNITY_EDITOR
-                    Debug.Log($"[AIRefactored-Panic] Group member {GetBotName(cache)} entered panic.");
-#endif
                 }
             }
         }
 
+        #endregion
+
+        #region Helpers
+
         /// <summary>
-        /// Utility to format the name of a bot for logging/debug.
+        /// Returns the bot's visible nickname, or "Unknown" if not available.
         /// </summary>
         private static string GetBotName(BotComponentCache cache)
         {
             return cache?.Bot?.Profile?.Info?.Nickname ?? "Unknown";
         }
+
+        #endregion
     }
 }

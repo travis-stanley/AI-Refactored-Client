@@ -2,22 +2,24 @@
 
 using UnityEngine;
 using EFT;
+using System;
 using System.Collections.Generic;
 using AIRefactored.AI.Core;
 using AIRefactored.AI.Helpers;
 using AIRefactored.AI.Reactions;
 using AIRefactored.AI.Components;
 using Comfort.Common;
-using System;
 
 namespace AIRefactored.AI.Perception
 {
     /// <summary>
     /// Simulates realistic directional hearing for bots.
-    /// Includes sound detection and deafening from loud sources.
+    /// Includes sound detection, occlusion dampening, deafening, and memory integration.
     /// </summary>
     public class BotHearingSystem : MonoBehaviour
     {
+        #region Fields
+
         private BotOwner? _bot;
         private BotComponentCache? _cache;
         private AIRefactoredBotOwner? _owner;
@@ -32,7 +34,11 @@ namespace AIRefactored.AI.Perception
         private const float CrouchLoudness = 0.3f;
         private const float FireLoudness = 1.25f;
 
-        private int _playerLayerMask;
+        private static readonly int PlayerLayerMask = LayerMask.GetMask("Player", "PlayerCorpse", "Ragdoll", "Interactive");
+
+        #endregion
+
+        #region Unity Lifecycle
 
         private void Awake()
         {
@@ -40,79 +46,52 @@ namespace AIRefactored.AI.Perception
             _cache = GetComponent<BotComponentCache>();
             _owner = GetComponent<AIRefactoredBotOwner>();
             _hearing = GetComponent<HearingDamageComponent>();
-
-            _playerLayerMask = LayerMask.GetMask("Player", "PlayerCorpse", "Ragdoll", "Interactive");
         }
 
         private void Update()
         {
-            if (_bot == null || _cache == null || _owner == null || Time.time < _nextCheckTime || _bot.IsDead)
+            if (_bot == null || _cache == null || _owner == null || _bot.IsDead || Time.time < _nextCheckTime)
                 return;
+
+            if (_bot.GetPlayer != null && _bot.GetPlayer.IsYourPlayer)
+                return; // 🛑 Ignore human or FIKA-controlled players
 
             _nextCheckTime = Time.time + CheckInterval;
             EvaluateNearbySounds();
         }
 
+        #endregion
+
+        #region Hearing Logic
+
         private void EvaluateNearbySounds()
         {
-            float hearingMod = Mathf.Lerp(0.5f, 1.5f, _owner.PersonalityProfile?.Caution ?? 0.5f);
-            float effectiveRadius = MaxBaseHearing * hearingMod;
+            float caution = _owner.PersonalityProfile?.Caution ?? 0.5f;
+            float effectiveRadius = MaxBaseHearing * Mathf.Lerp(0.5f, 1.5f, caution);
 
-            Collider[] hits = Physics.OverlapSphere(_bot.Position, effectiveRadius, _playerLayerMask);
+            Collider[] hits = Physics.OverlapSphere(_bot!.Position, effectiveRadius, PlayerLayerMask);
             for (int i = 0; i < hits.Length; i++)
             {
                 var player = hits[i].GetComponent<Player>();
                 if (player == null || player.ProfileId == _bot.ProfileId || !player.HealthController.IsAlive)
                     continue;
 
-                var ctx = player.MovementContext;
-                float loudness = 0f;
+                if (!player.IsAI && player.IsYourPlayer)
+                    continue;
 
-                if (ctx?.CurrentState != null)
-                {
-                    var stateName = ctx.CurrentState.GetType().Name;
-                    if (stateName.Contains("Sprint"))
-                        loudness = SprintLoudness;
-                    else if (stateName.Contains("Walk"))
-                        loudness = WalkLoudness;
-                    else if (stateName.Contains("Crouch"))
-                        loudness = CrouchLoudness;
-                }
-
-                float distance = Vector3.Distance(player.Position, _bot.Position);
-
-                // Gunfire fallback for nearby players
-                bool loudGunfireFallback = distance < 50f && !player.IsAI;
-                if (loudGunfireFallback)
-                {
-                    loudness = Mathf.Max(loudness, FireLoudness);
-                }
-
-                // Deafening logic
-                if (loudness >= 1f)
-                {
-                    float scaled = Mathf.Clamp01(1f - (distance / 30f));
-                    if (scaled > 0.2f)
-                    {
-                        float intensity = scaled;
-                        float duration = Mathf.Lerp(1f, 8f, scaled);
-
-                        var equipment = _bot.Profile?.Inventory?.Equipment;
-                        var earpiece = equipment?.GetSlot(EFT.InventoryLogic.EquipmentSlot.Earpiece)?.ContainedItem;
-                        bool hasEarProtection = earpiece != null;
-
-                        if (hasEarProtection)
-                        {
-                            intensity *= 0.3f;
-                            duration *= 0.4f;
-                        }
-
-                        _hearing?.ApplyDeafness(intensity, duration);
-                    }
-                }
-
+                float loudness = EstimateLoudness(player);
                 if (loudness <= 0.1f)
                     continue;
+
+                float distance = Vector3.Distance(_bot.Position, player.Position);
+
+                // Fallback for unknown sound events (e.g., gunfire)
+                if (!player.IsAI && distance < 50f)
+                    loudness = Mathf.Max(loudness, FireLoudness);
+
+                // Deafening from loud sources
+                if (loudness >= 1f)
+                    TryApplyDeafness(distance);
 
                 float perceived = loudness * Mathf.Clamp01(1f - (distance / effectiveRadius));
 
@@ -124,16 +103,49 @@ namespace AIRefactored.AI.Perception
 
                 if (perceived > 0.35f)
                 {
-                    _cache.RegisterHeardSound(player.Position); // 🧠 log it
-
-                    HandleDetectedNoise(player.Position, perceived);
-#if UNITY_EDITOR
-                    Debug.DrawLine(_bot.Position, player.Position, Color.yellow, 0.25f);
-                    Debug.Log($"[AIRefactored-Hearing] {_bot.Profile?.Info?.Nickname} heard noise → loudness={perceived:F2}");
-#endif
-                    break;
+                    _cache.RegisterHeardSound(player.Position);
+                    _bot.BotsGroup?.LastSoundsController?.AddNeutralSound(player, player.Position);
+                    HandleDetectedNoise(player.Position);
+                    return;
                 }
             }
+        }
+
+        private float EstimateLoudness(Player player)
+        {
+            string? stateName = player.MovementContext?.CurrentState?.GetType().Name;
+            if (string.IsNullOrEmpty(stateName))
+                return 0f;
+
+            if (stateName.Contains("Sprint")) return SprintLoudness;
+            if (stateName.Contains("Walk")) return WalkLoudness;
+            if (stateName.Contains("Crouch")) return CrouchLoudness;
+            return 0f;
+        }
+
+        private void TryApplyDeafness(float distance)
+        {
+            if (_hearing == null || distance > 30f)
+                return;
+
+            float scaled = Mathf.Clamp01(1f - (distance / 30f));
+            if (scaled <= 0.2f)
+                return;
+
+            float intensity = scaled;
+            float duration = Mathf.Lerp(1f, 8f, scaled);
+
+            var equipment = _bot?.Profile?.Inventory?.Equipment;
+            var earpiece = equipment?.GetSlot(EFT.InventoryLogic.EquipmentSlot.Earpiece)?.ContainedItem;
+            bool hasEarProtection = earpiece != null;
+
+            if (hasEarProtection)
+            {
+                intensity *= 0.3f;
+                duration *= 0.4f;
+            }
+
+            _hearing.ApplyDeafness(intensity, duration);
         }
 
         private bool HasClearPath(Vector3 source, out float occlusionModifier)
@@ -150,15 +162,18 @@ namespace AIRefactored.AI.Perception
             return true;
         }
 
-        private void HandleDetectedNoise(Vector3 position, float loudness)
+        private void HandleDetectedNoise(Vector3 position)
         {
-            if (_bot.Memory.GoalEnemy != null)
+            if (_bot?.Memory.GoalEnemy != null)
                 return;
 
-            Vector3 alertPoint = _bot.Position + (position - _bot.Position).normalized * 3f;
+            Vector3 direction = (position - _bot.Position).normalized;
+            Vector3 alertPoint = _bot.Position + direction * 3f;
 
             _bot.GoToPoint(alertPoint, false);
             _bot.BotTalk?.TrySay(EPhraseTrigger.OnEnemyShot);
         }
+
+        #endregion
     }
 }

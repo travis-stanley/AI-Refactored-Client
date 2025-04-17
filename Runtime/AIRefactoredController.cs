@@ -7,14 +7,23 @@ using AIRefactored.AI.Optimization;
 namespace AIRefactored.Runtime
 {
     /// <summary>
-    /// Runtime controller that initializes and manages global AIRefactored systems.
-    /// Ticks AI subsystems like BotAIManager each frame.
+    /// Central controller for AIRefactored. Manages initialization and global AI subsystems.
     /// </summary>
     public class AIRefactoredController : MonoBehaviour
     {
+        #region Fields
+
         private static AIRefactoredController? _instance;
         private static ManualLogSource? _logger;
 
+        #endregion
+
+        #region Initialization
+
+        /// <summary>
+        /// Initializes the AIRefactored controller and global managers.
+        /// </summary>
+        /// <param name="logger">BepInEx logger instance for diagnostics.</param>
         public static void Initialize(ManualLogSource logger)
         {
             _logger = logger;
@@ -24,18 +33,12 @@ namespace AIRefactored.Runtime
 
             var obj = new GameObject("AIRefactoredController");
             _instance = obj.AddComponent<AIRefactoredController>();
-
             DontDestroyOnLoad(obj);
+
             BotAIManager.Initialize(logger);
-
-#if UNITY_EDITOR
-            _logger.LogInfo("[AIRefactored] Controller initialized.");
-#endif
+            _logger.LogInfo("[AIRefactored] ✅ Global controller initialized.");
         }
 
-        private void Update()
-        {
-            BotAIManager.TickAll();
-        }
+        #endregion
     }
 }

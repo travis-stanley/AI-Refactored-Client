@@ -1,33 +1,33 @@
-﻿using EFT;
+﻿#nullable enable
+
+using EFT;
 using UnityEngine;
 
 namespace AIRefactored.AI.Memory
 {
     /// <summary>
-    /// Utility extensions for resetting bot memory and restoring aggression after panic/fallback.
+    /// Provides tactical memory reset tools for bots following panic, fallback, or disengagement.
     /// </summary>
     public static class CombatResetExtensions
     {
+        #region Public API
+
         /// <summary>
-        /// Forces bot out of panic/fallback and re-evaluates combat state.
+        /// Resets bot's memory to a combat-ready state — used after fallback, suppression, or confusion.
         /// </summary>
+        /// <param name="bot">The BotOwner instance to reset.</param>
         public static void RestoreCombatAggression(this BotOwner bot)
         {
-            if (bot == null || bot.Memory == null || bot.IsDead)
+            if (bot == null || bot.IsDead || bot.Memory == null)
                 return;
 
-            // Signal bot is no longer in passive or fleeing mode
             bot.Memory.IsPeace = false;
-
-            // Re-engage if enemy is known
             bot.Memory.AttackImmediately = true;
-
-            // Refresh current combat state
             bot.Memory.CheckIsPeace();
 
-#if UNITY_EDITOR
             Debug.Log($"[AIRefactored-Combat] Bot {bot.Profile?.Info?.Nickname ?? "unknown"} restored to combat aggression.");
-#endif
         }
+
+        #endregion
     }
 }

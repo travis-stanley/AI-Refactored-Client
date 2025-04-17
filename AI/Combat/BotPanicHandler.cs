@@ -6,20 +6,31 @@ using Comfort.Common;
 using AIRefactored.AI.Core;
 using AIRefactored.AI.Memory;
 using AIRefactored.AI.Perception;
+using AIRefactored.AI.Optimization;
+using AIRefactored.AI.Helpers;
 
 namespace AIRefactored.AI.Combat
 {
     /// <summary>
-    /// Handles panic behavior for bots. Triggers a retreat/fallback when blinded or under high threat.
+    /// Handles panic behavior for bots. Triggers retreat/fallback when blinded or under extreme threat.
     /// </summary>
     public class BotPanicHandler : MonoBehaviour
     {
+        #region Fields
+
         private BotOwner? _bot;
         private BotComponentCache? _cache;
 
         private float _panicStartTime = -1f;
-        private const float PanicDuration = 3.5f;
         private bool _isPanicking = false;
+
+        private const float PanicDuration = 3.5f;
+        private const float PanicCooldown = 5.0f;
+        private float _lastPanicExitTime = -99f;
+
+        #endregion
+
+        #region Unity Lifecycle
 
         private void Awake()
         {
@@ -29,24 +40,36 @@ namespace AIRefactored.AI.Combat
 
         private void Update()
         {
-            if (_bot == null || _cache == null)
+            if (_bot == null || _cache == null || IsHumanPlayer())
                 return;
 
-            if (ShouldTriggerPanic() && !_isPanicking)
-            {
-                StartPanic();
-            }
+            float now = Time.time;
 
-            if (_isPanicking && Time.time - _panicStartTime > PanicDuration)
+            if (!_isPanicking)
             {
-                EndPanic();
+                if (now > _lastPanicExitTime + PanicCooldown && ShouldTriggerPanic())
+                {
+                    StartPanic(now);
+                }
+            }
+            else if (now - _panicStartTime > PanicDuration)
+            {
+                EndPanic(now);
             }
         }
 
+        #endregion
+
+        #region Panic Triggers
+
         public void TriggerPanic()
         {
-            if (!_isPanicking)
-                StartPanic();
+            if (_bot == null || IsHumanPlayer())
+                return;
+
+            float now = Time.time;
+            if (!_isPanicking && now > _lastPanicExitTime + PanicCooldown)
+                StartPanic(now);
         }
 
         private bool ShouldTriggerPanic()
@@ -54,42 +77,66 @@ namespace AIRefactored.AI.Combat
             if (_cache?.FlashGrenade?.IsFlashed() == true)
                 return true;
 
-            var hp = _bot.HealthController.GetBodyPartHealth(EBodyPart.Common);
-            return hp.Current < 25f;
+            var hp = _bot?.HealthController?.GetBodyPartHealth(EBodyPart.Common);
+            return hp.HasValue && hp.Value.Current < 25f;
         }
 
-        private void StartPanic()
+
+        #endregion
+
+        #region Panic Behavior
+
+        private void StartPanic(float now)
         {
+            if (_bot == null || _cache == null)
+                return;
+
             _isPanicking = true;
-            _panicStartTime = Time.time;
+            _panicStartTime = now;
 
             Vector3 fallbackDir = -_bot.LookDirection.normalized;
             Vector3 fallbackPos = _bot.Position + fallbackDir * 8f;
 
-            if (Physics.Raycast(_bot.Position, fallbackDir, out var hit, 8f))
+            RaycastHit hit;
+            if (Physics.Raycast(_bot.Position, fallbackDir, out hit, 8f))
             {
                 fallbackPos = hit.point - fallbackDir * 1f;
             }
 
-            _bot.FallbackTo(fallbackPos);
+            if (_cache.PathCache != null)
+            {
+                var path = BotCoverRetreatPlanner.GetCoverRetreatPath(_bot, fallbackDir, _cache.PathCache);
+                if (path.Count > 0)
+                    fallbackPos = path[path.Count - 1];
+            }
+
+            BotMovementHelper.SmoothMoveTo(_bot, fallbackPos, allowSlowEnd: false, cohesionScale: 1f);
             _bot.BotTalk?.TrySay(EPhraseTrigger.OnLostVisual);
 
-            string mapId = Singleton<GameWorld>.Instance?.MainPlayer?.Location?.ToLowerInvariant() ?? "unknown";
-            BotMemoryStore.AddDangerZone(mapId, _bot.Position, DangerTriggerType.Panic, 0.6f);
-
-#if UNITY_EDITOR
-            Debug.Log($"[AIRefactored-Panic] Bot {_bot.Profile?.Info?.Nickname ?? "?"} entered PANIC → fallback to {fallbackPos}");
-#endif
+            var world = Singleton<GameWorld>.Instance;
+            if (world?.MainPlayer?.Location != null)
+            {
+                string mapId = world.MainPlayer.Location; // no ToLowerInvariant() needed unless case-sensitive
+                BotMemoryStore.AddDangerZone(mapId, _bot.Position, DangerTriggerType.Panic, 0.6f);
+            }
         }
 
-        private void EndPanic()
+        private void EndPanic(float now)
         {
             _isPanicking = false;
+            _lastPanicExitTime = now;
             _bot?.RestoreCombatAggression();
-
-#if UNITY_EDITOR
-            Debug.Log($"[AIRefactored-Panic] Bot {_bot.Profile?.Info?.Nickname ?? "?"} exited PANIC state.");
-#endif
         }
+
+        #endregion
+
+        #region Helper
+
+        private bool IsHumanPlayer()
+        {
+            return _bot?.GetPlayer != null && !_bot.GetPlayer.IsAI;
+        }
+
+        #endregion
     }
 }

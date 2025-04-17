@@ -4,17 +4,33 @@ using UnityEngine;
 
 namespace AIRefactored.AI.Groups
 {
+    /// <summary>
+    /// Centralized registry for tracking bot group memberships by GroupId.
+    /// Enables squad-based coordination, zone sync, and enemy sharing between squadmates.
+    /// </summary>
     public static class BotTeamTracker
     {
+        #region Internal Storage
+
         private static readonly Dictionary<string, List<BotOwner>> _groups = new();
 
+        #endregion
+
+        #region Public API
+
         /// <summary>
-        /// Registers a bot into the specified group.
+        /// Registers a bot into the specified group by GroupId.
+        /// If the group does not exist, it will be created.
+        /// Skips all human players (FIKA or otherwise).
         /// </summary>
         public static void Register(string groupId, BotOwner bot)
         {
             if (string.IsNullOrEmpty(groupId) || bot == null)
                 return;
+
+            var player = bot.GetPlayer;
+            if (player == null || !player.IsAI)
+                return; // ❌ Don't track human players
 
             if (!_groups.TryGetValue(groupId, out var list))
             {
@@ -25,26 +41,35 @@ namespace AIRefactored.AI.Groups
             if (!list.Contains(bot))
             {
                 list.Add(bot);
-
-#if UNITY_EDITOR
-                Debug.Log($"[AIRefactored-TeamTracker] Registered {bot.Profile?.Info?.Nickname ?? "unknown"} to group {groupId}");
-#endif
             }
         }
 
         /// <summary>
-        /// Gets the list of bots in a specific group.
+        /// Retrieves all bots in a group, filtering out any human players just in case.
         /// </summary>
         public static List<BotOwner> GetGroup(string groupId)
         {
             if (string.IsNullOrEmpty(groupId))
                 return new List<BotOwner>();
 
-            return _groups.TryGetValue(groupId, out var list) ? list : new List<BotOwner>();
+            if (!_groups.TryGetValue(groupId, out var list))
+                return new List<BotOwner>();
+
+            var result = new List<BotOwner>(list.Count);
+            foreach (var bot in list)
+            {
+                var player = bot?.GetPlayer;
+                if (bot != null && player != null && player.IsAI)
+                {
+                    result.Add(bot);
+                }
+            }
+
+            return result;
         }
 
         /// <summary>
-        /// Unregisters a bot from all groups it belongs to.
+        /// Unregisters a bot from all groups it may belong to.
         /// </summary>
         public static void Unregister(BotOwner bot)
         {
@@ -53,35 +78,33 @@ namespace AIRefactored.AI.Groups
 
             foreach (var kvp in _groups)
             {
-                if (kvp.Value.Remove(bot) && kvp.Value.Count == 0)
+                if (kvp.Value.Remove(bot))
                 {
-                    _groups.Remove(kvp.Key);
+                    if (kvp.Value.Count == 0)
+                    {
+                        _groups.Remove(kvp.Key);
+                    }
                     break;
                 }
             }
-
-#if UNITY_EDITOR
-            Debug.Log($"[AIRefactored-TeamTracker] Unregistered {bot.Profile?.Info?.Nickname ?? "unknown"}");
-#endif
         }
 
         /// <summary>
-        /// Clears all team registrations.
+        /// Clears all group membership records from the tracker.
         /// </summary>
         public static void Clear()
         {
             _groups.Clear();
-#if UNITY_EDITOR
-            Debug.Log("[AIRefactored-TeamTracker] Cleared all bot groups.");
-#endif
         }
 
         /// <summary>
-        /// Returns all active groups.
+        /// Returns the full dictionary of currently active bot groups.
         /// </summary>
         public static IReadOnlyDictionary<string, List<BotOwner>> GetAllGroups()
         {
             return _groups;
         }
+
+        #endregion
     }
 }

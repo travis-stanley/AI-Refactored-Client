@@ -2,32 +2,32 @@
 
 using UnityEngine;
 using EFT;
+using AIRefactored.Core;
 
 namespace AIRefactored.AI.Memory
 {
     /// <summary>
-    /// Provides high-level movement and tactical behavior flags for BotOwner agents.
-    /// These simulate realistic fallback, aggressive, or cautious tactical transitions.
+    /// Extension methods for enhancing bot memory, tactical state transitions, and auditory memory.
     /// </summary>
     public static class BotMemoryExtensions
     {
+        #region Tactical Movement
+
         /// <summary>
-        /// Simulates a fallback movement by commanding the bot to move to a new position.
+        /// Commands the bot to fallback to a safer position using pathfinding.
         /// </summary>
+        /// <param name="bot">The bot issuing the fallback.</param>
+        /// <param name="fallbackPosition">The position to retreat to.</param>
         public static void FallbackTo(this BotOwner bot, Vector3 fallbackPosition)
         {
-            if (bot == null || fallbackPosition == Vector3.zero || bot.IsDead)
+            if (bot == null || bot.IsDead || fallbackPosition == Vector3.zero)
                 return;
 
             bot.GoToPoint(fallbackPosition, slowAtTheEnd: true);
-
-#if UNITY_EDITOR
-            Debug.Log($"[AIRefactored-Memory] Bot {bot.Profile?.Info?.Nickname ?? "unknown"} performing fallback to {fallbackPosition}");
-#endif
         }
 
         /// <summary>
-        /// Forces the bot to move immediately to a position, regardless of combat state.
+        /// Forces the bot to immediately move to a target position.
         /// </summary>
         public static void ForceMoveTo(this BotOwner bot, Vector3 position)
         {
@@ -35,49 +35,99 @@ namespace AIRefactored.AI.Memory
                 return;
 
             bot.GoToPoint(position, slowAtTheEnd: true);
-
-#if UNITY_EDITOR
-            Debug.Log($"[AIRefactored-Memory] Bot {bot.Profile?.Info?.Nickname ?? "unknown"} forced move to {position}");
-#endif
         }
 
         /// <summary>
-        /// Triggers reevaluation of cover behavior. Placeholder for future threat & position systems.
+        /// Placeholder for future dynamic cover reassessment logic.
         /// </summary>
         public static void ReevaluateCurrentCover(this BotOwner bot)
         {
             if (bot == null || bot.IsDead)
                 return;
 
-#if UNITY_EDITOR
-            Debug.Log($"[AIRefactored-Memory] Bot {bot.Profile?.Info?.Nickname ?? "unknown"} reevaluating cover behavior");
-#endif
+            // TODO: Implement dynamic cover lookup and repositioning.
         }
 
+        #endregion
+
+        #region Behavior Mode Flags
+
         /// <summary>
-        /// Flags the bot to behave with caution — potentially used for group or patrol AI.
+        /// Flags the bot to act cautiously — used in stealth or after hearing threats.
         /// </summary>
         public static void SetCautiousSearchMode(this BotOwner bot)
         {
             if (bot == null || bot.IsDead)
                 return;
 
-#if UNITY_EDITOR
-            Debug.Log($"[AIRefactored-Memory] Bot {bot.Profile?.Info?.Nickname ?? "unknown"} using cautious search mode");
-#endif
+            bot.Memory.AttackImmediately = false;
+            bot.Memory.IsPeace = false;
         }
 
         /// <summary>
-        /// Flags the bot to enter an aggressive mode — can influence VO, group behavior, or movement.
+        /// Enables aggressive combat behavior.
         /// </summary>
         public static void SetCombatAggressionMode(this BotOwner bot)
         {
             if (bot == null || bot.IsDead)
                 return;
 
-#if UNITY_EDITOR
-            Debug.Log($"[AIRefactored-Memory] Bot {bot.Profile?.Info?.Nickname ?? "unknown"} using combat aggression mode");
-#endif
+            bot.Memory.AttackImmediately = true;
+            bot.Memory.IsPeace = false;
         }
+
+        /// <summary>
+        /// Switches the bot into patrol/peaceful behavior logic.
+        /// </summary>
+        public static void SetPeaceMode(this BotOwner bot)
+        {
+            if (bot == null || bot.IsDead)
+                return;
+
+            bot.Memory.AttackImmediately = false;
+            bot.Memory.IsPeace = true;
+            bot.Memory.CheckIsPeace();
+        }
+
+        #endregion
+
+        #region Auditory Memory
+
+        /// <summary>
+        /// Logs a recent sound heard by the bot and moves it cautiously toward the source.
+        /// </summary>
+        /// <param name="bot">The bot who heard the sound.</param>
+        /// <param name="source">The player who made the sound.</param>
+        public static void SetLastHeardSound(this BotOwner bot, Player source)
+        {
+            if (bot == null || bot.IsDead || source == null || bot.ProfileId == source.ProfileId)
+                return;
+
+            // Register sound internally with group sound controller (optional use)
+            bot.BotsGroup?.LastSoundsController?.AddNeutralSound(source, source.Position);
+
+            // Store in AIRefactored memory system
+            BotMemoryStore.AddHeardSound(bot.ProfileId, source.Position, Time.time);
+
+            // Move cautiously toward sound
+            Vector3 cautiousAdvance = source.Position + (bot.Position - source.Position).normalized * 3f;
+            bot.GoToPoint(cautiousAdvance, slowAtTheEnd: false);
+
+            // Trigger voice line
+            bot.BotTalk?.TrySay(EPhraseTrigger.OnEnemyShot);
+        }
+
+        /// <summary>
+        /// Clears any previously stored auditory memory data for the bot.
+        /// </summary>
+        public static void ClearLastHeardSound(this BotOwner bot)
+        {
+            if (bot == null || bot.IsDead)
+                return;
+
+            BotMemoryStore.ClearHeardSound(bot.ProfileId);
+        }
+
+        #endregion
     }
 }

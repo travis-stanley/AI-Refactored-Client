@@ -7,6 +7,7 @@ using EFT;
 using EFT.Interactive;
 using EFT.InventoryLogic;
 using EFT.Communications;
+using AIRefactored.AI;
 using AIRefactored.AI.Core;
 using AIRefactored.AI.Groups;
 using AIRefactored.AI.Perception;
@@ -18,6 +19,8 @@ namespace AIRefactored.AI.Missions
 {
     public class BotMissionSystem : MonoBehaviour
     {
+        #region Fields
+
         private BotOwner? _bot;
         private BotGroupSyncCoordinator? _group;
         private CombatStateMachine? _combat;
@@ -26,6 +29,8 @@ namespace AIRefactored.AI.Missions
 
         private float _lastUpdate;
         private const float _objectiveCooldown = 15f;
+        private const float REACHED_THRESHOLD = 6f;
+        private const float SQUAD_COHESION_RANGE = 10f;
 
         private bool _isLooting = false;
         private bool _readyToExtract = false;
@@ -34,23 +39,39 @@ namespace AIRefactored.AI.Missions
         private bool _lootComplete = false;
         private bool _fightComplete = false;
 
-        private const float REACHED_THRESHOLD = 6f;
-        private const float SQUAD_COHESION_RANGE = 10f;
-
+        private BotPersonalityProfile? _personality;
         private readonly List<LootableContainer> _lootContainers = new();
         private readonly System.Random _rng = new();
 
         public enum MissionType { Loot, Fight, Quest }
 
+        #endregion
+
+        #region Initialization
+
         public void Init(BotOwner bot)
         {
             _bot = bot ?? throw new ArgumentNullException(nameof(bot));
+            if (_bot.GetPlayer?.IsYourPlayer == true)
+                return;
+
             _group = _bot.GetPlayer?.GetComponent<BotGroupSyncCoordinator>();
             _combat = _bot.GetPlayer?.GetComponent<CombatStateMachine>();
+            _personality = BotRegistry.Get(_bot.Profile.Id);
             CacheLootZones();
 
             if (!_forcedMission)
                 PickMission();
+        }
+
+        private void CacheLootZones()
+        {
+            _lootContainers.Clear();
+            foreach (var container in GameObject.FindObjectsOfType<LootableContainer>())
+            {
+                if (container != null)
+                    _lootContainers.Add(container);
+            }
         }
 
         public void SetForcedMission(MissionType mission)
@@ -59,9 +80,16 @@ namespace AIRefactored.AI.Missions
             _forcedMission = true;
         }
 
+        #endregion
+
+        #region Update Loop
+
         private void Update()
         {
             if (_bot == null || _bot.GetPlayer == null || !_bot.GetPlayer.HealthController.IsAlive)
+                return;
+
+            if (_bot.GetPlayer.IsYourPlayer)
                 return;
 
             if (_combat != null && _combat.IsInCombatState())
@@ -82,88 +110,97 @@ namespace AIRefactored.AI.Missions
             }
         }
 
-        private void CacheLootZones()
-        {
-            _lootContainers.Clear();
+        #endregion
 
-            foreach (var container in GameObject.FindObjectsOfType<LootableContainer>())
-                _lootContainers.Add(container);
-        }
+        #region Mission Handling
 
         private void PickMission()
         {
-            _missionType = MissionType.Loot;
-            _currentObjective = GetBestLootZone();
-            _bot?.GoToPoint(_currentObjective, false);
+            if (_personality == null)
+            {
+                _missionType = MissionType.Loot;
+                _currentObjective = GetBestLootZone();
+                return;
+            }
+
+            bool isPmc = _bot.Profile.Info.Side == EPlayerSide.Usec || _bot.Profile.Info.Side == EPlayerSide.Bear;
+
+            MissionBias bias = _personality.PreferredMission;
+            _missionType = bias switch
+            {
+                MissionBias.Quest => isPmc ? MissionType.Quest : MissionType.Loot,
+                MissionBias.Fight => MissionType.Fight,
+                MissionBias.Loot => MissionType.Loot,
+                _ => RandomizeMissionType(isPmc)
+            };
+
+            _currentObjective = GetInitialObjective(_missionType);
+            _bot.GoToPoint(_currentObjective, false);
+        }
+
+        private MissionType RandomizeMissionType(bool isPmc)
+        {
+            int roll = _rng.Next(0, 100);
+            if (roll < 30) return MissionType.Loot;
+            if (roll < 65) return MissionType.Fight;
+            return isPmc ? MissionType.Quest : MissionType.Loot;
+        }
+
+        private Vector3 GetInitialObjective(MissionType mission)
+        {
+            return mission switch
+            {
+                MissionType.Loot => GetBestLootZone(),
+                MissionType.Fight => GetRandomZone(MissionType.Fight),
+                MissionType.Quest => HotspotSystem.GetRandomHotspot(_bot!),
+                _ => _bot?.Position ?? Vector3.zero
+            };
         }
 
         private void EvaluateMission()
         {
-            if (_bot == null)
+            if (_bot == null || _bot.GetPlayer?.IsYourPlayer == true)
                 return;
 
-            if (_missionType == MissionType.Loot)
+            switch (_missionType)
             {
-                if (!_readyToExtract && InventoryUtil.IsBackpackFull(_bot))
-                {
-                    _readyToExtract = true;
-                    Say(EPhraseTrigger.OnFight);
-                    _missionType = MissionType.Fight;
-                    _currentObjective = GetRandomZone(MissionType.Fight);
-                    _bot.GoToPoint(_currentObjective, false);
-                }
-                else if (!_lootComplete)
-                {
-                    _currentObjective = GetBestLootZone();
-                    _bot.GoToPoint(_currentObjective, false);
-                }
-            }
-            else if (_missionType == MissionType.Fight)
-            {
-                if (!_fightComplete)
-                {
-                    _fightComplete = true;
-                    _missionType = MissionType.Quest;
-                    _currentObjective = HotspotSystem.GetRandomHotspot(_bot); // ✅ Replaces static zone
-                    _bot.GoToPoint(_currentObjective, false);
-                }
-            }
-            else if (_missionType == MissionType.Quest)
-            {
-                TryExtract();
+                case MissionType.Loot:
+                    if (!_readyToExtract && InventoryUtil.IsBackpackFull(_bot))
+                    {
+                        _readyToExtract = true;
+                        Say(EPhraseTrigger.OnFight);
+                        _missionType = MissionType.Fight;
+                        _currentObjective = GetRandomZone(MissionType.Fight);
+                        _bot.GoToPoint(_currentObjective, false);
+                    }
+                    else if (!_lootComplete)
+                    {
+                        _currentObjective = GetBestLootZone();
+                        _bot.GoToPoint(_currentObjective, false);
+                    }
+                    break;
+
+                case MissionType.Fight:
+                    if (!_fightComplete)
+                    {
+                        _fightComplete = true;
+                        _missionType = MissionType.Quest;
+                        _currentObjective = HotspotSystem.GetRandomHotspot(_bot);
+                        _bot.GoToPoint(_currentObjective, false);
+                    }
+                    break;
+
+                case MissionType.Quest:
+                    TryExtract();
+                    break;
             }
 
             _waitForGroup = !IsGroupAligned();
         }
 
-        private void TryExtract()
-        {
-            ExfiltrationPoint? closest = null;
-            float minDist = float.MaxValue;
+        #endregion
 
-            foreach (var point in GameObject.FindObjectsOfType<ExfiltrationPoint>())
-            {
-                if (point == null || point.Status != EExfiltrationStatus.RegularMode)
-                    continue;
-
-                float dist = Vector3.Distance(_bot.Position, point.transform.position);
-                if (dist < minDist)
-                {
-                    closest = point;
-                    minDist = dist;
-                }
-            }
-
-            if (closest != null)
-            {
-                _bot.GoToPoint(closest.transform.position, false);
-                Say(EPhraseTrigger.ExitLocated);
-            }
-            else
-            {
-                Say(EPhraseTrigger.MumblePhrase);
-            }
-        }
+        #region Objectives and State
 
         private void OnObjectiveReached()
         {
@@ -171,7 +208,7 @@ namespace AIRefactored.AI.Missions
             {
                 _isLooting = true;
                 Say(EPhraseTrigger.OnLoot);
-                _bot.Mover?.Stop();
+                _bot?.Mover?.Stop();
                 Invoke(nameof(ResumeMovement), 4f);
                 return;
             }
@@ -180,15 +217,13 @@ namespace AIRefactored.AI.Missions
             {
                 Say(EPhraseTrigger.MumblePhrase);
                 _bot?.Deactivate();
-                if (_bot?.GetPlayer != null)
-                    _bot.GetPlayer.gameObject.SetActive(false);
+                _bot?.GetPlayer?.gameObject.SetActive(false);
             }
         }
 
         private void ResumeMovement()
         {
-            if (_bot != null)
-                _bot.GoToPoint(_currentObjective, false);
+            _bot?.GoToPoint(_currentObjective, false);
         }
 
         private Vector3 GetBestLootZone()
@@ -226,7 +261,6 @@ namespace AIRefactored.AI.Missions
 
         private Vector3 GetRandomZone(MissionType type)
         {
-            // Only Fight still uses hotzones directly
             if (type == MissionType.Fight)
             {
                 var zones = GameObject.FindObjectsOfType<BotZone>();
@@ -238,6 +272,38 @@ namespace AIRefactored.AI.Missions
             }
 
             return _bot?.Position ?? Vector3.zero;
+        }
+
+        private void TryExtract()
+        {
+            if (_bot?.GetPlayer?.IsYourPlayer == true)
+                return;
+
+            ExfiltrationPoint? closest = null;
+            float minDist = float.MaxValue;
+
+            foreach (var point in GameObject.FindObjectsOfType<ExfiltrationPoint>())
+            {
+                if (point == null || point.Status != EExfiltrationStatus.RegularMode)
+                    continue;
+
+                float dist = Vector3.Distance(_bot.Position, point.transform.position);
+                if (dist < minDist)
+                {
+                    closest = point;
+                    minDist = dist;
+                }
+            }
+
+            if (closest != null)
+            {
+                _bot.GoToPoint(closest.transform.position, false);
+                Say(EPhraseTrigger.ExitLocated);
+            }
+            else
+            {
+                Say(EPhraseTrigger.MumblePhrase);
+            }
         }
 
         private bool IsGroupAligned()
@@ -270,6 +336,8 @@ namespace AIRefactored.AI.Missions
                 Debug.LogWarning($"[AIRefactored-Mission] Voice failed: {ex.Message}");
             }
         }
+
+        #endregion
     }
 
     public static class InventoryUtil

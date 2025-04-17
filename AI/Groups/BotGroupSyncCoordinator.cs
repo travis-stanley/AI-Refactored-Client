@@ -8,11 +8,10 @@ using AIRefactored.AI.Memory;
 
 namespace AIRefactored.AI.Groups
 {
-    /// <summary>
-    /// Synchronizes fallback zones, loot targets, and extract coordination among group members.
-    /// </summary>
     public class BotGroupSyncCoordinator : MonoBehaviour
     {
+        #region Fields
+
         private BotOwner? _bot;
         private BotComponentCache? _cache;
         private BotsGroup? _group;
@@ -24,26 +23,48 @@ namespace AIRefactored.AI.Groups
         private Vector3? _lastLootPoint;
         private Vector3? _lastExtractPoint;
 
+        private static readonly List<BotOwner> _tempList = new();
+
+        #endregion
+
+        #region Initialization
+
         public void Init(BotOwner bot)
         {
             _bot = bot;
             _cache = _bot?.GetComponent<BotComponentCache>();
             _group = _bot?.BotsGroup;
 
+            if (_bot?.GetPlayer?.IsAI != true)
+                return;
+
             RegisterGroupHooks();
         }
 
         private void Start()
         {
-            if (_bot == null)
-            {
-                _bot = GetComponent<BotOwner>();
-                _cache = GetComponent<BotComponentCache>();
-                _group = _bot?.BotsGroup;
-            }
+            _bot = GetComponent<BotOwner>();
+            _cache = GetComponent<BotComponentCache>();
+            _group = _bot?.BotsGroup;
+
+            if (_bot?.GetPlayer?.IsAI != true)
+                return;
 
             RegisterGroupHooks();
         }
+
+        private void OnDestroy()
+        {
+            if (_group != null)
+            {
+                _group.OnMemberAdd -= OnTeammateAdded;
+                _group.OnMemberRemove -= OnTeammateRemoved;
+            }
+        }
+
+        #endregion
+
+        #region Group Hook Registration
 
         private void RegisterGroupHooks()
         {
@@ -61,24 +82,18 @@ namespace AIRefactored.AI.Groups
             }
         }
 
-        private void OnDestroy()
-        {
-            if (_group != null)
-            {
-                _group.OnMemberAdd -= OnTeammateAdded;
-                _group.OnMemberRemove -= OnTeammateRemoved;
-            }
-        }
-
         private void OnTeammateAdded(BotOwner teammate)
         {
             if (teammate == null || teammate == _bot || _teammateCaches.ContainsKey(teammate))
                 return;
 
+            if (teammate.GetPlayer?.IsAI != true)
+                return;
+
             var cache = teammate.GetComponent<BotComponentCache>();
             if (cache != null)
             {
-                _teammateCaches[teammate] = cache;
+                _teammateCaches.Add(teammate, cache);
             }
         }
 
@@ -90,9 +105,16 @@ namespace AIRefactored.AI.Groups
             }
         }
 
+        #endregion
+
+        #region Update Loop
+
         private void Update()
         {
             if (_bot == null || _cache == null || _group == null || Time.time < _nextSyncTime)
+                return;
+
+            if (_bot.GetPlayer?.IsAI != true || _teammateCaches.Count == 0)
                 return;
 
             _nextSyncTime = Time.time + SyncInterval;
@@ -101,63 +123,50 @@ namespace AIRefactored.AI.Groups
 
         private void EvaluateGroupZones()
         {
-            if (_teammateCaches.Count == 0)
+            string? myZoneId = _cache?.Zone?.ZoneId;
+            if (string.IsNullOrEmpty(myZoneId) || myZoneId == "unknown")
                 return;
-
-            string myZoneId = _cache.Zone?.ZoneId ?? "unknown";
 
             foreach (var kvp in _teammateCaches)
             {
                 var teammate = kvp.Key;
                 var teammateCache = kvp.Value;
 
-                if (teammate == null || teammateCache?.Zone == null)
+                if (teammate == null || teammateCache?.Zone == null || teammate.GetPlayer?.IsAI != true)
                     continue;
 
-                string otherZoneId = teammateCache.Zone.ZoneId ?? "unknown";
-
-                if (otherZoneId != myZoneId && myZoneId != "unknown")
+                string? otherZoneId = teammateCache.Zone.ZoneId;
+                if (!string.IsNullOrEmpty(otherZoneId) && otherZoneId != myZoneId)
                 {
                     teammateCache.Zone.AssignZone(myZoneId);
-
                 }
             }
         }
 
-        // === Shared Info ===
+        #endregion
 
-        public void BroadcastLootPoint(Vector3 point)
-        {
-            _lastLootPoint = point;
-        }
+        #region Shared Info Distribution
 
-        public void BroadcastExtractPoint(Vector3 point)
-        {
-            _lastExtractPoint = point;
-        }
+        public void BroadcastLootPoint(Vector3 point) => _lastLootPoint = point;
 
-        public Vector3? GetSharedLootTarget()
-        {
-            return _lastLootPoint;
-        }
+        public void BroadcastExtractPoint(Vector3 point) => _lastExtractPoint = point;
 
-        public Vector3? GetSharedExtractTarget()
-        {
-            return _lastExtractPoint;
-        }
+        public Vector3? GetSharedLootTarget() => _lastLootPoint;
 
-        /// <summary>
-        /// Returns a list of synced teammates.
-        /// </summary>
+        public Vector3? GetSharedExtractTarget() => _lastExtractPoint;
+
         public List<BotOwner> GetTeammates()
         {
-            var list = new List<BotOwner>(_teammateCaches.Count);
-            foreach (var teammate in _teammateCaches.Keys)
+            _tempList.Clear();
+            foreach (var kvp in _teammateCaches)
             {
-                if (teammate != null)
-                    list.Add(teammate);
+                var teammate = kvp.Key;
+                if (teammate != null && teammate.GetPlayer?.IsAI == true)
+                    _tempList.Add(teammate);
             }
-            return list;
+            return new List<BotOwner>(_tempList);
         }
+
+        #endregion
     }
 }

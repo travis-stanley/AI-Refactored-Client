@@ -2,15 +2,26 @@
 
 using System.Collections.Generic;
 using EFT;
+using UnityEngine;
+using AIRefactored.AI.Core;
 
 namespace AIRefactored.AI.Perception
 {
     /// <summary>
-    /// Maps EFT WildSpawnTypes to specific vision and flash response profiles.
+    /// Maps EFT WildSpawnTypes to default vision response profiles.
+    /// Optionally overrides with personality-based scaling if available.
     /// </summary>
     public static class BotVisionProfiles
     {
-        private static readonly BotVisionProfile Default = new();
+        #region Fields
+
+        private static readonly BotVisionProfile Default = new()
+        {
+            AdaptationSpeed = 1.0f,
+            LightSensitivity = 1.0f,
+            AggressionResponse = 1.0f,
+            MaxBlindness = 1.0f
+        };
 
         private static readonly Dictionary<WildSpawnType, BotVisionProfile> Profiles = new()
         {
@@ -40,10 +51,36 @@ namespace AIRefactored.AI.Perception
             { WildSpawnType.arenaFighter, new() { AdaptationSpeed = 1.3f, LightSensitivity = 1.0f, AggressionResponse = 1.5f, MaxBlindness = 0.95f }}
         };
 
+        #endregion
+
+        #region Public API
+
+        /// <summary>
+        /// Returns a composite vision profile based on wildspawn role and optional personality traits.
+        /// </summary>
         public static BotVisionProfile Get(Player bot)
         {
-            var role = bot?.Profile?.Info?.Settings?.Role ?? WildSpawnType.assault;
-            return Profiles.TryGetValue(role, out var profile) ? profile : Default;
+            if (bot == null || bot.Profile == null || bot.AIData == null)
+                return Default;
+
+            var role = bot.Profile.Info.Settings?.Role ?? WildSpawnType.assault;
+            var baseProfile = Profiles.TryGetValue(role, out var profile) ? profile : Default;
+
+            var owner = bot.GetComponent<AIRefactoredBotOwner>();
+            var personality = owner?.PersonalityProfile;
+
+            if (personality == null)
+                return baseProfile;
+
+            return new BotVisionProfile
+            {
+                AdaptationSpeed = Mathf.Clamp(baseProfile.AdaptationSpeed + (1f - personality.Caution) * 0.5f, 0.5f, 3f),
+                MaxBlindness = Mathf.Clamp(baseProfile.MaxBlindness + (1f - personality.RiskTolerance) * 0.4f, 0.5f, 2f),
+                LightSensitivity = Mathf.Clamp(baseProfile.LightSensitivity + personality.Caution * 0.5f, 0.3f, 2f),
+                AggressionResponse = Mathf.Clamp(baseProfile.AggressionResponse + personality.AggressionLevel * 0.5f, 0.5f, 3f)
+            };
         }
+
+        #endregion
     }
 }

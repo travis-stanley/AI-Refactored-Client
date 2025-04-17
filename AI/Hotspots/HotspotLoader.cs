@@ -3,7 +3,6 @@
 using System;
 using System.Collections.Generic;
 using System.IO;
-using AIRefactored.Data;
 using Comfort.Common;
 using EFT;
 using Newtonsoft.Json;
@@ -12,105 +11,133 @@ using UnityEngine;
 namespace AIRefactored.AI.Hotspots
 {
     /// <summary>
-    /// Loads and caches patrol hotspot positions per-map.
+    /// Loads and caches patrol hotspots per map for use in dynamic AI routing and mission planning.
     /// </summary>
     public static class HotspotLoader
     {
+        #region Fields
+
         private const string HOTSPOT_FOLDER = "hotspots/";
         private static readonly Dictionary<string, HotspotSet> _cache = new();
         private static bool _loaded = false;
+        private static bool _debugLog = false;
 
-        /// <summary>
-        /// Loads all hotspot files into memory.
-        /// </summary>
+        #endregion
+
+        #region Public API
+
+        public static void EnableDebugLogs(bool enabled) => _debugLog = enabled;
+
         public static void LoadAll()
         {
             if (_loaded)
                 return;
 
-            string basePath = Path.Combine(Application.dataPath, HOTSPOT_FOLDER);
+            string basePath = ResolveHotspotPath();
             if (!Directory.Exists(basePath))
             {
-                basePath = Path.Combine("BepInEx", "plugins", "AIRefactored", HOTSPOT_FOLDER);
-            }
-
-            if (!Directory.Exists(basePath))
-            {
-                Debug.LogWarning($"[AIRefactored] Hotspot folder not found: {basePath}");
+                Debug.LogWarning($"[AIRefactored] Hotspot folder not found at: {basePath}");
                 return;
             }
 
-            string[] files = Directory.GetFiles(basePath, "*.json");
-            for (int i = 0; i < files.Length; i++)
+            string[] files = Directory.GetFiles(basePath, "*.json", SearchOption.TopDirectoryOnly);
+            foreach (string file in files)
             {
                 try
                 {
-                    string json = File.ReadAllText(files[i]);
-                    var data = JsonConvert.DeserializeObject<HotspotFile>(json);
+                    string json = File.ReadAllText(file);
+                    var set = HotspotSet.FromJson(json);
 
-                    if (data == null || data.hotspots == null || data.hotspots.Count == 0)
+                    if (set == null || set.Points.Count == 0)
                         continue;
 
-                    string map = Path.GetFileNameWithoutExtension(files[i]);
-                    _cache[map.ToLowerInvariant()] = new HotspotSet
-                    {
-                        Points = data.hotspots
-                    };
+                    string map = Path.GetFileNameWithoutExtension(file).ToLowerInvariant();
+                    _cache[map] = set;
 
-#if UNITY_EDITOR
-                    Debug.Log($"[AIRefactored] Loaded {data.hotspots.Count} hotspots for map '{map}'");
-#endif
+                    if (_debugLog)
+                        Debug.Log($"[AIRefactored] Loaded {set.Points.Count} hotspots for map '{map}'");
                 }
                 catch (Exception ex)
                 {
-                    Debug.LogError($"[AIRefactored] Failed to load hotspots from {files[i]}: {ex.Message}");
+                    Debug.LogError($"[AIRefactored] Failed to load hotspots from '{file}': {ex.Message}");
                 }
             }
 
             _loaded = true;
         }
 
-        /// <summary>
-        /// Returns hotspots for the current map and given WildSpawnType.
-        /// </summary>
         public static HotspotSet? GetHotspotsForCurrentMap(WildSpawnType role)
         {
             if (!_loaded)
                 LoadAll();
 
-            string map = Singleton<GameWorld>.Instance?.LocationId?.ToLowerInvariant() ?? string.Empty;
-            if (!_cache.TryGetValue(map, out var set))
-                return null;
-
-            // PMC or non-PMC logic can be added here if needed
-            return set;
+            string mapId = Singleton<GameWorld>.Instance?.LocationId?.ToLowerInvariant() ?? "unknown";
+            return _cache.TryGetValue(mapId, out var set) ? set.FilteredForRole(role) : null;
         }
 
-        /// <summary>
-        /// Forces a reload of all hotspot files.
-        /// </summary>
         public static void Reload()
         {
             _loaded = false;
             _cache.Clear();
             LoadAll();
-            Debug.Log("[AIRefactored] Hotspots reloaded.");
+
+            if (_debugLog)
+                Debug.Log("[AIRefactored] Hotspot data reloaded.");
         }
 
-        /// <summary>
-        /// Internal data structure matching the on-disk JSON format.
-        /// </summary>
-        private class HotspotFile
+        public static IReadOnlyDictionary<string, HotspotSet> GetAll() => _cache;
+
+        #endregion
+
+        #region Internal Helpers
+
+        private static string ResolveHotspotPath()
         {
-            public List<Vector3> hotspots = new();
+            string fallbackPath = Path.Combine("BepInEx", "plugins", "AIRefactored", HOTSPOT_FOLDER);
+            string assetPath = Path.Combine(Application.dataPath, HOTSPOT_FOLDER);
+            return Directory.Exists(assetPath) ? assetPath : fallbackPath;
         }
+
+        #endregion
     }
 
     /// <summary>
-    /// Runtime hotspot set for a map. May be filtered or randomized by other AI modules.
+    /// Represents the hotspot set for a single map.
+    /// Contains all zone locations and potential role filtering.
     /// </summary>
     public class HotspotSet
     {
         public List<Vector3> Points = new();
+
+        /// <summary>
+        /// Optional: filters hotspots based on bot role (PMC, Scav, etc).
+        /// </summary>
+        public HotspotSet FilteredForRole(WildSpawnType role)
+        {
+            // TODO: Implement actual filtering if roles differ
+            return this;
+        }
+
+        public static HotspotSet? FromJson(string json)
+        {
+            try
+            {
+                var file = JsonConvert.DeserializeObject<HotspotFile>(json);
+                if (file?.hotspots == null || file.hotspots.Count == 0)
+                    return null;
+
+                return new HotspotSet { Points = file.hotspots };
+            }
+            catch (Exception ex)
+            {
+                Debug.LogError($"[AIRefactored] JSON parse error: {ex.Message}");
+                return null;
+            }
+        }
+
+        private class HotspotFile
+        {
+            public List<Vector3> hotspots = new();
+        }
     }
 }

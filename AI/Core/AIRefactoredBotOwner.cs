@@ -2,33 +2,45 @@
 
 using UnityEngine;
 using EFT;
-using AIRefactored.AI.Core;
-using AIRefactored.Data;
 
 namespace AIRefactored.AI.Core
 {
     /// <summary>
-    /// Holds metadata and behavior profile for AIRefactored bots, including personality and zone logic.
+    /// Holds metadata and behavior profile for AIRefactored bots, including personality traits and zone logic.
+    /// This component is used for high-level coordination and tuning of tactical behavior.
     /// </summary>
     public class AIRefactoredBotOwner : MonoBehaviour
     {
+        #region Public Fields
+
+        /// <summary>
+        /// The underlying EFT BotOwner object.
+        /// </summary>
         public BotOwner Bot { get; private set; } = null!;
+
+        /// <summary>
+        /// Cached internal components for performance and reuse.
+        /// </summary>
         public BotComponentCache Cache { get; private set; } = null!;
 
         /// <summary>
-        /// Assigned personality used to drive all tactical and psychological behavior.
+        /// Assigned tactical and psychological profile.
         /// </summary>
         public BotPersonalityProfile PersonalityProfile { get; private set; } = new();
 
         /// <summary>
-        /// Label used for debug and runtime inspection (e.g. Aggressive, Cautious, etc.).
+        /// Label used for personality debug tracking (e.g., Aggressive, Cautious).
         /// </summary>
         public string PersonalityName { get; private set; } = "Unknown";
 
         /// <summary>
-        /// Zone name for fallback, group sync, or strategic positioning.
+        /// The zone this bot is assigned to for fallback, patrol, or coordination purposes.
         /// </summary>
         public string AssignedZone { get; private set; } = "unknown";
+
+        #endregion
+
+        #region Unity Lifecycle
 
         private void Awake()
         {
@@ -41,7 +53,7 @@ namespace AIRefactored.AI.Core
                 return;
             }
 
-            // Assign a default personality if not explicitly set
+            // Assign default personality if unset
             if (!HasPersonality() || PersonalityName == "Unknown")
             {
                 var defaultPersonality = GetRandomPersonality();
@@ -49,8 +61,12 @@ namespace AIRefactored.AI.Core
             }
         }
 
+        #endregion
+
+        #region Personality Management
+
         /// <summary>
-        /// Initializes a preset personality by type.
+        /// Initializes a preset personality from a known enum type.
         /// </summary>
         public void InitProfile(PersonalityType type)
         {
@@ -65,27 +81,19 @@ namespace AIRefactored.AI.Core
                 PersonalityName = "Adaptive";
                 Debug.LogWarning($"[AIRefactoredBotOwner] Missing preset for {type}, defaulting to Adaptive.");
             }
-
-#if UNITY_EDITOR
-            Debug.Log($"[AIRefactoredBotOwner] Assigned personality '{PersonalityName}' to {Bot?.Profile?.Info?.Nickname}");
-#endif
         }
 
         /// <summary>
-        /// Initializes using a specific profile object.
+        /// Initializes personality directly using a custom profile object.
         /// </summary>
         public void InitProfile(BotPersonalityProfile profile, string name = "Custom")
         {
             PersonalityProfile = profile ?? new BotPersonalityProfile();
             PersonalityName = name;
-
-#if UNITY_EDITOR
-            Debug.Log($"[AIRefactoredBotOwner] Assigned custom personality '{name}' to {Bot?.Profile?.Info?.Nickname}");
-#endif
         }
 
         /// <summary>
-        /// Clears the current personality and resets to defaults.
+        /// Clears the assigned personality and resets profile to neutral/default.
         /// </summary>
         public void ClearPersonality()
         {
@@ -94,34 +102,41 @@ namespace AIRefactored.AI.Core
         }
 
         /// <summary>
-        /// Checks whether the bot has an assigned personality.
+        /// Returns true if this bot has a valid personality profile assigned.
         /// </summary>
         public bool HasPersonality()
         {
             return PersonalityProfile != null;
         }
 
+        #endregion
+
+        #region Zone Management
+
         /// <summary>
-        /// Assigns the bot to a logical zone.
+        /// Assigns a fallback or behavior logic zone to this bot.
         /// </summary>
         public void SetZone(string zoneName)
         {
             if (!string.IsNullOrEmpty(zoneName))
             {
                 AssignedZone = zoneName;
-#if UNITY_EDITOR
-                Debug.Log($"[AIRefactoredBotOwner] Bot {Bot?.Profile?.Info?.Nickname} assigned zone: {zoneName}");
-#endif
             }
         }
 
+        #endregion
+
+        #region Internal Helpers
+
         /// <summary>
-        /// Picks a fallback personality at random from available presets.
+        /// Picks a random fallback personality from the known enum list.
         /// </summary>
         private PersonalityType GetRandomPersonality()
         {
             var values = System.Enum.GetValues(typeof(PersonalityType));
             return (PersonalityType)values.GetValue(Random.Range(0, values.Length));
         }
+
+        #endregion
     }
 }

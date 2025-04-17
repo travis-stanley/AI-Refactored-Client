@@ -1,20 +1,21 @@
 ﻿#nullable enable
 
-using EFT;
-using EFT.InventoryLogic;
 using UnityEngine;
+using EFT;
+using System;
+using System.Collections.Generic;
+using EFT.InventoryLogic;
 using AIRefactored.AI.Core;
 using AIRefactored.AI.Helpers;
 using AIRefactored.AI.Memory;
-
+using AIRefactored.AI.Optimization;
 
 namespace AIRefactored.AI.Combat
 {
-    /// <summary>
-    /// Controls fire decision-making for bots: cadence, fire mode, suppression, and fallback.
-    /// </summary>
     public class BotFireLogic
     {
+        #region Fields
+
         private readonly BotOwner _botOwner;
         private readonly BotComponentCache? _cache;
 
@@ -23,8 +24,19 @@ namespace AIRefactored.AI.Combat
         private const float ENGAGE_LIMIT = 120f;
         private const float SCATTER_MULTIPLIER = 1.15f;
         private const float SCATTER_RECOVERY = 0.95f;
+        private const float MAX_SCATTER = 4.0f;
+        private const float RETREAT_COOLDOWN = 4.0f;
 
         private float _nextFireDecisionTime = 0f;
+        private float _lastRetreatTime = -999f;
+
+        private static readonly Dictionary<string, float> WeaponRanges = new()
+        {
+            { "sniper", 120f }, { "marksman", 120f }, { "assault", 90f }, { "rifle", 90f },
+            { "smg", 50f }, { "pistol", 35f }, { "shotgun", 40f }
+        };
+
+        #endregion
 
         public BotFireLogic(BotOwner botOwner)
         {
@@ -34,7 +46,7 @@ namespace AIRefactored.AI.Combat
 
         public void UpdateShootingBehavior()
         {
-            if (_botOwner?.Memory?.GoalEnemy == null || _botOwner.WeaponManager == null)
+            if (_botOwner?.Memory?.GoalEnemy == null || _botOwner.WeaponManager?.CurrentWeapon == null || !_botOwner.IsAI)
                 return;
 
             var weapon = _botOwner.WeaponManager.CurrentWeapon;
@@ -42,34 +54,34 @@ namespace AIRefactored.AI.Combat
             var shootData = _botOwner.ShootData;
             var core = _botOwner.Settings?.FileSettings?.Core as GClass592;
 
-            if (weapon == null || weaponInfo == null || shootData == null || core == null)
+            if (weaponInfo == null || shootData == null || core == null)
                 return;
 
             var profile = BotRegistry.Get(_botOwner.ProfileId);
             if (profile == null)
                 return;
 
-            float distance = Vector3.Distance(_botOwner.Position, _botOwner.Memory.GoalEnemy.CurrPosition);
+            var targetPos = _botOwner.Memory.GoalEnemy.CurrPosition;
+            float distance = Vector3.Distance(_botOwner.Position, targetPos);
             float maxEngageRange = GetEffectiveEngageRange(weapon, profile);
             bool underSuppression = _botOwner.Memory.IsUnderFire;
 
             if (ShouldPanic(profile, underSuppression))
             {
-                RetreatToSafety();
+                RetreatToSafety(profile);
                 return;
             }
 
             if (distance > maxEngageRange && !CanOverrideSuppression(profile, underSuppression))
             {
-                _botOwner.GoToPoint(_botOwner.Memory.GoalEnemy.CurrPosition, false);
+                BotMovementHelper.SmoothMoveTo(_botOwner, targetPos, allowSlowEnd: false, cohesionScale: profile.Cohesion);
                 return;
             }
 
             if (Time.time < _nextFireDecisionTime)
                 return;
 
-            float cadence = GetBurstCadence(profile);
-            _nextFireDecisionTime = Time.time + cadence;
+            _nextFireDecisionTime = Time.time + GetBurstCadence(profile);
 
             if (distance <= FULL_AUTO_MAX)
             {
@@ -90,48 +102,53 @@ namespace AIRefactored.AI.Combat
             shootData.Shoot();
         }
 
+        #region Engagement Logic
+
         private float GetEffectiveEngageRange(Weapon weapon, BotPersonalityProfile profile)
         {
-            float weaponRange = EstimateWeaponRange(weapon);
-            return Mathf.Min(profile.EngagementRange, weaponRange, ENGAGE_LIMIT);
+            return Mathf.Min(profile.EngagementRange, EstimateWeaponRange(weapon), ENGAGE_LIMIT);
         }
 
         private float EstimateWeaponRange(Weapon weapon)
         {
-            string name = weapon.Template?.Name?.ToLower() ?? "";
+            string? name = weapon.Template?.Name;
+            if (string.IsNullOrEmpty(name))
+                return 60f;
 
-            if (name.Contains("sniper") || name.Contains("marksman")) return 120f;
-            if (name.Contains("assault") || name.Contains("rifle")) return 90f;
-            if (name.Contains("smg")) return 50f;
-            if (name.Contains("pistol")) return 35f;
-            if (name.Contains("shotgun")) return 40f;
+            name = name.ToLowerInvariant();
+
+            foreach (var pair in WeaponRanges)
+            {
+                if (name.Contains(pair.Key))
+                    return pair.Value;
+            }
 
             return 60f;
         }
 
         private bool SupportsFireMode(Weapon weapon, Weapon.EFireMode mode)
         {
-            foreach (var available in weapon.WeapFireType)
-            {
-                if (available == mode)
-                    return true;
-            }
-            return false;
+            return Array.Exists(weapon.WeapFireType, f => f == mode);
         }
 
         private void TrySetFireMode(BotWeaponInfo info, Weapon.EFireMode mode)
         {
             if (info.weapon.SelectedFireMode != mode)
-            {
                 info.ChangeFireMode(mode);
-            }
         }
+
+        #endregion
+
+        #region Accuracy + Cadence
 
         private void ApplyScatter(GClass592 core, bool underFire, BotPersonalityProfile profile)
         {
             float suppressionFactor = underFire ? 1f - profile.AccuracyUnderFire : 0f;
             float scatterBoost = 1f + (SCATTER_MULTIPLIER - 1f) + suppressionFactor;
+
             core.ScatteringPerMeter *= scatterBoost;
+            if (core.ScatteringPerMeter > MAX_SCATTER)
+                core.ScatteringPerMeter = MAX_SCATTER;
         }
 
         private void RecoverAccuracy(GClass592 core)
@@ -142,31 +159,26 @@ namespace AIRefactored.AI.Combat
         private float GetBurstCadence(BotPersonalityProfile profile)
         {
             float baseDelay = Mathf.Lerp(0.8f, 0.3f, profile.AggressionLevel);
-            float chaosWobble = Random.Range(-0.1f, 0.3f) * profile.ChaosFactor;
+            float chaosWobble = UnityEngine.Random.Range(-0.1f, 0.3f) * profile.ChaosFactor;
             return Mathf.Clamp(baseDelay + chaosWobble, 0.25f, 1.2f);
         }
 
+        #endregion
+
+        #region Suppression/Panic Overrides
+
         private bool CanOverrideSuppression(BotPersonalityProfile profile, bool isUnderFire)
         {
-            if (!isUnderFire) return false;
-
-            if (profile.IsFrenzied || profile.IsStubborn)
-                return true;
-
-            if (Random.value < profile.ChaosFactor)
-                return true;
-
-            if (profile.RiskTolerance > 0.6f && profile.AccuracyUnderFire > 0.5f)
-                return true;
-
-            return false;
+            return isUnderFire && (
+                profile.IsFrenzied || profile.IsStubborn ||
+                UnityEngine.Random.value < profile.ChaosFactor ||
+                (profile.RiskTolerance > 0.6f && profile.AccuracyUnderFire > 0.5f)
+            );
         }
 
         private bool ShouldPanic(BotPersonalityProfile profile, bool isUnderFire)
         {
-            if (!isUnderFire) return false;
-            float healthRatio = GetBotHealthRatio();
-            return healthRatio <= profile.RetreatThreshold;
+            return isUnderFire && GetBotHealthRatio() <= profile.RetreatThreshold;
         }
 
         private float GetBotHealthRatio()
@@ -177,7 +189,7 @@ namespace AIRefactored.AI.Combat
             float totalCurrent = 0f;
             float totalMax = 0f;
 
-            foreach (EBodyPart part in System.Enum.GetValues(typeof(EBodyPart)))
+            foreach (EBodyPart part in Enum.GetValues(typeof(EBodyPart)))
             {
                 var hp = hc.GetBodyPartHealth(part);
                 totalCurrent += hp.Current;
@@ -187,12 +199,28 @@ namespace AIRefactored.AI.Combat
             return Mathf.Clamp01(totalCurrent / totalMax);
         }
 
-        private void RetreatToSafety()
+        private void RetreatToSafety(BotPersonalityProfile profile)
         {
-            Vector3 away = _botOwner.Position - _botOwner.Memory.GoalEnemy.CurrPosition;
-            Vector3 fallback = _botOwner.Position + away.normalized * 10f;
+            if (Time.time < _lastRetreatTime + RETREAT_COOLDOWN)
+                return;
 
-            _botOwner.FallbackTo(fallback);
+            Vector3 fallbackDir = -_botOwner.LookDirection.normalized;
+            Vector3 fallbackPos = _botOwner.Position + fallbackDir * 8f;
+
+            if (Physics.Raycast(_botOwner.Position, fallbackDir, out var hit, 8f))
+                fallbackPos = hit.point - fallbackDir;
+
+            if (_cache?.PathCache != null)
+            {
+                var path = BotCoverRetreatPlanner.GetCoverRetreatPath(_botOwner, fallbackDir, _cache.PathCache);
+                if (path.Count > 0)
+                    fallbackPos = path[path.Count - 1];
+            }
+
+            BotMovementHelper.SmoothMoveTo(_botOwner, fallbackPos, false, profile.Cohesion);
+            _lastRetreatTime = Time.time;
         }
+
+        #endregion
     }
 }

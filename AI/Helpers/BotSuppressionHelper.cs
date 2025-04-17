@@ -10,13 +10,12 @@ using AIRefactored.AI.Reactions;
 namespace AIRefactored.AI.Helpers
 {
     /// <summary>
-    /// Utility for triggering suppression and panic behavior in bots.
+    /// Utility for triggering suppression or panic responses in AI bots.
+    /// Wraps reflection-based methods and safely handles fallback behavior.
     /// </summary>
     public static class BotSuppressionHelper
     {
         private static MethodInfo? _setUnderFireMethod;
-
-        #region Bot Access
 
         public static BotOwner? GetBotOwner(Player bot)
         {
@@ -28,43 +27,27 @@ namespace AIRefactored.AI.Helpers
             return bot.GetComponent<BotComponentCache>();
         }
 
-        #endregion
-
-        #region Suppression Logic
-
-        /// <summary>
-        /// Uses reflection to call the internal SetUnderFire method on ShootData.
-        /// </summary>
         public static void TrySetUnderFire(BotOwner owner)
         {
-            if (owner?.ShootData == null)
+            if (owner == null || BotCacheUtility.IsHumanPlayer(owner) || owner.ShootData == null)
                 return;
 
             _setUnderFireMethod ??= owner.ShootData.GetType()
                 .GetMethod("SetUnderFire", BindingFlags.Instance | BindingFlags.NonPublic | BindingFlags.Public);
 
-            if (_setUnderFireMethod != null)
-            {
-                _setUnderFireMethod.Invoke(owner.ShootData, null);
-#if UNITY_EDITOR
-                LogDebug($"{owner.Profile?.Info?.Nickname ?? "?"} marked under fire.");
-#endif
-            }
+            _setUnderFireMethod?.Invoke(owner.ShootData, null);
+            LogDebug($"{owner.Profile?.Info?.Nickname ?? "?"} marked under fire.");
         }
 
-        /// <summary>
-        /// Triggers suppression or panic based on available components.
-        /// </summary>
         public static void TrySuppressBot(Player bot, Vector3 source)
         {
-            if (!bot.IsAI || bot.AIData == null)
+            if (!bot.IsAI || bot.AIData == null || BotCacheUtility.IsHumanPlayer(bot))
                 return;
 
             var cache = GetCache(bot);
             if (cache == null)
                 return;
 
-            // Panic first
             if (BotPanicUtility.TryGet(cache, out var panic))
             {
                 panic.TriggerPanic();
@@ -72,7 +55,6 @@ namespace AIRefactored.AI.Helpers
                 return;
             }
 
-            // Fallback to suppression
             if (cache.TryGetComponent(out BotFlashReactionComponent? reaction))
             {
                 reaction.TriggerSuppression();
@@ -80,13 +62,10 @@ namespace AIRefactored.AI.Helpers
             }
         }
 
-        /// <summary>
-        /// Determines if suppression should be triggered based on visibility and lighting.
-        /// </summary>
         public static bool ShouldTriggerSuppression(Player bot, float visibilityThreshold = 12f, float ambientThreshold = 0.25f)
         {
             var owner = GetBotOwner(bot);
-            if (owner?.LookSensor == null)
+            if (owner == null || owner.LookSensor == null)
                 return false;
 
             float visibleDist = owner.LookSensor.ClearVisibleDist;
@@ -95,15 +74,9 @@ namespace AIRefactored.AI.Helpers
             return visibleDist < visibilityThreshold || ambient < ambientThreshold;
         }
 
-        #endregion
-
-        #region Debug
-
         [System.Diagnostics.Conditional("DEBUG")]
         [System.Diagnostics.Conditional("UNITY_EDITOR")]
         private static void LogDebug(string msg) =>
             Debug.Log($"[AIRefactored-Suppress] {msg}");
-
-        #endregion
     }
 }

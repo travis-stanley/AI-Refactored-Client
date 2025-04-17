@@ -1,28 +1,41 @@
 ﻿#nullable enable
 
+using System;
 using System.Collections.Generic;
 using UnityEngine;
-using AIRefactored.Data;
 
 namespace AIRefactored.AI
 {
     /// <summary>
-    /// Provides default bot personality profiles and runtime generators.
+    /// Provides runtime personality preset generation and lookup for all bots.
     /// </summary>
     public static class BotPersonalityPresets
     {
+        #region Static Preset Cache
+
+        /// <summary>
+        /// Global preset lookup for each personality type.
+        /// </summary>
         public static readonly Dictionary<PersonalityType, BotPersonalityProfile> Presets;
 
         static BotPersonalityPresets()
         {
             Presets = new Dictionary<PersonalityType, BotPersonalityProfile>();
-
-            foreach (PersonalityType type in System.Enum.GetValues(typeof(PersonalityType)))
+            foreach (PersonalityType type in Enum.GetValues(typeof(PersonalityType)))
             {
                 Presets[type] = GenerateProfile(type);
             }
         }
 
+        #endregion
+
+        #region Preset Generator
+
+        /// <summary>
+        /// Generates a personality profile based on the specified personality type.
+        /// </summary>
+        /// <param name="type">The personality type to generate a profile for.</param>
+        /// <returns>A fully initialized bot personality profile.</returns>
         public static BotPersonalityProfile GenerateProfile(PersonalityType type)
         {
             var profile = new BotPersonalityProfile
@@ -55,7 +68,6 @@ namespace AIRefactored.AI
                     profile.Accuracy = 0.7f;
                     profile.RiskTolerance = 0.5f;
                     profile.AggressionLevel = 0.6f;
-                    profile.PreferredMission = MissionBias.Random;
                     break;
 
                 case PersonalityType.Camper:
@@ -194,7 +206,6 @@ namespace AIRefactored.AI
 
                 case PersonalityType.Unpredictable:
                     profile.ChaosFactor = 1.0f;
-                    profile.PreferredMission = MissionBias.Random;
                     break;
 
                 case PersonalityType.Vengeful:
@@ -207,5 +218,7 @@ namespace AIRefactored.AI
 
             return profile;
         }
+
+        #endregion
     }
 }

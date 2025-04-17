@@ -2,7 +2,6 @@
 
 using System;
 using System.Collections.Generic;
-using System.Linq;
 using AIRefactored.AI.Core;
 using AIRefactored.AI.Helpers;
 using AIRefactored.Core;
@@ -13,18 +12,10 @@ using UnityEngine;
 
 namespace AIRefactored.AI.Hotspots
 {
-    /// <summary>
-    /// Drives bot patrol and defensive behavior using map-defined hotspot data.
-    /// Dynamically assigns routes or defensive positions based on personality traits.
-    /// </summary>
     public class HotspotSystem : MonoBehaviour
     {
         #region Session
 
-        /// <summary>
-        /// Internal per-bot routing session.
-        /// Handles movement, routing logic, and damage reactivity.
-        /// </summary>
         private sealed class HotspotSession
         {
             private readonly BotOwner _bot;
@@ -40,7 +31,7 @@ namespace AIRefactored.AI.Hotspots
             public HotspotSession(BotOwner bot, List<Vector3> route, bool isDefender)
             {
                 _bot = bot;
-                _route = route;
+                _route = new List<Vector3>(route);
                 _isDefender = isDefender;
                 _index = 0;
                 _nextSwitchTime = Time.time + GetSwitchInterval();
@@ -124,15 +115,16 @@ namespace AIRefactored.AI.Hotspots
 
         private void Start()
         {
-            HotspotLoader.LoadAll(); // ensure hotspots are preloaded
+            HotspotLoader.LoadAll();
         }
 
         private void Update()
         {
-            _botList = Singleton<BotsController>.Instance?.Bots?.BotOwners.ToList();
-            if (_botList == null)
+            var controller = Singleton<BotsController>.Instance;
+            if (controller == null || controller.Bots == null || controller.Bots.BotOwners == null)
                 return;
 
+            _botList = new List<BotOwner>(controller.Bots.BotOwners);
             for (int i = 0; i < _botList.Count; i++)
             {
                 BotOwner bot = _botList[i];
@@ -154,9 +146,6 @@ namespace AIRefactored.AI.Hotspots
 
         #region Assignment Logic
 
-        /// <summary>
-        /// Assigns a personality-aware hotspot patrol or defense route to a bot.
-        /// </summary>
         private HotspotSession? AssignHotspotRoute(BotOwner bot)
         {
             var role = bot.Profile?.Info?.Settings?.Role ?? WildSpawnType.assault;
@@ -198,9 +187,6 @@ namespace AIRefactored.AI.Hotspots
 
         #region External API
 
-        /// <summary>
-        /// Returns a random hotspot point for the current map for use in mission behaviors.
-        /// </summary>
         public static Vector3 GetRandomHotspot(BotOwner bot)
         {
             var role = bot.Profile?.Info?.Settings?.Role ?? WildSpawnType.assault;

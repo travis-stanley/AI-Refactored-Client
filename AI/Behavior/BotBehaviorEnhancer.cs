@@ -46,9 +46,6 @@ namespace AIRefactored.AI.Behavior
 
         #region Initialization
 
-        /// <summary>
-        /// Initializes the behavior enhancer with the owning bot instance.
-        /// </summary>
         public void Init(BotOwner bot)
         {
             _bot = bot;
@@ -73,12 +70,9 @@ namespace AIRefactored.AI.Behavior
 
         #region Tick Loop
 
-        /// <summary>
-        /// Called every frame to update AI logic.
-        /// </summary>
         public void Tick(float time)
         {
-            if (_bot == null || _profile == null || _hasExtracted || !_bot.GetPlayer?.HealthController?.IsAlive == true)
+            if (_bot == null || _profile == null || _hasExtracted || _bot.GetPlayer?.HealthController?.IsAlive != true)
                 return;
 
             if (!_bot.GetPlayer.IsAI)
@@ -110,9 +104,6 @@ namespace AIRefactored.AI.Behavior
 
         #region Loot Logic
 
-        /// <summary>
-        /// Attempts to find and move toward a loot container.
-        /// </summary>
         private void TryLoot()
         {
             if (_bot == null || _lootPoints == null || _lootPoints.Count == 0)
@@ -125,7 +116,7 @@ namespace AIRefactored.AI.Behavior
             {
                 var loot = _lootPoints[i];
                 float dist = Vector3.Distance(_bot.Position, loot.position);
-                float score = 1f / Mathf.Max(1f, dist); // Placeholder for smarter value later
+                float score = 1f / Mathf.Max(1f, dist);
 
                 if (score > bestScore)
                 {
@@ -145,9 +136,6 @@ namespace AIRefactored.AI.Behavior
 
         #region Extraction Logic
 
-        /// <summary>
-        /// Attempts to initiate extraction if conditions are met.
-        /// </summary>
         private void TryExtract()
         {
             if (_isExtracting || _bot == null || _extractPoints == null || _profile == null)
@@ -175,12 +163,12 @@ namespace AIRefactored.AI.Behavior
                 SmoothMoveTo(fallback.Value);
         }
 
-        /// <summary>
-        /// Checks if enough group members are near to extract together.
-        /// </summary>
         private bool IsGroupReadyToExtract()
         {
-            var teammates = _groupSync?.GetTeammates();
+            if (_groupSync == null || _profile == null)
+                return true;
+
+            var teammates = _groupSync.GetTeammates();
             if (teammates == null || teammates.Count <= 1)
                 return true;
 
@@ -188,16 +176,13 @@ namespace AIRefactored.AI.Behavior
             for (int i = 0; i < teammates.Count; i++)
             {
                 var mate = teammates[i];
-                if (mate != null && mate != _bot && Vector3.Distance(mate.Position, _bot.Position) <= GROUP_RADIUS)
+                if (mate != null && mate != _bot && Vector3.Distance(mate.Position, _bot!.Position) <= GROUP_RADIUS)
                     nearCount++;
             }
 
-            return nearCount >= Mathf.CeilToInt(teammates.Count * _profile!.Cohesion);
+            return nearCount >= Mathf.CeilToInt(teammates.Count * _profile.Cohesion);
         }
 
-        /// <summary>
-        /// Begins the extraction routine for the bot.
-        /// </summary>
         private void BeginExtract(ExfiltrationPoint point)
         {
             _isExtracting = true;
@@ -205,12 +190,10 @@ namespace AIRefactored.AI.Behavior
             SmoothMoveTo(point.transform.position);
             _bot?.BotTalk?.TrySay(EPhraseTrigger.MumblePhrase);
             _bot?.Deactivate();
-            StartCoroutine(ExtractRoutine(6f));
+            if (this.isActiveAndEnabled)
+                StartCoroutine(ExtractRoutine(6f));
         }
 
-        /// <summary>
-        /// Deactivates the bot after a delay to simulate extraction.
-        /// </summary>
         private IEnumerator ExtractRoutine(float delay)
         {
             yield return new WaitForSeconds(delay);
@@ -223,9 +206,6 @@ namespace AIRefactored.AI.Behavior
 
         #region Retreat Logic
 
-        /// <summary>
-        /// Attempts to retreat if bot is injured or under fire.
-        /// </summary>
         private void TryRetreat()
         {
             if (_bot == null || _profile == null || !_bot.Memory.IsUnderFire)
@@ -245,7 +225,7 @@ namespace AIRefactored.AI.Behavior
             float ratio = max > 0f ? current / max : 1f;
             if (ratio >= _profile.RetreatThreshold) return;
 
-            Vector3 fallback = _bot.Position - _bot.Memory.GoalEnemy.CurrPosition.normalized * 8f;
+            Vector3 fallback = _bot.Position - _bot.Memory.GoalEnemy?.CurrPosition.normalized * 8f ?? _bot.Position;
             SmoothMoveTo(fallback);
             _groupSync?.BroadcastExtractPoint(fallback);
 
@@ -269,9 +249,6 @@ namespace AIRefactored.AI.Behavior
 
         #region Movement
 
-        /// <summary>
-        /// Smoothly moves the bot toward a position, with damped lerp for realism.
-        /// </summary>
         private void SmoothMoveTo(Vector3 target)
         {
             if (_bot == null || Time.time < _lastMoveCommandTime + MOVE_COOLDOWN)

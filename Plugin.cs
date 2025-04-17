@@ -15,7 +15,7 @@ namespace AIRefactored
     {
         #region Fields
 
-        private static ManualLogSource _logger = null!;
+        private static ManualLogSource? _logger;
 
         #endregion
 
@@ -40,6 +40,13 @@ namespace AIRefactored
 
             _logger.LogInfo("[AIRefactored] ✅ AIRefactored mod loaded and systems online.");
         }
+
+        #endregion
+
+        #region Accessor
+
+        public static ManualLogSource LoggerInstance =>
+            _logger ?? throw new System.NullReferenceException("Logger accessed before Awake() initialized it.");
 
         #endregion
     }

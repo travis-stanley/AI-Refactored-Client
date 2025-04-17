@@ -22,8 +22,8 @@ namespace AIRefactored.AI.Combat
     {
         #region Fields
 
-        private BotOwner _bot;
-        private BotComponentCache _cache;
+        private BotOwner? _bot;
+        private BotComponentCache? _cache;
 
         private float _panicStartTime = -1f;
         private float _lastPanicExitTime = -99f;
@@ -45,7 +45,7 @@ namespace AIRefactored.AI.Combat
             _bot = GetComponent<BotOwner>();
             _cache = GetComponent<BotComponentCache>();
 
-            if (_bot.GetPlayer != null && _bot.GetPlayer.HealthController is HealthControllerClass health)
+            if (_bot?.GetPlayer?.HealthController is HealthControllerClass health)
                 health.ApplyDamageEvent += OnDamaged;
         }
 
@@ -105,6 +105,8 @@ namespace AIRefactored.AI.Combat
 
         private bool ShouldTriggerPanic()
         {
+            if (_bot == null || _cache == null) return false;
+
             var profile = BotRegistry.Get(_bot.ProfileId);
             if (profile.IsFrenzied || profile.IsStubborn)
                 return false;
@@ -119,6 +121,8 @@ namespace AIRefactored.AI.Combat
         private bool CheckNearbySquadDanger(out Vector3 retreatDir)
         {
             retreatDir = Vector3.zero;
+            if (_bot == null || _bot.Profile?.Info?.GroupId == null)
+                return false;
 
             string groupId = _bot.Profile.Info.GroupId;
             if (string.IsNullOrEmpty(groupId))
@@ -148,18 +152,19 @@ namespace AIRefactored.AI.Combat
 
         private void StartPanic(float now, Vector3 retreatDir)
         {
+            if (_bot == null) return;
+
             _isPanicking = true;
             _panicStartTime = now;
             _composureLevel = 0f;
 
-            List<Vector3> path = (_cache.PathCache != null)
+            List<Vector3> path = (_cache?.PathCache != null)
                 ? BotCoverRetreatPlanner.GetCoverRetreatPath(_bot, retreatDir, _cache.PathCache)
                 : new List<Vector3> { _bot.Position + retreatDir * 8f };
 
             if (path.Count >= 2)
                 _bot.GoToPoint(path[1]);
 
-            // Register the danger zone without assuming a "Trigger" enum
             string mapId = GameWorldHandler.GetCurrentMapName();
             BotMemoryStore.AddDangerZone(mapId, _bot.Position, DangerTriggerType.Panic, 0.6f);
 
@@ -169,6 +174,8 @@ namespace AIRefactored.AI.Combat
 
         private void EndPanic(float now)
         {
+            if (_bot == null) return;
+
             _isPanicking = false;
             _lastPanicExitTime = now;
 
@@ -208,7 +215,7 @@ namespace AIRefactored.AI.Combat
 
         private bool IsHumanPlayer()
         {
-            return _bot.GetPlayer != null && !_bot.GetPlayer.IsAI;
+            return _bot?.GetPlayer != null && !_bot.GetPlayer.IsAI;
         }
 
         #endregion

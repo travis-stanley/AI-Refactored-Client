@@ -15,7 +15,7 @@ namespace AIRefactored.AI.Combat
     {
         #region Fields
 
-        private BotOwner _bot = null!;
+        private BotOwner? _bot;
         private float _lastCheckTime = 0f;
         private bool _hasEscalated = false;
 
@@ -30,15 +30,18 @@ namespace AIRefactored.AI.Combat
         private void Awake()
         {
             _bot = GetComponent<BotOwner>();
+
+            if (_bot == null)
+                Debug.LogError("[AIRefactored] BotThreatEscalationMonitor missing BotOwner!");
         }
 
         private void Update()
         {
-            if (_hasEscalated || Time.time < _lastCheckTime || _bot.IsDead)
+            if (_bot == null || _hasEscalated || Time.time < _lastCheckTime || _bot.IsDead)
                 return;
 
             if (_bot.GetPlayer != null && !_bot.GetPlayer.IsAI)
-                return; // 🛑 Skip real players or FIKA clients
+                return;
 
             _lastCheckTime = Time.time + CheckInterval;
 
@@ -52,11 +55,11 @@ namespace AIRefactored.AI.Combat
 
         #region External Triggers
 
-        /// <summary>
-        /// Called externally by panic systems to begin monitoring escalation.
-        /// </summary>
         public void NotifyPanicTriggered()
         {
+            if (_bot == null)
+                return;
+
             if (_panicStartTime < 0f)
                 _panicStartTime = Time.time;
         }
@@ -65,37 +68,25 @@ namespace AIRefactored.AI.Combat
 
         #region Escalation Trigger Logic
 
-        /// <summary>
-        /// Evaluates threat context and returns true if escalation should occur.
-        /// </summary>
         private bool ShouldEscalate()
         {
-            return PanicElapsed() || HasMultipleEnemies() || SquadHasCasualties();
+            return _bot != null && (PanicElapsed() || HasMultipleEnemies() || SquadHasCasualties());
         }
 
-        /// <summary>
-        /// True if bot has been in a panic state longer than threshold.
-        /// </summary>
         private bool PanicElapsed()
         {
             return _panicStartTime > 0f && (Time.time - _panicStartTime) > PanicDurationThreshold;
         }
 
-        /// <summary>
-        /// True if bot is tracking two or more enemies.
-        /// </summary>
         private bool HasMultipleEnemies()
         {
-            var enemies = _bot.EnemiesController?.EnemyInfos;
+            var enemies = _bot?.EnemiesController?.EnemyInfos;
             return enemies != null && enemies.Count >= 2;
         }
 
-        /// <summary>
-        /// True if enough squadmates have died to justify tactical escalation.
-        /// </summary>
         private bool SquadHasCasualties()
         {
-            var group = _bot.BotsGroup;
+            var group = _bot?.BotsGroup;
             if (group == null || group.MembersCount <= 1)
                 return false;
 
@@ -114,14 +105,14 @@ namespace AIRefactored.AI.Combat
 
         #region Escalation Execution
 
-        /// <summary>
-        /// Applies runtime tuning changes for vision, aggression, and weapon control.
-        /// </summary>
         private void EscalateBot()
         {
+            if (_bot == null)
+                return;
+
             _hasEscalated = true;
 
-            Debug.Log($"[AIRefactored-ThreatEscalation] Bot {_bot.Profile?.Info?.Nickname} escalating AI tuning.");
+            Debug.Log($"[AIRefactored-ThreatEscalation] Bot {_bot.Profile?.Info?.Nickname ?? "Unknown"} escalating AI tuning.");
 
             AIOptimizationManager.Reset(_bot);
             AIOptimizationManager.Apply(_bot);
@@ -129,13 +120,9 @@ namespace AIRefactored.AI.Combat
             ApplyEscalationTuning();
         }
 
-        /// <summary>
-        /// Applies internal tuning overrides for perception and combat response.
-        /// </summary>
         private void ApplyEscalationTuning()
         {
-            var settings = _bot.Settings?.FileSettings;
-            if (settings == null)
+            if (_bot?.Settings?.FileSettings is not { } settings)
                 return;
 
             var mind = settings.Mind;
@@ -143,9 +130,7 @@ namespace AIRefactored.AI.Combat
             var shoot = settings.Shoot;
 
             if (shoot != null)
-            {
                 shoot.RECOIL_PER_METER = Mathf.Clamp(shoot.RECOIL_PER_METER * 0.85f, 0.1f, 2.0f);
-            }
 
             if (mind != null)
             {
@@ -155,11 +140,9 @@ namespace AIRefactored.AI.Combat
             }
 
             if (look != null)
-            {
                 look.MAX_VISION_GRASS_METERS = Mathf.Clamp(look.MAX_VISION_GRASS_METERS + 5f, 5f, 40f);
-            }
 
-            Debug.Log($"[AIRefactored-Tuning] {_bot.Profile?.Info?.Nickname} → runtime recoil, vision, and sprint tuning escalated.");
+            Debug.Log($"[AIRefactored-Tuning] {_bot?.Profile?.Info?.Nickname ?? "Unknown"} → runtime recoil, vision, and sprint tuning escalated.");
         }
 
         #endregion

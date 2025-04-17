@@ -56,7 +56,7 @@ namespace AIRefactored.AI.Combat
 
         public void UpdateShootingBehavior()
         {
-            if (_botOwner == null || !_botOwner.IsAI || _botOwner.Memory == null || _botOwner.WeaponManager == null)
+            if (!_botOwner.IsAI || _botOwner.Memory == null || _botOwner.WeaponManager == null)
                 return;
 
             var weapon = _botOwner.WeaponManager.CurrentWeapon;
@@ -123,7 +123,7 @@ namespace AIRefactored.AI.Combat
 
         private float EstimateWeaponRange(Weapon weapon)
         {
-            string name = weapon.Template?.Name?.ToLowerInvariant() ?? "";
+            string name = weapon.Template?.Name?.ToLowerInvariant() ?? string.Empty;
             foreach (var pair in WeaponRanges)
             {
                 if (name.Contains(pair.Key))
@@ -149,11 +149,7 @@ namespace AIRefactored.AI.Combat
 
         private void ApplyScatter(GClass592 core, bool underFire, BotPersonalityProfile profile)
         {
-            float composure = 1f;
-            var panicHandler = _cache?.PanicHandler;
-            if (panicHandler != null)
-                composure = panicHandler.GetComposureLevel();
-
+            float composure = _cache?.PanicHandler?.GetComposureLevel() ?? 1f;
             float suppressionFactor = underFire ? (1f - profile.AccuracyUnderFire) * (1f - composure) : 0f;
             float scatterBoost = 1f + (SCATTER_MULTIPLIER - 1f) + suppressionFactor;
 

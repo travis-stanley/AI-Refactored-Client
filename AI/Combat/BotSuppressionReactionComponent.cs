@@ -4,7 +4,6 @@ using UnityEngine;
 using EFT;
 using AIRefactored.AI.Helpers;
 using AIRefactored.AI.Core;
-using AIRefactored.AI.Combat;
 
 namespace AIRefactored.AI.Combat
 {
@@ -54,11 +53,6 @@ namespace AIRefactored.AI.Combat
 
         #region Suppression Logic
 
-        /// <summary>
-        /// Triggers suppression logic and evasive sprinting away from the threat source.
-        /// Duration scales with composure level.
-        /// </summary>
-        /// <param name="from">Optional position of incoming threat (e.g. gunfire).</param>
         public void TriggerSuppression(Vector3? from = null)
         {
             if (_isSuppressed || _bot == null || IsHumanPlayer())
@@ -67,19 +61,21 @@ namespace AIRefactored.AI.Combat
             _isSuppressed = true;
             _suppressionStartTime = Time.time;
 
-            float composure = 1f;
-            if (_cache?.PanicHandler != null)
-                composure = _cache.PanicHandler.GetComposureLevel();
+            float composure = _cache?.PanicHandler?.GetComposureLevel() ?? 1f;
 
-            // Less composure = longer suppression duration
             _currentSuppressionDuration = Mathf.Lerp(MaxSuppressionDuration, MinSuppressionDuration, composure);
 
-            Vector3 direction = from.HasValue
-                ? (_bot.Position - from.Value).normalized
-                : -_bot.LookDirection.normalized;
+            Vector3 direction;
+            if (from.HasValue)
+            {
+                direction = (_bot.Position - from.Value).normalized;
+            }
+            else
+            {
+                direction = -_bot.LookDirection.normalized;
+            }
 
             Vector3 fallback = _bot.Position + direction * 6f;
-
             if (Physics.Raycast(_bot.Position, direction, out RaycastHit hit, 6f))
             {
                 fallback = hit.point - direction;
@@ -97,27 +93,17 @@ namespace AIRefactored.AI.Combat
             BotMovementHelper.SmoothMoveTo(_bot, fallback, allowSlowEnd: false, cohesionScale: cohesion);
         }
 
-        /// <summary>
-        /// Public trigger for suppression response.
-        /// </summary>
-        /// <param name="source">The origin of suppressive fire or explosive.</param>
         public void ReactToSuppression(Vector3 source)
         {
             TriggerSuppression(source);
         }
 
-        /// <summary>
-        /// Returns true if the bot is currently reacting to suppression.
-        /// </summary>
         public bool IsSuppressed() => _isSuppressed;
 
         #endregion
 
         #region Helpers
 
-        /// <summary>
-        /// Checks if bot is controlled by a human.
-        /// </summary>
         private bool IsHumanPlayer()
         {
             return _bot?.GetPlayer != null && !_bot.GetPlayer.IsAI;

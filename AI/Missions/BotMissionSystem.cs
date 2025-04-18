@@ -1,31 +1,32 @@
 ﻿#nullable enable
 
-using System;
-using System.Collections.Generic;
-using UnityEngine;
+using AIRefactored.AI.Combat;
+using AIRefactored.AI.Groups;
+using AIRefactored.AI.Helpers;
+using AIRefactored.AI.Hotspots;
+using AIRefactored.Core;
 using EFT;
 using EFT.Interactive;
 using EFT.InventoryLogic;
-using EFT.Communications;
-using AIRefactored.AI;
-using AIRefactored.AI.Core;
-using AIRefactored.AI.Groups;
-using AIRefactored.AI.Perception;
-using AIRefactored.AI.Hotspots;
-using AIRefactored.AI.Memory;
-using AIRefactored.AI.Combat;
-using AIRefactored.AI.Helpers;
+using System;
+using System.Collections.Generic;
+using UnityEngine;
 
 namespace AIRefactored.AI.Missions
 {
+    /// <summary>
+    /// Controls high-level mission behavior for bots: loot, fight, or quest.
+    /// Used by BotAsyncThinker to simulate long-term goals and behavior chains.
+    /// </summary>
     public class BotMissionSystem : MonoBehaviour
     {
-        public enum MissionType
-        {
-            Loot,
-            Fight,
-            Quest
-        }
+        #region Enums
+
+        public enum MissionType { Loot, Fight, Quest }
+
+        #endregion
+
+        #region Fields
 
         private BotOwner? _bot;
         private BotGroupSyncCoordinator? _group;
@@ -47,8 +48,12 @@ namespace AIRefactored.AI.Missions
         private bool _lootComplete = false;
         private bool _fightComplete = false;
 
-        private readonly List<LootableContainer> _lootContainers = new();
-        private readonly System.Random _rng = new();
+        private readonly List<LootableContainer> _lootContainers = new List<LootableContainer>();
+        private readonly System.Random _rng = new System.Random();
+
+        #endregion
+
+        #region Initialization
 
         public void Init(BotOwner bot)
         {
@@ -72,7 +77,11 @@ namespace AIRefactored.AI.Missions
             _forcedMission = true;
         }
 
-        private void Update()
+        #endregion
+
+        #region Main Tick
+
+        public void ManualTick(float time)
         {
             if (_bot == null || _bot.GetPlayer == null || !_bot.GetPlayer.HealthController.IsAlive)
                 return;
@@ -83,10 +92,10 @@ namespace AIRefactored.AI.Missions
             if (_waitForGroup && !IsGroupAligned())
                 return;
 
-            if (Time.time - _lastUpdate > _objectiveCooldown)
+            if (time - _lastUpdate > _objectiveCooldown)
             {
                 EvaluateMission();
-                _lastUpdate = Time.time;
+                _lastUpdate = time;
             }
 
             if (Vector3.Distance(_bot.Position, _currentObjective) < REACHED_THRESHOLD)
@@ -94,6 +103,10 @@ namespace AIRefactored.AI.Missions
                 OnObjectiveReached();
             }
         }
+
+        #endregion
+
+        #region Mission Evaluation
 
         private void PickMission()
         {
@@ -116,7 +129,7 @@ namespace AIRefactored.AI.Missions
             };
 
             _currentObjective = GetInitialObjective(_missionType);
-            BotMovementHelper.SmoothMoveTo(_bot!, _currentObjective, false, 1f);
+            BotMovementHelper.SmoothMoveTo(_bot, _currentObjective);
         }
 
         private MissionType RandomizeMissionType(bool isPmc)
@@ -146,7 +159,7 @@ namespace AIRefactored.AI.Missions
             switch (_missionType)
             {
                 case MissionType.Loot:
-                    if (!_readyToExtract && InventoryUtil.IsBackpackFull(_bot))
+                    if (!_readyToExtract && IsBackpackFull(_bot))
                     {
                         _readyToExtract = true;
                         Say(EPhraseTrigger.OnFight);
@@ -186,7 +199,13 @@ namespace AIRefactored.AI.Missions
                 _isLooting = true;
                 Say(EPhraseTrigger.OnLoot);
                 _bot?.Mover?.Stop();
-                Invoke(nameof(ResumeMovement), 4f);
+
+                UnityMainThreadDispatcher.Enqueue(() =>
+                {
+                    if (_bot != null)
+                        BotMovementHelper.SmoothMoveTo(_bot, _currentObjective);
+                });
+
                 return;
             }
 
@@ -198,11 +217,9 @@ namespace AIRefactored.AI.Missions
             }
         }
 
-        private void ResumeMovement()
-        {
-            if (_bot != null)
-                BotMovementHelper.SmoothMoveTo(_bot, _currentObjective, false, 1f);
-        }
+        #endregion
+
+        #region Mission Goals
 
         private void CacheLootZones()
         {
@@ -219,8 +236,9 @@ namespace AIRefactored.AI.Missions
             float highestValue = 0f;
             Vector3 bestPos = _bot?.Position ?? Vector3.zero;
 
-            foreach (var container in _lootContainers)
+            for (int i = 0; i < _lootContainers.Count; i++)
             {
+                var container = _lootContainers[i];
                 float value = EstimateContainerValue(container);
                 if (value > highestValue)
                 {
@@ -240,7 +258,7 @@ namespace AIRefactored.AI.Missions
             float total = 0f;
             foreach (var item in container.ItemOwner.RootItem.GetAllItems())
             {
-                if (item?.Template?.CreditsPrice > 0)
+                if (item?.Template != null && item.Template.CreditsPrice > 0)
                     total += item.Template.CreditsPrice;
             }
 
@@ -285,7 +303,7 @@ namespace AIRefactored.AI.Missions
 
             if (closest != null)
             {
-                BotMovementHelper.SmoothMoveTo(_bot!, closest.transform.position);
+                BotMovementHelper.SmoothMoveTo(_bot, closest.transform.position);
                 Say(EPhraseTrigger.ExitLocated);
             }
             else
@@ -293,6 +311,10 @@ namespace AIRefactored.AI.Missions
                 Say(EPhraseTrigger.MumblePhrase);
             }
         }
+
+        #endregion
+
+        #region Group Check
 
         private bool IsGroupAligned()
         {
@@ -304,14 +326,40 @@ namespace AIRefactored.AI.Missions
                 return true;
 
             int nearby = 0;
-            foreach (var mate in teammates)
+            for (int i = 0; i < teammates.Count; i++)
             {
-                if (mate != null && Vector3.Distance(mate.Position, _bot!.Position) < SQUAD_COHESION_RANGE)
+                var mate = teammates[i];
+                if (mate != null && Vector3.Distance(mate.Position, _bot.Position) < SQUAD_COHESION_RANGE)
                     nearby++;
             }
 
             return nearby >= Mathf.CeilToInt(teammates.Count * 0.6f);
         }
+
+        private bool IsBackpackFull(BotOwner bot)
+        {
+            var inv = bot.GetPlayer?.Inventory;
+            var slot = inv?.Equipment?.GetSlot(EquipmentSlot.Backpack);
+            var backpack = slot?.ContainedItem;
+
+            if (backpack == null)
+                return false;
+
+            int count = 0;
+            foreach (var item in backpack.GetAllItems())
+            {
+                if (item != null)
+                    count++;
+                if (count >= 40)
+                    return true;
+            }
+
+            return false;
+        }
+
+        #endregion
+
+        #region VO
 
         private void Say(EPhraseTrigger phrase)
         {
@@ -324,29 +372,7 @@ namespace AIRefactored.AI.Missions
                 Debug.LogWarning($"[AIRefactored-Mission] Voice failed: {ex.Message}");
             }
         }
-    }
 
-    public static class InventoryUtil
-    {
-        public static bool IsBackpackFull(BotOwner bot)
-        {
-            var inv = bot?.GetPlayer?.Inventory;
-            var bpSlot = inv?.Equipment?.GetSlot(EquipmentSlot.Backpack);
-            var backpack = bpSlot?.ContainedItem;
-
-            if (backpack == null)
-                return false;
-
-            int count = 0;
-            foreach (var item in backpack.GetAllItems())
-            {
-                if (item == null) continue;
-                count++;
-                if (count >= 40)
-                    return true;
-            }
-
-            return false;
-        }
+        #endregion
     }
 }

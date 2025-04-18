@@ -1,9 +1,9 @@
 ﻿#nullable enable
 
-using System.Collections.Generic;
-using EFT;
-using UnityEngine;
 using AIRefactored.AI.Core;
+using EFT;
+using System.Collections.Generic;
+using UnityEngine;
 
 namespace AIRefactored.AI.Perception
 {

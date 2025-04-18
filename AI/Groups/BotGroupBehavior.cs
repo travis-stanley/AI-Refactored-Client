@@ -1,63 +1,47 @@
 ﻿#nullable enable
 
-using System.Collections.Generic;
-using AIRefactored.AI;
-using AIRefactored.AI.Groups;
 using AIRefactored.AI.Helpers;
-using Comfort.Common;
 using EFT;
 using EFT.Interactive;
+using System.Collections.Generic;
 using UnityEngine;
 
 namespace AIRefactored.AI.Groups
 {
     /// <summary>
     /// Controls bot squad cohesion, spacing, and smart door unlocking within a group.
-    /// Keeps AI squads tightly aligned without overlapping or separating too far.
+    /// Managed by BotBrain for squad-level coordination.
     /// </summary>
-    public class BotGroupBehavior : MonoBehaviour
+    public class BotGroupBehavior
     {
-        #region Fields
+        private readonly BotOwner _bot;
+        private readonly string _groupId;
 
-        private BotOwner? _bot;
-        private string? _groupId;
-
-        private float doorTimer = 0f;
+        private float _doorTimer = 0f;
         private const float DoorCheckInterval = 1.25f;
 
         private const float SQUAD_SPACING_MIN = 3f;
         private const float SQUAD_SPACING_MAX = 15f;
         private const float LOCKED_DOOR_RADIUS = 2f;
 
-        #endregion
-
-        #region Unity Events
-
-        private void Start()
+        public BotGroupBehavior(BotOwner bot)
         {
-            _bot = GetComponent<BotOwner>();
-            _groupId = _bot?.Profile?.Info?.GroupId;
+            _bot = bot;
+            _groupId = bot.Profile?.Info?.GroupId ?? string.Empty;
 
-            if (_bot != null && _bot.GetPlayer?.IsAI == true && !string.IsNullOrEmpty(_groupId))
-            {
+            if (_bot.GetPlayer?.IsAI == true && !string.IsNullOrEmpty(_groupId))
                 BotTeamTracker.Register(_groupId, _bot);
-            }
         }
 
-        private void OnDestroy()
+        public void Dispose()
         {
-            if (_bot != null && _bot.GetPlayer?.IsAI == true)
-            {
+            if (_bot.GetPlayer?.IsAI == true)
                 BotTeamTracker.Unregister(_bot);
-            }
         }
 
-        private void Update()
+        public void Tick(float deltaTime)
         {
-            if (_bot == null || _bot.IsDead || string.IsNullOrEmpty(_groupId))
-                return;
-
-            if (_bot.GetPlayer == null || !_bot.GetPlayer.IsAI)
+            if (!IsValid())
                 return;
 
             if (_bot.Memory?.GoalEnemy != null)
@@ -65,45 +49,52 @@ namespace AIRefactored.AI.Groups
 
             HandleSquadSpacing();
 
-            doorTimer += Time.deltaTime;
-            if (doorTimer >= DoorCheckInterval)
+            _doorTimer += deltaTime;
+            if (_doorTimer >= DoorCheckInterval)
             {
                 TryUnlockNearbyDoors();
-                doorTimer = 0f;
+                _doorTimer = 0f;
             }
         }
 
-        #endregion
-
-        #region Behavior Logic
+        private bool IsValid()
+        {
+            return _bot != null &&
+                   !_bot.IsDead &&
+                   _bot.GetPlayer != null &&
+                   _bot.GetPlayer.IsAI &&
+                   !string.IsNullOrEmpty(_groupId);
+        }
 
         private void HandleSquadSpacing()
         {
-            List<BotOwner> group = BotTeamTracker.GetGroup(_groupId!);
-            if (group.Count <= 1)
+            List<BotOwner>? group = BotTeamTracker.GetGroup(_groupId);
+            if (group == null || group.Count <= 1)
                 return;
 
-            int selfIndex = group.IndexOf(_bot!);
+            int selfIndex = group.IndexOf(_bot);
             if (selfIndex == -1)
                 return;
 
+            Vector3 selfPos = _bot.Position;
+
             for (int i = 0; i < group.Count; i++)
             {
-                var teammate = group[i];
+                BotOwner teammate = group[i];
                 if (teammate == null || teammate == _bot || teammate.IsDead)
                     continue;
 
-                float dist = Vector3.Distance(_bot!.Position, teammate.Position);
+                float dist = Vector3.Distance(selfPos, teammate.Position);
 
                 if (dist < SQUAD_SPACING_MIN)
                 {
                     Vector3 stagger = Random.insideUnitSphere * 1.5f;
                     stagger.y = 0f;
-                    BotMovementHelper.SmoothMoveTo(_bot, _bot.Position + stagger, true, 1f);
+                    BotMovementHelper.SmoothMoveTo(_bot, selfPos + stagger, true, 1f);
                 }
                 else if (dist > SQUAD_SPACING_MAX && selfIndex > i)
                 {
-                    Vector3 midpoint = Vector3.Lerp(_bot.Position, teammate.Position, 0.5f);
+                    Vector3 midpoint = Vector3.Lerp(selfPos, teammate.Position, 0.5f);
                     BotMovementHelper.SmoothMoveTo(_bot, midpoint, false, 1f);
                 }
             }
@@ -111,23 +102,19 @@ namespace AIRefactored.AI.Groups
 
         private void TryUnlockNearbyDoors()
         {
-            if (_bot?.Mover == null)
+            if (_bot.Mover == null)
                 return;
 
             Collider[] hits = Physics.OverlapSphere(_bot.Position, LOCKED_DOOR_RADIUS);
             for (int i = 0; i < hits.Length; i++)
             {
-                if (hits[i].TryGetComponent(out Door door))
+                Door? door = hits[i].GetComponent<Door>();
+                if (door != null && (door.DoorState == EDoorState.Shut || door.DoorState == EDoorState.Locked))
                 {
-                    if (door.DoorState == EDoorState.Shut || door.DoorState == EDoorState.Locked)
-                    {
-                        door.Interact(new InteractionResult(EInteractionType.Open));
-                        break;
-                    }
+                    door.Interact(new InteractionResult(EInteractionType.Open));
+                    break;
                 }
             }
         }
-
-        #endregion
     }
 }

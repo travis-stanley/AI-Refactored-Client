@@ -1,14 +1,19 @@
 ﻿#nullable enable
 
-using UnityEngine;
-using EFT;
 using AIRefactored.AI.Optimization;
-using AIRefactored.Core;
+using EFT;
+using UnityEngine;
 
 namespace AIRefactored.AI.Combat
 {
+    /// <summary>
+    /// Monitors conditions like panic duration, enemy count, and squad losses to trigger threat escalation.
+    /// Used by BotBrain to boost bot reaction and tuning dynamically.
+    /// </summary>
     public class BotThreatEscalationMonitor : MonoBehaviour
     {
+        #region Fields
+
         private BotOwner? _bot;
         private float _lastCheckTime = 0f;
         private bool _hasEscalated = false;
@@ -17,24 +22,33 @@ namespace AIRefactored.AI.Combat
         private const float PanicDurationThreshold = 4.0f;
         private float _panicStartTime = -1f;
 
+        #endregion
+
+        #region Unity Lifecycle
+
         private void Awake()
         {
             _bot = GetComponent<BotOwner>();
-
             if (_bot == null)
                 Debug.LogError("[AIRefactored] BotThreatEscalationMonitor missing BotOwner!");
         }
 
-        private void Update()
+        #endregion
+
+        #region Public API
+
+        /// <summary>
+        /// Tick handler for BotBrain. Executes all escalation logic.
+        /// </summary>
+        public void Tick(float time)
         {
             if (_bot == null || _hasEscalated || _bot.IsDead)
                 return;
 
-            float time = Time.time;
-            if (time < _lastCheckTime)
+            if (_bot.GetPlayer != null && !_bot.GetPlayer.IsAI)
                 return;
 
-            if (_bot.GetPlayer != null && !_bot.GetPlayer.IsAI)
+            if (time < _lastCheckTime)
                 return;
 
             _lastCheckTime = time + CheckInterval;
@@ -43,11 +57,18 @@ namespace AIRefactored.AI.Combat
                 EscalateBot();
         }
 
+        /// <summary>
+        /// Records the start time of panic, triggered externally (e.g. from flash or suppression).
+        /// </summary>
         public void NotifyPanicTriggered()
         {
-            if (_bot != null && _panicStartTime < 0f)
+            if (_panicStartTime < 0f)
                 _panicStartTime = Time.time;
         }
+
+        #endregion
+
+        #region Internal Logic
 
         private bool ShouldEscalate()
         {
@@ -108,12 +129,12 @@ namespace AIRefactored.AI.Combat
 
         private void ApplyEscalationTuning(string name)
         {
-            if (_bot?.Settings?.FileSettings is not { } settings)
+            if (_bot?.Settings?.FileSettings == null)
                 return;
 
-            var mind = settings.Mind;
-            var look = settings.Look;
-            var shoot = settings.Shoot;
+            var mind = _bot.Settings.FileSettings.Mind;
+            var look = _bot.Settings.FileSettings.Look;
+            var shoot = _bot.Settings.FileSettings.Shoot;
 
             if (shoot != null)
                 shoot.RECOIL_PER_METER = Mathf.Clamp(shoot.RECOIL_PER_METER * 0.85f, 0.1f, 2.0f);
@@ -130,5 +151,7 @@ namespace AIRefactored.AI.Combat
 
             Debug.Log($"[AIRefactored-Tuning] {name} → runtime recoil, vision, and sprint tuning escalated.");
         }
+
+        #endregion
     }
 }

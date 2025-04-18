@@ -1,9 +1,9 @@
 ﻿#nullable enable
 
+using AIRefactored.Runtime;
 using BepInEx;
 using BepInEx.Logging;
 using UnityEngine;
-using AIRefactored.Runtime;
 
 namespace AIRefactored
 {
@@ -15,6 +15,9 @@ namespace AIRefactored
     {
         #region Fields
 
+        /// <summary>
+        /// Static reference to the plugin's logger.
+        /// </summary>
         private static ManualLogSource? _logger;
 
         #endregion
@@ -22,7 +25,8 @@ namespace AIRefactored
         #region Unity Lifecycle
 
         /// <summary>
-        /// Called when the AI-Refactored mod is loaded by BepInEx.
+        /// Called automatically by BepInEx when the mod is loaded.
+        /// Initializes all core runtime systems for AI-Refactored.
         /// </summary>
         private void Awake()
         {
@@ -45,7 +49,7 @@ namespace AIRefactored
         #region Public Access
 
         /// <summary>
-        /// Globally accessible logger for use by other components.
+        /// Provides global access to the plugin's logger instance.
         /// </summary>
         public static ManualLogSource LoggerInstance =>
             _logger ?? throw new System.NullReferenceException("LoggerInstance accessed before Awake() initialized it.");

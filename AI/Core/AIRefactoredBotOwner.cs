@@ -1,7 +1,7 @@
 ﻿#nullable enable
 
-using UnityEngine;
 using EFT;
+using UnityEngine;
 
 namespace AIRefactored.AI.Core
 {
@@ -14,27 +14,27 @@ namespace AIRefactored.AI.Core
         #region Public Properties
 
         /// <summary>
-        /// The underlying EFT BotOwner instance.
+        /// The live reference to this bot's BotOwner instance.
         /// </summary>
         public BotOwner? Bot { get; private set; }
 
         /// <summary>
-        /// Cached component access for AI subsystems.
+        /// Cached reference to shared bot systems.
         /// </summary>
         public BotComponentCache? Cache { get; private set; }
 
         /// <summary>
-        /// Current personality profile defining behavior.
+        /// The current personality traits in use by this bot.
         /// </summary>
-        public BotPersonalityProfile PersonalityProfile { get; private set; } = new();
+        public BotPersonalityProfile PersonalityProfile { get; private set; } = new BotPersonalityProfile();
 
         /// <summary>
-        /// Readable label for debugging or display (e.g. Aggressive, Cautious).
+        /// Name of the assigned personality, for logging or debugging.
         /// </summary>
         public string PersonalityName { get; private set; } = "Unknown";
 
         /// <summary>
-        /// Tactical zone name used for fallback or patrol logic.
+        /// Name of the zone this bot was assigned to patrol or defend.
         /// </summary>
         public string AssignedZone { get; private set; } = "unknown";
 
@@ -42,6 +42,9 @@ namespace AIRefactored.AI.Core
 
         #region Unity Lifecycle
 
+        /// <summary>
+        /// Attempts to auto-wire components and assign a default personality.
+        /// </summary>
         private void Awake()
         {
             Bot = GetComponent<BotOwner>();
@@ -55,8 +58,7 @@ namespace AIRefactored.AI.Core
 
             if (!HasPersonality())
             {
-                var defaultType = GetRandomPersonality();
-                InitProfile(defaultType);
+                InitProfile(GetRandomPersonality());
             }
         }
 
@@ -65,11 +67,11 @@ namespace AIRefactored.AI.Core
         #region Personality Management
 
         /// <summary>
-        /// Assigns a named preset profile to the bot.
+        /// Initializes this bot's personality from a known preset type.
         /// </summary>
         public void InitProfile(PersonalityType type)
         {
-            if (BotPersonalityPresets.Presets.TryGetValue(type, out var preset))
+            if (BotPersonalityPresets.Presets.TryGetValue(type, out BotPersonalityProfile? preset))
             {
                 PersonalityProfile = preset;
                 PersonalityName = type.ToString();
@@ -83,7 +85,7 @@ namespace AIRefactored.AI.Core
         }
 
         /// <summary>
-        /// Assigns a custom personality object with optional label.
+        /// Initializes this bot's personality from a raw profile object.
         /// </summary>
         public void InitProfile(BotPersonalityProfile profile, string name = "Custom")
         {
@@ -92,7 +94,7 @@ namespace AIRefactored.AI.Core
         }
 
         /// <summary>
-        /// Clears the assigned personality and resets to neutral.
+        /// Clears any currently assigned personality and resets to default.
         /// </summary>
         public void ClearPersonality()
         {
@@ -101,7 +103,7 @@ namespace AIRefactored.AI.Core
         }
 
         /// <summary>
-        /// Returns true if a personality has been assigned.
+        /// Returns whether this bot has a valid personality profile.
         /// </summary>
         public bool HasPersonality()
         {
@@ -113,7 +115,7 @@ namespace AIRefactored.AI.Core
         #region Zone Assignment
 
         /// <summary>
-        /// Sets the tactical zone ID for fallback, patrol, or formation logic.
+        /// Assigns a named zone to this bot for tracking or patrol logic.
         /// </summary>
         public void SetZone(string zoneName)
         {
@@ -125,9 +127,12 @@ namespace AIRefactored.AI.Core
 
         #region Internal Helpers
 
+        /// <summary>
+        /// Picks a random PersonalityType enum value from known presets.
+        /// </summary>
         private PersonalityType GetRandomPersonality()
         {
-            var values = System.Enum.GetValues(typeof(PersonalityType));
+            System.Array values = System.Enum.GetValues(typeof(PersonalityType));
             return (PersonalityType)values.GetValue(Random.Range(0, values.Length));
         }
 

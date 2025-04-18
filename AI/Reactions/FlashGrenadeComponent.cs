@@ -1,8 +1,8 @@
 ﻿#nullable enable
 
-using UnityEngine;
-using EFT;
 using AIRefactored.AI.Helpers;
+using EFT;
+using UnityEngine;
 
 namespace AIRefactored.AI.Reactions
 {
@@ -32,27 +32,25 @@ namespace AIRefactored.AI.Reactions
 
         #endregion
 
-        #region Unity Lifecycle
+        #region Lifecycle
 
-        /// <summary>
-        /// Called during MonoBehaviour initialization. Caches BotOwner reference.
-        /// </summary>
         private void Awake()
         {
             Bot = GetComponent<BotOwner>();
         }
 
-        /// <summary>
-        /// Evaluates flashlight exposure and updates blindness status every frame.
-        /// </summary>
-        private void Update()
+        #endregion
+
+        #region External Tick
+
+        public void Tick(float time)
         {
             if (Bot == null || Bot.HealthController == null || !Bot.GetPlayer?.IsAI == true)
                 return;
 
             CheckFlashlightExposure();
 
-            if (_isBlinded && Time.time - _lastFlashTime > BlindDuration)
+            if (_isBlinded && time - _lastFlashTime > BlindDuration)
                 _isBlinded = false;
         }
 
@@ -60,10 +58,6 @@ namespace AIRefactored.AI.Reactions
 
         #region Flashlight Detection
 
-        /// <summary>
-        /// Scans the environment for active spotlights simulating flashlights.
-        /// If bot is facing an intense beam, triggers blindness and suppression logic.
-        /// </summary>
         private void CheckFlashlightExposure()
         {
             if (Bot == null || Bot.IsDead || Bot.Transform == null)
@@ -72,11 +66,8 @@ namespace AIRefactored.AI.Reactions
             Vector3 botForward = Bot.LookDirection;
             Vector3 botPosition = Bot.Transform.position;
 
-            foreach (Light light in GameObject.FindObjectsOfType<Light>())
+            foreach (Light light in FlashlightRegistry.GetActiveFlashlights())
             {
-                if (!light.enabled || light.type != LightType.Spot || light.intensity < FlashlightMinIntensity)
-                    continue;
-
                 Vector3 dirToLight = (light.transform.position - botPosition).normalized;
                 float angle = Vector3.Angle(botForward, -dirToLight);
 
@@ -92,16 +83,8 @@ namespace AIRefactored.AI.Reactions
 
         #region Flash Reaction Logic
 
-        /// <summary>
-        /// Returns whether the bot is currently blinded by a light source.
-        /// </summary>
         public bool IsFlashed() => _isBlinded;
 
-        /// <summary>
-        /// Triggers temporary blindness and suppresses bot behavior from a light source.
-        /// </summary>
-        /// <param name="duration">Blindness duration in seconds.</param>
-        /// <param name="source">World-space origin of the flash effect.</param>
         public void AddBlindEffect(float duration, Vector3 source)
         {
             if (Bot == null || !Bot.GetPlayer?.IsAI == true)

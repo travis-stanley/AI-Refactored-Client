@@ -1,7 +1,7 @@
 ﻿#nullable enable
 
-using System.Collections.Generic;
 using EFT;
+using System.Collections.Generic;
 using UnityEngine;
 
 namespace AIRefactored.AI.Optimization
@@ -12,18 +12,23 @@ namespace AIRefactored.AI.Optimization
     /// </summary>
     public class BotAIOptimization
     {
-        #region State
+        #region Fields
 
-        private readonly Dictionary<string, bool> _optimizationApplied = new();
+        /// <summary>
+        /// Tracks whether optimization has already been applied to a bot by ID.
+        /// Prevents redundant logging or tuning reapplication.
+        /// </summary>
+        private readonly Dictionary<string, bool> _optimizationApplied = new Dictionary<string, bool>();
 
         #endregion
 
         #region Public API
 
         /// <summary>
-        /// Applies and logs optimization diagnostics for the given bot if not already applied.
+        /// Applies runtime diagnostics and logs AI tuning settings for the bot.
+        /// Skips reapplication if already optimized.
         /// </summary>
-        /// <param name="botOwner">The bot to optimize and verify.</param>
+        /// <param name="botOwner">The bot to inspect and tune.</param>
         public void Optimize(BotOwner botOwner)
         {
             if (!IsAIBot(botOwner))
@@ -31,7 +36,8 @@ namespace AIRefactored.AI.Optimization
 
             string botId = botOwner.Profile.Id;
 
-            if (_optimizationApplied.TryGetValue(botId, out var alreadyOptimized) && alreadyOptimized)
+            bool alreadyOptimized;
+            if (_optimizationApplied.TryGetValue(botId, out alreadyOptimized) && alreadyOptimized)
                 return;
 
             LogVisionSettings(botOwner);
@@ -42,7 +48,7 @@ namespace AIRefactored.AI.Optimization
         }
 
         /// <summary>
-        /// Resets the optimization flag for the given bot, allowing reapplication.
+        /// Clears the optimization flag for a bot, allowing reapplication on next call to Optimize().
         /// </summary>
         /// <param name="botOwner">The bot to reset.</param>
         public void ResetOptimization(BotOwner botOwner)
@@ -50,15 +56,16 @@ namespace AIRefactored.AI.Optimization
             if (!IsAIBot(botOwner))
                 return;
 
-            _optimizationApplied[botOwner.Profile.Id] = false;
+            string botId = botOwner.Profile.Id;
+            _optimizationApplied[botId] = false;
         }
 
         #endregion
 
-        #region Private Helpers
+        #region Internal Helpers
 
         /// <summary>
-        /// Returns true if the bot is AI-controlled and not a human or FIKA Coop player.
+        /// Returns true if the bot is AI-controlled and not a human-controlled player.
         /// </summary>
         private static bool IsAIBot(BotOwner botOwner)
         {
@@ -67,7 +74,7 @@ namespace AIRefactored.AI.Optimization
         }
 
         /// <summary>
-        /// Logs vision and perception settings from the Look config.
+        /// Logs grass vision range and light boost radius for enemy detection.
         /// </summary>
         private void LogVisionSettings(BotOwner bot)
         {
@@ -75,13 +82,13 @@ namespace AIRefactored.AI.Optimization
             if (look != null)
             {
                 Debug.Log($"[AIRefactored-Vision] {bot.Profile.Info.Nickname} → " +
-                          $"GrassVision = {look.MAX_VISION_GRASS_METERS:F1}m, " +
-                          $"LightAdd = {look.ENEMY_LIGHT_ADD:F1}m");
+                          $"GrassVision: {look.MAX_VISION_GRASS_METERS:F1}m | " +
+                          $"LightAdd: {look.ENEMY_LIGHT_ADD:F1}m");
             }
         }
 
         /// <summary>
-        /// Logs mind settings such as scare thresholds and reaction chance.
+        /// Logs psychological response parameters like fear thresholds and damage-based reaction chance.
         /// </summary>
         private void LogMindSettings(BotOwner bot)
         {
@@ -89,18 +96,18 @@ namespace AIRefactored.AI.Optimization
             if (mind != null)
             {
                 Debug.Log($"[AIRefactored-Mind] {bot.Profile.Info.Nickname} → " +
-                          $"MinScare = {mind.MIN_DAMAGE_SCARE:F1}, " +
-                          $"RunOnDamageChance = {mind.CHANCE_TO_RUN_CAUSE_DAMAGE_0_100}%");
+                          $"MinScare: {mind.MIN_DAMAGE_SCARE:F1} | " +
+                          $"RunOnDamageChance: {mind.CHANCE_TO_RUN_CAUSE_DAMAGE_0_100}%");
             }
         }
 
         /// <summary>
-        /// Logs the assigned WildSpawnType role of the bot.
+        /// Logs the bot’s assigned role based on the WildSpawnType (e.g., pmcUSEC, assault).
         /// </summary>
         private void LogAggressionRole(BotOwner bot)
         {
             var role = bot.Profile.Info.Settings.Role;
-            Debug.Log($"[AIRefactored-Aggression] {bot.Profile.Info.Nickname} → Role = {role}");
+            Debug.Log($"[AIRefactored-Aggression] {bot.Profile.Info.Nickname} → Role: {role}");
         }
 
         #endregion

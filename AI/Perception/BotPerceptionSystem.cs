@@ -1,14 +1,14 @@
 ﻿#nullable enable
 
-using UnityEngine;
-using EFT;
 using AIRefactored.AI.Core;
+using EFT;
+using UnityEngine;
 
 namespace AIRefactored.AI.Perception
 {
     /// <summary>
-    /// Modifies bot visual perception based on flashbangs, suppression, and flare exposure.
-    /// Syncs with speech and panic systems via <see cref="BotComponentCache"/>.
+    /// Modifies bot visual perception based on flashbangs, flares, and suppression exposure.
+    /// Dynamically adjusts visible distance and tracks blindness states.
     /// </summary>
     public class BotPerceptionSystem : MonoBehaviour, IFlashReactiveBot
     {
@@ -29,7 +29,7 @@ namespace AIRefactored.AI.Perception
 
         #endregion
 
-        #region Unity Lifecycle
+        #region Initialization
 
         private void Awake()
         {
@@ -42,7 +42,14 @@ namespace AIRefactored.AI.Perception
             }
         }
 
-        private void Update()
+        #endregion
+
+        #region Real-Time Tick
+
+        /// <summary>
+        /// Called every frame by BotBrain to apply recovery and perception penalties.
+        /// </summary>
+        public void Tick(float deltaTime)
         {
             if (_bot == null || _profile == null || _cache == null || _bot.IsDead)
                 return;
@@ -59,17 +66,13 @@ namespace AIRefactored.AI.Perception
             _cache.BlindUntilTime = Time.time + Mathf.Clamp01(_flashBlindness) * 3f;
 
             TryTriggerPanic();
-            RecoverPerception();
+            RecoverPerception(deltaTime);
         }
 
         #endregion
 
         #region Perception Modifiers
 
-        /// <summary>
-        /// Applies flash blindness to the bot's perception, scaled by profile intensity.
-        /// </summary>
-        /// <param name="intensity">Value between 0 and 1.</param>
         public void ApplyFlashBlindness(float intensity)
         {
             if (_profile == null || _cache == null || _bot?.GetPlayer?.IsYourPlayer == true)
@@ -86,9 +89,6 @@ namespace AIRefactored.AI.Perception
             _blindStartTime = Time.time;
         }
 
-        /// <summary>
-        /// Applies flare exposure penalty to visual clarity.
-        /// </summary>
         public void ApplyFlareExposure(float strength)
         {
             if (_bot?.GetPlayer?.IsYourPlayer == true)
@@ -97,9 +97,6 @@ namespace AIRefactored.AI.Perception
             _flareIntensity = Mathf.Clamp(strength * 0.6f, 0f, 0.8f);
         }
 
-        /// <summary>
-        /// Applies suppression penalty to bot visual processing.
-        /// </summary>
         public void ApplySuppression(float severity)
         {
             if (_profile == null || _bot?.GetPlayer?.IsYourPlayer == true)
@@ -108,9 +105,6 @@ namespace AIRefactored.AI.Perception
             _suppressionFactor = Mathf.Clamp(severity * _profile.AggressionResponse, 0f, 1f);
         }
 
-        /// <summary>
-        /// Interface hook for flashlight/flare logic — default exposure.
-        /// </summary>
         public void OnFlashExposure(Vector3 lightOrigin)
         {
             if (_bot?.GetPlayer?.IsYourPlayer == true)
@@ -121,21 +115,15 @@ namespace AIRefactored.AI.Perception
 
         #endregion
 
-        #region Recovery + Panic
+        #region Internal Logic
 
-        /// <summary>
-        /// Gradually recovers perception factors over time.
-        /// </summary>
-        private void RecoverPerception()
+        private void RecoverPerception(float deltaTime)
         {
-            _flashBlindness = Mathf.MoveTowards(_flashBlindness, 0f, FlashRecoverySpeed * Time.deltaTime);
-            _flareIntensity = Mathf.MoveTowards(_flareIntensity, 0f, 0.25f * Time.deltaTime);
-            _suppressionFactor = Mathf.MoveTowards(_suppressionFactor, 0f, 0.3f * Time.deltaTime);
+            _flashBlindness = Mathf.MoveTowards(_flashBlindness, 0f, FlashRecoverySpeed * deltaTime);
+            _flareIntensity = Mathf.MoveTowards(_flareIntensity, 0f, 0.25f * deltaTime);
+            _suppressionFactor = Mathf.MoveTowards(_suppressionFactor, 0f, 0.3f * deltaTime);
         }
 
-        /// <summary>
-        /// Triggers panic if bot is heavily blinded for a short time.
-        /// </summary>
         private void TryTriggerPanic()
         {
             if (_cache?.PanicHandler == null || _bot == null)

@@ -1,12 +1,15 @@
 ﻿#nullable enable
 
-using UnityEngine;
-using EFT;
-using AIRefactored.AI.Reactions;
-using AIRefactored.AI.Memory;
-using AIRefactored.AI.Optimization;
 using AIRefactored.AI.Behavior;
 using AIRefactored.AI.Combat;
+using AIRefactored.AI.Components;
+using AIRefactored.AI.Groups;
+using AIRefactored.AI.Movement;
+using AIRefactored.AI.Optimization;
+using AIRefactored.AI.Perception;
+using AIRefactored.AI.Reactions;
+using EFT;
+using UnityEngine;
 
 namespace AIRefactored.AI.Core
 {
@@ -18,30 +21,21 @@ namespace AIRefactored.AI.Core
     {
         #region Core References
 
-        /// <summary>
-        /// The EFT BotOwner instance attached to this bot.
-        /// </summary>
         public BotOwner? Bot { get; internal set; }
 
-        /// <summary> Handles flashbang effects and blind logic. </summary>
         public FlashGrenadeComponent? FlashGrenade { get; private set; }
-
-        /// <summary> Controls panic behavior and retreat triggers. </summary>
         public BotPanicHandler? PanicHandler { get; private set; }
-
-        /// <summary> Handles suppression sprint/retreat behavior. </summary>
         public BotSuppressionReactionComponent? Suppression { get; private set; }
 
-        /// <summary> Central tick and routine processor. </summary>
-        public BotAIController? AIController { get; private set; }
-
-        /// <summary> High-level owner wrapper for personality and group logic. </summary>
         public AIRefactoredBotOwner? AIRefactoredBotOwner { get; private set; }
-
-        /// <summary> Handles post-combat logic like looting and extracting. </summary>
         public BotBehaviorEnhancer? BehaviorEnhancer { get; private set; }
+        public BotGroupBehavior? GroupBehavior { get; private set; }
 
-        /// <summary> Pathfinding cache for cover, fallback, and group offsets. </summary>
+        public BotMovementController? Movement { get; private set; }
+        public BotTacticalDeviceController? Tactical { get; private set; }
+
+        public HearingDamageComponent? HearingDamage { get; private set; }
+
         public BotOwnerPathfindingCache? PathCache { get; private set; }
 
         #endregion
@@ -59,10 +53,6 @@ namespace AIRefactored.AI.Core
         public float LastHeardTime { get; private set; } = -999f;
         public Vector3? LastHeardDirection { get; private set; }
 
-        /// <summary>
-        /// Registers a sound event heard by this bot.
-        /// </summary>
-        /// <param name="source">The world position of the sound.</param>
         public void RegisterHeardSound(Vector3 source)
         {
             if (Bot?.GetPlayer == null || !Bot.GetPlayer.IsAI)
@@ -76,15 +66,13 @@ namespace AIRefactored.AI.Core
 
         #region Properties
 
-        /// <summary>
-        /// True if all essential core AIRefactored modules are present on this bot.
-        /// </summary>
         public bool IsReady =>
             Bot != null &&
             FlashGrenade != null &&
             PanicHandler != null &&
             Suppression != null &&
-            AIController != null;
+            Movement != null &&
+            Tactical != null;
 
         #endregion
 
@@ -102,11 +90,33 @@ namespace AIRefactored.AI.Core
             FlashGrenade = GetComponent<FlashGrenadeComponent>();
             PanicHandler = GetComponent<BotPanicHandler>();
             Suppression = GetComponent<BotSuppressionReactionComponent>();
-            AIController = GetComponent<BotAIController>();
             AIRefactoredBotOwner = GetComponent<AIRefactoredBotOwner>();
             BehaviorEnhancer = GetComponent<BotBehaviorEnhancer>();
+            GroupBehavior = GetComponent<BotGroupBehavior>();
+            Movement = GetComponent<BotMovementController>();
+            Tactical = GetComponent<BotTacticalDeviceController>();
+            HearingDamage = GetComponent<HearingDamageComponent>();
 
             PathCache = new BotOwnerPathfindingCache();
+        }
+
+        #endregion
+
+        #region Reset Support
+
+        /// <summary>
+        /// Resets all transient state, references, and timers in this cache.
+        /// Use when reinitializing bots between sessions or waves.
+        /// </summary>
+        public void Reset()
+        {
+            IsBlinded = false;
+            BlindUntilTime = 0f;
+            LastFlashTime = 0f;
+            LastHeardTime = -999f;
+            LastHeardDirection = null;
+
+            PathCache?.Clear();
         }
 
         #endregion

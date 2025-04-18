@@ -1,29 +1,25 @@
 ﻿#nullable enable
 
-using UnityEngine;
-using EFT;
 using AIRefactored.AI.Helpers;
-using AIRefactored.AI.Core;
+using EFT;
+using UnityEngine;
 
 namespace AIRefactored.AI.Combat
 {
     /// <summary>
     /// Simulates bot suppression response — evasive movement and flinch retreat under threat.
-    /// Suppression duration dynamically scales with composure level.
+    /// Intended to be triggered externally by audio cues or visible fire.
     /// </summary>
     public class BotSuppressionReactionComponent : MonoBehaviour
     {
         #region Fields
 
         private BotOwner? _bot;
-        private BotComponentCache? _cache;
-
         private float _suppressionStartTime = -99f;
-        private float _currentSuppressionDuration = 2.0f;
         private bool _isSuppressed = false;
 
-        private const float MaxSuppressionDuration = 2.5f;
-        private const float MinSuppressionDuration = 0.6f;
+        private const float SuppressionDuration = 2.0f;
+        private const float RetreatDistance = 6.0f;
 
         #endregion
 
@@ -32,18 +28,31 @@ namespace AIRefactored.AI.Combat
         private void Awake()
         {
             _bot = GetComponent<BotOwner>();
-            _cache = GetComponent<BotComponentCache>();
-
             if (_bot == null)
+            {
                 Debug.LogError("[AIRefactored] BotSuppressionReactionComponent missing BotOwner!");
+            }
         }
 
         private void Update()
         {
-            if (!_isSuppressed || _bot == null || IsHumanPlayer())
+            // Legacy fallback if Tick() is not invoked externally
+            Tick(Time.time);
+        }
+
+        #endregion
+
+        #region Tick Logic
+
+        /// <summary>
+        /// Async-compatible tick invoked by BotBrain or fallback Update.
+        /// </summary>
+        public void Tick(float now)
+        {
+            if (!_isSuppressed || _bot == null || !_bot.IsAI || _bot.IsDead)
                 return;
 
-            if (Time.time - _suppressionStartTime > _currentSuppressionDuration)
+            if (now - _suppressionStartTime > SuppressionDuration)
             {
                 _isSuppressed = false;
             }
@@ -51,37 +60,27 @@ namespace AIRefactored.AI.Combat
 
         #endregion
 
-        #region Suppression Logic
+        #region Suppression Triggers
 
+        /// <summary>
+        /// Triggers suppression logic and evasive fallback sprinting.
+        /// </summary>
+        /// <param name="from">Source direction of incoming fire or light.</param>
         public void TriggerSuppression(Vector3? from = null)
         {
-            if (_isSuppressed || _bot == null || IsHumanPlayer())
+            if (_isSuppressed || _bot == null || !_bot.IsAI || _bot.IsDead)
                 return;
 
             _isSuppressed = true;
             _suppressionStartTime = Time.time;
 
-            float composure = _cache?.PanicHandler?.GetComposureLevel() ?? 1f;
+            Vector3 direction = from.HasValue
+                ? (_bot.Position - from.Value).normalized
+                : -_bot.LookDirection.normalized;
 
-            _currentSuppressionDuration = Mathf.Lerp(MaxSuppressionDuration, MinSuppressionDuration, composure);
-
-            Vector3 direction;
-            if (from.HasValue)
-            {
-                direction = (_bot.Position - from.Value).normalized;
-            }
-            else
-            {
-                direction = -_bot.LookDirection.normalized;
-            }
-
-            Vector3 fallback = _bot.Position + direction * 6f;
-            if (Physics.Raycast(_bot.Position, direction, out RaycastHit hit, 6f))
-            {
-                fallback = hit.point - direction;
-            }
-
-            _bot.Sprint(true);
+            Vector3 fallback = _bot.Position + direction * RetreatDistance;
+            fallback += Random.insideUnitSphere * 0.75f;
+            fallback.y = _bot.Position.y;
 
             float cohesion = 1.0f;
             if (BotRegistry.Exists(_bot.ProfileId))
@@ -90,24 +89,23 @@ namespace AIRefactored.AI.Combat
                 cohesion = Mathf.Lerp(0.6f, 1.2f, profile.Cohesion);
             }
 
-            BotMovementHelper.SmoothMoveTo(_bot, fallback, allowSlowEnd: false, cohesionScale: cohesion);
+            _bot.Sprint(true);
+            BotMovementHelper.SmoothMoveTo(_bot, fallback, false, cohesion);
         }
 
+        /// <summary>
+        /// Convenience alias for suppression reaction from a given position.
+        /// </summary>
+        /// <param name="source">Origin of threat.</param>
         public void ReactToSuppression(Vector3 source)
         {
             TriggerSuppression(source);
         }
 
+        /// <summary>
+        /// Returns true if bot is currently suppressed.
+        /// </summary>
         public bool IsSuppressed() => _isSuppressed;
-
-        #endregion
-
-        #region Helpers
-
-        private bool IsHumanPlayer()
-        {
-            return _bot?.GetPlayer != null && !_bot.GetPlayer.IsAI;
-        }
 
         #endregion
     }

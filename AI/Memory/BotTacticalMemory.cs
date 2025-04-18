@@ -1,6 +1,5 @@
 ﻿#nullable enable
 
-using System;
 using System.Collections.Generic;
 using UnityEngine;
 
@@ -20,42 +19,42 @@ namespace AIRefactored.AI.Memory
 
         #endregion
 
-        #region Location Memory
+        #region Cleared Location Memory
 
-        private readonly List<Vector3> _clearedLocations = new();
-        private readonly Dictionary<Vector3, float> _clearedTime = new();
+        private readonly List<Vector3> _clearedLocations = new List<Vector3>(16);
+        private readonly Dictionary<Vector3, float> _clearedTimestamps = new Dictionary<Vector3, float>(16);
 
         /// <summary>
-        /// Returns true if the position has been recently cleared by the bot.
+        /// Returns true if the given location was recently cleared.
         /// </summary>
         public bool WasRecentlyCleared(Vector3 position)
         {
             float now = Time.time;
-            bool foundRecent = false;
+            bool recent = false;
 
             for (int i = _clearedLocations.Count - 1; i >= 0; i--)
             {
                 Vector3 point = _clearedLocations[i];
-                float lastSeen = _clearedTime.TryGetValue(point, out var ts) ? ts : 0f;
+                float timestamp;
 
-                if (now - lastSeen > MemoryDuration)
+                if (!_clearedTimestamps.TryGetValue(point, out timestamp) || now - timestamp > MemoryDuration)
                 {
                     _clearedLocations.RemoveAt(i);
-                    _clearedTime.Remove(point);
+                    _clearedTimestamps.Remove(point);
                     continue;
                 }
 
-                if (!foundRecent && Vector3.Distance(point, position) < ClearedThreshold)
+                if (!recent && Vector3.Distance(point, position) < ClearedThreshold)
                 {
-                    foundRecent = true;
+                    recent = true;
                 }
             }
 
-            return foundRecent;
+            return recent;
         }
 
         /// <summary>
-        /// Marks a location as recently cleared or investigated.
+        /// Marks a location as recently scanned or cleared.
         /// </summary>
         public void MarkCleared(Vector3 position)
         {
@@ -65,47 +64,47 @@ namespace AIRefactored.AI.Memory
             {
                 if (Vector3.Distance(_clearedLocations[i], position) < ClearedThreshold)
                 {
-                    _clearedTime[_clearedLocations[i]] = now;
+                    _clearedTimestamps[_clearedLocations[i]] = now;
                     return;
                 }
             }
 
             _clearedLocations.Add(position);
-            _clearedTime[position] = now;
+            _clearedTimestamps[position] = now;
         }
 
         #endregion
 
-        #region Enemy Position Memory
+        #region Enemy Memory
 
-        private Vector3? _lastKnownEnemy;
+        private Vector3? _lastKnownEnemyPos = null;
         private float _enemySeenTime = -999f;
 
         /// <summary>
-        /// Records the last known position of an enemy for investigative use.
+        /// Stores the most recently seen enemy position.
         /// </summary>
         public void RecordEnemyPosition(Vector3 position)
         {
-            _lastKnownEnemy = position;
+            _lastKnownEnemyPos = position;
             _enemySeenTime = Time.time;
         }
 
         /// <summary>
-        /// Returns the last seen enemy position if recent enough.
+        /// Gets the most recent enemy position if memory is fresh.
         /// </summary>
         public Vector3? GetLastKnownEnemyPosition()
         {
-            return (_lastKnownEnemy.HasValue && Time.time - _enemySeenTime <= EnemyMemoryDuration)
-                ? _lastKnownEnemy
+            return (_lastKnownEnemyPos.HasValue && (Time.time - _enemySeenTime <= EnemyMemoryDuration))
+                ? _lastKnownEnemyPos
                 : null;
         }
 
         /// <summary>
-        /// Clears stored enemy position memory.
+        /// Clears stored enemy position data.
         /// </summary>
         public void ClearLastKnownEnemy()
         {
-            _lastKnownEnemy = null;
+            _lastKnownEnemyPos = null;
         }
 
         #endregion

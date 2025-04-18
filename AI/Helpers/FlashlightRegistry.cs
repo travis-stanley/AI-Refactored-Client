@@ -11,12 +11,7 @@ namespace AIRefactored.AI.Helpers
     /// </summary>
     public static class FlashlightRegistry
     {
-        #region Cached Lights
-
-        /// <summary>
-        /// Internal list of valid lights cached per frame.
-        /// </summary>
-        private static readonly List<Light> _activeLights = new();
+        #region Configuration
 
         /// <summary>
         /// Minimum light intensity required to be considered a flashlight.
@@ -30,20 +25,28 @@ namespace AIRefactored.AI.Helpers
 
         #endregion
 
-        #region Public Queries
+        #region Internal Cache
 
         /// <summary>
-        /// Returns all valid flashlight sources in the current scene.
-        /// Caches results each frame to avoid repeated allocation.
+        /// Internal list of valid lights cached per query to reduce allocation.
         /// </summary>
-        public static IEnumerable<Light> GetAllLights()
+        private static readonly List<Light> _activeLights = new List<Light>(32);
+
+        #endregion
+
+        #region Public Access
+
+        /// <summary>
+        /// Returns all valid tactical flashlight sources in the scene.
+        /// </summary>
+        public static IEnumerable<Light> GetActiveFlashlights()
         {
             _activeLights.Clear();
+            var lights = Object.FindObjectsOfType<Light>();
 
-            var sceneLights = Object.FindObjectsOfType<Light>();
-            for (int i = 0; i < sceneLights.Length; i++)
+            for (int i = 0; i < lights.Length; i++)
             {
-                var light = sceneLights[i];
+                Light light = lights[i];
                 if (IsTacticalFlashlight(light))
                 {
                     _activeLights.Add(light);
@@ -53,21 +56,17 @@ namespace AIRefactored.AI.Helpers
             return _activeLights;
         }
 
-        /// <summary>
-        /// Alias for GetAllLights, maintained for compatibility.
-        /// </summary>
-        public static IEnumerable<Light> GetActiveFlashlights() => GetAllLights();
-
         #endregion
 
         #region Classification Logic
 
         /// <summary>
-        /// Determines whether a given light matches tactical flashlight criteria.
+        /// Returns true if the light qualifies as a tactical flashlight.
         /// </summary>
         private static bool IsTacticalFlashlight(Light light)
         {
-            return light.enabled &&
+            return light != null &&
+                   light.enabled &&
                    light.type == LightType.Spot &&
                    light.intensity >= INTENSITY_THRESHOLD &&
                    light.spotAngle <= ANGLE_THRESHOLD;

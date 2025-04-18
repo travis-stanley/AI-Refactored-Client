@@ -1,11 +1,8 @@
 ﻿#nullable enable
 
-using UnityEngine;
-using EFT;
 using AIRefactored.AI.Helpers;
-using AIRefactored.AI.Memory;
-using AIRefactored.AI.Combat;
-using AIRefactored.AI.Core;
+using EFT;
+using UnityEngine;
 
 namespace AIRefactored.AI.Reactions
 {
@@ -17,9 +14,6 @@ namespace AIRefactored.AI.Reactions
     {
         #region Public Properties
 
-        /// <summary>
-        /// Reference to the bot owner attached to this component.
-        /// </summary>
         public BotOwner? Bot { get; private set; }
 
         #endregion
@@ -37,22 +31,18 @@ namespace AIRefactored.AI.Reactions
 
         #region Unity Lifecycle
 
-        /// <summary>
-        /// Initializes the bot reference during Awake.
-        /// </summary>
         private void Awake()
         {
             Bot = GetComponent<BotOwner>();
         }
 
-        /// <summary>
-        /// Resets suppression status after the suppression period expires.
-        /// </summary>
-        private void Update()
-        {
-            float now = Time.time;
+        #endregion
 
-            if (_suppressedUntil > 0f && now >= _suppressedUntil)
+        #region External Tick
+
+        public void Tick(float time)
+        {
+            if (_suppressedUntil > 0f && time >= _suppressedUntil)
                 _suppressedUntil = -1f;
         }
 
@@ -60,11 +50,6 @@ namespace AIRefactored.AI.Reactions
 
         #region Suppression Logic
 
-        /// <summary>
-        /// Triggers suppression on the bot with a strength value between 0 and 1.
-        /// Initiates fallback movement and panic behavior.
-        /// </summary>
-        /// <param name="strength">Intensity of the flash effect (0–1). Higher values last longer.</param>
         public void TriggerSuppression(float strength = 0.6f)
         {
             float now = Time.time;
@@ -81,37 +66,28 @@ namespace AIRefactored.AI.Reactions
             float duration = Mathf.Lerp(MinDuration, MaxDuration, clampedStrength);
             _suppressedUntil = now + duration;
 
-            TriggerFallbackMovement();
+            TriggerFallbackMovement(Bot.Position - Bot.LookDirection.normalized);
             TriggerPanicSync();
         }
 
-        /// <summary>
-        /// Returns whether the bot is currently suppressed.
-        /// </summary>
         public bool IsSuppressed() => Time.time < _suppressedUntil;
 
         #endregion
 
         #region Fallback and Panic Integration
 
-        /// <summary>
-        /// Calculates a retreat vector and commands the bot to move away from the flash direction.
-        /// </summary>
-        private void TriggerFallbackMovement()
+        private void TriggerFallbackMovement(Vector3 from)
         {
             if (Bot == null || Bot.IsDead || Bot.Transform == null)
                 return;
 
-            Vector3 fallbackDir = -Bot.LookDirection.normalized;
+            Vector3 fallbackDir = (Bot.Position - from).normalized;
             Vector3 retreat = Bot.Position + fallbackDir * 5f + Random.insideUnitSphere * 1.5f;
             retreat.y = Bot.Position.y;
 
-            BotMovementHelper.SmoothMoveTo(Bot, retreat, allowSlowEnd: false);
+            BotMovementHelper.SmoothMoveTo(Bot, retreat, cohesionScale: 1.0f);
         }
 
-        /// <summary>
-        /// Synchronizes panic behavior via the panic utility and shared cache.
-        /// </summary>
         private void TriggerPanicSync()
         {
             if (Bot == null)

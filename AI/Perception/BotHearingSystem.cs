@@ -1,40 +1,35 @@
 ﻿#nullable enable
 
-using UnityEngine;
-using EFT;
-using System;
-using System.Collections.Generic;
-using AIRefactored.AI.Core;
-using AIRefactored.AI.Helpers;
-using AIRefactored.AI.Reactions;
 using AIRefactored.AI.Components;
-using Comfort.Common;
+using AIRefactored.AI.Core;
+using EFT;
+using UnityEngine;
 
 namespace AIRefactored.AI.Perception
 {
     /// <summary>
-    /// Simulates realistic directional hearing for bots.
-    /// Includes sound detection, occlusion dampening, deafening, and memory integration.
+    /// Simulates auditory perception for bots, including sound source evaluation,
+    /// loudness scoring, occlusion, and reaction to nearby player noise.
     /// </summary>
     public class BotHearingSystem : MonoBehaviour
     {
+        #region Constants
+
+        private const float MaxBaseHearing = 60f;
+        private const float SprintLoudness = 1.0f;
+        private const float WalkLoudness = 0.6f;
+        private const float CrouchLoudness = 0.3f;
+        private const float FireLoudness = 1.25f;
+        private static readonly int PlayerLayerMask = LayerMask.GetMask("Player");
+
+        #endregion
+
         #region Fields
 
         private BotOwner? _bot;
         private BotComponentCache? _cache;
         private AIRefactoredBotOwner? _owner;
         private HearingDamageComponent? _hearing;
-
-        private float _nextCheckTime = 0f;
-
-        private const float CheckInterval = 0.3f;
-        private const float MaxBaseHearing = 60f;
-        private const float SprintLoudness = 1.0f;
-        private const float WalkLoudness = 0.6f;
-        private const float CrouchLoudness = 0.3f;
-        private const float FireLoudness = 1.25f;
-
-        private static readonly int PlayerLayerMask = LayerMask.GetMask("Player", "PlayerCorpse", "Ragdoll", "Interactive");
 
         #endregion
 
@@ -48,32 +43,38 @@ namespace AIRefactored.AI.Perception
             _hearing = GetComponent<HearingDamageComponent>();
         }
 
-        private void Update()
+        #endregion
+
+        #region Tick Interface
+
+        /// <summary>
+        /// Tick-based auditory evaluation, called from BotBrain at 3Hz.
+        /// </summary>
+        public void Tick(float time)
         {
-            if (_bot == null || _cache == null || _owner == null || _bot.IsDead || Time.time < _nextCheckTime)
+            if (_bot == null || _cache == null || _owner == null || _bot.IsDead)
                 return;
 
-            if (_bot.GetPlayer != null && _bot.GetPlayer.IsYourPlayer)
-                return; // Ignore human/FIKA players
+            if (_bot.GetPlayer?.IsYourPlayer == true)
+                return;
 
-            _nextCheckTime = Time.time + CheckInterval;
             EvaluateNearbySounds();
         }
 
         #endregion
 
-        #region Hearing Logic
+        #region Sound Evaluation
 
         private void EvaluateNearbySounds()
         {
-            float caution = _owner?.PersonalityProfile?.Caution ?? 0.5f;
+            float caution = _owner.PersonalityProfile?.Caution ?? 0.5f;
             float effectiveRadius = MaxBaseHearing * Mathf.Lerp(0.5f, 1.5f, caution);
 
-            Collider[] hits = Physics.OverlapSphere(_bot!.Position, effectiveRadius, PlayerLayerMask);
+            Collider[] hits = Physics.OverlapSphere(_bot.Position, effectiveRadius, PlayerLayerMask);
 
-            foreach (var hit in hits)
+            for (int i = 0; i < hits.Length; i++)
             {
-                var player = hit.GetComponent<Player>();
+                Player player = hits[i].GetComponent<Player>();
                 if (player == null || player.ProfileId == _bot.ProfileId || !player.HealthController.IsAlive)
                     continue;
 
@@ -81,10 +82,10 @@ namespace AIRefactored.AI.Perception
                     continue;
 
                 float loudness = EstimateLoudness(player);
+                float distance = Vector3.Distance(_bot.Position, player.Position);
+
                 if (loudness <= 0.1f)
                     continue;
-
-                float distance = Vector3.Distance(_bot.Position, player.Position);
 
                 if (!player.IsAI && distance < 50f)
                     loudness = Mathf.Max(loudness, FireLoudness);
@@ -105,20 +106,23 @@ namespace AIRefactored.AI.Perception
                     _cache.RegisterHeardSound(player.Position);
                     _bot.BotsGroup?.LastSoundsController?.AddNeutralSound(player, player.Position);
                     HandleDetectedNoise(player.Position);
-                    return;
+                    break;
                 }
             }
         }
 
+        #endregion
+
+        #region Loudness & Occlusion
+
         private float EstimateLoudness(Player player)
         {
-            string? stateName = player.MovementContext?.CurrentState?.GetType().Name;
-            if (string.IsNullOrEmpty(stateName))
-                return 0f;
+            string? state = player.MovementContext?.CurrentState?.GetType().Name;
 
-            if (stateName.Contains("Sprint")) return SprintLoudness;
-            if (stateName.Contains("Walk")) return WalkLoudness;
-            if (stateName.Contains("Crouch")) return CrouchLoudness;
+            if (string.IsNullOrEmpty(state)) return 0f;
+            if (state.Contains("Sprint")) return SprintLoudness;
+            if (state.Contains("Walk")) return WalkLoudness;
+            if (state.Contains("Crouch")) return CrouchLoudness;
 
             return 0f;
         }
@@ -129,17 +133,15 @@ namespace AIRefactored.AI.Perception
                 return;
 
             float scaled = Mathf.Clamp01(1f - (distance / 30f));
-            if (scaled <= 0.2f)
-                return;
+            if (scaled <= 0.2f) return;
 
             float intensity = scaled;
             float duration = Mathf.Lerp(1f, 8f, scaled);
 
-            var equipment = _bot?.Profile?.Inventory?.Equipment;
-            var earpiece = equipment?.GetSlot(EFT.InventoryLogic.EquipmentSlot.Earpiece)?.ContainedItem;
-            bool hasEarProtection = earpiece != null;
+            var earpiece = _bot?.Profile?.Inventory?.Equipment?
+                .GetSlot(EFT.InventoryLogic.EquipmentSlot.Earpiece)?.ContainedItem;
 
-            if (hasEarProtection)
+            if (earpiece != null)
             {
                 intensity *= 0.3f;
                 duration *= 0.4f;
@@ -151,6 +153,7 @@ namespace AIRefactored.AI.Perception
         private bool HasClearPath(Vector3 source, out float occlusionModifier)
         {
             occlusionModifier = 1f;
+
             if (Physics.Linecast(source, _bot!.Position, out RaycastHit hit))
             {
                 if (hit.collider != null && hit.collider.gameObject != _bot.GetPlayer?.gameObject)
@@ -159,8 +162,13 @@ namespace AIRefactored.AI.Perception
                     return false;
                 }
             }
+
             return true;
         }
+
+        #endregion
+
+        #region Reaction
 
         private void HandleDetectedNoise(Vector3 position)
         {
@@ -168,9 +176,9 @@ namespace AIRefactored.AI.Perception
                 return;
 
             Vector3 direction = (position - _bot.Position).normalized;
-            Vector3 alertPoint = _bot.Position + direction * 3f;
+            Vector3 moveTo = _bot.Position + direction * 3f;
 
-            BotMovementHelper.SmoothMoveTo(_bot, alertPoint, allowSlowEnd: false);
+            _bot.GoToPoint(moveTo, slowAtTheEnd: false);
             _bot.BotTalk?.TrySay(EPhraseTrigger.OnEnemyShot);
         }
 

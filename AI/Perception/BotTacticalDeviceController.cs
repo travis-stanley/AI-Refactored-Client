@@ -1,19 +1,17 @@
 ﻿#nullable enable
 
-using System;
+using AIRefactored.AI.Core;
+using EFT;
+using EFT.InventoryLogic;
 using System.Collections.Generic;
 using System.Reflection;
 using UnityEngine;
-using EFT;
-using EFT.InventoryLogic;
-using AIRefactored.AI.Core;
-using AIRefactored.AI.Helpers;
 
 namespace AIRefactored.AI.Perception
 {
     /// <summary>
-    /// Controls bot tactical device behavior: flashlights, lasers, NVG, thermals.
-    /// Decides toggling based on lighting, fog, chaos factor, and baiting behavior.
+    /// Controls bot tactical device usage (flashlights, lasers, NVGs, thermals).
+    /// Toggles devices dynamically based on darkness, fog, and bait behavior influenced by bot personality.
     /// </summary>
     public class BotTacticalDeviceController : MonoBehaviour
     {
@@ -31,7 +29,7 @@ namespace AIRefactored.AI.Perception
         private const float FogThreshold = 0.5f;
         private const float LightThreshold = 0.3f;
 
-        private static readonly string[] ToggleKeywords = { "light", "laser", "nvg", "thermal" };
+        private static readonly string[] ToggleKeywords = { "light", "laser", "nvg", "thermal", "flash" };
 
         #endregion
 
@@ -46,10 +44,10 @@ namespace AIRefactored.AI.Perception
 
         #endregion
 
-        #region Public Entry
+        #region Public Logic
 
         /// <summary>
-        /// Called each AI tick to evaluate whether tactical devices should be toggled.
+        /// Called each tick to evaluate and update tactical device usage.
         /// </summary>
         public void UpdateTacticalLogic(BotOwner bot, BotComponentCache cache)
         {
@@ -69,33 +67,35 @@ namespace AIRefactored.AI.Perception
             bool isDark = IsEnvironmentDark();
             bool baitMode = ShouldBaitPlayer();
 
-            foreach (var item in _attachedDevices)
+            for (int i = 0; i < _attachedDevices.Count; i++)
             {
+                var item = _attachedDevices[i];
                 string name = item.Template?.Name?.ToLower() ?? "";
 
                 if (name.Contains("nvg") || name.Contains("thermal"))
                 {
                     ToggleDevice(item, isDark);
                 }
-
-                if (name.Contains("light") || name.Contains("flash") || name.Contains("laser"))
+                else if (name.Contains("light") || name.Contains("flash") || name.Contains("laser"))
                 {
                     ToggleDevice(item, isDark || baitMode);
                 }
             }
 
             if (baitMode)
-                Invoke(nameof(DisableAllDevices), 1.5f); // Fake-out tactic
+            {
+                Invoke(nameof(DisableAllDevices), 1.5f); // Bait fake-out
+            }
         }
 
         /// <summary>
-        /// Turns off all tactical devices on the weapon.
+        /// Immediately disables all tactical devices currently active.
         /// </summary>
         public void DisableAllDevices()
         {
-            foreach (var item in _attachedDevices)
+            for (int i = 0; i < _attachedDevices.Count; i++)
             {
-                ToggleDevice(item, false);
+                ToggleDevice(_attachedDevices[i], false);
             }
         }
 
@@ -104,7 +104,7 @@ namespace AIRefactored.AI.Perception
         #region Internal Logic
 
         /// <summary>
-        /// Finds all tactical mods that can be toggled on the weapon.
+        /// Scans the weapon for toggleable attachments like flashlights, lasers, NVGs.
         /// </summary>
         private void ScanForToggleableDevices(Weapon weapon)
         {
@@ -116,10 +116,10 @@ namespace AIRefactored.AI.Perception
                 if (mod == null)
                     continue;
 
-                string lowerName = mod.Template?.Name?.ToLower() ?? "";
-                foreach (string keyword in ToggleKeywords)
+                string name = mod.Template?.Name?.ToLower() ?? "";
+                for (int i = 0; i < ToggleKeywords.Length; i++)
                 {
-                    if (lowerName.Contains(keyword))
+                    if (name.Contains(ToggleKeywords[i]))
                     {
                         _attachedDevices.Add(mod);
                         break;
@@ -129,36 +129,38 @@ namespace AIRefactored.AI.Perception
         }
 
         /// <summary>
-        /// Uses reflection to toggle an item on/off based on current state.
+        /// Toggles the item on or off if needed using reflection.
         /// </summary>
-        private void ToggleDevice(Item item, bool on)
+        private void ToggleDevice(Item item, bool enable)
         {
             if (_toggleMethod == null || item == null)
                 return;
 
-            var toggleProp = item.GetType().GetProperty("On", BindingFlags.Public | BindingFlags.Instance);
-            if (toggleProp == null || !toggleProp.CanRead || !toggleProp.CanWrite)
+            var prop = item.GetType().GetProperty("On", BindingFlags.Instance | BindingFlags.Public);
+            if (prop == null || !prop.CanRead || !prop.CanWrite)
                 return;
 
-            bool current = (bool)(toggleProp.GetValue(item) ?? false);
-            if (current != on)
+            bool isCurrentlyOn = (bool)(prop.GetValue(item) ?? false);
+            if (isCurrentlyOn != enable)
             {
-                toggleProp.SetValue(item, on);
+                prop.SetValue(item, enable);
             }
         }
 
         /// <summary>
-        /// Checks environment lighting and fog to determine if it’s dark.
+        /// Checks if ambient light or fog conditions are low enough to warrant vision aid devices.
         /// </summary>
         private bool IsEnvironmentDark()
         {
             float ambient = RenderSettings.ambientLight.grayscale;
             float fog = RenderSettings.fog ? RenderSettings.fogDensity : 0f;
+
             return ambient < LightThreshold || fog > FogThreshold;
         }
 
         /// <summary>
-        /// Determines if the bot should bait the player by briefly flashing devices.
+        /// Determines if bot should intentionally bait the player using lights.
+        /// Influenced by ChaosFactor.
         /// </summary>
         private bool ShouldBaitPlayer()
         {

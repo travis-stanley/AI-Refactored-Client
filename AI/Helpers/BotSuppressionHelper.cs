@@ -1,10 +1,10 @@
 ﻿#nullable enable
 
-using System.Reflection;
-using EFT;
-using UnityEngine;
 using AIRefactored.AI.Core;
 using AIRefactored.AI.Reactions;
+using EFT;
+using System.Reflection;
+using UnityEngine;
 
 namespace AIRefactored.AI.Helpers
 {
@@ -14,11 +14,8 @@ namespace AIRefactored.AI.Helpers
     /// </summary>
     public static class BotSuppressionHelper
     {
-        #region Reflection Cache
-
         private static MethodInfo? _setUnderFireMethod;
-
-        #endregion
+        private static readonly bool EnableDebugLogs = false;
 
         #region Bot Accessors
 
@@ -38,19 +35,22 @@ namespace AIRefactored.AI.Helpers
 
         public static void TrySetUnderFire(BotOwner owner)
         {
-            if (owner == null || BotCacheUtility.IsHumanPlayer(owner) || owner.ShootData == null)
+            if (owner == null || owner.ShootData == null)
                 return;
 
-            _setUnderFireMethod ??= owner.ShootData.GetType()
-                .GetMethod("SetUnderFire", BindingFlags.Instance | BindingFlags.NonPublic | BindingFlags.Public);
+            if (_setUnderFireMethod == null)
+            {
+                _setUnderFireMethod = owner.ShootData.GetType()
+                    .GetMethod("SetUnderFire", BindingFlags.Instance | BindingFlags.NonPublic | BindingFlags.Public);
+            }
 
             _setUnderFireMethod?.Invoke(owner.ShootData, null);
             LogDebug($"{owner.Profile?.Info?.Nickname ?? "?"} marked under fire.");
         }
 
-        public static void TrySuppressBot(Player bot, Vector3 source)
+        public static void TrySuppressBot(Player bot, Vector3 flashSource)
         {
-            if (!bot.IsAI || bot.AIData == null || BotCacheUtility.IsHumanPlayer(bot))
+            if (!bot.IsAI || bot.AIData == null)
                 return;
 
             var cache = GetCache(bot);
@@ -60,18 +60,19 @@ namespace AIRefactored.AI.Helpers
             if (BotPanicUtility.TryGet(cache, out var panic))
             {
                 panic.TriggerPanic();
-                LogDebug($"{bot.Profile?.Info?.Nickname ?? "?"} triggered PANIC (via BotPanicHandler).");
+                LogDebug($"{bot.Profile?.Info?.Nickname ?? "?"} triggered PANIC via PanicHandler.");
                 return;
             }
 
-            if (cache.TryGetComponent(out BotFlashReactionComponent? reaction))
+            if (cache.TryGetComponent(out BotFlashReactionComponent? flashReaction))
             {
-                reaction.TriggerSuppression();
-                LogDebug($"{bot.Profile?.Info?.Nickname ?? "?"} triggered SUPPRESSION (via FlashReactionComponent).");
+                flashReaction.TriggerSuppression(0.6f); // default suppression intensity
+                LogDebug($"{bot.Profile?.Info?.Nickname ?? "?"} triggered SUPPRESSION via FlashReactionComponent.");
             }
         }
 
-        public static bool ShouldTriggerSuppression(Player bot, float visibilityThreshold = 12f, float ambientThreshold = 0.25f)
+
+        public static bool ShouldTriggerSuppression(Player bot, float visibleDistThreshold = 12f, float ambientThreshold = 0.25f)
         {
             var owner = GetBotOwner(bot);
             if (owner == null || owner.LookSensor == null)
@@ -80,17 +81,20 @@ namespace AIRefactored.AI.Helpers
             float visibleDist = owner.LookSensor.ClearVisibleDist;
             float ambient = RenderSettings.ambientLight.grayscale;
 
-            return visibleDist < visibilityThreshold || ambient < ambientThreshold;
+            return visibleDist < visibleDistThreshold || ambient < ambientThreshold;
         }
 
         #endregion
 
         #region Logging
 
-        [System.Diagnostics.Conditional("DEBUG")]
-        [System.Diagnostics.Conditional("UNITY_EDITOR")]
-        private static void LogDebug(string msg) =>
-            Debug.Log($"[AIRefactored-Suppress] {msg}");
+        private static void LogDebug(string msg)
+        {
+#if UNITY_EDITOR
+            if (EnableDebugLogs)
+                Debug.Log($"[AIRefactored-Suppress] {msg}");
+#endif
+        }
 
         #endregion
     }

@@ -1,8 +1,7 @@
 ﻿#nullable enable
 
-using UnityEngine;
 using EFT;
-using System;
+using UnityEngine;
 
 namespace AIRefactored.AI.Helpers
 {
@@ -25,9 +24,10 @@ namespace AIRefactored.AI.Helpers
         /// <summary>
         /// Smoothly moves the bot toward a world position using cohesion-based buffering.
         /// </summary>
-        public static void SmoothMoveTo(BotOwner bot, Vector3 target, bool allowSlowEnd = true, float cohesionScale = 1.0f)
+        public static void SmoothMoveTo(BotOwner bot, Vector3 target, bool slow = true, float cohesionScale = 1.0f)
         {
-            if (!IsBotEligible(bot)) return;
+            if (!IsEligible(bot))
+                return;
 
             float buffer = DefaultRadius * Mathf.Clamp(cohesionScale, 0.7f, 1.3f);
             Vector3 position = bot.Position;
@@ -35,21 +35,23 @@ namespace AIRefactored.AI.Helpers
             if ((position - target).sqrMagnitude < buffer * buffer)
                 return;
 
-            bot.Mover.GoToPoint(target, allowSlowEnd, cohesionScale);
+            bot.Mover.GoToPoint(target, slow, cohesionScale);
         }
 
         /// <summary>
         /// Smoothly rotates the bot to face a direction or target position.
-        /// Uses Lerp for human-like aim tracking.
+        /// Uses Slerp for human-like aim tracking.
         /// </summary>
         public static void SmoothLookTo(BotOwner bot, Vector3 lookTarget, float speed = DefaultLookSpeed)
         {
-            if (!IsBotEligible(bot)) return;
+            if (!IsEligible(bot))
+                return;
 
-            Vector3 direction = (lookTarget - bot.Position).normalized;
-            if (direction == Vector3.zero) return;
+            Vector3 dir = lookTarget - bot.Position;
+            if (dir.sqrMagnitude < 0.01f)
+                return;
 
-            Quaternion targetRotation = Quaternion.LookRotation(direction, Vector3.up);
+            Quaternion targetRotation = Quaternion.LookRotation(dir.normalized, Vector3.up);
             bot.Transform.rotation = Quaternion.Slerp(bot.Transform.rotation, targetRotation, Time.deltaTime * speed);
         }
 
@@ -58,30 +60,32 @@ namespace AIRefactored.AI.Helpers
         /// </summary>
         public static void SmoothStrafeFrom(BotOwner bot, Vector3 threatDirection, float scale = 1.0f)
         {
-            if (!IsBotEligible(bot)) return;
+            if (!IsEligible(bot))
+                return;
 
-            Vector3 side = Vector3.Cross(Vector3.up, threatDirection.normalized);
-            Vector3 strafeTarget = bot.Position + side * DefaultStrafeDistance * Mathf.Clamp(scale, 0.5f, 1.5f);
+            Vector3 right = Vector3.Cross(Vector3.up, threatDirection.normalized);
+            Vector3 offset = right * DefaultStrafeDistance * Mathf.Clamp(scale, 0.5f, 1.5f);
+            Vector3 strafeTarget = bot.Position + offset;
 
-            bot.Mover.GoToPoint(strafeTarget, slowAtTheEnd: false, reachDist: 1f, getUpWithCheck: true);
+            bot.Mover.GoToPoint(strafeTarget, false, 1f); // false = not slow; cohesionScale = 1
         }
 
         #endregion
 
         #region Helpers
 
-        private static bool IsBotEligible(BotOwner? bot)
+        private static bool IsEligible(BotOwner? bot)
         {
-            return bot != null && bot.Mover != null && !bot.IsDead && !BotCacheUtility.IsHumanPlayer(bot);
+            return bot != null && bot.Mover != null && !bot.IsDead && bot.GetPlayer != null && bot.GetPlayer.IsAI;
         }
 
         #endregion
 
-        #region Reset (Retained for compatibility)
+        #region Legacy Stub
 
         public static void Reset(BotOwner bot)
         {
-            // No-op: cooldown logic has been removed.
+            // No-op (for compatibility only)
         }
 
         #endregion

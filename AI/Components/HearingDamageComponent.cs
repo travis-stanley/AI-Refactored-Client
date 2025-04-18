@@ -8,7 +8,7 @@ namespace AIRefactored.AI.Components
     /// Simulates hearing damage and deafening effects from loud sounds like explosions or gunfire.
     /// Deafness affects a bot's ability to perceive auditory cues in the world.
     /// </summary>
-    public class HearingDamageComponent : MonoBehaviour
+    public class HearingDamageComponent
     {
         #region Fields
 
@@ -38,22 +38,6 @@ namespace AIRefactored.AI.Components
 
         #endregion
 
-        #region Unity Events
-
-        /// <summary>
-        /// Updates deafness recovery over time.
-        /// </summary>
-        private void Update()
-        {
-            if (_recoveryTimeLeft > 0f)
-            {
-                _recoveryTimeLeft -= Time.deltaTime;
-                Deafness = Mathf.MoveTowards(Deafness, 0f, RecoveryRate * Time.deltaTime);
-            }
-        }
-
-        #endregion
-
         #region Public API
 
         /// <summary>
@@ -66,6 +50,18 @@ namespace AIRefactored.AI.Components
         {
             Deafness = Mathf.Clamp01(Mathf.Max(Deafness, intensity));
             _recoveryTimeLeft = Mathf.Max(_recoveryTimeLeft, duration);
+        }
+
+        /// <summary>
+        /// Called each tick to update recovery over time.
+        /// </summary>
+        public void Tick(float deltaTime)
+        {
+            if (_recoveryTimeLeft > 0f)
+            {
+                _recoveryTimeLeft -= deltaTime;
+                Deafness = Mathf.MoveTowards(Deafness, 0f, RecoveryRate * deltaTime);
+            }
         }
 
         #endregion

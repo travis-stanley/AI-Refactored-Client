@@ -1,9 +1,8 @@
 ﻿#nullable enable
 
-using UnityEngine;
-using EFT;
-using AIRefactored.Core;
 using AIRefactored.AI.Helpers;
+using EFT;
+using UnityEngine;
 
 namespace AIRefactored.AI.Memory
 {
@@ -35,17 +34,17 @@ namespace AIRefactored.AI.Memory
         /// </summary>
         public static void ReevaluateCurrentCover(this BotOwner bot)
         {
-            if (bot == null || bot.IsDead)
+            if (bot == null || bot.IsDead || bot.Memory?.GoalEnemy == null)
                 return;
 
             var enemy = bot.Memory.GoalEnemy;
-            if (enemy == null || !enemy.IsVisible)
+            if (!enemy.IsVisible)
                 return;
 
             Vector3 toEnemy = enemy.CurrPosition - bot.Position;
-            float angleToEnemy = Vector3.Angle(bot.LookDirection, toEnemy);
+            float angle = Vector3.Angle(bot.LookDirection, toEnemy);
 
-            if (angleToEnemy < 20f && Vector3.Distance(bot.Position, enemy.CurrPosition) < 25f)
+            if (angle < 20f && toEnemy.sqrMagnitude < 625f) // 25m
             {
                 Vector3 fallback = bot.Position - toEnemy.normalized * 5f;
                 BotMovementHelper.SmoothMoveTo(bot, fallback, true, 1f);
@@ -59,7 +58,7 @@ namespace AIRefactored.AI.Memory
 
         public static void SetCautiousSearchMode(this BotOwner bot)
         {
-            if (bot == null || bot.IsDead)
+            if (bot == null || bot.IsDead || bot.Memory == null)
                 return;
 
             bot.Memory.AttackImmediately = false;
@@ -68,7 +67,7 @@ namespace AIRefactored.AI.Memory
 
         public static void SetCombatAggressionMode(this BotOwner bot)
         {
-            if (bot == null || bot.IsDead)
+            if (bot == null || bot.IsDead || bot.Memory == null)
                 return;
 
             bot.Memory.AttackImmediately = true;
@@ -77,7 +76,7 @@ namespace AIRefactored.AI.Memory
 
         public static void SetPeaceMode(this BotOwner bot)
         {
-            if (bot == null || bot.IsDead)
+            if (bot == null || bot.IsDead || bot.Memory == null)
                 return;
 
             bot.Memory.AttackImmediately = false;
@@ -91,7 +90,7 @@ namespace AIRefactored.AI.Memory
 
         public static void SetLastHeardSound(this BotOwner bot, Player source)
         {
-            if (bot == null || bot.IsDead || source == null || bot.ProfileId == source.ProfileId)
+            if (bot == null || bot.IsDead || source == null || source.ProfileId == bot.ProfileId)
                 return;
 
             bot.BotsGroup?.LastSoundsController?.AddNeutralSound(source, source.Position);

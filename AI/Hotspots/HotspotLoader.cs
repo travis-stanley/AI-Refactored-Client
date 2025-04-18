@@ -1,11 +1,11 @@
 ﻿#nullable enable
 
-using System;
-using System.Collections.Generic;
-using System.IO;
 using Comfort.Common;
 using EFT;
 using Newtonsoft.Json;
+using System;
+using System.Collections.Generic;
+using System.IO;
 using UnityEngine;
 
 namespace AIRefactored.AI.Hotspots
@@ -13,11 +13,14 @@ namespace AIRefactored.AI.Hotspots
     public static class HotspotLoader
     {
         private const string HOTSPOT_FOLDER = "hotspots/";
-        private static readonly Dictionary<string, HotspotSet> _cache = new();
+        private static readonly Dictionary<string, HotspotSet> _cache = new Dictionary<string, HotspotSet>();
         private static bool _loaded = false;
         private static bool _debugLog = false;
 
-        public static void EnableDebugLogs(bool enabled) => _debugLog = enabled;
+        public static void EnableDebugLogs(bool enabled)
+        {
+            _debugLog = enabled;
+        }
 
         public static void LoadAll()
         {
@@ -32,13 +35,13 @@ namespace AIRefactored.AI.Hotspots
             }
 
             string[] files = Directory.GetFiles(basePath, "*.json", SearchOption.TopDirectoryOnly);
-            foreach (string file in files)
+            for (int i = 0; i < files.Length; i++)
             {
+                string file = files[i];
                 try
                 {
                     string json = File.ReadAllText(file);
-                    var set = HotspotSet.FromJson(json);
-
+                    HotspotSet? set = HotspotSet.FromJson(json);
                     if (set == null || set.Points.Count == 0)
                         continue;
 
@@ -63,9 +66,12 @@ namespace AIRefactored.AI.Hotspots
                 LoadAll();
 
             string mapId = Singleton<GameWorld>.Instance?.LocationId?.ToLowerInvariant() ?? "unknown";
-            return _cache.TryGetValue(mapId, out var set)
-                ? set.FilteredForRole(role)
-                : null;
+
+            HotspotSet set;
+            if (_cache.TryGetValue(mapId, out set))
+                return set.FilteredForRole(role);
+
+            return null;
         }
 
         public static void Reload()
@@ -78,7 +84,10 @@ namespace AIRefactored.AI.Hotspots
                 Debug.Log("[AIRefactored] Hotspot data reloaded.");
         }
 
-        public static IReadOnlyDictionary<string, HotspotSet> GetAll() => _cache;
+        public static IReadOnlyDictionary<string, HotspotSet> GetAll()
+        {
+            return _cache;
+        }
 
         private static string ResolveHotspotPath()
         {
@@ -90,42 +99,50 @@ namespace AIRefactored.AI.Hotspots
 
     public class HotspotSet
     {
-        public List<Vector3> Points = new();
+        public List<Vector3> Points = new List<Vector3>();
 
         public HotspotSet FilteredForRole(WildSpawnType role)
         {
-            if (Points.Count == 0)
-                return this;
+            HotspotSet result = new HotspotSet();
+            int count = Points.Count;
 
-            List<Vector3> filtered = new();
+            if (count == 0)
+                return this;
 
             if (role == WildSpawnType.pmcBEAR || role == WildSpawnType.pmcUSEC)
             {
-                int count = Mathf.CeilToInt(Points.Count * 0.6f); // Prioritize first 60%
-                filtered.AddRange(Points.GetRange(0, count));
+                int limit = (int)(count * 0.6f);
+                for (int i = 0; i < limit && i < count; i++)
+                    result.Points.Add(Points[i]);
             }
             else if (role == WildSpawnType.assault || role == WildSpawnType.cursedAssault)
             {
-                int skip = Mathf.FloorToInt(Points.Count * 0.4f); // Skip first 40%
-                filtered.AddRange(Points.GetRange(skip, Points.Count - skip));
+                int skip = (int)(count * 0.4f);
+                for (int i = skip; i < count; i++)
+                    result.Points.Add(Points[i]);
             }
             else
             {
-                filtered.AddRange(Points);
+                for (int i = 0; i < count; i++)
+                    result.Points.Add(Points[i]);
             }
 
-            return new HotspotSet { Points = filtered };
+            return result;
         }
 
         public static HotspotSet? FromJson(string json)
         {
             try
             {
-                var file = JsonConvert.DeserializeObject<HotspotFile>(json);
-                if (file?.hotspots == null || file.hotspots.Count == 0)
+                HotspotFile? file = JsonConvert.DeserializeObject<HotspotFile>(json);
+                if (file == null || file.hotspots == null || file.hotspots.Count == 0)
                     return null;
 
-                return new HotspotSet { Points = file.hotspots };
+                HotspotSet set = new HotspotSet();
+                for (int i = 0; i < file.hotspots.Count; i++)
+                    set.Points.Add(file.hotspots[i]);
+
+                return set;
             }
             catch (Exception ex)
             {
@@ -136,7 +153,7 @@ namespace AIRefactored.AI.Hotspots
 
         private class HotspotFile
         {
-            public List<Vector3> hotspots = new();
+            public List<Vector3> hotspots = new List<Vector3>();
         }
     }
 }

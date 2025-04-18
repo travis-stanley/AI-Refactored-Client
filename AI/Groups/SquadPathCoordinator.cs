@@ -1,8 +1,8 @@
 ﻿#nullable enable
 
-using UnityEngine;
-using EFT;
 using AIRefactored.AI.Core;
+using EFT;
+using UnityEngine;
 
 namespace AIRefactored.AI.Groups
 {
@@ -12,6 +12,8 @@ namespace AIRefactored.AI.Groups
     /// </summary>
     public class SquadPathCoordinator : MonoBehaviour
     {
+        #region Fields
+
         private BotOwner? _bot;
         private BotComponentCache? _cache;
 
@@ -21,6 +23,10 @@ namespace AIRefactored.AI.Groups
 
         private const float MaxOffset = 3.5f;
 
+        #endregion
+
+        #region Unity Lifecycle
+
         private void Awake()
         {
             _bot = GetComponent<BotOwner>();
@@ -29,6 +35,7 @@ namespace AIRefactored.AI.Groups
             if (_bot?.BotsGroup != null)
             {
                 _groupSize = _bot.BotsGroup.MembersCount;
+
                 for (int i = 0; i < _groupSize; i++)
                 {
                     var member = _bot.BotsGroup.Member(i);
@@ -41,9 +48,12 @@ namespace AIRefactored.AI.Groups
             }
         }
 
+        #endregion
+
+        #region Offset Logic
+
         /// <summary>
-        /// Returns a destination offset based on this bot’s index in its squad.
-        /// Call this when moving toward a common squad objective.
+        /// Computes a formation offset vector based on the bot’s index within the squad.
         /// </summary>
         public Vector3 GetOffset()
         {
@@ -52,13 +62,13 @@ namespace AIRefactored.AI.Groups
 
             float angle = 360f * (_groupIndex / (float)_groupSize);
             Vector3 offset = Quaternion.Euler(0f, angle, 0f) * Vector3.forward;
-            _lastOffset = offset.normalized * MaxOffset * 0.5f;
 
+            _lastOffset = offset.normalized * MaxOffset * 0.5f;
             return _lastOffset;
         }
 
         /// <summary>
-        /// Applies the current offset to a shared destination.
+        /// Returns a destination adjusted by the current squad offset.
         /// </summary>
         public Vector3 ApplyOffsetTo(Vector3 sharedDestination)
         {
@@ -66,11 +76,13 @@ namespace AIRefactored.AI.Groups
         }
 
         /// <summary>
-        /// Returns the current raw offset vector (cached).
+        /// Returns the last calculated offset vector.
         /// </summary>
         public Vector3 GetCurrentOffset()
         {
             return _lastOffset;
         }
+
+        #endregion
     }
 }

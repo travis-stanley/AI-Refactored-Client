@@ -1,16 +1,14 @@
 ﻿#nullable enable
 
-using UnityEngine;
-using EFT;
-using Comfort.Common;
 using AIRefactored.AI.Core;
-using AIRefactored.AI.Memory;
-using AIRefactored.AI.Hotspots;
-using AIRefactored.AI.Combat;
-using AIRefactored.AI.Helpers;
-using AIRefactored.AI.Optimization;
 using AIRefactored.AI.Groups;
+using AIRefactored.AI.Helpers;
+using AIRefactored.AI.Hotspots;
+using AIRefactored.AI.Memory;
+using AIRefactored.AI.Optimization;
+using EFT;
 using System.Collections.Generic;
+using UnityEngine;
 
 namespace AIRefactored.AI.Combat
 {
@@ -33,13 +31,12 @@ namespace AIRefactored.AI.Combat
         private float _lastHitTime = -999f;
         private float _switchCooldown = 0f;
         private float _lastEchoTime = -999f;
-
         private const float InvestigateScanRadius = 4f;
         private const float InvestigateCooldown = 10f;
         private const float EchoCooldown = 5f;
         private const float EchoChance = 0.3f;
 
-        private readonly List<float> _soundTimestamps = new(4);
+        private readonly List<float> _soundTimestamps = new List<float>(4);
 
         private void Awake()
         {
@@ -52,15 +49,13 @@ namespace AIRefactored.AI.Combat
             _squadCoordinator = GetComponent<SquadPathCoordinator>();
         }
 
-        private void Update()
+        public void Tick(float time)
         {
             if (_bot == null || _cache == null || _profile == null || _bot.IsDead)
                 return;
 
             if (_bot.GetPlayer != null && !_bot.GetPlayer.IsAI)
                 return;
-
-            float time = Time.time;
 
             if (_bot.Memory?.GoalEnemy != null)
             {
@@ -82,7 +77,7 @@ namespace AIRefactored.AI.Combat
                 else
                 {
                     var adjusted = _squadCoordinator?.ApplyOffsetTo(_fallbackPosition.Value) ?? _fallbackPosition.Value;
-                    BotMovementHelper.SmoothMoveTo(_bot, adjusted);
+                    BotMovementHelper.SmoothMoveTo(_bot, adjusted, false, _profile.Cohesion);
                 }
                 return;
             }
@@ -109,9 +104,11 @@ namespace AIRefactored.AI.Combat
             if (_state == CombatState.Investigate && _lastKnownEnemyPos.HasValue)
             {
                 var adjusted = _squadCoordinator?.ApplyOffsetTo(_lastKnownEnemyPos.Value) ?? _lastKnownEnemyPos.Value;
-                BotMovementHelper.SmoothMoveTo(_bot, adjusted);
+                BotMovementHelper.SmoothMoveTo(_bot, adjusted, false, _profile.Cohesion);
+
                 if (Vector3.Distance(_bot.Position, _lastKnownEnemyPos.Value) < 3f)
                     _lastKnownEnemyPos = null;
+
                 return;
             }
 
@@ -134,7 +131,7 @@ namespace AIRefactored.AI.Combat
             {
                 Vector3 target = HotspotSystem.GetRandomHotspot(_bot);
                 var adjusted = _squadCoordinator?.ApplyOffsetTo(target) ?? target;
-                BotMovementHelper.SmoothMoveTo(_bot, adjusted);
+                BotMovementHelper.SmoothMoveTo(_bot, adjusted, false, _profile.Cohesion);
                 _switchCooldown = time + Random.Range(15f, 45f);
 
                 if (Random.value < 0.25f)
@@ -149,7 +146,7 @@ namespace AIRefactored.AI.Combat
                 if (_tacticalMemory != null && !_tacticalMemory.WasRecentlyCleared(scan))
                 {
                     var adjusted = _squadCoordinator?.ApplyOffsetTo(scan) ?? scan;
-                    BotMovementHelper.SmoothMoveTo(_bot, adjusted);
+                    BotMovementHelper.SmoothMoveTo(_bot, adjusted, false, _profile.Cohesion);
                     _tacticalMemory.MarkCleared(scan);
 
                     if (Random.value < 0.3f)
@@ -160,7 +157,8 @@ namespace AIRefactored.AI.Combat
 
         private void TriggerSuppressedFallback()
         {
-            if (_bot == null || _cache == null) return;
+            if (_bot == null || _cache == null)
+                return;
 
             _state = CombatState.Fallback;
             _fallbackPosition = null;

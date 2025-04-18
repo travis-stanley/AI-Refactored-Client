@@ -48,9 +48,6 @@ namespace AIRefactored.AI.Groups
             RegisterGroupHooks();
         }
 
-        /// <summary>
-        /// Unity Start hook — fallback to initialize group tracking.
-        /// </summary>
         private void Start()
         {
             _bot = GetComponent<BotOwner>();
@@ -63,9 +60,6 @@ namespace AIRefactored.AI.Groups
             RegisterGroupHooks();
         }
 
-        /// <summary>
-        /// Cleans up listeners on destruction.
-        /// </summary>
         private void OnDestroy()
         {
             if (_group != null)
@@ -79,9 +73,6 @@ namespace AIRefactored.AI.Groups
 
         #region Group Hook Registration
 
-        /// <summary>
-        /// Subscribes to group member events and caches current teammates.
-        /// </summary>
         private void RegisterGroupHooks()
         {
             if (_group == null || _bot == null)
@@ -123,58 +114,36 @@ namespace AIRefactored.AI.Groups
 
         #endregion
 
-        #region Update Loop
+        #region Public Tick
 
         /// <summary>
         /// Periodic update that may sync zones or group states.
+        /// This must be called externally now (e.g., from BotBrain).
         /// </summary>
-        private void Update()
+        public void Tick(float time)
         {
-            if (_bot == null || _cache == null || _group == null || Time.time < _nextSyncTime)
+            if (_bot == null || _cache == null || _group == null || time < _nextSyncTime)
                 return;
 
             if (_bot.GetPlayer?.IsAI != true || _teammateCaches.Count == 0)
                 return;
 
-            _nextSyncTime = Time.time + SyncInterval;
+            _nextSyncTime = time + SyncInterval;
             EvaluateGroupZones();
-        }
-
-        /// <summary>
-        /// Stub: Evaluate and synchronize squad-level tactical zones.
-        /// </summary>
-        private void EvaluateGroupZones()
-        {
-            // Future implementation: sync squad fallback or investigation zones
         }
 
         #endregion
 
         #region Shared Info Distribution
 
-        /// <summary>
-        /// Shares a loot target with squadmates.
-        /// </summary>
         public void BroadcastLootPoint(Vector3 point) => _lastLootPoint = point;
 
-        /// <summary>
-        /// Shares a fallback/extraction target with squadmates.
-        /// </summary>
         public void BroadcastExtractPoint(Vector3 point) => _lastExtractPoint = point;
 
-        /// <summary>
-        /// Retrieves last shared loot position (if any).
-        /// </summary>
         public Vector3? GetSharedLootTarget() => _lastLootPoint;
 
-        /// <summary>
-        /// Retrieves last shared extract/fallback position (if any).
-        /// </summary>
         public Vector3? GetSharedExtractTarget() => _lastExtractPoint;
 
-        /// <summary>
-        /// Gets current AI teammates in this bot's squad.
-        /// </summary>
         public List<BotOwner> GetTeammates()
         {
             _tempList.Clear();
@@ -187,6 +156,15 @@ namespace AIRefactored.AI.Groups
             }
 
             return new List<BotOwner>(_tempList);
+        }
+
+        #endregion
+
+        #region Stub Zone Sync
+
+        private void EvaluateGroupZones()
+        {
+            // TODO: Share fallback zones or alert regions
         }
 
         #endregion

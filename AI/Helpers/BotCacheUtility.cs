@@ -1,10 +1,10 @@
 ﻿#nullable enable
 
+using AIRefactored.AI.Combat;
+using AIRefactored.AI.Core;
+using EFT;
 using System.Collections.Generic;
 using UnityEngine;
-using EFT;
-using AIRefactored.AI.Core;
-using AIRefactored.AI.Combat;
 
 namespace AIRefactored.AI.Helpers
 {
@@ -21,7 +21,7 @@ namespace AIRefactored.AI.Helpers
         public static bool TryGet<T>(BotComponentCache cache, out T? result) where T : class
         {
             result = null;
-            if (cache?.gameObject == null || cache.Bot == null)
+            if (cache == null || cache.gameObject == null || cache.Bot == null)
                 return false;
 
             result = cache.GetComponent<T>();
@@ -46,7 +46,7 @@ namespace AIRefactored.AI.Helpers
         /// </summary>
         public static BotComponentCache? GetCache(Player player)
         {
-            return player?.GetComponent<BotComponentCache>();
+            return player != null ? player.GetComponent<BotComponentCache>() : null;
         }
 
         #endregion
@@ -58,7 +58,7 @@ namespace AIRefactored.AI.Helpers
         /// </summary>
         public static BotPersonalityProfile? GetPersonality(BotComponentCache cache)
         {
-            if (cache?.Bot?.ProfileId == null)
+            if (cache == null || cache.Bot?.ProfileId == null)
                 return null;
 
             return BotRegistry.Get(cache.Bot.ProfileId);
@@ -69,7 +69,7 @@ namespace AIRefactored.AI.Helpers
         /// </summary>
         public static string GetBotName(BotComponentCache cache)
         {
-            if (cache?.Bot?.Profile?.Info == null)
+            if (cache == null || cache.Bot?.Profile?.Info == null)
                 return "Unknown";
 
             string name = cache.Bot.Profile.Info.Nickname;
@@ -86,10 +86,12 @@ namespace AIRefactored.AI.Helpers
         /// </summary>
         public static Transform? Head(BotComponentCache cache)
         {
-            if (cache?.Bot?.MainParts?.TryGetValue(BodyPartType.head, out var headPart) == true)
+            if (cache?.Bot?.MainParts != null &&
+                cache.Bot.MainParts.TryGetValue(BodyPartType.head, out var headPart))
             {
                 return headPart?._transform?.Original;
             }
+
             return null;
         }
 
@@ -117,9 +119,7 @@ namespace AIRefactored.AI.Helpers
             {
                 var cache = all[i];
                 if (cache != null && cache.Bot != null && !cache.Bot.IsDead)
-                {
                     results.Add(cache);
-                }
             }
 
             return results;

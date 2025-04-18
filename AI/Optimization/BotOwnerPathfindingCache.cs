@@ -1,13 +1,11 @@
 ﻿#nullable enable
 
+using AIRefactored.AI.Memory;
+using AIRefactored.Core;
+using EFT;
 using System.Collections.Generic;
 using UnityEngine;
 using UnityEngine.AI;
-using EFT;
-using AIRefactored.AI.Helpers;
-using AIRefactored.AI.Core;
-using AIRefactored.AI.Memory;
-using AIRefactored.Core;
 
 namespace AIRefactored.AI.Optimization
 {
@@ -19,11 +17,9 @@ namespace AIRefactored.AI.Optimization
     {
         #region Fields
 
-        private readonly Dictionary<string, List<Vector3>> _pathCache = new();
-        private readonly Dictionary<string, float> _coverWeights = new();
-
-        private readonly List<Vector3> _navBuffer = new(16);
-        private readonly HashSet<string> _usedKeysThisFrame = new();
+        private readonly Dictionary<string, List<Vector3>> _pathCache = new Dictionary<string, List<Vector3>>();
+        private readonly Dictionary<string, float> _coverWeights = new Dictionary<string, float>();
+        private readonly HashSet<string> _usedKeysThisFrame = new HashSet<string>();
 
         #endregion
 
@@ -51,9 +47,9 @@ namespace AIRefactored.AI.Optimization
         }
 
         /// <summary>
-        /// Clears all cached paths and transient state.
+        /// Clears all cached paths and transient keys.
         /// </summary>
-        public void ClearCache()
+        public void Clear()
         {
             _pathCache.Clear();
             _usedKeysThisFrame.Clear();
@@ -69,12 +65,14 @@ namespace AIRefactored.AI.Optimization
         private List<Vector3> BuildNavPath(Vector3 origin, Vector3 target)
         {
             var navPath = new NavMeshPath();
+
             if (NavMesh.CalculatePath(origin, target, NavMesh.AllAreas, navPath) &&
                 navPath.status == NavMeshPathStatus.PathComplete)
             {
                 return new List<Vector3>(navPath.corners);
             }
 
+            // Fallback
             return new List<Vector3> { origin, target };
         }
 
@@ -98,12 +96,12 @@ namespace AIRefactored.AI.Optimization
         public float GetCoverWeight(string mapId, Vector3 pos)
         {
             string key = mapId + "_" + RoundVector3ToKey(pos);
-            return _coverWeights.TryGetValue(key, out var weight) ? weight : 1f;
+            return _coverWeights.TryGetValue(key, out float weight) ? weight : 1f;
         }
 
         #endregion
 
-        #region Group Broadcasts
+        #region Group Danger Broadcast
 
         /// <summary>
         /// Broadcasts a fallback position to other bots via squad memory.
@@ -111,7 +109,7 @@ namespace AIRefactored.AI.Optimization
         /// </summary>
         public void BroadcastRetreat(BotOwner botOwner, Vector3 point)
         {
-            if (!IsAIBot(botOwner) || botOwner?.BotsGroup == null || botOwner.ProfileId == null)
+            if (!IsAIBot(botOwner) || botOwner.BotsGroup == null || string.IsNullOrEmpty(botOwner.ProfileId))
                 return;
 
             string map = GameWorldHandler.GetCurrentMapName();
@@ -122,18 +120,12 @@ namespace AIRefactored.AI.Optimization
 
         #region Helpers
 
-        /// <summary>
-        /// Determines if a bot is AI-controlled and not the player or coop.
-        /// </summary>
         private static bool IsAIBot(BotOwner bot)
         {
             var player = bot?.GetPlayer;
             return player != null && player.IsAI && !player.IsYourPlayer;
         }
 
-        /// <summary>
-        /// Rounds a Vector3 to a formatted string key for spatial hashing.
-        /// </summary>
         private static string RoundVector3ToKey(Vector3 v)
         {
             return $"{v.x:F1}_{v.y:F1}_{v.z:F1}";

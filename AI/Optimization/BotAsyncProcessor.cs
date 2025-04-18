@@ -1,9 +1,8 @@
 ﻿#nullable enable
 
+using EFT;
 using System.Threading.Tasks;
 using UnityEngine;
-using EFT;
-using AIRefactored.Core;
 
 namespace AIRefactored.AI.Optimization
 {
@@ -15,38 +14,61 @@ namespace AIRefactored.AI.Optimization
     {
         #region Fields
 
+        /// <summary>
+        /// The bot associated with this processor.
+        /// </summary>
         private BotOwner? _bot;
+
+        /// <summary>
+        /// Whether initialization has already been applied to this bot.
+        /// </summary>
         private bool _hasInitialized;
+
+        /// <summary>
+        /// Initial delay in seconds before async tuning starts.
+        /// </summary>
         private const float InitDelay = 0.5f;
 
         #endregion
 
         #region Unity Lifecycle
 
+        /// <summary>
+        /// Unity Start method that schedules deferred async initialization.
+        /// </summary>
         private async void Start()
         {
             await Task.Delay((int)(InitDelay * 1000f));
 
             if (_bot != null && !_hasInitialized)
+            {
                 await ProcessBotOwnerAsync(_bot);
+            }
         }
 
         #endregion
 
         #region Initialization
 
+        /// <summary>
+        /// Injects the bot reference for delayed tuning.
+        /// </summary>
+        /// <param name="botOwner">The bot to process.</param>
         public void Initialize(BotOwner botOwner)
         {
             _bot = botOwner;
         }
 
+        /// <summary>
+        /// Runs delayed personality-based tuning logic for the bot.
+        /// </summary>
+        /// <param name="botOwner">The bot to process.</param>
         public async Task ProcessBotOwnerAsync(BotOwner botOwner)
         {
             if (_hasInitialized || botOwner?.Settings?.FileSettings?.Mind == null)
                 return;
 
-            await Task.Yield(); // Defer logic until spawn frame completes
-
+            await Task.Yield(); // Defer for spawn stabilization
             ApplyPersonalityModifiers(botOwner);
             _hasInitialized = true;
         }
@@ -55,6 +77,10 @@ namespace AIRefactored.AI.Optimization
 
         #region Personality Logic
 
+        /// <summary>
+        /// Applies bot personality tuning to MindSettings.
+        /// </summary>
+        /// <param name="botOwner">Bot to tune.</param>
         private void ApplyPersonalityModifiers(BotOwner botOwner)
         {
             var mind = botOwner.Settings.FileSettings.Mind;

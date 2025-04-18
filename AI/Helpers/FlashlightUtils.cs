@@ -13,29 +13,22 @@ namespace AIRefactored.AI.Helpers
         #region Exposure Checks
 
         /// <summary>
-        /// Determines if a light is positioned within a blinding angle of the bot's head direction.
+        /// Determines if a light is within a blinding angle of the bot's head orientation.
         /// </summary>
-        /// <param name="lightTransform">The light's transform in world space.</param>
-        /// <param name="botHeadTransform">The transform representing the bot's head orientation.</param>
-        /// <param name="angleThreshold">Maximum angle (in degrees) to be considered blinding.</param>
-        /// <returns>True if the light is within the blinding angle.</returns>
         public static bool IsBlindingLight(Transform lightTransform, Transform botHeadTransform, float angleThreshold = 30f)
         {
             if (lightTransform == null || botHeadTransform == null)
                 return false;
 
-            Vector3 directionToLight = lightTransform.position - botHeadTransform.position;
-            float angle = Vector3.Angle(botHeadTransform.forward, directionToLight);
-            return angle < angleThreshold;
+            Vector3 toLight = lightTransform.position - botHeadTransform.position;
+            float angle = Vector3.Angle(botHeadTransform.forward, toLight);
+            return angle <= angleThreshold;
         }
 
         /// <summary>
-        /// Calculates the forward-facing intensity factor of a flashlight.
-        /// Value is 1.0 when directly in front, 0.0 when behind.
+        /// Calculates a normalized intensity factor based on direct exposure.
+        /// Value approaches 1.0 when bot is looking directly into the light.
         /// </summary>
-        /// <param name="lightTransform">The light source.</param>
-        /// <param name="botHeadTransform">The bot head transform.</param>
-        /// <returns>Dot product factor clamped between 0 and 1.</returns>
         public static float GetFlashIntensityFactor(Transform lightTransform, Transform botHeadTransform)
         {
             if (lightTransform == null || botHeadTransform == null)
@@ -51,12 +44,8 @@ namespace AIRefactored.AI.Helpers
         #region Alignment Checks
 
         /// <summary>
-        /// Determines whether a source is facing toward a target within a given angle threshold.
+        /// Returns true if the source is facing the target within a given angle threshold.
         /// </summary>
-        /// <param name="source">Transform to check facing from.</param>
-        /// <param name="target">Target position to face.</param>
-        /// <param name="angleThreshold">Angle threshold in degrees.</param>
-        /// <returns>True if source is facing the target.</returns>
         public static bool IsFacingTarget(Transform source, Transform target, float angleThreshold = 30f)
         {
             if (source == null || target == null)
@@ -64,7 +53,7 @@ namespace AIRefactored.AI.Helpers
 
             Vector3 toTarget = target.position - source.position;
             float angle = Vector3.Angle(source.forward, toTarget);
-            return angle < angleThreshold;
+            return angle <= angleThreshold;
         }
 
         #endregion
@@ -72,13 +61,9 @@ namespace AIRefactored.AI.Helpers
         #region Visibility Scoring
 
         /// <summary>
-        /// Calculates a visibility score based on angle and distance.
-        /// Used to determine flash effectiveness in bot vision systems.
+        /// Scores the visibility strength of a flashlight based on distance and angle.
+        /// Used for flash reaction thresholding.
         /// </summary>
-        /// <param name="lightTransform">The light source transform.</param>
-        /// <param name="botHeadTransform">The bot's head transform.</param>
-        /// <param name="maxDistance">Maximum effective range for flash effect falloff.</param>
-        /// <returns>A float score (0-1) representing flash visibility strength.</returns>
         public static float CalculateFlashScore(Transform lightTransform, Transform botHeadTransform, float maxDistance = 20f)
         {
             if (lightTransform == null || botHeadTransform == null)
@@ -86,12 +71,11 @@ namespace AIRefactored.AI.Helpers
 
             Vector3 toLight = lightTransform.position - botHeadTransform.position;
             float distance = toLight.magnitude;
-            float dot = Vector3.Dot(botHeadTransform.forward, toLight.normalized);
 
-            float angleScore = Mathf.Clamp01(dot);
-            float distanceFalloff = 1f - Mathf.Clamp01(distance / maxDistance);
+            float angleFactor = Mathf.Clamp01(Vector3.Dot(botHeadTransform.forward, toLight.normalized));
+            float distanceFactor = 1f - Mathf.Clamp01(distance / maxDistance);
 
-            return angleScore * distanceFalloff;
+            return angleFactor * distanceFactor;
         }
 
         #endregion

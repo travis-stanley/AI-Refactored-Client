@@ -1,12 +1,9 @@
 ﻿#nullable enable
 
-using System.Collections.Generic;
-using AIRefactored.AI;
-using AIRefactored.AI.Groups;
 using AIRefactored.AI.Helpers;
 using Comfort.Common;
 using EFT;
-using EFT.Interactive;
+using System.Collections.Generic;
 using UnityEngine;
 
 namespace AIRefactored.AI.Group
@@ -25,6 +22,9 @@ namespace AIRefactored.AI.Group
 
         #region Constructor
 
+        /// <summary>
+        /// Initializes team logic for a specific bot.
+        /// </summary>
         public BotTeamLogic(BotOwner bot)
         {
             _bot = bot;
@@ -34,32 +34,32 @@ namespace AIRefactored.AI.Group
 
         #region Team Setup
 
+        /// <summary>
+        /// Filters and stores teammates based on shared GroupId.
+        /// </summary>
         public void SetTeammates(List<BotOwner> allBots)
         {
             _teammates.Clear();
 
-            var player = _bot.GetPlayer;
-            if (player == null || !player.IsAI)
+            if (_bot?.GetPlayer?.IsAI != true)
                 return;
 
-            string? myGroupId = player.Profile?.Info?.GroupId;
+            string? myGroupId = _bot.GetPlayer.Profile?.Info?.GroupId;
             if (string.IsNullOrEmpty(myGroupId))
                 return;
 
             foreach (var other in allBots)
             {
-                if (other == null || other == _bot)
+                if (other == null || other == _bot || other.IsDead)
                     continue;
 
-                var otherPlayer = other.GetPlayer;
-                if (otherPlayer == null || !otherPlayer.IsAI)
+                var player = other.GetPlayer;
+                if (player?.IsAI != true)
                     continue;
 
-                string? otherGroupId = otherPlayer.Profile?.Info?.GroupId;
-                if (!string.IsNullOrEmpty(otherGroupId) && otherGroupId == myGroupId)
-                {
+                string? groupId = player.Profile?.Info?.GroupId;
+                if (groupId == myGroupId)
                     _teammates.Add(other);
-                }
             }
         }
 
@@ -67,6 +67,9 @@ namespace AIRefactored.AI.Group
 
         #region Target Sharing
 
+        /// <summary>
+        /// Shares a detected enemy with all squadmates who haven’t seen them yet.
+        /// </summary>
         public void ShareTarget(IPlayer enemy)
         {
             if (enemy == null || string.IsNullOrEmpty(enemy.ProfileId))
@@ -76,32 +79,22 @@ namespace AIRefactored.AI.Group
             if (resolved == null)
                 return;
 
-            for (int i = 0; i < _teammates.Count; i++)
+            foreach (var teammate in _teammates)
             {
-                var teammate = _teammates[i];
-                var teammatePlayer = teammate?.GetPlayer;
-
-                if (teammate == null || teammatePlayer == null || !teammatePlayer.IsAI)
+                if (teammate == null || teammate.IsDead || teammate.GetPlayer?.IsAI != true)
                     continue;
 
-                if (teammate.Memory == null || teammate.BotsGroup == null || !teammate.HealthController.IsAlive)
+                if (teammate.Memory?.GoalEnemy?.Person?.Id == resolved.Id)
                     continue;
 
-                bool alreadyTargeting = teammate.Memory.GoalEnemy?.Person?.Id == resolved.Id;
-                if (alreadyTargeting)
-                    continue;
-
-                if (!teammate.BotsGroup.IsEnemy(resolved))
+                if (!teammate.BotsGroup?.IsEnemy(resolved) ?? true)
                 {
-                    bool success = teammate.BotsGroup.AddEnemy(resolved, EBotEnemyCause.zryachiyLogic);
-                    if (!success)
+                    if (!teammate.BotsGroup!.AddEnemy(resolved, EBotEnemyCause.zryachiyLogic))
                         continue;
                 }
 
-                if (teammate.BotsGroup.Enemies.TryGetValue(resolved, out var groupInfo))
-                {
-                    teammate.Memory.AddEnemy(resolved, groupInfo, onActivation: false);
-                }
+                if (teammate.BotsGroup.Enemies.TryGetValue(resolved, out var info))
+                    teammate.Memory?.AddEnemy(resolved, info, false);
             }
         }
 
@@ -110,33 +103,23 @@ namespace AIRefactored.AI.Group
         #region Coordination
 
         /// <summary>
-        /// Aligns the bot with the average squad position smoothly, avoiding teleportation or tick-gated motion.
+        /// Smoothly aligns bot with average group position. Adds natural stagger and avoids tight clustering.
         /// </summary>
         public void CoordinateMovement()
         {
-            var player = _bot.GetPlayer;
-            if (player == null || !player.IsAI)
-                return;
-
-            if (_teammates.Count == 0 || _bot.IsDead)
+            if (_bot?.GetPlayer?.IsAI != true || _bot.IsDead || _teammates.Count == 0)
                 return;
 
             Vector3 center = Vector3.zero;
             int count = 0;
 
-            for (int i = 0; i < _teammates.Count; i++)
+            foreach (var mate in _teammates)
             {
-                var teammate = _teammates[i];
-                var teammatePlayer = teammate?.GetPlayer;
+                if (mate == null || mate.GetPlayer?.IsAI != true || mate.IsDead)
+                    continue;
 
-                if (teammate != null &&
-                    teammatePlayer != null &&
-                    teammatePlayer.IsAI &&
-                    teammatePlayer.HealthController.IsAlive)
-                {
-                    center += teammate.Position;
-                    count++;
-                }
+                center += mate.Position;
+                count++;
             }
 
             if (count > 0)
@@ -147,12 +130,10 @@ namespace AIRefactored.AI.Group
                 stagger.y = 0f;
 
                 Vector3 regroupPoint = center + stagger;
-                float distance = Vector3.Distance(_bot.Position, regroupPoint);
+                float dist = Vector3.Distance(_bot.Position, regroupPoint);
 
-                if (distance > 2f)
-                {
-                    BotMovementHelper.SmoothMoveTo(_bot, regroupPoint, false, cohesionScale: 1f);
-                }
+                if (dist > 2f)
+                    BotMovementHelper.SmoothMoveTo(_bot, regroupPoint, false, 1f);
             }
         }
 

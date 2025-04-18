@@ -1,9 +1,8 @@
 ﻿#nullable enable
 
-using System.Collections.Generic;
-using UnityEngine;
 using AIRefactored.AI.Combat;
 using AIRefactored.AI.Core;
+using System.Collections.Generic;
 
 namespace AIRefactored.AI.Helpers
 {
@@ -21,7 +20,7 @@ namespace AIRefactored.AI.Helpers
         public static bool TryGetPanicComponent(BotComponentCache cache, out BotPanicHandler? panic)
         {
             panic = null;
-            if (cache == null)
+            if (cache == null || cache.Bot == null)
                 return false;
 
             panic = cache.GetComponent<BotPanicHandler>();
@@ -43,22 +42,18 @@ namespace AIRefactored.AI.Helpers
         /// <summary>
         /// Triggers panic behavior for a single bot if valid and AI-controlled.
         /// </summary>
-        /// <param name="cache">Bot's component cache.</param>
         public static void Trigger(BotComponentCache cache)
         {
             if (cache == null || BotCacheUtility.IsHumanPlayer(cache.Bot))
                 return;
 
             if (TryGetPanicComponent(cache, out var panic))
-            {
                 panic.TriggerPanic();
-            }
         }
 
         /// <summary>
         /// Triggers panic behavior for all bots in the specified group.
         /// </summary>
-        /// <param name="group">List of bot component caches in the group.</param>
         public static void TriggerGroup(List<BotComponentCache> group)
         {
             if (group == null || group.Count == 0)
@@ -71,22 +66,8 @@ namespace AIRefactored.AI.Helpers
                     continue;
 
                 if (TryGetPanicComponent(cache, out var panic))
-                {
                     panic.TriggerPanic();
-                }
             }
-        }
-
-        #endregion
-
-        #region Helpers
-
-        /// <summary>
-        /// Returns the bot's visible nickname, or "Unknown" if not available.
-        /// </summary>
-        private static string GetBotName(BotComponentCache cache)
-        {
-            return cache?.Bot?.Profile?.Info?.Nickname ?? "Unknown";
         }
 
         #endregion

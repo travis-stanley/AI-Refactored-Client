@@ -38,7 +38,7 @@ namespace AIRefactored
 
             // === Bot Lifecycle Bootstrap ===
             var bootstrap = new GameObject("AIRefactored.BotInitializer");
-            bootstrap.AddComponent<BotInitializer>();
+            bootstrap.AddComponent<BotBrainBootstrapper>();
             DontDestroyOnLoad(bootstrap);
 
             _logger.LogInfo("[AIRefactored-Plugin] ✅ AI-Refactored mod initialized and systems online.");

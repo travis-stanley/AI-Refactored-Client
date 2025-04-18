@@ -59,11 +59,11 @@ namespace AIRefactored.AI.Groups
 
         private bool IsValid()
         {
-            return _bot != null &&
-                   !_bot.IsDead &&
-                   _bot.GetPlayer != null &&
-                   _bot.GetPlayer.IsAI &&
-                   !string.IsNullOrEmpty(_groupId);
+            if (_bot == null || _bot.IsDead)
+                return false;
+
+            var player = _bot.GetPlayer;
+            return player != null && player.IsAI && !player.IsYourPlayer && !string.IsNullOrEmpty(_groupId);
         }
 
         private void HandleSquadSpacing()

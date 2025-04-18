@@ -30,7 +30,11 @@ namespace AIRefactored.AI.Movement
         /// </summary>
         public void Tick(float deltaTime)
         {
-            if (_bot == null || !_bot.IsAI || _bot.IsDead || _bot.GetPlayer == null || _bot.GetPlayer.IsYourPlayer)
+            if (_bot == null || _bot.IsDead)
+                return;
+
+            var player = _bot.GetPlayer;
+            if (player == null || !player.IsAI || player.IsYourPlayer)
                 return;
 
             float now = Time.time;

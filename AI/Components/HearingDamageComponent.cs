@@ -55,6 +55,7 @@ namespace AIRefactored.AI.Components
         /// <summary>
         /// Called each tick to update recovery over time.
         /// </summary>
+        /// <param name="deltaTime">Elapsed time since last tick.</param>
         public void Tick(float deltaTime)
         {
             if (_recoveryTimeLeft > 0f)

@@ -17,6 +17,8 @@ namespace AIRefactored.AI.Helpers
         private const float DefaultLookSpeed = 4f;
         private const float DefaultStrafeDistance = 3f;
 
+        private static readonly bool EnableDebug = false;
+
         #endregion
 
         #region Movement
@@ -34,6 +36,9 @@ namespace AIRefactored.AI.Helpers
 
             if ((position - target).sqrMagnitude < buffer * buffer)
                 return;
+
+            if (EnableDebug)
+                Debug.DrawLine(position, target, Color.green, 0.1f);
 
             bot.Mover.GoToPoint(target, slow, cohesionScale);
         }
@@ -53,6 +58,9 @@ namespace AIRefactored.AI.Helpers
 
             Quaternion targetRotation = Quaternion.LookRotation(dir.normalized, Vector3.up);
             bot.Transform.rotation = Quaternion.Slerp(bot.Transform.rotation, targetRotation, Time.deltaTime * speed);
+
+            if (EnableDebug)
+                Debug.DrawRay(bot.Position + Vector3.up * 1.5f, dir.normalized * 2f, Color.yellow, 0.05f);
         }
 
         /// <summary>
@@ -67,7 +75,10 @@ namespace AIRefactored.AI.Helpers
             Vector3 offset = right * DefaultStrafeDistance * Mathf.Clamp(scale, 0.5f, 1.5f);
             Vector3 strafeTarget = bot.Position + offset;
 
-            bot.Mover.GoToPoint(strafeTarget, false, 1f); // false = not slow; cohesionScale = 1
+            if (EnableDebug)
+                Debug.DrawLine(bot.Position, strafeTarget, Color.cyan, 0.1f);
+
+            bot.Mover.GoToPoint(strafeTarget, false, 1f); // fast movement
         }
 
         #endregion
@@ -76,7 +87,7 @@ namespace AIRefactored.AI.Helpers
 
         private static bool IsEligible(BotOwner? bot)
         {
-            return bot != null && bot.Mover != null && !bot.IsDead && bot.GetPlayer != null && bot.GetPlayer.IsAI;
+            return bot != null && bot.Mover != null && !bot.IsDead && bot.GetPlayer?.IsAI == true;
         }
 
         #endregion

@@ -27,14 +27,19 @@ namespace AIRefactored.AI.Combat
         private CombatState _state = CombatState.Patrol;
         private Vector3? _fallbackPosition;
         private Vector3? _lastKnownEnemyPos;
+        private Vector3? _lastMoveTarget;
 
         private float _lastHitTime = -999f;
+        private float _lastStateChangeTime = -999f;
         private float _switchCooldown = 0f;
         private float _lastEchoTime = -999f;
+
         private const float InvestigateScanRadius = 4f;
         private const float InvestigateCooldown = 10f;
         private const float EchoCooldown = 5f;
         private const float EchoChance = 0.3f;
+        private const float MinStateDuration = 2.5f;
+        private const float MoveTargetTolerance = 1.0f;
 
         private readonly List<float> _soundTimestamps = new List<float>(4);
 
@@ -51,15 +56,12 @@ namespace AIRefactored.AI.Combat
 
         public void Tick(float time)
         {
-            if (_bot == null || _cache == null || _profile == null || _bot.IsDead)
-                return;
-
-            if (_bot.GetPlayer != null && !_bot.GetPlayer.IsAI)
+            if (_bot == null || _cache == null || _profile == null || _bot.IsDead || _bot.GetPlayer?.IsAI != true)
                 return;
 
             if (_bot.Memory?.GoalEnemy != null)
             {
-                _state = CombatState.Attack;
+                ForceState(CombatState.Attack, time);
                 _lastKnownEnemyPos = _bot.Memory.GoalEnemy.CurrPosition;
                 _tacticalMemory?.RecordEnemyPosition(_lastKnownEnemyPos.Value);
                 _bot.Sprint(true);
@@ -71,26 +73,25 @@ namespace AIRefactored.AI.Combat
                 float dist = Vector3.Distance(_bot.Position, _fallbackPosition.Value);
                 if (dist < 2f)
                 {
-                    _state = CombatState.Patrol;
+                    ForceState(CombatState.Patrol, time);
                     _fallbackPosition = null;
                 }
                 else
                 {
-                    var adjusted = _squadCoordinator?.ApplyOffsetTo(_fallbackPosition.Value) ?? _fallbackPosition.Value;
-                    BotMovementHelper.SmoothMoveTo(_bot, adjusted, false, _profile.Cohesion);
+                    MoveSmoothlyTo(_squadCoordinator?.ApplyOffsetTo(_fallbackPosition.Value) ?? _fallbackPosition.Value);
                 }
                 return;
             }
 
-            if (_suppress?.IsSuppressed() == true && _state != CombatState.Fallback)
+            if (_suppress?.IsSuppressed() == true && _state != CombatState.Fallback && TimeSinceStateChange(time) >= MinStateDuration)
             {
-                TriggerSuppressedFallback();
+                TriggerSuppressedFallback(time);
                 return;
             }
 
             if (_state == CombatState.Investigate && time - _lastHitTime > InvestigateCooldown)
             {
-                _state = CombatState.Patrol;
+                ForceState(CombatState.Patrol, time);
                 _lastKnownEnemyPos = null;
             }
 
@@ -103,8 +104,7 @@ namespace AIRefactored.AI.Combat
 
             if (_state == CombatState.Investigate && _lastKnownEnemyPos.HasValue)
             {
-                var adjusted = _squadCoordinator?.ApplyOffsetTo(_lastKnownEnemyPos.Value) ?? _lastKnownEnemyPos.Value;
-                BotMovementHelper.SmoothMoveTo(_bot, adjusted, false, _profile.Cohesion);
+                MoveSmoothlyTo(_squadCoordinator?.ApplyOffsetTo(_lastKnownEnemyPos.Value) ?? _lastKnownEnemyPos.Value);
 
                 if (Vector3.Distance(_bot.Position, _lastKnownEnemyPos.Value) < 3f)
                     _lastKnownEnemyPos = null;
@@ -117,9 +117,9 @@ namespace AIRefactored.AI.Combat
                 _soundTimestamps.Add(time);
                 CleanupOldSoundEvents(time);
 
-                if (_soundTimestamps.Count >= 2 && _profile.Caution > 0.5f)
+                if (_soundTimestamps.Count >= 2 && _profile.Caution > 0.5f && TimeSinceStateChange(time) >= MinStateDuration)
                 {
-                    _state = CombatState.Investigate;
+                    ForceState(CombatState.Investigate, time);
                     _lastHitTime = time;
                     _bot.BotTalk?.TrySay(EPhraseTrigger.NeedHelp);
                     EchoInvestigateToSquad();
@@ -130,61 +130,83 @@ namespace AIRefactored.AI.Combat
             if (_state == CombatState.Patrol && time >= _switchCooldown)
             {
                 Vector3 target = HotspotSystem.GetRandomHotspot(_bot);
-                var adjusted = _squadCoordinator?.ApplyOffsetTo(target) ?? target;
-                BotMovementHelper.SmoothMoveTo(_bot, adjusted, false, _profile.Cohesion);
-                _switchCooldown = time + Random.Range(15f, 45f);
+                MoveSmoothlyTo(_squadCoordinator?.ApplyOffsetTo(target) ?? target);
 
-                if (Random.value < 0.25f)
+                _switchCooldown = time + UnityEngine.Random.Range(15f, 45f);
+
+                if (UnityEngine.Random.value < 0.25f)
                     _bot.BotTalk?.TrySay(EPhraseTrigger.GoForward);
             }
 
             if (_state == CombatState.Investigate && !_lastKnownEnemyPos.HasValue)
             {
-                Vector3 jitter = Random.insideUnitSphere * InvestigateScanRadius;
+                Vector3 jitter = UnityEngine.Random.insideUnitSphere * InvestigateScanRadius;
                 Vector3 scan = _bot.Position + new Vector3(jitter.x, 0f, jitter.z);
 
                 if (_tacticalMemory != null && !_tacticalMemory.WasRecentlyCleared(scan))
                 {
-                    var adjusted = _squadCoordinator?.ApplyOffsetTo(scan) ?? scan;
-                    BotMovementHelper.SmoothMoveTo(_bot, adjusted, false, _profile.Cohesion);
+                    MoveSmoothlyTo(_squadCoordinator?.ApplyOffsetTo(scan) ?? scan);
                     _tacticalMemory.MarkCleared(scan);
 
-                    if (Random.value < 0.3f)
+                    if (UnityEngine.Random.value < 0.3f)
                         _bot.BotTalk?.TrySay(EPhraseTrigger.Look);
                 }
             }
         }
 
-        private void TriggerSuppressedFallback()
+        private void TriggerSuppressedFallback(float time)
         {
-            if (_bot == null || _cache == null)
-                return;
-
-            _state = CombatState.Fallback;
-            _fallbackPosition = null;
-
-            _bot.BotTalk?.TrySay(EPhraseTrigger.OnBeingHurt);
+            _bot?.BotTalk?.TrySay(EPhraseTrigger.OnBeingHurt);
             float cohesion = Mathf.Lerp(0.6f, 1.2f, _profile?.Cohesion ?? 1f);
 
-            if (_cache.PathCache != null)
+            if (_cache?.PathCache != null)
             {
-                Vector3 threatDir = _bot.LookDirection.normalized;
+                Vector3 threatDir = _bot!.LookDirection.normalized;
                 List<Vector3> path = BotCoverRetreatPlanner.GetCoverRetreatPath(_bot, threatDir, _cache.PathCache);
                 if (path.Count > 0)
                 {
-                    Vector3 finalPoint = path[path.Count - 1];
-                    _fallbackPosition = finalPoint;
-                    var adjusted = _squadCoordinator?.ApplyOffsetTo(finalPoint) ?? finalPoint;
-                    BotMovementHelper.SmoothMoveTo(_bot, adjusted, false, cohesion);
+                    _fallbackPosition = path[path.Count - 1];
+                    MoveSmoothlyTo(_squadCoordinator?.ApplyOffsetTo(_fallbackPosition.Value) ?? _fallbackPosition.Value);
+                    ForceState(CombatState.Fallback, time);
+                    EchoFallbackToSquad();
                     return;
                 }
             }
 
-            _fallbackPosition = _bot.Position - _bot.LookDirection.normalized * 5f;
-            var fallback = _squadCoordinator?.ApplyOffsetTo(_fallbackPosition.Value) ?? _fallbackPosition.Value;
-            BotMovementHelper.SmoothMoveTo(_bot, fallback, false, cohesion);
-
+            _fallbackPosition = _bot!.Position - _bot.LookDirection.normalized * 5f;
+            MoveSmoothlyTo(_squadCoordinator?.ApplyOffsetTo(_fallbackPosition.Value) ?? _fallbackPosition.Value);
+            ForceState(CombatState.Fallback, time);
             EchoFallbackToSquad();
+        }
+
+        private void MoveSmoothlyTo(Vector3 destination)
+        {
+            if (!_lastMoveTarget.HasValue || Vector3.Distance(_lastMoveTarget.Value, destination) > MoveTargetTolerance)
+            {
+                BotMovementHelper.SmoothMoveTo(_bot!, destination, false, _profile?.Cohesion ?? 1f);
+                _lastMoveTarget = destination;
+            }
+        }
+
+        private void ForceState(CombatState newState, float time)
+        {
+            if (_state != newState)
+            {
+                _state = newState;
+                _lastStateChangeTime = time;
+                _lastMoveTarget = null;
+            }
+        }
+
+        private float TimeSinceStateChange(float now) => now - _lastStateChangeTime;
+
+        private void CleanupOldSoundEvents(float now)
+        {
+            for (int i = _soundTimestamps.Count - 1; i >= 0; i--)
+            {
+                if (now - _soundTimestamps[i] > 5f)
+                    _soundTimestamps.RemoveAt(i);
+            }
         }
 
         private void EchoInvestigateToSquad()
@@ -199,7 +221,7 @@ namespace AIRefactored.AI.Combat
                 if (teammate == null || teammate == _bot)
                     continue;
 
-                if (Vector3.Distance(teammate.Position, _bot.Position) < 30f && Random.value < EchoChance)
+                if (Vector3.Distance(teammate.Position, _bot.Position) < 30f && UnityEngine.Random.value < EchoChance)
                 {
                     var stateMachine = teammate.GetComponent<CombatStateMachine>();
                     stateMachine?.NotifyEchoInvestigate();
@@ -221,7 +243,7 @@ namespace AIRefactored.AI.Combat
                 if (teammate == null || teammate == _bot)
                     continue;
 
-                if (Vector3.Distance(teammate.Position, _bot.Position) < 30f && Random.value < EchoChance)
+                if (Vector3.Distance(teammate.Position, _bot.Position) < 30f && UnityEngine.Random.value < EchoChance)
                 {
                     var stateMachine = teammate.GetComponent<CombatStateMachine>();
                     if (stateMachine != null)
@@ -232,19 +254,10 @@ namespace AIRefactored.AI.Combat
             _lastEchoTime = Time.time;
         }
 
-        private void CleanupOldSoundEvents(float now)
-        {
-            for (int i = _soundTimestamps.Count - 1; i >= 0; i--)
-            {
-                if (now - _soundTimestamps[i] > 5f)
-                    _soundTimestamps.RemoveAt(i);
-            }
-        }
-
         public void NotifyDamaged()
         {
             _lastHitTime = Time.time;
-            _state = CombatState.Investigate;
+            ForceState(CombatState.Investigate, _lastHitTime);
             _bot?.BotTalk?.TrySay(EPhraseTrigger.OnBeingHurt);
         }
 
@@ -252,8 +265,9 @@ namespace AIRefactored.AI.Combat
         {
             if (_state == CombatState.Patrol)
             {
-                _state = CombatState.Investigate;
-                _lastHitTime = Time.time;
+                float now = Time.time;
+                ForceState(CombatState.Investigate, now);
+                _lastHitTime = now;
                 _bot?.BotTalk?.TrySay(EPhraseTrigger.Cooperation);
             }
         }
@@ -261,7 +275,7 @@ namespace AIRefactored.AI.Combat
         public void TriggerFallback(Vector3 position)
         {
             _fallbackPosition = position;
-            _state = CombatState.Fallback;
+            ForceState(CombatState.Fallback, Time.time);
             _bot?.BotTalk?.TrySay(EPhraseTrigger.OnLostVisual);
         }
 

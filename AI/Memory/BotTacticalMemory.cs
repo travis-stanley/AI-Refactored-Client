@@ -21,36 +21,25 @@ namespace AIRefactored.AI.Memory
 
         #region Cleared Location Memory
 
-        private readonly List<Vector3> _clearedLocations = new List<Vector3>(16);
-        private readonly Dictionary<Vector3, float> _clearedTimestamps = new Dictionary<Vector3, float>(16);
+        private readonly Dictionary<string, float> _clearedTimestamps = new Dictionary<string, float>(32);
 
         /// <summary>
         /// Returns true if the given location was recently cleared.
         /// </summary>
         public bool WasRecentlyCleared(Vector3 position)
         {
+            string key = HashKey(position);
             float now = Time.time;
-            bool recent = false;
 
-            for (int i = _clearedLocations.Count - 1; i >= 0; i--)
+            if (_clearedTimestamps.TryGetValue(key, out float timestamp))
             {
-                Vector3 point = _clearedLocations[i];
-                float timestamp;
+                if (now - timestamp <= MemoryDuration)
+                    return true;
 
-                if (!_clearedTimestamps.TryGetValue(point, out timestamp) || now - timestamp > MemoryDuration)
-                {
-                    _clearedLocations.RemoveAt(i);
-                    _clearedTimestamps.Remove(point);
-                    continue;
-                }
-
-                if (!recent && Vector3.Distance(point, position) < ClearedThreshold)
-                {
-                    recent = true;
-                }
+                _clearedTimestamps.Remove(key);
             }
 
-            return recent;
+            return false;
         }
 
         /// <summary>
@@ -58,19 +47,13 @@ namespace AIRefactored.AI.Memory
         /// </summary>
         public void MarkCleared(Vector3 position)
         {
-            float now = Time.time;
+            _clearedTimestamps[HashKey(position)] = Time.time;
+        }
 
-            for (int i = 0; i < _clearedLocations.Count; i++)
-            {
-                if (Vector3.Distance(_clearedLocations[i], position) < ClearedThreshold)
-                {
-                    _clearedTimestamps[_clearedLocations[i]] = now;
-                    return;
-                }
-            }
-
-            _clearedLocations.Add(position);
-            _clearedTimestamps[position] = now;
+        private static string HashKey(Vector3 v)
+        {
+            // Round to reduce noise in memory footprint
+            return $"{Mathf.Round(v.x * 0.5f) * 2f:F1}_{Mathf.Round(v.y):F1}_{Mathf.Round(v.z * 0.5f) * 2f:F1}";
         }
 
         #endregion

@@ -17,6 +17,7 @@ namespace AIRefactored.AI.Perception
 
         private const float MaxPlayerScanDistance = 120f;
         private const float FieldOfViewDegrees = 120f;
+        private const float ProximityAutoDetectDistance = 4.0f;
 
         #endregion
 
@@ -73,6 +74,14 @@ namespace AIRefactored.AI.Perception
                 float distance = Vector3.Distance(_bot.Position, target.Position);
                 if (distance > MaxPlayerScanDistance)
                     continue;
+
+                // === Instant auto-detect at close range ===
+                if (distance <= ProximityAutoDetectDistance)
+                {
+                    _bot.Memory?.AddEnemy(target, null, onActivation: false);
+                    _bot.BotTalk?.TrySay(EPhraseTrigger.OnEnemyConversation);
+                    continue;
+                }
 
                 EvaluateTarget(target);
             }

@@ -29,14 +29,12 @@ namespace AIRefactored.AI.Combat
         {
             _bot = GetComponent<BotOwner>();
             if (_bot == null)
-            {
                 Debug.LogError("[AIRefactored] BotSuppressionReactionComponent missing BotOwner!");
-            }
         }
 
         private void Update()
         {
-            // Legacy fallback if Tick() is not invoked externally
+            // Legacy fallback in case not driven by BotBrain
             Tick(Time.time);
         }
 
@@ -45,7 +43,7 @@ namespace AIRefactored.AI.Combat
         #region Tick Logic
 
         /// <summary>
-        /// Async-compatible tick invoked by BotBrain or fallback Update.
+        /// Async-compatible tick invoked externally (BotBrain preferred).
         /// </summary>
         public void Tick(float now)
         {
@@ -53,9 +51,7 @@ namespace AIRefactored.AI.Combat
                 return;
 
             if (now - _suppressionStartTime > SuppressionDuration)
-            {
                 _isSuppressed = false;
-            }
         }
 
         #endregion
@@ -65,7 +61,6 @@ namespace AIRefactored.AI.Combat
         /// <summary>
         /// Triggers suppression logic and evasive fallback sprinting.
         /// </summary>
-        /// <param name="from">Source direction of incoming fire or light.</param>
         public void TriggerSuppression(Vector3? from = null)
         {
             if (_isSuppressed || _bot == null || !_bot.IsAI || _bot.IsDead)
@@ -94,9 +89,8 @@ namespace AIRefactored.AI.Combat
         }
 
         /// <summary>
-        /// Convenience alias for suppression reaction from a given position.
+        /// Triggers suppression from a specific threat origin.
         /// </summary>
-        /// <param name="source">Origin of threat.</param>
         public void ReactToSuppression(Vector3 source)
         {
             TriggerSuppression(source);

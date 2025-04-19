@@ -15,7 +15,7 @@ namespace AIRefactored.AI.Memory
 
         public static void FallbackTo(this BotOwner bot, Vector3 fallbackPosition)
         {
-            if (bot == null || bot.IsDead || fallbackPosition == Vector3.zero)
+            if (!IsValid(bot) || fallbackPosition == Vector3.zero)
                 return;
 
             BotMovementHelper.SmoothMoveTo(bot, fallbackPosition, true, 1f);
@@ -23,7 +23,7 @@ namespace AIRefactored.AI.Memory
 
         public static void ForceMoveTo(this BotOwner bot, Vector3 position)
         {
-            if (bot == null || bot.IsDead)
+            if (!IsValid(bot))
                 return;
 
             BotMovementHelper.SmoothMoveTo(bot, position, true, 1f);
@@ -34,7 +34,7 @@ namespace AIRefactored.AI.Memory
         /// </summary>
         public static void ReevaluateCurrentCover(this BotOwner bot)
         {
-            if (bot == null || bot.IsDead || bot.Memory?.GoalEnemy == null)
+            if (!IsValid(bot) || bot.Memory?.GoalEnemy == null)
                 return;
 
             var enemy = bot.Memory.GoalEnemy;
@@ -44,7 +44,7 @@ namespace AIRefactored.AI.Memory
             Vector3 toEnemy = enemy.CurrPosition - bot.Position;
             float angle = Vector3.Angle(bot.LookDirection, toEnemy);
 
-            if (angle < 20f && toEnemy.sqrMagnitude < 625f) // 25m
+            if (angle < 20f && toEnemy.sqrMagnitude < 625f) // within 25m
             {
                 Vector3 fallback = bot.Position - toEnemy.normalized * 5f;
                 BotMovementHelper.SmoothMoveTo(bot, fallback, true, 1f);
@@ -58,7 +58,7 @@ namespace AIRefactored.AI.Memory
 
         public static void SetCautiousSearchMode(this BotOwner bot)
         {
-            if (bot == null || bot.IsDead || bot.Memory == null)
+            if (!IsValid(bot) || bot.Memory == null)
                 return;
 
             bot.Memory.AttackImmediately = false;
@@ -67,7 +67,7 @@ namespace AIRefactored.AI.Memory
 
         public static void SetCombatAggressionMode(this BotOwner bot)
         {
-            if (bot == null || bot.IsDead || bot.Memory == null)
+            if (!IsValid(bot) || bot.Memory == null)
                 return;
 
             bot.Memory.AttackImmediately = true;
@@ -76,7 +76,7 @@ namespace AIRefactored.AI.Memory
 
         public static void SetPeaceMode(this BotOwner bot)
         {
-            if (bot == null || bot.IsDead || bot.Memory == null)
+            if (!IsValid(bot) || bot.Memory == null)
                 return;
 
             bot.Memory.AttackImmediately = false;
@@ -90,7 +90,7 @@ namespace AIRefactored.AI.Memory
 
         public static void SetLastHeardSound(this BotOwner bot, Player source)
         {
-            if (bot == null || bot.IsDead || source == null || source.ProfileId == bot.ProfileId)
+            if (!IsValid(bot) || source == null || source.ProfileId == bot.ProfileId)
                 return;
 
             bot.BotsGroup?.LastSoundsController?.AddNeutralSound(source, source.Position);
@@ -104,10 +104,19 @@ namespace AIRefactored.AI.Memory
 
         public static void ClearLastHeardSound(this BotOwner bot)
         {
-            if (bot == null || bot.IsDead)
+            if (!IsValid(bot))
                 return;
 
             BotMemoryStore.ClearHeardSound(bot.ProfileId);
+        }
+
+        #endregion
+
+        #region Helpers
+
+        private static bool IsValid(BotOwner? bot)
+        {
+            return bot != null && !bot.IsDead;
         }
 
         #endregion

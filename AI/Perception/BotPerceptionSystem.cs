@@ -1,6 +1,7 @@
 ﻿#nullable enable
 
 using AIRefactored.AI.Core;
+using AIRefactored.AI.Group;
 using EFT;
 using UnityEngine;
 
@@ -44,7 +45,7 @@ namespace AIRefactored.AI.Perception
 
         #endregion
 
-        #region Real-Time Tick
+        #region Tick Loop
 
         /// <summary>
         /// Called every frame by BotBrain to apply recovery and perception penalties.
@@ -54,7 +55,8 @@ namespace AIRefactored.AI.Perception
             if (_bot == null || _profile == null || _cache == null || _bot.IsDead)
                 return;
 
-            if (_bot.GetPlayer != null && _bot.GetPlayer.IsYourPlayer)
+            var player = _bot.GetPlayer;
+            if (player == null || player.IsYourPlayer)
                 return;
 
             float penalty = Mathf.Max(_flashBlindness, _flareIntensity, _suppressionFactor);
@@ -67,11 +69,12 @@ namespace AIRefactored.AI.Perception
 
             TryTriggerPanic();
             RecoverPerception(deltaTime);
+            TryShareEnemy();
         }
 
         #endregion
 
-        #region Perception Modifiers
+        #region Reactive Modifiers
 
         public void ApplyFlashBlindness(float intensity)
         {
@@ -82,9 +85,7 @@ namespace AIRefactored.AI.Perception
             _cache.LastFlashTime = Time.time;
 
             if (_flashBlindness > BlindSpeechThreshold)
-            {
                 _bot?.BotTalk?.TrySay(EPhraseTrigger.OnBeingHurt);
-            }
 
             _blindStartTime = Time.time;
         }
@@ -115,7 +116,7 @@ namespace AIRefactored.AI.Perception
 
         #endregion
 
-        #region Internal Logic
+        #region Internals
 
         private void RecoverPerception(float deltaTime)
         {
@@ -130,8 +131,13 @@ namespace AIRefactored.AI.Perception
                 return;
 
             if (_flashBlindness >= PanicTriggerThreshold && Time.time - _blindStartTime < 2.5f)
-            {
                 _cache.PanicHandler.TriggerPanic();
+        }
+        private void TryShareEnemy()
+        {
+            if (_bot?.Memory?.GoalEnemy?.Person != null)
+            {
+                BotTeamLogic.AddEnemy(_bot, _bot.Memory.GoalEnemy.Person);
             }
         }
 

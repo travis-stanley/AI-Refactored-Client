@@ -112,6 +112,22 @@ namespace AIRefactored.AI.Memory
 
         #endregion
 
+        #region Tactical Evaluation
+
+        /// <summary>
+        /// Estimates a direction from which the bot is being flanked.
+        /// </summary>
+        public static Vector3? TryGetFlankDirection(this BotOwner bot)
+        {
+            if (!IsValid(bot) || bot.Memory?.GoalEnemy == null)
+                return null;
+
+            Vector3 toEnemy = bot.Memory.GoalEnemy.CurrPosition - bot.Position;
+            return Vector3.Cross(toEnemy.normalized, Vector3.up); // Approximate side/flank vector
+        }
+
+        #endregion
+
         #region Helpers
 
         private static bool IsValid(BotOwner? bot)

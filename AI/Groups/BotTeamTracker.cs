@@ -23,8 +23,6 @@ namespace AIRefactored.AI.Groups
         /// Registers a bot into the specified group by GroupId.
         /// Skips human players (FIKA, Coop, or main player).
         /// </summary>
-        /// <param name="groupId">The GroupId for the bot squad.</param>
-        /// <param name="bot">The bot to register.</param>
         public static void Register(string groupId, BotOwner bot)
         {
             if (string.IsNullOrEmpty(groupId) || bot == null)
@@ -45,10 +43,20 @@ namespace AIRefactored.AI.Groups
         }
 
         /// <summary>
+        /// Registers a bot using its GroupId from its Profile.
+        /// Safe for usage during BotBrain initialization.
+        /// </summary>
+        public static void RegisterFromBot(BotOwner bot)
+        {
+            if (bot?.GetPlayer?.Profile?.Info?.GroupId is string groupId && !string.IsNullOrEmpty(groupId))
+            {
+                Register(groupId, bot);
+            }
+        }
+
+        /// <summary>
         /// Retrieves all AI-controlled bots in a group.
         /// </summary>
-        /// <param name="groupId">The group ID.</param>
-        /// <returns>List of valid AI-controlled BotOwners.</returns>
         public static List<BotOwner> GetGroup(string groupId)
         {
             if (string.IsNullOrEmpty(groupId))
@@ -71,7 +79,6 @@ namespace AIRefactored.AI.Groups
         /// <summary>
         /// Removes a bot from any group it may belong to.
         /// </summary>
-        /// <param name="bot">Bot to unregister.</param>
         public static void Unregister(BotOwner bot)
         {
             if (bot == null)

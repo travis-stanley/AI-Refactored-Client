@@ -35,10 +35,10 @@ namespace AIRefactored.AI.Core
         public BotTacticalDeviceController? Tactical { get; private set; }
 
         public HearingDamageComponent? HearingDamage { get; private set; }
+        public CombatStateMachine? Combat { get; private set; }
 
         public BotOwnerPathfindingCache? PathCache { get; private set; }
-
-        public BotTilt? Tilt { get; private set; } // ✅ BotTilt now cached here
+        public BotTilt? Tilt { get; private set; }
 
         #endregion
 
@@ -98,10 +98,10 @@ namespace AIRefactored.AI.Core
             Movement = GetComponent<BotMovementController>();
             Tactical = GetComponent<BotTacticalDeviceController>();
             HearingDamage = GetComponent<HearingDamageComponent>();
+            Combat = GetComponent<CombatStateMachine>();
 
             PathCache = new BotOwnerPathfindingCache();
-
-            Tilt = new BotTilt(Bot); 
+            Tilt = Bot != null ? new BotTilt(Bot) : null;
         }
 
         #endregion

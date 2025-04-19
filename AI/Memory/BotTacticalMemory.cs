@@ -6,90 +6,69 @@ using UnityEngine;
 namespace AIRefactored.AI.Memory
 {
     /// <summary>
-    /// Tracks tactical memory for a bot including last investigated locations and enemy sightings.
-    /// Used to prevent redundant scans and support long-term awareness.
+    /// Stores recent tactical memory for a bot, including last seen enemy positions and cleared scan points.
+    /// Prevents redundant searching and improves squad efficiency.
     /// </summary>
     public class BotTacticalMemory : MonoBehaviour
     {
-        #region Constants
+        private Vector3? _lastEnemyPosition;
+        private float _lastEnemyTime;
 
-        private const float ClearedThreshold = 3.5f;
-        private const float MemoryDuration = 60f;
-        private const float EnemyMemoryDuration = 30f;
+        private const float MaxMemoryTime = 12f;
+        private const float ClearRepeatDelay = 10f;
 
-        #endregion
-
-        #region Cleared Location Memory
-
-        private readonly Dictionary<string, float> _clearedTimestamps = new Dictionary<string, float>(32);
+        private readonly Dictionary<Vector3, float> _clearedPositions = new(16);
 
         /// <summary>
-        /// Returns true if the given location was recently cleared.
+        /// Remembers where an enemy was last seen.
+        /// </summary>
+        public void RecordEnemyPosition(Vector3 position)
+        {
+            _lastEnemyPosition = position;
+            _lastEnemyTime = Time.time;
+        }
+
+        /// <summary>
+        /// Gets the last known enemy position if still fresh.
+        /// </summary>
+        public Vector3? GetLastKnownEnemyPosition()
+        {
+            if (Time.time - _lastEnemyTime > MaxMemoryTime)
+                return null;
+
+            return _lastEnemyPosition;
+        }
+
+        /// <summary>
+        /// Marks a location as cleared to avoid redundant searching.
+        /// </summary>
+        public void MarkCleared(Vector3 position)
+        {
+            _clearedPositions[position] = Time.time;
+        }
+
+        /// <summary>
+        /// Checks whether a location was recently cleared.
         /// </summary>
         public bool WasRecentlyCleared(Vector3 position)
         {
-            string key = HashKey(position);
-            float now = Time.time;
-
-            if (_clearedTimestamps.TryGetValue(key, out float timestamp))
+            if (_clearedPositions.TryGetValue(position, out float clearedTime))
             {
-                if (now - timestamp <= MemoryDuration)
+                if (Time.time - clearedTime < ClearRepeatDelay)
                     return true;
-
-                _clearedTimestamps.Remove(key);
             }
 
             return false;
         }
 
         /// <summary>
-        /// Marks a location as recently scanned or cleared.
+        /// Clears all memory (e.g. on respawn).
         /// </summary>
-        public void MarkCleared(Vector3 position)
+        public void ResetMemory()
         {
-            _clearedTimestamps[HashKey(position)] = Time.time;
+            _lastEnemyPosition = null;
+            _lastEnemyTime = 0f;
+            _clearedPositions.Clear();
         }
-
-        private static string HashKey(Vector3 v)
-        {
-            // Round to reduce noise in memory footprint
-            return $"{Mathf.Round(v.x * 0.5f) * 2f:F1}_{Mathf.Round(v.y):F1}_{Mathf.Round(v.z * 0.5f) * 2f:F1}";
-        }
-
-        #endregion
-
-        #region Enemy Memory
-
-        private Vector3? _lastKnownEnemyPos = null;
-        private float _enemySeenTime = -999f;
-
-        /// <summary>
-        /// Stores the most recently seen enemy position.
-        /// </summary>
-        public void RecordEnemyPosition(Vector3 position)
-        {
-            _lastKnownEnemyPos = position;
-            _enemySeenTime = Time.time;
-        }
-
-        /// <summary>
-        /// Gets the most recent enemy position if memory is fresh.
-        /// </summary>
-        public Vector3? GetLastKnownEnemyPosition()
-        {
-            return (_lastKnownEnemyPos.HasValue && (Time.time - _enemySeenTime <= EnemyMemoryDuration))
-                ? _lastKnownEnemyPos
-                : null;
-        }
-
-        /// <summary>
-        /// Clears stored enemy position data.
-        /// </summary>
-        public void ClearLastKnownEnemy()
-        {
-            _lastKnownEnemyPos = null;
-        }
-
-        #endregion
     }
 }

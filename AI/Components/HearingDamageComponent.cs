@@ -5,66 +5,64 @@ using UnityEngine;
 namespace AIRefactored.AI.Components
 {
     /// <summary>
-    /// Simulates hearing damage and deafening effects from loud sounds like explosions or gunfire.
-    /// Deafness affects a bot's ability to perceive auditory cues in the world.
+    /// Tracks and applies hearing loss effects to a bot after loud sounds (gunfire, explosions, flashbangs).
+    /// Used to dampen sound detection and simulate deafness.
     /// </summary>
     public class HearingDamageComponent
     {
-        #region Fields
+        private float _deafness = 0f;
+        private float _recoveryRate = 0.3f; // Per second
+        private float _deafUntilTime = 0f;
 
         /// <summary>
-        /// Current deafness level (0 = normal, 1 = fully deafened).
+        /// Current deafness level (0.0 = full hearing, 1.0 = fully deaf).
         /// </summary>
-        public float Deafness { get; private set; } = 0f;
+        public float Deafness => _deafness;
 
         /// <summary>
-        /// Remaining recovery time in seconds.
+        /// True if deafness is significant enough to impair sound detection.
         /// </summary>
-        private float _recoveryTimeLeft = 0f;
+        public bool IsDeafened => _deafness > 0.2f;
 
         /// <summary>
-        /// Rate at which deafness recovers per second.
+        /// Amount by which sound volume should be reduced (1.0 = no sound, 0.0 = unaffected).
+        /// Use to attenuate audio-based detection or awareness.
         /// </summary>
-        private const float RecoveryRate = 0.25f;
-
-        #endregion
-
-        #region Properties
+        public float VolumeModifier => Mathf.Clamp01(1f - Deafness);
 
         /// <summary>
-        /// Whether the bot is currently considered deafened (Deafness > 0.2).
+        /// Time remaining before deafness completely wears off.
         /// </summary>
-        public bool IsDeafened => Deafness > 0.2f;
-
-        #endregion
-
-        #region Public API
+        public float RemainingTime => Mathf.Max(0f, _deafUntilTime - Time.time);
 
         /// <summary>
-        /// Applies a deafening effect with a given intensity and recovery duration.
-        /// If multiple deafness sources apply, the stronger one wins.
+        /// Applies a deafening effect to the bot. The duration is cumulative if overlapping.
         /// </summary>
-        /// <param name="intensity">Value between 0 (none) and 1 (fully deaf).</param>
-        /// <param name="duration">Duration in seconds until recovery begins.</param>
         public void ApplyDeafness(float intensity, float duration)
         {
-            Deafness = Mathf.Clamp01(Mathf.Max(Deafness, intensity));
-            _recoveryTimeLeft = Mathf.Max(_recoveryTimeLeft, duration);
+            intensity = Mathf.Clamp01(intensity);
+            _deafness = Mathf.Max(_deafness, intensity);
+            _deafUntilTime = Mathf.Max(_deafUntilTime, Time.time + duration);
         }
 
         /// <summary>
-        /// Called each tick to update recovery over time.
+        /// Called each frame to recover from deafness over time.
         /// </summary>
-        /// <param name="deltaTime">Elapsed time since last tick.</param>
         public void Tick(float deltaTime)
         {
-            if (_recoveryTimeLeft > 0f)
+            if (Time.time >= _deafUntilTime)
             {
-                _recoveryTimeLeft -= deltaTime;
-                Deafness = Mathf.MoveTowards(Deafness, 0f, RecoveryRate * deltaTime);
+                _deafness = Mathf.MoveTowards(_deafness, 0f, _recoveryRate * deltaTime);
             }
         }
 
-        #endregion
+        /// <summary>
+        /// Immediately clears all hearing effects.
+        /// </summary>
+        public void Clear()
+        {
+            _deafness = 0f;
+            _deafUntilTime = 0f;
+        }
     }
 }

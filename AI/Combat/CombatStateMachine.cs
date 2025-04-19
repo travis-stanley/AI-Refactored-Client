@@ -1,6 +1,7 @@
 ﻿#nullable enable
 
 using AIRefactored.AI.Core;
+using AIRefactored.AI.Group;
 using AIRefactored.AI.Groups;
 using AIRefactored.AI.Helpers;
 using AIRefactored.AI.Hotspots;
@@ -157,24 +158,26 @@ namespace AIRefactored.AI.Combat
         private void TriggerSuppressedFallback(float time)
         {
             _bot?.BotTalk?.TrySay(EPhraseTrigger.OnBeingHurt);
-            float cohesion = Mathf.Lerp(0.6f, 1.2f, _profile?.Cohesion ?? 1f);
+
+            Vector3 threatDir = _bot!.LookDirection.normalized;
+            Vector3? fallback = null;
 
             if (_cache?.PathCache != null)
             {
-                Vector3 threatDir = _bot!.LookDirection.normalized;
                 List<Vector3> path = BotCoverRetreatPlanner.GetCoverRetreatPath(_bot, threatDir, _cache.PathCache);
                 if (path.Count > 0)
-                {
-                    _fallbackPosition = path[path.Count - 1];
-                    MoveSmoothlyTo(_squadCoordinator?.ApplyOffsetTo(_fallbackPosition.Value) ?? _fallbackPosition.Value);
-                    ForceState(CombatState.Fallback, time);
-                    EchoFallbackToSquad();
-                    return;
-                }
+                    fallback = path[path.Count - 1];
             }
 
-            _fallbackPosition = _bot!.Position - _bot.LookDirection.normalized * 5f;
-            MoveSmoothlyTo(_squadCoordinator?.ApplyOffsetTo(_fallbackPosition.Value) ?? _fallbackPosition.Value);
+            fallback ??= _bot.Position - threatDir * 5f;
+            _fallbackPosition = fallback;
+
+            Vector3 moveTo = _squadCoordinator?.ApplyOffsetTo(fallback.Value) ?? fallback.Value;
+            MoveSmoothlyTo(moveTo);
+
+
+            BotTeamLogic.BroadcastFallback(_bot, fallback.Value);
+
             ForceState(CombatState.Fallback, time);
             EchoFallbackToSquad();
         }
@@ -246,8 +249,7 @@ namespace AIRefactored.AI.Combat
                 if (Vector3.Distance(teammate.Position, _bot.Position) < 30f && UnityEngine.Random.value < EchoChance)
                 {
                     var stateMachine = teammate.GetComponent<CombatStateMachine>();
-                    if (stateMachine != null)
-                        stateMachine.TriggerFallback(teammate.Position - teammate.LookDirection.normalized * 5f);
+                    stateMachine?.TriggerFallback(teammate.Position - teammate.LookDirection.normalized * 5f);
                 }
             }
 

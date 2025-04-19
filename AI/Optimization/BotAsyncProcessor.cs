@@ -1,5 +1,6 @@
 ﻿#nullable enable
 
+using AIRefactored.AI.Groups;
 using EFT;
 using System.Threading.Tasks;
 using UnityEngine;
@@ -8,26 +9,18 @@ namespace AIRefactored.AI.Optimization
 {
     /// <summary>
     /// Performs async-safe, low-frequency personality initialization for bots.
-    /// Intended to stagger tuning logic outside the spawn frame without sacrificing realism.
+    /// Also executes periodic runtime optimization and squad resync.
     /// </summary>
     public class BotAsyncProcessor : MonoBehaviour
     {
         #region Fields
 
-        /// <summary>
-        /// The bot associated with this processor.
-        /// </summary>
         private BotOwner? _bot;
-
-        /// <summary>
-        /// Whether initialization has already been applied to this bot.
-        /// </summary>
         private bool _hasInitialized;
-
-        /// <summary>
-        /// Initial delay in seconds before async tuning starts.
-        /// </summary>
         private const float InitDelay = 0.5f;
+
+        private BotOwnerStateCache? _stateCache;
+        private readonly BotOwnerGroupOptimization _groupOptimizer = new();
 
         #endregion
 
@@ -51,18 +44,17 @@ namespace AIRefactored.AI.Optimization
         #region Initialization
 
         /// <summary>
-        /// Injects the bot reference for delayed tuning.
+        /// Injects the bot reference for delayed tuning and runtime optimization.
         /// </summary>
-        /// <param name="botOwner">The bot to process.</param>
         public void Initialize(BotOwner botOwner)
         {
             _bot = botOwner;
+            _stateCache = new BotOwnerStateCache();
         }
 
         /// <summary>
         /// Runs delayed personality-based tuning logic for the bot.
         /// </summary>
-        /// <param name="botOwner">The bot to process.</param>
         public async Task ProcessBotOwnerAsync(BotOwner botOwner)
         {
             if (_hasInitialized || botOwner?.Settings?.FileSettings?.Mind == null)
@@ -75,12 +67,33 @@ namespace AIRefactored.AI.Optimization
 
         #endregion
 
+        #region Tick-Based Runtime Optimization
+
+        /// <summary>
+        /// Called on slow tick from BotBrain to apply dynamic optimization.
+        /// </summary>
+        public void Tick(float time)
+        {
+            if (!_hasInitialized || _bot == null || _bot.IsDead)
+                return;
+
+            _stateCache?.UpdateBotOwnerStateIfNeeded(_bot);
+
+            var groupId = _bot.Profile?.Info?.GroupId;
+            if (!string.IsNullOrEmpty(groupId))
+            {
+                var teammates = BotTeamTracker.GetGroup(groupId);
+                _groupOptimizer.OptimizeGroupAI(teammates);
+            }
+        }
+
+        #endregion
+
         #region Personality Logic
 
         /// <summary>
         /// Applies bot personality tuning to MindSettings.
         /// </summary>
-        /// <param name="botOwner">Bot to tune.</param>
         private void ApplyPersonalityModifiers(BotOwner botOwner)
         {
             var mind = botOwner.Settings.FileSettings.Mind;

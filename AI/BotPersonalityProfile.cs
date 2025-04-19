@@ -6,10 +6,6 @@ namespace AIRefactored.AI
 {
     #region Enums
 
-    /// <summary>
-    /// Defines archetypal AI personalities used in AIRefactored.
-    /// Each type influences tactical, behavioral, and decision-making traits.
-    /// </summary>
     public enum PersonalityType
     {
         Adaptive,
@@ -37,9 +33,6 @@ namespace AIRefactored.AI
         Vengeful
     }
 
-    /// <summary>
-    /// Represents the preferred mission objective bias used by bots to guide strategic decisions.
-    /// </summary>
     public enum MissionBias
     {
         Random,
@@ -48,9 +41,6 @@ namespace AIRefactored.AI
         Quest
     }
 
-    /// <summary>
-    /// Controls when and how bots use lean-to-aim tactics during combat.
-    /// </summary>
     public enum LeanPreference
     {
         Never,
@@ -106,10 +96,31 @@ namespace AIRefactored.AI
 
         #region Leaning Behavior
 
-        /// <summary>
-        /// Controls whether and how the bot uses leaning in combat.
-        /// </summary>
         public LeanPreference LeaningStyle { get; set; } = LeanPreference.Conservative;
+
+        #endregion
+
+        #region Motion Personality
+
+        /// <summary>
+        /// How much movement randomness this bot injects during travel. 0 = laser-straight, 1 = zigzag erratic.
+        /// </summary>
+        public float MovementJitter { get; set; } = 0.2f;
+
+        /// <summary>
+        /// Tendency to strafe right vs left during idle peeking.
+        /// </summary>
+        public float SideStepBias { get; set; } = 0.5f;
+
+        /// <summary>
+        /// Frequency (0-1) of lean peeking attempts near corners.
+        /// </summary>
+        public float LeanPeekFrequency { get; set; } = 0.5f;
+
+        /// <summary>
+        /// How long this bot typically pauses to lean-check a corner.
+        /// </summary>
+        public float CornerCheckPauseTime { get; set; } = 0.35f;
 
         #endregion
 

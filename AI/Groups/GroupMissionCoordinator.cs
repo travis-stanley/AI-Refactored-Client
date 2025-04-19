@@ -5,7 +5,6 @@ using AIRefactored.AI.Missions;
 using Comfort.Common;
 using EFT;
 using System.Collections.Generic;
-using UnityEngine;
 
 namespace AIRefactored.AI.Groups
 {
@@ -58,6 +57,29 @@ namespace AIRefactored.AI.Groups
 #endif
 
             return mission;
+        }
+
+        /// <summary>
+        /// Registers a bot's group and assigns a mission using profile + map weighting.
+        /// Safe to call during BotBrain init.
+        /// </summary>
+        public static void RegisterFromBot(BotOwner bot)
+        {
+            if (!IsValidAIBot(bot))
+                return;
+
+            string groupId = bot.Profile?.Info?.GroupId ?? string.Empty;
+
+            if (!string.IsNullOrEmpty(groupId) && !_assignedMissions.ContainsKey(groupId))
+            {
+                var mission = PickWeightedMission(bot);
+                _assignedMissions[groupId] = mission;
+
+#if UNITY_EDITOR
+                if (_debugLog)
+                    Debug.Log($"[AIRefactored-Mission] [AutoRegister] Assigned group mission '{mission}' to group {groupId}");
+#endif
+            }
         }
 
         /// <summary>

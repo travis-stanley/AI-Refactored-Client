@@ -1,10 +1,8 @@
 ﻿#nullable enable
 
-using AIRefactored.AI.Core;
 using AIRefactored.AI.Helpers;
 using Comfort.Common;
 using EFT;
-using EFT.HealthSystem;
 using System.Collections.Generic;
 using UnityEngine;
 

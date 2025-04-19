@@ -1,6 +1,5 @@
 ﻿#nullable enable
 
-using AIRefactored.AI.Core;
 using EFT;
 using UnityEngine;
 
@@ -8,81 +7,62 @@ namespace AIRefactored.AI.Groups
 {
     /// <summary>
     /// Applies squad-aware offset to movement destinations to prevent pathing collisions and clumping.
-    /// Staggers formation based on squad size and group position.
+    /// Staggers formation based on bot index within the group.
     /// </summary>
     public class SquadPathCoordinator : MonoBehaviour
     {
-        #region Fields
-
         private BotOwner? _bot;
-        private BotComponentCache? _cache;
+        private BotsGroup? _group;
 
-        private int _groupIndex = 0;
-        private int _groupSize = 1;
-        private Vector3 _lastOffset = Vector3.zero;
-
-        private const float MaxOffset = 3.5f;
-
-        #endregion
-
-        #region Unity Lifecycle
+        private const float OffsetRadius = 2.5f;
 
         private void Awake()
         {
             _bot = GetComponent<BotOwner>();
-            _cache = GetComponent<BotComponentCache>();
-
-            if (_bot?.BotsGroup != null)
-            {
-                _groupSize = _bot.BotsGroup.MembersCount;
-
-                for (int i = 0; i < _groupSize; i++)
-                {
-                    var member = _bot.BotsGroup.Member(i);
-                    if (member == _bot)
-                    {
-                        _groupIndex = i;
-                        break;
-                    }
-                }
-            }
-        }
-
-        #endregion
-
-        #region Offset Logic
-
-        /// <summary>
-        /// Computes a formation offset vector based on the bot’s index within the squad.
-        /// </summary>
-        public Vector3 GetOffset()
-        {
-            if (_groupSize <= 1)
-                return Vector3.zero;
-
-            float angle = 360f * (_groupIndex / (float)_groupSize);
-            Vector3 offset = Quaternion.Euler(0f, angle, 0f) * Vector3.forward;
-
-            _lastOffset = offset.normalized * MaxOffset * 0.5f;
-            return _lastOffset;
+            _group = _bot?.BotsGroup;
         }
 
         /// <summary>
-        /// Returns a destination adjusted by the current squad offset.
+        /// Returns a destination adjusted by this bot’s squad offset.
         /// </summary>
         public Vector3 ApplyOffsetTo(Vector3 sharedDestination)
         {
-            return sharedDestination + GetOffset();
+            return sharedDestination + GetCurrentOffset();
         }
 
         /// <summary>
-        /// Returns the last calculated offset vector.
+        /// Gets this bot’s current formation offset.
         /// </summary>
         public Vector3 GetCurrentOffset()
         {
-            return _lastOffset;
+            if (_bot == null || _group == null || _group.MembersCount <= 1)
+                return Vector3.zero;
+
+            int myIndex = GetBotIndexInGroup();
+            if (myIndex == -1)
+                return Vector3.zero;
+
+            float angleDeg = 60f * myIndex;
+            float rad = angleDeg * Mathf.Deg2Rad;
+
+            return new Vector3(Mathf.Cos(rad), 0f, Mathf.Sin(rad)) * OffsetRadius;
         }
 
-        #endregion
+        /// <summary>
+        /// Gets this bot’s index within its BotsGroup. Returns -1 if not found.
+        /// </summary>
+        private int GetBotIndexInGroup()
+        {
+            if (_bot == null || _group == null)
+                return -1;
+
+            for (int i = 0; i < _group.MembersCount; i++)
+            {
+                if (_group.Member(i) == _bot)
+                    return i;
+            }
+
+            return -1;
+        }
     }
 }

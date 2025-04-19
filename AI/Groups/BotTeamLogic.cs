@@ -1,6 +1,8 @@
 ﻿#nullable enable
 
+using AIRefactored.AI.Combat;
 using AIRefactored.AI.Helpers;
+using AIRefactored.AI.Missions;
 using Comfort.Common;
 using EFT;
 using System.Collections.Generic;
@@ -22,9 +24,6 @@ namespace AIRefactored.AI.Group
 
         #region Constructor
 
-        /// <summary>
-        /// Initializes team logic for a specific bot.
-        /// </summary>
         public BotTeamLogic(BotOwner bot)
         {
             _bot = bot;
@@ -34,9 +33,6 @@ namespace AIRefactored.AI.Group
 
         #region Team Setup
 
-        /// <summary>
-        /// Filters and stores teammates based on shared GroupId.
-        /// </summary>
         public void SetTeammates(List<BotOwner> allBots)
         {
             _teammates.Clear();
@@ -67,9 +63,6 @@ namespace AIRefactored.AI.Group
 
         #region Target Sharing
 
-        /// <summary>
-        /// Shares a detected enemy with all squadmates who haven’t seen them yet.
-        /// </summary>
         public void ShareTarget(IPlayer enemy)
         {
             if (enemy == null || string.IsNullOrEmpty(enemy.ProfileId))
@@ -102,9 +95,6 @@ namespace AIRefactored.AI.Group
 
         #region Coordination
 
-        /// <summary>
-        /// Smoothly aligns bot with average group position. Adds natural stagger and avoids tight clustering.
-        /// </summary>
         public void CoordinateMovement()
         {
             if (_bot?.GetPlayer?.IsAI != true || _bot.IsDead || _teammates.Count == 0)
@@ -136,6 +126,82 @@ namespace AIRefactored.AI.Group
                     BotMovementHelper.SmoothMoveTo(_bot, regroupPoint, false, 1f);
             }
         }
+
+        #endregion
+
+        #region Static Global Methods
+
+        /// <summary>
+        /// Shares a detected enemy with all squadmates of the calling bot.
+        /// </summary>
+        public static void AddEnemy(BotOwner bot, IPlayer target)
+        {
+            if (bot?.BotsGroup == null || target == null || bot.IsDead)
+                return;
+
+            for (int i = 0; i < bot.BotsGroup.MembersCount; i++)
+            {
+                var teammate = bot.BotsGroup.Member(i);
+                if (teammate == null || teammate.IsDead || teammate == bot || teammate.GetPlayer?.IsAI != true)
+                    continue;
+
+                if (teammate.Memory?.GoalEnemy?.Person?.Id == target.Id)
+                    continue;
+
+                if (!teammate.BotsGroup?.IsEnemy(target) ?? true)
+                {
+                    if (!teammate.BotsGroup!.AddEnemy(target, EBotEnemyCause.zryachiyLogic))
+                        continue;
+                }
+
+                if (teammate.BotsGroup.Enemies.TryGetValue(target, out var info))
+                    teammate.Memory?.AddEnemy(target, info, false);
+            }
+        }
+
+        /// <summary>
+        /// Broadcasts a fallback position to all group members.
+        /// </summary>
+        public static void BroadcastFallback(BotOwner bot, Vector3 retreatPoint)
+        {
+            if (bot?.BotsGroup == null || bot.IsDead)
+                return;
+
+            for (int i = 0; i < bot.BotsGroup.MembersCount; i++)
+            {
+                var teammate = bot.BotsGroup.Member(i);
+                if (teammate == null || teammate == bot || teammate.IsDead)
+                    continue;
+
+                var machine = teammate.GetComponent<CombatStateMachine>();
+                machine?.TriggerFallback(retreatPoint);
+            }
+        }
+
+        /// <summary>
+        /// Informs group members of a mission change. Bots may react (e.g. enter alert or adjust objective).
+        /// </summary>
+        public static void BroadcastMissionType(BotOwner bot, BotMissionSystem.MissionType mission)
+        {
+            if (bot?.BotsGroup == null || bot.IsDead)
+                return;
+
+            for (int i = 0; i < bot.BotsGroup.MembersCount; i++)
+            {
+                var teammate = bot.BotsGroup.Member(i);
+                if (teammate == null || teammate == bot || teammate.IsDead)
+                    continue;
+
+                // Custom logic placeholder — bots could align or comment
+                var brain = teammate.GetComponent<BotMissionSystem>();
+                if (brain != null)
+                {
+                    // Future: dynamic sync of objectives, or reaction VO
+                    teammate.BotTalk?.TrySay(EPhraseTrigger.Cooperation);
+                }
+            }
+        }
+
 
         #endregion
     }

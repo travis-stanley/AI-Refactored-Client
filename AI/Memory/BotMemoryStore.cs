@@ -1,5 +1,7 @@
 ﻿#nullable enable
 
+using AIRefactored.Core;
+using EFT;
 using System.Collections.Generic;
 using UnityEngine;
 
@@ -93,6 +95,27 @@ namespace AIRefactored.AI.Memory
         public static void ClearAllHeardSounds()
         {
             _heardSounds.Clear();
+        }
+
+        /// <summary>
+        /// Returns all nearby players (AI or human) within the given radius of a position.
+        /// Uses GameWorldHandler to safely access alive players.
+        /// </summary>
+        public static List<Player> GetNearbyPlayers(Vector3 origin, float radius = 40f)
+        {
+            List<Player> result = new List<Player>(8);
+
+            foreach (var player in GameWorldHandler.GetAllAlivePlayers())
+            {
+                if (player == null)
+                    continue;
+
+                float dist = Vector3.Distance(origin, player.Position);
+                if (dist <= radius)
+                    result.Add(player);
+            }
+
+            return result;
         }
 
         #endregion

@@ -1,25 +1,21 @@
 ﻿#nullable enable
 
-using System;
-using UnityEngine;
-using EFT;
-using AIRefactored.AI.Core;
-using AIRefactored.AI.Perception;
-using AIRefactored.AI.Reactions;
-using AIRefactored.AI.Missions;
 using AIRefactored.AI.Behavior;
 using AIRefactored.AI.Combat;
-using AIRefactored.AI.Groups;
-using AIRefactored.AI.Optimization;
-using AIRefactored.AI.Helpers;
-using AIRefactored.AI.Movement;
 using AIRefactored.AI.Components;
+using AIRefactored.AI.Core;
+using AIRefactored.AI.Group;
+using AIRefactored.AI.Groups;
+using AIRefactored.AI.Missions;
+using AIRefactored.AI.Movement;
+using AIRefactored.AI.Optimization;
+using AIRefactored.AI.Perception;
+using AIRefactored.AI.Reactions;
+using EFT;
+using UnityEngine;
 
 namespace AIRefactored.AI.Threads
 {
-    /// <summary>
-    /// Central AI coordinator per bot. Updates all AIRefactored logic systems from a single ticking MonoBehaviour.
-    /// </summary>
     public class BotBrain : MonoBehaviour
     {
         private BotOwner? _bot;
@@ -40,9 +36,15 @@ namespace AIRefactored.AI.Threads
         private BotMovementController? _movement;
         private BotTacticalDeviceController? _tactical;
         private HearingDamageComponent? _hearingDamage;
+        private BotTilt? _tilt;
+        private BotCornerScanner? _cornerScanner;
+        private BotPoseController? _poseController;
+        private BotAsyncProcessor? _asyncProcessor;
+        private BotTeamLogic? _teamLogic;
 
         private float _nextTick = 0f;
-        private const float TickRate = 0.333f;
+        private const float IdleTickRate = 0.333f;
+        private const float CombatTickRate = 1f / 30f;
 
         private void Update()
         {
@@ -57,16 +59,25 @@ namespace AIRefactored.AI.Threads
 
             _vision?.Tick(now);
             _perception?.Tick(delta);
+            _hearing?.Tick(now);
             _movement?.Tick(delta);
             _groupBehavior?.Tick(delta);
+            _cornerScanner?.Tick(now);
+            _poseController?.Tick(now);
+            _tilt?.ManualUpdate();
 
-            // === Lean reset logic
-            _cache?.Tilt?.ManualUpdate();
+            bool isAlert =
+                _combat?.IsInCombatState() == true ||
+                _bot.Memory?.GoalEnemy != null ||
+                _cache?.IsBlinded == true ||
+                _cache?.LastHeardTime + 2f > now;
+
+            float tickRate = isAlert ? CombatTickRate : IdleTickRate;
 
             if (now >= _nextTick)
             {
                 Tick(now, delta);
-                _nextTick = now + TickRate;
+                _nextTick = now + tickRate;
             }
         }
 
@@ -96,14 +107,26 @@ namespace AIRefactored.AI.Threads
             _movement = GetComponent<BotMovementController>();
             _tactical = GetComponent<BotTacticalDeviceController>();
             _hearingDamage = GetComponent<HearingDamageComponent>();
+
+            _cornerScanner = new BotCornerScanner(bot, _cache);
+            _poseController = new BotPoseController(bot, _cache);
+
+            _asyncProcessor = gameObject.AddComponent<BotAsyncProcessor>();
+            _asyncProcessor.Initialize(bot);
+
+            _tilt = _player.GetComponent<BotTilt>();
+            if (_tilt == null)
+                _tilt = new BotTilt(bot);
+
+            _teamLogic = new BotTeamLogic(bot);
         }
 
         private void Tick(float time, float deltaTime)
         {
             _mission?.ManualTick(time);
             _behavior?.Tick(time);
+            _combat?.Tick(time);
             _escalation?.Tick(time);
-            _hearing?.Tick(time);
             _flashReaction?.Tick(time);
             _flashDetector?.Tick(time);
             _groupSync?.Tick(time);

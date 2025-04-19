@@ -1,10 +1,8 @@
 ﻿#nullable enable
 
+using AIRefactored.AI.Core;
 using EFT;
 using UnityEngine;
-using AIRefactored.AI.Helpers;
-using AIRefactored.AI.Core;
-using AIRefactored.AI; // Needed for BotPersonalityProfile and LeanPreference
 
 namespace AIRefactored.AI.Movement
 {
@@ -12,6 +10,7 @@ namespace AIRefactored.AI.Movement
     {
         private BotOwner? _bot;
         private BotComponentCache? _cache;
+        private BotMovementTrajectoryPlanner? _trajectory;
 
         private const float CornerScanInterval = 1.2f;
         private const float ScanDistance = 2.5f;
@@ -33,6 +32,9 @@ namespace AIRefactored.AI.Movement
         {
             _bot = GetComponent<BotOwner>();
             _cache = GetComponent<BotComponentCache>();
+
+            if (_bot != null && _cache != null)
+                _trajectory = new BotMovementTrajectoryPlanner(_bot, _cache);
         }
 
         public void Tick(float deltaTime)
@@ -83,7 +85,8 @@ namespace AIRefactored.AI.Movement
 
         private void ApplyInertia(float deltaTime)
         {
-            if (_bot?.Mover == null) return;
+            if (_bot?.Mover == null || _bot.GetPlayer == null)
+                return;
 
             Vector3 targetPoint = _bot.Mover.LastTargetPoint(1.0f);
             Vector3 direction = targetPoint - _bot.Position;
@@ -93,15 +96,16 @@ namespace AIRefactored.AI.Movement
                 return;
 
             float moveSpeed = 1.65f;
-            Vector3 desiredVelocity = direction.normalized * moveSpeed;
+            Vector3 desiredDir = _trajectory?.ModifyTrajectory(direction, deltaTime) ?? direction.normalized;
+            Vector3 desiredVelocity = desiredDir * moveSpeed;
 
             _lastVelocity = Vector3.Lerp(_lastVelocity, desiredVelocity, InertiaWeight * deltaTime);
-            _bot.GetPlayer?.CharacterController?.Move(_lastVelocity * deltaTime, deltaTime);
+            _bot.GetPlayer.CharacterController?.Move(_lastVelocity * deltaTime, deltaTime);
         }
 
         private void CombatStrafe(float deltaTime)
         {
-            if (_bot == null || _bot.Mover == null)
+            if (_bot == null || _bot.Mover == null || _bot.GetPlayer == null)
                 return;
 
             _strafeTimer -= deltaTime;
@@ -111,10 +115,30 @@ namespace AIRefactored.AI.Movement
                 _strafeTimer = UnityEngine.Random.Range(0.4f, 0.8f);
             }
 
-            Vector3 strafeDir = _isStrafingRight ? transform.right : -transform.right;
+            Vector3 baseStrafe = _isStrafingRight ? transform.right : -transform.right;
+
+            // Avoid clumping with nearby teammates
+            Vector3 avoidVector = Vector3.zero;
+            if (_bot.BotsGroup != null)
+            {
+                for (int i = 0; i < _bot.BotsGroup.MembersCount; i++)
+                {
+                    var mate = _bot.BotsGroup.Member(i);
+                    if (mate == null || mate == _bot || mate.IsDead)
+                        continue;
+
+                    float dist = Vector3.Distance(_bot.Position, mate.Position);
+                    if (dist < 2f && dist > 0.01f)
+                    {
+                        avoidVector += (_bot.Position - mate.Position).normalized / dist;
+                    }
+                }
+            }
+
+            Vector3 strafeDir = (baseStrafe + avoidVector * 1.2f).normalized;
             float strafeSpeed = 1.25f;
 
-            _bot.GetPlayer?.CharacterController?.Move(strafeDir * strafeSpeed * deltaTime, deltaTime);
+            _bot.GetPlayer.CharacterController?.Move(strafeDir * strafeSpeed * deltaTime, deltaTime);
         }
 
         private void TryCombatLean()
@@ -147,7 +171,6 @@ namespace AIRefactored.AI.Movement
             var cover = memory.BotCurrentCoverInfo?.LastCover;
             bool inCover = cover != null;
 
-            // Conservative bots require wall or cover
             if (personality.LeaningStyle == LeanPreference.Conservative && !inCover && !wallLeft && !wallRight)
                 return;
 

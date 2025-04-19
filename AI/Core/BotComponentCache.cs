@@ -4,6 +4,7 @@ using AIRefactored.AI.Behavior;
 using AIRefactored.AI.Combat;
 using AIRefactored.AI.Components;
 using AIRefactored.AI.Groups;
+using AIRefactored.AI.Medical;
 using AIRefactored.AI.Movement;
 using AIRefactored.AI.Optimization;
 using AIRefactored.AI.Perception;
@@ -39,6 +40,17 @@ namespace AIRefactored.AI.Core
 
         public BotOwnerPathfindingCache? PathCache { get; private set; }
         public BotTilt? Tilt { get; private set; }
+
+        public BotPoseController? PoseController { get; set; }
+
+        #endregion
+
+        #region Tactical Modules
+
+        public BotThreatSelector ThreatSelector = null!;
+        public BotInjurySystem InjurySystem = null!;
+        public BotLastShotTracker LastShotTracker = null!;
+        public BotGroupComms GroupComms = null!;
 
         #endregion
 
@@ -78,6 +90,34 @@ namespace AIRefactored.AI.Core
 
         #endregion
 
+        #region Shortcuts
+
+        /// <summary>
+        /// Returns the bot’s current world position or fallback to transform if unset.
+        /// </summary>
+        public Vector3 Position => Bot?.Position ?? transform.position;
+
+        /// <summary>
+        /// Shortcut to BotOwner.Memory.
+        /// </summary>
+        public BotMemoryClass? Memory => Bot?.Memory;
+
+        /// <summary>
+        /// Alias for PanicHandler.
+        /// </summary>
+        public BotPanicHandler? Panic => PanicHandler;
+
+        #endregion
+
+        #region Visibility Tracking
+
+        /// <summary>
+        /// Tracks partial enemy visibility (head/torso) for accurate suppression/fire logic.
+        /// </summary>
+        public TrackedEnemyVisibility? VisibilityTracker;
+
+        #endregion
+
         #region Unity Lifecycle
 
         private void Awake()
@@ -102,6 +142,12 @@ namespace AIRefactored.AI.Core
 
             PathCache = new BotOwnerPathfindingCache();
             Tilt = Bot != null ? new BotTilt(Bot) : null;
+
+            // Tactical modules
+            ThreatSelector = new BotThreatSelector(this);
+            InjurySystem = new BotInjurySystem(this);
+            LastShotTracker = new BotLastShotTracker();
+            GroupComms = new BotGroupComms(this);
         }
 
         #endregion
@@ -115,6 +161,7 @@ namespace AIRefactored.AI.Core
             LastFlashTime = 0f;
             LastHeardTime = -999f;
             LastHeardDirection = null;
+            VisibilityTracker = null;
 
             PathCache?.Clear();
         }

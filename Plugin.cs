@@ -1,5 +1,6 @@
 ﻿#nullable enable
 
+using AIRefactored.Core;
 using AIRefactored.Runtime;
 using BepInEx;
 using BepInEx.Logging;
@@ -31,17 +32,22 @@ namespace AIRefactored
         private void Awake()
         {
             _logger = Logger;
-            _logger.LogInfo("[AIRefactored-Plugin] 🔧 Initializing AI-Refactored mod...");
+            _logger.LogInfo("[AIRefactored] 🔧 Initializing AI-Refactored mod...");
 
-            // === Core System Setup ===
+            if (FikaHeadlessDetector.IsHeadless)
+                _logger.LogInfo("[AIRefactored] 🧠 Running in FIKA Headless Host mode.");
+            else
+                _logger.LogInfo("[AIRefactored] 🧠 Running in Client/Interactive mode.");
+
+            // === Core Boot ===
             AIRefactoredController.Initialize(_logger);
 
-            // === Bot Lifecycle Bootstrap ===
+            // === Bot Initialization ===
             var bootstrap = new GameObject("AIRefactored.BotInitializer");
             bootstrap.AddComponent<BotBrainBootstrapper>();
             DontDestroyOnLoad(bootstrap);
 
-            _logger.LogInfo("[AIRefactored-Plugin] ✅ AI-Refactored mod initialized and systems online.");
+            _logger.LogInfo("[AIRefactored] ✅ Initialization complete. Systems are online.");
         }
 
         #endregion
@@ -52,7 +58,7 @@ namespace AIRefactored
         /// Provides global access to the plugin's logger instance.
         /// </summary>
         public static ManualLogSource LoggerInstance =>
-            _logger ?? throw new System.NullReferenceException("LoggerInstance accessed before Awake() initialized it.");
+            _logger ?? throw new System.NullReferenceException("[AIRefactored] LoggerInstance was accessed before plugin Awake().");
 
         #endregion
     }

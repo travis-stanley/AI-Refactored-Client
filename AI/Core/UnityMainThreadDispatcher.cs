@@ -9,32 +9,22 @@ namespace AIRefactored.Core
     /// <summary>
     /// Allows background threads to safely schedule logic to run on Unity’s main thread.
     /// Used by async logic like <see cref="AI.Threads.BotAsyncThinker"/> to queue main-thread Unity API calls.
+    /// Automatically disabled in FIKA Headless environments.
     /// </summary>
     public class UnityMainThreadDispatcher : MonoBehaviour
     {
         #region Static Fields
 
-        /// <summary>
-        /// Thread-safe queue of actions to run on the main thread.
-        /// </summary>
         private static readonly Queue<Action> _queue = new Queue<Action>();
-
-        /// <summary>
-        /// Singleton instance.
-        /// </summary>
         private static UnityMainThreadDispatcher? _instance;
 
         #endregion
 
         #region Public API
 
-        /// <summary>
-        /// Thread-safe method to enqueue actions to be run on the next Unity Update.
-        /// </summary>
-        /// <param name="action">The delegate to invoke on the main thread.</param>
         public static void Enqueue(Action action)
         {
-            if (action == null)
+            if (action == null || FikaHeadlessDetector.IsHeadless)
                 return;
 
             lock (_queue)
@@ -47,11 +37,11 @@ namespace AIRefactored.Core
 
         #region Unity Lifecycle
 
-        /// <summary>
-        /// Executes all queued actions each frame on the main thread.
-        /// </summary>
         private void Update()
         {
+            if (FikaHeadlessDetector.IsHeadless)
+                return;
+
             lock (_queue)
             {
                 while (_queue.Count > 0)
@@ -69,9 +59,6 @@ namespace AIRefactored.Core
             }
         }
 
-        /// <summary>
-        /// Sets singleton instance and prevents duplicates across scene loads.
-        /// </summary>
         private void Awake()
         {
             if (_instance != null && _instance != this)
@@ -81,20 +68,19 @@ namespace AIRefactored.Core
             }
 
             _instance = this;
-            DontDestroyOnLoad(gameObject);
+
+            if (!FikaHeadlessDetector.IsHeadless)
+                DontDestroyOnLoad(gameObject);
         }
 
         #endregion
 
         #region Static Bootstrap
 
-        /// <summary>
-        /// Ensures the dispatcher is created once after scene load.
-        /// </summary>
         [RuntimeInitializeOnLoadMethod(RuntimeInitializeLoadType.AfterSceneLoad)]
         private static void InitOnLoad()
         {
-            if (_instance != null)
+            if (FikaHeadlessDetector.IsHeadless || _instance != null)
                 return;
 
             GameObject dispatcherObject = new GameObject("UnityMainThreadDispatcher");

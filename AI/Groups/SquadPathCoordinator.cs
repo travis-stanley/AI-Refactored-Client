@@ -7,14 +7,15 @@ namespace AIRefactored.AI.Groups
 {
     /// <summary>
     /// Applies squad-aware offset to movement destinations to prevent pathing collisions and clumping.
-    /// Staggers formation based on bot index within the group.
+    /// Dynamically staggers formation using radial patterns based on bot index.
     /// </summary>
     public class SquadPathCoordinator : MonoBehaviour
     {
         private BotOwner? _bot;
         private BotsGroup? _group;
 
-        private const float OffsetRadius = 2.5f;
+        private const float OffsetRadius = 2.25f;
+        private const float MinSpacing = 1.25f;
 
         private void Awake()
         {
@@ -23,7 +24,7 @@ namespace AIRefactored.AI.Groups
         }
 
         /// <summary>
-        /// Returns a destination adjusted by this bot’s squad offset.
+        /// Returns a destination adjusted by this bot’s squad offset to reduce clumping.
         /// </summary>
         public Vector3 ApplyOffsetTo(Vector3 sharedDestination)
         {
@@ -31,7 +32,7 @@ namespace AIRefactored.AI.Groups
         }
 
         /// <summary>
-        /// Gets this bot’s current formation offset.
+        /// Calculates a radial offset based on this bot’s position in the squad.
         /// </summary>
         public Vector3 GetCurrentOffset()
         {
@@ -42,14 +43,16 @@ namespace AIRefactored.AI.Groups
             if (myIndex == -1)
                 return Vector3.zero;
 
-            float angleDeg = 60f * myIndex;
+            float spacing = Mathf.Clamp(OffsetRadius, MinSpacing, 6f);
+            float angleStep = 360f / Mathf.Max(2, _group.MembersCount);
+            float angleDeg = myIndex * angleStep;
             float rad = angleDeg * Mathf.Deg2Rad;
 
-            return new Vector3(Mathf.Cos(rad), 0f, Mathf.Sin(rad)) * OffsetRadius;
+            return new Vector3(Mathf.Cos(rad), 0f, Mathf.Sin(rad)) * spacing;
         }
 
         /// <summary>
-        /// Gets this bot’s index within its BotsGroup. Returns -1 if not found.
+        /// Gets the index of this bot within its group. Returns -1 if not found.
         /// </summary>
         private int GetBotIndexInGroup()
         {

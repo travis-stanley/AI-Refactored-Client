@@ -9,7 +9,8 @@ using UnityEngine;
 namespace AIRefactored.AI.Movement
 {
     /// <summary>
-    /// Controls crouching, standing, prone, and lean pose transitions based on combat state, suppression, flanks, and cover.
+    /// Controls crouching, standing, prone, and lean pose transitions based on combat state, suppression, panic, and cover.
+    /// Works in tandem with BotMovementController (which handles leaning).
     /// </summary>
     public class BotPoseController
     {
@@ -18,13 +19,17 @@ namespace AIRefactored.AI.Movement
         private readonly MovementContext _movement;
         private readonly BotPersonalityProfile _personality;
 
-        private float _nextPoseCheck = 0f;
-        private const float PoseCheckInterval = 0.35f;
+        private float _targetPoseLevel = 100f;
+        private float _currentPoseLevel = 100f;
 
-        private const float FlankAngleThreshold = 120f;
-        private const float SuppressionCrouchDuration = 2.5f;
+        private float _nextPoseCheck = 0f;
+        private const float PoseCheckInterval = 0.3f;
 
         private float _suppressedUntil = 0f;
+        private const float SuppressionCrouchDuration = 2.5f;
+
+        private const float FlankAngleThreshold = 120f;
+        private const float PoseBlendSpeedBase = 140f;
 
         public BotPoseController(BotOwner bot, BotComponentCache cache)
         {
@@ -35,105 +40,108 @@ namespace AIRefactored.AI.Movement
         }
 
         /// <summary>
-        /// Called from BotBrain.Tick() to update posture logic.
+        /// Ticked from BotBrain. Updates target pose level, and smoothly blends into it.
         /// </summary>
         public void Tick(float time)
         {
             if (time < _nextPoseCheck)
+            {
+                BlendPose(Time.deltaTime);
                 return;
+            }
 
             _nextPoseCheck = time + PoseCheckInterval;
-
-            if (CheckSuppression(time)) return;
-            if (CheckCoverProne()) return;
-            if (CheckSmartProne()) return;
-            if (CheckCoverCrouch()) return;
-
-            HandleDefaultStance();
+            EvaluatePoseIntent(time);
+            BlendPose(Time.deltaTime);
         }
 
-        private bool CheckSuppression(float time)
+        private void EvaluatePoseIntent(float time)
         {
+            // === 1. Suppressed
             if (_cache.Suppression?.IsSuppressed() == true)
-            {
                 _suppressedUntil = time + SuppressionCrouchDuration;
-            }
 
             if (time < _suppressedUntil)
             {
-                _movement.SetPoseLevel(50); // crouch
-                return true;
+                _targetPoseLevel = 50f; // crouch
+                return;
             }
 
-            return false;
-        }
-
-        private bool CheckSmartProne()
-        {
-            bool isSniper = _personality.Personality == PersonalityType.Sniper;
-            bool isFearful = _personality.IsFearful || _personality.Personality == PersonalityType.Fearful;
-            bool isPanicking = _cache.PanicHandler?.IsPanicking == true;
-
-            if (!(isSniper || isFearful || isPanicking))
-                return false;
-
-            Vector3? flankDir = BotMemoryExtensions.TryGetFlankDirection(_bot);
-            if (flankDir.HasValue)
+            // === 2. Panic (fully prone)
+            if (_cache.PanicHandler?.IsPanicking == true)
             {
-                float angle = Vector3.Angle(_bot.LookDirection, flankDir.Value.normalized);
-                if (angle > FlankAngleThreshold)
+                _targetPoseLevel = 0f;
+                return;
+            }
+
+            // === 3. Smart prone: flanked
+            if (_personality.IsFearful || _personality.Personality == PersonalityType.Sniper || _personality.IsFrenzied)
+            {
+                Vector3? flankDir = BotMemoryExtensions.TryGetFlankDirection(_bot);
+                if (flankDir.HasValue)
                 {
-                    _movement.SetPoseLevel(0); // prone
-                    return true;
+                    float angle = Vector3.Angle(_bot.LookDirection, flankDir.Value.normalized);
+                    if (angle > FlankAngleThreshold)
+                    {
+                        _targetPoseLevel = 0f;
+                        return;
+                    }
                 }
             }
 
-            if (isPanicking)
-            {
-                _movement.SetPoseLevel(0); // prone
-                return true;
-            }
-
-            return false;
-        }
-
-        private bool CheckCoverProne()
-        {
+            // === 4. Approaching cover (anticipation)
             var cover = _bot.Memory?.BotCurrentCoverInfo?.LastCover;
-            if (cover != null && BotCoverHelper.IsProneCover(cover))
+            if (cover != null)
             {
-                _movement.SetPoseLevel(0); // prone
-                return true;
+                float dist = Vector3.Distance(_bot.Position, cover.Position);
+                if (dist < 2.5f)
+                {
+                    if (BotCoverHelper.IsProneCover(cover))
+                    {
+                        _targetPoseLevel = 0f;
+                        return;
+                    }
+
+                    if (BotCoverHelper.IsLowCover(cover))
+                    {
+                        _targetPoseLevel = 50f;
+                        return;
+                    }
+                }
             }
 
-            return false;
-        }
-
-        private bool CheckCoverCrouch()
-        {
-            var cover = _bot.Memory?.BotCurrentCoverInfo?.LastCover;
-            if (cover != null && BotCoverHelper.IsLowCover(cover))
-            {
-                _movement.SetPoseLevel(50); // crouch
-                return true;
-            }
-
-            return false;
-        }
-
-        private void HandleDefaultStance()
-        {
+            // === 5. Default stance logic
             bool inCombat = _cache.Combat?.IsInCombatState() == true;
             bool crouchPreferred = _personality.Caution > 0.6f || _personality.IsCamper;
 
-            if (inCombat && crouchPreferred)
-            {
-                _movement.SetPoseLevel(50); // crouch
-            }
-            else
-            {
-                _movement.SetPoseLevel(100); // full stand
-            }
+            _targetPoseLevel = (inCombat && crouchPreferred) ? 50f : 100f;
+        }
+
+        private void BlendPose(float deltaTime)
+        {
+            float panicFactor = _cache.PanicHandler?.IsPanicking == true ? 0.6f : 1f;
+            float combatFactor = _cache.Combat?.IsInCombatState() == true ? 1f : 0.4f;
+
+            float blendSpeed = PoseBlendSpeedBase * panicFactor * combatFactor;
+            _currentPoseLevel = Mathf.MoveTowards(_currentPoseLevel, _targetPoseLevel, blendSpeed * deltaTime);
+            _movement.SetPoseLevel(_currentPoseLevel);
+        }
+
+        // === Public API for external stance requests (e.g. from CombatStateMachine) ===
+
+        public void SetStand()
+        {
+            _targetPoseLevel = 100f;
+        }
+
+        public void SetCrouch(bool anticipate = false)
+        {
+            _targetPoseLevel = anticipate ? 60f : 50f;
+        }
+
+        public void SetProne(bool anticipate = false)
+        {
+            _targetPoseLevel = anticipate ? 20f : 0f;
         }
     }
 }

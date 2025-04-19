@@ -20,7 +20,7 @@ namespace AIRefactored.AI.Movement
 
         private const float ChaosInterval = 0.4f;
         private const float ChaosRadius = 0.65f;
-        private const float AvoidanceRadius = 2f;
+        private const float AvoidanceRadius = 2.0f;
 
         public BotMovementTrajectoryPlanner(BotOwner bot, BotComponentCache cache)
         {
@@ -35,22 +35,26 @@ namespace AIRefactored.AI.Movement
         {
             float now = Time.time;
 
-            // === Refresh chaos every ChaosInterval
+            // === Chaos offset update
             if (now > _nextOffsetTime)
             {
-                _chaosOffset = new Vector3(UnityEngine.Random.Range(-ChaosRadius, ChaosRadius), 0f, UnityEngine.Random.Range(-ChaosRadius, ChaosRadius));
+                _chaosOffset = new Vector3(
+                    UnityEngine.Random.Range(-ChaosRadius, ChaosRadius),
+                    0f,
+                    UnityEngine.Random.Range(-ChaosRadius, ChaosRadius)
+                );
                 _nextOffsetTime = now + ChaosInterval;
             }
 
-            Vector3 normalized = targetDir.normalized;
+            Vector3 baseDirection = targetDir.normalized;
 
-            // === Squad spacing shaping
+            // === Squad spacing (formation)
             Vector3 squadOffset = Vector3.zero;
-            if (_cache?.GetComponent<SquadPathCoordinator>() is SquadPathCoordinator squad)
+            if (_cache.GetComponent<SquadPathCoordinator>() is SquadPathCoordinator squad)
                 squadOffset = squad.GetCurrentOffset();
 
-            // === Teammate avoidance (simple repulsion)
-            Vector3 avoidVector = Vector3.zero;
+            // === Teammate avoidance (repulsion vector)
+            Vector3 avoidance = Vector3.zero;
             if (_bot.BotsGroup != null)
             {
                 for (int i = 0; i < _bot.BotsGroup.MembersCount; i++)
@@ -62,16 +66,22 @@ namespace AIRefactored.AI.Movement
                     float dist = Vector3.Distance(_bot.Position, mate.Position);
                     if (dist < AvoidanceRadius && dist > 0.01f)
                     {
-                        Vector3 away = (_bot.Position - mate.Position).normalized / dist;
-                        avoidVector += away;
+                        avoidance += (_bot.Position - mate.Position).normalized / dist;
                     }
                 }
             }
 
-            // === Combine weights
-            Vector3 combined = normalized + _chaosOffset + squadOffset.normalized * 0.5f + avoidVector * 1.25f;
-            combined.y = 0f;
-            return combined.normalized;
+            // === Combine all movement influences
+            Vector3 finalDirection = baseDirection
+                + _chaosOffset
+                + squadOffset.normalized * 0.5f
+                + avoidance * 1.25f;
+
+            finalDirection.y = 0f;
+
+            return finalDirection.sqrMagnitude > 0.01f
+                ? finalDirection.normalized
+                : baseDirection;
         }
     }
 }

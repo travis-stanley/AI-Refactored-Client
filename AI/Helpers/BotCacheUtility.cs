@@ -112,17 +112,13 @@ namespace AIRefactored.AI.Helpers
         /// </summary>
         public static IEnumerable<BotComponentCache> AllActiveBots()
         {
-            var results = new List<BotComponentCache>();
-            var all = Object.FindObjectsOfType<BotComponentCache>();
-
+            BotComponentCache[] all = Object.FindObjectsOfType<BotComponentCache>();
             for (int i = 0; i < all.Length; i++)
             {
-                var cache = all[i];
-                if (cache != null && cache.Bot != null && !cache.Bot.IsDead)
-                    results.Add(cache);
+                BotComponentCache cache = all[i];
+                if (cache?.Bot != null && !cache.Bot.IsDead)
+                    yield return cache;
             }
-
-            return results;
         }
 
         #endregion

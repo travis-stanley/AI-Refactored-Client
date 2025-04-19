@@ -6,12 +6,12 @@ using System.Collections.Generic;
 namespace AIRefactored.AI.Groups
 {
     /// <summary>
-    /// Centralized registry for tracking bot group memberships by GroupId.
-    /// Enables squad-based coordination, zone sync, and enemy sharing between squadmates.
+    /// Centralized runtime registry for tracking bot squads by GroupId.
+    /// Enables coordination, fallback sync, and squad-wide queries.
     /// </summary>
     public static class BotTeamTracker
     {
-        #region Internal Storage
+        #region Internal State
 
         private static readonly Dictionary<string, List<BotOwner>> _groups = new(32);
 
@@ -20,8 +20,8 @@ namespace AIRefactored.AI.Groups
         #region Public API
 
         /// <summary>
-        /// Registers a bot into the specified group by GroupId.
-        /// Skips human players (FIKA, Coop, or main player).
+        /// Registers a bot into the specified group by ID.
+        /// Skips human players or invalid instances.
         /// </summary>
         public static void Register(string groupId, BotOwner bot)
         {
@@ -43,19 +43,18 @@ namespace AIRefactored.AI.Groups
         }
 
         /// <summary>
-        /// Registers a bot using its GroupId from its Profile.
-        /// Safe for usage during BotBrain initialization.
+        /// Registers a bot using its profile’s embedded GroupId (if present).
+        /// Safe for calling during BotBrain startup or during bot spawn.
         /// </summary>
         public static void RegisterFromBot(BotOwner bot)
         {
-            if (bot?.GetPlayer?.Profile?.Info?.GroupId is string groupId && !string.IsNullOrEmpty(groupId))
-            {
-                Register(groupId, bot);
-            }
+            var groupId = bot?.GetPlayer?.Profile?.Info?.GroupId;
+            if (!string.IsNullOrEmpty(groupId))
+                Register(groupId!, bot!);
         }
 
         /// <summary>
-        /// Retrieves all AI-controlled bots in a group.
+        /// Returns a fresh copy of all living squadmates by GroupId.
         /// </summary>
         public static List<BotOwner> GetGroup(string groupId)
         {
@@ -65,11 +64,11 @@ namespace AIRefactored.AI.Groups
             if (!_groups.TryGetValue(groupId, out var original))
                 return new List<BotOwner>(0);
 
-            List<BotOwner> result = new(original.Count);
+            var result = new List<BotOwner>(original.Count);
             for (int i = 0; i < original.Count; i++)
             {
                 var bot = original[i];
-                if (bot?.GetPlayer?.IsAI == true)
+                if (bot?.GetPlayer?.IsAI == true && !bot.IsDead)
                     result.Add(bot);
             }
 
@@ -77,7 +76,7 @@ namespace AIRefactored.AI.Groups
         }
 
         /// <summary>
-        /// Removes a bot from any group it may belong to.
+        /// Unregisters the specified bot from all groups.
         /// </summary>
         public static void Unregister(BotOwner bot)
         {
@@ -86,20 +85,18 @@ namespace AIRefactored.AI.Groups
 
             foreach (var kvp in _groups)
             {
-                List<BotOwner> list = kvp.Value;
+                var list = kvp.Value;
                 if (list.Remove(bot))
                 {
                     if (list.Count == 0)
-                    {
                         _groups.Remove(kvp.Key);
-                    }
                     break;
                 }
             }
         }
 
         /// <summary>
-        /// Clears all tracked bot squads.
+        /// Clears all groups. Used on shutdown or full reset.
         /// </summary>
         public static void Clear()
         {
@@ -107,7 +104,7 @@ namespace AIRefactored.AI.Groups
         }
 
         /// <summary>
-        /// Returns a deep copy of all group data.
+        /// Returns a shallow copy of all group references.
         /// </summary>
         public static Dictionary<string, List<BotOwner>> GetAllGroups()
         {

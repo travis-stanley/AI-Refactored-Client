@@ -15,33 +15,26 @@ namespace AIRefactored.AI.Group
     /// </summary>
     public class BotTeamLogic
     {
-        #region Fields
-
         private readonly BotOwner _bot;
         private readonly List<BotOwner> _teammates = new();
-
-        #endregion
-
-        #region Constructor
 
         public BotTeamLogic(BotOwner bot)
         {
             _bot = bot;
         }
 
-        #endregion
-
-        #region Team Setup
-
+        /// <summary>
+        /// Gathers all alive teammates in the same group.
+        /// </summary>
         public void SetTeammates(List<BotOwner> allBots)
         {
             _teammates.Clear();
 
-            if (_bot?.GetPlayer?.IsAI != true)
+            if (_bot.GetPlayer?.IsAI != true)
                 return;
 
-            string? myGroupId = _bot.GetPlayer.Profile?.Info?.GroupId;
-            if (string.IsNullOrEmpty(myGroupId))
+            string? groupId = _bot.GetPlayer.Profile?.Info?.GroupId;
+            if (string.IsNullOrEmpty(groupId))
                 return;
 
             foreach (var other in allBots)
@@ -49,20 +42,18 @@ namespace AIRefactored.AI.Group
                 if (other == null || other == _bot || other.IsDead)
                     continue;
 
-                var player = other.GetPlayer;
-                if (player?.IsAI != true)
+                if (other.GetPlayer?.IsAI != true)
                     continue;
 
-                string? groupId = player.Profile?.Info?.GroupId;
-                if (groupId == myGroupId)
+                string? otherGroupId = other.GetPlayer.Profile?.Info?.GroupId;
+                if (otherGroupId == groupId)
                     _teammates.Add(other);
             }
         }
 
-        #endregion
-
-        #region Target Sharing
-
+        /// <summary>
+        /// Share an enemy target with all teammates in memory and group systems.
+        /// </summary>
         public void ShareTarget(IPlayer enemy)
         {
             if (enemy == null || string.IsNullOrEmpty(enemy.ProfileId))
@@ -91,13 +82,12 @@ namespace AIRefactored.AI.Group
             }
         }
 
-        #endregion
-
-        #region Coordination
-
+        /// <summary>
+        /// Coordinates movement with teammates by forming a staggered center point regroup.
+        /// </summary>
         public void CoordinateMovement()
         {
-            if (_bot?.GetPlayer?.IsAI != true || _bot.IsDead || _teammates.Count == 0)
+            if (_bot.GetPlayer?.IsAI != true || _bot.IsDead || _teammates.Count == 0)
                 return;
 
             Vector3 center = Vector3.zero;
@@ -105,34 +95,27 @@ namespace AIRefactored.AI.Group
 
             foreach (var mate in _teammates)
             {
-                if (mate == null || mate.GetPlayer?.IsAI != true || mate.IsDead)
+                if (mate == null || mate.IsDead || mate.GetPlayer?.IsAI != true)
                     continue;
 
                 center += mate.Position;
                 count++;
             }
 
-            if (count > 0)
-            {
-                center /= count;
+            if (count == 0)
+                return;
 
-                Vector3 stagger = Random.insideUnitSphere * 1.5f;
-                stagger.y = 0f;
+            center /= count;
+            Vector3 stagger = Random.insideUnitSphere * 1.5f;
+            stagger.y = 0f;
+            Vector3 regroupPoint = center + stagger;
 
-                Vector3 regroupPoint = center + stagger;
-                float dist = Vector3.Distance(_bot.Position, regroupPoint);
-
-                if (dist > 2f)
-                    BotMovementHelper.SmoothMoveTo(_bot, regroupPoint, false, 1f);
-            }
+            if (Vector3.Distance(_bot.Position, regroupPoint) > 2f)
+                BotMovementHelper.SmoothMoveTo(_bot, regroupPoint, false, 1f);
         }
 
-        #endregion
-
-        #region Static Global Methods
-
         /// <summary>
-        /// Shares a detected enemy with all squadmates of the calling bot.
+        /// Shares a detected enemy with the entire group (static call).
         /// </summary>
         public static void AddEnemy(BotOwner bot, IPlayer target)
         {
@@ -160,7 +143,7 @@ namespace AIRefactored.AI.Group
         }
 
         /// <summary>
-        /// Broadcasts a fallback position to all group members.
+        /// Broadcasts a fallback location to nearby squadmates.
         /// </summary>
         public static void BroadcastFallback(BotOwner bot, Vector3 retreatPoint)
         {
@@ -170,16 +153,16 @@ namespace AIRefactored.AI.Group
             for (int i = 0; i < bot.BotsGroup.MembersCount; i++)
             {
                 var teammate = bot.BotsGroup.Member(i);
-                if (teammate == null || teammate == bot || teammate.IsDead)
+                if (teammate == null || teammate.IsDead || teammate == bot)
                     continue;
 
-                var machine = teammate.GetComponent<CombatStateMachine>();
-                machine?.TriggerFallback(retreatPoint);
+                var sm = teammate.GetComponent<CombatStateMachine>();
+                sm?.TriggerFallback(retreatPoint);
             }
         }
 
         /// <summary>
-        /// Informs group members of a mission change. Bots may react (e.g. enter alert or adjust objective).
+        /// Announces a mission shift (e.g. loot, extract, defend) to the team.
         /// </summary>
         public static void BroadcastMissionType(BotOwner bot, BotMissionSystem.MissionType mission)
         {
@@ -192,17 +175,10 @@ namespace AIRefactored.AI.Group
                 if (teammate == null || teammate == bot || teammate.IsDead)
                     continue;
 
-                // Custom logic placeholder — bots could align or comment
                 var brain = teammate.GetComponent<BotMissionSystem>();
                 if (brain != null)
-                {
-                    // Future: dynamic sync of objectives, or reaction VO
                     teammate.BotTalk?.TrySay(EPhraseTrigger.Cooperation);
-                }
             }
         }
-
-
-        #endregion
     }
 }

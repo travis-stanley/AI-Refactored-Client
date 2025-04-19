@@ -17,7 +17,6 @@ namespace AIRefactored.AI.Combat
         private readonly BotComponentCache? _cache;
 
         private float _nextFireDecisionTime = 0f;
-        private float _lastSuppressionTime = -999f;
 
         private static readonly Dictionary<string, float> WeaponRanges = new()
         {
@@ -48,16 +47,21 @@ namespace AIRefactored.AI.Combat
                 return;
 
             var profile = BotRegistry.Get(_botOwner.ProfileId);
-            if (profile == null || _botOwner.Memory.GoalEnemy == null)
+            if (profile == null)
                 return;
 
-            Vector3 targetPos = _botOwner.Memory.GoalEnemy.CurrPosition;
+            // === THREAT SELECTION OVERRIDE ===
+            IPlayer? enemy = _cache?.ThreatSelector?.CurrentTarget
+                          ?? _botOwner.Memory.GoalEnemy?.Person;
+
+            if (enemy == null)
+                return;
+
+            Vector3 targetPos = enemy.Transform.position;
             float distance = Vector3.Distance(_botOwner.Position, targetPos);
-            float engageRange = GetEffectiveEngageRange(weapon, profile);
+            float engageRange = Mathf.Min(profile.EngagementRange, EstimateWeaponRange(weapon), 200f);
 
-            bool underFire = _botOwner.Memory.IsUnderFire;
-
-            if (underFire && GetHealthRatio() <= profile.RetreatThreshold)
+            if (_botOwner.Memory.IsUnderFire && GetHealthRatio() <= profile.RetreatThreshold)
             {
                 TryRetreat(profile);
                 return;
@@ -79,8 +83,8 @@ namespace AIRefactored.AI.Combat
 
             if (weaponInfo.BulletCount == 0 && !weaponInfo.CheckHaveAmmoForReload())
             {
-                _botOwner.WeaponManager.Selector.TryChangeWeaponCauseNoAmmo();
-                _botOwner.WeaponManager.Melee.Activate();
+                weaponMgr.Selector.TryChangeWeaponCauseNoAmmo();
+                weaponMgr.Melee.Activate();
                 return;
             }
 
@@ -92,31 +96,27 @@ namespace AIRefactored.AI.Combat
             else if (distance <= 100f && SupportsFireMode(weapon, Weapon.EFireMode.burst))
             {
                 SetFireMode(weaponInfo, Weapon.EFireMode.burst);
-                ApplyScatter(core, underFire, profile);
+                ApplyScatter(core, true, profile);
             }
             else
             {
                 SetFireMode(weaponInfo, Weapon.EFireMode.single);
-                ApplyScatter(core, underFire, profile);
+                ApplyScatter(core, true, profile);
             }
 
-            shootData.Shoot();
-        }
-
-        private float GetEffectiveEngageRange(Weapon weapon, BotPersonalityProfile profile)
-        {
-            return Mathf.Min(profile.EngagementRange, EstimateWeaponRange(weapon), 200f);
-        }
-
-        private float EstimateWeaponRange(Weapon weapon)
-        {
-            string name = weapon.Template?.Name.ToLowerInvariant() ?? string.Empty;
-            foreach (var kvp in WeaponRanges)
+            if (_botOwner.WeaponManager.IsWeaponReady)
             {
-                if (name.Contains(kvp.Key))
-                    return kvp.Value;
+                shootData.Shoot();
+
+                // === REGISTER LAST SHOT ===
+                _cache?.LastShotTracker?.RegisterShot(enemy);
             }
-            return 90f;
+        }
+
+        private void SetFireMode(BotWeaponInfo info, Weapon.EFireMode mode)
+        {
+            if (info.weapon.SelectedFireMode != mode)
+                info.ChangeFireMode(mode);
         }
 
         private bool SupportsFireMode(Weapon weapon, Weapon.EFireMode mode)
@@ -127,10 +127,13 @@ namespace AIRefactored.AI.Combat
             return false;
         }
 
-        private void SetFireMode(BotWeaponInfo info, Weapon.EFireMode mode)
+        private float EstimateWeaponRange(Weapon weapon)
         {
-            if (info.weapon.SelectedFireMode != mode)
-                info.ChangeFireMode(mode);
+            string name = weapon.Template?.Name.ToLowerInvariant() ?? string.Empty;
+            foreach (var kvp in WeaponRanges)
+                if (name.Contains(kvp.Key))
+                    return kvp.Value;
+            return 90f;
         }
 
         private void ApplyScatter(GClass592 core, bool underFire, BotPersonalityProfile profile)
@@ -138,7 +141,6 @@ namespace AIRefactored.AI.Combat
             float composure = _cache?.PanicHandler?.GetComposureLevel() ?? 1f;
             float scatterPenalty = underFire ? (1f - profile.AccuracyUnderFire) * (1f - composure) : 0f;
             float scatter = 1.15f + scatterPenalty;
-
             core.ScatteringPerMeter = Mathf.Min(core.ScatteringPerMeter * scatter, 4.0f);
         }
 

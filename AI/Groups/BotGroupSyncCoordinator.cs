@@ -9,12 +9,10 @@ namespace AIRefactored.AI.Groups
 {
     /// <summary>
     /// Coordinates group awareness and information sharing between AI squad members.
-    /// Syncs loot targets, extraction targets, and tracks teammate state for cohesion behavior.
+    /// Syncs loot targets, fallback decisions, and extraction targets for cohesion behavior.
     /// </summary>
     public class BotGroupSyncCoordinator : MonoBehaviour
     {
-        #region Fields
-
         private BotOwner? _bot;
         private BotComponentCache? _cache;
         private BotsGroup? _group;
@@ -25,16 +23,15 @@ namespace AIRefactored.AI.Groups
 
         private Vector3? _lastLootPoint;
         private Vector3? _lastExtractPoint;
+        private Vector3? _lastFallbackPoint;
+
+        private float _lastDangerBroadcastTime = -999f;
+        private Vector3 _lastDangerPosition = Vector3.zero;
 
         private static readonly List<BotOwner> _tempList = new();
 
-        #endregion
+        #region Unity Lifecycle
 
-        #region Initialization
-
-        /// <summary>
-        /// Call manually if not using Start() hook to initialize group tracking.
-        /// </summary>
         public void Init(BotOwner bot)
         {
             _bot = bot;
@@ -70,7 +67,7 @@ namespace AIRefactored.AI.Groups
 
         #endregion
 
-        #region Group Hook Registration
+        #region Group Management
 
         private void RegisterGroupHooks()
         {
@@ -113,12 +110,8 @@ namespace AIRefactored.AI.Groups
 
         #endregion
 
-        #region Public Tick
+        #region Per-Frame Sync
 
-        /// <summary>
-        /// Periodic update that may sync zones or group states.
-        /// This must be called externally now (e.g., from BotBrain).
-        /// </summary>
         public void Tick(float time)
         {
             if (_bot == null || _cache == null || _group == null || time < _nextSyncTime)
@@ -128,25 +121,34 @@ namespace AIRefactored.AI.Groups
                 return;
 
             _nextSyncTime = time + SyncInterval;
-            EvaluateGroupZones();
+
+            // Optional future: share status (is panicking, is healing, etc.)
         }
 
         #endregion
 
-        #region Shared Info Distribution
+        #region Sharing Interface
 
         public void BroadcastLootPoint(Vector3 point) => _lastLootPoint = point;
-
         public void BroadcastExtractPoint(Vector3 point) => _lastExtractPoint = point;
+        public void BroadcastFallbackPoint(Vector3 point) => _lastFallbackPoint = point;
 
         public Vector3? GetSharedLootTarget() => _lastLootPoint;
-
         public Vector3? GetSharedExtractTarget() => _lastExtractPoint;
+        public Vector3? GetSharedFallbackTarget() => _lastFallbackPoint;
+
+        public void BroadcastDanger(Vector3 position)
+        {
+            _lastDangerBroadcastTime = Time.time;
+            _lastDangerPosition = position;
+        }
+
+        public float LastDangerBroadcastTime => _lastDangerBroadcastTime;
+        public Vector3 LastDangerPosition => _lastDangerPosition;
 
         public List<BotOwner> GetTeammates()
         {
             _tempList.Clear();
-
             foreach (var kvp in _teammateCaches)
             {
                 var teammate = kvp.Key;
@@ -155,15 +157,6 @@ namespace AIRefactored.AI.Groups
             }
 
             return new List<BotOwner>(_tempList);
-        }
-
-        #endregion
-
-        #region Stub Zone Sync
-
-        private void EvaluateGroupZones()
-        {
-            // TODO: Share fallback zones or alert regions
         }
 
         #endregion

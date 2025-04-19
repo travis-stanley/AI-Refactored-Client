@@ -13,8 +13,8 @@ namespace AIRefactored.AI
     {
         #region Fields
 
-        private static readonly Dictionary<string, BotPersonalityProfile> _registry = new();
-        private static readonly HashSet<string> _missingLogged = new();
+        private static readonly Dictionary<string, BotPersonalityProfile> _registry = new(128);
+        private static readonly HashSet<string> _missingLogged = new(64);
         private static bool _debug = true;
 
         #endregion
@@ -31,7 +31,7 @@ namespace AIRefactored.AI
                 _registry.Add(profileId, profile);
 
                 if (_debug)
-                    Debug.Log($"[AIRefactored] Registered personality for bot {profileId}: {profile.Personality}");
+                    Debug.Log($"[AIRefactored:BotRegistry] Registered personality for bot '{profileId}': {profile.Personality}");
             }
         }
 
@@ -39,18 +39,26 @@ namespace AIRefactored.AI
         /// Retrieves the registered personality profile for the specified bot.
         /// Falls back to Balanced if not found.
         /// </summary>
-        public static BotPersonalityProfile Get(string profileId)
+        public static BotPersonalityProfile Get(string profileId, PersonalityType fallback = PersonalityType.Balanced)
         {
             if (_registry.TryGetValue(profileId, out var profile))
                 return profile;
 
-            if (_debug && !_missingLogged.Contains(profileId))
-            {
-                Debug.LogWarning($"[AIRefactored] Missing personality for bot {profileId}. Defaulting to Balanced.");
-                _missingLogged.Add(profileId);
-            }
+            if (_debug && _missingLogged.Add(profileId))
+                Debug.LogWarning($"[AIRefactored:BotRegistry] Missing personality for bot '{profileId}'. Defaulting to {fallback}.");
 
-            return BotPersonalityPresets.GenerateProfile(PersonalityType.Balanced);
+            return BotPersonalityPresets.GenerateProfile(fallback);
+        }
+
+        /// <summary>
+        /// Tries to get a profile. Returns null if not found.
+        /// </summary>
+        public static BotPersonalityProfile? TryGet(string profileId)
+        {
+            if (_registry.TryGetValue(profileId, out var profile))
+                return profile;
+
+            return null;
         }
 
         /// <summary>
@@ -67,7 +75,7 @@ namespace AIRefactored.AI
             _missingLogged.Clear();
 
             if (_debug)
-                Debug.Log("[AIRefactored] Bot personality registry cleared.");
+                Debug.Log("[AIRefactored:BotRegistry] Cleared all registered profiles and warnings.");
         }
 
         /// <summary>
@@ -76,6 +84,7 @@ namespace AIRefactored.AI
         public static void EnableDebug(bool enable)
         {
             _debug = enable;
+            Debug.Log($"[AIRefactored:BotRegistry] Debug logging {(enable ? "enabled" : "disabled")}.");
         }
 
         #endregion

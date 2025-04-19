@@ -6,15 +6,12 @@ using AIRefactored.AI.Memory;
 using AIRefactored.AI.Optimization;
 using AIRefactored.Core;
 using EFT;
+using EFT.HealthSystem;
 using System.Collections.Generic;
 using UnityEngine;
 
 namespace AIRefactored.AI.Combat
 {
-    /// <summary>
-    /// Manages panic state for bots including damage, flash, and squad-based fear reactions.
-    /// Drives fallback behavior and composure recovery.
-    /// </summary>
     public class BotPanicHandler : MonoBehaviour
     {
         #region Fields
@@ -34,9 +31,12 @@ namespace AIRefactored.AI.Combat
 
         #endregion
 
-        #region Properties
+        #region Public Properties
 
         public bool IsPanicking => _isPanicking;
+
+        public string? LastHitSource { get; private set; }
+        public string? LastSuppressionSource { get; private set; }
 
         #endregion
 
@@ -100,6 +100,12 @@ namespace AIRefactored.AI.Combat
 
             Vector3 threatDir = (_bot.Position - info.HitPoint).normalized;
             StartPanic(Time.time, threatDir);
+
+            var source = _bot.Memory?.GoalEnemy?.Person;
+            LastHitSource = source?.ProfileId ?? "unknown";
+            _cache?.LastShotTracker?.RegisterHitBy(source);
+            _cache?.InjurySystem?.OnHit(part, damage);
+            _cache?.GroupComms?.SayHit();
         }
 
         private bool ShouldTriggerPanic()
@@ -173,6 +179,9 @@ namespace AIRefactored.AI.Combat
                 BotMovementHelper.SmoothMoveTo(_bot, path[1], false, cohesion);
 
             BotMemoryStore.AddDangerZone(GameWorldHandler.GetCurrentMapName(), _bot.Position, DangerTriggerType.Panic, 0.6f);
+
+            var source = _bot.Memory?.GoalEnemy?.Person;
+            LastSuppressionSource = source?.ProfileId ?? "unknown";
 
             _bot.Sprint(true);
             _bot.BotTalk?.TrySay(EPhraseTrigger.OnBeingHurt);

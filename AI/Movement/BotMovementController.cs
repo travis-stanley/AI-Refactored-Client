@@ -1,6 +1,7 @@
 ﻿#nullable enable
 
 using AIRefactored.AI.Core;
+using AIRefactored.AI.Helpers;
 using EFT;
 using UnityEngine;
 
@@ -66,6 +67,7 @@ namespace AIRefactored.AI.Movement
             {
                 CombatStrafe(deltaTime);
                 TryCombatLean();
+                TryFlankAroundEnemy();
             }
         }
 
@@ -117,7 +119,6 @@ namespace AIRefactored.AI.Movement
 
             Vector3 baseStrafe = _isStrafingRight ? transform.right : -transform.right;
 
-            // Avoid clumping with nearby teammates
             Vector3 avoidVector = Vector3.zero;
             if (_bot.BotsGroup != null)
             {
@@ -174,9 +175,9 @@ namespace AIRefactored.AI.Movement
             if (personality.LeaningStyle == LeanPreference.Conservative && !inCover && !wallLeft && !wallRight)
                 return;
 
-            if (inCover)
+            if (inCover && cover != null)
             {
-                Vector3 coverToBot = _bot.Position - cover!.Position;
+                Vector3 coverToBot = _bot.Position - cover.Position;
                 float side = Vector3.Dot(coverToBot.normalized, transform.right);
                 _cache.Tilt.Set(side > 0f ? BotTiltType.right : BotTiltType.left);
             }
@@ -195,7 +196,25 @@ namespace AIRefactored.AI.Movement
             }
 
             _nextLeanAllowed = Time.time + LeanCooldown;
-            Debug.Log($"[AIRefactored-Movement] {BotName()} leaned for combat.");
+        }
+
+        private void TryFlankAroundEnemy()
+        {
+            if (_cache == null || _bot == null || _bot.Memory?.GoalEnemy == null)
+                return;
+
+            var enemy = _bot.Memory.GoalEnemy;
+            Vector3 botPos = _bot.Position;
+            Vector3 enemyPos = enemy.CurrPosition;
+
+            if (Vector3.Distance(botPos, enemyPos) < 25f)
+            {
+                if (FlankPositionPlanner.TryFindFlankPosition(botPos, enemyPos, out Vector3 flankPoint))
+                {
+                    BotMovementHelper.SmoothMoveTo(_bot, flankPoint, false, 1.0f);
+                    Debug.Log($"[AIRefactored-Movement] {_bot.Profile.Info.Nickname} flanking to {flankPoint}.");
+                }
+            }
         }
 
         private void ScanAhead()
@@ -213,11 +232,6 @@ namespace AIRefactored.AI.Movement
                     _bot.BotTalk?.TrySay(EPhraseTrigger.Look);
                 }
             }
-        }
-
-        private string BotName()
-        {
-            return _bot?.Profile?.Info?.Nickname ?? "UnknownBot";
         }
     }
 }

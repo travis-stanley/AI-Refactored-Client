@@ -5,12 +5,13 @@ using AIRefactored.AI.Missions;
 using Comfort.Common;
 using EFT;
 using System.Collections.Generic;
+using UnityEngine;
 
 namespace AIRefactored.AI.Groups
 {
     /// <summary>
-    /// Assigns shared missions to bot squads and individual AI based on map context and personality.
-    /// Enables group-level decision-making around loot, combat, and quest objectives.
+    /// Assigns shared missions to bot squads and individuals based on map and personality weightings.
+    /// Enables consistent squad coordination across Loot, Fight, and Quest missions.
     /// </summary>
     public static class GroupMissionCoordinator
     {
@@ -24,13 +25,7 @@ namespace AIRefactored.AI.Groups
 
         #region Public API
 
-        /// <summary>
-        /// Enables or disables debug logging for mission assignment.
-        /// </summary>
-        public static void EnableDebug(bool enabled)
-        {
-            _debugLog = enabled;
-        }
+        public static void EnableDebug(bool enabled) => _debugLog = enabled;
 
         /// <summary>
         /// Returns the assigned mission type for a bot's group. If not already assigned, one is selected and stored.
@@ -51,17 +46,14 @@ namespace AIRefactored.AI.Groups
             var mission = PickWeightedMission(bot);
             _assignedMissions[groupId] = mission;
 
-#if UNITY_EDITOR
             if (_debugLog)
                 Debug.Log($"[AIRefactored-Mission] Assigned group mission '{mission}' to group {groupId}");
-#endif
 
             return mission;
         }
 
         /// <summary>
-        /// Registers a bot's group and assigns a mission using profile + map weighting.
-        /// Safe to call during BotBrain init.
+        /// Registers and assigns a mission to the bot’s group (safe to call during bot initialization).
         /// </summary>
         public static void RegisterFromBot(BotOwner bot)
         {
@@ -69,21 +61,18 @@ namespace AIRefactored.AI.Groups
                 return;
 
             string groupId = bot.Profile?.Info?.GroupId ?? string.Empty;
+            if (string.IsNullOrEmpty(groupId) || _assignedMissions.ContainsKey(groupId))
+                return;
 
-            if (!string.IsNullOrEmpty(groupId) && !_assignedMissions.ContainsKey(groupId))
-            {
-                var mission = PickWeightedMission(bot);
-                _assignedMissions[groupId] = mission;
+            var mission = PickWeightedMission(bot);
+            _assignedMissions[groupId] = mission;
 
-#if UNITY_EDITOR
-                if (_debugLog)
-                    Debug.Log($"[AIRefactored-Mission] [AutoRegister] Assigned group mission '{mission}' to group {groupId}");
-#endif
-            }
+            if (_debugLog)
+                Debug.Log($"[AIRefactored-Mission] [AutoRegister] Assigned group mission '{mission}' to group {groupId}");
         }
 
         /// <summary>
-        /// Force-assigns a mission type to a specific group.
+        /// Forces a group to use a specific mission.
         /// </summary>
         public static void ForceMissionForGroup(string groupId, BotMissionSystem.MissionType mission)
         {
@@ -92,7 +81,7 @@ namespace AIRefactored.AI.Groups
         }
 
         /// <summary>
-        /// Clears all mission assignments.
+        /// Clears all group mission assignments (typically on session reset).
         /// </summary>
         public static void Reset()
         {
@@ -101,25 +90,21 @@ namespace AIRefactored.AI.Groups
 
         #endregion
 
-        #region Internals
+        #region Internal Helpers
 
         private static BotMissionSystem.MissionType GetSoloBotMission(BotOwner bot)
         {
             var mission = PickWeightedMission(bot);
 
-#if UNITY_EDITOR
             if (_debugLog)
             {
                 string name = bot.Profile?.Info?.Nickname ?? "unknown";
                 Debug.Log($"[AIRefactored-Mission] Solo bot {name} assigned mission {mission}");
             }
-#endif
+
             return mission;
         }
 
-        /// <summary>
-        /// Selects a mission based on map and bot personality profile.
-        /// </summary>
         private static BotMissionSystem.MissionType PickWeightedMission(BotOwner bot)
         {
             string map = Singleton<GameWorld>.Instantiated
@@ -130,7 +115,7 @@ namespace AIRefactored.AI.Groups
             float fight = 1.0f;
             float quest = 1.0f;
 
-            // === Map Influence ===
+            // === Map Weights ===
             switch (map)
             {
                 case "factory4_day":
@@ -149,12 +134,10 @@ namespace AIRefactored.AI.Groups
                 default: loot += 0.5f; break;
             }
 
-            // === Personality Influence ===
+            // === Personality Weights ===
             var wrapper = bot.GetComponent<AIRefactoredBotOwner>();
-            if (wrapper?.PersonalityProfile != null)
+            if (wrapper?.PersonalityProfile is { } profile)
             {
-                var profile = wrapper.PersonalityProfile;
-
                 loot += profile.Caution * 1.0f;
                 quest += profile.Caution * 0.5f;
                 fight += profile.AggressionLevel * 1.2f;
@@ -167,15 +150,13 @@ namespace AIRefactored.AI.Groups
             float total = loot + fight + quest;
             float roll = (float)_rng.NextDouble() * total;
 
-            if (roll < loot) return BotMissionSystem.MissionType.Loot;
-            if (roll < loot + fight) return BotMissionSystem.MissionType.Fight;
-
-            return BotMissionSystem.MissionType.Quest;
+            return roll < loot
+                ? BotMissionSystem.MissionType.Loot
+                : roll < (loot + fight)
+                    ? BotMissionSystem.MissionType.Fight
+                    : BotMissionSystem.MissionType.Quest;
         }
 
-        /// <summary>
-        /// Validates whether the bot is an AI-controlled NPC.
-        /// </summary>
         private static bool IsValidAIBot(BotOwner bot)
         {
             return bot?.GetPlayer?.IsAI == true;

@@ -1,6 +1,8 @@
 ﻿#nullable enable
 
+using AIRefactored.AI.Core;
 using AIRefactored.AI.Helpers;
+using AIRefactored.AI.Optimization;
 using EFT;
 using UnityEngine;
 
@@ -15,6 +17,8 @@ namespace AIRefactored.AI.Combat
         #region Fields
 
         private BotOwner? _bot;
+        private BotComponentCache? _cache;
+
         private float _suppressionStartTime = -99f;
         private bool _isSuppressed = false;
 
@@ -28,13 +32,15 @@ namespace AIRefactored.AI.Combat
         private void Awake()
         {
             _bot = GetComponent<BotOwner>();
+            _cache = GetComponent<BotComponentCache>();
+
             if (_bot == null)
-                Debug.LogError("[AIRefactored] BotSuppressionReactionComponent missing BotOwner!");
+                Debug.LogError("[AIRefactored] ❌ BotSuppressionReactionComponent missing BotOwner!");
         }
 
         private void Update()
         {
-            // Legacy fallback in case not driven by BotBrain
+            // Fallback if BotBrain is not ticking this
             Tick(Time.time);
         }
 
@@ -43,7 +49,7 @@ namespace AIRefactored.AI.Combat
         #region Tick Logic
 
         /// <summary>
-        /// Async-compatible tick invoked externally (BotBrain preferred).
+        /// Invoked externally by BotBrain for suppression decay.
         /// </summary>
         public void Tick(float now)
         {
@@ -84,12 +90,25 @@ namespace AIRefactored.AI.Combat
                 cohesion = Mathf.Lerp(0.6f, 1.2f, profile.Cohesion);
             }
 
+            // Optionally use retreat planner for more realistic cover fallback
+            if (_cache?.PathCache != null)
+            {
+                var path = BotCoverRetreatPlanner.GetCoverRetreatPath(_bot, direction, _cache.PathCache);
+                if (path.Count > 0)
+                    fallback = path[path.Count - 1];
+            }
+
             _bot.Sprint(true);
             BotMovementHelper.SmoothMoveTo(_bot, fallback, false, cohesion);
+
+            if (_bot.BotTalk != null)
+                _bot.BotTalk.TrySay(EPhraseTrigger.OnLostVisual);
+
+            Debug.DrawLine(_bot.Position, fallback, Color.red, 1.25f);
         }
 
         /// <summary>
-        /// Triggers suppression from a specific threat origin.
+        /// Triggers suppression from a known source location.
         /// </summary>
         public void ReactToSuppression(Vector3 source)
         {

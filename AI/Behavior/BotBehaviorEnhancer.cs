@@ -247,7 +247,7 @@ namespace AIRefactored.AI.Behavior
                     UnityEngine.Random.value < _profile.Cohesion)
                 {
                     Vector3 retreat = Vector3.Lerp(other.Position, fallback, 0.6f);
-                    other.Mover?.GoToPoint(retreat, false, 1f);
+                    BotMovementHelper.SmoothMoveTo(other, retreat, false, _profile.Cohesion);
                 }
             }
         }

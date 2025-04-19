@@ -5,6 +5,10 @@ using System.Collections.Generic;
 
 namespace AIRefactored.AI
 {
+    /// <summary>
+    /// Provides per-type preset templates for bot personalities.
+    /// These are injected at spawn-time for dynamic, realistic variation across squads and maps.
+    /// </summary>
     public static class BotPersonalityPresets
     {
         public static readonly Dictionary<PersonalityType, BotPersonalityProfile> Presets;
@@ -36,6 +40,7 @@ namespace AIRefactored.AI
                     profile.Cohesion = 0.65f;
                     profile.RiskTolerance = 0.6f;
                     profile.PreferredMission = MissionBias.Quest;
+                    profile.ReactionSpeed = 0.75f;
                     break;
 
                 case PersonalityType.Aggressive:
@@ -46,6 +51,7 @@ namespace AIRefactored.AI
                     profile.FlinchThreshold = 0.2f;
                     profile.CommunicationLevel = 0.3f;
                     profile.PreferredMission = MissionBias.Fight;
+                    profile.ReactionSpeed = 0.85f;
                     break;
 
                 case PersonalityType.Balanced:
@@ -53,6 +59,7 @@ namespace AIRefactored.AI
                     profile.Accuracy = 0.7f;
                     profile.RiskTolerance = 0.5f;
                     profile.AggressionLevel = 0.6f;
+                    profile.ReactionSpeed = 0.7f;
                     break;
 
                 case PersonalityType.Camper:
@@ -62,6 +69,7 @@ namespace AIRefactored.AI
                     profile.FlinchThreshold = 0.3f;
                     profile.SuppressionSensitivity = 0.7f;
                     profile.PreferredMission = MissionBias.Loot;
+                    profile.ReactionSpeed = 0.45f;
                     break;
 
                 case PersonalityType.Cautious:
@@ -71,6 +79,7 @@ namespace AIRefactored.AI
                     profile.AggressionLevel = 0.3f;
                     profile.Caution = 0.9f;
                     profile.PreferredMission = MissionBias.Quest;
+                    profile.ReactionSpeed = 0.5f;
                     break;
 
                 case PersonalityType.ColdBlooded:
@@ -80,6 +89,7 @@ namespace AIRefactored.AI
                     profile.SuppressionSensitivity = 0.1f;
                     profile.FlinchThreshold = 0.1f;
                     profile.PreferredMission = MissionBias.Quest;
+                    profile.ReactionSpeed = 0.9f;
                     break;
 
                 case PersonalityType.Defensive:
@@ -88,6 +98,7 @@ namespace AIRefactored.AI
                     profile.RetreatThreshold = 0.5f;
                     profile.Caution = 0.7f;
                     profile.PreferredMission = MissionBias.Quest;
+                    profile.ReactionSpeed = 0.55f;
                     break;
 
                 case PersonalityType.Dumb:
@@ -95,6 +106,7 @@ namespace AIRefactored.AI
                     profile.Accuracy = 0.3f;
                     profile.AggressionLevel = 0.2f;
                     profile.PreferredMission = MissionBias.Loot;
+                    profile.ReactionSpeed = 0.25f;
                     break;
 
                 case PersonalityType.Explorer:
@@ -102,35 +114,40 @@ namespace AIRefactored.AI
                     profile.RiskTolerance = 0.9f;
                     profile.Caution = 0.3f;
                     profile.PreferredMission = MissionBias.Quest;
+                    profile.ReactionSpeed = 0.7f;
                     break;
 
                 case PersonalityType.Fearful:
+                    profile.IsFearful = true;
                     profile.Accuracy = 0.4f;
                     profile.RetreatThreshold = 0.7f;
                     profile.Caution = 0.9f;
                     profile.AggressionLevel = 0.1f;
-                    profile.IsFearful = true;
                     profile.PreferredMission = MissionBias.Loot;
+                    profile.ReactionSpeed = 0.4f;
                     break;
 
                 case PersonalityType.Frenzied:
+                    profile.IsFrenzied = true;
                     profile.AggressionLevel = 1.0f;
                     profile.ChaosFactor = 1.0f;
-                    profile.IsFrenzied = true;
                     profile.AccuracyUnderFire = 0.2f;
                     profile.PreferredMission = MissionBias.Fight;
+                    profile.ReactionSpeed = 1.0f;
                     break;
 
                 case PersonalityType.Loner:
                     profile.Cohesion = 0.0f;
                     profile.CommunicationLevel = 0.1f;
                     profile.PreferredMission = MissionBias.Quest;
+                    profile.ReactionSpeed = 0.6f;
                     break;
 
                 case PersonalityType.Patient:
                     profile.Accuracy = 0.85f;
                     profile.Caution = 0.8f;
                     profile.PreferredMission = MissionBias.Quest;
+                    profile.ReactionSpeed = 0.5f;
                     break;
 
                 case PersonalityType.Reckless:
@@ -138,12 +155,14 @@ namespace AIRefactored.AI
                     profile.Accuracy = 0.4f;
                     profile.AggressionLevel = 1.0f;
                     profile.PreferredMission = MissionBias.Fight;
+                    profile.ReactionSpeed = 0.95f;
                     break;
 
                 case PersonalityType.RiskTaker:
                     profile.RiskTolerance = 0.9f;
                     profile.EngagementRange = 60f;
                     profile.PreferredMission = MissionBias.Fight;
+                    profile.ReactionSpeed = 0.8f;
                     break;
 
                 case PersonalityType.SilentHunter:
@@ -152,6 +171,7 @@ namespace AIRefactored.AI
                     profile.CommunicationLevel = 0.1f;
                     profile.FlinchThreshold = 0.2f;
                     profile.PreferredMission = MissionBias.Quest;
+                    profile.ReactionSpeed = 0.75f;
                     break;
 
                 case PersonalityType.Sniper:
@@ -159,6 +179,7 @@ namespace AIRefactored.AI
                     profile.Accuracy = 0.95f;
                     profile.FlinchThreshold = 0.2f;
                     profile.PreferredMission = MissionBias.Fight;
+                    profile.ReactionSpeed = 0.7f;
                     break;
 
                 case PersonalityType.Strategic:
@@ -166,6 +187,7 @@ namespace AIRefactored.AI
                     profile.AggressionLevel = 0.4f;
                     profile.Accuracy = 0.75f;
                     profile.PreferredMission = MissionBias.Quest;
+                    profile.ReactionSpeed = 0.7f;
                     break;
 
                 case PersonalityType.Stubborn:
@@ -173,6 +195,7 @@ namespace AIRefactored.AI
                     profile.RetreatThreshold = 0.0f;
                     profile.Cohesion = 0.2f;
                     profile.PreferredMission = MissionBias.Fight;
+                    profile.ReactionSpeed = 0.6f;
                     break;
 
                 case PersonalityType.Tactical:
@@ -180,17 +203,20 @@ namespace AIRefactored.AI
                     profile.RepositionPriority = 1.0f;
                     profile.Caution = 0.6f;
                     profile.PreferredMission = MissionBias.Fight;
+                    profile.ReactionSpeed = 0.7f;
                     break;
 
                 case PersonalityType.TeamPlayer:
+                    profile.IsTeamPlayer = true;
                     profile.Cohesion = 1.0f;
                     profile.CommunicationLevel = 1.0f;
-                    profile.IsTeamPlayer = true;
                     profile.PreferredMission = MissionBias.Quest;
+                    profile.ReactionSpeed = 0.7f;
                     break;
 
                 case PersonalityType.Unpredictable:
                     profile.ChaosFactor = 1.0f;
+                    profile.ReactionSpeed = 0.75f;
                     break;
 
                 case PersonalityType.Vengeful:
@@ -198,8 +224,15 @@ namespace AIRefactored.AI
                     profile.CommunicationLevel = 0.2f;
                     profile.RetreatThreshold = 0.1f;
                     profile.PreferredMission = MissionBias.Fight;
+                    profile.ReactionSpeed = 0.9f;
                     break;
             }
+
+            // === Common motion values applied uniformly ===
+            profile.MovementJitter = 0.2f;
+            profile.SideStepBias = 0.5f;
+            profile.LeanPeekFrequency = 0.5f;
+            profile.CornerCheckPauseTime = 0.35f;
 
             return profile;
         }

@@ -5,20 +5,16 @@ using AIRefactored.AI.Group;
 using AIRefactored.AI.Groups;
 using AIRefactored.AI.Helpers;
 using AIRefactored.AI.Hotspots;
+using AIRefactored.AI.Looting;
 using AIRefactored.Core;
 using EFT;
 using EFT.Interactive;
 using EFT.InventoryLogic;
 using System;
-using System.Collections.Generic;
 using UnityEngine;
 
 namespace AIRefactored.AI.Missions
 {
-    /// <summary>
-    /// Controls high-level mission behavior for bots: loot, fight, or quest.
-    /// Used by BotAsyncThinker to simulate long-term goals and behavior chains.
-    /// </summary>
     public class BotMissionSystem : MonoBehaviour
     {
         public enum MissionType { Loot, Fight, Quest }
@@ -27,6 +23,8 @@ namespace AIRefactored.AI.Missions
         private BotGroupSyncCoordinator? _group;
         private CombatStateMachine? _combat;
         private BotPersonalityProfile? _personality;
+        private BotLootScanner? _lootScanner;
+        private BotDeadBodyScanner? _deadBodyScanner;
 
         private Vector3 _currentObjective;
         private MissionType _missionType;
@@ -36,14 +34,12 @@ namespace AIRefactored.AI.Missions
         private const float REACHED_THRESHOLD = 6f;
         private const float SQUAD_COHESION_RANGE = 10f;
 
-        private bool _isLooting = false;
         private bool _readyToExtract = false;
         private bool _waitForGroup = false;
         private bool _forcedMission = false;
         private bool _lootComplete = false;
         private bool _fightComplete = false;
 
-        private readonly List<LootableContainer> _lootContainers = new();
         private readonly System.Random _rng = new();
 
         public void Init(BotOwner bot)
@@ -55,8 +51,8 @@ namespace AIRefactored.AI.Missions
             _group = _bot.GetPlayer?.GetComponent<BotGroupSyncCoordinator>();
             _combat = _bot.GetPlayer?.GetComponent<CombatStateMachine>();
             _personality = BotRegistry.Get(_bot.Profile.Id);
-
-            CacheLootZones();
+            _lootScanner = _bot.GetPlayer?.GetComponent<BotLootScanner>();
+            _deadBodyScanner = _bot.GetPlayer?.GetComponent<BotDeadBodyScanner>();
 
             if (!_forcedMission)
                 PickMission();
@@ -97,7 +93,7 @@ namespace AIRefactored.AI.Missions
             if (_personality == null)
             {
                 _missionType = MissionType.Loot;
-                _currentObjective = GetBestLootZone();
+                _currentObjective = GetStaggeredMissionObjective(GetLootObjective());
                 return;
             }
 
@@ -112,7 +108,8 @@ namespace AIRefactored.AI.Missions
                 _ => RandomizeMissionType(isPmc)
             };
 
-            _currentObjective = GetInitialObjective(_missionType);
+            Vector3 rawObjective = GetInitialObjective(_missionType);
+            _currentObjective = GetStaggeredMissionObjective(rawObjective);
             BotMovementHelper.SmoothMoveTo(_bot, _currentObjective);
 
             BotTeamLogic.BroadcastMissionType(_bot, _missionType);
@@ -130,11 +127,43 @@ namespace AIRefactored.AI.Missions
         {
             return mission switch
             {
-                MissionType.Loot => GetBestLootZone(),
+                MissionType.Loot => GetLootObjective(),
                 MissionType.Fight => GetRandomZone(MissionType.Fight),
                 MissionType.Quest => HotspotSystem.GetRandomHotspot(_bot!),
                 _ => _bot?.Position ?? Vector3.zero
             };
+        }
+
+        private Vector3 GetStaggeredMissionObjective(Vector3 target)
+        {
+            if (_group == null || _bot == null)
+                return target;
+
+            int index = 0;
+            for (int i = 0; i < _group.GetTeammates().Count; i++)
+            {
+                var mate = _group.GetTeammates()[i];
+                if (mate == _bot)
+                {
+                    index = i;
+                    break;
+                }
+            }
+
+            return GetStaggeredPosition(target, index);
+        }
+
+        private Vector3 GetStaggeredPosition(Vector3 target, int index)
+        {
+            float angle = index * 137f;
+            float radius = 1.5f + (index % 3) * 0.75f;
+            Vector3 offset = new Vector3(
+                Mathf.Cos(angle * Mathf.Deg2Rad),
+                0f,
+                Mathf.Sin(angle * Mathf.Deg2Rad)
+            ) * radius;
+
+            return target + offset;
         }
 
         private void EvaluateMission()
@@ -150,13 +179,13 @@ namespace AIRefactored.AI.Missions
                         _readyToExtract = true;
                         Say(EPhraseTrigger.OnFight);
                         _missionType = MissionType.Fight;
-                        _currentObjective = GetRandomZone(MissionType.Fight);
+                        _currentObjective = GetStaggeredMissionObjective(GetRandomZone(MissionType.Fight));
                         BotMovementHelper.SmoothMoveTo(_bot, _currentObjective);
                         BotTeamLogic.BroadcastMissionType(_bot, _missionType);
                     }
                     else if (!_lootComplete)
                     {
-                        _currentObjective = GetBestLootZone();
+                        _currentObjective = GetStaggeredMissionObjective(GetLootObjective());
                         BotMovementHelper.SmoothMoveTo(_bot, _currentObjective);
                     }
                     break;
@@ -166,7 +195,7 @@ namespace AIRefactored.AI.Missions
                     {
                         _fightComplete = true;
                         _missionType = MissionType.Quest;
-                        _currentObjective = HotspotSystem.GetRandomHotspot(_bot);
+                        _currentObjective = GetStaggeredMissionObjective(HotspotSystem.GetRandomHotspot(_bot));
                         BotMovementHelper.SmoothMoveTo(_bot, _currentObjective);
                         BotTeamLogic.BroadcastMissionType(_bot, _missionType);
                     }
@@ -182,18 +211,12 @@ namespace AIRefactored.AI.Missions
 
         private void OnObjectiveReached()
         {
-            if (_missionType == MissionType.Loot && !_isLooting)
+            if (_missionType == MissionType.Loot && !_lootComplete)
             {
-                _isLooting = true;
+                _lootScanner?.TryLootNearby();
+                _deadBodyScanner?.TryLootNearby();
+                _lootComplete = true;
                 Say(EPhraseTrigger.OnLoot);
-                _bot?.Mover?.Stop();
-
-                UnityMainThreadDispatcher.Enqueue(() =>
-                {
-                    if (_bot != null)
-                        BotMovementHelper.SmoothMoveTo(_bot, _currentObjective);
-                });
-
                 return;
             }
 
@@ -205,47 +228,9 @@ namespace AIRefactored.AI.Missions
             }
         }
 
-        private void CacheLootZones()
+        private Vector3 GetLootObjective()
         {
-            _lootContainers.Clear();
-            foreach (var container in GameObject.FindObjectsOfType<LootableContainer>())
-            {
-                if (container != null)
-                    _lootContainers.Add(container);
-            }
-        }
-
-        private Vector3 GetBestLootZone()
-        {
-            float highestValue = 0f;
-            Vector3 bestPos = _bot?.Position ?? Vector3.zero;
-
-            foreach (var container in _lootContainers)
-            {
-                float value = EstimateContainerValue(container);
-                if (value > highestValue)
-                {
-                    highestValue = value;
-                    bestPos = container.transform.position;
-                }
-            }
-
-            return bestPos;
-        }
-
-        private float EstimateContainerValue(LootableContainer container)
-        {
-            if (container?.ItemOwner?.RootItem == null)
-                return 0f;
-
-            float total = 0f;
-            foreach (var item in container.ItemOwner.RootItem.GetAllItems())
-            {
-                if (item?.Template != null && item.Template.CreditsPrice > 0)
-                    total += item.Template.CreditsPrice;
-            }
-
-            return total;
+            return _lootScanner?.GetHighestValueLootPoint() ?? _bot?.Position ?? Vector3.zero;
         }
 
         private Vector3 GetRandomZone(MissionType type)
@@ -339,7 +324,10 @@ namespace AIRefactored.AI.Missions
         {
             try
             {
-                _bot?.GetPlayer?.Say(phrase);
+                if (!FikaHeadlessDetector.IsHeadless)
+                {
+                    _bot?.GetPlayer?.Say(phrase);
+                }
             }
             catch (Exception ex)
             {

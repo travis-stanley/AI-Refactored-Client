@@ -38,6 +38,8 @@ namespace AIRefactored.AI.Core
 
         public BotOwnerPathfindingCache? PathCache { get; private set; }
 
+        public BotTilt? Tilt { get; private set; } // ✅ BotTilt now cached here
+
         #endregion
 
         #region Perception State
@@ -98,16 +100,14 @@ namespace AIRefactored.AI.Core
             HearingDamage = GetComponent<HearingDamageComponent>();
 
             PathCache = new BotOwnerPathfindingCache();
+
+            Tilt = new BotTilt(Bot); 
         }
 
         #endregion
 
         #region Reset Support
 
-        /// <summary>
-        /// Resets all transient state, references, and timers in this cache.
-        /// Use when reinitializing bots between sessions or waves.
-        /// </summary>
         public void Reset()
         {
             IsBlinded = false;

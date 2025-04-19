@@ -17,6 +17,9 @@ using AIRefactored.AI.Components;
 
 namespace AIRefactored.AI.Threads
 {
+    /// <summary>
+    /// Central AI coordinator per bot. Updates all AIRefactored logic systems from a single ticking MonoBehaviour.
+    /// </summary>
     public class BotBrain : MonoBehaviour
     {
         private BotOwner? _bot;
@@ -56,6 +59,9 @@ namespace AIRefactored.AI.Threads
             _perception?.Tick(delta);
             _movement?.Tick(delta);
             _groupBehavior?.Tick(delta);
+
+            // === Lean reset logic
+            _cache?.Tilt?.ManualUpdate();
 
             if (now >= _nextTick)
             {

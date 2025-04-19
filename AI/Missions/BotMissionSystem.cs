@@ -14,19 +14,9 @@ using UnityEngine;
 
 namespace AIRefactored.AI.Missions
 {
-    /// <summary>
-    /// Controls high-level mission behavior for bots: loot, fight, or quest.
-    /// Used by BotAsyncThinker to simulate long-term goals and behavior chains.
-    /// </summary>
     public class BotMissionSystem : MonoBehaviour
     {
-        #region Enums
-
         public enum MissionType { Loot, Fight, Quest }
-
-        #endregion
-
-        #region Fields
 
         private BotOwner? _bot;
         private BotGroupSyncCoordinator? _group;
@@ -51,10 +41,6 @@ namespace AIRefactored.AI.Missions
         private readonly List<LootableContainer> _lootContainers = new List<LootableContainer>();
         private readonly System.Random _rng = new System.Random();
 
-        #endregion
-
-        #region Initialization
-
         public void Init(BotOwner bot)
         {
             _bot = bot ?? throw new ArgumentNullException(nameof(bot));
@@ -76,10 +62,6 @@ namespace AIRefactored.AI.Missions
             _missionType = mission;
             _forcedMission = true;
         }
-
-        #endregion
-
-        #region Main Tick
 
         public void ManualTick(float time)
         {
@@ -104,16 +86,13 @@ namespace AIRefactored.AI.Missions
             }
         }
 
-        #endregion
-
-        #region Mission Evaluation
-
         private void PickMission()
         {
             if (_personality == null)
             {
                 _missionType = MissionType.Loot;
                 _currentObjective = GetBestLootZone();
+                Debug.Log($"[AIRefactored-Mission] {BotName()} defaulted to Loot.");
                 return;
             }
 
@@ -129,6 +108,7 @@ namespace AIRefactored.AI.Missions
             };
 
             _currentObjective = GetInitialObjective(_missionType);
+            Debug.Log($"[AIRefactored-Mission] {BotName()} assigned {_missionType} mission → moving to {_currentObjective}");
             BotMovementHelper.SmoothMoveTo(_bot, _currentObjective);
         }
 
@@ -146,9 +126,22 @@ namespace AIRefactored.AI.Missions
             {
                 MissionType.Loot => GetBestLootZone(),
                 MissionType.Fight => GetRandomZone(MissionType.Fight),
-                MissionType.Quest => HotspotSystem.GetRandomHotspot(_bot!),
+                MissionType.Quest => GetQuestHotspot(),
                 _ => _bot?.Position ?? Vector3.zero
             };
+        }
+
+        private Vector3 GetQuestHotspot()
+        {
+            var hotspot = HotspotSystem.GetRandomHotspot(_bot!);
+            if (hotspot != Vector3.zero)
+            {
+                Debug.Log($"[AIRefactored-Mission] {BotName()} targeting hotspot: {hotspot}");
+                return hotspot;
+            }
+
+            Debug.LogWarning($"[AIRefactored-Mission] {BotName()} failed to find hotspot. Using fallback.");
+            return GetRandomZone(MissionType.Fight);
         }
 
         private void EvaluateMission()
@@ -165,11 +158,13 @@ namespace AIRefactored.AI.Missions
                         Say(EPhraseTrigger.OnFight);
                         _missionType = MissionType.Fight;
                         _currentObjective = GetRandomZone(MissionType.Fight);
+                        Debug.Log($"[AIRefactored-Mission] {BotName()} backpack full → switching to Fight at {_currentObjective}");
                         BotMovementHelper.SmoothMoveTo(_bot, _currentObjective);
                     }
                     else if (!_lootComplete)
                     {
                         _currentObjective = GetBestLootZone();
+                        Debug.Log($"[AIRefactored-Mission] {BotName()} continuing to loot at {_currentObjective}");
                         BotMovementHelper.SmoothMoveTo(_bot, _currentObjective);
                     }
                     break;
@@ -179,7 +174,8 @@ namespace AIRefactored.AI.Missions
                     {
                         _fightComplete = true;
                         _missionType = MissionType.Quest;
-                        _currentObjective = HotspotSystem.GetRandomHotspot(_bot);
+                        _currentObjective = GetQuestHotspot();
+                        Debug.Log($"[AIRefactored-Mission] {BotName()} finished fighting → questing at {_currentObjective}");
                         BotMovementHelper.SmoothMoveTo(_bot, _currentObjective);
                     }
                     break;
@@ -217,9 +213,41 @@ namespace AIRefactored.AI.Missions
             }
         }
 
-        #endregion
+        private void TryExtract()
+        {
+            if (_bot?.GetPlayer?.IsYourPlayer == true)
+                return;
 
-        #region Mission Goals
+            ExfiltrationPoint? closest = null;
+            float minDist = float.MaxValue;
+
+            foreach (var point in GameObject.FindObjectsOfType<ExfiltrationPoint>())
+            {
+                if (point == null || point.Status != EExfiltrationStatus.RegularMode)
+                    continue;
+
+                float dist = Vector3.Distance(_bot.Position, point.transform.position);
+                if (dist < minDist)
+                {
+                    closest = point;
+                    minDist = dist;
+                }
+            }
+
+            if (closest != null)
+            {
+                Debug.Log($"[AIRefactored-Mission] {BotName()} found extract → moving to {closest.name}");
+                BotMovementHelper.SmoothMoveTo(_bot, closest.transform.position);
+                Say(EPhraseTrigger.ExitLocated);
+            }
+            else
+            {
+                Debug.LogWarning($"[AIRefactored-Mission] {BotName()} could not find extract. Re-assigning quest target.");
+                Say(EPhraseTrigger.MumblePhrase);
+                _currentObjective = GetQuestHotspot();
+                BotMovementHelper.SmoothMoveTo(_bot, _currentObjective);
+            }
+        }
 
         private void CacheLootZones()
         {
@@ -280,42 +308,6 @@ namespace AIRefactored.AI.Missions
             return _bot?.Position ?? Vector3.zero;
         }
 
-        private void TryExtract()
-        {
-            if (_bot?.GetPlayer?.IsYourPlayer == true)
-                return;
-
-            ExfiltrationPoint? closest = null;
-            float minDist = float.MaxValue;
-
-            foreach (var point in GameObject.FindObjectsOfType<ExfiltrationPoint>())
-            {
-                if (point == null || point.Status != EExfiltrationStatus.RegularMode)
-                    continue;
-
-                float dist = Vector3.Distance(_bot.Position, point.transform.position);
-                if (dist < minDist)
-                {
-                    closest = point;
-                    minDist = dist;
-                }
-            }
-
-            if (closest != null)
-            {
-                BotMovementHelper.SmoothMoveTo(_bot, closest.transform.position);
-                Say(EPhraseTrigger.ExitLocated);
-            }
-            else
-            {
-                Say(EPhraseTrigger.MumblePhrase);
-            }
-        }
-
-        #endregion
-
-        #region Group Check
-
         private bool IsGroupAligned()
         {
             if (_group == null)
@@ -357,10 +349,6 @@ namespace AIRefactored.AI.Missions
             return false;
         }
 
-        #endregion
-
-        #region VO
-
         private void Say(EPhraseTrigger phrase)
         {
             try
@@ -373,6 +361,9 @@ namespace AIRefactored.AI.Missions
             }
         }
 
-        #endregion
+        private string BotName()
+        {
+            return _bot?.Profile?.Info?.Nickname ?? "UnknownBot";
+        }
     }
 }

@@ -16,6 +16,10 @@
 # Mono auto generated files
 mono_crash.*
 
+# Ignore local dependencies folder
+/dependencies/
+
+
 # Build results
 [Dd]ebug/
 [Dd]ebugPublic/

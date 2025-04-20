@@ -18,7 +18,10 @@ namespace AIRefactored.AI.Optimization
 
         private const float BackWallCheckDistance = 3f;
         private const float ExposureDistance = 5f;
-        private const float FlankRayDistance = 2f;
+        private const float FlankRayDistance = 2.5f;
+
+        private const float MaxEffectiveRange = 25f;
+        private const float IdealFallbackDistance = 8f;
 
         #endregion
 
@@ -45,23 +48,34 @@ namespace AIRefactored.AI.Optimization
             }
 
             // 2. Penalty if point is exposed toward threat
-            if (!Physics.Raycast(eyeLevel, threatDirection, ExposureDistance))
+            if (!Physics.Raycast(eyeLevel, threatDirection.normalized, ExposureDistance))
                 score -= 2f;
 
             // 3. Bonus if flank sides have geometry protection
-            Vector3 leftCheck = Quaternion.Euler(0f, -45f, 0f) * threatDirection;
-            Vector3 rightCheck = Quaternion.Euler(0f, 45f, 0f) * threatDirection;
+            Vector3[] flankDirections =
+            {
+                Quaternion.Euler(0f, -60f, 0f) * threatDirection,
+                Quaternion.Euler(0f, -30f, 0f) * threatDirection,
+                Quaternion.Euler(0f, 30f, 0f) * threatDirection,
+                Quaternion.Euler(0f, 60f, 0f) * threatDirection
+            };
 
-            if (Physics.Raycast(eyeLevel, leftCheck, out RaycastHit lHit, FlankRayDistance) && IsSolid(lHit.collider))
-                score += 1f;
-
-            if (Physics.Raycast(eyeLevel, rightCheck, out RaycastHit rHit, FlankRayDistance) && IsSolid(rHit.collider))
-                score += 1f;
+            foreach (var flank in flankDirections)
+            {
+                if (Physics.Raycast(eyeLevel, flank.normalized, out RaycastHit flankHit, FlankRayDistance))
+                {
+                    if (IsSolid(flankHit.collider))
+                        score += 0.5f;
+                }
+            }
 
             // 4. Distance penalty to reduce risky or excessive fallback
             float dist = Vector3.Distance(bot.Position, candidate);
-            if (dist > 12f) score -= 1.5f;
-            if (dist > 18f) score -= 2.0f;
+            if (dist > IdealFallbackDistance)
+            {
+                float penalty = Mathf.Clamp((dist - IdealFallbackDistance) * 0.2f, 0f, 3.0f);
+                score -= penalty;
+            }
 
             return Mathf.Clamp(score, MinScore, MaxScore);
         }
@@ -71,7 +85,7 @@ namespace AIRefactored.AI.Optimization
         #region Helper Methods
 
         /// <summary>
-        /// Returns true if the surface is solid and not transparent (e.g., not glass or foliage).
+        /// Returns true if the surface is solid and not transparent (e.g., not glass, foliage, soft banners).
         /// </summary>
         private static bool IsSolid(Collider collider)
         {
@@ -81,7 +95,8 @@ namespace AIRefactored.AI.Optimization
             string tag = collider.tag.ToLowerInvariant();
             string material = collider.sharedMaterial != null ? collider.sharedMaterial.name.ToLowerInvariant() : "";
 
-            return !(tag.Contains("glass") || tag.Contains("foliage") || material.Contains("leaf") || material.Contains("bush"));
+            return !(tag.Contains("glass") || tag.Contains("foliage") || tag.Contains("banner") ||
+                     material.Contains("leaf") || material.Contains("bush") || material.Contains("net") || material.Contains("fabric"));
         }
 
         #endregion

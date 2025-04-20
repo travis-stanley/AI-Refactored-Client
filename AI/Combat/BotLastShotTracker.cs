@@ -22,41 +22,49 @@ namespace AIRefactored.AI.Combat
         /// <summary>
         /// Call when the bot fires at a target.
         /// </summary>
-        public void RegisterShot(IPlayer enemy)
+        public void RegisterShot(IPlayer? enemy)
         {
-            if (enemy?.ProfileId != null)
-            {
-                _lastTargetProfileId = enemy.ProfileId;
-                _lastShotTime = Time.time;
-            }
+            if (enemy == null || string.IsNullOrEmpty(enemy.ProfileId))
+                return;
+
+            _lastTargetProfileId = enemy.ProfileId;
+            _lastShotTime = Time.time;
         }
 
         /// <summary>
         /// Call when the bot is hit by an attacker.
         /// </summary>
-        public void RegisterHitBy(IPlayer attacker)
+        public void RegisterHitBy(IPlayer? attacker)
         {
-            if (attacker?.ProfileId != null)
-            {
-                _lastHitByProfileId = attacker.ProfileId;
-                _lastHitTime = Time.time;
-            }
+            if (attacker == null || string.IsNullOrEmpty(attacker.ProfileId))
+                return;
+
+            _lastHitByProfileId = attacker.ProfileId;
+            _lastHitTime = Time.time;
         }
 
         /// <summary>
         /// Returns true if the bot was recently hit by the given profile.
         /// </summary>
-        public bool WasRecentlyShotBy(string profileId)
+        public bool WasRecentlyShotBy(string profileId, float now = -1f)
         {
-            return _lastHitByProfileId == profileId && (Time.time - _lastHitTime) <= MemoryDuration;
+            if (string.IsNullOrEmpty(profileId) || _lastHitByProfileId != profileId)
+                return false;
+
+            if (now < 0f) now = Time.time;
+            return (now - _lastHitTime) <= MemoryDuration;
         }
 
         /// <summary>
         /// Returns true if the bot recently shot at the given profile.
         /// </summary>
-        public bool DidRecentlyShoot(string profileId)
+        public bool DidRecentlyShoot(string profileId, float now = -1f)
         {
-            return _lastTargetProfileId == profileId && (Time.time - _lastShotTime) <= MemoryDuration;
+            if (string.IsNullOrEmpty(profileId) || _lastTargetProfileId != profileId)
+                return false;
+
+            if (now < 0f) now = Time.time;
+            return (now - _lastShotTime) <= MemoryDuration;
         }
 
         /// <summary>
@@ -66,6 +74,8 @@ namespace AIRefactored.AI.Combat
         {
             _lastTargetProfileId = null;
             _lastHitByProfileId = null;
+            _lastShotTime = 0f;
+            _lastHitTime = 0f;
         }
     }
 }

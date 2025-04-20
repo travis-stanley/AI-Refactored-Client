@@ -11,7 +11,7 @@ namespace AIRefactored.AI.Perception
     /// </summary>
     public class TrackedEnemyVisibility
     {
-        private readonly Transform _botOrigin;
+        private readonly Transform? _botOrigin;
 
         private const float VisibilityTimeout = 0.5f;
         private readonly Dictionary<string, BoneVisibilityInfo> _visibleBones = new(8);
@@ -38,16 +38,35 @@ namespace AIRefactored.AI.Perception
         /// <summary>
         /// Returns true if any tracked bone has been seen recently.
         /// </summary>
-        public bool CanSeeAny()
+        public bool CanSeeAny(float now = -1f)
         {
-            float now = Time.time;
-            foreach (var entry in _visibleBones.Values)
+            if (now < 0f)
+                now = Time.time;
+
+            List<string> toRemove = null!;
+            bool seen = false;
+
+            foreach (var kvp in _visibleBones)
             {
-                if (now - entry.LastSeenTime <= VisibilityTimeout)
-                    return true;
+                if (now - kvp.Value.LastSeenTime <= VisibilityTimeout)
+                {
+                    seen = true;
+                }
+                else
+                {
+                    if (toRemove == null)
+                        toRemove = new List<string>();
+                    toRemove.Add(kvp.Key);
+                }
             }
 
-            return false;
+            if (toRemove != null)
+            {
+                for (int i = 0; i < toRemove.Count; i++)
+                    _visibleBones.Remove(toRemove[i]);
+            }
+
+            return seen;
         }
 
         /// <summary>
@@ -61,26 +80,50 @@ namespace AIRefactored.AI.Perception
             if (Time.time - info.LastSeenTime > VisibilityTimeout)
                 return false;
 
+            if (_botOrigin == null)
+                return false;
+
             Vector3 origin = _botOrigin.position + Vector3.up * 1.4f;
+            Vector3 target = info.WorldPosition;
+            float maxDist = Vector3.Distance(origin, target);
 
-            if (!Physics.Linecast(origin, info.WorldPosition, out var hit))
-                return true;
+            if (Physics.Linecast(origin, target, out var hit))
+            {
+                return hit.collider != null && hit.distance >= maxDist - 0.15f;
+            }
 
-            return hit.collider == null || hit.distance >= Vector3.Distance(origin, info.WorldPosition) - 0.1f;
+            return true;
         }
 
         /// <summary>
         /// Returns the total number of bones currently exposed.
         /// </summary>
-        public int ExposedBoneCount()
+        public int ExposedBoneCount(float now = -1f)
         {
-            int count = 0;
-            float now = Time.time;
+            if (now < 0f)
+                now = Time.time;
 
-            foreach (var entry in _visibleBones.Values)
+            int count = 0;
+            List<string> toRemove = null!;
+
+            foreach (var kvp in _visibleBones)
             {
-                if (now - entry.LastSeenTime <= VisibilityTimeout)
+                if (now - kvp.Value.LastSeenTime <= VisibilityTimeout)
+                {
                     count++;
+                }
+                else
+                {
+                    if (toRemove == null)
+                        toRemove = new List<string>();
+                    toRemove.Add(kvp.Key);
+                }
+            }
+
+            if (toRemove != null)
+            {
+                for (int i = 0; i < toRemove.Count; i++)
+                    _visibleBones.Remove(toRemove[i]);
             }
 
             return count;

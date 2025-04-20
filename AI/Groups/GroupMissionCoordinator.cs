@@ -2,10 +2,11 @@
 
 using AIRefactored.AI.Core;
 using AIRefactored.AI.Missions;
+using AIRefactored.Runtime;
+using BepInEx.Logging;
 using Comfort.Common;
 using EFT;
 using System.Collections.Generic;
-using UnityEngine;
 
 namespace AIRefactored.AI.Groups
 {
@@ -20,6 +21,8 @@ namespace AIRefactored.AI.Groups
         private static readonly Dictionary<string, BotMissionSystem.MissionType> _assignedMissions = new(32);
         private static readonly System.Random _rng = new();
         private static bool _debugLog = true;
+
+        private static readonly ManualLogSource _log = AIRefactoredController.Logger;
 
         #endregion
 
@@ -47,7 +50,7 @@ namespace AIRefactored.AI.Groups
             _assignedMissions[groupId] = mission;
 
             if (_debugLog)
-                Debug.Log($"[AIRefactored-Mission] Assigned group mission '{mission}' to group {groupId}");
+                _log.LogInfo($"[AIRefactored-Mission] Assigned group mission '{mission}' to group {groupId}");
 
             return mission;
         }
@@ -68,7 +71,7 @@ namespace AIRefactored.AI.Groups
             _assignedMissions[groupId] = mission;
 
             if (_debugLog)
-                Debug.Log($"[AIRefactored-Mission] [AutoRegister] Assigned group mission '{mission}' to group {groupId}");
+                _log.LogInfo($"[AIRefactored-Mission] [AutoRegister] Assigned group mission '{mission}' to group {groupId}");
         }
 
         /// <summary>
@@ -99,7 +102,7 @@ namespace AIRefactored.AI.Groups
             if (_debugLog)
             {
                 string name = bot.Profile?.Info?.Nickname ?? "unknown";
-                Debug.Log($"[AIRefactored-Mission] Solo bot {name} assigned mission {mission}");
+                _log.LogInfo($"[AIRefactored-Mission] Solo bot {name} assigned mission {mission}");
             }
 
             return mission;

@@ -1,6 +1,8 @@
 ﻿#nullable enable
 
 using AIRefactored.AI.Optimization;
+using AIRefactored.Runtime;
+using BepInEx.Logging;
 using EFT;
 using UnityEngine;
 
@@ -20,6 +22,8 @@ namespace AIRefactored.AI.Combat
         private const float CheckInterval = 1.0f;
         private const float PanicDurationThreshold = 4.0f;
         private const float SquadCasualtyThreshold = 0.4f;
+
+        private static readonly ManualLogSource _log = AIRefactoredController.Logger;
 
         public void Initialize(BotOwner bot)
         {
@@ -90,7 +94,7 @@ namespace AIRefactored.AI.Combat
             _hasEscalated = true;
 
             string name = _bot.Profile?.Info?.Nickname ?? "Unknown";
-            Debug.Log($"[AIRefactored-Escalation] 🔺 Bot {name} is escalating behavior due to threat conditions.");
+            _log.LogInfo($"[AIRefactored-Escalation] 🔺 Bot {name} is escalating behavior due to threat conditions.");
 
             // Re-apply base optimizations before boost
             AIOptimizationManager.Reset(_bot);
@@ -121,7 +125,7 @@ namespace AIRefactored.AI.Combat
             if (look != null)
                 look.MAX_VISION_GRASS_METERS = Mathf.Clamp(look.MAX_VISION_GRASS_METERS + 5f, 5f, 40f);
 
-            Debug.Log($"[AIRefactored-Tuning] ✅ Escalation tuning applied to {_bot.Profile?.Info?.Nickname ?? "Unknown"}.");
+            _log.LogInfo($"[AIRefactored-Tuning] ✅ Escalation tuning applied to {_bot.Profile?.Info?.Nickname ?? "Unknown"}.");
         }
 
         private bool IsValid()

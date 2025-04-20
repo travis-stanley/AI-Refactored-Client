@@ -54,7 +54,7 @@ namespace AIRefactored.AI.Groups
                 {
                     // Too close — stagger slightly apart
                     Vector3 direction = (_bot.Position - mate.Position).normalized;
-                    Vector3 target = _bot.Position + direction * 2.0f;
+                    Vector3 target = _bot.Position + direction * SpacingMin;
                     BotMovementHelper.SmoothMoveTo(_bot, target, false, MoveCohesion);
                     return;
                 }
@@ -63,7 +63,7 @@ namespace AIRefactored.AI.Groups
                 {
                     // Too far — regroup with the teammate if not in combat
                     Vector3 direction = (mate.Position - _bot.Position).normalized;
-                    Vector3 target = _bot.Position + direction * 4.0f;
+                    Vector3 target = _bot.Position + direction * SpacingMax;
                     BotMovementHelper.SmoothMoveTo(_bot, target, false, MoveCohesion);
                     return;
                 }

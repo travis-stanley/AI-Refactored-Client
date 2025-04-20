@@ -23,7 +23,6 @@ namespace AIRefactored.AI.Combat
         private bool _isSuppressed = false;
 
         private const float SuppressionDuration = 2.0f;
-        private const float RetreatDistance = 6.0f;
 
         #endregion
 
@@ -48,7 +47,9 @@ namespace AIRefactored.AI.Combat
                 return;
 
             if (now - _suppressionStartTime > SuppressionDuration)
+            {
                 _isSuppressed = false;
+            }
         }
 
         #endregion
@@ -66,35 +67,33 @@ namespace AIRefactored.AI.Combat
             _isSuppressed = true;
             _suppressionStartTime = Time.time;
 
-            Vector3 direction = from.HasValue
+            Vector3 threatDirection = from.HasValue
                 ? (_bot.Position - from.Value).normalized
                 : -_bot.LookDirection.normalized;
-
-            Vector3 fallback = _bot.Position + direction * RetreatDistance;
-            fallback += Random.insideUnitSphere * 0.75f;
-            fallback.y = _bot.Position.y;
 
             float cohesion = 1.0f;
             if (BotRegistry.Exists(_bot.ProfileId))
             {
                 var profile = BotRegistry.Get(_bot.ProfileId);
-                cohesion = Mathf.Lerp(0.6f, 1.2f, profile.Cohesion);
+                cohesion = Mathf.Clamp(profile.Cohesion, 0.5f, 1.5f);
             }
 
-            // Optionally use retreat planner for more realistic cover fallback
+            Vector3 fallback = _bot.Position + threatDirection * 6f;
+
             if (_cache?.PathCache != null)
             {
-                var path = BotCoverRetreatPlanner.GetCoverRetreatPath(_bot, direction, _cache.PathCache);
+                var path = BotCoverRetreatPlanner.GetCoverRetreatPath(_bot, threatDirection, _cache.PathCache);
                 if (path.Count > 0)
                     fallback = path[path.Count - 1];
             }
 
             _bot.Sprint(true);
             BotMovementHelper.SmoothMoveTo(_bot, fallback, false, cohesion);
-
             _bot.BotTalk?.TrySay(EPhraseTrigger.OnLostVisual);
 
+#if UNITY_EDITOR
             Debug.DrawLine(_bot.Position, fallback, Color.red, 1.25f);
+#endif
         }
 
         /// <summary>

@@ -14,25 +14,24 @@ namespace AIRefactored.AI.Helpers
         /// Checks if the specified player has fired recently.
         /// Uses the BotSoundRegistry hook if available.
         /// </summary>
-        public static bool DidFireRecently(Player player, float recentThreshold = 1.5f)
+        public static bool DidFireRecently(Player? player, float recentThreshold = 1.5f, float now = -1f)
         {
-            if (player == null || !player.IsAI || player.IsYourPlayer)
+            if (player == null || !player.IsAI || player.IsYourPlayer || string.IsNullOrEmpty(player.ProfileId))
                 return false;
 
-            // Use our registry tracking for firing events
-            return BotSoundRegistry.FiredRecently(player, recentThreshold);
+            return BotSoundRegistry.FiredRecently(player, recentThreshold, now);
         }
 
         /// <summary>
         /// Checks if the specified player has stepped recently.
         /// Uses the BotSoundRegistry hook if available.
         /// </summary>
-        public static bool DidStepRecently(Player player, float recentThreshold = 1.5f)
+        public static bool DidStepRecently(Player? player, float recentThreshold = 1.5f, float now = -1f)
         {
-            if (player == null || !player.IsAI || player.IsYourPlayer)
+            if (player == null || !player.IsAI || player.IsYourPlayer || string.IsNullOrEmpty(player.ProfileId))
                 return false;
 
-            return BotSoundRegistry.SteppedRecently(player, recentThreshold);
+            return BotSoundRegistry.SteppedRecently(player, recentThreshold, now);
         }
     }
 }

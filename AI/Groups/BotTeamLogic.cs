@@ -8,7 +8,7 @@ using EFT;
 using System.Collections.Generic;
 using UnityEngine;
 
-namespace AIRefactored.AI.Group
+namespace AIRefactored.AI.Groups
 {
     /// <summary>
     /// Coordinates team behavior for bots in the same squad, including enemy sharing and squad movement cohesion.

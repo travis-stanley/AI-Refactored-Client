@@ -1,5 +1,7 @@
 ﻿#nullable enable
 
+using AIRefactored.Runtime;
+using BepInEx.Logging;
 using Comfort.Common;
 using EFT;
 using System.Collections.Generic;
@@ -13,17 +15,31 @@ namespace AIRefactored.Core
     /// </summary>
     public static class GameWorldHandler
     {
+        #region Fields
+
         private static Vector3 _cachedPlayerPosition = Vector3.zero;
         private static float _lastUpdateTime = -1f;
         private const float CacheRefreshRate = 0.1f;
+        private static readonly bool _debug = false;
+
+        private static ManualLogSource Logger => AIRefactoredController.Logger;
 
         private static ClientGameWorld? CachedWorld =>
             Singleton<ClientGameWorld>.Instantiated ? Singleton<ClientGameWorld>.Instance : null;
 
+        #endregion
+
+        #region Public API
+
         public static ClientGameWorld? Get() => CachedWorld;
 
-        public static string GetCurrentMapName() =>
-            CachedWorld?.MainPlayer?.Location ?? "unknown";
+        public static string GetCurrentMapName()
+        {
+            var name = CachedWorld?.MainPlayer?.Location ?? "unknown";
+            if (_debug)
+                Logger.LogDebug($"[GameWorldHandler] Current map: {name}");
+            return name;
+        }
 
         public static bool TryGetMainPlayerPosition(out Vector3 position, float refreshRate = CacheRefreshRate)
         {
@@ -37,6 +53,9 @@ namespace AIRefactored.Core
             {
                 _cachedPlayerPosition = player.Transform.position;
                 _lastUpdateTime = Time.time;
+
+                if (_debug)
+                    Logger.LogDebug($"[GameWorldHandler] Cached main player position: {_cachedPlayerPosition}");
             }
 
             position = _cachedPlayerPosition;
@@ -91,5 +110,7 @@ namespace AIRefactored.Core
 
             return false;
         }
+
+        #endregion
     }
 }

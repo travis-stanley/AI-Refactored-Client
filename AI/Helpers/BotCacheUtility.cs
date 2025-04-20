@@ -32,7 +32,7 @@ namespace AIRefactored.AI.Helpers
 
         public static BotComponentCache? GetCache(BotOwner bot)
         {
-            return CacheRegistry.TryGetValue(bot, out var cache) ? cache : null;
+            return bot != null && CacheRegistry.TryGetValue(bot, out var cache) ? cache : null;
         }
 
         public static BotComponentCache? GetCache(Player player)

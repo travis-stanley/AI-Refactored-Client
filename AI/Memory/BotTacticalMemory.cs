@@ -21,9 +21,6 @@ namespace AIRefactored.AI.Memory
 
         private BotComponentCache? _cache;
 
-        /// <summary>
-        /// Injects BotComponentCache reference for personality and perception access.
-        /// </summary>
         public void Initialize(BotComponentCache cache)
         {
             _cache = cache;
@@ -35,16 +32,19 @@ namespace AIRefactored.AI.Memory
         public void RecordEnemyPosition(Vector3 position, string tag = "Generic")
         {
             float now = Time.time;
+            Vector3 gridPos = SnapToGrid(position);
+
             for (int i = 0; i < _enemyMemory.Count; i++)
             {
-                if ((position - _enemyMemory[i].Position).sqrMagnitude < PositionToleranceSqr)
+                if ((gridPos - _enemyMemory[i].Position).sqrMagnitude < PositionToleranceSqr)
                 {
-                    _enemyMemory[i] = new SeenEnemyRecord(position, now, tag);
+                    // Refresh existing memory
+                    _enemyMemory[i] = new SeenEnemyRecord(gridPos, now, tag);
                     return;
                 }
             }
 
-            _enemyMemory.Add(new SeenEnemyRecord(position, now, tag));
+            _enemyMemory.Add(new SeenEnemyRecord(gridPos, now, tag));
         }
 
         /// <summary>
@@ -55,8 +55,9 @@ namespace AIRefactored.AI.Memory
             float now = Time.time;
             SeenEnemyRecord? freshest = null;
 
-            foreach (var mem in _enemyMemory)
+            for (int i = 0; i < _enemyMemory.Count; i++)
             {
+                var mem = _enemyMemory[i];
                 if (now - mem.TimeSeen <= MaxMemoryTime)
                 {
                     if (freshest == null || mem.TimeSeen > freshest.Value.TimeSeen)
@@ -120,9 +121,6 @@ namespace AIRefactored.AI.Memory
             RecordEnemyPosition(position, tag);
         }
 
-        /// <summary>
-        /// Rounds position to a fixed spatial grid.
-        /// </summary>
         private static Vector3 SnapToGrid(Vector3 pos)
         {
             const float gridSize = 0.5f;

@@ -87,14 +87,11 @@ namespace AIRefactored.AI.Combat
 
         private void OnDamaged(EBodyPart part, float damage, DamageInfoStruct info)
         {
-            if (_isPanicking || !IsValid())
+            if (!IsValid() || _isPanicking || Time.time < _lastPanicExitTime + PanicCooldown)
                 return;
 
             var profile = BotRegistry.Get(_bot!.ProfileId);
             if (profile == null || profile.IsFrenzied || profile.IsStubborn || profile.AggressionLevel > 0.8f)
-                return;
-
-            if (Time.time < _lastPanicExitTime + PanicCooldown)
                 return;
 
             Vector3 threatDir = (_bot.Position - info.HitPoint).normalized;
@@ -145,10 +142,7 @@ namespace AIRefactored.AI.Combat
 
         public void TriggerPanic()
         {
-            if (_isPanicking || !IsValid())
-                return;
-
-            if (Time.time < _lastPanicExitTime + PanicCooldown)
+            if (!IsValid() || _isPanicking || Time.time < _lastPanicExitTime + PanicCooldown)
                 return;
 
             StartPanic(Time.time, -_bot!.LookDirection);
@@ -160,7 +154,8 @@ namespace AIRefactored.AI.Combat
 
         private void StartPanic(float now, Vector3 retreatDir)
         {
-            if (!IsValid()) return;
+            if (!IsValid())
+                return;
 
             _isPanicking = true;
             _panicStartTime = now;
@@ -176,6 +171,8 @@ namespace AIRefactored.AI.Combat
 
             if (path.Count >= 2)
                 BotMovementHelper.SmoothMoveTo(_bot, path[1], false, cohesion);
+            else
+                BotMovementHelper.SmoothMoveTo(_bot, fallback, false, cohesion);
 
             BotMemoryStore.AddDangerZone(GameWorldHandler.GetCurrentMapName(), _bot.Position, DangerTriggerType.Panic, 0.6f);
 

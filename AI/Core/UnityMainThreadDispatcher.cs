@@ -1,5 +1,7 @@
 ﻿#nullable enable
 
+using AIRefactored.Runtime;
+using BepInEx.Logging;
 using System;
 using System.Collections.Generic;
 using UnityEngine;
@@ -17,6 +19,7 @@ namespace AIRefactored.Core
 
         private static readonly Queue<Action> _queue = new Queue<Action>();
         private static UnityMainThreadDispatcher? _instance;
+        private static readonly ManualLogSource _log = AIRefactoredController.Logger;
 
         #endregion
 
@@ -53,7 +56,7 @@ namespace AIRefactored.Core
                     }
                     catch (Exception ex)
                     {
-                        Debug.LogWarning($"[UnityMainThreadDispatcher] ❌ Exception while executing action: {ex.Message}");
+                        _log.LogWarning($"[UnityMainThreadDispatcher] ❌ Exception while executing action: {ex.Message}");
                     }
                 }
             }

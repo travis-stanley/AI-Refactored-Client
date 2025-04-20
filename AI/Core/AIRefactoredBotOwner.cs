@@ -1,5 +1,7 @@
 ﻿#nullable enable
 
+using AIRefactored.Runtime;
+using BepInEx.Logging;
 using EFT;
 using UnityEngine;
 
@@ -40,6 +42,12 @@ namespace AIRefactored.AI.Core
 
         #endregion
 
+        #region Fields
+
+        private static readonly ManualLogSource _log = AIRefactoredController.Logger;
+
+        #endregion
+
         #region Unity Lifecycle
 
         /// <summary>
@@ -52,7 +60,7 @@ namespace AIRefactored.AI.Core
 
             if (Bot == null || Cache == null)
             {
-                Debug.LogWarning("[AIRefactored-Owner] ❌ Missing BotOwner or BotComponentCache.");
+                _log.LogWarning("[AIRefactored-Owner] ❌ Missing BotOwner or BotComponentCache.");
                 return;
             }
 
@@ -75,12 +83,13 @@ namespace AIRefactored.AI.Core
             {
                 PersonalityProfile = preset;
                 PersonalityName = type.ToString();
+                _log.LogInfo($"[AIRefactored-Owner] Personality {PersonalityName} assigned.");
             }
             else
             {
                 PersonalityProfile = BotPersonalityPresets.Presets[PersonalityType.Adaptive];
                 PersonalityName = "Adaptive";
-                Debug.LogWarning($"[AIRefactored-Owner] Unknown preset {type}, defaulting to Adaptive.");
+                _log.LogWarning($"[AIRefactored-Owner] Unknown preset {type}, defaulting to Adaptive.");
             }
         }
 
@@ -91,6 +100,7 @@ namespace AIRefactored.AI.Core
         {
             PersonalityProfile = profile;
             PersonalityName = name;
+            _log.LogInfo($"[AIRefactored-Owner] Custom personality {PersonalityName} assigned.");
         }
 
         /// <summary>
@@ -100,6 +110,7 @@ namespace AIRefactored.AI.Core
         {
             PersonalityProfile = new BotPersonalityProfile();
             PersonalityName = "Cleared";
+            _log.LogInfo("[AIRefactored-Owner] Personality cleared.");
         }
 
         /// <summary>
@@ -120,7 +131,14 @@ namespace AIRefactored.AI.Core
         public void SetZone(string zoneName)
         {
             if (!string.IsNullOrEmpty(zoneName))
+            {
                 AssignedZone = zoneName;
+                _log.LogInfo($"[AIRefactored-Owner] Bot assigned to zone: {zoneName}");
+            }
+            else
+            {
+                _log.LogWarning("[AIRefactored-Owner] Attempted to assign empty zone name.");
+            }
         }
 
         #endregion

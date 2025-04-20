@@ -19,50 +19,52 @@ namespace AIRefactored.AI.Helpers
         /// Notify system that this bot has fired a weapon.
         /// Should be called when OnFireEvent is triggered or weapon discharges.
         /// </summary>
-        public static void NotifyShot(Player player)
+        public static void NotifyShot(Player? player)
         {
-            if (player == null || player.IsYourPlayer)
+            if (player == null || player.IsYourPlayer || string.IsNullOrEmpty(player.ProfileId))
                 return;
 
-            string id = player.ProfileId;
-            if (!string.IsNullOrEmpty(id))
-                _shotTimestamps[id] = Time.time;
+            _shotTimestamps[player.ProfileId] = Time.time;
         }
 
         /// <summary>
         /// Notify system that this bot has made a step sound.
         /// Should be called when a footstep sound plays (e.g., from PlayStepSound or NPCFootstepSoundPlayer).
         /// </summary>
-        public static void NotifyStep(Player player)
+        public static void NotifyStep(Player? player)
         {
-            if (player == null || player.IsYourPlayer)
+            if (player == null || player.IsYourPlayer || string.IsNullOrEmpty(player.ProfileId))
                 return;
 
-            string id = player.ProfileId;
-            if (!string.IsNullOrEmpty(id))
-                _footstepTimestamps[id] = Time.time;
+            _footstepTimestamps[player.ProfileId] = Time.time;
         }
 
         /// <summary>
         /// Returns true if the bot fired recently (within N seconds).
         /// </summary>
-        public static bool FiredRecently(Player player, float withinSeconds = 1.5f)
+        public static bool FiredRecently(Player? player, float withinSeconds = 1.5f, float now = -1f)
         {
-            if (player == null) return false;
+            if (player == null || string.IsNullOrEmpty(player.ProfileId))
+                return false;
 
-            string id = player.ProfileId;
-            return _shotTimestamps.TryGetValue(id, out float time) && Time.time - time <= withinSeconds;
+            if (now < 0f)
+                now = Time.time;
+
+            return _shotTimestamps.TryGetValue(player.ProfileId, out float time) && now - time <= withinSeconds;
         }
 
         /// <summary>
         /// Returns true if the bot stepped recently (within N seconds).
         /// </summary>
-        public static bool SteppedRecently(Player player, float withinSeconds = 1.2f)
+        public static bool SteppedRecently(Player? player, float withinSeconds = 1.2f, float now = -1f)
         {
-            if (player == null) return false;
+            if (player == null || string.IsNullOrEmpty(player.ProfileId))
+                return false;
 
-            string id = player.ProfileId;
-            return _footstepTimestamps.TryGetValue(id, out float time) && Time.time - time <= withinSeconds;
+            if (now < 0f)
+                now = Time.time;
+
+            return _footstepTimestamps.TryGetValue(player.ProfileId, out float time) && now - time <= withinSeconds;
         }
 
         /// <summary>

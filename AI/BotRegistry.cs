@@ -1,7 +1,8 @@
 ﻿#nullable enable
 
+using AIRefactored.Runtime;
+using BepInEx.Logging;
 using System.Collections.Generic;
-using UnityEngine;
 
 namespace AIRefactored.AI
 {
@@ -16,6 +17,7 @@ namespace AIRefactored.AI
         private static readonly Dictionary<string, BotPersonalityProfile> _registry = new(128);
         private static readonly HashSet<string> _missingLogged = new(64);
         private static bool _debug = true;
+        private static ManualLogSource _log => AIRefactoredController.Logger;
 
         #endregion
 
@@ -31,7 +33,7 @@ namespace AIRefactored.AI
                 _registry.Add(profileId, profile);
 
                 if (_debug)
-                    Debug.Log($"[AIRefactored:BotRegistry] Registered personality for bot '{profileId}': {profile.Personality}");
+                    _log.LogInfo($"[BotRegistry] Registered personality for bot '{profileId}': {profile.Personality}");
             }
         }
 
@@ -45,7 +47,7 @@ namespace AIRefactored.AI
                 return profile;
 
             if (_debug && _missingLogged.Add(profileId))
-                Debug.LogWarning($"[AIRefactored:BotRegistry] Missing personality for bot '{profileId}'. Defaulting to {fallback}.");
+                _log.LogWarning($"[BotRegistry] Missing personality for bot '{profileId}'. Defaulting to {fallback}.");
 
             return BotPersonalityPresets.GenerateProfile(fallback);
         }
@@ -75,7 +77,7 @@ namespace AIRefactored.AI
             _missingLogged.Clear();
 
             if (_debug)
-                Debug.Log("[AIRefactored:BotRegistry] Cleared all registered profiles and warnings.");
+                _log.LogInfo("[BotRegistry] Cleared all registered profiles and warnings.");
         }
 
         /// <summary>
@@ -84,7 +86,7 @@ namespace AIRefactored.AI
         public static void EnableDebug(bool enable)
         {
             _debug = enable;
-            Debug.Log($"[AIRefactored:BotRegistry] Debug logging {(enable ? "enabled" : "disabled")}.");
+            _log.LogInfo($"[BotRegistry] Debug logging {(enable ? "enabled" : "disabled")}.");
         }
 
         #endregion

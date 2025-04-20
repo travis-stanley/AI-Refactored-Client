@@ -4,7 +4,6 @@ using AIRefactored.AI.Behavior;
 using AIRefactored.AI.Combat;
 using AIRefactored.AI.Components;
 using AIRefactored.AI.Core;
-using AIRefactored.AI.Group;
 using AIRefactored.AI.Groups;
 using AIRefactored.AI.Looting;
 using AIRefactored.AI.Missions;
@@ -54,7 +53,7 @@ namespace AIRefactored.AI.Threads
         private float _nextCombatTick;
         private float _nextLogicTick;
 
-        // Tick rates (local/headless)
+        // Tick rates
         private float PerceptionTickRate => FikaHeadlessDetector.IsHeadless ? 1f / 60f : 1f / 30f;
         private float CombatTickRate => FikaHeadlessDetector.IsHeadless ? 1f / 60f : 1f / 30f;
         private float LogicTickRate => FikaHeadlessDetector.IsHeadless ? 1f / 30f : 1f / 15f;
@@ -87,7 +86,7 @@ namespace AIRefactored.AI.Threads
                 _nextLogicTick = now + LogicTickRate;
             }
 
-            // Real-time components (not tick gated)
+            // Realtime systems
             float delta = Time.deltaTime;
             _movement?.Tick(delta);
             _groupBehavior?.Tick(delta);
@@ -110,7 +109,7 @@ namespace AIRefactored.AI.Threads
                 return;
             }
 
-            // === Pure C# logic systems ===
+            // === Pure logic systems ===
             (_combat = new CombatStateMachine()).Initialize(_cache);
             (_mission = new BotMissionSystem()).Initialize(_bot);
             (_behavior = new BotBehaviorEnhancer()).Initialize(_cache);
@@ -127,16 +126,16 @@ namespace AIRefactored.AI.Threads
             (_groupSync = new BotGroupSyncCoordinator()).Initialize(_bot);
             (_tactical = new BotTacticalDeviceController()).Initialize(_bot, _cache);
 
+            // === One-off components ===
             _hearingDamage = new HearingDamageComponent();
             _cornerScanner = new BotCornerScanner(bot, _cache);
             _poseController = new BotPoseController(bot, _cache);
             _tilt = _player?.GetComponent<BotTilt>() ?? new BotTilt(bot);
-
             _asyncProcessor = new BotAsyncProcessor();
             _asyncProcessor.Initialize(bot, _cache);
-
             _teamLogic = new BotTeamLogic(bot);
 
+            // === Register with scheduler (if headless) ===
             if (FikaHeadlessDetector.IsHeadless)
                 BotWorkScheduler.RegisterBot(this);
         }

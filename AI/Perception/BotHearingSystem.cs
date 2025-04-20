@@ -3,6 +3,8 @@
 using AIRefactored.AI.Core;
 using AIRefactored.AI.Helpers;
 using AIRefactored.AI.Memory;
+using AIRefactored.Runtime;
+using BepInEx.Logging;
 using EFT;
 using System.Collections.Generic;
 using UnityEngine;
@@ -18,6 +20,9 @@ namespace AIRefactored.AI.Perception
         private BotOwner? _bot;
         private BotComponentCache? _cache;
         private float _baseRange = 35f;
+
+        private static readonly ManualLogSource _log = AIRefactoredController.Logger;
+        private static readonly bool _debug = false;
 
         public void Initialize(BotComponentCache cache)
         {
@@ -53,6 +58,13 @@ namespace AIRefactored.AI.Perception
                     continue;
 
                 _cache?.RegisterHeardSound(player.Position);
+
+                if (_debug)
+                {
+                    string botName = BotName();
+                    string target = player.Profile?.Info?.Nickname ?? "unknown";
+                    _log.LogDebug($"[BotHearing] {botName} heard {target} at {dist:F1}m.");
+                }
             }
         }
 

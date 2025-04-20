@@ -55,9 +55,8 @@ namespace AIRefactored.AI.Helpers
             if (group == null || group.Count == 0)
                 return;
 
-            for (int i = 0; i < group.Count; i++)
+            foreach (var cache in group)
             {
-                var cache = group[i];
                 if (cache?.Bot == null || BotCacheUtility.IsHumanPlayer(cache.Bot))
                     continue;
 

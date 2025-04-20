@@ -2,6 +2,8 @@
 
 using AIRefactored.AI.Core;
 using AIRefactored.AI.Helpers;
+using AIRefactored.Runtime;
+using BepInEx.Logging;
 using UnityEngine;
 
 namespace AIRefactored.AI.Groups
@@ -15,6 +17,8 @@ namespace AIRefactored.AI.Groups
         private float _nextVoiceTime = 0f;
         private const float VoiceCooldown = 5f;
 
+        private static readonly ManualLogSource _log = AIRefactoredController.Logger;
+
         public BotGroupComms(BotComponentCache cache)
         {
             _cache = cache;
@@ -27,9 +31,7 @@ namespace AIRefactored.AI.Groups
 
             _nextVoiceTime = Time.time + VoiceCooldown;
 
-            Debug.Log($"[Comms] {_cache.Bot?.Profile.Info.Nickname}: {message}");
-
-            // You could eventually route this to VO system or subtitle layer here
+            _log.LogInfo($"[Comms] {_cache.Bot?.Profile.Info.Nickname}: {message}");
         }
 
         public void SayFragOut()

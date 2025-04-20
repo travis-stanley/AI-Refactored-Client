@@ -36,12 +36,9 @@ namespace AIRefactored.AI.Combat
             if (_med == null)
                 return;
 
-            _injurySystem.Update();
+            _injurySystem.Tick(time);
 
-            if (_isHealing)
-                return;
-
-            if (time < _nextHealCheck)
+            if (_isHealing || time < _nextHealCheck)
                 return;
 
             _nextHealCheck = time + HealCheckInterval;
@@ -51,37 +48,41 @@ namespace AIRefactored.AI.Combat
 
         private void TryHealOrBuff()
         {
-            if (_med == null || _cache.Bot == null || _cache.Panic?.IsPanicking == true)
+            if (_med == null || _cache.Bot == null || _cache.PanicHandler?.IsPanicking == true)
                 return;
 
+            var firstAid = _med.FirstAid;
+            var surgery = _med.SurgicalKit;
+            var stim = _med.Stimulators;
+
             // === Priority 1: First Aid ===
-            if (_med.FirstAid.ShallStartUse())
+            if (firstAid != null && firstAid.ShallStartUse())
             {
                 _isHealing = true;
-                _med.FirstAid.OnEndApply += OnHealComplete;
-                _med.FirstAid.TryApplyToCurrentPart();
+                firstAid.OnEndApply += OnHealComplete;
+                firstAid.TryApplyToCurrentPart();
                 _cache.Bot.BotTalk?.TrySay(EPhraseTrigger.StartHeal);
                 return;
             }
 
             // === Priority 2: Surgical Kit ===
-            if (_med.SurgicalKit.ShallStartUse())
+            if (surgery != null && surgery.ShallStartUse())
             {
                 _isHealing = true;
-                _med.SurgicalKit.ApplyToCurrentPart(() =>
+                surgery.ApplyToCurrentPart(() =>
                 {
                     _isHealing = false;
-                    _med.FirstAid.CheckParts(); // recheck follow-up meds
+                    firstAid?.CheckParts(); // Trigger follow-up first aid if needed
                 });
                 _cache.Bot.BotTalk?.TrySay(EPhraseTrigger.StartHeal);
                 return;
             }
 
             // === Priority 3: Stimulants (Painkillers, Buffs) ===
-            if (_med.Stimulators.HaveSmt && _med.Stimulators.CanUseNow())
+            if (stim != null && stim.HaveSmt && stim.CanUseNow())
             {
                 _isHealing = true;
-                _med.Stimulators.StartApplyToTarget(success =>
+                stim.StartApplyToTarget(success =>
                 {
                     _isHealing = false;
                 });
@@ -94,7 +95,7 @@ namespace AIRefactored.AI.Combat
             _isHealing = false;
             _injurySystem.Reset();
 
-            if (_med != null)
+            if (_med?.FirstAid != null)
             {
                 _med.FirstAid.OnEndApply -= OnHealComplete;
             }
@@ -104,6 +105,11 @@ namespace AIRefactored.AI.Combat
         {
             _isHealing = false;
             _injurySystem.Reset();
+
+            if (_med?.FirstAid != null)
+            {
+                _med.FirstAid.OnEndApply -= OnHealComplete;
+            }
         }
     }
 }

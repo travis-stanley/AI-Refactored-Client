@@ -2,6 +2,8 @@
 
 using AIRefactored.AI.Core;
 using AIRefactored.AI.Helpers;
+using AIRefactored.Runtime;
+using BepInEx.Logging;
 using EFT;
 using UnityEngine;
 
@@ -28,6 +30,9 @@ namespace AIRefactored.AI.Movement
         private bool _isStrafingRight = true;
         private float _strafeTimer = 0f;
         private float _nextLeanAllowed = 0f;
+
+        private static readonly ManualLogSource _log = AIRefactoredController.Logger;
+        private static readonly bool _debug = false;
 
         public void Initialize(BotComponentCache cache)
         {
@@ -215,7 +220,9 @@ namespace AIRefactored.AI.Movement
                 if (FlankPositionPlanner.TryFindFlankPosition(botPos, enemyPos, out Vector3 flankPoint))
                 {
                     BotMovementHelper.SmoothMoveTo(_bot, flankPoint, false, 1.0f);
-                    Debug.Log($"[AIRefactored-Movement] {_bot.Profile.Info.Nickname} flanking to {flankPoint}.");
+
+                    if (_debug)
+                        _log.LogDebug($"[AIRefactored-Movement] {_bot.Profile.Info.Nickname} flanking to {flankPoint}.");
                 }
             }
         }

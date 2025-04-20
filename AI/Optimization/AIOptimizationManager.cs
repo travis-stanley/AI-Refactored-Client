@@ -31,7 +31,11 @@ namespace AIRefactored.AI.Optimization
             if (bot == null)
                 return;
 
-            _optimizer.Optimize(bot);
+            // Ensure that the bot is valid and ready for optimization
+            if (bot.GetPlayer?.IsAI == true && !bot.IsDead)
+            {
+                _optimizer.Optimize(bot);
+            }
         }
 
         /// <summary>
@@ -44,7 +48,11 @@ namespace AIRefactored.AI.Optimization
             if (bot == null)
                 return;
 
-            _optimizer.ResetOptimization(bot);
+            // Ensure the bot is valid before resetting optimization
+            if (bot.GetPlayer?.IsAI == true && !bot.IsDead)
+            {
+                _optimizer.ResetOptimization(bot);
+            }
         }
 
         #endregion

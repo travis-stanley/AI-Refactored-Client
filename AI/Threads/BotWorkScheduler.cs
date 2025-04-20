@@ -1,6 +1,8 @@
 ﻿#nullable enable
 
 using AIRefactored.Core;
+using AIRefactored.Runtime;
+using BepInEx.Logging;
 using System;
 using System.Collections.Concurrent;
 using System.Collections.Generic;
@@ -26,6 +28,8 @@ namespace AIRefactored.AI.Threads
 
         private static bool _headlessInitialized;
 
+        private static readonly ManualLogSource _log = AIRefactoredController.Logger;
+
         // === Headless Tick Rates ===
         private const float TickLogicInterval = 1f / 30f;     // 30Hz
         private const float TickCombatInterval = 1f / 60f;    // 60Hz
@@ -42,7 +46,7 @@ namespace AIRefactored.AI.Threads
 
             _headlessInitialized = true;
             StartWorkerThreads();
-            Debug.Log("[AIRefactored-Scheduler] 💠 BotWorkScheduler started in Headless Mode.");
+            _log.LogInfo("[AIRefactored-Scheduler] 💠 BotWorkScheduler started in Headless Mode.");
         }
 
         private void Update()
@@ -55,7 +59,7 @@ namespace AIRefactored.AI.Threads
                 }
                 catch (Exception ex)
                 {
-                    Debug.LogWarning($"[AIRefactored-Scheduler] ❌ Exception in main thread callback: {ex.Message}");
+                    _log.LogWarning($"[AIRefactored-Scheduler] ❌ Exception in main thread callback: {ex.Message}");
                 }
             }
         }
@@ -110,7 +114,7 @@ namespace AIRefactored.AI.Threads
                 }
                 catch (Exception ex)
                 {
-                    Debug.LogWarning($"[BotWorkScheduler] ⚠️ Error in background tick: {ex.Message}");
+                    _log.LogWarning($"[BotWorkScheduler] ⚠️ Error in background tick: {ex.Message}");
                 }
 
                 if (now - _lastPerceptionTick >= TickPerceptionInterval)

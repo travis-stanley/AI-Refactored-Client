@@ -19,7 +19,7 @@ namespace AIRefactored
         /// <summary>
         /// Static reference to the plugin's logger.
         /// </summary>
-        private static ManualLogSource? _logger;
+        private static ManualLogSource? _log;
 
         #endregion
 
@@ -31,23 +31,23 @@ namespace AIRefactored
         /// </summary>
         private void Awake()
         {
-            _logger = Logger;
-            _logger.LogInfo("[AIRefactored] 🔧 Initializing AI-Refactored mod...");
+            _log = Logger;
+            _log.LogInfo("[AIRefactored] 🔧 Initializing AI-Refactored mod...");
 
             if (FikaHeadlessDetector.IsHeadless)
-                _logger.LogInfo("[AIRefactored] 🧠 Running in FIKA Headless Host mode.");
+                _log.LogInfo("[AIRefactored] 🧠 Running in FIKA Headless Host mode.");
             else
-                _logger.LogInfo("[AIRefactored] 🧠 Running in Client/Interactive mode.");
+                _log.LogInfo("[AIRefactored] 🧠 Running in Client/Interactive mode.");
 
             // === Core Boot ===
-            AIRefactoredController.Initialize(_logger);
+            AIRefactoredController.Initialize(_log);
 
             // === Bot Initialization ===
             var bootstrap = new GameObject("AIRefactored.BotInitializer");
             bootstrap.AddComponent<BotBrainBootstrapper>();
             DontDestroyOnLoad(bootstrap);
 
-            _logger.LogInfo("[AIRefactored] ✅ Initialization complete. Systems are online.");
+            _log.LogInfo("[AIRefactored] ✅ Initialization complete. Systems are online.");
         }
 
         #endregion
@@ -58,7 +58,7 @@ namespace AIRefactored
         /// Provides global access to the plugin's logger instance.
         /// </summary>
         public static ManualLogSource LoggerInstance =>
-            _logger ?? throw new System.NullReferenceException("[AIRefactored] LoggerInstance was accessed before plugin Awake().");
+            _log ?? throw new System.NullReferenceException("[AIRefactored] LoggerInstance was accessed before plugin Awake().");
 
         #endregion
     }

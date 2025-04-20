@@ -2,6 +2,8 @@
 
 using AIRefactored.AI.Core;
 using AIRefactored.Core;
+using AIRefactored.Runtime;
+using BepInEx.Logging;
 using EFT;
 using EFT.Interactive;
 using EFT.InventoryLogic;
@@ -22,6 +24,9 @@ namespace AIRefactored.AI.Looting
         private BotOwner? _bot;
         private BotComponentCache? _cache;
         private float _nextScanTime;
+
+        private static readonly ManualLogSource _log = AIRefactoredController.Logger;
+        private static readonly bool _debug = false;
 
         public void Initialize(BotComponentCache cache)
         {
@@ -45,6 +50,9 @@ namespace AIRefactored.AI.Looting
 
             if (TryFindDeadBody(out var corpse))
             {
+                if (_debug)
+                    _log.LogDebug($"[DeadBodyScanner] Looting body of {corpse.Profile?.Info?.Nickname}");
+
                 TryLootCorpse(corpse);
                 _nextScanTime = time + Cooldown;
             }
@@ -57,6 +65,9 @@ namespace AIRefactored.AI.Looting
 
             if (TryFindDeadBody(out var corpse))
             {
+                if (_debug)
+                    _log.LogDebug($"[DeadBodyScanner] (Manual) Looting body of {corpse.Profile?.Info?.Nickname}");
+
                 TryLootCorpse(corpse);
             }
         }
@@ -101,6 +112,9 @@ namespace AIRefactored.AI.Looting
                 {
                     if (hit.collider?.transform.root == p.Transform.Original.root)
                     {
+                        if (_debug)
+                            _log.LogDebug($"[DeadBodyScanner] Found lootable corpse: {p.Profile?.Info?.Nickname}");
+
                         corpse = p;
                         return true;
                     }
@@ -119,6 +133,10 @@ namespace AIRefactored.AI.Looting
             if (lootable != null && lootable.enabled)
             {
                 lootable.Interact(new InteractionResult(EInteractionType.Open));
+
+                if (_debug)
+                    _log.LogDebug($"[DeadBodyScanner] Interacted with LootableContainer on {deadPlayer.Profile?.Info?.Nickname}");
+
                 return;
             }
 
@@ -147,10 +165,16 @@ namespace AIRefactored.AI.Looting
                 var move = InteractionsHandlerClass.Move(item, dest, inv, true);
                 if (move.Succeeded)
                 {
+                    if (_debug)
+                        _log.LogDebug($"[DeadBodyScanner] Picked up item {item.Name.Localized()} from {slot}");
+
                     inv.TryRunNetworkTransaction(move, null);
                     return;
                 }
             }
+
+            if (_debug)
+                _log.LogDebug($"[DeadBodyScanner] No items successfully looted from {deadPlayer.Profile?.Info?.Nickname}");
         }
     }
 }

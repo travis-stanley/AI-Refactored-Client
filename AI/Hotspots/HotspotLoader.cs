@@ -1,5 +1,7 @@
 ﻿#nullable enable
 
+using AIRefactored.Runtime;
+using BepInEx.Logging;
 using Comfort.Common;
 using EFT;
 using Newtonsoft.Json;
@@ -17,11 +19,16 @@ namespace AIRefactored.AI.Hotspots
         private static bool _loaded = false;
         private static bool _debugLog = false;
 
+        private static readonly ManualLogSource _log = AIRefactoredController.Logger;
+
         public static void EnableDebugLogs(bool enabled)
         {
             _debugLog = enabled;
         }
 
+        /// <summary>
+        /// Loads all hotspots from the file system into the cache.
+        /// </summary>
         public static void LoadAll()
         {
             if (_loaded)
@@ -30,7 +37,7 @@ namespace AIRefactored.AI.Hotspots
             string basePath = ResolveHotspotPath();
             if (!Directory.Exists(basePath))
             {
-                Debug.LogWarning($"[AIRefactored] Hotspot folder not found at: {basePath}");
+                _log.LogWarning($"[AIRefactored] Hotspot folder not found at: {basePath}");
                 return;
             }
 
@@ -49,17 +56,20 @@ namespace AIRefactored.AI.Hotspots
                     _cache[map] = set;
 
                     if (_debugLog)
-                        Debug.Log($"[AIRefactored] Loaded {set.Points.Count} hotspots for map '{map}'");
+                        _log.LogInfo($"[AIRefactored] Loaded {set.Points.Count} hotspots for map '{map}'");
                 }
                 catch (Exception ex)
                 {
-                    Debug.LogError($"[AIRefactored] Failed to load hotspots from '{file}': {ex.Message}");
+                    _log.LogError($"[AIRefactored] Failed to load hotspots from '{file}': {ex.Message}");
                 }
             }
 
             _loaded = true;
         }
 
+        /// <summary>
+        /// Gets the hotspot set for the current map based on the bot's role.
+        /// </summary>
         public static HotspotSet? GetHotspotsForCurrentMap(WildSpawnType role)
         {
             if (!_loaded)
@@ -67,13 +77,15 @@ namespace AIRefactored.AI.Hotspots
 
             string mapId = Singleton<GameWorld>.Instance?.LocationId?.ToLowerInvariant() ?? "unknown";
 
-            HotspotSet set;
-            if (_cache.TryGetValue(mapId, out set))
+            if (_cache.TryGetValue(mapId, out var set))
                 return set.FilteredForRole(role);
 
             return null;
         }
 
+        /// <summary>
+        /// Reloads the hotspot data from the files.
+        /// </summary>
         public static void Reload()
         {
             _loaded = false;
@@ -81,14 +93,20 @@ namespace AIRefactored.AI.Hotspots
             LoadAll();
 
             if (_debugLog)
-                Debug.Log("[AIRefactored] Hotspot data reloaded.");
+                _log.LogInfo("[AIRefactored] Hotspot data reloaded.");
         }
 
+        /// <summary>
+        /// Gets all cached hotspots.
+        /// </summary>
         public static IReadOnlyDictionary<string, HotspotSet> GetAll()
         {
             return _cache;
         }
 
+        /// <summary>
+        /// Resolves the path to the hotspot folder.
+        /// </summary>
         private static string ResolveHotspotPath()
         {
             string fallbackPath = Path.Combine("BepInEx", "plugins", "AIRefactored", HOTSPOT_FOLDER);
@@ -101,6 +119,9 @@ namespace AIRefactored.AI.Hotspots
     {
         public List<Vector3> Points = new List<Vector3>();
 
+        /// <summary>
+        /// Filters the hotspot points for the given role.
+        /// </summary>
         public HotspotSet FilteredForRole(WildSpawnType role)
         {
             HotspotSet result = new HotspotSet();
@@ -130,6 +151,9 @@ namespace AIRefactored.AI.Hotspots
             return result;
         }
 
+        /// <summary>
+        /// Deserializes JSON into a HotspotSet.
+        /// </summary>
         public static HotspotSet? FromJson(string json)
         {
             try
@@ -146,7 +170,7 @@ namespace AIRefactored.AI.Hotspots
             }
             catch (Exception ex)
             {
-                Debug.LogError($"[AIRefactored] JSON parse error: {ex.Message}");
+                AIRefactoredController.Logger.LogError($"[AIRefactored] JSON parse error: {ex.Message}");
                 return null;
             }
         }

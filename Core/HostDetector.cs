@@ -1,7 +1,7 @@
 ﻿#nullable enable
 
+using AIRefactored.Runtime;
 using Fika.Core.Coop.Utils;
-using UnityEngine;
 
 namespace AIRefactored.Core
 {
@@ -33,23 +33,23 @@ namespace AIRefactored.Core
                 if (FikaBackendUtils.IsServer)
                 {
                     _isHost = true;
-                    Debug.Log("[AI-Refactored] ✅ FIKA host detected (GroupLeader).");
+                    AIRefactoredController.Logger.LogInfo("[AI-Refactored] ✅ FIKA host detected (GroupLeader).");
                 }
                 else if (FikaBackendUtils.IsClient)
                 {
                     _isHost = false;
-                    Debug.Log("[AI-Refactored] 🧍 FIKA client detected (GroupPlayer).");
+                    AIRefactoredController.Logger.LogInfo("[AI-Refactored] 🧍 FIKA client detected (GroupPlayer).");
                 }
                 else
                 {
                     _isHost = true;
-                    Debug.Log("[AI-Refactored] 🔄 Defaulting to SPT host.");
+                    AIRefactoredController.Logger.LogInfo("[AI-Refactored] 🔄 Defaulting to SPT host.");
                 }
             }
             catch (System.Exception e)
             {
                 _isHost = false;
-                Debug.LogError($"[AI-Refactored] ❌ HostDetector failed: {e.Message}");
+                AIRefactoredController.Logger.LogError($"[AI-Refactored] ❌ HostDetector failed: {e.Message}");
             }
 
             return _isHost.Value;

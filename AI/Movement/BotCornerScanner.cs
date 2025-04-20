@@ -44,6 +44,7 @@ namespace AIRefactored.AI.Movement
             Vector3 left = -_bot.Transform.right;
             Vector3 right = _bot.Transform.right;
 
+            // Check for walls on the left side
             if (Physics.Raycast(origin, left, out RaycastHit hitLeft, WallCheckDistance))
             {
                 if (IsAngledWall(hitLeft.normal, left))
@@ -53,6 +54,7 @@ namespace AIRefactored.AI.Movement
                 }
             }
 
+            // Check for walls on the right side
             if (Physics.Raycast(origin, right, out RaycastHit hitRight, WallCheckDistance))
             {
                 if (IsAngledWall(hitRight.normal, right))
@@ -72,14 +74,16 @@ namespace AIRefactored.AI.Movement
 
         private void TriggerLean(BotTiltType side, float time)
         {
+            // Set the lean direction based on the side (left or right)
             _cache.Tilt?.Set(side);
-            _pauseUntil = time + PauseDuration;
+            _pauseUntil = time + PauseDuration; // Set the pause duration after triggering lean
         }
 
         private bool IsAngledWall(Vector3 wallNormal, Vector3 scanDir)
         {
+            // Check if the angle between the wall normal and scanning direction is sufficient for leaning
             float dot = Vector3.Dot(wallNormal, scanDir.normalized);
-            return dot < WallAngleThreshold;
+            return dot < WallAngleThreshold;  // Returns true if the wall is angled enough to trigger a lean
         }
     }
 }

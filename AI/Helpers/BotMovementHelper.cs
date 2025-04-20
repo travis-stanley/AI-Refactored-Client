@@ -34,12 +34,14 @@ namespace AIRefactored.AI.Helpers
             float buffer = DefaultRadius * Mathf.Clamp(cohesionScale, 0.7f, 1.3f);
             Vector3 position = bot.Position;
 
+            // If the bot is close enough to the target, skip movement
             if ((position - target).sqrMagnitude < buffer * buffer)
                 return;
 
             if (EnableDebug)
                 Debug.DrawLine(position, target, Color.green, 0.1f);
 
+            // Issue the movement command with adjusted speed based on cohesion
             bot.Mover.GoToPoint(target, slow, cohesionScale);
         }
 
@@ -56,6 +58,7 @@ namespace AIRefactored.AI.Helpers
             if (dir.sqrMagnitude < 0.01f)
                 return;
 
+            // Rotate bot smoothly towards the target using spherical interpolation
             Quaternion targetRotation = Quaternion.LookRotation(dir.normalized, Vector3.up);
             bot.Transform.rotation = Quaternion.Slerp(bot.Transform.rotation, targetRotation, Time.deltaTime * speed);
 
@@ -71,6 +74,7 @@ namespace AIRefactored.AI.Helpers
             if (!IsEligible(bot))
                 return;
 
+            // Calculate a strafe direction perpendicular to the threat direction
             Vector3 right = Vector3.Cross(Vector3.up, threatDirection.normalized);
             Vector3 offset = right * DefaultStrafeDistance * Mathf.Clamp(scale, 0.5f, 1.5f);
             Vector3 strafeTarget = bot.Position + offset;
@@ -78,6 +82,7 @@ namespace AIRefactored.AI.Helpers
             if (EnableDebug)
                 Debug.DrawLine(bot.Position, strafeTarget, Color.cyan, 0.1f);
 
+            // Move the bot to the calculated strafe target
             bot.Mover.GoToPoint(strafeTarget, false, 1f); // fast movement
         }
 
@@ -87,6 +92,7 @@ namespace AIRefactored.AI.Helpers
 
         private static bool IsEligible(BotOwner? bot)
         {
+            // Check if the bot is valid, not dead, and is AI-controlled
             return bot != null && bot.Mover != null && !bot.IsDead && bot.GetPlayer?.IsAI == true;
         }
 

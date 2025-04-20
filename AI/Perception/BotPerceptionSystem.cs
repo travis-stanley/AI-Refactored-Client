@@ -1,7 +1,9 @@
 ﻿#nullable enable
 
 using AIRefactored.AI.Core;
-using AIRefactored.AI.Group;
+using AIRefactored.AI.Groups;
+using AIRefactored.Runtime;
+using BepInEx.Logging;
 using EFT;
 using UnityEngine;
 
@@ -27,6 +29,9 @@ namespace AIRefactored.AI.Perception
         private const float FlashRecoverySpeed = 0.5f;
         private const float BlindSpeechThreshold = 0.4f;
         private const float PanicTriggerThreshold = 0.6f;
+
+        private static readonly ManualLogSource _log = AIRefactoredController.Logger;
+        private static readonly bool _debug = false;
 
         #endregion
 
@@ -59,9 +64,11 @@ namespace AIRefactored.AI.Perception
             float baseRange = Mathf.Lerp(15f, 70f, 1f - penalty);
 
             _bot.LookSensor.ClearVisibleDist = baseRange * _profile.AdaptationSpeed;
-
             _cache.IsBlinded = _flashBlindness > 0.3f;
             _cache.BlindUntilTime = Time.time + Mathf.Clamp01(_flashBlindness) * 3f;
+
+            if (_debug)
+                _log.LogDebug($"[Perception] Penalty: {penalty:F2}, Blind: {_cache.IsBlinded}, Range: {_bot.LookSensor.ClearVisibleDist:F1}");
 
             TryTriggerPanic();
             RecoverPerception(deltaTime);
@@ -79,11 +86,13 @@ namespace AIRefactored.AI.Perception
 
             _flashBlindness = Mathf.Clamp(_flashBlindness + intensity * _profile.MaxBlindness, 0f, 1f);
             _cache.LastFlashTime = Time.time;
+            _blindStartTime = Time.time;
+
+            if (_debug)
+                _log.LogDebug($"[Perception] FlashBlindness: {_flashBlindness:F2} after exposure");
 
             if (_flashBlindness > BlindSpeechThreshold)
                 _bot?.BotTalk?.TrySay(EPhraseTrigger.OnBeingHurt);
-
-            _blindStartTime = Time.time;
         }
 
         public void ApplyFlareExposure(float strength)
@@ -100,6 +109,9 @@ namespace AIRefactored.AI.Perception
                 return;
 
             _suppressionFactor = Mathf.Clamp(severity * _profile.AggressionResponse, 0f, 1f);
+
+            if (_debug)
+                _log.LogDebug($"[Perception] SuppressionFactor updated to {_suppressionFactor:F2}");
         }
 
         public void OnFlashExposure(Vector3 lightOrigin)
@@ -127,7 +139,12 @@ namespace AIRefactored.AI.Perception
                 return;
 
             if (_flashBlindness >= PanicTriggerThreshold && Time.time - _blindStartTime < 2.5f)
+            {
                 _cache.PanicHandler.TriggerPanic();
+
+                if (_debug)
+                    _log.LogDebug($"[Perception] Panic triggered by flash blindness on {_bot.Profile?.Info?.Nickname}");
+            }
         }
 
         private void TryShareEnemy()

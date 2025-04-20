@@ -17,15 +17,15 @@ namespace AIRefactored.Runtime
 
         private void Start()
         {
-            if (Singleton<BotSpawner>.Instantiated)
-            {
-                Singleton<BotSpawner>.Instance.OnBotCreated += HandleBotCreated;
-                Debug.Log("[AIRefactored] ✅ BotBrainBootstrapper active and listening for bot spawns.");
-            }
-            else
-            {
-                Debug.LogError("[AIRefactored] ❌ BotSpawner unavailable — cannot attach AI brains.");
-            }
+            StartCoroutine(DelayedHook());
+        }
+
+        private System.Collections.IEnumerator DelayedHook()
+        {
+            yield return new WaitUntil(() => Singleton<BotSpawner>.Instantiated);
+
+            Singleton<BotSpawner>.Instance.OnBotCreated += HandleBotCreated;
+            Plugin.LoggerInstance.LogInfo("[AIRefactored] ✅ BotBrainBootstrapper active and listening for bot spawns.");
         }
 
         private void OnDestroy()
@@ -41,7 +41,10 @@ namespace AIRefactored.Runtime
         private void HandleBotCreated(BotOwner bot)
         {
             if (!IsEligible(bot))
+            {
+                Plugin.LoggerInstance.LogDebug($"[AIRefactored] Skipped bot: {bot.Profile?.Id ?? "unknown"} (not AI or local player)");
                 return;
+            }
 
             GameObject? playerObject = bot.GetPlayer?.gameObject;
             if (playerObject == null || playerObject.GetComponent<BotBrain>() != null)
@@ -50,7 +53,8 @@ namespace AIRefactored.Runtime
             var brain = playerObject.AddComponent<BotBrain>();
             brain.Initialize(bot);
 
-            Debug.Log($"[AIRefactored] 🤖 BotBrain attached to {bot.Profile?.Info?.Nickname ?? "unknown"}");
+            string name = bot.Profile?.Info?.Nickname ?? "UnnamedBot";
+            Plugin.LoggerInstance.LogInfo($"[AIRefactored] 🤖 BotBrain attached to {name}");
         }
 
         private static bool IsEligible(BotOwner bot)

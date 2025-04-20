@@ -41,10 +41,6 @@ namespace AIRefactored.AI.Optimization
         /// Computes a safe fallback path for a bot under threat using local NavMesh samples.
         /// Applies squad-level caching and filters danger zones.
         /// </summary>
-        /// <param name="bot">The bot evaluating retreat.</param>
-        /// <param name="threatDir">Direction of the incoming threat.</param>
-        /// <param name="pathCache">The bot's local pathfinding cache.</param>
-        /// <returns>A list of safe points to move through or toward.</returns>
         public static List<Vector3> GetCoverRetreatPath(BotOwner bot, Vector3 threatDir, BotOwnerPathfindingCache pathCache)
         {
             if (!IsAIBot(bot) || bot.Transform == null)
@@ -61,7 +57,7 @@ namespace AIRefactored.AI.Optimization
                 SquadRetreatCache[map] = squadCache;
             }
 
-            if (squadCache.TryGetValue(squadId, out var cachedPath) && cachedPath.Count > 0)
+            if (squadCache.TryGetValue(squadId, out var cachedPath) && cachedPath.Count >= 2)
                 return cachedPath;
 
             EnsureNavMeshAvailable(map);
@@ -78,8 +74,7 @@ namespace AIRefactored.AI.Optimization
                 Vector3 dir = Quaternion.Euler(0f, angle, 0f) * away;
                 Vector3 probe = origin + dir * RetreatDistance;
 
-                NavMeshHit hit;
-                if (NavMesh.SamplePosition(probe, out hit, NavSampleRadius, NavMesh.AllAreas))
+                if (NavMesh.SamplePosition(probe, out var hit, NavSampleRadius, NavMesh.AllAreas))
                 {
                     Vector3 pos = hit.position;
 
@@ -98,10 +93,10 @@ namespace AIRefactored.AI.Optimization
 
                     float dangerPenalty = GetDangerPenalty(map, pos);
                     float sneakBonus = (profile != null && profile.IsSilentHunter) ? 0.75f : 1f;
-                    float coverScore = CoverScorer.ScoreCoverPoint(bot, pos, threatDir);
+                    float coverScore = Mathf.Max(CoverScorer.ScoreCoverPoint(bot, pos, threatDir), 0.5f);
                     float dist = Vector3.Distance(origin, pos);
 
-                    float score = (dist / Mathf.Max(coverScore, 0.5f)) * dangerPenalty * sneakBonus;
+                    float score = (dist / coverScore) * dangerPenalty * sneakBonus;
                     candidates[pos] = score;
                 }
             }
@@ -122,9 +117,6 @@ namespace AIRefactored.AI.Optimization
 
         #region NavMesh & Scoring Internals
 
-        /// <summary>
-        /// Builds a valid NavMesh path between two points or returns fallback path.
-        /// </summary>
         private static List<Vector3> BuildSafePath(Vector3 origin, Vector3 target)
         {
             var navPath = new NavMeshPath();
@@ -137,10 +129,6 @@ namespace AIRefactored.AI.Optimization
             return new List<Vector3> { origin, target };
         }
 
-        /// <summary>
-        /// Ensures a NavMesh surface is available for the given map.
-        /// Builds it dynamically if not present.
-        /// </summary>
         private static void EnsureNavMeshAvailable(string mapId)
         {
             if (MapNavSurfaces.TryGetValue(mapId, out var surface) && surface != null)
@@ -156,9 +144,6 @@ namespace AIRefactored.AI.Optimization
             MapNavSurfaces[mapId] = surface;
         }
 
-        /// <summary>
-        /// Scores a position based on proximity to stored danger zones.
-        /// </summary>
         private static float GetDangerPenalty(string mapId, Vector3 pos)
         {
             List<BotMemoryStore.DangerZone> zones = BotMemoryStore.GetZonesForMap(mapId);
@@ -170,15 +155,12 @@ namespace AIRefactored.AI.Optimization
             return 1f;
         }
 
-        /// <summary>
-        /// Finds the position with the lowest retreat penalty score.
-        /// </summary>
         private static Vector3 GetLowestScore(Dictionary<Vector3, float> dict)
         {
             float min = float.MaxValue;
             Vector3 best = Vector3.zero;
 
-            foreach (KeyValuePair<Vector3, float> kvp in dict)
+            foreach (var kvp in dict)
             {
                 if (kvp.Value < min)
                 {
@@ -190,9 +172,6 @@ namespace AIRefactored.AI.Optimization
             return best;
         }
 
-        /// <summary>
-        /// Clears retreat cache for all squads if expiration time has elapsed.
-        /// </summary>
         private static void ClearExpiredCache()
         {
             if (Time.time - _lastClearTime > MemoryClearInterval)
@@ -202,9 +181,6 @@ namespace AIRefactored.AI.Optimization
             }
         }
 
-        /// <summary>
-        /// Validates whether this is an AI bot.
-        /// </summary>
         private static bool IsAIBot(BotOwner bot)
         {
             Player? p = bot.GetPlayer;

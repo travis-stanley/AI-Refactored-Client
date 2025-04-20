@@ -1,9 +1,9 @@
 ﻿#nullable enable
 
 using AIRefactored.AI.Core;
-using AIRefactored.AI.Group;
+using AIRefactored.AI.Groups;
 using AIRefactored.AI.Memory;
-using Comfort.Common;
+using AIRefactored.Core;
 using EFT;
 using UnityEngine;
 
@@ -65,7 +65,7 @@ namespace AIRefactored.AI.Perception
             if (_bot.GetPlayer == null || _bot.GetPlayer.IsYourPlayer)
                 return;
 
-            var allPlayers = Singleton<GameWorld>.Instance?.RegisteredPlayers;
+            var allPlayers = GameWorldHandler.GetAllAlivePlayers();
             if (allPlayers == null)
                 return;
 
@@ -139,12 +139,12 @@ namespace AIRefactored.AI.Perception
 
             if (!_bot.EnemiesController.EnemyInfos.ContainsKey(target))
             {
-                var enemySettings = new BotSettingsClass(target, _bot.BotsGroup, EBotEnemyCause.addPlayer);
-                _bot.EnemiesController.AddNew(_bot.BotsGroup, target, enemySettings);
+                var group = _bot.BotsGroup;
+                var enemySettings = new BotSettingsClass(target, group, EBotEnemyCause.addPlayer);
+                _bot.EnemiesController.AddNew(group, target, enemySettings);
+                _bot.BotTalk?.TrySay(EPhraseTrigger.OnEnemyConversation);
+                BotTeamLogic.AddEnemy(_bot, target);
             }
-
-            _bot.BotTalk?.TrySay(EPhraseTrigger.OnEnemyConversation);
-            BotTeamLogic.AddEnemy(_bot, target);
         }
 
         private void TrackVisibleBones(Player target)

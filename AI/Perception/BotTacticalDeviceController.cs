@@ -1,6 +1,8 @@
 ﻿#nullable enable
 
 using AIRefactored.AI.Core;
+using AIRefactored.Runtime;
+using BepInEx.Logging;
 using EFT;
 using EFT.InventoryLogic;
 using System.Collections.Generic;
@@ -29,6 +31,9 @@ namespace AIRefactored.AI.Perception
         private const float LightThreshold = 0.3f;
 
         private static readonly string[] ToggleKeywords = { "light", "laser", "nvg", "thermal", "flash" };
+
+        private static readonly ManualLogSource _log = AIRefactoredController.Logger;
+        private static readonly bool _debug = false;
 
         #endregion
 
@@ -66,6 +71,9 @@ namespace AIRefactored.AI.Perception
             bool isDark = IsEnvironmentDark();
             bool baitMode = ShouldBaitPlayer();
 
+            if (_debug)
+                _log.LogDebug($"[TacticalDevice] {bot.Profile?.Info?.Nickname}: dark={isDark}, bait={baitMode}");
+
             for (int i = 0; i < _attachedDevices.Count; i++)
             {
                 var item = _attachedDevices[i];
@@ -83,12 +91,15 @@ namespace AIRefactored.AI.Perception
 
             if (baitMode)
             {
-                // Fake-out: lights go off after brief bait window
                 _nextDecisionTime = Time.time + 1.5f;
+
                 for (int i = 0; i < _attachedDevices.Count; i++)
                 {
                     ToggleDevice(_attachedDevices[i], false);
                 }
+
+                if (_debug)
+                    _log.LogDebug($"[TacticalDevice] {bot.Profile?.Info?.Nickname} executed bait-light fake-out.");
             }
         }
 
@@ -101,6 +112,9 @@ namespace AIRefactored.AI.Perception
             {
                 ToggleDevice(_attachedDevices[i], false);
             }
+
+            if (_debug)
+                _log.LogDebug("[TacticalDevice] Disabled all attached tactical devices.");
         }
 
         #endregion
@@ -126,6 +140,8 @@ namespace AIRefactored.AI.Perception
                     if (name.Contains(ToggleKeywords[i]))
                     {
                         _attachedDevices.Add(mod);
+                        if (_debug)
+                            _log.LogDebug($"[TacticalDevice] Found device: {mod.Template?.Name}");
                         break;
                     }
                 }
@@ -148,6 +164,8 @@ namespace AIRefactored.AI.Perception
             if (isCurrentlyOn != enable)
             {
                 prop.SetValue(item, enable);
+                if (_debug)
+                    _log.LogDebug($"[TacticalDevice] {(enable ? "Enabled" : "Disabled")} device: {item.Template?.Name}");
             }
         }
 

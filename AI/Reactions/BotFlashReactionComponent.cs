@@ -2,6 +2,8 @@
 
 using AIRefactored.AI.Core;
 using AIRefactored.AI.Helpers;
+using AIRefactored.Runtime;
+using BepInEx.Logging;
 using EFT;
 using UnityEngine;
 
@@ -29,6 +31,9 @@ namespace AIRefactored.AI.Reactions
         private const float MaxDuration = 5.0f;
         private const float Cooldown = 0.5f;
 
+        private static readonly ManualLogSource _log = AIRefactoredController.Logger;
+        private static readonly bool _debug = false;
+
         #endregion
 
         #region Initialization
@@ -45,7 +50,12 @@ namespace AIRefactored.AI.Reactions
         public void Tick(float time)
         {
             if (_suppressedUntil > 0f && time >= _suppressedUntil)
+            {
+                if (_debug)
+                    _log.LogDebug($"[BotFlashReaction] Suppression ended for bot {_cache?.Bot?.Profile?.Id}");
+
                 _suppressedUntil = -1f;
+            }
         }
 
         #endregion
@@ -67,6 +77,9 @@ namespace AIRefactored.AI.Reactions
             float duration = Mathf.Lerp(MinDuration, MaxDuration, clampedStrength);
             _suppressedUntil = now + duration;
 
+            if (_debug)
+                _log.LogDebug($"[BotFlashReaction] Suppression triggered for {_cache.Bot.Profile?.Id}, duration: {duration:0.00}s");
+
             TriggerFallbackMovement(_cache.Bot.Position - _cache.Bot.LookDirection.normalized);
             TriggerPanicSync();
         }
@@ -86,6 +99,9 @@ namespace AIRefactored.AI.Reactions
             Vector3 retreat = _cache.Bot.Position + fallbackDir * 5f + Random.insideUnitSphere * 1.5f;
             retreat.y = _cache.Bot.Position.y;
 
+            if (_debug)
+                _log.LogDebug($"[BotFlashReaction] Bot {_cache.Bot.Profile?.Id} fallback retreat to {retreat}");
+
             BotMovementHelper.SmoothMoveTo(_cache.Bot, retreat, cohesionScale: 1.0f);
         }
 
@@ -100,6 +116,9 @@ namespace AIRefactored.AI.Reactions
 
             if (BotPanicUtility.TryGetPanicComponent(_cache, out var panic))
             {
+                if (_debug)
+                    _log.LogDebug($"[BotFlashReaction] Panic triggered for {_cache.Bot.Profile?.Id}");
+
                 panic.TriggerPanic();
             }
         }

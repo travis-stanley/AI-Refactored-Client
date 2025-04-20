@@ -1,6 +1,8 @@
 ﻿#nullable enable
 
 using AIRefactored.Core;
+using AIRefactored.Runtime;
+using BepInEx.Logging;
 using System;
 using System.Collections.Generic;
 using System.Threading.Tasks;
@@ -19,6 +21,8 @@ namespace AIRefactored.AI.Optimization
 
         private const int MaxThreads = 8; // Cap usage to avoid oversaturation
         private static int _nextThreadIndex = 0;
+
+        private static readonly ManualLogSource _log = AIRefactoredController.Logger;
 
         private void Update()
         {
@@ -51,7 +55,7 @@ namespace AIRefactored.AI.Optimization
                             }
                             catch (Exception ex)
                             {
-                                Debug.LogWarning($"[BotWorkGroup] ⚠ Background work exception: {ex.Message}");
+                                _log.LogWarning($"[BotWorkGroup] ⚠ Background work exception: {ex.Message}");
                             }
                         }
                     });

@@ -52,14 +52,6 @@ namespace AIRefactored.AI.Medical
         }
 
         /// <summary>
-        /// Public Update method for compatibility with AI stack expectations.
-        /// </summary>
-        public void Update()
-        {
-            Tick(Time.time);
-        }
-
-        /// <summary>
         /// Checks if the bot should initiate healing at current time.
         /// </summary>
         public bool ShouldHeal() => ShouldHeal(Time.time);
@@ -69,7 +61,7 @@ namespace AIRefactored.AI.Medical
         /// </summary>
         public bool ShouldHeal(float time)
         {
-            if (!_hasBlackLimb || _injuredLimb == null)
+            if (_injuredLimb == null || !_hasBlackLimb)
                 return false;
 
             if (time < _nextHealTime)
@@ -93,13 +85,16 @@ namespace AIRefactored.AI.Medical
             if (bot == null || bot.IsDead || _injuredLimb == null)
                 return;
 
+            var health = bot.GetPlayer?.HealthController;
+            if (health == null || !health.IsBodyPartDestroyed(_injuredLimb.Value))
+                return;
+
             var surgical = bot.Medecine?.SurgicalKit;
             if (surgical == null || !surgical.HaveWork || !surgical.ShallStartUse())
                 return;
 
             bot.Sprint(false);
             bot.WeaponManager?.Selector?.TakePrevWeapon();
-
             bot.BotTalk?.Say(EPhraseTrigger.StartHeal, false, null);
 
             surgical.ApplyToCurrentPart();

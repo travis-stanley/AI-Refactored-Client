@@ -72,9 +72,13 @@ namespace AIRefactored.AI.Helpers
             Vector3 toLight = lightTransform.position - botHeadTransform.position;
             float distance = toLight.magnitude;
 
+            // Angle factor based on the forward direction of the bot's head and light's position
             float angleFactor = Mathf.Clamp01(Vector3.Dot(botHeadTransform.forward, toLight.normalized));
+
+            // Distance factor based on the max distance to the light
             float distanceFactor = 1f - Mathf.Clamp01(distance / maxDistance);
 
+            // Final score is the product of the angle and distance factors
             return angleFactor * distanceFactor;
         }
 

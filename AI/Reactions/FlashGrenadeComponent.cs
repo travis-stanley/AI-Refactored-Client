@@ -2,6 +2,8 @@
 
 using AIRefactored.AI.Core;
 using AIRefactored.AI.Helpers;
+using AIRefactored.Runtime;
+using BepInEx.Logging;
 using EFT;
 using UnityEngine;
 
@@ -20,9 +22,6 @@ namespace AIRefactored.AI.Reactions
         /// </summary>
         public BotOwner? Bot { get; private set; }
 
-        /// <summary>
-        /// Cache for unified access to bot systems.
-        /// </summary>
         private BotComponentCache? _cache;
 
         #endregion
@@ -35,6 +34,9 @@ namespace AIRefactored.AI.Reactions
         private const float BlindDuration = 4.5f;
         private const float FlashlightThresholdAngle = 25f;
         private const float FlashlightMinIntensity = 2.0f;
+
+        private static readonly ManualLogSource _log = AIRefactoredController.Logger;
+        private static readonly bool _debug = false;
 
         #endregion
 
@@ -58,7 +60,11 @@ namespace AIRefactored.AI.Reactions
             CheckFlashlightExposure();
 
             if (_isBlinded && time - _lastFlashTime > BlindDuration)
+            {
+                if (_debug)
+                    _log.LogDebug($"[FlashGrenadeComponent] Bot {Bot.Profile?.Id} recovered from blind.");
                 _isBlinded = false;
+            }
         }
 
         #endregion
@@ -83,6 +89,9 @@ namespace AIRefactored.AI.Reactions
 
                 if (angle < FlashlightThresholdAngle)
                 {
+                    if (_debug)
+                        _log.LogDebug($"[FlashGrenadeComponent] Bot {Bot.Profile?.Id} blinded by flashlight at angle {angle:0.0}°");
+
                     AddBlindEffect(BlindDuration, light.transform.position);
                     break;
                 }
@@ -102,6 +111,9 @@ namespace AIRefactored.AI.Reactions
 
             _lastFlashTime = Time.time;
             _isBlinded = true;
+
+            if (_debug)
+                _log.LogDebug($"[FlashGrenadeComponent] Blind effect applied to {Bot.Profile?.Id} for {duration:0.00}s");
 
             BotSuppressionHelper.TrySuppressBot(Bot.GetPlayer, source);
         }

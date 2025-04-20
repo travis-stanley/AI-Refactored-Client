@@ -1,5 +1,7 @@
 ﻿#nullable enable
 
+using AIRefactored.Runtime;
+using BepInEx.Logging;
 using EFT;
 using System.Collections.Generic;
 using UnityEngine;
@@ -12,6 +14,13 @@ namespace AIRefactored.AI.Optimization
     /// </summary>
     public class BotOwnerGroupOptimization
     {
+        #region Fields
+
+        private static readonly ManualLogSource _log = AIRefactoredController.Logger;
+        private static readonly bool _debug = false;
+
+        #endregion
+
         #region Public API
 
         /// <summary>
@@ -49,26 +58,24 @@ namespace AIRefactored.AI.Optimization
         /// </summary>
         private void ApplyGroupModifiers(BotOwner bot, BotPersonalityProfile profile, BotGlobalsMindSettings mind)
         {
-            // Expand enemy detection distance based on low cohesion
             mind.DIST_TO_FOUND_SQRT = Mathf.Lerp(300f, 600f, 1f - profile.Cohesion);
 
-            // Increase aggression toward squad killers
             mind.FRIEND_AGR_KILL = Mathf.Clamp(
                 mind.FRIEND_AGR_KILL + profile.AggressionLevel * 0.15f,
                 0f,
                 1f
             );
 
-            // Narrow field-of-view angle with higher cohesion (simulates tighter scanning focus)
             mind.ENEMY_LOOK_AT_ME_ANG = Mathf.Clamp(
                 mind.ENEMY_LOOK_AT_ME_ANG - profile.Cohesion * 5f,
                 5f,
                 30f
             );
 
-#if DEBUG
-            Debug.Log($"[AIRefactored-GroupOpt] Optimized group logic for {bot.Profile?.Info?.Nickname} (Cohesion={profile.Cohesion:F2})");
-#endif
+            if (_debug)
+            {
+                _log.LogDebug($"[AIRefactored-GroupOpt] Optimized group logic for {bot.Profile?.Info?.Nickname} (Cohesion={profile.Cohesion:F2})");
+            }
         }
 
         #endregion

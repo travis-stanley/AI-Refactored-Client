@@ -1,8 +1,9 @@
 ﻿#nullable enable
 
+using AIRefactored.Runtime;
+using BepInEx.Logging;
 using System;
 using System.Collections.Concurrent;
-using UnityEngine;
 
 namespace AIRefactored.AI.Optimization
 {
@@ -13,6 +14,7 @@ namespace AIRefactored.AI.Optimization
     public static class BotWorkScheduler
     {
         private static readonly ConcurrentQueue<Action> _mainThreadQueue = new();
+        private static readonly ManualLogSource _log = AIRefactoredController.Logger;
 
         /// <summary>
         /// Enqueues a delegate to be run on the next Unity main thread frame.
@@ -39,7 +41,7 @@ namespace AIRefactored.AI.Optimization
                 }
                 catch (Exception ex)
                 {
-                    Debug.LogWarning($"[BotWorkScheduler] ❌ Error running scheduled action: {ex.Message}");
+                    _log.LogWarning($"[BotWorkScheduler] ❌ Error running scheduled action: {ex.Message}");
                 }
             }
         }

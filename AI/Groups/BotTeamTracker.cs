@@ -88,6 +88,7 @@ namespace AIRefactored.AI.Groups
                 var list = kvp.Value;
                 if (list.Remove(bot))
                 {
+                    // Remove the group if it becomes empty after removal
                     if (list.Count == 0)
                         _groups.Remove(kvp.Key);
                     break;

@@ -1,6 +1,8 @@
 ﻿#nullable enable
 
 using AIRefactored.AI.Helpers;
+using AIRefactored.Runtime;
+using BepInEx.Logging;
 using Comfort.Common;
 using EFT;
 using System.Collections.Generic;
@@ -8,10 +10,6 @@ using UnityEngine;
 
 namespace AIRefactored.AI.Hotspots
 {
-    /// <summary>
-    /// Controls bot routing along predefined high-value hotspots.
-    /// Dynamically assigns patrol or defend behaviors based on personality.
-    /// </summary>
     public class HotspotSystem
     {
         private sealed class HotspotSession
@@ -101,6 +99,7 @@ namespace AIRefactored.AI.Hotspots
 
         private readonly Dictionary<BotOwner, HotspotSession> _sessions = new();
         private static readonly List<BotOwner> _botList = new();
+        private static readonly ManualLogSource _log = AIRefactoredController.Logger;
 
         public void Initialize()
         {
@@ -151,17 +150,17 @@ namespace AIRefactored.AI.Hotspots
 
             if (defendOnly)
             {
-                Vector3 defendPoint = set.Points[Random.Range(0, set.Points.Count)];
+                Vector3 defendPoint = set.Points[UnityEngine.Random.Range(0, set.Points.Count)];
                 return new HotspotSession(bot, new List<Vector3> { defendPoint }, true);
             }
 
-            int pointCount = Random.Range(2, 4);
+            int pointCount = UnityEngine.Random.Range(2, 4);
             var route = new List<Vector3>(pointCount);
             var usedIndices = new HashSet<int>();
 
             while (route.Count < pointCount && usedIndices.Count < set.Points.Count)
             {
-                int index = Random.Range(0, set.Points.Count);
+                int index = UnityEngine.Random.Range(0, set.Points.Count);
                 if (usedIndices.Add(index))
                     route.Add(set.Points[index]);
             }
@@ -177,11 +176,11 @@ namespace AIRefactored.AI.Hotspots
             var set = HotspotLoader.GetHotspotsForCurrentMap(role);
             if (set == null || set.Points.Count == 0)
             {
-                Debug.LogWarning($"[AIRefactored] No hotspots found for {map} ({role})");
-                return bot.Position + Random.insideUnitSphere * 5f;
+                _log.LogWarning($"[AIRefactored] No hotspots found for {map} ({role})");
+                return bot.Position + UnityEngine.Random.insideUnitSphere * 5f;
             }
 
-            return set.Points[Random.Range(0, set.Points.Count)];
+            return set.Points[UnityEngine.Random.Range(0, set.Points.Count)];
         }
     }
 }

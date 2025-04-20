@@ -39,7 +39,7 @@ namespace AIRefactored.AI.Combat
 
             var weaponMgr = _botOwner.WeaponManager;
             var shootData = _botOwner.ShootData;
-            var weaponInfo = weaponMgr._currentWeaponInfo;
+            var weaponInfo = weaponMgr?._currentWeaponInfo;
             var weapon = weaponInfo?.weapon;
             var core = _botOwner.Settings?.FileSettings?.Core as GClass592;
 
@@ -88,6 +88,7 @@ namespace AIRefactored.AI.Combat
                 return;
             }
 
+            // === Fire Mode Logic ===
             if (distance <= 40f)
             {
                 SetFireMode(weaponInfo, Weapon.EFireMode.fullauto);
@@ -104,11 +105,9 @@ namespace AIRefactored.AI.Combat
                 ApplyScatter(core, true, profile);
             }
 
-            if (_botOwner.WeaponManager.IsWeaponReady)
+            if (weaponMgr.IsWeaponReady)
             {
                 shootData.Shoot();
-
-                // === REGISTER LAST SHOT ===
                 _cache?.LastShotTracker?.RegisterShot(enemy);
             }
         }
@@ -151,9 +150,9 @@ namespace AIRefactored.AI.Combat
 
         private float GetBurstCadence(BotPersonalityProfile profile)
         {
-            float baseDelay = Mathf.Lerp(0.8f, 0.3f, profile.AggressionLevel);
-            float chaos = UnityEngine.Random.Range(-0.1f, 0.3f) * profile.ChaosFactor;
-            return Mathf.Clamp(baseDelay + chaos, 0.25f, 1.0f);
+            float baseDelay = Mathf.Lerp(0.8f, 0.25f, profile.AggressionLevel);
+            float chaos = UnityEngine.Random.Range(-0.1f, 0.2f) * profile.ChaosFactor;
+            return Mathf.Clamp(baseDelay + chaos, 0.2f, 1.0f);
         }
 
         private float GetHealthRatio()
@@ -173,20 +172,17 @@ namespace AIRefactored.AI.Combat
 
         private void TryRetreat(BotPersonalityProfile profile)
         {
-            Vector3 dir = -_botOwner.LookDirection.normalized;
-            Vector3 fallback = _botOwner.Position + dir * 8f;
+            if (_cache?.PathCache == null)
+                return;
 
-            if (Physics.Raycast(_botOwner.Position, dir, out RaycastHit hit, 8f))
-                fallback = hit.point - dir;
+            Vector3 threatDirection = _botOwner.LookDirection.normalized;
+            List<Vector3> path = BotCoverRetreatPlanner.GetCoverRetreatPath(_botOwner, threatDirection, _cache.PathCache);
 
-            if (_cache?.PathCache != null)
+            if (path.Count > 0)
             {
-                var path = BotCoverRetreatPlanner.GetCoverRetreatPath(_botOwner, dir, _cache.PathCache);
-                if (path.Count > 0)
-                    fallback = path[path.Count - 1];
+                Vector3 target = path[path.Count - 1];
+                BotMovementHelper.SmoothMoveTo(_botOwner, target, false, profile.Cohesion);
             }
-
-            BotMovementHelper.SmoothMoveTo(_botOwner, fallback, false, profile.Cohesion);
         }
     }
 }

@@ -1,8 +1,9 @@
 ﻿#nullable enable
 
+using AIRefactored.Runtime;
+using BepInEx.Logging;
 using EFT;
 using System.Collections.Generic;
-using UnityEngine;
 
 namespace AIRefactored.AI.Optimization
 {
@@ -20,6 +21,8 @@ namespace AIRefactored.AI.Optimization
         /// </summary>
         private readonly Dictionary<string, bool> _optimizationApplied = new Dictionary<string, bool>();
 
+        private static readonly ManualLogSource _log = AIRefactoredController.Logger;
+
         #endregion
 
         #region Public API
@@ -36,8 +39,7 @@ namespace AIRefactored.AI.Optimization
 
             string botId = botOwner.Profile.Id;
 
-            bool alreadyOptimized;
-            if (_optimizationApplied.TryGetValue(botId, out alreadyOptimized) && alreadyOptimized)
+            if (_optimizationApplied.TryGetValue(botId, out var alreadyOptimized) && alreadyOptimized)
                 return;
 
             LogVisionSettings(botOwner);
@@ -81,9 +83,13 @@ namespace AIRefactored.AI.Optimization
             var look = bot.Settings?.FileSettings?.Look;
             if (look != null)
             {
-                Debug.Log($"[AIRefactored-Vision] {bot.Profile.Info.Nickname} → " +
-                          $"GrassVision: {look.MAX_VISION_GRASS_METERS:F1}m | " +
-                          $"LightAdd: {look.ENEMY_LIGHT_ADD:F1}m");
+                _log.LogInfo($"[AIRefactored-Vision] {bot.Profile.Info.Nickname} → " +
+                             $"GrassVision: {look.MAX_VISION_GRASS_METERS:F1}m | " +
+                             $"LightAdd: {look.ENEMY_LIGHT_ADD:F1}m");
+            }
+            else
+            {
+                _log.LogWarning($"[AIRefactored-Vision] {bot.Profile.Info.Nickname} → Vision settings not found.");
             }
         }
 
@@ -95,9 +101,13 @@ namespace AIRefactored.AI.Optimization
             var mind = bot.Settings?.FileSettings?.Mind;
             if (mind != null)
             {
-                Debug.Log($"[AIRefactored-Mind] {bot.Profile.Info.Nickname} → " +
-                          $"MinScare: {mind.MIN_DAMAGE_SCARE:F1} | " +
-                          $"RunOnDamageChance: {mind.CHANCE_TO_RUN_CAUSE_DAMAGE_0_100}%");
+                _log.LogInfo($"[AIRefactored-Mind] {bot.Profile.Info.Nickname} → " +
+                             $"MinScare: {mind.MIN_DAMAGE_SCARE:F1} | " +
+                             $"RunOnDamageChance: {mind.CHANCE_TO_RUN_CAUSE_DAMAGE_0_100}%");
+            }
+            else
+            {
+                _log.LogWarning($"[AIRefactored-Mind] {bot.Profile.Info.Nickname} → Mind settings not found.");
             }
         }
 
@@ -107,7 +117,7 @@ namespace AIRefactored.AI.Optimization
         private void LogAggressionRole(BotOwner bot)
         {
             var role = bot.Profile.Info.Settings.Role;
-            Debug.Log($"[AIRefactored-Aggression] {bot.Profile.Info.Nickname} → Role: {role}");
+            _log.LogInfo($"[AIRefactored-Aggression] {bot.Profile.Info.Nickname} → Role: {role}");
         }
 
         #endregion

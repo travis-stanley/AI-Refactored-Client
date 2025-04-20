@@ -5,6 +5,8 @@ using AIRefactored.AI.Core;
 using AIRefactored.AI.Groups;
 using AIRefactored.AI.Missions;
 using AIRefactored.Core;
+using AIRefactored.Runtime;
+using BepInEx.Logging;
 using EFT;
 using System;
 using System.Threading;
@@ -34,6 +36,8 @@ namespace AIRefactored.AI.Optimization
         private BotBehaviorEnhancer? _behavior;
 
         private float _lastThinkTime = 0f;
+
+        private static readonly ManualLogSource _log = AIRefactoredController.Logger;
 
         /// <summary>
         /// Initializes the async processor with a bot and its component cache.
@@ -100,7 +104,7 @@ namespace AIRefactored.AI.Optimization
                         try { ThinkThreaded(); }
                         catch (Exception ex)
                         {
-                            Debug.LogWarning($"[AIRefactored-Async] ❌ Headless thinker crash: {ex.Message}");
+                            _log.LogWarning($"[AIRefactored-Async] ❌ Headless thinker crash: {ex.Message}");
                         }
                     });
                 }
@@ -144,7 +148,7 @@ namespace AIRefactored.AI.Optimization
             mind.DIST_TO_FOUND_SQRT = Mathf.Lerp(200f, 600f, 1f - personality.Cohesion);
             mind.FRIEND_AGR_KILL = Mathf.Lerp(0f, 0.4f, personality.AggressionLevel);
 
-            Debug.Log($"[AIRefactored-Async] ✅ Personality tuned → {botOwner.Profile?.Info?.Nickname ?? "Unnamed Bot"}");
+            _log.LogInfo($"[AIRefactored-Async] ✅ Personality tuned → {botOwner.Profile?.Info?.Nickname ?? "Unnamed Bot"}");
         }
     }
 }

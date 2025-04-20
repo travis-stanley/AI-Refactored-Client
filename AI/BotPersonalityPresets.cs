@@ -25,6 +25,9 @@ namespace AIRefactored.AI
             }
         }
 
+        /// <summary>
+        /// Generates a bot personality profile for the given personality type.
+        /// </summary>
         public static BotPersonalityProfile GenerateProfile(PersonalityType type)
         {
             var profile = new BotPersonalityProfile

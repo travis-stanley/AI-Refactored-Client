@@ -12,7 +12,7 @@ namespace AIRefactored.AI.Combat
     /// Simulates bot suppression response — evasive movement and flinch retreat under threat.
     /// Intended to be triggered externally by audio cues or visible fire.
     /// </summary>
-    public class BotSuppressionReactionComponent : MonoBehaviour
+    public class BotSuppressionReactionComponent
     {
         #region Fields
 
@@ -27,21 +27,12 @@ namespace AIRefactored.AI.Combat
 
         #endregion
 
-        #region Unity Lifecycle
+        #region Init
 
-        private void Awake()
+        public void Initialize(BotComponentCache cache)
         {
-            _bot = GetComponent<BotOwner>();
-            _cache = GetComponent<BotComponentCache>();
-
-            if (_bot == null)
-                Debug.LogError("[AIRefactored] ❌ BotSuppressionReactionComponent missing BotOwner!");
-        }
-
-        private void Update()
-        {
-            // Fallback if BotBrain is not ticking this
-            Tick(Time.time);
+            _cache = cache;
+            _bot = cache.Bot;
         }
 
         #endregion
@@ -101,8 +92,7 @@ namespace AIRefactored.AI.Combat
             _bot.Sprint(true);
             BotMovementHelper.SmoothMoveTo(_bot, fallback, false, cohesion);
 
-            if (_bot.BotTalk != null)
-                _bot.BotTalk.TrySay(EPhraseTrigger.OnLostVisual);
+            _bot.BotTalk?.TrySay(EPhraseTrigger.OnLostVisual);
 
             Debug.DrawLine(_bot.Position, fallback, Color.red, 1.25f);
         }

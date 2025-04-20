@@ -11,7 +11,7 @@ namespace AIRefactored.AI.Groups
     /// Coordinates group awareness and information sharing between AI squad members.
     /// Syncs loot targets, fallback decisions, and extraction targets for cohesion behavior.
     /// </summary>
-    public class BotGroupSyncCoordinator : MonoBehaviour
+    public class BotGroupSyncCoordinator
     {
         private BotOwner? _bot;
         private BotComponentCache? _cache;
@@ -30,44 +30,19 @@ namespace AIRefactored.AI.Groups
 
         private static readonly List<BotOwner> _tempList = new();
 
-        #region Unity Lifecycle
+        #region Initialization
 
-        public void Init(BotOwner bot)
+        public void Initialize(BotOwner bot)
         {
             _bot = bot;
-            _cache = _bot?.GetComponent<BotComponentCache>();
-            _group = _bot?.BotsGroup;
+            _cache = bot.GetComponent<BotComponentCache>();
+            _group = bot.BotsGroup;
 
-            if (_bot?.GetPlayer?.IsAI != true)
+            if (_bot.GetPlayer?.IsAI != true)
                 return;
 
             RegisterGroupHooks();
         }
-
-        private void Start()
-        {
-            _bot = GetComponent<BotOwner>();
-            _cache = GetComponent<BotComponentCache>();
-            _group = _bot?.BotsGroup;
-
-            if (_bot?.GetPlayer?.IsAI != true)
-                return;
-
-            RegisterGroupHooks();
-        }
-
-        private void OnDestroy()
-        {
-            if (_group != null)
-            {
-                _group.OnMemberAdd -= OnTeammateAdded;
-                _group.OnMemberRemove -= OnTeammateRemoved;
-            }
-        }
-
-        #endregion
-
-        #region Group Management
 
         private void RegisterGroupHooks()
         {
@@ -110,7 +85,7 @@ namespace AIRefactored.AI.Groups
 
         #endregion
 
-        #region Per-Frame Sync
+        #region Per-Tick Sync
 
         public void Tick(float time)
         {
@@ -122,7 +97,7 @@ namespace AIRefactored.AI.Groups
 
             _nextSyncTime = time + SyncInterval;
 
-            // Optional future: share status (is panicking, is healing, etc.)
+            // Optional: Sync status like "is suppressed", "is healing", etc.
         }
 
         #endregion

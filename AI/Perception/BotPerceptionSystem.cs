@@ -11,7 +11,7 @@ namespace AIRefactored.AI.Perception
     /// Modifies bot visual perception based on flashbangs, flares, and suppression exposure.
     /// Dynamically adjusts visible distance and tracks blindness states.
     /// </summary>
-    public class BotPerceptionSystem : MonoBehaviour, IFlashReactiveBot
+    public class BotPerceptionSystem : IFlashReactiveBot
     {
         #region Fields
 
@@ -32,15 +32,11 @@ namespace AIRefactored.AI.Perception
 
         #region Initialization
 
-        private void Awake()
+        public void Initialize(BotComponentCache cache)
         {
-            _bot = GetComponent<BotOwner>();
-            _cache = GetComponent<BotComponentCache>();
-
-            if (_bot?.GetPlayer != null)
-            {
-                _profile = BotVisionProfiles.Get(_bot.GetPlayer);
-            }
+            _cache = cache;
+            _bot = cache.Bot;
+            _profile = BotVisionProfiles.Get(_bot.GetPlayer);
         }
 
         #endregion
@@ -133,6 +129,7 @@ namespace AIRefactored.AI.Perception
             if (_flashBlindness >= PanicTriggerThreshold && Time.time - _blindStartTime < 2.5f)
                 _cache.PanicHandler.TriggerPanic();
         }
+
         private void TryShareEnemy()
         {
             if (_bot?.Memory?.GoalEnemy?.Person != null)

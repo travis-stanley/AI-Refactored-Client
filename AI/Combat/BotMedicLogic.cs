@@ -1,9 +1,8 @@
 ﻿#nullable enable
 
-using EFT;
-using UnityEngine;
 using AIRefactored.AI.Core;
 using AIRefactored.AI.Medical;
+using EFT;
 
 namespace AIRefactored.AI.Combat
 {

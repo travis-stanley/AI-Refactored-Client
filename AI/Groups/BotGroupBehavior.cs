@@ -1,9 +1,9 @@
 ﻿#nullable enable
 
-using EFT;
-using UnityEngine;
 using AIRefactored.AI.Core;
 using AIRefactored.AI.Helpers;
+using EFT;
+using UnityEngine;
 
 namespace AIRefactored.AI.Groups
 {
@@ -11,7 +11,7 @@ namespace AIRefactored.AI.Groups
     /// Controls how a bot moves and behaves relative to its group.
     /// Used for maintaining squad cohesion and spacing during patrol or fallback.
     /// </summary>
-    public class BotGroupBehavior : MonoBehaviour
+    public class BotGroupBehavior
     {
         private BotOwner? _bot;
         private BotComponentCache? _cache;
@@ -21,20 +21,26 @@ namespace AIRefactored.AI.Groups
         private const float SpacingMax = 8f;
         private const float MoveCohesion = 1.0f;
 
-        private void Awake()
+        /// <summary>
+        /// Initializes the group behavior using the shared bot cache.
+        /// </summary>
+        public void Initialize(BotComponentCache cache)
         {
-            _bot = GetComponent<BotOwner>();
-            _cache = GetComponent<BotComponentCache>();
+            _cache = cache;
+            _bot = cache.Bot;
             _group = _bot?.BotsGroup;
         }
 
+        /// <summary>
+        /// Called every frame to adjust bot's movement relative to group members.
+        /// </summary>
         public void Tick(float deltaTime)
         {
             if (_bot == null || _group == null || _bot.IsDead)
                 return;
 
             if (_bot.Memory?.GoalEnemy != null)
-                return; // In combat — let combat logic handle positioning
+                return; // Let combat state handle movement during fight
 
             for (int i = 0; i < _group.MembersCount; i++)
             {

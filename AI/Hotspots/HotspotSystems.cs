@@ -8,7 +8,11 @@ using UnityEngine;
 
 namespace AIRefactored.AI.Hotspots
 {
-    public class HotspotSystem : MonoBehaviour
+    /// <summary>
+    /// Controls bot routing along predefined high-value hotspots.
+    /// Dynamically assigns patrol or defend behaviors based on personality.
+    /// </summary>
+    public class HotspotSystem
     {
         private sealed class HotspotSession
         {
@@ -56,7 +60,7 @@ namespace AIRefactored.AI.Hotspots
                 };
             }
 
-            public void Update()
+            public void Tick()
             {
                 if (_bot == null || _bot.IsDead || _route.Count == 0 || _bot.GetPlayer?.IsYourPlayer == true)
                     return;
@@ -67,7 +71,6 @@ namespace AIRefactored.AI.Hotspots
                     return;
                 }
 
-                // Pause movement briefly if bot recently took damage
                 if (Time.time - _lastHitTime < DamageCooldown)
                     return;
 
@@ -88,9 +91,6 @@ namespace AIRefactored.AI.Hotspots
                 }
 
                 BotMovementHelper.SmoothMoveTo(_bot, _route[_index]);
-
-                // Optional: Talk trigger
-                // if (Random.value < 0.15f) _bot.BotTalk?.TrySay(EPhraseTrigger.GoForward);
             }
 
             private void MoveNext()
@@ -102,12 +102,12 @@ namespace AIRefactored.AI.Hotspots
         private readonly Dictionary<BotOwner, HotspotSession> _sessions = new();
         private static readonly List<BotOwner> _botList = new();
 
-        private void Start()
+        public void Initialize()
         {
             HotspotLoader.LoadAll();
         }
 
-        private void Update()
+        public void Tick()
         {
             var controller = Singleton<BotsController>.Instance;
             if (controller?.Bots?.BotOwners == null)
@@ -129,7 +129,7 @@ namespace AIRefactored.AI.Hotspots
                         _sessions[bot] = session;
                 }
 
-                session?.Update();
+                session?.Tick();
             }
         }
 
@@ -142,7 +142,6 @@ namespace AIRefactored.AI.Hotspots
                 return null;
 
             var profile = BotRegistry.Get(bot.ProfileId);
-
             bool defendOnly = profile?.Personality switch
             {
                 PersonalityType.Camper => true,

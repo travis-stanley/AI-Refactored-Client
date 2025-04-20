@@ -19,11 +19,7 @@ namespace AIRefactored.AI.Helpers
         /// </summary>
         public static bool TryGetPanicComponent(BotComponentCache cache, out BotPanicHandler? panic)
         {
-            panic = null;
-            if (cache == null || cache.Bot == null)
-                return false;
-
-            panic = cache.GetComponent<BotPanicHandler>();
+            panic = cache?.PanicHandler;
             return panic != null;
         }
 
@@ -44,7 +40,7 @@ namespace AIRefactored.AI.Helpers
         /// </summary>
         public static void Trigger(BotComponentCache cache)
         {
-            if (cache == null || BotCacheUtility.IsHumanPlayer(cache.Bot))
+            if (cache?.Bot == null || BotCacheUtility.IsHumanPlayer(cache.Bot))
                 return;
 
             if (TryGetPanicComponent(cache, out var panic))
@@ -62,7 +58,7 @@ namespace AIRefactored.AI.Helpers
             for (int i = 0; i < group.Count; i++)
             {
                 var cache = group[i];
-                if (cache == null || BotCacheUtility.IsHumanPlayer(cache.Bot))
+                if (cache?.Bot == null || BotCacheUtility.IsHumanPlayer(cache.Bot))
                     continue;
 
                 if (TryGetPanicComponent(cache, out var panic))

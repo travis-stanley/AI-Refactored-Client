@@ -10,7 +10,7 @@ namespace AIRefactored.AI.Combat
     /// Monitors panic duration, enemy count, and squad losses to trigger runtime threat escalation.
     /// Used by BotBrain to boost bot tuning and threat posture.
     /// </summary>
-    public class BotThreatEscalationMonitor : MonoBehaviour
+    public class BotThreatEscalationMonitor
     {
         private BotOwner? _bot;
         private float _panicStartTime = -1f;
@@ -21,11 +21,9 @@ namespace AIRefactored.AI.Combat
         private const float PanicDurationThreshold = 4.0f;
         private const float SquadCasualtyThreshold = 0.4f;
 
-        private void Awake()
+        public void Initialize(BotOwner bot)
         {
-            _bot = GetComponent<BotOwner>();
-            if (_bot == null)
-                Debug.LogError("[AIRefactored] ❌ BotThreatEscalationMonitor missing BotOwner!");
+            _bot = bot;
         }
 
         /// <summary>

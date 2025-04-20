@@ -13,49 +13,46 @@ namespace AIRefactored.AI.Helpers
     /// </summary>
     public static class BotCacheUtility
     {
-        #region Component Access
+        // Central registry for pure-C# cache lookups
+        private static readonly Dictionary<BotOwner, BotComponentCache> CacheRegistry = new();
 
-        /// <summary>
-        /// Tries to get a specific component attached to the bot GameObject.
-        /// </summary>
-        public static bool TryGet<T>(BotComponentCache cache, out T? result) where T : class
+        #region Registry
+
+        public static void Register(BotOwner bot, BotComponentCache cache)
         {
-            result = null;
-            if (cache == null || cache.gameObject == null || cache.Bot == null)
-                return false;
-
-            result = cache.GetComponent<T>();
-            return result != null;
+            if (bot != null && !CacheRegistry.ContainsKey(bot))
+                CacheRegistry.Add(bot, cache);
         }
 
-        /// <summary>
-        /// Attempts to retrieve the panic handler component for a bot.
-        /// </summary>
-        public static bool TryGetPanicComponent(BotComponentCache cache, out BotPanicHandler? panic)
+        public static void Unregister(BotOwner bot)
         {
-            panic = null;
-            if (cache == null || cache.gameObject == null)
-                return false;
-
-            panic = cache.GetComponent<BotPanicHandler>();
-            return panic != null;
+            if (bot != null)
+                CacheRegistry.Remove(bot);
         }
 
-        /// <summary>
-        /// Gets the BotComponentCache from a player reference, if present.
-        /// </summary>
+        public static BotComponentCache? GetCache(BotOwner bot)
+        {
+            return CacheRegistry.TryGetValue(bot, out var cache) ? cache : null;
+        }
+
         public static BotComponentCache? GetCache(Player player)
         {
-            return player != null ? player.GetComponent<BotComponentCache>() : null;
+            return player?.AIData?.BotOwner is BotOwner bot ? GetCache(bot) : null;
+        }
+
+        public static IEnumerable<BotComponentCache> AllActiveBots()
+        {
+            foreach (var pair in CacheRegistry)
+            {
+                if (pair.Key != null && !pair.Key.IsDead)
+                    yield return pair.Value;
+            }
         }
 
         #endregion
 
-        #region Lookup & Metadata
+        #region Metadata & Personality
 
-        /// <summary>
-        /// Retrieves the assigned personality profile from a cache.
-        /// </summary>
         public static BotPersonalityProfile? GetPersonality(BotComponentCache cache)
         {
             if (cache == null || cache.Bot?.ProfileId == null)
@@ -64,9 +61,6 @@ namespace AIRefactored.AI.Helpers
             return BotRegistry.Get(cache.Bot.ProfileId);
         }
 
-        /// <summary>
-        /// Returns the bot's display name and faction side.
-        /// </summary>
         public static string GetBotName(BotComponentCache cache)
         {
             if (cache == null || cache.Bot?.Profile?.Info == null)
@@ -79,11 +73,8 @@ namespace AIRefactored.AI.Helpers
 
         #endregion
 
-        #region Visibility & Position
+        #region Tactical & Transform
 
-        /// <summary>
-        /// Returns the Transform representing the bot's head position.
-        /// </summary>
         public static Transform? Head(BotComponentCache cache)
         {
             if (cache?.Bot?.MainParts != null &&
@@ -95,9 +86,6 @@ namespace AIRefactored.AI.Helpers
             return null;
         }
 
-        /// <summary>
-        /// Returns the transform the bot uses for forward-facing calculations.
-        /// </summary>
         public static Transform? GetLookTransform(BotComponentCache cache)
         {
             return cache?.Bot?.Fireport?.Original;
@@ -105,37 +93,23 @@ namespace AIRefactored.AI.Helpers
 
         #endregion
 
-        #region Query Utilities
+        #region Panic Support
 
-        /// <summary>
-        /// Returns all currently active bots in the scene with alive BotOwners.
-        /// </summary>
-        public static IEnumerable<BotComponentCache> AllActiveBots()
+        public static bool TryGetPanicComponent(BotComponentCache cache, out BotPanicHandler? panic)
         {
-            BotComponentCache[] all = Object.FindObjectsOfType<BotComponentCache>();
-            for (int i = 0; i < all.Length; i++)
-            {
-                BotComponentCache cache = all[i];
-                if (cache?.Bot != null && !cache.Bot.IsDead)
-                    yield return cache;
-            }
+            panic = cache.PanicHandler;
+            return panic != null;
         }
 
         #endregion
 
         #region Human Checks
 
-        /// <summary>
-        /// Checks if a given Player is a human-controlled character.
-        /// </summary>
         public static bool IsHumanPlayer(Player? player)
         {
             return player != null && !player.IsAI;
         }
 
-        /// <summary>
-        /// Checks if a given BotOwner is actually controlled by a human (e.g., Coop/FIKA).
-        /// </summary>
         public static bool IsHumanPlayer(BotOwner? bot)
         {
             return bot?.GetPlayer != null && !bot.GetPlayer.IsAI;

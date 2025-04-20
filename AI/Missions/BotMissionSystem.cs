@@ -15,7 +15,7 @@ using UnityEngine;
 
 namespace AIRefactored.AI.Missions
 {
-    public class BotMissionSystem : MonoBehaviour
+    public class BotMissionSystem
     {
         public enum MissionType { Loot, Fight, Quest }
 
@@ -42,17 +42,20 @@ namespace AIRefactored.AI.Missions
 
         private readonly System.Random _rng = new();
 
-        public void Init(BotOwner bot)
+        public void Initialize(BotOwner bot)
         {
             _bot = bot ?? throw new ArgumentNullException(nameof(bot));
             if (_bot.GetPlayer?.IsYourPlayer == true)
                 return;
 
-            _group = _bot.GetPlayer?.GetComponent<BotGroupSyncCoordinator>();
-            _combat = _bot.GetPlayer?.GetComponent<CombatStateMachine>();
+            _group = BotCacheUtility.GetCache(bot.GetPlayer!)?.GroupBehavior != null
+                ? bot.GetPlayer!.GetComponent<BotGroupSyncCoordinator>()
+                : null;
+
+            _combat = BotCacheUtility.GetCache(bot.GetPlayer!)?.Combat;
             _personality = BotRegistry.Get(_bot.Profile.Id);
-            _lootScanner = _bot.GetPlayer?.GetComponent<BotLootScanner>();
-            _deadBodyScanner = _bot.GetPlayer?.GetComponent<BotDeadBodyScanner>();
+            _lootScanner = BotCacheUtility.GetCache(bot.GetPlayer!)?.AIRefactoredBotOwner?.GetComponent<BotLootScanner>();
+            _deadBodyScanner = BotCacheUtility.GetCache(bot.GetPlayer!)?.AIRefactoredBotOwner?.GetComponent<BotDeadBodyScanner>();
 
             if (!_forcedMission)
                 PickMission();
@@ -64,7 +67,7 @@ namespace AIRefactored.AI.Missions
             _forcedMission = true;
         }
 
-        public void ManualTick(float time)
+        public void Tick(float time)
         {
             if (_bot == null || _bot.GetPlayer == null || !_bot.GetPlayer.HealthController.IsAlive)
                 return;
@@ -111,7 +114,6 @@ namespace AIRefactored.AI.Missions
             Vector3 rawObjective = GetInitialObjective(_missionType);
             _currentObjective = GetStaggeredMissionObjective(rawObjective);
             BotMovementHelper.SmoothMoveTo(_bot, _currentObjective);
-
             BotTeamLogic.BroadcastMissionType(_bot, _missionType);
         }
 
@@ -140,10 +142,10 @@ namespace AIRefactored.AI.Missions
                 return target;
 
             int index = 0;
-            for (int i = 0; i < _group.GetTeammates().Count; i++)
+            var teammates = _group.GetTeammates();
+            for (int i = 0; i < teammates.Count; i++)
             {
-                var mate = _group.GetTeammates()[i];
-                if (mate == _bot)
+                if (teammates[i] == _bot)
                 {
                     index = i;
                     break;

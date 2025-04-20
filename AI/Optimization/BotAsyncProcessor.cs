@@ -1,6 +1,7 @@
 ﻿#nullable enable
 
 using AIRefactored.AI.Behavior;
+using AIRefactored.AI.Core;
 using AIRefactored.AI.Groups;
 using AIRefactored.AI.Missions;
 using AIRefactored.Core;
@@ -16,10 +17,12 @@ namespace AIRefactored.AI.Optimization
     /// Performs async-safe, low-frequency personality initialization and runtime optimization.
     /// On headless servers, offloads processing to background threads for higher tick frequency and throughput.
     /// </summary>
-    public class BotAsyncProcessor : MonoBehaviour
+    public class BotAsyncProcessor
     {
         private BotOwner? _bot;
+        private BotComponentCache? _cache;
         private bool _hasInitialized;
+
         private const float InitDelay = 0.5f;
         private const float HeadlessThinkCooldown = 1.5f;
         private const float NormalThinkCooldown = 3.5f;
@@ -32,8 +35,21 @@ namespace AIRefactored.AI.Optimization
 
         private float _lastThinkTime = 0f;
 
-        private void Start()
+        /// <summary>
+        /// Initializes the async processor with a bot and its component cache.
+        /// </summary>
+        public void Initialize(BotOwner botOwner, BotComponentCache cache)
         {
+            _bot = botOwner;
+            _cache = cache;
+            _stateCache = new BotOwnerStateCache();
+
+            _mission = new BotMissionSystem();
+            _mission.Initialize(botOwner);
+
+            _behavior = new BotBehaviorEnhancer();
+            _behavior.Initialize(cache);
+
             Task.Run(async () =>
             {
                 await Task.Delay((int)(InitDelay * 1000f));
@@ -42,14 +58,9 @@ namespace AIRefactored.AI.Optimization
             });
         }
 
-        public void Initialize(BotOwner botOwner)
-        {
-            _bot = botOwner;
-            _stateCache = new BotOwnerStateCache();
-            _mission = GetComponent<BotMissionSystem>();
-            _behavior = GetComponent<BotBehaviorEnhancer>();
-        }
-
+        /// <summary>
+        /// Applies tuning logic after bot is fully loaded.
+        /// </summary>
         public async Task ProcessBotOwnerAsync(BotOwner botOwner)
         {
             if (_hasInitialized || botOwner?.Settings?.FileSettings?.Mind == null)
@@ -60,6 +71,9 @@ namespace AIRefactored.AI.Optimization
             _hasInitialized = true;
         }
 
+        /// <summary>
+        /// Executes low-frequency logic ticks for squad sync, thinking, and async ops.
+        /// </summary>
         public void Tick(float time)
         {
             if (!_hasInitialized || _bot == null || _bot.IsDead)
@@ -67,7 +81,6 @@ namespace AIRefactored.AI.Optimization
 
             _stateCache?.UpdateBotOwnerStateIfNeeded(_bot);
 
-            // Optimize squad grouping
             var groupId = _bot.Profile?.Info?.GroupId;
             if (!string.IsNullOrEmpty(groupId))
             {
@@ -75,7 +88,6 @@ namespace AIRefactored.AI.Optimization
                 _groupOptimizer.OptimizeGroupAI(teammates);
             }
 
-            // Lightweight decision logic — threaded for headless mode
             float cooldown = FikaHeadlessDetector.IsHeadless ? HeadlessThinkCooldown : NormalThinkCooldown;
             if (time - _lastThinkTime >= cooldown)
             {
@@ -99,12 +111,14 @@ namespace AIRefactored.AI.Optimization
             }
         }
 
+        /// <summary>
+        /// Main decision loop executed either inline or from thread pool.
+        /// </summary>
         private void ThinkThreaded()
         {
-            _mission?.ManualTick(Time.time);
+            _mission?.Tick(Time.time);
             _behavior?.Tick(Time.time);
 
-            // Optionally enqueue light vocal logic
             if (_bot != null && UnityEngine.Random.value < 0.01f)
             {
                 BotWorkScheduler.EnqueueToMainThread(() =>
@@ -114,6 +128,9 @@ namespace AIRefactored.AI.Optimization
             }
         }
 
+        /// <summary>
+        /// Applies baseline behavior modifiers from personality to EFT mind parameters.
+        /// </summary>
         private void ApplyPersonalityModifiers(BotOwner botOwner)
         {
             var mind = botOwner.Settings.FileSettings.Mind;

@@ -12,22 +12,45 @@ namespace AIRefactored.AI.Looting
     /// Scans for lootable containers and items near the bot, prioritizing line-of-sight and proximity.
     /// Supports GetHighestValueLootPoint for mission targeting and TryLootNearby for reactive looting.
     /// </summary>
-    public class BotLootScanner : MonoBehaviour
+    public class BotLootScanner
     {
         private BotOwner? _bot;
         private BotComponentCache? _cache;
         private const float ScanRadius = 12f;
         private const float MaxAngle = 120f;
 
-        private void Awake()
+        private float _nextScanTime = 0f;
+        private const float ScanInterval = 1.5f;
+
+        public void Initialize(BotComponentCache cache)
         {
-            _bot = GetComponent<BotOwner>();
-            _cache = GetComponent<BotComponentCache>();
+            _cache = cache;
+            _bot = cache.Bot;
         }
 
         public void Tick(float deltaTime)
         {
-            // Optional scanning logic could be added here
+            if (_bot == null || FikaHeadlessDetector.IsHeadless || _bot.IsDead)
+                return;
+
+            float now = Time.time;
+            if (now >= _nextScanTime)
+            {
+                _nextScanTime = now + ScanInterval;
+
+                if (CanLoot())
+                {
+                    if (TryFindNearbyContainer(out var container))
+                    {
+                        Debug.DrawLine(_bot.Position, container.transform.position, Color.green, 1f);
+                    }
+
+                    if (TryFindNearbyItem(out var item))
+                    {
+                        Debug.DrawLine(_bot.Position, item.transform.position, Color.cyan, 1f);
+                    }
+                }
+            }
         }
 
         public void TryLootNearby()
@@ -91,7 +114,10 @@ namespace AIRefactored.AI.Looting
         private bool TryFindNearbyContainer(out LootableContainer container)
         {
             container = null!;
-            Collider[] hits = Physics.OverlapSphere(_bot!.Position, ScanRadius, LayerMaskClass.LootLayerMask);
+            if (_bot == null)
+                return false;
+
+            Collider[] hits = Physics.OverlapSphere(_bot.Position, ScanRadius, LayerMaskClass.LootLayerMask);
 
             foreach (var hit in hits)
             {
@@ -109,7 +135,10 @@ namespace AIRefactored.AI.Looting
         private bool TryFindNearbyItem(out LootItem item)
         {
             item = null!;
-            Collider[] hits = Physics.OverlapSphere(_bot!.Position, ScanRadius, LayerMaskClass.LootLayerMask);
+            if (_bot == null)
+                return false;
+
+            Collider[] hits = Physics.OverlapSphere(_bot.Position, ScanRadius, LayerMaskClass.LootLayerMask);
 
             foreach (var hit in hits)
             {

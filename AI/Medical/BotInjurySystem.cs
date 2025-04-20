@@ -1,11 +1,7 @@
 ﻿#nullable enable
 
-using EFT;
-using UnityEngine;
-using EFT.HealthSystem;
 using AIRefactored.AI.Core;
-using AIRefactored.AI.Combat;
-using AIRefactored.AI.Helpers;
+using UnityEngine;
 
 namespace AIRefactored.AI.Medical
 {

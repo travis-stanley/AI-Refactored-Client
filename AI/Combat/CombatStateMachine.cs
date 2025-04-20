@@ -7,12 +7,11 @@ using AIRefactored.AI.Hotspots;
 using AIRefactored.AI.Memory;
 using AIRefactored.AI.Optimization;
 using EFT;
-using System.Collections.Generic;
 using UnityEngine;
 
 namespace AIRefactored.AI.Combat
 {
-    public class CombatStateMachine : MonoBehaviour
+    public class CombatStateMachine
     {
         private enum CombatState { Patrol, Investigate, Engage, Attack, Fallback }
 
@@ -43,15 +42,15 @@ namespace AIRefactored.AI.Combat
         private const float MoveTargetTolerance = 1.0f;
         private const float RepathIfStuckDuration = 6f;
 
-        private void Awake()
+        public void Initialize(BotComponentCache cache)
         {
-            _bot = GetComponent<BotOwner>();
-            _cache = GetComponent<BotComponentCache>();
-            _owner = GetComponent<AIRefactoredBotOwner>();
+            _cache = cache;
+            _bot = cache.Bot;
+            _owner = cache.AIRefactoredBotOwner;
             _profile = _owner?.PersonalityProfile;
-            _suppress = GetComponent<BotSuppressionReactionComponent>();
-            _tacticalMemory = GetComponent<BotTacticalMemory>();
-            _squadCoordinator = GetComponent<SquadPathCoordinator>();
+            _suppress = cache.Suppression;
+            _tacticalMemory = cache.TacticalMemory;
+            _squadCoordinator = cache.SquadPath;
         }
 
         public void Tick(float time)

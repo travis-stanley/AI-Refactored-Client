@@ -1,7 +1,6 @@
 ﻿#nullable enable
 
 using AIRefactored.AI.Core;
-using AIRefactored.AI.Groups;
 using EFT;
 using UnityEngine;
 
@@ -50,8 +49,8 @@ namespace AIRefactored.AI.Movement
 
             // === Squad spacing (formation)
             Vector3 squadOffset = Vector3.zero;
-            if (_cache.GetComponent<SquadPathCoordinator>() is SquadPathCoordinator squad)
-                squadOffset = squad.GetCurrentOffset();
+            if (_cache.SquadPath != null)
+                squadOffset = _cache.SquadPath.GetCurrentOffset();
 
             // === Teammate avoidance (repulsion vector)
             Vector3 avoidance = Vector3.zero;

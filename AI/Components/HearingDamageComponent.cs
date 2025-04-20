@@ -13,8 +13,8 @@ namespace AIRefactored.AI.Components
         private float _deafness = 0f;
         private float _deafUntilTime = 0f;
 
-        private const float RecoveryRate = 0.3f; // Per second
-        private const float DeafenedThreshold = 0.2f;
+        private const float RecoveryRate = 0.3f;       // Per second
+        private const float DeafenedThreshold = 0.2f;  // >= this = impaired
 
         /// <summary>
         /// Current deafness level (0.0 = full hearing, 1.0 = fully deaf).

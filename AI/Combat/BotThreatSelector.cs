@@ -1,6 +1,5 @@
 ﻿#nullable enable
 
-using System.Collections.Generic;
 using AIRefactored.AI.Core;
 using Comfort.Common;
 using EFT;

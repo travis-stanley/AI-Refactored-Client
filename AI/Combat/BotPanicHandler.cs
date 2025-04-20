@@ -6,13 +6,12 @@ using AIRefactored.AI.Memory;
 using AIRefactored.AI.Optimization;
 using AIRefactored.Core;
 using EFT;
-using EFT.HealthSystem;
 using System.Collections.Generic;
 using UnityEngine;
 
 namespace AIRefactored.AI.Combat
 {
-    public class BotPanicHandler : MonoBehaviour
+    public class BotPanicHandler
     {
         #region Fields
 
@@ -40,12 +39,12 @@ namespace AIRefactored.AI.Combat
 
         #endregion
 
-        #region Lifecycle
+        #region Initialization
 
-        private void Awake()
+        public void Initialize(BotComponentCache cache)
         {
-            _bot = GetComponent<BotOwner>();
-            _cache = GetComponent<BotComponentCache>();
+            _cache = cache;
+            _bot = cache.Bot;
 
             if (_bot?.GetPlayer?.HealthController is HealthControllerClass health)
                 health.ApplyDamageEvent += OnDamaged;

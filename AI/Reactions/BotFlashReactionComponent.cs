@@ -1,5 +1,6 @@
 ﻿#nullable enable
 
+using AIRefactored.AI.Core;
 using AIRefactored.AI.Helpers;
 using EFT;
 using UnityEngine;
@@ -10,16 +11,17 @@ namespace AIRefactored.AI.Reactions
     /// Handles bot reaction to intense light sources (e.g., flashbangs, flashlights) by triggering suppression,
     /// fallback movement, and panic synchronization. Enhances realism under light-based threats.
     /// </summary>
-    public class BotFlashReactionComponent : MonoBehaviour
+    public class BotFlashReactionComponent
     {
         #region Public Properties
 
-        public BotOwner? Bot { get; private set; }
+        public BotOwner? Bot => _cache?.Bot;
 
         #endregion
 
         #region Private Fields
 
+        private BotComponentCache? _cache;
         private float _suppressedUntil = -1f;
         private float _lastTriggerTime = -1f;
 
@@ -29,11 +31,11 @@ namespace AIRefactored.AI.Reactions
 
         #endregion
 
-        #region Unity Lifecycle
+        #region Initialization
 
-        private void Awake()
+        public void Initialize(BotComponentCache cache)
         {
-            Bot = GetComponent<BotOwner>();
+            _cache = cache;
         }
 
         #endregion
@@ -53,8 +55,7 @@ namespace AIRefactored.AI.Reactions
         public void TriggerSuppression(float strength = 0.6f)
         {
             float now = Time.time;
-
-            if (Bot == null || Bot.IsDead || !Bot.GetPlayer?.IsAI == true)
+            if (_cache?.Bot == null || _cache.Bot.IsDead || !_cache.Bot.GetPlayer?.IsAI == true)
                 return;
 
             if (now - _lastTriggerTime < Cooldown)
@@ -66,7 +67,7 @@ namespace AIRefactored.AI.Reactions
             float duration = Mathf.Lerp(MinDuration, MaxDuration, clampedStrength);
             _suppressedUntil = now + duration;
 
-            TriggerFallbackMovement(Bot.Position - Bot.LookDirection.normalized);
+            TriggerFallbackMovement(_cache.Bot.Position - _cache.Bot.LookDirection.normalized);
             TriggerPanicSync();
         }
 
@@ -78,27 +79,26 @@ namespace AIRefactored.AI.Reactions
 
         private void TriggerFallbackMovement(Vector3 from)
         {
-            if (Bot == null || Bot.IsDead || Bot.Transform == null)
+            if (_cache?.Bot == null || _cache.Bot.IsDead)
                 return;
 
-            Vector3 fallbackDir = (Bot.Position - from).normalized;
-            Vector3 retreat = Bot.Position + fallbackDir * 5f + Random.insideUnitSphere * 1.5f;
-            retreat.y = Bot.Position.y;
+            Vector3 fallbackDir = (_cache.Bot.Position - from).normalized;
+            Vector3 retreat = _cache.Bot.Position + fallbackDir * 5f + Random.insideUnitSphere * 1.5f;
+            retreat.y = _cache.Bot.Position.y;
 
-            BotMovementHelper.SmoothMoveTo(Bot, retreat, cohesionScale: 1.0f);
+            BotMovementHelper.SmoothMoveTo(_cache.Bot, retreat, cohesionScale: 1.0f);
         }
 
         private void TriggerPanicSync()
         {
-            if (Bot == null)
+            if (_cache?.Bot == null)
                 return;
 
-            var player = Bot.GetPlayer;
+            var player = _cache.Bot.GetPlayer;
             if (player == null || !player.IsAI)
                 return;
 
-            var cache = BotCacheUtility.GetCache(player);
-            if (cache != null && BotPanicUtility.TryGetPanicComponent(cache, out var panic))
+            if (BotPanicUtility.TryGetPanicComponent(_cache, out var panic))
             {
                 panic.TriggerPanic();
             }

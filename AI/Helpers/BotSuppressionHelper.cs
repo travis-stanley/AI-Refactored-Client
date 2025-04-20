@@ -1,7 +1,6 @@
 ﻿#nullable enable
 
 using AIRefactored.AI.Core;
-using AIRefactored.AI.Reactions;
 using EFT;
 using System.Reflection;
 using UnityEngine;
@@ -26,7 +25,7 @@ namespace AIRefactored.AI.Helpers
 
         public static BotComponentCache? GetCache(Player bot)
         {
-            return bot.GetComponent<BotComponentCache>();
+            return BotCacheUtility.GetCache(bot);
         }
 
         #endregion
@@ -45,7 +44,7 @@ namespace AIRefactored.AI.Helpers
             }
 
             _setUnderFireMethod?.Invoke(owner.ShootData, null);
-            LogDebug($"{owner.Profile?.Info?.Nickname ?? "?"} marked under fire.");
+
         }
 
         public static void TrySuppressBot(Player bot, Vector3 flashSource)
@@ -57,20 +56,20 @@ namespace AIRefactored.AI.Helpers
             if (cache == null)
                 return;
 
-            if (BotPanicUtility.TryGet(cache, out var panic))
+            if (cache.PanicHandler != null)
             {
-                panic.TriggerPanic();
-                LogDebug($"{bot.Profile?.Info?.Nickname ?? "?"} triggered PANIC via PanicHandler.");
+                cache.PanicHandler.TriggerPanic();
+
                 return;
             }
 
-            if (cache.TryGetComponent(out BotFlashReactionComponent? flashReaction))
+            if (cache.FlashGrenade != null)
             {
-                flashReaction.TriggerSuppression(0.6f); // default suppression intensity
-                LogDebug($"{bot.Profile?.Info?.Nickname ?? "?"} triggered SUPPRESSION via FlashReactionComponent.");
-            }
-        }
+                cache.FlashGrenade.AddBlindEffect(4.5f, flashSource);
 
+            }
+
+        }
 
         public static bool ShouldTriggerSuppression(Player bot, float visibleDistThreshold = 12f, float ambientThreshold = 0.25f)
         {
@@ -86,16 +85,5 @@ namespace AIRefactored.AI.Helpers
 
         #endregion
 
-        #region Logging
-
-        private static void LogDebug(string msg)
-        {
-#if UNITY_EDITOR
-            if (EnableDebugLogs)
-                Debug.Log($"[AIRefactored-Suppress] {msg}");
-#endif
-        }
-
-        #endregion
     }
 }

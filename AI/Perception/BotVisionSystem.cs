@@ -3,7 +3,6 @@
 using AIRefactored.AI.Core;
 using AIRefactored.AI.Group;
 using AIRefactored.AI.Memory;
-using AIRefactored.AI.Perception;
 using Comfort.Common;
 using EFT;
 using UnityEngine;
@@ -14,7 +13,7 @@ namespace AIRefactored.AI.Perception
     /// Simulates realistic bot vision perception with real-time FOV and line-of-sight checks.
     /// Detects enemies every frame for smooth visual reactions.
     /// </summary>
-    public class BotVisionSystem : MonoBehaviour
+    public class BotVisionSystem
     {
         #region Constants
 
@@ -46,20 +45,14 @@ namespace AIRefactored.AI.Perception
 
         #endregion
 
-        #region Unity Lifecycle
-
-        private void Awake()
+        public void Initialize(BotComponentCache cache)
         {
-            _bot = GetComponent<BotOwner>();
-            _cache = GetComponent<BotComponentCache>();
-            _owner = GetComponent<AIRefactoredBotOwner>();
+            _cache = cache;
+            _bot = cache.Bot;
+            _owner = cache.AIRefactoredBotOwner;
             _profile = _owner?.PersonalityProfile;
-            _memory = GetComponent<BotTacticalMemory>();
+            _memory = cache.TacticalMemory;
         }
-
-        #endregion
-
-        #region Public Tick
 
         /// <summary>
         /// Called every frame by BotBrain for real-time vision processing.
@@ -106,8 +99,6 @@ namespace AIRefactored.AI.Perception
                 }
             }
         }
-
-        #endregion
 
         #region Visibility Logic
 
@@ -177,8 +168,12 @@ namespace AIRefactored.AI.Perception
 
                 if (!Physics.Linecast(origin, targetPoint, out var hit) || hit.collider?.gameObject == target.gameObject)
                 {
-                    _cache.VisibilityTracker ??= new TrackedEnemyVisibility(transform);
-                    _cache.VisibilityTracker.UpdateBoneVisibility(boneType.ToString(), targetPoint);
+                    if (_cache.VisibilityTracker == null && _bot.Transform?.Original != null)
+                    {
+                        _cache.VisibilityTracker = new TrackedEnemyVisibility(_bot.Transform.Original);
+                    }
+
+                    _cache.VisibilityTracker?.UpdateBoneVisibility(boneType.ToString(), targetPoint);
                 }
             }
         }

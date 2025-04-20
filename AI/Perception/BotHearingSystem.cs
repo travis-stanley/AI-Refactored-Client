@@ -13,16 +13,16 @@ namespace AIRefactored.AI.Perception
     /// Listens for nearby sounds like gunfire or movement and registers them with bot memory.
     /// Adjusted by hearing damage and auditory range.
     /// </summary>
-    public class BotHearingSystem : MonoBehaviour
+    public class BotHearingSystem
     {
         private BotOwner? _bot;
         private BotComponentCache? _cache;
         private float _baseRange = 35f;
 
-        private void Awake()
+        public void Initialize(BotComponentCache cache)
         {
-            _bot = GetComponent<BotOwner>();
-            _cache = GetComponent<BotComponentCache>();
+            _cache = cache;
+            _bot = cache.Bot;
         }
 
         /// <summary>
@@ -41,7 +41,7 @@ namespace AIRefactored.AI.Perception
 
             foreach (var player in players)
             {
-                if (player == null || player == _bot.GetPlayer || !player.IsAI && !player.IsYourPlayer)
+                if (player == null || player == _bot.GetPlayer || (!player.IsAI && !player.IsYourPlayer))
                     continue;
 
                 float dist = Vector3.Distance(myPos, player.Position);
@@ -53,7 +53,6 @@ namespace AIRefactored.AI.Perception
                     continue;
 
                 _cache?.RegisterHeardSound(player.Position);
-
             }
         }
 

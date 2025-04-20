@@ -2,7 +2,6 @@
 
 using UnityEngine;
 using UnityEngine.AI;
-using EFT;
 
 namespace AIRefactored.AI.Movement
 {

@@ -1,10 +1,8 @@
 ﻿#nullable enable
 
-using EFT;
-using UnityEngine;
 using AIRefactored.AI.Core;
-using System.Collections.Generic;
 using AIRefactored.AI.Helpers;
+using UnityEngine;
 
 namespace AIRefactored.AI.Groups
 {

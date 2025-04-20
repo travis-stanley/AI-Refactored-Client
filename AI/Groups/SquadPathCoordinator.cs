@@ -1,5 +1,6 @@
 ﻿#nullable enable
 
+using AIRefactored.AI.Core;
 using EFT;
 using UnityEngine;
 
@@ -9,7 +10,7 @@ namespace AIRefactored.AI.Groups
     /// Applies squad-aware offset to movement destinations to prevent pathing collisions and clumping.
     /// Dynamically staggers formation using radial patterns based on bot index.
     /// </summary>
-    public class SquadPathCoordinator : MonoBehaviour
+    public class SquadPathCoordinator
     {
         private BotOwner? _bot;
         private BotsGroup? _group;
@@ -17,9 +18,12 @@ namespace AIRefactored.AI.Groups
         private const float OffsetRadius = 2.25f;
         private const float MinSpacing = 1.25f;
 
-        private void Awake()
+        /// <summary>
+        /// Initializes the squad coordinator using the bot's component cache.
+        /// </summary>
+        public void Initialize(BotComponentCache cache)
         {
-            _bot = GetComponent<BotOwner>();
+            _bot = cache.Bot;
             _group = _bot?.BotsGroup;
         }
 

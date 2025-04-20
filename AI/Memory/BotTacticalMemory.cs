@@ -1,5 +1,6 @@
 ﻿#nullable enable
 
+using AIRefactored.AI.Core;
 using System.Collections.Generic;
 using UnityEngine;
 
@@ -9,7 +10,7 @@ namespace AIRefactored.AI.Memory
     /// Stores recent tactical memory for a bot, including last seen enemy positions, scan points, and per-bone visibility.
     /// Prevents redundant investigation and encourages coordinated squad behavior.
     /// </summary>
-    public class BotTacticalMemory : MonoBehaviour
+    public class BotTacticalMemory
     {
         private const float MaxMemoryTime = 14f;
         private const float ClearedMemoryDuration = 10f;
@@ -17,6 +18,16 @@ namespace AIRefactored.AI.Memory
 
         private readonly Dictionary<Vector3, float> _clearedSpots = new(32, new Vector3EqualityComparer());
         private readonly List<SeenEnemyRecord> _enemyMemory = new(4);
+
+        private BotComponentCache? _cache;
+
+        /// <summary>
+        /// Injects BotComponentCache reference for personality and perception access.
+        /// </summary>
+        public void Initialize(BotComponentCache cache)
+        {
+            _cache = cache;
+        }
 
         /// <summary>
         /// Adds a new enemy position to memory.
@@ -80,7 +91,8 @@ namespace AIRefactored.AI.Memory
         public bool WasRecentlyCleared(Vector3 position)
         {
             Vector3 gridPos = SnapToGrid(position);
-            return _clearedSpots.TryGetValue(gridPos, out float lastCleared) && Time.time - lastCleared < ClearedMemoryDuration;
+            return _clearedSpots.TryGetValue(gridPos, out float lastCleared) &&
+                   Time.time - lastCleared < ClearedMemoryDuration;
         }
 
         /// <summary>

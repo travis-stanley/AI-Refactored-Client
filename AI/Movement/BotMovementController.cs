@@ -7,7 +7,7 @@ using UnityEngine;
 
 namespace AIRefactored.AI.Movement
 {
-    public class BotMovementController : MonoBehaviour
+    public class BotMovementController
     {
         private BotOwner? _bot;
         private BotComponentCache? _cache;
@@ -29,10 +29,10 @@ namespace AIRefactored.AI.Movement
         private float _strafeTimer = 0f;
         private float _nextLeanAllowed = 0f;
 
-        private void Awake()
+        public void Initialize(BotComponentCache cache)
         {
-            _bot = GetComponent<BotOwner>();
-            _cache = GetComponent<BotComponentCache>();
+            _cache = cache;
+            _bot = cache.Bot;
 
             if (_bot != null && _cache != null)
                 _trajectory = new BotMovementTrajectoryPlanner(_bot, _cache);
@@ -73,16 +73,19 @@ namespace AIRefactored.AI.Movement
 
         private void SmoothLookTo(Vector3 target, float deltaTime)
         {
-            Vector3 direction = target - transform.position;
+            if (_bot == null)
+                return;
+
+            Vector3 direction = target - _bot.Transform.position;
             direction.y = 0f;
             if (direction.sqrMagnitude < 0.01f) return;
 
-            float angle = Vector3.Angle(transform.forward, direction);
+            float angle = Vector3.Angle(_bot.Transform.forward, direction);
             if (_cache?.Tilt?._coreTilt == true && angle > 80f)
                 return;
 
             Quaternion targetRotation = Quaternion.LookRotation(direction);
-            transform.rotation = Quaternion.Lerp(transform.rotation, targetRotation, LookSmoothSpeed * deltaTime);
+            _bot.Transform.rotation = Quaternion.Lerp(_bot.Transform.rotation, targetRotation, LookSmoothSpeed * deltaTime);
         }
 
         private void ApplyInertia(float deltaTime)
@@ -117,7 +120,7 @@ namespace AIRefactored.AI.Movement
                 _strafeTimer = UnityEngine.Random.Range(0.4f, 0.8f);
             }
 
-            Vector3 baseStrafe = _isStrafingRight ? transform.right : -transform.right;
+            Vector3 baseStrafe = _isStrafingRight ? _bot.Transform.right : -_bot.Transform.right;
 
             Vector3 avoidVector = Vector3.zero;
             if (_bot.BotsGroup != null)
@@ -162,8 +165,8 @@ namespace AIRefactored.AI.Movement
             Vector3 toEnemy = enemyPos - _bot.Position;
 
             Vector3 origin = _bot.Position + Vector3.up * 1.5f;
-            Vector3 left = -transform.right;
-            Vector3 right = transform.right;
+            Vector3 left = -_bot.Transform.right;
+            Vector3 right = _bot.Transform.right;
 
             float checkDist = 1.5f;
             bool wallLeft = Physics.Raycast(origin, left, checkDist);
@@ -178,7 +181,7 @@ namespace AIRefactored.AI.Movement
             if (inCover && cover != null)
             {
                 Vector3 coverToBot = _bot.Position - cover.Position;
-                float side = Vector3.Dot(coverToBot.normalized, transform.right);
+                float side = Vector3.Dot(coverToBot.normalized, _bot.Transform.right);
                 _cache.Tilt.Set(side > 0f ? BotTiltType.right : BotTiltType.left);
             }
             else if (wallLeft && !wallRight)
@@ -191,7 +194,7 @@ namespace AIRefactored.AI.Movement
             }
             else
             {
-                float dot = Vector3.Dot(toEnemy.normalized, transform.right);
+                float dot = Vector3.Dot(toEnemy.normalized, _bot.Transform.right);
                 _cache.Tilt.Set(dot > 0f ? BotTiltType.right : BotTiltType.left);
             }
 

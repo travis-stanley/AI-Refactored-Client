@@ -1,5 +1,6 @@
 ﻿#nullable enable
 
+using AIRefactored.AI.Core;
 using AIRefactored.AI.Helpers;
 using EFT;
 using UnityEngine;
@@ -10,14 +11,19 @@ namespace AIRefactored.AI.Reactions
     /// Detects intense directional light sources (e.g. flashlights, flashbangs) and simulates temporary blindness.
     /// Applies suppression and panic responses based on exposure severity and angle.
     /// </summary>
-    public class FlashGrenadeComponent : MonoBehaviour
+    public class FlashGrenadeComponent
     {
         #region Public Properties
 
         /// <summary>
-        /// Reference to the associated BotOwner component.
+        /// Reference to the associated bot's owner.
         /// </summary>
         public BotOwner? Bot { get; private set; }
+
+        /// <summary>
+        /// Cache for unified access to bot systems.
+        /// </summary>
+        private BotComponentCache? _cache;
 
         #endregion
 
@@ -32,11 +38,12 @@ namespace AIRefactored.AI.Reactions
 
         #endregion
 
-        #region Lifecycle
+        #region Initialization
 
-        private void Awake()
+        public void Initialize(BotComponentCache cache)
         {
-            Bot = GetComponent<BotOwner>();
+            _cache = cache;
+            Bot = cache.Bot;
         }
 
         #endregion
@@ -68,6 +75,9 @@ namespace AIRefactored.AI.Reactions
 
             foreach (Light light in FlashlightRegistry.GetActiveFlashlights())
             {
+                if (light == null || !light.enabled || light.intensity < FlashlightMinIntensity)
+                    continue;
+
                 Vector3 dirToLight = (light.transform.position - botPosition).normalized;
                 float angle = Vector3.Angle(botForward, -dirToLight);
 

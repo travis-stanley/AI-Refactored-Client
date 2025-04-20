@@ -51,11 +51,10 @@ namespace AIRefactored.AI.Threads
 
         private float _nextTick = 0f;
 
-        // === Tick Rates ===
-        private const float LocalIdleTickRate = 0.333f;     // ~3Hz for idle bots on client
-        private const float LocalCombatTickRate = 1f / 30f; // 30Hz for combat state on client
-        private const float HeadlessIdleTickRate = 1f / 30f; // 30Hz for idle bots on FIKA headless
-        private const float HeadlessCombatTickRate = 1f / 60f; // 60Hz for combat on FIKA headless
+        private const float LocalIdleTickRate = 0.333f;
+        private const float LocalCombatTickRate = 1f / 30f;
+        private const float HeadlessIdleTickRate = 1f / 30f;
+        private const float HeadlessCombatTickRate = 1f / 60f;
 
         private void Update()
         {
@@ -68,17 +67,15 @@ namespace AIRefactored.AI.Threads
             float now = Time.time;
             float delta = Time.deltaTime;
 
-            // Always-ticked real-time components
-            _vision?.Tick(now);             // 30Hz frame-locked
-            _perception?.Tick(delta);      // Real-time
-            _hearing?.Tick(now);           // 30Hz frame-locked
-            _movement?.Tick(delta);        // Real-time
-            _groupBehavior?.Tick(delta);   // Real-time
-            _cornerScanner?.Tick(now);     // Real-time
-            _poseController?.Tick(now);    // Real-time
-            _tilt?.ManualUpdate();         // Real-time
+            _vision?.Tick(now);
+            _perception?.Tick(delta);
+            _hearing?.Tick(now);
+            _movement?.Tick(delta);
+            _groupBehavior?.Tick(delta);
+            _cornerScanner?.Tick(now);
+            _poseController?.Tick(now);
+            _tilt?.ManualUpdate();
 
-            // Local ticked logic
             if (!FikaHeadlessDetector.IsHeadless)
             {
                 float tickRate = ShouldCombatTick(now) ? LocalCombatTickRate : LocalIdleTickRate;
@@ -94,7 +91,9 @@ namespace AIRefactored.AI.Threads
         {
             _bot = bot;
             _player = bot.GetPlayer;
-            _cache = GetComponent<BotComponentCache>();
+
+            _cache = new BotComponentCache();
+            _cache.Initialize(bot);
 
             if (!IsValid())
             {
@@ -102,46 +101,40 @@ namespace AIRefactored.AI.Threads
                 return;
             }
 
-            // Component assignments
-            _mission = GetComponent<BotMissionSystem>();
-            _behavior = GetComponent<BotBehaviorEnhancer>();
-            _combat = GetComponent<CombatStateMachine>();
-            _escalation = GetComponent<BotThreatEscalationMonitor>();
-            _vision = GetComponent<BotVisionSystem>();
-            _hearing = GetComponent<BotHearingSystem>();
-            _perception = GetComponent<BotPerceptionSystem>();
-            _flashReaction = GetComponent<BotFlashReactionComponent>();
-            _flashDetector = GetComponent<FlashGrenadeComponent>();
-            _groupSync = GetComponent<BotGroupSyncCoordinator>();
-            _groupBehavior = GetComponent<BotGroupBehavior>();
-            _movement = GetComponent<BotMovementController>();
-            _tactical = GetComponent<BotTacticalDeviceController>();
-            _hearingDamage = GetComponent<HearingDamageComponent>();
-            _lootScanner = GetComponent<BotLootScanner>();
-            _corpseScanner = GetComponent<BotDeadBodyScanner>();
+            // === Logic Systems (pure C# only) ===
+            (_combat = new CombatStateMachine()).Initialize(_cache);
+            (_mission = new BotMissionSystem()).Initialize(bot);
+            (_behavior = new BotBehaviorEnhancer()).Initialize(_cache);
+            (_escalation = new BotThreatEscalationMonitor()).Initialize(bot);
+            (_vision = new BotVisionSystem()).Initialize(_cache);
+            (_hearing = new BotHearingSystem()).Initialize(_cache);
+            (_perception = new BotPerceptionSystem()).Initialize(_cache);
+            (_movement = new BotMovementController()).Initialize(_cache);
+            (_groupBehavior = new BotGroupBehavior()).Initialize(_cache);
+            (_lootScanner = new BotLootScanner()).Initialize(_cache);
+            (_corpseScanner = new BotDeadBodyScanner()).Initialize(_cache);
+            (_flashReaction = new BotFlashReactionComponent()).Initialize(_cache);
+            (_flashDetector = new FlashGrenadeComponent()).Initialize(_cache);
+            (_groupSync = new BotGroupSyncCoordinator()).Initialize(bot);
+            (_tactical = new BotTacticalDeviceController()).Initialize(bot, _cache);
 
-            // Procedural logic modules
+            _hearingDamage = new HearingDamageComponent();
             _cornerScanner = new BotCornerScanner(bot, _cache);
             _poseController = new BotPoseController(bot, _cache);
-
-            // Always attach async processor
-            _asyncProcessor = gameObject.AddComponent<BotAsyncProcessor>();
-            _asyncProcessor.Initialize(bot);
-
-            // Create or reuse tilt logic
             _tilt = _player.GetComponent<BotTilt>() ?? new BotTilt(bot);
 
-            // Runtime logic model
+            _asyncProcessor = new BotAsyncProcessor();
+            _asyncProcessor.Initialize(bot, _cache);
+
             _teamLogic = new BotTeamLogic(bot);
 
-            // Register if FIKA headless
             if (FikaHeadlessDetector.IsHeadless)
                 BotWorkScheduler.RegisterBot(this);
         }
 
         private void Tick(float time, float deltaTime)
         {
-            _mission?.ManualTick(time);
+            _mission?.Tick(time);
             _behavior?.Tick(time);
             _combat?.Tick(time);
             _escalation?.Tick(time);
@@ -152,6 +145,7 @@ namespace AIRefactored.AI.Threads
             _tactical?.UpdateTacticalLogic(_bot!, _cache!);
             _lootScanner?.Tick(deltaTime);
             _corpseScanner?.Tick(time);
+            _asyncProcessor?.Tick(time);
         }
 
         public void BackgroundTick(float time)

@@ -13,7 +13,7 @@ namespace AIRefactored.AI.Looting
     /// Scans for dead bodies nearby and attempts to loot them if safe.
     /// Used by BotMissionSystem to simulate realistic scavenging behavior.
     /// </summary>
-    public class BotDeadBodyScanner : MonoBehaviour
+    public class BotDeadBodyScanner
     {
         private const float ScanRadius = 12f;
         private const float MaxLootAngle = 120f;
@@ -23,10 +23,10 @@ namespace AIRefactored.AI.Looting
         private BotComponentCache? _cache;
         private float _nextScanTime;
 
-        private void Awake()
+        public void Initialize(BotComponentCache cache)
         {
-            _bot = GetComponent<BotOwner>();
-            _cache = GetComponent<BotComponentCache>();
+            _cache = cache;
+            _bot = cache.Bot;
         }
 
         public void Tick(float time)
@@ -78,7 +78,8 @@ namespace AIRefactored.AI.Looting
         private bool TryFindDeadBody(out Player corpse)
         {
             corpse = null!;
-            if (_bot == null) return false;
+            if (_bot == null)
+                return false;
 
             Vector3 origin = _bot.Position;
 

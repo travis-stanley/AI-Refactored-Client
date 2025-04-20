@@ -6,7 +6,6 @@ using AIRefactored.AI.Helpers;
 using EFT;
 using EFT.Interactive;
 using System;
-using System.Collections;
 using System.Collections.Generic;
 using UnityEngine;
 
@@ -16,12 +15,12 @@ namespace AIRefactored.AI.Behavior
     /// Enhances bot behavior with looting, retreat, and group-aware extraction logic.
     /// Controlled via periodic Tick() updates from BotBrain.
     /// </summary>
-    public class BotBehaviorEnhancer : MonoBehaviour
+    public class BotBehaviorEnhancer
     {
         #region Fields
 
-        private BotOwner? _bot;
         private BotComponentCache? _cache;
+        private BotOwner? _bot;
         private BotGroupSyncCoordinator? _groupSync;
         private AIRefactoredBotOwner? _owner;
         private BotPersonalityProfile? _profile;
@@ -30,12 +29,15 @@ namespace AIRefactored.AI.Behavior
         private float _lastExtractCheck = 0f;
         private float _lastEnemySeenTime = 0f;
         private float _lastTickTime = -999f;
+        private float _extractStartTime = -1f;
 
         private bool _isExtracting = false;
         private bool _hasExtracted = false;
 
         private ExfiltrationPoint[]? _extractPoints;
         private readonly List<Transform> _lootPoints = new(64);
+
+        private BotDoorOpener? _doorOpener;
 
         private const float EXTRACT_RADIUS = 10f;
         private const float GROUP_RADIUS = 12f;
@@ -46,12 +48,12 @@ namespace AIRefactored.AI.Behavior
 
         #region Initialization
 
-        public void Init(BotOwner bot)
+        public void Initialize(BotComponentCache cache)
         {
-            _bot = bot;
-            _cache = bot.GetComponent<BotComponentCache>();
-            _groupSync = bot.GetComponent<BotGroupSyncCoordinator>();
-            _owner = bot.GetComponent<AIRefactoredBotOwner>();
+            _cache = cache;
+            _bot = cache.Bot;
+            _owner = cache.AIRefactoredBotOwner;
+            _groupSync = _bot?.GetPlayer?.GetComponent<BotGroupSyncCoordinator>();
             _profile = _owner?.PersonalityProfile;
 
             _extractPoints = GameObject.FindObjectsOfType<ExfiltrationPoint>();
@@ -62,6 +64,9 @@ namespace AIRefactored.AI.Behavior
                 if (loot != null)
                     _lootPoints.Add(loot.transform);
             }
+
+            if (_bot != null)
+                _doorOpener = new BotDoorOpener(_bot);
         }
 
         #endregion
@@ -78,6 +83,10 @@ namespace AIRefactored.AI.Behavior
 
             _lastTickTime = time;
 
+            // === Door opening logic ===
+            if (_doorOpener != null && _doorOpener.Update() == false)
+                return; // Wait until doors are cleared before continuing
+
             if (_bot.Memory.GoalEnemy?.IsVisible == true)
                 _lastEnemySeenTime = time;
 
@@ -91,9 +100,21 @@ namespace AIRefactored.AI.Behavior
                 _lastLootCheck = time;
             }
 
+            if (_isExtracting)
+            {
+                if (_extractStartTime > 0f && time - _extractStartTime > 6f)
+                {
+                    _hasExtracted = true;
+                    if (_bot.GetPlayer != null)
+                        _bot.GetPlayer.gameObject.SetActive(false);
+                }
+
+                return;
+            }
+
             if (time - _lastExtractCheck > extractCooldown)
             {
-                TryExtract();
+                TryExtract(time);
                 _lastExtractCheck = time;
             }
 
@@ -135,7 +156,7 @@ namespace AIRefactored.AI.Behavior
 
         #region Extract Logic
 
-        private void TryExtract()
+        private void TryExtract(float time)
         {
             if (_isExtracting || _bot == null || _extractPoints == null || _profile == null)
                 return;
@@ -150,7 +171,7 @@ namespace AIRefactored.AI.Behavior
 
                 if (Vector3.Distance(_bot.Position, point.transform.position) <= EXTRACT_RADIUS)
                 {
-                    BeginExtract(point);
+                    BeginExtract(point, time);
                     return;
                 }
             }
@@ -160,25 +181,15 @@ namespace AIRefactored.AI.Behavior
                 BotMovementHelper.SmoothMoveTo(_bot, fallback.Value, false, _profile.Cohesion);
         }
 
-        private void BeginExtract(ExfiltrationPoint point)
+        private void BeginExtract(ExfiltrationPoint point, float time)
         {
             _isExtracting = true;
+            _extractStartTime = time;
+
             _groupSync?.BroadcastExtractPoint(point.transform.position);
             BotMovementHelper.SmoothMoveTo(_bot!, point.transform.position, false, _profile?.Cohesion ?? 1f);
             _bot?.BotTalk?.TrySay(EPhraseTrigger.MumblePhrase);
             _bot?.Deactivate();
-
-            if (isActiveAndEnabled)
-                StartCoroutine(ExtractRoutine(6f));
-        }
-
-        private IEnumerator ExtractRoutine(float delay)
-        {
-            yield return new WaitForSeconds(delay);
-            _hasExtracted = true;
-
-            if (_bot?.GetPlayer != null)
-                _bot.GetPlayer.gameObject.SetActive(false);
         }
 
         private bool IsGroupReadyToExtract()

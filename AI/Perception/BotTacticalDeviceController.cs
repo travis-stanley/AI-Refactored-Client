@@ -13,7 +13,7 @@ namespace AIRefactored.AI.Perception
     /// Controls bot tactical device usage (flashlights, lasers, NVGs, thermals).
     /// Toggles devices dynamically based on darkness, fog, and bait behavior influenced by bot personality.
     /// </summary>
-    public class BotTacticalDeviceController : MonoBehaviour
+    public class BotTacticalDeviceController
     {
         #region Fields
 
@@ -22,7 +22,6 @@ namespace AIRefactored.AI.Perception
         private MethodInfo? _toggleMethod;
 
         private readonly List<Item> _attachedDevices = new();
-
         private float _nextDecisionTime = 0f;
 
         private const float CheckInterval = 2.0f;
@@ -33,12 +32,12 @@ namespace AIRefactored.AI.Perception
 
         #endregion
 
-        #region Unity Lifecycle
+        #region Initialization
 
-        private void Awake()
+        public void Initialize(BotOwner bot, BotComponentCache cache)
         {
-            _bot = GetComponent<BotOwner>();
-            _cache = GetComponent<BotComponentCache>();
+            _bot = bot;
+            _cache = cache;
             _toggleMethod = typeof(Item).GetMethod("Toggle", BindingFlags.Instance | BindingFlags.Public | BindingFlags.NonPublic);
         }
 
@@ -84,7 +83,12 @@ namespace AIRefactored.AI.Perception
 
             if (baitMode)
             {
-                Invoke(nameof(DisableAllDevices), 1.5f); // Bait fake-out
+                // Fake-out: lights go off after brief bait window
+                _nextDecisionTime = Time.time + 1.5f;
+                for (int i = 0; i < _attachedDevices.Count; i++)
+                {
+                    ToggleDevice(_attachedDevices[i], false);
+                }
             }
         }
 
@@ -154,7 +158,6 @@ namespace AIRefactored.AI.Perception
         {
             float ambient = RenderSettings.ambientLight.grayscale;
             float fog = RenderSettings.fog ? RenderSettings.fogDensity : 0f;
-
             return ambient < LightThreshold || fog > FogThreshold;
         }
 

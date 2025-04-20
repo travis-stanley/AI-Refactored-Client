@@ -18,40 +18,40 @@
 
   <ItemGroup>
     <Reference Include="0Harmony">
-      <HintPath>dependencies\0Harmony.dll</HintPath>
+      <HintPath>..\dependencies\0Harmony.dll</HintPath>
     </Reference>
     <Reference Include="Assembly-CSharp">
-      <HintPath>dependencies\Assembly-CSharp.dll</HintPath>
+      <HintPath>..\dependencies\Assembly-CSharp.dll</HintPath>
     </Reference>
     <Reference Include="BepInEx">
-      <HintPath>dependencies\BepInEx.dll</HintPath>
+      <HintPath>..\dependencies\BepInEx.dll</HintPath>
     </Reference>
     <Reference Include="Comfort">
-      <HintPath>dependencies\Comfort.dll</HintPath>
+      <HintPath>..\dependencies\Comfort.dll</HintPath>
     </Reference>
     <Reference Include="DissonanceVoip">
-      <HintPath>dependencies\DissonanceVoip.dll</HintPath>
+      <HintPath>..\dependencies\DissonanceVoip.dll</HintPath>
     </Reference>
     <Reference Include="Fika.Core">
-      <HintPath>dependencies\Fika.Core.dll</HintPath>
+      <HintPath>..\dependencies\Fika.Core.dll</HintPath>
     </Reference>
     <Reference Include="Newtonsoft.Json">
-      <HintPath>dependencies\Newtonsoft.Json.dll</HintPath>
+      <HintPath>..\dependencies\Newtonsoft.Json.dll</HintPath>
     </Reference>
     <Reference Include="Unity.AI.Navigation">
-      <HintPath>dependencies\Unity.AI.Navigation.dll</HintPath>
+      <HintPath>..\dependencies\Unity.AI.Navigation.dll</HintPath>
     </Reference>
     <Reference Include="UnityEngine">
-      <HintPath>dependencies\UnityEngine.dll</HintPath>
+      <HintPath>..\dependencies\UnityEngine.dll</HintPath>
     </Reference>
     <Reference Include="UnityEngine.AIModule">
-      <HintPath>dependencies\UnityEngine.AIModule.dll</HintPath>
+      <HintPath>..\dependencies\UnityEngine.AIModule.dll</HintPath>
     </Reference>
     <Reference Include="UnityEngine.CoreModule">
-      <HintPath>dependencies\UnityEngine.CoreModule.dll</HintPath>
+      <HintPath>..\dependencies\UnityEngine.CoreModule.dll</HintPath>
     </Reference>
     <Reference Include="UnityEngine.PhysicsModule">
-      <HintPath>dependencies\UnityEngine.PhysicsModule.dll</HintPath>
+      <HintPath>..\dependencies\UnityEngine.PhysicsModule.dll</HintPath>
     </Reference>
   </ItemGroup>
 

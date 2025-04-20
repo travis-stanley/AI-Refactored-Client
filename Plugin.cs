@@ -4,6 +4,7 @@ using AIRefactored.Core;
 using AIRefactored.Runtime;
 using BepInEx;
 using BepInEx.Logging;
+using HarmonyLib;
 using UnityEngine;
 
 namespace AIRefactored
@@ -16,19 +17,13 @@ namespace AIRefactored
     {
         #region Fields
 
-        /// <summary>
-        /// Static reference to the plugin's logger.
-        /// </summary>
         private static ManualLogSource? _log;
+        private Harmony? _harmony;
 
         #endregion
 
         #region Unity Lifecycle
 
-        /// <summary>
-        /// Called automatically by BepInEx when the mod is loaded.
-        /// Initializes all core runtime systems for AI-Refactored.
-        /// </summary>
         private void Awake()
         {
             _log = Logger;
@@ -42,21 +37,29 @@ namespace AIRefactored
             // === Core Boot ===
             AIRefactoredController.Initialize(_log);
 
-            // === Bot Initialization ===
-            var bootstrap = new GameObject("AIRefactored.BotInitializer");
-            bootstrap.AddComponent<BotBrainBootstrapper>();
-            DontDestroyOnLoad(bootstrap);
+            // === Attach bot brains via GameWorld hook ===
+            GameWorldHandler.HookBotSpawns();
+
+            // === Harmony Patches ===
+            _harmony = new Harmony("com.spock.airefactored");
+            _harmony.PatchAll();
 
             _log.LogInfo("[AIRefactored] ✅ Initialization complete. Systems are online.");
+        }
+
+        private void OnDestroy()
+        {
+            GameWorldHandler.UnhookBotSpawns();
+
+            _harmony?.UnpatchSelf();
+            _log?.LogInfo("[AIRefactored] 🔻 Harmony patches removed.");
+            _log?.LogInfo("[AIRefactored] 🔻 Plugin shutdown complete.");
         }
 
         #endregion
 
         #region Public Access
 
-        /// <summary>
-        /// Provides global access to the plugin's logger instance.
-        /// </summary>
         public static ManualLogSource LoggerInstance =>
             _log ?? throw new System.NullReferenceException("[AIRefactored] LoggerInstance was accessed before plugin Awake().");
 

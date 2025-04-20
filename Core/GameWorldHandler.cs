@@ -1,9 +1,11 @@
 ﻿#nullable enable
 
+using AIRefactored.AI.Threads;
 using AIRefactored.Runtime;
 using BepInEx.Logging;
 using Comfort.Common;
 using EFT;
+using System.Collections;
 using System.Collections.Generic;
 using UnityEngine;
 
@@ -11,7 +13,7 @@ namespace AIRefactored.Core
 {
     /// <summary>
     /// Provides safe access to ClientGameWorld data: player location, map name, and squad proximity.
-    /// Supports both local and multiplayer (e.g., FIKA) contexts.
+    /// Also manages runtime bootstrap of bot brain logic when the game world is loaded.
     /// </summary>
     public static class GameWorldHandler
     {
@@ -23,13 +25,43 @@ namespace AIRefactored.Core
         private static readonly bool _debug = false;
 
         private static ManualLogSource Logger => AIRefactoredController.Logger;
+        private static GameObject? _bootstrapHost;
 
         private static ClientGameWorld? CachedWorld =>
             Singleton<ClientGameWorld>.Instantiated ? Singleton<ClientGameWorld>.Instance : null;
 
         #endregion
 
-        #region Public API
+        #region Runtime Init
+
+        /// <summary>
+        /// Starts the runtime listener for bot spawning and world attach events.
+        /// </summary>
+        public static void HookBotSpawns()
+        {
+            if (_bootstrapHost != null)
+                return;
+
+            _bootstrapHost = new GameObject("AIRefactored.BootstrapHost");
+            _bootstrapHost.AddComponent<WorldBootstrapper>();
+            Object.DontDestroyOnLoad(_bootstrapHost);
+
+            Logger.LogInfo("[AIRefactored] ✅ GameWorldHandler initialized and watching for bots.");
+        }
+
+        public static void UnhookBotSpawns()
+        {
+            if (_bootstrapHost != null)
+            {
+                Object.Destroy(_bootstrapHost);
+                _bootstrapHost = null;
+                Logger.LogInfo("[AIRefactored] 🔻 GameWorldHandler shut down.");
+            }
+        }
+
+        #endregion
+
+        #region Game World Accessors
 
         public static ClientGameWorld? Get() => CachedWorld;
 
@@ -44,7 +76,6 @@ namespace AIRefactored.Core
         public static bool TryGetMainPlayerPosition(out Vector3 position, float refreshRate = CacheRefreshRate)
         {
             position = Vector3.zero;
-
             var player = CachedWorld?.MainPlayer;
             if (player == null || !player.HealthController.IsAlive)
                 return false;
@@ -109,6 +140,48 @@ namespace AIRefactored.Core
             }
 
             return false;
+        }
+
+        #endregion
+
+        #region Embedded MonoBootstrapper
+
+        private class WorldBootstrapper : MonoBehaviour
+        {
+            private void Awake()
+            {
+                StartCoroutine(WatchForGameWorld());
+            }
+
+            private IEnumerator WatchForGameWorld()
+            {
+                while (Singleton<BotSpawner>.Instance == null || Singleton<GameWorld>.Instance == null)
+                    yield return null;
+
+                Singleton<BotSpawner>.Instance.OnBotCreated += HandleBotCreated;
+                Logger.LogInfo("[AIRefactored] 🧠 Game world initialized. Now listening for bot spawns.");
+            }
+
+            private void OnDestroy()
+            {
+                if (Singleton<BotSpawner>.Instantiated)
+                    Singleton<BotSpawner>.Instance.OnBotCreated -= HandleBotCreated;
+            }
+
+            private void HandleBotCreated(BotOwner bot)
+            {
+                var player = bot.GetPlayer;
+                if (player == null || !player.IsAI || player.IsYourPlayer)
+                    return;
+
+                if (player.gameObject.GetComponent<BotBrain>() != null)
+                    return;
+
+                var brain = player.gameObject.AddComponent<BotBrain>();
+                brain.Initialize(bot);
+
+                Logger.LogInfo($"[AIRefactored] 🤖 BotBrain attached to {bot.Profile?.Info?.Nickname ?? "unknown"}");
+            }
         }
 
         #endregion

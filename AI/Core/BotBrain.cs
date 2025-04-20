@@ -86,8 +86,9 @@ namespace AIRefactored.AI.Threads
                 _nextLogicTick = now + LogicTickRate;
             }
 
-            // Realtime systems
             float delta = Time.deltaTime;
+
+            // Always-realtime systems (movement must never tick-gate)
             _movement?.Tick(delta);
             _groupBehavior?.Tick(delta);
             _cornerScanner?.Tick(now);
@@ -111,9 +112,9 @@ namespace AIRefactored.AI.Threads
 
             // === Pure logic systems ===
             (_combat = new CombatStateMachine()).Initialize(_cache);
-            (_mission = new BotMissionSystem()).Initialize(_bot);
+            (_mission = new BotMissionSystem()).Initialize(bot);
             (_behavior = new BotBehaviorEnhancer()).Initialize(_cache);
-            (_escalation = new BotThreatEscalationMonitor()).Initialize(_bot);
+            (_escalation = new BotThreatEscalationMonitor()).Initialize(bot);
             (_vision = new BotVisionSystem()).Initialize(_cache);
             (_hearing = new BotHearingSystem()).Initialize(_cache);
             (_perception = new BotPerceptionSystem()).Initialize(_cache);
@@ -123,8 +124,8 @@ namespace AIRefactored.AI.Threads
             (_corpseScanner = new BotDeadBodyScanner()).Initialize(_cache);
             (_flashReaction = new BotFlashReactionComponent()).Initialize(_cache);
             (_flashDetector = new FlashGrenadeComponent()).Initialize(_cache);
-            (_groupSync = new BotGroupSyncCoordinator()).Initialize(_bot);
-            (_tactical = new BotTacticalDeviceController()).Initialize(_bot, _cache);
+            (_groupSync = new BotGroupSyncCoordinator()).Initialize(bot);
+            (_tactical = new BotTacticalDeviceController()).Initialize(bot, _cache);
 
             // === One-off components ===
             _hearingDamage = new HearingDamageComponent();
@@ -135,7 +136,7 @@ namespace AIRefactored.AI.Threads
             _asyncProcessor.Initialize(bot, _cache);
             _teamLogic = new BotTeamLogic(bot);
 
-            // === Register with scheduler (if headless) ===
+            // === Register with scheduler (for headless tick balancing) ===
             if (FikaHeadlessDetector.IsHeadless)
                 BotWorkScheduler.RegisterBot(this);
         }

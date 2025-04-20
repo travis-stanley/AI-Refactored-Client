@@ -26,6 +26,15 @@ namespace AIRefactored.AI.Threads
 
         private static bool _headlessInitialized;
 
+        // === Headless Tick Rates ===
+        private const float TickLogicInterval = 1f / 30f;     // 30Hz
+        private const float TickCombatInterval = 1f / 60f;    // 60Hz
+        private const float TickPerceptionInterval = 1f / 60f; // 60Hz
+
+        private static float _lastLogicTick;
+        private static float _lastCombatTick;
+        private static float _lastPerceptionTick;
+
         private void Awake()
         {
             if (!FikaHeadlessDetector.IsHeadless || _headlessInitialized)
@@ -80,23 +89,41 @@ namespace AIRefactored.AI.Threads
                     _nextBotIndex++;
                 }
 
+                float now = Time.time;
+
                 try
                 {
-                    float now = Time.time;
-                    bot?.BackgroundTick(now);
+                    if (now - _lastPerceptionTick >= TickPerceptionInterval)
+                    {
+                        bot?.TickPerception(now);
+                    }
+
+                    if (now - _lastCombatTick >= TickCombatInterval)
+                    {
+                        bot?.TickCombat(now);
+                    }
+
+                    if (now - _lastLogicTick >= TickLogicInterval)
+                    {
+                        bot?.TickLogic(now);
+                    }
                 }
                 catch (Exception ex)
                 {
                     Debug.LogWarning($"[BotWorkScheduler] ⚠️ Error in background tick: {ex.Message}");
                 }
 
-                Thread.Sleep(5); // throttle loop to reduce CPU strain
+                if (now - _lastPerceptionTick >= TickPerceptionInterval)
+                    _lastPerceptionTick = now;
+                if (now - _lastCombatTick >= TickCombatInterval)
+                    _lastCombatTick = now;
+                if (now - _lastLogicTick >= TickLogicInterval)
+                    _lastLogicTick = now;
+
+                Thread.Sleep(5); // modest throttle to reduce CPU usage
             }
         }
 
-        /// <summary>
-        /// Registers a bot into the scheduling system.
-        /// </summary>
         public static void RegisterBot(BotBrain brain)
         {
             if (!FikaHeadlessDetector.IsHeadless)
@@ -109,9 +136,6 @@ namespace AIRefactored.AI.Threads
             }
         }
 
-        /// <summary>
-        /// Queue an action to run safely on the Unity main thread.
-        /// </summary>
         public static void EnqueueToMainThread(Action action)
         {
             _mainThreadQueue.Enqueue(action);

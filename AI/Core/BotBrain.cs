@@ -12,16 +12,23 @@ using AIRefactored.AI.Optimization;
 using AIRefactored.AI.Perception;
 using AIRefactored.AI.Reactions;
 using AIRefactored.Core;
+using AIRefactored.Runtime;
+using BepInEx.Logging;
 using EFT;
 using UnityEngine;
 
 namespace AIRefactored.AI.Threads
 {
     /// <summary>
-    /// Central brain component for AI bots. Controls tick frequency and dispatches subsystems.
+    /// Central AI controller for bots in the AIRefactored system.
+    /// Manages perception, combat, logic, movement, and group behavior through subsystem delegation.
     /// </summary>
     public class BotBrain : MonoBehaviour
     {
+        #region Fields
+
+        private static readonly ManualLogSource Logger = AIRefactoredController.Logger;
+
         private BotOwner? _bot;
         private Player? _player;
         private BotComponentCache? _cache;
@@ -50,15 +57,17 @@ namespace AIRefactored.AI.Threads
 
         private bool _isValid;
 
-        // Tick timestamps
         private float _nextPerceptionTick;
         private float _nextCombatTick;
         private float _nextLogicTick;
 
-        // Tick rates
         private float PerceptionTickRate => FikaHeadlessDetector.IsHeadless ? 1f / 60f : 1f / 30f;
         private float CombatTickRate => FikaHeadlessDetector.IsHeadless ? 1f / 60f : 1f / 30f;
         private float LogicTickRate => FikaHeadlessDetector.IsHeadless ? 1f / 30f : 1f / 15f;
+
+        #endregion
+
+        #region Unity Lifecycle
 
         private void Update()
         {
@@ -97,67 +106,131 @@ namespace AIRefactored.AI.Threads
             _tilt?.ManualUpdate();
         }
 
+        #endregion
+
+        #region Initialization
+
+        /// <summary>
+        /// Initializes all AI subsystems and verifies dependencies.
+        /// </summary>
+        /// <param name="bot">The BotOwner instance for this bot.</param>
         public void Initialize(BotOwner bot)
         {
             _bot = bot;
             _player = bot.GetPlayer;
 
-            _cache = new BotComponentCache();
-            _cache.Initialize(bot);
-
-            _isValid = _bot != null &&
-                       _player != null &&
-                       _player.IsAI &&
-                       !_player.IsYourPlayer &&
-                       !_bot.IsDead &&
-                       _cache != null;
-
-            if (!_isValid)
+            if (_player == null)
             {
+                Logger.LogWarning("[BotBrain] ❌ Player is null during Initialize.");
                 enabled = false;
                 return;
             }
 
-            // === Core logic ===
-            (_combat = new CombatStateMachine()).Initialize(_cache);
-            (_mission = new BotMissionSystem()).Initialize(bot);
-            (_behavior = new BotBehaviorEnhancer()).Initialize(_cache);
-            (_escalation = new BotThreatEscalationMonitor()).Initialize(bot);
-            (_vision = new BotVisionSystem()).Initialize(_cache);
-            (_hearing = new BotHearingSystem()).Initialize(_cache);
-            (_perception = new BotPerceptionSystem()).Initialize(_cache);
-            (_movement = new BotMovementController()).Initialize(_cache);
-            (_groupBehavior = new BotGroupBehavior()).Initialize(_cache);
-            (_lootScanner = new BotLootScanner()).Initialize(_cache);
-            (_corpseScanner = new BotDeadBodyScanner()).Initialize(_cache);
-            (_flashReaction = new BotFlashReactionComponent()).Initialize(_cache);
-            (_flashDetector = new FlashGrenadeComponent()).Initialize(_cache);
-            (_groupSync = new BotGroupSyncCoordinator()).Initialize(bot);
-            (_tactical = new BotTacticalDeviceController()).Initialize(bot, _cache);
+            var builtCache = new BotComponentCache();
+            builtCache.Initialize(bot);
+            _cache = builtCache;
 
-            _hearingDamage = new HearingDamageComponent();
-            _cornerScanner = new BotCornerScanner(bot, _cache);
-            _poseController = new BotPoseController(bot, _cache);
-            _tilt = _player?.GetComponent<BotTilt>() ?? new BotTilt(bot);
+            // Re-check nulls explicitly for analyzer satisfaction
+            if (_cache == null || _bot == null || _player == null || !_player.IsAI || _player.IsYourPlayer || _bot.IsDead)
+            {
+                Logger.LogWarning("[BotBrain] ❌ Initialization failed due to invalid state.");
+                enabled = false;
+                return;
+            }
 
-            _asyncProcessor = new BotAsyncProcessor();
-            _asyncProcessor.Initialize(bot, _cache);
+            _isValid = true;
 
-            _teamLogic = new BotTeamLogic(bot);
+            try
+            {
+                _combat = new CombatStateMachine();
+                _combat.Initialize(_cache);
 
-            if (FikaHeadlessDetector.IsHeadless)
-                BotWorkScheduler.RegisterBot(this);
+                _mission = new BotMissionSystem();
+                _mission.Initialize(_bot);
 
-            // === Guard against overwrites ===
-            BotBrainGuardian.Enforce(_player!.gameObject);
+                _behavior = new BotBehaviorEnhancer();
+                _behavior.Initialize(_cache);
+
+                _escalation = new BotThreatEscalationMonitor();
+                _escalation.Initialize(_bot);
+
+                _vision = new BotVisionSystem();
+                _vision.Initialize(_cache);
+
+                _hearing = new BotHearingSystem();
+                _hearing.Initialize(_cache);
+
+                _perception = new BotPerceptionSystem();
+                _perception.Initialize(_cache);
+
+                _movement = new BotMovementController();
+                _movement.Initialize(_cache);
+
+                _groupBehavior = new BotGroupBehavior();
+                _groupBehavior.Initialize(_cache);
+
+                _lootScanner = new BotLootScanner();
+                _lootScanner.Initialize(_cache);
+
+                _corpseScanner = new BotDeadBodyScanner();
+                _corpseScanner.Initialize(_cache);
+
+                _flashReaction = new BotFlashReactionComponent();
+                _flashReaction.Initialize(_cache);
+
+                _flashDetector = new FlashGrenadeComponent();
+                _flashDetector.Initialize(_cache);
+
+                _groupSync = new BotGroupSyncCoordinator();
+                _groupSync.Initialize(_bot);
+
+                _tactical = new BotTacticalDeviceController();
+                _tactical.Initialize(_bot, _cache);
+
+                _hearingDamage = new HearingDamageComponent();
+
+                _cornerScanner = new BotCornerScanner(_bot, _cache);
+                _poseController = new BotPoseController(_bot, _cache);
+
+                _tilt = _player.GetComponent<BotTilt>() ?? new BotTilt(_bot);
+
+                _asyncProcessor = new BotAsyncProcessor();
+                _asyncProcessor.Initialize(_bot, _cache);
+
+                _teamLogic = new BotTeamLogic(_bot);
+
+                if (FikaHeadlessDetector.IsHeadless)
+                    BotWorkScheduler.RegisterBot(this);
+
+                BotBrainGuardian.Enforce(_player.gameObject);
+
+                Logger.LogInfo($"[BotBrain] ✅ AI stack initialized for bot: {_player.Profile?.Info?.Nickname ?? "Unnamed"}");
+            }
+            catch (System.Exception ex)
+            {
+                Logger.LogError($"[BotBrain] ❌ Exception during bot initialization: {ex}");
+                enabled = false;
+            }
         }
 
+        #endregion
+
+        #region Tick Delegates
+
+        /// <summary>
+        /// Ticks vision and hearing systems for real-time perception.
+        /// </summary>
+        /// <param name="time">Current world time.</param>
         public void TickPerception(float time)
         {
             _vision?.Tick(time);
             _hearing?.Tick(time);
         }
 
+        /// <summary>
+        /// Ticks combat logic, including suppression and flash awareness.
+        /// </summary>
+        /// <param name="time">Current world time.</param>
         public void TickCombat(float time)
         {
             _combat?.Tick(time);
@@ -166,16 +239,25 @@ namespace AIRefactored.AI.Threads
             _flashDetector?.Tick(time);
         }
 
+        /// <summary>
+        /// Ticks high-level mission logic and tactical actions.
+        /// </summary>
+        /// <param name="time">Current world time.</param>
         public void TickLogic(float time)
         {
             _mission?.Tick(time);
             _behavior?.Tick(time);
             _groupSync?.Tick(time);
             _hearingDamage?.Tick(Time.deltaTime);
-            _tactical?.UpdateTacticalLogic(_bot!, _cache!);
+
+            if (_bot != null && _cache != null)
+                _tactical?.UpdateTacticalLogic(_bot, _cache);
+
             _lootScanner?.Tick(Time.deltaTime);
             _corpseScanner?.Tick(time);
             _asyncProcessor?.Tick(time);
         }
+
+        #endregion
     }
 }

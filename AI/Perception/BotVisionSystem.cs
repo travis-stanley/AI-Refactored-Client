@@ -45,6 +45,11 @@ namespace AIRefactored.AI.Perception
 
         #endregion
 
+        #region Initialization
+
+        /// <summary>
+        /// Sets up vision system with required bot context.
+        /// </summary>
         public void Initialize(BotComponentCache cache)
         {
             _cache = cache;
@@ -54,6 +59,10 @@ namespace AIRefactored.AI.Perception
             _memory = cache.TacticalMemory;
         }
 
+        #endregion
+
+        #region Tick Loop
+
         /// <summary>
         /// Called every frame by BotBrain for real-time vision processing.
         /// </summary>
@@ -62,7 +71,8 @@ namespace AIRefactored.AI.Perception
             if (_bot == null || _bot.IsDead || _cache == null || _profile == null)
                 return;
 
-            if (_bot.GetPlayer == null || _bot.GetPlayer.IsYourPlayer)
+            Player? botPlayer = _bot.GetPlayer;
+            if (botPlayer == null || botPlayer.IsYourPlayer)
                 return;
 
             var allPlayers = GameWorldHandler.GetAllAlivePlayers();
@@ -71,21 +81,17 @@ namespace AIRefactored.AI.Perception
 
             for (int i = 0; i < allPlayers.Count; i++)
             {
-                var other = allPlayers[i];
-                if (other == null || other.ProfileId == _bot.ProfileId || !other.HealthController.IsAlive)
+                Player? target = allPlayers[i];
+                if (target == null || target.ProfileId == _bot.ProfileId || !target.HealthController.IsAlive)
                     continue;
 
-                if (!other.IsAI && other.IsYourPlayer)
-                    continue;
-
-                if (other is not Player target)
+                if (!target.IsAI && target.IsYourPlayer)
                     continue;
 
                 float distance = Vector3.Distance(_bot.Position, target.Position);
                 if (distance > MaxPlayerScanDistance)
                     continue;
 
-                // === Instant auto-detect at close range ===
                 if (distance <= ProximityAutoDetectDistance)
                 {
                     ForceEnemyCommit(target);
@@ -93,48 +99,47 @@ namespace AIRefactored.AI.Perception
                     continue;
                 }
 
-                if (EvaluateTarget(target))
+                if (IsInViewCone(target) && HasLineOfSight(target))
                 {
+                    _memory?.RecordEnemyPosition(target.Position);
+
+                    if (_profile.ReactionSpeed >= 0.5f)
+                        ForceEnemyCommit(target);
+
                     TrackVisibleBones(target);
                 }
             }
         }
 
+        #endregion
+
         #region Visibility Logic
 
-        private bool EvaluateTarget(Player target)
+        private bool IsInViewCone(Player target)
         {
             if (_bot == null)
                 return false;
 
             Vector3 toTarget = target.Position - _bot.Position;
             float angle = Vector3.Angle(_bot.LookDirection, toTarget);
-            if (angle > FieldOfViewDegrees * 0.5f)
+            return angle <= FieldOfViewDegrees * 0.5f;
+        }
+
+        private bool HasLineOfSight(Player target)
+        {
+            if (_bot == null)
                 return false;
 
-            Vector3 eyePosBot = _bot.Position + Vector3.up * 1.4f;
-            Vector3 eyePosTarget = target.Position + Vector3.up * 1.4f;
+            Vector3 botEye = _bot.Position + Vector3.up * 1.4f;
+            Vector3 targetEye = target.Position + Vector3.up * 1.4f;
 
-            if (Physics.Linecast(eyePosBot, eyePosTarget, out var hit) &&
-                hit.collider != null &&
-                hit.collider.gameObject != target.gameObject)
-            {
-                return false;
-            }
-
-            _memory?.RecordEnemyPosition(target.Position);
-
-            if (_profile.ReactionSpeed >= 0.5f)
-            {
-                ForceEnemyCommit(target);
-            }
-
-            return true;
+            return !Physics.Linecast(botEye, targetEye, out var hit) ||
+                   (hit.collider != null && hit.collider.gameObject == target.gameObject);
         }
 
         private void ForceEnemyCommit(Player target)
         {
-            if (_bot?.Memory == null || target == null)
+            if (_bot == null || _bot.Memory == null || target == null)
                 return;
 
             if (!_bot.EnemiesController.EnemyInfos.ContainsKey(target))
@@ -164,16 +169,18 @@ namespace AIRefactored.AI.Perception
                 if (bone?.Original == null)
                     continue;
 
-                Vector3 targetPoint = bone.Original.position;
+                Vector3 point = bone.Original.position;
+                bool canSee = !Physics.Linecast(origin, point, out RaycastHit hit) ||
+                              hit.collider?.gameObject == target.gameObject;
 
-                if (!Physics.Linecast(origin, targetPoint, out var hit) || hit.collider?.gameObject == target.gameObject)
+                if (canSee)
                 {
                     if (_cache.VisibilityTracker == null && _bot.Transform?.Original != null)
                     {
                         _cache.VisibilityTracker = new TrackedEnemyVisibility(_bot.Transform.Original);
                     }
 
-                    _cache.VisibilityTracker?.UpdateBoneVisibility(boneType.ToString(), targetPoint);
+                    _cache.VisibilityTracker?.UpdateBoneVisibility(boneType.ToString(), point);
                 }
             }
         }

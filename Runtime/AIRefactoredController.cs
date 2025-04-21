@@ -10,19 +10,20 @@ namespace AIRefactored.Runtime
     /// </summary>
     public class AIRefactoredController : MonoBehaviour
     {
-        #region Fields
+        #region Static Fields
 
         private static AIRefactoredController? _instance;
         private static ManualLogSource? _logger;
 
         #endregion
 
-        #region Public API
+        #region Initialization
 
         /// <summary>
         /// Initializes the global AIRefactoredController if not already active.
-        /// Persists across scene loads.
+        /// Persists across scene loads and provides shared access to global systems.
         /// </summary>
+        /// <param name="logger">BepInEx logger to register for centralized output.</param>
         public static void Initialize(ManualLogSource logger)
         {
             if (_instance != null)
@@ -37,13 +38,17 @@ namespace AIRefactored.Runtime
             _logger.LogInfo("[AIRefactored] 🌐 Global controller initialized.");
         }
 
+        #endregion
+
+        #region Public API
+
         /// <summary>
         /// Returns true if the AIRefactoredController has been initialized.
         /// </summary>
         public static bool IsInitialized => _instance != null;
 
         /// <summary>
-        /// Returns a reference to the logger, or throws if not yet initialized.
+        /// Provides a safe reference to the logger instance.
         /// </summary>
         public static ManualLogSource Logger =>
             _logger ?? throw new System.NullReferenceException("[AIRefactored] Logger accessed before initialization.");

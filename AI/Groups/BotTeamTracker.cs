@@ -7,22 +7,27 @@ namespace AIRefactored.AI.Groups
 {
     /// <summary>
     /// Centralized runtime registry for tracking bot squads by GroupId.
-    /// Enables coordination, fallback sync, and squad-wide queries.
+    /// Enables coordination, fallback sync, and squad-wide tactical queries.
     /// </summary>
     public static class BotTeamTracker
     {
-        #region Internal State
+        #region Fields
 
-        private static readonly Dictionary<string, List<BotOwner>> _groups = new(32);
+        /// <summary>
+        /// Internal map of GroupId to list of active BotOwner references.
+        /// </summary>
+        private static readonly Dictionary<string, List<BotOwner>> _groups = new Dictionary<string, List<BotOwner>>(32);
 
         #endregion
 
-        #region Public API
+        #region Registration
 
         /// <summary>
-        /// Registers a bot into the specified group by ID.
-        /// Skips human players or invalid instances.
+        /// Registers a bot to a group by its string GroupId.
+        /// Skips null, dead, or non-AI players.
         /// </summary>
+        /// <param name="groupId">The group identifier (usually from Profile.Info.GroupId).</param>
+        /// <param name="bot">The bot to register.</param>
         public static void Register(string groupId, BotOwner bot)
         {
             if (string.IsNullOrEmpty(groupId) || bot == null)
@@ -32,7 +37,7 @@ namespace AIRefactored.AI.Groups
             if (player == null || !player.IsAI)
                 return;
 
-            if (!_groups.TryGetValue(groupId, out var list))
+            if (!_groups.TryGetValue(groupId, out List<BotOwner>? list))
             {
                 list = new List<BotOwner>(8);
                 _groups[groupId] = list;
@@ -43,73 +48,100 @@ namespace AIRefactored.AI.Groups
         }
 
         /// <summary>
-        /// Registers a bot using its profile’s embedded GroupId (if present).
-        /// Safe for calling during BotBrain startup or during bot spawn.
+        /// Automatically registers a bot to its GroupId based on profile metadata.
+        /// Safe to call during spawn or AI startup.
         /// </summary>
+        /// <param name="bot">The bot to register.</param>
         public static void RegisterFromBot(BotOwner bot)
         {
-            var groupId = bot?.GetPlayer?.Profile?.Info?.GroupId;
+            if (bot == null)
+                return;
+
+            var player = bot.GetPlayer;
+            if (player?.Profile?.Info == null)
+                return;
+
+            string? groupId = player.Profile.Info.GroupId;
             if (!string.IsNullOrEmpty(groupId))
-                Register(groupId!, bot!);
+                Register(groupId, bot);
         }
 
+        #endregion
+
+        #region Querying
+
         /// <summary>
-        /// Returns a fresh copy of all living squadmates by GroupId.
+        /// Returns all valid, living squadmates registered to the given GroupId.
         /// </summary>
+        /// <param name="groupId">The group identifier.</param>
+        /// <returns>A list of alive AI bots in that group.</returns>
         public static List<BotOwner> GetGroup(string groupId)
         {
             if (string.IsNullOrEmpty(groupId))
                 return new List<BotOwner>(0);
 
-            if (!_groups.TryGetValue(groupId, out var original))
+            if (!_groups.TryGetValue(groupId, out List<BotOwner>? original))
                 return new List<BotOwner>(0);
 
             var result = new List<BotOwner>(original.Count);
             for (int i = 0; i < original.Count; i++)
             {
                 var bot = original[i];
-                if (bot?.GetPlayer?.IsAI == true && !bot.IsDead)
+                if (bot != null && !bot.IsDead && bot.GetPlayer?.IsAI == true)
+                {
                     result.Add(bot);
+                }
             }
 
             return result;
         }
 
         /// <summary>
-        /// Unregisters the specified bot from all groups.
+        /// Returns a shallow copy of the current full group registry.
         /// </summary>
+        /// <returns>A dictionary of group keys to bot lists.</returns>
+        public static Dictionary<string, List<BotOwner>> GetAllGroups()
+        {
+            return new Dictionary<string, List<BotOwner>>(_groups);
+        }
+
+        #endregion
+
+        #region Cleanup
+
+        /// <summary>
+        /// Unregisters the specified bot from any group it is part of.
+        /// </summary>
+        /// <param name="bot">The bot to remove from registry.</param>
         public static void Unregister(BotOwner bot)
         {
             if (bot == null)
                 return;
 
-            foreach (var kvp in _groups)
+            string? keyToRemove = null;
+
+            foreach (KeyValuePair<string, List<BotOwner>> kvp in _groups)
             {
                 var list = kvp.Value;
                 if (list.Remove(bot))
                 {
-                    // Remove the group if it becomes empty after removal
                     if (list.Count == 0)
-                        _groups.Remove(kvp.Key);
+                        keyToRemove = kvp.Key;
                     break;
                 }
             }
+
+            if (keyToRemove != null)
+                _groups.Remove(keyToRemove);
         }
 
         /// <summary>
-        /// Clears all groups. Used on shutdown or full reset.
+        /// Wipes all teams from the tracker.
+        /// Call this during shutdown or game reset.
         /// </summary>
         public static void Clear()
         {
             _groups.Clear();
-        }
-
-        /// <summary>
-        /// Returns a shallow copy of all group references.
-        /// </summary>
-        public static Dictionary<string, List<BotOwner>> GetAllGroups()
-        {
-            return new Dictionary<string, List<BotOwner>>(_groups);
         }
 
         #endregion

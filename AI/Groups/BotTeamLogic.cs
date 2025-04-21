@@ -3,7 +3,7 @@
 using AIRefactored.AI.Combat;
 using AIRefactored.AI.Helpers;
 using AIRefactored.AI.Missions;
-using Comfort.Common;
+using AIRefactored.Core;
 using EFT;
 using System.Collections.Generic;
 using UnityEngine;
@@ -11,60 +11,84 @@ using UnityEngine;
 namespace AIRefactored.AI.Groups
 {
     /// <summary>
-    /// Coordinates team behavior for bots in the same squad, including enemy sharing and squad movement cohesion.
+    /// Provides tactical group logic for bots in the same squad, including enemy sharing, fallback, and regrouping.
     /// </summary>
     public class BotTeamLogic
     {
+        #region Fields
+
         private readonly BotOwner _bot;
         private readonly List<BotOwner> _teammates = new();
 
+        #endregion
+
+        #region Constructor
+
+        /// <summary>
+        /// Creates a new BotTeamLogic instance for the given bot.
+        /// </summary>
+        /// <param name="bot">The bot owner associated with this logic controller.</param>
         public BotTeamLogic(BotOwner bot)
         {
             _bot = bot;
         }
 
+        #endregion
+
+        #region Team Synchronization
+
         /// <summary>
-        /// Gathers all alive teammates in the same group.
+        /// Populates the internal teammate list based on all known AI bots that share the same group ID.
         /// </summary>
+        /// <param name="allBots">A list of all active bot owners.</param>
         public void SetTeammates(List<BotOwner> allBots)
         {
             _teammates.Clear();
 
-            if (_bot.GetPlayer?.IsAI != true)
+            var player = _bot.GetPlayer;
+            if (player == null || !player.IsAI)
                 return;
 
-            string? groupId = _bot.GetPlayer.Profile?.Info?.GroupId;
+            string? groupId = player.Profile?.Info?.GroupId;
             if (string.IsNullOrEmpty(groupId))
                 return;
 
-            foreach (var other in allBots)
+            for (int i = 0; i < allBots.Count; i++)
             {
+                var other = allBots[i];
                 if (other == null || other == _bot || other.IsDead)
                     continue;
 
-                if (other.GetPlayer?.IsAI != true)
+                var otherPlayer = other.GetPlayer;
+                if (otherPlayer?.IsAI != true)
                     continue;
 
-                string? otherGroupId = other.GetPlayer.Profile?.Info?.GroupId;
+                string? otherGroupId = otherPlayer.Profile?.Info?.GroupId;
                 if (otherGroupId == groupId)
                     _teammates.Add(other);
             }
         }
 
+        #endregion
+
+        #region Enemy Sharing
+
         /// <summary>
-        /// Share an enemy target with all teammates in memory and group systems.
+        /// Pushes a known enemy to all current teammates, triggering group targeting logic and memory update.
         /// </summary>
+        /// <param name="enemy">The IPlayer enemy to share with the group.</param>
         public void ShareTarget(IPlayer enemy)
         {
             if (enemy == null || string.IsNullOrEmpty(enemy.ProfileId))
                 return;
 
-            var resolved = Singleton<GameWorld>.Instance?.GetAlivePlayerByProfileID(enemy.ProfileId);
+            var resolved = GameWorldHandler.Get()?.GetAlivePlayerByProfileID(enemy.ProfileId);
             if (resolved == null)
                 return;
 
-            foreach (var teammate in _teammates)
+            for (int i = 0; i < _teammates.Count; i++)
             {
+                var teammate = _teammates[i];
                 if (teammate == null || teammate.IsDead || teammate.GetPlayer?.IsAI != true)
                     continue;
 
@@ -77,54 +101,29 @@ namespace AIRefactored.AI.Groups
                         continue;
                 }
 
-                if (teammate.BotsGroup.Enemies.TryGetValue(resolved, out var info))
+                var enemies = teammate.BotsGroup?.Enemies;
+                if (enemies != null && enemies.TryGetValue(resolved, out var info))
+                {
                     teammate.Memory?.AddEnemy(resolved, info, false);
+                }
             }
         }
 
         /// <summary>
-        /// Coordinates movement with teammates by forming a staggered center point regroup.
+        /// Static helper to add a shared enemy across all squad members from the given bot’s group.
         /// </summary>
-        public void CoordinateMovement()
-        {
-            if (_bot.GetPlayer?.IsAI != true || _bot.IsDead || _teammates.Count == 0)
-                return;
-
-            Vector3 center = Vector3.zero;
-            int count = 0;
-
-            foreach (var mate in _teammates)
-            {
-                if (mate == null || mate.IsDead || mate.GetPlayer?.IsAI != true)
-                    continue;
-
-                center += mate.Position;
-                count++;
-            }
-
-            if (count == 0)
-                return;
-
-            center /= count;
-            Vector3 stagger = Random.insideUnitSphere * 1.5f;
-            stagger.y = 0f;
-            Vector3 regroupPoint = center + stagger;
-
-            if (Vector3.Distance(_bot.Position, regroupPoint) > 2f)
-                BotMovementHelper.SmoothMoveTo(_bot, regroupPoint, false, 1f);
-        }
-
-        /// <summary>
-        /// Shares a detected enemy with the entire group (static call).
-        /// </summary>
+        /// <param name="bot">The bot who initially saw the enemy.</param>
+        /// <param name="target">The IPlayer target to sync.</param>
         public static void AddEnemy(BotOwner bot, IPlayer target)
         {
             if (bot?.BotsGroup == null || target == null || bot.IsDead)
                 return;
 
-            for (int i = 0; i < bot.BotsGroup.MembersCount; i++)
+            var group = bot.BotsGroup;
+
+            for (int i = 0; i < group.MembersCount; i++)
             {
-                var teammate = bot.BotsGroup.Member(i);
+                var teammate = group.Member(i);
                 if (teammate == null || teammate.IsDead || teammate == bot || teammate.GetPlayer?.IsAI != true)
                     continue;
 
@@ -137,14 +136,59 @@ namespace AIRefactored.AI.Groups
                         continue;
                 }
 
-                if (teammate.BotsGroup.Enemies.TryGetValue(target, out var info))
+                var enemies = teammate.BotsGroup?.Enemies;
+                if (enemies != null && enemies.TryGetValue(target, out var info))
+                {
                     teammate.Memory?.AddEnemy(target, info, false);
+                }
+            }
+        }
+
+        #endregion
+
+        #region Squad Movement
+
+        /// <summary>
+        /// Moves this bot toward the average squad center position with slight randomization.
+        /// </summary>
+        public void CoordinateMovement()
+        {
+            if (_bot.GetPlayer?.IsAI != true || _bot.IsDead || _teammates.Count == 0)
+                return;
+
+            Vector3 center = Vector3.zero;
+            int count = 0;
+
+            for (int i = 0; i < _teammates.Count; i++)
+            {
+                var mate = _teammates[i];
+                if (mate == null || mate.IsDead || mate.GetPlayer?.IsAI != true)
+                    continue;
+
+                center += mate.Position;
+                count++;
+            }
+
+            if (count == 0)
+                return;
+
+            center /= count;
+
+            Vector3 offset = UnityEngine.Random.insideUnitSphere * 1.5f;
+            offset.y = 0f;
+            Vector3 regroupPoint = center + offset;
+
+            if (Vector3.Distance(_bot.Position, regroupPoint) > 2.5f)
+            {
+                BotMovementHelper.SmoothMoveTo(_bot, regroupPoint, false, 1.0f);
             }
         }
 
         /// <summary>
-        /// Broadcasts a fallback location to nearby squadmates.
+        /// Instructs all squadmates to fallback to a shared retreat location.
         /// </summary>
+        /// <param name="bot">The bot initiating the fallback.</param>
+        /// <param name="retreatPoint">The position to fall back to.</param>
         public static void BroadcastFallback(BotOwner bot, Vector3 retreatPoint)
         {
             if (bot?.BotsGroup == null || bot.IsDead)
@@ -156,14 +200,20 @@ namespace AIRefactored.AI.Groups
                 if (teammate == null || teammate.IsDead || teammate == bot)
                     continue;
 
-                var sm = teammate.GetComponent<CombatStateMachine>();
-                sm?.TriggerFallback(retreatPoint);
+                var stateMachine = teammate.GetComponent<CombatStateMachine>();
+                stateMachine?.TriggerFallback(retreatPoint);
             }
         }
 
+        #endregion
+
+        #region Mission Coordination
+
         /// <summary>
-        /// Announces a mission shift (e.g. loot, extract, defend) to the team.
+        /// Announces the mission type to squadmates and optionally plays cooperation VO.
         /// </summary>
+        /// <param name="bot">The broadcasting bot.</param>
+        /// <param name="mission">The mission type (Quest, Loot, etc).</param>
         public static void BroadcastMissionType(BotOwner bot, BotMissionSystem.MissionType mission)
         {
             if (bot?.BotsGroup == null || bot.IsDead)
@@ -175,10 +225,13 @@ namespace AIRefactored.AI.Groups
                 if (teammate == null || teammate == bot || teammate.IsDead)
                     continue;
 
-                var brain = teammate.GetComponent<BotMissionSystem>();
-                if (brain != null)
+                if (teammate.GetPlayer?.IsAI == true && !FikaHeadlessDetector.IsHeadless)
+                {
                     teammate.BotTalk?.TrySay(EPhraseTrigger.Cooperation);
+                }
             }
         }
+
+        #endregion
     }
 }

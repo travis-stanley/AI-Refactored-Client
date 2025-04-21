@@ -18,30 +18,34 @@ namespace AIRefactored.AI.Reactions
         #region Public Properties
 
         /// <summary>
-        /// Reference to the associated bot's owner.
+        /// Gets the active bot instance linked to this flash component.
         /// </summary>
         public BotOwner? Bot { get; private set; }
-
-        private BotComponentCache? _cache;
 
         #endregion
 
         #region Private Fields
 
+        private BotComponentCache? _cache;
+
         private float _lastFlashTime = -999f;
         private bool _isBlinded = false;
 
-        private const float BlindDuration = 4.5f;
+        private const float BaseBlindDuration = 4.5f;
         private const float FlashlightThresholdAngle = 25f;
         private const float FlashlightMinIntensity = 2.0f;
 
-        private static readonly ManualLogSource _log = AIRefactoredController.Logger;
-        private static readonly bool _debug = false;
+        private static readonly ManualLogSource Logger = AIRefactoredController.Logger;
+        private static readonly bool DebugEnabled = false;
 
         #endregion
 
         #region Initialization
 
+        /// <summary>
+        /// Assigns cache references to prepare the flash component.
+        /// </summary>
+        /// <param name="cache">Bot component cache instance.</param>
         public void Initialize(BotComponentCache cache)
         {
             _cache = cache;
@@ -52,18 +56,23 @@ namespace AIRefactored.AI.Reactions
 
         #region External Tick
 
+        /// <summary>
+        /// Called each frame to track light exposure and recover from blindness over time.
+        /// </summary>
+        /// <param name="time">Current world time.</param>
         public void Tick(float time)
         {
-            if (Bot == null || Bot.HealthController == null || !Bot.GetPlayer?.IsAI == true)
+            if (Bot == null || Bot.HealthController == null || Bot.GetPlayer?.IsAI != true)
                 return;
 
             CheckFlashlightExposure();
 
-            if (_isBlinded && time - _lastFlashTime > BlindDuration)
+            if (_isBlinded && time - _lastFlashTime > GetBlindRecoveryDuration())
             {
-                if (_debug)
-                    _log.LogDebug($"[FlashGrenadeComponent] Bot {Bot.Profile?.Id} recovered from blind.");
                 _isBlinded = false;
+
+                if (DebugEnabled)
+                    Logger.LogDebug($"[FlashGrenadeComponent] Bot {Bot.Profile?.Id} recovered from blindness.");
             }
         }
 
@@ -71,28 +80,38 @@ namespace AIRefactored.AI.Reactions
 
         #region Flashlight Detection
 
+        /// <summary>
+        /// Checks all visible flashlights for direct eye exposure on this bot.
+        /// </summary>
         private void CheckFlashlightExposure()
         {
-            if (Bot == null || Bot.IsDead || Bot.Transform == null)
+            if (Bot?.IsDead != false || _cache == null)
                 return;
 
-            Vector3 botForward = Bot.LookDirection;
-            Vector3 botPosition = Bot.Transform.position;
+            Transform? head = BotCacheUtility.Head(_cache);
+            if (head == null)
+                return;
 
-            foreach (Light light in FlashlightRegistry.GetActiveFlashlights())
+            Vector3 eyePos = head.position;
+            Vector3 lookDir = head.forward;
+
+            foreach (Light? light in FlashlightRegistry.GetActiveFlashlights())
             {
                 if (light == null || !light.enabled || light.intensity < FlashlightMinIntensity)
                     continue;
 
-                Vector3 dirToLight = (light.transform.position - botPosition).normalized;
-                float angle = Vector3.Angle(botForward, -dirToLight);
+                Vector3 toLight = light.transform.position - eyePos;
+                float angle = Vector3.Angle(lookDir, toLight.normalized);
 
-                if (angle < FlashlightThresholdAngle)
+                if (angle <= FlashlightThresholdAngle)
                 {
-                    if (_debug)
-                        _log.LogDebug($"[FlashGrenadeComponent] Bot {Bot.Profile?.Id} blinded by flashlight at angle {angle:0.0}°");
+                    if (DebugEnabled)
+                    {
+                        string id = Bot.Profile?.Id ?? "unknown";
+                        Logger.LogDebug($"[FlashGrenadeComponent] Bot {id} blinded at angle {angle:F1}°");
+                    }
 
-                    AddBlindEffect(BlindDuration, light.transform.position);
+                    AddBlindEffect(BaseBlindDuration, light.transform.position);
                     break;
                 }
             }
@@ -102,20 +121,37 @@ namespace AIRefactored.AI.Reactions
 
         #region Flash Reaction Logic
 
+        /// <summary>
+        /// Returns true if the bot is currently affected by flash blindness.
+        /// </summary>
         public bool IsFlashed() => _isBlinded;
 
+        /// <summary>
+        /// Applies a flash effect with duration and triggers suppression.
+        /// </summary>
+        /// <param name="duration">Duration in seconds of the blind state.</param>
+        /// <param name="source">World position of the light source.</param>
         public void AddBlindEffect(float duration, Vector3 source)
         {
-            if (Bot == null || !Bot.GetPlayer?.IsAI == true)
+            if (Bot == null || Bot.GetPlayer?.IsAI != true)
                 return;
 
             _lastFlashTime = Time.time;
             _isBlinded = true;
 
-            if (_debug)
-                _log.LogDebug($"[FlashGrenadeComponent] Blind effect applied to {Bot.Profile?.Id} for {duration:0.00}s");
+            if (DebugEnabled)
+                Logger.LogDebug($"[FlashGrenadeComponent] Blind applied to {Bot.Profile?.Id} for {duration:F1}s");
 
             BotSuppressionHelper.TrySuppressBot(Bot.GetPlayer, source);
+        }
+
+        /// <summary>
+        /// Calculates how long blindness should last based on composure.
+        /// </summary>
+        private float GetBlindRecoveryDuration()
+        {
+            float composure = _cache?.PanicHandler?.GetComposureLevel() ?? 1f;
+            return Mathf.Lerp(2.0f, BaseBlindDuration, 1f - composure);
         }
 
         #endregion

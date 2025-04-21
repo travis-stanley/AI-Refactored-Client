@@ -1,6 +1,8 @@
 ﻿#nullable enable
 
 using AIRefactored.AI.Core;
+using AIRefactored.Runtime;
+using BepInEx.Logging;
 using EFT;
 using System;
 using System.Reflection;
@@ -9,27 +11,35 @@ using UnityEngine;
 namespace AIRefactored.AI.Helpers
 {
     /// <summary>
-    /// Utility for triggering suppression or panic responses in AI bots.
-    /// Wraps reflection-based methods and safely handles fallback behavior.
+    /// Utility for triggering suppression or panic responses in AIRefactored bots.
+    /// Supports realistic simulation of enemy fire pressure and flash panic using fallback logic.
     /// </summary>
     public static class BotSuppressionHelper
     {
+        #region Reflection
+
         private static MethodInfo? _setUnderFireMethod;
-        private static readonly bool EnableDebugLogs = false;
+        private static readonly ManualLogSource _log = AIRefactoredController.Logger;
+
+        #endregion
 
         #region Bot Accessors
 
         /// <summary>
-        /// Retrieves the BotOwner from a Player if it is AI-controlled.
+        /// Attempts to retrieve the BotOwner from an AI-controlled Player.
         /// </summary>
+        /// <param name="bot">The player to inspect.</param>
+        /// <returns>BotOwner if AI and valid; otherwise null.</returns>
         public static BotOwner? GetBotOwner(Player bot)
         {
             return bot.IsAI && bot.AIData is BotOwner owner ? owner : null;
         }
 
         /// <summary>
-        /// Retrieves the BotComponentCache associated with the Player bot.
+        /// Gets the BotComponentCache for a player (if AI-controlled).
         /// </summary>
+        /// <param name="bot">The player to query.</param>
+        /// <returns>BotComponentCache instance or null.</returns>
         public static BotComponentCache? GetCache(Player bot)
         {
             return BotCacheUtility.GetCache(bot);
@@ -40,15 +50,15 @@ namespace AIRefactored.AI.Helpers
         #region Suppression Triggers
 
         /// <summary>
-        /// Sets the 'Under Fire' state on the bot if the appropriate method exists.
-        /// Uses reflection to invoke the internal method.
+        /// Attempts to trigger the bot's internal "under fire" flag using reflection.
+        /// This simulates enemy fire perception without causing real damage.
         /// </summary>
-        public static void TrySetUnderFire(BotOwner owner)
+        /// <param name="owner">The target BotOwner.</param>
+        public static void TrySetUnderFire(BotOwner? owner)
         {
-            if (owner == null || owner.ShootData == null)
+            if (owner?.ShootData == null)
                 return;
 
-            // Cache the reflection method for optimization
             if (_setUnderFireMethod == null)
             {
                 _setUnderFireMethod = owner.ShootData.GetType()
@@ -63,15 +73,17 @@ namespace AIRefactored.AI.Helpers
                 }
                 catch (Exception ex)
                 {
-                    if (EnableDebugLogs)
-                        Debug.LogError($"Failed to invoke 'SetUnderFire' method: {ex.Message}");
+                    _log.LogWarning($"[SuppressionHelper] Failed to invoke SetUnderFire: {ex.Message}");
                 }
             }
         }
 
         /// <summary>
-        /// Triggers panic or flash blindness for the specified bot when under suppression.
+        /// Applies suppression effects (panic or blind) based on what components are available.
+        /// Flash-based suppression fallback will apply if panic is unavailable.
         /// </summary>
+        /// <param name="bot">The AI player to affect.</param>
+        /// <param name="flashSource">The source position of the threat (for directionally-aware flash).</param>
         public static void TrySuppressBot(Player bot, Vector3 flashSource)
         {
             if (!bot.IsAI || bot.AIData == null)
@@ -83,30 +95,30 @@ namespace AIRefactored.AI.Helpers
 
             if (cache.PanicHandler != null)
             {
-                cache.PanicHandler.TriggerPanic();  // Trigger panic if PanicHandler is available
-                return;
+                cache.PanicHandler.TriggerPanic();
             }
-
-            if (cache.FlashGrenade != null)
+            else if (cache.FlashGrenade != null)
             {
-                cache.FlashGrenade.AddBlindEffect(4.5f, flashSource);  // Apply flashbang blindness effect
+                cache.FlashGrenade.AddBlindEffect(4.5f, flashSource);
             }
         }
 
         /// <summary>
-        /// Determines whether suppression should be triggered based on visibility and ambient light.
+        /// Determines whether the bot should be suppressed based on visibility range and ambient brightness.
         /// </summary>
+        /// <param name="bot">Target AI player.</param>
+        /// <param name="visibleDistThreshold">Minimum distance at which bot is considered "trapped."</param>
+        /// <param name="ambientThreshold">Minimum ambient brightness considered safe.</param>
+        /// <returns>True if suppression logic should be triggered.</returns>
         public static bool ShouldTriggerSuppression(Player bot, float visibleDistThreshold = 12f, float ambientThreshold = 0.25f)
         {
             var owner = GetBotOwner(bot);
-            if (owner == null || owner.LookSensor == null)
+            if (owner?.LookSensor == null)
                 return false;
 
-            // Get the visibility distance from the LookSensor and the ambient light level
             float visibleDist = owner.LookSensor.ClearVisibleDist;
             float ambient = RenderSettings.ambientLight.grayscale;
 
-            // Trigger suppression if conditions are met
             return visibleDist < visibleDistThreshold || ambient < ambientThreshold;
         }
 

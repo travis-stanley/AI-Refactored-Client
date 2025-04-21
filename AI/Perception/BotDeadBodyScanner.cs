@@ -7,6 +7,7 @@ using BepInEx.Logging;
 using EFT;
 using EFT.Interactive;
 using EFT.InventoryLogic;
+using System.Collections.Generic;
 using UnityEngine;
 
 namespace AIRefactored.AI.Looting
@@ -17,59 +18,98 @@ namespace AIRefactored.AI.Looting
     /// </summary>
     public class BotDeadBodyScanner
     {
+        #region Config
+
         private const float ScanRadius = 12f;
         private const float MaxLootAngle = 120f;
         private const float Cooldown = 10f;
+        private const float LootMemoryDuration = 15f;
+
+        #endregion
+
+        #region State
 
         private BotOwner? _bot;
         private BotComponentCache? _cache;
         private float _nextScanTime;
 
-        private static readonly ManualLogSource _log = AIRefactoredController.Logger;
-        private static readonly bool _debug = false;
+        private static readonly HashSet<string> _recentLootedBodies = new();
+        private static readonly Dictionary<string, float> _lootTimestamps = new();
 
+        private static readonly ManualLogSource Logger = AIRefactoredController.Logger;
+        private static readonly bool DebugEnabled = false;
+
+        #endregion
+
+        #region Initialization
+
+        /// <summary>
+        /// Initializes this scanner with bot dependencies.
+        /// </summary>
         public void Initialize(BotComponentCache cache)
         {
             _cache = cache;
             _bot = cache.Bot;
         }
 
+        #endregion
+
+        #region Runtime Tick
+
+        /// <summary>
+        /// Called each frame to evaluate and possibly loot a body.
+        /// </summary>
         public void Tick(float time)
         {
-            if (_bot == null || _bot.IsDead || _bot.GetPlayer?.IsYourPlayer == true)
+            if (!CanEvaluate(time))
                 return;
 
-            if (FikaHeadlessDetector.IsHeadless)
-                return;
-
-            if (_cache?.PanicHandler?.IsPanicking == true || time < _nextScanTime)
-                return;
-
-            if (!CanLootNow())
-                return;
-
-            if (TryFindDeadBody(out var corpse))
+            if (TryFindDeadBody(out Player corpse))
             {
-                if (_debug)
-                    _log.LogDebug($"[DeadBodyScanner] Looting body of {corpse.Profile?.Info?.Nickname}");
+                if (DebugEnabled)
+                    Logger.LogDebug($"[DeadBodyScanner] Looting body of {corpse.Profile?.Info?.Nickname}");
 
                 TryLootCorpse(corpse);
                 _nextScanTime = time + Cooldown;
+
+                if (!string.IsNullOrEmpty(corpse.ProfileId))
+                    RegisterLooted(corpse.ProfileId);
             }
         }
 
+        /// <summary>
+        /// Called manually (e.g. on combat over) to attempt looting.
+        /// </summary>
         public void TryLootNearby()
         {
             if (FikaHeadlessDetector.IsHeadless || !CanLootNow())
                 return;
 
-            if (TryFindDeadBody(out var corpse))
+            if (TryFindDeadBody(out Player corpse))
             {
-                if (_debug)
-                    _log.LogDebug($"[DeadBodyScanner] (Manual) Looting body of {corpse.Profile?.Info?.Nickname}");
+                if (DebugEnabled)
+                    Logger.LogDebug($"[DeadBodyScanner] (Manual) Looting body of {corpse.Profile?.Info?.Nickname}");
 
                 TryLootCorpse(corpse);
+
+                if (!string.IsNullOrEmpty(corpse.ProfileId))
+                    RegisterLooted(corpse.ProfileId);
             }
+        }
+
+        #endregion
+
+        #region Evaluation Logic
+
+        private bool CanEvaluate(float now)
+        {
+            if (_bot == null || _bot.IsDead || _bot.GetPlayer?.IsYourPlayer == true)
+                return false;
+
+            if (_cache == null || _cache.PanicHandler?.IsPanicking == true || now < _nextScanTime)
+                return false;
+
+            return CanLootNow();
         }
 
         private bool CanLootNow()
@@ -80,7 +120,11 @@ namespace AIRefactored.AI.Looting
             if (_cache?.PanicHandler?.IsPanicking == true)
                 return false;
 
-            if (_bot.Memory?.GoalEnemy != null || _bot.EnemiesController?.EnemyInfos.Count > 0)
+            if (_bot.Memory?.GoalEnemy != null || (_bot.EnemiesController?.EnemyInfos.Count ?? 0) > 0)
+                return false;
+
+            var profile = BotRegistry.Get(_bot.ProfileId);
+            if (profile != null && profile.Caution > 0.7f)
                 return false;
 
             return true;
@@ -99,6 +143,9 @@ namespace AIRefactored.AI.Looting
                 if (p == null || p == _bot.GetPlayer || p.HealthController?.IsAlive != false)
                     continue;
 
+                if (!string.IsNullOrEmpty(p.ProfileId) && WasRecentlyLooted(p.ProfileId))
+                    continue;
+
                 float dist = Vector3.Distance(origin, p.Position);
                 if (dist > ScanRadius)
                     continue;
@@ -110,11 +157,8 @@ namespace AIRefactored.AI.Looting
 
                 if (Physics.Raycast(origin, dir, out RaycastHit hit, dist + 0.3f, LayerMaskClass.HighPolyWithTerrainMaskAI))
                 {
-                    if (hit.collider?.transform.root == p.Transform.Original.root)
+                    if (hit.collider?.transform.root == p.Transform?.Original?.root)
                     {
-                        if (_debug)
-                            _log.LogDebug($"[DeadBodyScanner] Found lootable corpse: {p.Profile?.Info?.Nickname}");
-
                         corpse = p;
                         return true;
                     }
@@ -126,7 +170,13 @@ namespace AIRefactored.AI.Looting
 
         private void TryLootCorpse(Player deadPlayer)
         {
-            if (deadPlayer.InventoryController == null || _bot?.GetPlayer?.InventoryController == null)
+            if (_bot == null || _bot.IsDead || deadPlayer == null)
+                return;
+
+            var sourceInv = deadPlayer.InventoryController;
+            var targetInv = _bot.GetPlayer?.InventoryController;
+
+            if (sourceInv == null || targetInv == null)
                 return;
 
             var lootable = deadPlayer.GetComponent<LootableContainer>();
@@ -134,8 +184,8 @@ namespace AIRefactored.AI.Looting
             {
                 lootable.Interact(new InteractionResult(EInteractionType.Open));
 
-                if (_debug)
-                    _log.LogDebug($"[DeadBodyScanner] Interacted with LootableContainer on {deadPlayer.Profile?.Info?.Nickname}");
+                if (DebugEnabled)
+                    Logger.LogDebug($"[DeadBodyScanner] Interacted with LootableContainer on {deadPlayer.Profile?.Info?.Nickname}");
 
                 return;
             }
@@ -150,31 +200,49 @@ namespace AIRefactored.AI.Looting
                 EquipmentSlot.Pockets
             };
 
-            var inv = _bot.GetPlayer.InventoryController;
-
-            foreach (var slot in slots)
+            for (int i = 0; i < slots.Length; i++)
             {
-                var item = deadPlayer.InventoryController.Inventory.Equipment.GetSlot(slot).ContainedItem;
+                var item = sourceInv.Inventory.Equipment.GetSlot(slots[i]).ContainedItem;
                 if (item == null)
                     continue;
 
-                var dest = inv.FindSlotToPickUp(item);
+                var dest = targetInv.FindSlotToPickUp(item);
                 if (dest == null)
                     continue;
 
-                var move = InteractionsHandlerClass.Move(item, dest, inv, true);
+                var move = InteractionsHandlerClass.Move(item, dest, targetInv, true);
                 if (move.Succeeded)
                 {
-                    if (_debug)
-                        _log.LogDebug($"[DeadBodyScanner] Picked up item {item.Name.Localized()} from {slot}");
+                    if (DebugEnabled)
+                        Logger.LogDebug($"[DeadBodyScanner] Picked up item {item.Name.Localized()} from {slots[i]}");
 
-                    inv.TryRunNetworkTransaction(move, null);
+                    targetInv.TryRunNetworkTransaction(move, null);
                     return;
                 }
             }
 
-            if (_debug)
-                _log.LogDebug($"[DeadBodyScanner] No items successfully looted from {deadPlayer.Profile?.Info?.Nickname}");
+            if (DebugEnabled)
+                Logger.LogDebug($"[DeadBodyScanner] No items successfully looted from {deadPlayer.Profile?.Info?.Nickname}");
         }
+
+        #endregion
+
+        #region Memory Logic
+
+        private static void RegisterLooted(string profileId)
+        {
+            _recentLootedBodies.Add(profileId);
+            _lootTimestamps[profileId] = Time.time;
+        }
+
+        private static bool WasRecentlyLooted(string profileId)
+        {
+            if (_lootTimestamps.TryGetValue(profileId, out float time))
+                return (Time.time - time) < LootMemoryDuration;
+
+            return false;
+        }
+
+        #endregion
     }
 }

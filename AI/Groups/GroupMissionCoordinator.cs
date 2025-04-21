@@ -11,27 +11,33 @@ using System.Collections.Generic;
 namespace AIRefactored.AI.Groups
 {
     /// <summary>
-    /// Assigns shared missions to bot squads and individuals based on map and personality weightings.
-    /// Enables consistent squad coordination across Loot, Fight, and Quest missions.
+    /// Assigns shared missions to bot squads and individuals based on map context and personality weighting.
+    /// Enables consistent squad-level coordination across Loot, Fight, and Quest behaviors.
     /// </summary>
     public static class GroupMissionCoordinator
     {
         #region Fields
 
-        private static readonly Dictionary<string, BotMissionSystem.MissionType> _assignedMissions = new(32);
-        private static readonly System.Random _rng = new();
-        private static bool _debugLog = true;
-
+        private static readonly Dictionary<string, BotMissionSystem.MissionType> _assignedMissions = new Dictionary<string, BotMissionSystem.MissionType>(32);
+        private static readonly System.Random _rng = new System.Random();
         private static readonly ManualLogSource _log = AIRefactoredController.Logger;
+        private static bool _debugLog = true;
 
         #endregion
 
         #region Public API
 
-        public static void EnableDebug(bool enabled) => _debugLog = enabled;
+        /// <summary>
+        /// Enables or disables mission assignment logging for debugging purposes.
+        /// </summary>
+        public static void EnableDebug(bool enabled)
+        {
+            _debugLog = enabled;
+        }
 
         /// <summary>
-        /// Returns the assigned mission type for a bot's group. If not already assigned, one is selected and stored.
+        /// Gets or assigns a mission to a squad group based on GroupId.
+        /// If mission is not yet set, uses weighted logic.
         /// </summary>
         public static BotMissionSystem.MissionType GetMissionForGroup(BotOwner bot)
         {
@@ -56,7 +62,7 @@ namespace AIRefactored.AI.Groups
         }
 
         /// <summary>
-        /// Registers and assigns a mission to the bot’s group (safe to call during bot initialization).
+        /// Registers a bot’s group for mission assignment (auto-calls PickWeightedMission).
         /// </summary>
         public static void RegisterFromBot(BotOwner bot)
         {
@@ -64,6 +70,7 @@ namespace AIRefactored.AI.Groups
                 return;
 
             string groupId = bot.Profile?.Info?.GroupId ?? string.Empty;
+
             if (string.IsNullOrEmpty(groupId) || _assignedMissions.ContainsKey(groupId))
                 return;
 
@@ -75,7 +82,7 @@ namespace AIRefactored.AI.Groups
         }
 
         /// <summary>
-        /// Forces a group to use a specific mission.
+        /// Manually assigns a mission to a group, overriding weighted behavior.
         /// </summary>
         public static void ForceMissionForGroup(string groupId, BotMissionSystem.MissionType mission)
         {
@@ -84,7 +91,7 @@ namespace AIRefactored.AI.Groups
         }
 
         /// <summary>
-        /// Clears all group mission assignments (typically on session reset).
+        /// Clears all registered group missions. Called on reset or new raid.
         /// </summary>
         public static void Reset()
         {
@@ -95,6 +102,9 @@ namespace AIRefactored.AI.Groups
 
         #region Internal Helpers
 
+        /// <summary>
+        /// Assigns a mission to a solo bot using map+personality weight.
+        /// </summary>
         private static BotMissionSystem.MissionType GetSoloBotMission(BotOwner bot)
         {
             var mission = PickWeightedMission(bot);
@@ -108,46 +118,70 @@ namespace AIRefactored.AI.Groups
             return mission;
         }
 
+        /// <summary>
+        /// Computes weighted probability of Loot, Fight, or Quest mission using map and personality traits.
+        /// </summary>
         private static BotMissionSystem.MissionType PickWeightedMission(BotOwner bot)
         {
-            string map = Singleton<GameWorld>.Instantiated
-                ? Singleton<GameWorld>.Instance?.LocationId?.ToLowerInvariant() ?? "unknown"
-                : "unknown";
+            string map = "unknown";
+            if (Singleton<GameWorld>.Instantiated)
+                map = Singleton<GameWorld>.Instance?.LocationId?.ToLowerInvariant() ?? "unknown";
 
-            float loot = 1.0f;
-            float fight = 1.0f;
-            float quest = 1.0f;
+            float loot = 1f, fight = 1f, quest = 1f;
 
-            // === Map Weights ===
             switch (map)
             {
                 case "factory4_day":
-                case "factory4_night": fight += 1.5f; break;
-                case "woods": loot += 1.5f; break;
-                case "bigmap": quest += 0.75f; fight += 0.25f; break;
-                case "interchange": loot += 1.2f; break;
-                case "rezervbase": fight += 1.0f; loot += 0.4f; break;
-                case "lighthouse": quest += 1.2f; loot += 1.0f; break;
-                case "shoreline": quest += 1.4f; loot += 0.6f; break;
-                case "tarkovstreets": fight += 1.3f; loot += 0.5f; break;
-                case "laboratory": fight += 2.0f; break;
+                case "factory4_night":
+                    fight += 1.5f;
+                    break;
+                case "woods":
+                    loot += 1.5f;
+                    break;
+                case "bigmap":
+                    quest += 0.75f; fight += 0.25f;
+                    break;
+                case "interchange":
+                    loot += 1.2f;
+                    break;
+                case "rezervbase":
+                    fight += 1.0f; loot += 0.4f;
+                    break;
+                case "lighthouse":
+                    quest += 1.2f; loot += 1.0f;
+                    break;
+                case "shoreline":
+                    quest += 1.4f; loot += 0.6f;
+                    break;
+                case "tarkovstreets":
+                    fight += 1.3f; loot += 0.5f;
+                    break;
+                case "laboratory":
+                    fight += 2.0f;
+                    break;
                 case "sandbox":
                 case "sandbox_high":
-                case "groundzero": loot += 1.0f; break;
-                default: loot += 0.5f; break;
+                case "groundzero":
+                    loot += 1.0f;
+                    break;
+                default:
+                    loot += 0.5f;
+                    break;
             }
 
-            // === Personality Weights ===
             var wrapper = bot.GetComponent<AIRefactoredBotOwner>();
-            if (wrapper?.PersonalityProfile is { } profile)
+            if (wrapper?.PersonalityProfile is BotPersonalityProfile profile)
             {
                 loot += profile.Caution * 1.0f;
                 quest += profile.Caution * 0.5f;
                 fight += profile.AggressionLevel * 1.2f;
 
-                if (profile.IsFrenzied) fight += 1.5f;
-                if (profile.IsFearful) loot += 1.0f;
-                if (profile.IsCamper) quest += 0.75f;
+                if (profile.IsFrenzied)
+                    fight += 1.5f;
+                if (profile.IsFearful)
+                    loot += 1.0f;
+                if (profile.IsCamper)
+                    quest += 0.75f;
             }
 
             float total = loot + fight + quest;
@@ -160,9 +194,12 @@ namespace AIRefactored.AI.Groups
                     : BotMissionSystem.MissionType.Quest;
         }
 
+        /// <summary>
+        /// Returns true if the bot is valid, AI-controlled, and not null/dead.
+        /// </summary>
         private static bool IsValidAIBot(BotOwner bot)
         {
-            return bot?.GetPlayer?.IsAI == true;
+            return bot != null && bot.GetPlayer?.IsAI == true;
         }
 
         #endregion

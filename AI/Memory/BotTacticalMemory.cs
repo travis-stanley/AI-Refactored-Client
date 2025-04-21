@@ -7,30 +7,49 @@ using UnityEngine;
 namespace AIRefactored.AI.Memory
 {
     /// <summary>
-    /// Stores recent tactical memory for a bot, including last seen enemy positions, scan points, and per-bone visibility.
-    /// Prevents redundant investigation and encourages coordinated squad behavior.
+    /// Stores recent enemy sightings, cleared points, and tactical decisions.
+    /// Helps bots avoid redundant pathing and sync spotted positions with allies.
     /// </summary>
     public class BotTacticalMemory
     {
+        #region Constants
+
         private const float MaxMemoryTime = 14f;
         private const float ClearedMemoryDuration = 10f;
-        private const float PositionToleranceSqr = 0.5f * 0.5f;
+        private const float PositionToleranceSqr = 0.25f;
+
+        #endregion
+
+        #region Fields
 
         private readonly Dictionary<Vector3, float> _clearedSpots = new(32, new Vector3EqualityComparer());
         private readonly List<SeenEnemyRecord> _enemyMemory = new(4);
-
         private BotComponentCache? _cache;
 
+        #endregion
+
+        #region Initialization
+
+        /// <summary>
+        /// Initializes the tactical memory with bot cache reference.
+        /// </summary>
         public void Initialize(BotComponentCache cache)
         {
             _cache = cache;
         }
 
+        #endregion
+
+        #region Enemy Tracking
+
         /// <summary>
-        /// Adds a new enemy position to memory.
+        /// Records a seen enemy position.
         /// </summary>
         public void RecordEnemyPosition(Vector3 position, string tag = "Generic")
         {
+            if (_cache == null || _cache.IsBlinded || (_cache.PanicHandler != null && _cache.PanicHandler.IsPanicking))
+                return;
+
             float now = Time.time;
             Vector3 gridPos = SnapToGrid(position);
 
@@ -38,7 +57,6 @@ namespace AIRefactored.AI.Memory
             {
                 if ((gridPos - _enemyMemory[i].Position).sqrMagnitude < PositionToleranceSqr)
                 {
-                    // Refresh existing memory
                     _enemyMemory[i] = new SeenEnemyRecord(gridPos, now, tag);
                     return;
                 }
@@ -48,7 +66,7 @@ namespace AIRefactored.AI.Memory
         }
 
         /// <summary>
-        /// Returns the most recent valid enemy position if one exists.
+        /// Returns the freshest remembered enemy position.
         /// </summary>
         public Vector3? GetRecentEnemyMemory()
         {
@@ -69,7 +87,7 @@ namespace AIRefactored.AI.Memory
         }
 
         /// <summary>
-        /// Clears outdated or old enemy memory.
+        /// Removes expired entries from memory.
         /// </summary>
         public void CullExpired()
         {
@@ -77,8 +95,12 @@ namespace AIRefactored.AI.Memory
             _enemyMemory.RemoveAll(e => now - e.TimeSeen > MaxMemoryTime);
         }
 
+        #endregion
+
+        #region Cleared Locations
+
         /// <summary>
-        /// Marks a search location as cleared.
+        /// Marks a search point as cleared.
         /// </summary>
         public void MarkCleared(Vector3 position)
         {
@@ -87,17 +109,53 @@ namespace AIRefactored.AI.Memory
         }
 
         /// <summary>
-        /// Checks if a location was recently cleared.
+        /// Checks if a point was recently cleared.
         /// </summary>
         public bool WasRecentlyCleared(Vector3 position)
         {
             Vector3 gridPos = SnapToGrid(position);
-            return _clearedSpots.TryGetValue(gridPos, out float lastCleared) &&
-                   Time.time - lastCleared < ClearedMemoryDuration;
+            return _clearedSpots.TryGetValue(gridPos, out float lastTime) &&
+                   Time.time - lastTime < ClearedMemoryDuration;
+        }
+
+        #endregion
+
+        #region Squad Syncing
+
+        /// <summary>
+        /// Syncs an enemy memory entry from a squadmate.
+        /// </summary>
+        public void SyncMemory(Vector3 position, string tag = "AllyEcho")
+        {
+            RecordEnemyPosition(position, tag);
         }
 
         /// <summary>
-        /// Removes all stored data.
+        /// Shares tactical memory with squadmates.
+        /// </summary>
+        public void ShareMemoryWith(List<BotComponentCache> teammates)
+        {
+            for (int i = 0; i < _enemyMemory.Count; i++)
+            {
+                var entry = _enemyMemory[i];
+
+                for (int j = 0; j < teammates.Count; j++)
+                {
+                    var mate = teammates[j];
+                    if (mate?.Bot == null || mate.Bot == _cache?.Bot)
+                        continue;
+
+                    mate.TacticalMemory?.SyncMemory(entry.Position, $"Echo:{_cache?.Bot?.Profile?.Id ?? "bot"}");
+                }
+            }
+        }
+
+        #endregion
+
+        #region Utility
+
+        /// <summary>
+        /// Clears all tactical memory.
         /// </summary>
         public void ResetMemory()
         {
@@ -106,33 +164,29 @@ namespace AIRefactored.AI.Memory
         }
 
         /// <summary>
-        /// Returns all memory entries (for debug or sync).
+        /// Returns a copy of enemy memory list.
         /// </summary>
-        public List<SeenEnemyRecord> GetAllMemory()
-        {
-            return _enemyMemory;
-        }
+        public List<SeenEnemyRecord> GetAllMemory() => _enemyMemory;
 
         /// <summary>
-        /// Allows other bots to sync memory (e.g., squadmate spotted enemy).
+        /// Snaps vector to grid to improve positional comparisons.
         /// </summary>
-        public void SyncMemory(Vector3 position, string tag = "AllyEcho")
-        {
-            RecordEnemyPosition(position, tag);
-        }
-
         private static Vector3 SnapToGrid(Vector3 pos)
         {
-            const float gridSize = 0.5f;
+            const float grid = 0.5f;
             return new Vector3(
-                Mathf.Round(pos.x / gridSize) * gridSize,
-                Mathf.Round(pos.y / gridSize) * gridSize,
-                Mathf.Round(pos.z / gridSize) * gridSize
+                Mathf.Round(pos.x / grid) * grid,
+                Mathf.Round(pos.y / grid) * grid,
+                Mathf.Round(pos.z / grid) * grid
             );
         }
 
+        #endregion
+
+        #region Structures
+
         /// <summary>
-        /// Lightweight record of a spotted enemy position and its source.
+        /// Tactical record of a seen enemy position.
         /// </summary>
         public struct SeenEnemyRecord
         {
@@ -149,14 +203,12 @@ namespace AIRefactored.AI.Memory
         }
 
         /// <summary>
-        /// Fast grid-based equality comparer for Vector3.
+        /// Grid-based comparer for Vector3 equality on memory keys.
         /// </summary>
         private class Vector3EqualityComparer : IEqualityComparer<Vector3>
         {
-            public bool Equals(Vector3 a, Vector3 b)
-            {
-                return (a - b).sqrMagnitude < PositionToleranceSqr;
-            }
+            public bool Equals(Vector3 a, Vector3 b) =>
+                (a - b).sqrMagnitude < PositionToleranceSqr;
 
             public int GetHashCode(Vector3 v)
             {
@@ -170,5 +222,7 @@ namespace AIRefactored.AI.Memory
                 }
             }
         }
+
+        #endregion
     }
 }

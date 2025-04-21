@@ -1,32 +1,52 @@
 ﻿#nullable enable
 
 using AIRefactored.AI.Core;
+using AIRefactored.Runtime;
+using BepInEx.Logging;
 using UnityEngine;
 
 namespace AIRefactored.AI.Medical
 {
     /// <summary>
-    /// Tracks injury state, cooldown, and realistic safety before using medicine.
+    /// Manages bot injury state and healing behavior.
+    /// Tracks cooldowns, determines safe moments for healing,
+    /// and triggers surgical procedures on destroyed limbs.
     /// </summary>
     public class BotInjurySystem
     {
-        private readonly BotComponentCache _cache;
+        #region Fields
 
+        private readonly BotComponentCache _cache;
         private float _lastHitTime;
         private float _nextHealTime;
         private EBodyPart? _injuredLimb;
         private bool _hasBlackLimb;
 
         private const float HealCooldown = 6f;
+        private static readonly ManualLogSource _log = AIRefactoredController.Logger;
 
+        #endregion
+
+        #region Initialization
+
+        /// <summary>
+        /// Creates a new injury tracking system for the bot.
+        /// </summary>
+        /// <param name="cache">The bot’s component cache.</param>
         public BotInjurySystem(BotComponentCache cache)
         {
             _cache = cache;
         }
 
+        #endregion
+
+        #region Event Hooks
+
         /// <summary>
-        /// Called when the bot is hit. Flags healing cooldown and limb damage.
+        /// Called when the bot is hit. Flags limb as injured and begins cooldown.
         /// </summary>
+        /// <param name="part">The limb that was hit.</param>
+        /// <param name="damage">The damage value.</param>
         public void OnHit(EBodyPart part, float damage)
         {
             _lastHitTime = Time.time;
@@ -40,25 +60,31 @@ namespace AIRefactored.AI.Medical
             _hasBlackLimb = health.IsBodyPartDestroyed(part);
         }
 
+        #endregion
+
+        #region Tick & Decision Logic
+
         /// <summary>
-        /// External Tick from BotBrain.
+        /// Called every frame by the bot brain.
         /// </summary>
+        /// <param name="time">Current game time.</param>
         public void Tick(float time)
         {
             if (ShouldHeal(time))
-            {
                 TryUseMedicine();
-            }
         }
 
         /// <summary>
-        /// Checks if the bot should initiate healing at current time.
+        /// Whether the bot should attempt healing at the current time.
         /// </summary>
+        /// <returns>True if healing should begin.</returns>
         public bool ShouldHeal() => ShouldHeal(Time.time);
 
         /// <summary>
-        /// Determines whether the bot should begin healing.
+        /// Evaluates if the bot is in a safe and appropriate condition to begin healing.
         /// </summary>
+        /// <param name="time">Current game time.</param>
+        /// <returns>True if healing should begin.</returns>
         public bool ShouldHeal(float time)
         {
             if (_injuredLimb == null || !_hasBlackLimb)
@@ -76,8 +102,12 @@ namespace AIRefactored.AI.Medical
             return true;
         }
 
+        #endregion
+
+        #region Healing Logic
+
         /// <summary>
-        /// Attempts to trigger surgery if the bot has a valid black limb.
+        /// Attempts to begin surgical healing if possible.
         /// </summary>
         private void TryUseMedicine()
         {
@@ -102,12 +132,14 @@ namespace AIRefactored.AI.Medical
         }
 
         /// <summary>
-        /// Resets internal state after healing finishes.
+        /// Clears internal injury tracking state after healing completes.
         /// </summary>
         public void Reset()
         {
             _injuredLimb = null;
             _hasBlackLimb = false;
         }
+
+        #endregion
     }
 }

@@ -8,35 +8,35 @@ using UnityEngine;
 namespace AIRefactored.AI.Core
 {
     /// <summary>
-    /// Holds metadata and behavior profile for AIRefactored bots, including personality traits and zone logic.
-    /// This component is used for high-level coordination and tuning of tactical behavior.
+    /// AIRefactored behavior wrapper that manages bot metadata and profile initialization.
+    /// Tracks personality, assigned zones, and coordination with BotComponentCache.
     /// </summary>
     public class AIRefactoredBotOwner : MonoBehaviour
     {
         #region Public Properties
 
         /// <summary>
-        /// The live reference to this bot's BotOwner instance.
+        /// The underlying EFT BotOwner component.
         /// </summary>
         public BotOwner? Bot { get; private set; }
 
         /// <summary>
-        /// Cached reference to shared bot systems.
+        /// Cached bot component references (brain, AI logic, etc.).
         /// </summary>
         public BotComponentCache? Cache { get; private set; }
 
         /// <summary>
-        /// The current personality traits in use by this bot.
+        /// The currently assigned bot personality profile.
         /// </summary>
         public BotPersonalityProfile PersonalityProfile { get; private set; } = new BotPersonalityProfile();
 
         /// <summary>
-        /// Name of the assigned personality, for logging or debugging.
+        /// Human-readable name of the personality type.
         /// </summary>
         public string PersonalityName { get; private set; } = "Unknown";
 
         /// <summary>
-        /// Name of the zone this bot was assigned to patrol or defend.
+        /// Optional name of the strategic zone this bot is assigned to.
         /// </summary>
         public string AssignedZone { get; private set; } = "unknown";
 
@@ -44,15 +44,12 @@ namespace AIRefactored.AI.Core
 
         #region Fields
 
-        private static readonly ManualLogSource _log = AIRefactoredController.Logger;
+        private static readonly ManualLogSource Logger = AIRefactoredController.Logger;
 
         #endregion
 
         #region Unity Lifecycle
 
-        /// <summary>
-        /// Attempts to auto-wire components and assign a default personality.
-        /// </summary>
         private void Awake()
         {
             Bot = GetComponent<BotOwner>();
@@ -60,7 +57,7 @@ namespace AIRefactored.AI.Core
 
             if (Bot == null || Cache == null)
             {
-                _log.LogWarning("[AIRefactored-Owner] ❌ Missing BotOwner or BotComponentCache.");
+                Logger.LogWarning("[AIRefactored-Owner] ❌ Missing BotOwner or BotComponentCache.");
                 return;
             }
 
@@ -75,46 +72,49 @@ namespace AIRefactored.AI.Core
         #region Personality Management
 
         /// <summary>
-        /// Initializes this bot's personality from a known preset type.
+        /// Initializes the bot with a predefined personality preset.
         /// </summary>
+        /// <param name="type">The preset type to assign.</param>
         public void InitProfile(PersonalityType type)
         {
-            if (BotPersonalityPresets.Presets.TryGetValue(type, out BotPersonalityProfile? preset))
+            if (BotPersonalityPresets.Presets.TryGetValue(type, out var preset))
             {
                 PersonalityProfile = preset;
                 PersonalityName = type.ToString();
-                _log.LogInfo($"[AIRefactored-Owner] Personality {PersonalityName} assigned.");
+                Logger.LogInfo($"[AIRefactored-Owner] Personality {PersonalityName} assigned.");
             }
             else
             {
                 PersonalityProfile = BotPersonalityPresets.Presets[PersonalityType.Adaptive];
                 PersonalityName = "Adaptive";
-                _log.LogWarning($"[AIRefactored-Owner] Unknown preset {type}, defaulting to Adaptive.");
+                Logger.LogWarning($"[AIRefactored-Owner] Unknown preset {type}, defaulting to Adaptive.");
             }
         }
 
         /// <summary>
-        /// Initializes this bot's personality from a raw profile object.
+        /// Assigns a fully customized personality profile.
         /// </summary>
+        /// <param name="profile">The profile to assign.</param>
+        /// <param name="name">Optional display name.</param>
         public void InitProfile(BotPersonalityProfile profile, string name = "Custom")
         {
-            PersonalityProfile = profile;
+            PersonalityProfile = profile ?? new BotPersonalityProfile();
             PersonalityName = name;
-            _log.LogInfo($"[AIRefactored-Owner] Custom personality {PersonalityName} assigned.");
+            Logger.LogInfo($"[AIRefactored-Owner] Custom personality {PersonalityName} assigned.");
         }
 
         /// <summary>
-        /// Clears any currently assigned personality and resets to default.
+        /// Resets the bot's personality to default.
         /// </summary>
         public void ClearPersonality()
         {
             PersonalityProfile = new BotPersonalityProfile();
             PersonalityName = "Cleared";
-            _log.LogInfo("[AIRefactored-Owner] Personality cleared.");
+            Logger.LogInfo("[AIRefactored-Owner] Personality cleared.");
         }
 
         /// <summary>
-        /// Returns whether this bot has a valid personality profile.
+        /// Checks if a personality has been initialized.
         /// </summary>
         public bool HasPersonality()
         {
@@ -126,18 +126,19 @@ namespace AIRefactored.AI.Core
         #region Zone Assignment
 
         /// <summary>
-        /// Assigns a named zone to this bot for tracking or patrol logic.
+        /// Assigns the bot to a named tactical zone (used in routing, squads, etc.).
         /// </summary>
+        /// <param name="zoneName">Name of the zone to assign.</param>
         public void SetZone(string zoneName)
         {
             if (!string.IsNullOrEmpty(zoneName))
             {
                 AssignedZone = zoneName;
-                _log.LogInfo($"[AIRefactored-Owner] Bot assigned to zone: {zoneName}");
+                Logger.LogInfo($"[AIRefactored-Owner] Bot assigned to zone: {zoneName}");
             }
             else
             {
-                _log.LogWarning("[AIRefactored-Owner] Attempted to assign empty zone name.");
+                Logger.LogWarning("[AIRefactored-Owner] Attempted to assign empty zone name.");
             }
         }
 
@@ -146,11 +147,11 @@ namespace AIRefactored.AI.Core
         #region Internal Helpers
 
         /// <summary>
-        /// Picks a random PersonalityType enum value from known presets.
+        /// Picks a random personality preset from available enum values.
         /// </summary>
         private PersonalityType GetRandomPersonality()
         {
-            System.Array values = System.Enum.GetValues(typeof(PersonalityType));
+            var values = System.Enum.GetValues(typeof(PersonalityType));
             return (PersonalityType)values.GetValue(Random.Range(0, values.Length));
         }
 

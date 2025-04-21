@@ -29,18 +29,24 @@ namespace AIRefactored.AI.Optimization
         /// Returns a cached or newly computed NavMesh path from bot to destination.
         /// Falls back to a straight-line path if NavMesh fails.
         /// </summary>
+        /// <param name="botOwner">Bot requesting path.</param>
+        /// <param name="destination">Target destination vector.</param>
+        /// <returns>Cached or computed list of Vector3 waypoints.</returns>
         public List<Vector3> GetOptimizedPath(BotOwner botOwner, Vector3 destination)
         {
-            if (!IsAIBot(botOwner) || botOwner?.Profile?.Id == null)
+            if (!IsAIBot(botOwner))
                 return new List<Vector3> { destination };
 
-            string botId = botOwner.Profile.Id;
+            string? botId = botOwner.Profile?.Id;
+            if (string.IsNullOrEmpty(botId))
+                return new List<Vector3> { destination };
+
             string key = botId + "_" + destination.ToString("F2");
 
-            if (_pathCache.TryGetValue(key, out var cachedPath))
-                return cachedPath;
+            if (_pathCache.TryGetValue(key, out var cached))
+                return cached;
 
-            var path = BuildNavPath(botOwner.Position, destination);
+            List<Vector3> path = BuildNavPath(botOwner.Position, destination);
             _pathCache[key] = path;
 
             return path;
@@ -62,17 +68,18 @@ namespace AIRefactored.AI.Optimization
         /// <summary>
         /// Computes a NavMesh path between two points. Falls back to a 2-point line if invalid.
         /// </summary>
+        /// <param name="origin">Start position.</param>
+        /// <param name="target">Target destination.</param>
+        /// <returns>List of waypoints forming a valid NavMesh path or fallback.</returns>
         private List<Vector3> BuildNavPath(Vector3 origin, Vector3 target)
         {
             var navPath = new NavMeshPath();
-
             if (NavMesh.CalculatePath(origin, target, NavMesh.AllAreas, navPath) &&
                 navPath.status == NavMeshPathStatus.PathComplete)
             {
                 return new List<Vector3>(navPath.corners);
             }
 
-            // Fallback
             return new List<Vector3> { origin, target };
         }
 
@@ -81,18 +88,26 @@ namespace AIRefactored.AI.Optimization
         #region Cover Scoring
 
         /// <summary>
-        /// Stores a weight (desirability) score for a cover point.
+        /// Stores a desirability score for a specific cover point on a map.
         /// </summary>
+        /// <param name="mapId">Map identifier.</param>
+        /// <param name="pos">Cover location.</param>
+        /// <param name="score">Scored value between 0.1 and 10.</param>
         public void RegisterCoverNode(string mapId, Vector3 pos, float score)
         {
             string key = mapId + "_" + RoundVector3ToKey(pos);
             if (!_coverWeights.ContainsKey(key))
+            {
                 _coverWeights[key] = Mathf.Clamp(score, 0.1f, 10f);
+            }
         }
 
         /// <summary>
         /// Retrieves cover score for a location, or 1.0 (neutral) if unknown.
         /// </summary>
+        /// <param name="mapId">Map name or ID.</param>
+        /// <param name="pos">Cover position to query.</param>
+        /// <returns>Score between 0.1–10, or 1.0 default.</returns>
         public float GetCoverWeight(string mapId, Vector3 pos)
         {
             string key = mapId + "_" + RoundVector3ToKey(pos);
@@ -107,6 +122,8 @@ namespace AIRefactored.AI.Optimization
         /// Broadcasts a fallback position to other bots via squad memory.
         /// Useful for group panic or shared danger awareness.
         /// </summary>
+        /// <param name="botOwner">Bot broadcasting the danger zone.</param>
+        /// <param name="point">Location of threat or fallback trigger.</param>
         public void BroadcastRetreat(BotOwner botOwner, Vector3 point)
         {
             if (!IsAIBot(botOwner) || botOwner.BotsGroup == null || string.IsNullOrEmpty(botOwner.ProfileId))
@@ -120,12 +137,22 @@ namespace AIRefactored.AI.Optimization
 
         #region Helpers
 
-        private static bool IsAIBot(BotOwner bot)
+        /// <summary>
+        /// Determines if the bot is a non-player AI entity.
+        /// </summary>
+        /// <param name="bot">BotOwner instance.</param>
+        /// <returns>True if controlled by AI.</returns>
+        private static bool IsAIBot(BotOwner? bot)
         {
             var player = bot?.GetPlayer;
             return player != null && player.IsAI && !player.IsYourPlayer;
         }
 
+        /// <summary>
+        /// Converts a Vector3 into a rounded string key for consistent cache access.
+        /// </summary>
+        /// <param name="v">Vector3 to format.</param>
+        /// <returns>Rounded string representation for cache keys.</returns>
         private static string RoundVector3ToKey(Vector3 v)
         {
             return $"{v.x:F1}_{v.y:F1}_{v.z:F1}";

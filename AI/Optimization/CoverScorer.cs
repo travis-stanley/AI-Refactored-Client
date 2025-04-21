@@ -23,6 +23,8 @@ namespace AIRefactored.AI.Optimization
         private const float MaxEffectiveRange = 25f;
         private const float IdealFallbackDistance = 8f;
 
+        private static readonly bool EnableDebug = false;
+
         #endregion
 
         #region Scoring Logic
@@ -30,28 +32,30 @@ namespace AIRefactored.AI.Optimization
         /// <summary>
         /// Evaluates a world position as a potential fallback point based on cover and threat exposure.
         /// </summary>
-        /// <param name="bot">The evaluating bot.</param>
-        /// <param name="candidate">World position to test.</param>
-        /// <param name="threatDirection">Direction of threat (enemy position - bot position).</param>
-        /// <returns>Float score representing cover quality (1–10).</returns>
+        /// <param name="bot">Bot evaluating the fallback.</param>
+        /// <param name="candidate">The fallback point to score.</param>
+        /// <param name="threatDirection">Direction from which the threat is coming.</param>
+        /// <returns>A score between 1 and 10 indicating tactical value of the cover point.</returns>
         public static float ScoreCoverPoint(BotOwner bot, Vector3 candidate, Vector3 threatDirection)
         {
             float score = 1.0f;
             Vector3 eyeLevel = candidate + Vector3.up * 1.5f;
             Vector3 reverseThreat = -threatDirection.normalized;
 
-            // 1. Bonus if there's solid back-wall protection
+            // 1. Back wall cover bonus
             if (Physics.Raycast(eyeLevel, reverseThreat, out RaycastHit backHit, BackWallCheckDistance))
             {
                 if (IsSolid(backHit.collider))
                     score += 3f;
             }
 
-            // 2. Penalty if point is exposed toward threat
+            // 2. Exposure penalty — no obstacle between candidate and threat direction
             if (!Physics.Raycast(eyeLevel, threatDirection.normalized, ExposureDistance))
+            {
                 score -= 2f;
+            }
 
-            // 3. Bonus if flank sides have geometry protection
+            // 3. Flank coverage bonus
             Vector3[] flankDirections =
             {
                 Quaternion.Euler(0f, -60f, 0f) * threatDirection,
@@ -60,21 +64,28 @@ namespace AIRefactored.AI.Optimization
                 Quaternion.Euler(0f, 60f, 0f) * threatDirection
             };
 
-            foreach (var flank in flankDirections)
+            for (int i = 0; i < flankDirections.Length; i++)
             {
-                if (Physics.Raycast(eyeLevel, flank.normalized, out RaycastHit flankHit, FlankRayDistance))
+                Vector3 flankDir = flankDirections[i].normalized;
+                if (Physics.Raycast(eyeLevel, flankDir, out RaycastHit flankHit, FlankRayDistance))
                 {
                     if (IsSolid(flankHit.collider))
                         score += 0.5f;
                 }
             }
 
-            // 4. Distance penalty to reduce risky or excessive fallback
+            // 4. Distance penalty — too far is risky
             float dist = Vector3.Distance(bot.Position, candidate);
             if (dist > IdealFallbackDistance)
             {
-                float penalty = Mathf.Clamp((dist - IdealFallbackDistance) * 0.2f, 0f, 3.0f);
+                float penalty = Mathf.Clamp((dist - IdealFallbackDistance) * 0.25f, 0f, 3f);
                 score -= penalty;
+            }
+
+            if (EnableDebug)
+            {
+                Debug.DrawRay(eyeLevel, reverseThreat * BackWallCheckDistance, Color.red, 0.25f);
+                Debug.DrawRay(eyeLevel, threatDirection.normalized * ExposureDistance, Color.yellow, 0.25f);
             }
 
             return Mathf.Clamp(score, MinScore, MaxScore);
@@ -85,18 +96,26 @@ namespace AIRefactored.AI.Optimization
         #region Helper Methods
 
         /// <summary>
-        /// Returns true if the surface is solid and not transparent (e.g., not glass, foliage, soft banners).
+        /// Determines if the surface is opaque and solid enough for cover.
+        /// Filters out transparent or soft materials.
         /// </summary>
-        private static bool IsSolid(Collider collider)
+        /// <param name="collider">The collider hit by raycast.</param>
+        /// <returns>True if considered solid cover.</returns>
+        private static bool IsSolid(Collider? collider)
         {
             if (collider == null)
                 return false;
 
             string tag = collider.tag.ToLowerInvariant();
-            string material = collider.sharedMaterial != null ? collider.sharedMaterial.name.ToLowerInvariant() : "";
+            string matName = collider.sharedMaterial != null ? collider.sharedMaterial.name.ToLowerInvariant() : "";
 
-            return !(tag.Contains("glass") || tag.Contains("foliage") || tag.Contains("banner") ||
-                     material.Contains("leaf") || material.Contains("bush") || material.Contains("net") || material.Contains("fabric"));
+            if (tag.Contains("glass") || tag.Contains("foliage") || tag.Contains("banner"))
+                return false;
+
+            if (matName.Contains("leaf") || matName.Contains("bush") || matName.Contains("net") || matName.Contains("fabric"))
+                return false;
+
+            return true;
         }
 
         #endregion

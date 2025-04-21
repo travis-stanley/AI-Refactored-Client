@@ -17,7 +17,17 @@ namespace AIRefactored.AI.Threads
     /// </summary>
     public class BotWorkScheduler : MonoBehaviour
     {
+        #region Configuration
+
         private const int MaxWorkerThreads = 4;
+
+        private const float TickLogicInterval = 1f / 30f;      // 30Hz
+        private const float TickCombatInterval = 1f / 60f;     // 60Hz
+        private const float TickPerceptionInterval = 1f / 60f; // 60Hz
+
+        #endregion
+
+        #region State
 
         private static readonly ConcurrentQueue<Action> _mainThreadQueue = new();
         private static readonly List<BotBrain> _bots = new();
@@ -28,16 +38,15 @@ namespace AIRefactored.AI.Threads
 
         private static bool _headlessInitialized;
 
-        private static readonly ManualLogSource _log = AIRefactoredController.Logger;
-
-        // === Headless Tick Rates ===
-        private const float TickLogicInterval = 1f / 30f;     // 30Hz
-        private const float TickCombatInterval = 1f / 60f;    // 60Hz
-        private const float TickPerceptionInterval = 1f / 60f; // 60Hz
-
         private static float _lastLogicTick;
         private static float _lastCombatTick;
         private static float _lastPerceptionTick;
+
+        private static readonly ManualLogSource Logger = AIRefactoredController.Logger;
+
+        #endregion
+
+        #region Unity Lifecycle
 
         private void Awake()
         {
@@ -46,7 +55,7 @@ namespace AIRefactored.AI.Threads
 
             _headlessInitialized = true;
             StartWorkerThreads();
-            _log.LogInfo("[AIRefactored-Scheduler] 💠 BotWorkScheduler started in Headless Mode.");
+            Logger.LogInfo("[AIRefactored-Scheduler] 💠 BotWorkScheduler started in Headless Mode.");
         }
 
         private void Update()
@@ -59,14 +68,19 @@ namespace AIRefactored.AI.Threads
                 }
                 catch (Exception ex)
                 {
-                    _log.LogWarning($"[AIRefactored-Scheduler] ❌ Exception in main thread callback: {ex.Message}");
+                    Logger.LogWarning($"[AIRefactored-Scheduler] ❌ Exception in main thread callback: {ex}");
                 }
             }
         }
 
+        #endregion
+
+        #region Thread Management
+
         private static void StartWorkerThreads()
         {
             _workers = new Thread[MaxWorkerThreads];
+
             for (int i = 0; i < MaxWorkerThreads; i++)
             {
                 _workers[i] = new Thread(WorkerLoop)
@@ -87,7 +101,10 @@ namespace AIRefactored.AI.Threads
                 lock (_lock)
                 {
                     if (_bots.Count == 0)
+                    {
+                        Thread.Sleep(10);
                         continue;
+                    }
 
                     bot = _bots[_nextBotIndex % _bots.Count];
                     _nextBotIndex++;
@@ -98,29 +115,25 @@ namespace AIRefactored.AI.Threads
                 try
                 {
                     if (now - _lastPerceptionTick >= TickPerceptionInterval)
-                    {
                         bot?.TickPerception(now);
-                    }
 
                     if (now - _lastCombatTick >= TickCombatInterval)
-                    {
                         bot?.TickCombat(now);
-                    }
 
                     if (now - _lastLogicTick >= TickLogicInterval)
-                    {
                         bot?.TickLogic(now);
-                    }
                 }
                 catch (Exception ex)
                 {
-                    _log.LogWarning($"[BotWorkScheduler] ⚠️ Error in background tick: {ex.Message}");
+                    Logger.LogWarning($"[BotWorkScheduler] ⚠️ Error in background tick: {ex}");
                 }
 
                 if (now - _lastPerceptionTick >= TickPerceptionInterval)
                     _lastPerceptionTick = now;
+
                 if (now - _lastCombatTick >= TickCombatInterval)
                     _lastCombatTick = now;
+
                 if (now - _lastLogicTick >= TickLogicInterval)
                     _lastLogicTick = now;
 
@@ -128,6 +141,14 @@ namespace AIRefactored.AI.Threads
             }
         }
 
+        #endregion
+
+        #region Public API
+
+        /// <summary>
+        /// Registers a bot for threaded logic updates (only active in headless mode).
+        /// </summary>
+        /// <param name="brain">The bot brain to register.</param>
         public static void RegisterBot(BotBrain brain)
         {
             if (!FikaHeadlessDetector.IsHeadless)
@@ -140,9 +161,16 @@ namespace AIRefactored.AI.Threads
             }
         }
 
-        public static void EnqueueToMainThread(Action action)
+        /// <summary>
+        /// Enqueues a Unity-thread-safe delegate to be executed on the main thread.
+        /// </summary>
+        /// <param name="action">The logic to run on the main thread.</param>
+        public static void EnqueueToMainThread(Action? action)
         {
-            _mainThreadQueue.Enqueue(action);
+            if (action != null)
+                _mainThreadQueue.Enqueue(action);
         }
+
+        #endregion
     }
 }

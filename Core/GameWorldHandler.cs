@@ -1,5 +1,6 @@
 ﻿#nullable enable
 
+using AIRefactored.AI.Hotspots;
 using AIRefactored.AI.Threads;
 using AIRefactored.Runtime;
 using BepInEx.Logging;
@@ -13,7 +14,7 @@ namespace AIRefactored.Core
 {
     /// <summary>
     /// Provides safe access to ClientGameWorld data: player location, map name, and squad proximity.
-    /// Also manages runtime bootstrap of bot brain logic when the game world is loaded.
+    /// Manages runtime AIRefactored bootstrap, bot brain enforcement, and world-level system initialization.
     /// </summary>
     public static class GameWorldHandler
     {
@@ -22,18 +23,22 @@ namespace AIRefactored.Core
         private static Vector3 _cachedPlayerPosition = Vector3.zero;
         private static float _lastUpdateTime = -1f;
         private const float CacheRefreshRate = 0.1f;
+
+        private static GameObject? _bootstrapHost;
         private static readonly bool _debug = false;
 
         private static ManualLogSource Logger => AIRefactoredController.Logger;
-        private static GameObject? _bootstrapHost;
 
         private static ClientGameWorld? CachedWorld =>
             Singleton<ClientGameWorld>.Instantiated ? Singleton<ClientGameWorld>.Instance : null;
 
         #endregion
 
-        #region Runtime Init
+        #region Runtime Initialization
 
+        /// <summary>
+        /// Begins watching for world load and initializes world-level AI systems.
+        /// </summary>
         public static void HookBotSpawns()
         {
             if (_bootstrapHost != null)
@@ -46,12 +51,17 @@ namespace AIRefactored.Core
             Logger.LogInfo("[AIRefactored] ✅ GameWorldHandler initialized.");
         }
 
+        /// <summary>
+        /// Removes world-level hooks and cleanup logic.
+        /// </summary>
         public static void UnhookBotSpawns()
         {
             if (_bootstrapHost != null)
             {
                 GameObject.Destroy(_bootstrapHost);
                 _bootstrapHost = null;
+                HotspotLoader.Reset();
+
                 Logger.LogInfo("[AIRefactored] 🔻 GameWorldHandler shut down.");
             }
         }
@@ -64,10 +74,10 @@ namespace AIRefactored.Core
 
         public static string GetCurrentMapName()
         {
-            var name = CachedWorld?.MainPlayer?.Location ?? "unknown";
-            if (_debug)
-                Logger.LogDebug($"[GameWorldHandler] Current map: {name}");
-            return name;
+            if (CachedWorld?.MainPlayer == null)
+                return "unknown";
+
+            return CachedWorld.MainPlayer.Location ?? "unknown";
         }
 
         public static bool TryGetMainPlayerPosition(out Vector3 position, float refreshRate = CacheRefreshRate)
@@ -98,23 +108,27 @@ namespace AIRefactored.Core
 
         public static List<Player> GetAllAlivePlayers()
         {
-            var list = new List<Player>();
-            var all = CachedWorld?.AllAlivePlayersList;
-            if (all == null) return list;
+            var result = new List<Player>();
+            var world = CachedWorld;
+            if (world?.AllAlivePlayersList == null)
+                return result;
 
-            foreach (var p in all)
+            for (int i = 0; i < world.AllAlivePlayersList.Count; i++)
             {
-                if (p?.HealthController?.IsAlive == true)
-                    list.Add(p);
+                var p = world.AllAlivePlayersList[i];
+                if (p != null && p.HealthController?.IsAlive == true)
+                    result.Add(p);
             }
 
-            return list;
+            return result;
         }
 
         public static bool IsNearRealPlayer(Vector3 position, float radius)
         {
-            foreach (var p in GetAllAlivePlayers())
+            var players = GetAllAlivePlayers();
+            for (int i = 0; i < players.Count; i++)
             {
+                var p = players[i];
                 if (!p.IsAI && Vector3.Distance(p.Position, position) <= radius)
                     return true;
             }
@@ -127,10 +141,12 @@ namespace AIRefactored.Core
             if (string.IsNullOrEmpty(groupId))
                 return false;
 
-            foreach (var player in GetAllAlivePlayers())
+            var players = GetAllAlivePlayers();
+            for (int i = 0; i < players.Count; i++)
             {
-                if (player?.Profile?.Info?.GroupId == groupId &&
-                    Vector3.Distance(player.Transform.position, position) <= radius)
+                var p = players[i];
+                if (p.Profile?.Info?.GroupId == groupId &&
+                    Vector3.Distance(p.Transform.position, position) <= radius)
                 {
                     return true;
                 }
@@ -159,7 +175,10 @@ namespace AIRefactored.Core
                     yield return null;
 
                 Singleton<BotSpawner>.Instance.OnBotCreated += HandleBotCreated;
+
                 Logger.LogInfo("[AIRefactored] 🧠 World bootstrapper now listening for bots.");
+
+                InitializeWorldLevelSystems();
             }
 
             private void OnDestroy()
@@ -183,22 +202,32 @@ namespace AIRefactored.Core
                 if (player == null || !player.IsAI || player.IsYourPlayer)
                     return;
 
-                var go = player.gameObject;
-                BotBrainGuardian.Enforce(go);
+                BotBrainGuardian.Enforce(player.gameObject);
             }
 
             private void EnforceBotBrains()
             {
                 var world = Get();
-                if (world?.AllAlivePlayersList == null) return;
+                if (world?.AllAlivePlayersList == null)
+                    return;
 
-                foreach (var player in world.AllAlivePlayersList)
+                for (int i = 0; i < world.AllAlivePlayersList.Count; i++)
                 {
-                    if (player == null || !player.IsAI || player.IsYourPlayer)
-                        continue;
-
-                    BotBrainGuardian.Enforce(player.gameObject);
+                    var player = world.AllAlivePlayersList[i];
+                    if (player != null && player.IsAI && !player.IsYourPlayer)
+                        BotBrainGuardian.Enforce(player.gameObject);
                 }
+            }
+
+            /// <summary>
+            /// Initializes all world-level AIRefactored systems once the map is fully loaded.
+            /// </summary>
+            private void InitializeWorldLevelSystems()
+            {
+                HotspotLoader.Reset();
+                HotspotLoader.LoadCurrentMap();
+
+                Logger.LogInfo("[AIRefactored] 🌐 World-level AI systems initialized.");
             }
         }
 

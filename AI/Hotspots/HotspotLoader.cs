@@ -1,183 +1,93 @@
 ﻿#nullable enable
 
+using AIRefactored.Core;
 using AIRefactored.Runtime;
 using BepInEx.Logging;
-using Comfort.Common;
-using EFT;
-using Newtonsoft.Json;
-using System;
 using System.Collections.Generic;
-using System.IO;
 using UnityEngine;
 
 namespace AIRefactored.AI.Hotspots
 {
+    /// <summary>
+    /// Loads and manages tactical hotspot zones from hardcoded in-memory data.
+    /// Hotspots simulate high-value areas for loot, missions, and enemy encounters.
+    /// </summary>
     public static class HotspotLoader
     {
-        private const string HOTSPOT_FOLDER = "hotspots/";
-        private static readonly Dictionary<string, HotspotSet> _cache = new Dictionary<string, HotspotSet>();
-        private static bool _loaded = false;
-        private static bool _debugLog = false;
+        #region Fields
 
+        private static HotspotSet? _activeSet;
+        private static string _loadedMapId = "none";
+        private static bool _debugLog;
         private static readonly ManualLogSource _log = AIRefactoredController.Logger;
 
-        public static void EnableDebugLogs(bool enabled)
-        {
-            _debugLog = enabled;
-        }
+        #endregion
+
+        #region Public API
 
         /// <summary>
-        /// Loads all hotspots from the file system into the cache.
+        /// Enables verbose logging for hotspot loading and filtering.
         /// </summary>
-        public static void LoadAll()
+        public static void EnableDebugLogs(bool enabled) => _debugLog = enabled;
+
+        /// <summary>
+        /// Loads hotspot data for the current map if not already cached.
+        /// </summary>
+        public static void LoadCurrentMap()
         {
-            if (_loaded)
+            string mapId = GameWorldHandler.GetCurrentMapName().ToLowerInvariant();
+            if (_loadedMapId == mapId)
                 return;
 
-            string basePath = ResolveHotspotPath();
-            if (!Directory.Exists(basePath))
+            var set = HardcodedHotspots.GetForMap(mapId);
+            if (set != null && set.Points.Count > 0)
             {
-                _log.LogWarning($"[AIRefactored] Hotspot folder not found at: {basePath}");
-                return;
-            }
+                _activeSet = set;
+                _loadedMapId = mapId;
 
-            string[] files = Directory.GetFiles(basePath, "*.json", SearchOption.TopDirectoryOnly);
-            for (int i = 0; i < files.Length; i++)
-            {
-                string file = files[i];
-                try
-                {
-                    string json = File.ReadAllText(file);
-                    HotspotSet? set = HotspotSet.FromJson(json);
-                    if (set == null || set.Points.Count == 0)
-                        continue;
-
-                    string map = Path.GetFileNameWithoutExtension(file).ToLowerInvariant();
-                    _cache[map] = set;
-
-                    if (_debugLog)
-                        _log.LogInfo($"[AIRefactored] Loaded {set.Points.Count} hotspots for map '{map}'");
-                }
-                catch (Exception ex)
-                {
-                    _log.LogError($"[AIRefactored] Failed to load hotspots from '{file}': {ex.Message}");
-                }
-            }
-
-            _loaded = true;
-        }
-
-        /// <summary>
-        /// Gets the hotspot set for the current map based on the bot's role.
-        /// </summary>
-        public static HotspotSet? GetHotspotsForCurrentMap(WildSpawnType role)
-        {
-            if (!_loaded)
-                LoadAll();
-
-            string mapId = Singleton<GameWorld>.Instance?.LocationId?.ToLowerInvariant() ?? "unknown";
-
-            if (_cache.TryGetValue(mapId, out var set))
-                return set.FilteredForRole(role);
-
-            return null;
-        }
-
-        /// <summary>
-        /// Reloads the hotspot data from the files.
-        /// </summary>
-        public static void Reload()
-        {
-            _loaded = false;
-            _cache.Clear();
-            LoadAll();
-
-            if (_debugLog)
-                _log.LogInfo("[AIRefactored] Hotspot data reloaded.");
-        }
-
-        /// <summary>
-        /// Gets all cached hotspots.
-        /// </summary>
-        public static IReadOnlyDictionary<string, HotspotSet> GetAll()
-        {
-            return _cache;
-        }
-
-        /// <summary>
-        /// Resolves the path to the hotspot folder.
-        /// </summary>
-        private static string ResolveHotspotPath()
-        {
-            string fallbackPath = Path.Combine("BepInEx", "plugins", "AIRefactored", HOTSPOT_FOLDER);
-            string assetPath = Path.Combine(Application.dataPath, HOTSPOT_FOLDER);
-            return Directory.Exists(assetPath) ? assetPath : fallbackPath;
-        }
-    }
-
-    public class HotspotSet
-    {
-        public List<Vector3> Points = new List<Vector3>();
-
-        /// <summary>
-        /// Filters the hotspot points for the given role.
-        /// </summary>
-        public HotspotSet FilteredForRole(WildSpawnType role)
-        {
-            HotspotSet result = new HotspotSet();
-            int count = Points.Count;
-
-            if (count == 0)
-                return this;
-
-            if (role == WildSpawnType.pmcBEAR || role == WildSpawnType.pmcUSEC)
-            {
-                int limit = (int)(count * 0.6f);
-                for (int i = 0; i < limit && i < count; i++)
-                    result.Points.Add(Points[i]);
-            }
-            else if (role == WildSpawnType.assault || role == WildSpawnType.cursedAssault)
-            {
-                int skip = (int)(count * 0.4f);
-                for (int i = skip; i < count; i++)
-                    result.Points.Add(Points[i]);
+                if (_debugLog)
+                    _log.LogInfo($"[HotspotLoader] ✅ Loaded {set.Points.Count} hotspots for map '{mapId}'");
             }
             else
             {
-                for (int i = 0; i < count; i++)
-                    result.Points.Add(Points[i]);
-            }
+                _activeSet = null;
+                _loadedMapId = "none";
 
-            return result;
+                if (_debugLog)
+                    _log.LogWarning($"[HotspotLoader] ⚠️ No hotspots found for map '{mapId}'");
+            }
         }
 
         /// <summary>
-        /// Deserializes JSON into a HotspotSet.
+        /// Returns the current map's active hotspot set.
         /// </summary>
-        public static HotspotSet? FromJson(string json)
+        public static HotspotSet? GetHotspotsForCurrentMap()
         {
-            try
-            {
-                HotspotFile? file = JsonConvert.DeserializeObject<HotspotFile>(json);
-                if (file == null || file.hotspots == null || file.hotspots.Count == 0)
-                    return null;
-
-                HotspotSet set = new HotspotSet();
-                for (int i = 0; i < file.hotspots.Count; i++)
-                    set.Points.Add(file.hotspots[i]);
-
-                return set;
-            }
-            catch (Exception ex)
-            {
-                AIRefactoredController.Logger.LogError($"[AIRefactored] JSON parse error: {ex.Message}");
-                return null;
-            }
+            LoadCurrentMap();
+            return _activeSet;
         }
 
-        private class HotspotFile
+        /// <summary>
+        /// Returns all currently loaded hotspot points, if any.
+        /// </summary>
+        public static IReadOnlyList<Vector3> GetAllHotspotsRaw()
         {
-            public List<Vector3> hotspots = new List<Vector3>();
+            LoadCurrentMap();
+            return _activeSet?.Points ?? new List<Vector3>(0);
         }
+
+        /// <summary>
+        /// Clears cached hotspot data. Use on map unload or full reset.
+        /// </summary>
+        public static void Reset()
+        {
+            _activeSet = null;
+            _loadedMapId = "none";
+
+            if (_debugLog)
+                _log.LogInfo("[HotspotLoader] 🔁 Reset current map hotspot cache.");
+        }
+
+        #endregion
     }
 }

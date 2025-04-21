@@ -12,75 +12,104 @@ namespace AIRefactored.AI.Optimization
 {
     /// <summary>
     /// Assigns and distributes CPU-heavy logic across all bots in a group using background threads.
-    /// Ensures optimized scheduling and safe return to Unity main thread.
+    /// Ensures optimized scheduling and safe return to Unity main thread when needed.
+    /// Only runs under FIKA Headless mode.
     /// </summary>
     public class BotWorkGroupDispatcher : MonoBehaviour
     {
-        private static readonly List<IBotWorkload> _activeWorkloads = new();
-        private static readonly object _lock = new();
+        #region Configuration
 
-        private const int MaxThreads = 8; // Cap usage to avoid oversaturation
-        private static int _nextThreadIndex = 0;
+        private const int MaxThreads = 8;
 
-        private static readonly ManualLogSource _log = AIRefactoredController.Logger;
+        #endregion
 
+        #region State
+
+        private static readonly List<IBotWorkload> _pendingWorkloads = new List<IBotWorkload>(128);
+        private static readonly object _lock = new object();
+
+        private static readonly ManualLogSource Logger = AIRefactoredController.Logger;
+
+        #endregion
+
+        #region Unity Lifecycle
+
+        /// <summary>
+        /// Processes queued workloads and dispatches them to background threads.
+        /// Executed only on headless servers for AI optimization.
+        /// </summary>
         private void Update()
         {
             if (!FikaHeadlessDetector.IsHeadless)
                 return;
 
+            List<IBotWorkload> snapshot;
+
             lock (_lock)
             {
-                if (_activeWorkloads.Count == 0)
+                if (_pendingWorkloads.Count == 0)
                     return;
 
-                var snapshot = new List<IBotWorkload>(_activeWorkloads);
-                _activeWorkloads.Clear();
+                snapshot = new List<IBotWorkload>(_pendingWorkloads);
+                _pendingWorkloads.Clear();
+            }
 
-                int count = snapshot.Count;
-                int batchSize = Mathf.Max(1, count / MaxThreads);
+            int count = snapshot.Count;
+            int batchSize = Mathf.Max(1, count / MaxThreads);
 
-                for (int i = 0; i < count; i += batchSize)
+            for (int i = 0; i < count; i += batchSize)
+            {
+                int start = i;
+                int end = Mathf.Min(i + batchSize, count);
+
+                Task.Run(() =>
                 {
-                    int start = i;
-                    int end = Mathf.Min(i + batchSize, count);
-
-                    Task.Run(() =>
+                    for (int j = start; j < end; j++)
                     {
-                        for (int j = start; j < end; j++)
+                        try
                         {
-                            try
-                            {
-                                snapshot[j].RunBackgroundWork();
-                            }
-                            catch (Exception ex)
-                            {
-                                _log.LogWarning($"[BotWorkGroup] ⚠ Background work exception: {ex.Message}");
-                            }
+                            snapshot[j].RunBackgroundWork();
                         }
-                    });
-                }
+                        catch (Exception ex)
+                        {
+                            Logger.LogWarning($"[BotWorkGroupDispatcher] ⚠ Exception in background workload: {ex}");
+                        }
+                    }
+                });
             }
         }
 
-        public static void Schedule(IBotWorkload workload)
+        #endregion
+
+        #region Public API
+
+        /// <summary>
+        /// Queues a workload to be executed on the next available worker thread.
+        /// </summary>
+        /// <param name="workload">A background-compatible workload to be processed.</param>
+        public static void Schedule(IBotWorkload? workload)
         {
             if (workload == null)
                 return;
 
             lock (_lock)
             {
-                _activeWorkloads.Add(workload);
+                _pendingWorkloads.Add(workload);
             }
         }
+
+        #endregion
     }
 
     /// <summary>
     /// Interface for bot modules to implement multithreaded behavior logic.
-    /// Only called on background threads.
+    /// Only invoked on background threads. Must not touch Unity API directly.
     /// </summary>
     public interface IBotWorkload
     {
+        /// <summary>
+        /// Executes thread-safe logic outside the Unity main thread.
+        /// </summary>
         void RunBackgroundWork();
     }
 }

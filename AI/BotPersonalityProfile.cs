@@ -36,6 +36,12 @@ namespace AIRefactored.AI
         public float SuppressionSensitivity { get; set; } = 0.4f;
         public float ReactionSpeed { get; set; } = 0.65f;
 
+        /// <summary>
+        /// How fast the bot reacts to threats or events (lower is faster).
+        /// Typical range: 0.15 (chad) to 0.45 (slow)
+        /// </summary>
+        public float ReactionTime { get; set; } = 0.25f;
+
         #endregion
 
         #region Advanced Behavior

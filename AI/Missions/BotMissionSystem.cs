@@ -17,6 +17,10 @@ using UnityEngine;
 
 namespace AIRefactored.AI.Missions
 {
+    /// <summary>
+    /// Drives high-level objective behavior for bots: Questing, Looting, Fighting, and Extraction.
+    /// Dynamically switches mission types based on squad role, danger, value thresholds, and combat flow.
+    /// </summary>
     public class BotMissionSystem
     {
         public enum MissionType { Loot, Fight, Quest }
@@ -29,50 +33,54 @@ namespace AIRefactored.AI.Missions
         private BotDeadBodyScanner? _deadBodyScanner;
 
         private Vector3 _currentObjective;
-        private MissionType _missionType;
+        private Queue<Vector3> _questRoute = new();
 
         private float _lastUpdate;
-        private const float _baseCooldown = 15f;
-        private const float REACHED_THRESHOLD = 6f;
-        private const float SQUAD_COHESION_RANGE = 10f;
-
-        private bool _readyToExtract = false;
-        private bool _waitForGroup = false;
-        private bool _forcedMission = false;
-        private bool _lootComplete = false;
-        private bool _fightComplete = false;
-
-        private readonly System.Random _rng = new();
-        private Queue<Vector3> _questRoute = new();
         private float _lastCombatTime;
-        private bool _inCombatPause;
-
         private float _lastMoveTime;
         private float _stuckSince;
         private Vector3 _lastPos;
 
-        private static readonly ManualLogSource _log = AIRefactoredController.Logger;
+        private MissionType _missionType;
 
-        private const float GlobalLootThreshold = 0.85f;
+        private bool _inCombatPause;
+        private bool _waitForGroup;
+        private bool _forcedMission;
+        private bool _readyToExtract;
+        private bool _lootComplete;
+        private bool _fightComplete;
+
+        private const float BaseCooldown = 10f;
+        private const float ReachedThreshold = 6f;
+        private const float StuckDuration = 25f;
+        private const float StuckCooldown = 30f;
+
         private const int CombatSwitchThreshold = 2;
         private const int LootItemCountThreshold = 40;
+        private const float SquadCohesionRange = 10f;
+        private const float GlobalLootThreshold = 0.85f;
+
+        private readonly System.Random _rng = new();
+
+        private static readonly ManualLogSource _log = AIRefactoredController.Logger;
 
         public void Initialize(BotOwner bot)
         {
-            _bot = bot ?? throw new ArgumentNullException(nameof(bot));
+            _bot = bot;
             if (_bot.GetPlayer?.IsYourPlayer == true)
                 return;
 
-            _group = BotCacheUtility.GetCache(bot.GetPlayer!)?.GroupBehavior != null
-                ? bot.GetPlayer!.GetComponent<BotGroupSyncCoordinator>()
+            var player = bot.GetPlayer!;
+            _group = BotCacheUtility.GetCache(player)?.GroupBehavior != null
+                ? player.GetComponent<BotGroupSyncCoordinator>()
                 : null;
 
-            _combat = BotCacheUtility.GetCache(bot.GetPlayer!)?.Combat;
+            _combat = BotCacheUtility.GetCache(player)?.Combat;
             _personality = BotRegistry.Get(_bot.Profile.Id);
-            _lootScanner = BotCacheUtility.GetCache(bot.GetPlayer!)?.AIRefactoredBotOwner?.GetComponent<BotLootScanner>();
-            _deadBodyScanner = BotCacheUtility.GetCache(bot.GetPlayer!)?.AIRefactoredBotOwner?.GetComponent<BotDeadBodyScanner>();
+            _lootScanner = BotCacheUtility.GetCache(player)?.AIRefactoredBotOwner?.GetComponent<BotLootScanner>();
+            _deadBodyScanner = BotCacheUtility.GetCache(player)?.AIRefactoredBotOwner?.GetComponent<BotDeadBodyScanner>();
 
-            _lastPos = _bot.Position;
+            _lastPos = bot.Position;
             _lastMoveTime = Time.time;
 
             if (!_forcedMission)
@@ -87,26 +95,11 @@ namespace AIRefactored.AI.Missions
 
         public void Tick(float time)
         {
-            if (_bot == null || _bot.GetPlayer == null || !_bot.GetPlayer.HealthController.IsAlive)
+            if (_bot?.GetPlayer?.HealthController == null || !_bot.GetPlayer.HealthController.IsAlive)
                 return;
 
             if (_bot.GetPlayer.IsYourPlayer)
                 return;
-
-            bool inCombat = _combat?.IsInCombatState() == true;
-            if (inCombat)
-            {
-                _lastCombatTime = time;
-                if (_missionType == MissionType.Quest)
-                    _inCombatPause = true;
-            }
-
-            if (_missionType == MissionType.Quest && _inCombatPause && time - _lastCombatTime > 5f)
-            {
-                _inCombatPause = false;
-                _log.LogInfo($"[BotMissionSystem] {BotName()} exiting combat pause → resuming questing.");
-                ResumeQuesting();
-            }
 
             float moved = Vector3.Distance(_bot.Position, _lastPos);
             if (moved > 0.3f)
@@ -114,88 +107,65 @@ namespace AIRefactored.AI.Missions
                 _lastPos = _bot.Position;
                 _lastMoveTime = time;
             }
-            else if (time - _lastMoveTime > 25f && time - _stuckSince > 30f)
+            else if (time - _lastMoveTime > StuckDuration && time - _stuckSince > StuckCooldown)
             {
                 _stuckSince = time;
-                Vector3 fallback = _bot.Position + UnityEngine.Random.insideUnitSphere * 8f;
+                Vector3 fallback = _bot.Position + UnityEngine.Random.insideUnitSphere * 6f;
                 fallback.y = _bot.Position.y;
-                _log.LogInfo($"[BotMissionSystem] {BotName()} detected as stuck, issuing fallback move → {fallback}");
+                _log.LogInfo($"[BotMissionSystem] {BotName()} detected as stuck → moving to {fallback}");
                 BotMovementHelper.SmoothMoveTo(_bot, fallback);
             }
 
             if (_missionType != MissionType.Fight && _bot.EnemiesController?.EnemyInfos.Count >= CombatSwitchThreshold)
             {
-                _log.LogInfo($"[BotMissionSystem] {BotName()} detected high combat → switching to Fight.");
+                _log.LogInfo($"[BotMissionSystem] {BotName()} switching to Fight due to high enemy presence.");
                 _missionType = MissionType.Fight;
                 _currentObjective = GetStaggeredMissionObjective(GetRandomZone(MissionType.Fight));
                 BotMovementHelper.SmoothMoveTo(_bot, _currentObjective);
                 return;
             }
 
-            if (_missionType == MissionType.Quest || _missionType == MissionType.Loot)
+            if (_combat?.IsInCombatState() == true)
             {
-                if (ShouldExtractEarly(_bot))
-                {
-                    _log.LogInfo($"[BotMissionSystem] {BotName()} loot value reached → extracting early.");
-                    TryExtract();
-                    return;
-                }
+                _lastCombatTime = time;
+                if (_missionType == MissionType.Quest)
+                    _inCombatPause = true;
             }
 
-            if (_waitForGroup && !IsGroupAligned() && time - _lastUpdate < 20f)
+            if (_missionType == MissionType.Quest && _inCombatPause && time - _lastCombatTime > 4f)
+            {
+                _inCombatPause = false;
+                _log.LogInfo($"[BotMissionSystem] {BotName()} resuming quest after combat pause.");
+                ResumeQuesting();
+            }
+
+            if ((_missionType == MissionType.Quest || _missionType == MissionType.Loot) && ShouldExtractEarly())
+            {
+                _log.LogInfo($"[BotMissionSystem] {BotName()} ready to extract due to loot value.");
+                TryExtract();
+                return;
+            }
+
+            if (_waitForGroup && !IsGroupAligned() && time - _lastUpdate < 15f)
                 return;
 
-            float missionCooldown = _baseCooldown + UnityEngine.Random.Range(0f, (_personality?.ChaosFactor ?? 0f) * 8f);
-            if (time - _lastUpdate > missionCooldown)
+            float chaosDelay = UnityEngine.Random.Range(0f, (_personality?.ChaosFactor ?? 0f) * 8f);
+            if (time - _lastUpdate > BaseCooldown + chaosDelay)
             {
                 EvaluateMission();
                 _lastUpdate = time;
             }
 
-            if (!_inCombatPause && Vector3.Distance(_bot.Position, _currentObjective) < REACHED_THRESHOLD)
-            {
+            if (!_inCombatPause && Vector3.Distance(_bot.Position, _currentObjective) < ReachedThreshold)
                 OnObjectiveReached();
-            }
-        }
-
-        private bool ShouldExtractEarly(BotOwner bot)
-        {
-            float retreatThreshold = _personality?.RetreatThreshold ?? GlobalLootThreshold;
-
-            var inv = bot.GetPlayer?.Inventory;
-            var slot = inv?.Equipment?.GetSlot(EquipmentSlot.Backpack);
-            var backpack = slot?.ContainedItem;
-
-            if (backpack == null)
-                return false;
-
-            int itemCount = 0;
-            foreach (var item in backpack.GetAllItems())
-            {
-                if (item != null)
-                    itemCount++;
-            }
-
-            float fullness = (float)itemCount / LootItemCountThreshold;
-            bool cautious = _personality?.Caution > 0.6f;
-            bool notFrenzied = !_personality?.IsFrenzied ?? true;
-
-            return fullness >= retreatThreshold && cautious && notFrenzied;
         }
 
         private void PickMission()
         {
-            if (_personality == null)
-            {
-                _missionType = MissionType.Loot;
-                _currentObjective = GetStaggeredMissionObjective(GetLootObjective());
-                return;
-            }
+            if (_bot == null) return;
 
-            bool isPmc = _bot.Profile.Info.Side == EPlayerSide.Usec || _bot.Profile.Info.Side == EPlayerSide.Bear;
-            MissionBias bias = _personality.PreferredMission;
-
-            _missionType = bias switch
+            bool isPmc = _bot.Profile.Info.Side is EPlayerSide.Usec or EPlayerSide.Bear;
+            _missionType = _personality?.PreferredMission switch
             {
                 MissionBias.Quest => isPmc ? MissionType.Quest : MissionType.Loot,
                 MissionBias.Fight => MissionType.Fight,
@@ -203,75 +173,124 @@ namespace AIRefactored.AI.Missions
                 _ => RandomizeMissionType(isPmc)
             };
 
-            Vector3 rawObjective = _missionType switch
+            Vector3 target = _missionType switch
             {
                 MissionType.Quest => GetNextQuestObjective(),
-                _ => GetInitialObjective(_missionType)
+                MissionType.Loot => GetLootObjective(),
+                MissionType.Fight => GetRandomZone(MissionType.Fight),
+                _ => _bot.Position
             };
 
-            _currentObjective = GetStaggeredMissionObjective(rawObjective);
-
+            _currentObjective = GetStaggeredMissionObjective(target);
             if (Vector3.Distance(_bot.Position, _currentObjective) < 2f)
-            {
-                _log.LogWarning($"[BotMissionSystem] {BotName()} picked too-close objective → retrying.");
-                _currentObjective = _bot.Position + UnityEngine.Random.insideUnitSphere * 10f;
-                _currentObjective.y = _bot.Position.y;
-            }
+                _currentObjective = _bot.Position + UnityEngine.Random.insideUnitSphere * 6f;
 
-            _log.LogInfo($"[BotMissionSystem] {BotName()} mission: {_missionType}, target: {_currentObjective}");
+            _log.LogInfo($"[BotMissionSystem] {BotName()} starting mission {_missionType} → {_currentObjective}");
             BotMovementHelper.SmoothMoveTo(_bot, _currentObjective);
             BotTeamLogic.BroadcastMissionType(_bot, _missionType);
         }
 
-        private MissionType RandomizeMissionType(bool isPmc)
+        private void EvaluateMission()
         {
-            int roll = _rng.Next(0, 100);
-            if (roll < 30) return MissionType.Loot;
-            if (roll < 65) return MissionType.Fight;
-            return isPmc ? MissionType.Quest : MissionType.Loot;
-        }
-
-        private Vector3 GetInitialObjective(MissionType mission)
-        {
-            return mission switch
-            {
-                MissionType.Loot => GetLootObjective(),
-                MissionType.Fight => GetRandomZone(MissionType.Fight),
-                MissionType.Quest => HotspotSystem.GetRandomHotspot(_bot!),
-                _ => _bot?.Position ?? Vector3.zero
-            };
-        }
-
-        private void PopulateQuestRoute()
-        {
-            _questRoute.Clear();
-            var set = HotspotLoader.GetHotspotsForCurrentMap(_bot?.Profile.Info.Settings.Role ?? WildSpawnType.assault);
-            if (set == null || set.Points.Count == 0)
+            if (_bot?.GetPlayer?.IsYourPlayer == true)
                 return;
 
-            var used = new HashSet<int>();
-            int count = UnityEngine.Random.Range(2, 4);
-            while (_questRoute.Count < count && used.Count < set.Points.Count)
+            switch (_missionType)
             {
-                int i = UnityEngine.Random.Range(0, set.Points.Count);
-                if (used.Add(i))
-                    _questRoute.Enqueue(set.Points[i]);
+                case MissionType.Loot:
+                    if (_bot != null)
+                    {
+                        if (!_readyToExtract && IsBackpackFull())
+                        {
+                            _readyToExtract = true;
+                            Say(EPhraseTrigger.OnFight);
+
+                            _missionType = MissionType.Fight;
+
+                            Vector3 fightTarget = GetRandomZone(MissionType.Fight);
+                            _currentObjective = GetStaggeredMissionObjective(fightTarget);
+
+                            BotMovementHelper.SmoothMoveTo(_bot, _currentObjective);
+                            BotTeamLogic.BroadcastMissionType(_bot, _missionType);
+                        }
+                        else if (!_lootComplete)
+                        {
+                            Vector3 lootTarget = GetLootObjective();
+                            _currentObjective = GetStaggeredMissionObjective(lootTarget);
+
+                            if (_currentObjective != Vector3.zero)
+                                BotMovementHelper.SmoothMoveTo(_bot, _currentObjective);
+                        }
+                    }
+                    break;
+
+                case MissionType.Fight:
+                    if (_bot != null && !_fightComplete)
+                    {
+                        _fightComplete = true;
+                        _missionType = MissionType.Quest;
+
+                        PopulateQuestRoute();
+
+                        Vector3 questTarget = GetNextQuestObjective();
+                        _currentObjective = GetStaggeredMissionObjective(questTarget);
+
+                        if (_currentObjective != Vector3.zero)
+                            BotMovementHelper.SmoothMoveTo(_bot, _currentObjective);
+
+                        BotTeamLogic.BroadcastMissionType(_bot, _missionType);
+                    }
+                    break;
+
+                case MissionType.Quest:
+                    TryExtract();
+                    break;
             }
+
+
+            _waitForGroup = !IsGroupAligned();
         }
 
-        private Vector3 GetNextQuestObjective()
+        private void OnObjectiveReached()
         {
-            if (_questRoute.Count == 0)
-                PopulateQuestRoute();
+            if (_bot == null)
+                return;
 
-            if (_questRoute.Count > 0)
-                return _questRoute.Dequeue();
+            if (_missionType == MissionType.Loot && !_lootComplete)
+            {
+                _lootScanner?.TryLootNearby();
+                _deadBodyScanner?.TryLootNearby();
+                _lootComplete = true;
+                Say(EPhraseTrigger.OnLoot);
+            }
 
-            return _bot?.Position ?? Vector3.zero;
+            if (_missionType == MissionType.Quest)
+            {
+                if (_questRoute.Count > 0)
+                {
+                    _currentObjective = GetStaggeredMissionObjective(GetNextQuestObjective());
+                    _log.LogInfo($"[BotMissionSystem] {BotName()} next quest objective → {_currentObjective}");
+                    BotMovementHelper.SmoothMoveTo(_bot, _currentObjective);
+                }
+                else if (_readyToExtract || (_lootComplete && _fightComplete))
+                {
+                    _log.LogInfo($"[BotMissionSystem] {BotName()} completed mission → extracting.");
+                    Say(EPhraseTrigger.ExitLocated);
+                    _bot.Deactivate();
+                    _bot.GetPlayer?.gameObject.SetActive(false);
+                }
+                else
+                {
+                    ResumeQuesting();
+                }
+            }
         }
 
         private void ResumeQuesting()
         {
+            if (_bot == null)
+                return;
+
             if (_questRoute.Count == 0)
                 PopulateQuestRoute();
 
@@ -280,6 +299,86 @@ namespace AIRefactored.AI.Missions
                 _currentObjective = GetStaggeredMissionObjective(GetNextQuestObjective());
                 BotMovementHelper.SmoothMoveTo(_bot, _currentObjective);
             }
+        }
+
+        private void PopulateQuestRoute()
+        {
+            _questRoute.Clear();
+            var points = HotspotLoader.GetAllHotspotsRaw();
+            if (points.Count == 0 || _bot == null)
+                return;
+
+            int count = UnityEngine.Random.Range(2, 4);
+            var used = new HashSet<int>();
+
+            while (_questRoute.Count < count && used.Count < points.Count)
+            {
+                int i = UnityEngine.Random.Range(0, points.Count);
+                if (used.Add(i))
+                    _questRoute.Enqueue(points[i]);
+            }
+        }
+
+        private bool IsBackpackFull()
+        {
+            var backpack = _bot?.GetPlayer?.Inventory?.Equipment?.GetSlot(EquipmentSlot.Backpack)?.ContainedItem;
+            if (backpack == null)
+                return false;
+
+            int count = 0;
+            foreach (var item in backpack.GetAllItems())
+            {
+                if (item != null)
+                    count++;
+                if (count >= LootItemCountThreshold)
+                    return true;
+            }
+
+            return false;
+        }
+
+        private bool ShouldExtractEarly()
+        {
+            if (_bot == null) return false;
+
+            float threshold = _personality?.RetreatThreshold ?? GlobalLootThreshold;
+            var backpack = _bot.GetPlayer?.Inventory?.Equipment?.GetSlot(EquipmentSlot.Backpack)?.ContainedItem;
+            if (backpack == null) return false;
+
+            int count = 0;
+            foreach (var item in backpack.GetAllItems())
+            {
+                if (item != null)
+                    count++;
+                if (count >= LootItemCountThreshold)
+                    break;
+            }
+
+            float fullness = (float)count / LootItemCountThreshold;
+            return fullness >= threshold && (_personality?.Caution ?? 0f) > 0.6f && !(_personality?.IsFrenzied ?? false);
+        }
+
+        private Vector3 GetLootObjective() =>
+            _lootScanner?.GetHighestValueLootPoint() ?? _bot?.Position ?? Vector3.zero;
+
+        private Vector3 GetNextQuestObjective()
+        {
+            if (_questRoute.Count == 0)
+                PopulateQuestRoute();
+
+            return _questRoute.Count > 0 ? _questRoute.Dequeue() : _bot?.Position ?? Vector3.zero;
+        }
+
+        private Vector3 GetRandomZone(MissionType type)
+        {
+            if (type != MissionType.Fight || _bot == null)
+                return _bot?.Position ?? Vector3.zero;
+
+            var zones = GameObject.FindObjectsOfType<BotZone>();
+            if (zones.Length > 0)
+                return zones[_rng.Next(0, zones.Length)].transform.position;
+
+            return _bot.Position;
         }
 
         private Vector3 GetStaggeredMissionObjective(Vector3 target)
@@ -300,183 +399,74 @@ namespace AIRefactored.AI.Missions
 
             float angle = index * 137f;
             float radius = 1.5f + (index % 3) * 0.75f;
-            Vector3 offset = new Vector3(
+
+            return target + new Vector3(
                 Mathf.Cos(angle * Mathf.Deg2Rad),
                 0f,
                 Mathf.Sin(angle * Mathf.Deg2Rad)
             ) * radius;
-
-            return target + offset;
-        }
-
-        private void EvaluateMission()
-        {
-            if (_bot == null || _bot.GetPlayer?.IsYourPlayer == true)
-                return;
-
-            switch (_missionType)
-            {
-                case MissionType.Loot:
-                    if (!_readyToExtract && IsBackpackFull(_bot))
-                    {
-                        _readyToExtract = true;
-                        Say(EPhraseTrigger.OnFight);
-                        _missionType = MissionType.Fight;
-                        _currentObjective = GetStaggeredMissionObjective(GetRandomZone(MissionType.Fight));
-                        BotMovementHelper.SmoothMoveTo(_bot, _currentObjective);
-                        BotTeamLogic.BroadcastMissionType(_bot, _missionType);
-                    }
-                    else if (!_lootComplete)
-                    {
-                        _currentObjective = GetStaggeredMissionObjective(GetLootObjective());
-                        BotMovementHelper.SmoothMoveTo(_bot, _currentObjective);
-                    }
-                    break;
-
-                case MissionType.Fight:
-                    if (!_fightComplete)
-                    {
-                        _fightComplete = true;
-                        _missionType = MissionType.Quest;
-                        PopulateQuestRoute();
-                        _currentObjective = GetStaggeredMissionObjective(GetNextQuestObjective());
-                        BotMovementHelper.SmoothMoveTo(_bot, _currentObjective);
-                        BotTeamLogic.BroadcastMissionType(_bot, _missionType);
-                    }
-                    break;
-
-                case MissionType.Quest:
-                    TryExtract();
-                    break;
-            }
-
-            _waitForGroup = !IsGroupAligned();
-        }
-
-        private void OnObjectiveReached()
-        {
-            if (_missionType == MissionType.Loot && !_lootComplete)
-            {
-                _lootScanner?.TryLootNearby();
-                _deadBodyScanner?.TryLootNearby();
-                _lootComplete = true;
-                Say(EPhraseTrigger.OnLoot);
-                return;
-            }
-
-            if (_missionType == MissionType.Quest)
-            {
-                if (_questRoute.Count > 0)
-                {
-                    _currentObjective = GetStaggeredMissionObjective(GetNextQuestObjective());
-                    _log.LogInfo($"[BotMissionSystem] {BotName()} advancing to next quest hotspot → {_currentObjective}");
-                    BotMovementHelper.SmoothMoveTo(_bot, _currentObjective);
-                }
-                else if (_readyToExtract || (_lootComplete && _fightComplete))
-                {
-                    _log.LogInfo($"[BotMissionSystem] {BotName()} completed all objectives → extracting.");
-                    Say(EPhraseTrigger.ExitLocated);
-                    _bot?.Deactivate();
-                    _bot?.GetPlayer?.gameObject.SetActive(false);
-                }
-                else
-                {
-                    _log.LogInfo($"[BotMissionSystem] {BotName()} quest path empty → refilling.");
-                    ResumeQuesting();
-                }
-            }
-        }
-
-        private Vector3 GetLootObjective()
-        {
-            return _lootScanner?.GetHighestValueLootPoint() ?? _bot?.Position ?? Vector3.zero;
-        }
-
-        private Vector3 GetRandomZone(MissionType type)
-        {
-            if (type == MissionType.Fight)
-            {
-                var zones = GameObject.FindObjectsOfType<BotZone>();
-                if (zones.Length > 0)
-                {
-                    var randomZone = zones[_rng.Next(0, zones.Length)];
-                    return randomZone.transform.position;
-                }
-            }
-
-            return _bot?.Position ?? Vector3.zero;
-        }
-
-        private void TryExtract()
-        {
-            if (_bot?.GetPlayer?.IsYourPlayer == true)
-                return;
-
-            ExfiltrationPoint? closest = null;
-            float minDist = float.MaxValue;
-
-            foreach (var point in GameObject.FindObjectsOfType<ExfiltrationPoint>())
-            {
-                if (point == null || point.Status != EExfiltrationStatus.RegularMode)
-                    continue;
-
-                float dist = Vector3.Distance(_bot.Position, point.transform.position);
-                if (dist < minDist)
-                {
-                    closest = point;
-                    minDist = dist;
-                }
-            }
-
-            if (closest != null)
-            {
-                BotMovementHelper.SmoothMoveTo(_bot, closest.transform.position);
-                Say(EPhraseTrigger.ExitLocated);
-            }
-            else
-            {
-                Say(EPhraseTrigger.MumblePhrase);
-            }
         }
 
         private bool IsGroupAligned()
         {
-            if (_group == null)
+            if (_group == null || _bot == null)
                 return true;
 
-            var teammates = _group.GetTeammates();
-            if (teammates.Count == 0)
-                return true;
+            var mates = _group.GetTeammates();
+            int near = 0;
 
-            int nearby = 0;
-            foreach (var mate in teammates)
+            foreach (var m in mates)
             {
-                if (mate != null && Vector3.Distance(mate.Position, _bot.Position) < SQUAD_COHESION_RANGE)
-                    nearby++;
+                if (m != null && Vector3.Distance(m.Position, _bot.Position) < SquadCohesionRange)
+                    near++;
             }
 
-            return nearby >= Mathf.CeilToInt(teammates.Count * 0.6f);
+            return near >= Mathf.CeilToInt(mates.Count * 0.6f);
         }
 
-        private bool IsBackpackFull(BotOwner bot)
+        private void TryExtract()
         {
-            var inv = bot.GetPlayer?.Inventory;
-            var slot = inv?.Equipment?.GetSlot(EquipmentSlot.Backpack);
-            var backpack = slot?.ContainedItem;
+            if (_bot == null || _bot.IsDead)
+                return;
 
-            if (backpack == null)
-                return false;
+            var player = _bot.GetPlayer;
+            if (player == null || player.IsYourPlayer)
+                return;
 
-            int count = 0;
-            foreach (var item in backpack.GetAllItems())
+            try
             {
-                if (item != null)
-                    count++;
-                if (count >= LootItemCountThreshold)
-                    return true;
-            }
+                ExfiltrationPoint? closest = null;
+                float minDist = float.MaxValue;
+                Vector3 botPos = _bot.Position;
 
-            return false;
+                var exfils = GameObject.FindObjectsOfType<ExfiltrationPoint>();
+                if (exfils == null || exfils.Length == 0)
+                    return;
+
+                for (int i = 0; i < exfils.Length; i++)
+                {
+                    var point = exfils[i];
+                    if (point == null || point.Status != EExfiltrationStatus.RegularMode)
+                        continue;
+
+                    float dist = Vector3.Distance(botPos, point.transform.position);
+                    if (dist < minDist)
+                    {
+                        closest = point;
+                        minDist = dist;
+                    }
+                }
+
+                if (closest != null)
+                {
+                    BotMovementHelper.SmoothMoveTo(_bot, closest.transform.position);
+                    Say(EPhraseTrigger.ExitLocated);
+                }
+            }
+            catch (System.Exception ex)
+            {
+                _log.LogWarning($"[BotMissionSystem] ❌ Extraction failed: {ex.Message}");
+            }
         }
 
         private void Say(EPhraseTrigger phrase)
@@ -484,9 +474,7 @@ namespace AIRefactored.AI.Missions
             try
             {
                 if (!FikaHeadlessDetector.IsHeadless)
-                {
                     _bot?.GetPlayer?.Say(phrase);
-                }
             }
             catch (Exception ex)
             {
@@ -494,9 +482,15 @@ namespace AIRefactored.AI.Missions
             }
         }
 
-        private string BotName()
+        private MissionType RandomizeMissionType(bool isPmc)
         {
-            return _bot?.Profile?.Info?.Nickname ?? "UnknownBot";
+            int roll = _rng.Next(0, 100);
+            if (roll < 30) return MissionType.Loot;
+            if (roll < 65) return MissionType.Fight;
+            return isPmc ? MissionType.Quest : MissionType.Loot;
         }
+
+        private string BotName() =>
+            _bot?.Profile?.Info?.Nickname ?? "UnknownBot";
     }
 }

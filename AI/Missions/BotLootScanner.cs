@@ -10,52 +10,65 @@ namespace AIRefactored.AI.Looting
 {
     /// <summary>
     /// Scans for lootable containers and items near the bot, prioritizing line-of-sight and proximity.
-    /// Supports GetHighestValueLootPoint for mission targeting and TryLootNearby for reactive looting.
+    /// Supports <see cref="GetHighestValueLootPoint"/> for mission targeting and <see cref="TryLootNearby"/> for reactive looting.
     /// </summary>
     public class BotLootScanner
     {
+        #region Fields
+
         private BotOwner? _bot;
         private BotComponentCache? _cache;
+
         private const float ScanRadius = 12f;
         private const float MaxAngle = 120f;
-
-        private float _nextScanTime = 0f;
+        private const float HighestValueScanRadius = 20f;
         private const float ScanInterval = 1.5f;
 
+        private float _nextScanTime = 0f;
+
+        #endregion
+
+        #region Initialization
+
+        /// <summary>
+        /// Initializes the scanner with bot context and cache.
+        /// </summary>
         public void Initialize(BotComponentCache cache)
         {
             _cache = cache;
             _bot = cache.Bot;
         }
 
+        #endregion
+
+        #region Public API
+
+        /// <summary>
+        /// Called each frame to trigger scan logic at fixed intervals.
+        /// </summary>
         public void Tick(float deltaTime)
         {
-            if (_bot == null || FikaHeadlessDetector.IsHeadless || _bot.IsDead)
+            if (!CanEvaluate() || Time.time < _nextScanTime)
                 return;
 
-            float now = Time.time;
-            if (now >= _nextScanTime)
-            {
-                _nextScanTime = now + ScanInterval;
+            _nextScanTime = Time.time + ScanInterval;
 
-                if (CanLoot())
-                {
-                    if (TryFindNearbyContainer(out var container))
-                    {
-                        Debug.DrawLine(_bot.Position, container.transform.position, Color.green, 1f);
-                    }
+            if (!CanLoot())
+                return;
 
-                    if (TryFindNearbyItem(out var item))
-                    {
-                        Debug.DrawLine(_bot.Position, item.transform.position, Color.cyan, 1f);
-                    }
-                }
-            }
+            if (TryFindNearbyContainer(out var container))
+                Debug.DrawLine(_bot!.Position, container.transform.position, Color.green, 1f);
+
+            if (TryFindNearbyItem(out var item))
+                Debug.DrawLine(_bot!.Position, item.transform.position, Color.cyan, 1f);
         }
 
+        /// <summary>
+        /// Attempts to loot a nearby container or item.
+        /// </summary>
         public void TryLootNearby()
         {
-            if (FikaHeadlessDetector.IsHeadless || !CanLoot())
+            if (!CanLoot())
                 return;
 
             if (TryFindNearbyContainer(out var container))
@@ -71,18 +84,22 @@ namespace AIRefactored.AI.Looting
             }
         }
 
+        /// <summary>
+        /// Returns the location of the highest-value nearby container.
+        /// </summary>
         public Vector3 GetHighestValueLootPoint()
         {
-            if (FikaHeadlessDetector.IsHeadless || _bot == null)
-                return _bot?.Position ?? Vector3.zero;
+            if (_bot == null || FikaHeadlessDetector.IsHeadless)
+                return Vector3.zero;
 
             float highestValue = 0f;
             Vector3 best = _bot.Position;
 
-            var containers = GameObject.FindObjectsOfType<LootableContainer>();
-            foreach (var container in containers)
+            Collider[] hits = Physics.OverlapSphere(_bot.Position, HighestValueScanRadius, LayerMaskClass.LootLayerMask);
+            for (int i = 0; i < hits.Length; i++)
             {
-                if (container == null || !container.enabled)
+                var container = hits[i].GetComponent<LootableContainer>();
+                if (container == null || !container.enabled || !CanSeeTarget(container.transform.position))
                     continue;
 
                 float value = EstimateContainerValue(container);
@@ -96,19 +113,27 @@ namespace AIRefactored.AI.Looting
             return best;
         }
 
-        private float EstimateContainerValue(LootableContainer container)
+        #endregion
+
+        #region Private Logic
+
+        private bool CanEvaluate()
         {
-            if (container.ItemOwner?.RootItem == null)
-                return 0f;
+            return _bot != null && !_bot.IsDead && !FikaHeadlessDetector.IsHeadless;
+        }
 
-            float total = 0f;
-            foreach (var item in container.ItemOwner.RootItem.GetAllItems())
-            {
-                if (item?.Template != null && item.Template.CreditsPrice > 0)
-                    total += item.Template.CreditsPrice;
-            }
+        private bool CanLoot()
+        {
+            if (_bot == null || _bot.IsDead || _bot.GetPlayer?.IsYourPlayer == true)
+                return false;
 
-            return total;
+            if (_cache?.PanicHandler?.IsPanicking == true)
+                return false;
+
+            if (_bot.Memory?.GoalEnemy != null || (_bot.EnemiesController?.EnemyInfos.Count ?? 0) > 0)
+                return false;
+
+            return true;
         }
 
         private bool TryFindNearbyContainer(out LootableContainer container)
@@ -118,10 +143,9 @@ namespace AIRefactored.AI.Looting
                 return false;
 
             Collider[] hits = Physics.OverlapSphere(_bot.Position, ScanRadius, LayerMaskClass.LootLayerMask);
-
-            foreach (var hit in hits)
+            for (int i = 0; i < hits.Length; i++)
             {
-                var c = hit.GetComponent<LootableContainer>();
+                var c = hits[i].GetComponent<LootableContainer>();
                 if (c != null && c.enabled && CanSeeTarget(c.transform.position))
                 {
                     container = c;
@@ -139,18 +163,32 @@ namespace AIRefactored.AI.Looting
                 return false;
 
             Collider[] hits = Physics.OverlapSphere(_bot.Position, ScanRadius, LayerMaskClass.LootLayerMask);
-
-            foreach (var hit in hits)
+            for (int i = 0; i < hits.Length; i++)
             {
-                var i = hit.GetComponent<LootItem>();
-                if (i != null && i.enabled && CanSeeTarget(i.transform.position))
+                var iLoot = hits[i].GetComponent<LootItem>();
+                if (iLoot != null && iLoot.enabled && CanSeeTarget(iLoot.transform.position))
                 {
-                    item = i;
+                    item = iLoot;
                     return true;
                 }
             }
 
             return false;
+        }
+
+        private float EstimateContainerValue(LootableContainer container)
+        {
+            if (container.ItemOwner?.RootItem == null)
+                return 0f;
+
+            float total = 0f;
+            foreach (var item in container.ItemOwner.RootItem.GetAllItems())
+            {
+                if (item?.Template != null && item.Template.CreditsPrice > 0)
+                    total += item.Template.CreditsPrice;
+            }
+
+            return total;
         }
 
         private void TryLootContainer(LootableContainer container)
@@ -168,30 +206,12 @@ namespace AIRefactored.AI.Looting
 
             var inv = _bot.GetPlayer.InventoryController;
             var slot = inv.FindSlotToPickUp(item.Item);
-
             if (slot != null)
             {
                 var move = InteractionsHandlerClass.Move(item.Item, slot, inv, true);
                 if (move.Succeeded)
                     inv.TryRunNetworkTransaction(move, null);
             }
-        }
-
-        private bool CanLoot()
-        {
-            if (_bot == null || _bot.IsDead || _bot.GetPlayer?.IsYourPlayer == true)
-                return false;
-
-            if (_cache?.PanicHandler?.IsPanicking == true)
-                return false;
-
-            if (_bot.Memory?.GoalEnemy != null)
-                return false;
-
-            if (_bot.EnemiesController?.EnemyInfos.Count > 0)
-                return false;
-
-            return true;
         }
 
         private bool CanSeeTarget(Vector3 position)
@@ -201,14 +221,20 @@ namespace AIRefactored.AI.Looting
 
             Vector3 origin = _bot.WeaponRoot.position;
             Vector3 direction = position - origin;
+
             float angle = Vector3.Angle(_bot.WeaponRoot.forward, direction);
             if (angle > MaxAngle)
                 return false;
 
             if (Physics.Raycast(origin, direction.normalized, out RaycastHit hit, direction.magnitude + 0.5f, LayerMaskClass.HighPolyWithTerrainMaskAI))
-                return hit.collider != null && hit.point == position;
+            {
+                var root = hit.collider.GetComponentInParent<Transform>();
+                return root != null && (root.position - position).sqrMagnitude < 0.5f;
+            }
 
             return true;
         }
+
+        #endregion
     }
 }

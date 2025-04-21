@@ -6,40 +6,43 @@ using UnityEngine;
 namespace AIRefactored.AI.Threads
 {
     /// <summary>
-    /// Protects AI bots from conflicting brain components injected by SPT or other mods.
-    /// Ensures only AIRefactored.BotBrain is allowed to control AI logic.
+    /// Prevents conflicting brain components from interfering with AIRefactored bots.
+    /// Ensures only AIRefactored.BotBrain is active by removing other injected MonoBehaviours.
     /// </summary>
     public static class BotBrainGuardian
     {
         /// <summary>
-        /// Called after our BotBrain is added to a bot. Removes all other brain components aggressively.
+        /// Scans the bot GameObject for foreign MonoBehaviours and removes any components
+        /// that are not part of AIRefactored or the Unity/EFT core libraries.
         /// </summary>
+        /// <param name="botGameObject">The bot GameObject to sanitize.</param>
         public static void Enforce(GameObject botGameObject)
         {
             if (botGameObject == null)
                 return;
 
             MonoBehaviour[] components = botGameObject.GetComponents<MonoBehaviour>();
+
             for (int i = 0; i < components.Length; i++)
             {
-                var comp = components[i];
+                MonoBehaviour? comp = components[i];
                 if (comp == null)
                     continue;
 
-                var type = comp.GetType();
+                System.Type type = comp.GetType();
 
-                // === Safe if it IS our brain ===
+                // === Skip our official brain component
                 if (type == typeof(BotBrain))
                     continue;
 
-                // === Safe if from Unity or EFT core ===
-                string ns = type.Namespace?.ToLowerInvariant() ?? "";
+                // === Skip anything from Unity, EFT, or Comfort.Common
+                string ns = type.Namespace?.ToLowerInvariant() ?? string.Empty;
                 if (ns.StartsWith("unity") || ns.StartsWith("eft") || ns.Contains("comfort"))
                     continue;
 
-                // === Check for 'brain-like' names (aggressively match known SPT patterns) ===
+                // === Aggressive pattern matching for known injected brains (SPT, SAIN, etc.)
                 string name = type.Name.ToLowerInvariant();
-                bool isInjectedSPTBrain =
+                bool isInjectedBrain =
                     name.Contains("brain") ||
                     name.StartsWith("pmc") ||
                     name.StartsWith("boss") ||
@@ -50,7 +53,7 @@ namespace AIRefactored.AI.Threads
                     ns.Contains("sain") ||
                     ns.Contains("lua");
 
-                if (isInjectedSPTBrain)
+                if (isInjectedBrain)
                 {
                     Object.Destroy(comp);
                     AIRefactoredController.Logger.LogWarning($"[BotBrainGuardian] ⚠ Removed injected AI logic: {type.FullName}");

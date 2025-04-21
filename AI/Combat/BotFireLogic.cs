@@ -3,20 +3,30 @@
 using AIRefactored.AI.Core;
 using AIRefactored.AI.Helpers;
 using AIRefactored.AI.Optimization;
+using AIRefactored.Runtime;
+using BepInEx.Logging;
 using EFT;
 using EFT.InventoryLogic;
 using System;
 using System.Collections.Generic;
 using UnityEngine;
+using UnityEngine.AI;
 
 namespace AIRefactored.AI.Combat
 {
+    /// <summary>
+    /// Handles bot fire logic including fire mode decisions, cadence, retreat logic, and accuracy tuning.
+    /// Adapts behavior based on personality, distance, suppression, and weapon type.
+    /// </summary>
     public class BotFireLogic
     {
+        #region Fields
+
         private readonly BotOwner _botOwner;
         private readonly BotComponentCache? _cache;
+        private float _nextFireDecisionTime;
 
-        private float _nextFireDecisionTime = 0f;
+        private static readonly ManualLogSource Logger = AIRefactoredController.Logger;
 
         private static readonly Dictionary<string, float> WeaponRanges = new()
         {
@@ -26,20 +36,42 @@ namespace AIRefactored.AI.Combat
 
         private static readonly EBodyPart[] BodyParts = (EBodyPart[])Enum.GetValues(typeof(EBodyPart));
 
+        #endregion
+
+        #region Constructor
+
+        /// <summary>
+        /// Constructs fire logic for the specified bot.
+        /// </summary>
+        /// <param name="botOwner">Bot instance.</param>
         public BotFireLogic(BotOwner botOwner)
         {
             _botOwner = botOwner;
             _cache = botOwner.GetComponent<BotComponentCache>();
         }
 
+        #endregion
+
+        #region Public API
+
+        /// <summary>
+        /// Ticks bot fire logic. Determines fire decision, cadence, accuracy, and retreat behavior.
+        /// </summary>
+        /// <param name="time">Current world time.</param>
         public void Tick(float time)
         {
             if (_botOwner == null || !_botOwner.IsAI || _botOwner.IsDead || _botOwner.Memory == null)
                 return;
 
             var weaponMgr = _botOwner.WeaponManager;
+            if (weaponMgr == null)
+                return;
+
             var shootData = _botOwner.ShootData;
-            var weaponInfo = weaponMgr?._currentWeaponInfo;
+            if (shootData == null)
+                return;
+
+            var weaponInfo = weaponMgr._currentWeaponInfo;
             var weapon = weaponInfo?.weapon;
             var core = _botOwner.Settings?.FileSettings?.Core as GClass592;
 
@@ -50,11 +82,8 @@ namespace AIRefactored.AI.Combat
             if (profile == null)
                 return;
 
-            // === THREAT SELECTION OVERRIDE ===
-            IPlayer? enemy = _cache?.ThreatSelector?.CurrentTarget
-                          ?? _botOwner.Memory.GoalEnemy?.Person;
-
-            if (enemy == null)
+            IPlayer? enemy = _cache?.ThreatSelector?.CurrentTarget ?? _botOwner.Memory.GoalEnemy?.Person;
+            if (enemy == null || !enemy.HealthController.IsAlive)
                 return;
 
             Vector3 targetPos = enemy.Transform.position;
@@ -88,7 +117,6 @@ namespace AIRefactored.AI.Combat
                 return;
             }
 
-            // === Fire Mode Logic ===
             if (distance <= 40f)
             {
                 SetFireMode(weaponInfo, Weapon.EFireMode.fullauto);
@@ -112,6 +140,10 @@ namespace AIRefactored.AI.Combat
             }
         }
 
+        #endregion
+
+        #region Internal Logic
+
         private void SetFireMode(BotWeaponInfo info, Weapon.EFireMode mode)
         {
             if (info.weapon.SelectedFireMode != mode)
@@ -120,9 +152,11 @@ namespace AIRefactored.AI.Combat
 
         private bool SupportsFireMode(Weapon weapon, Weapon.EFireMode mode)
         {
-            foreach (var available in weapon.WeapFireType)
-                if (available == mode)
+            foreach (var fireType in weapon.WeapFireType)
+            {
+                if (fireType == mode)
                     return true;
+            }
             return false;
         }
 
@@ -130,8 +164,10 @@ namespace AIRefactored.AI.Combat
         {
             string name = weapon.Template?.Name.ToLowerInvariant() ?? string.Empty;
             foreach (var kvp in WeaponRanges)
+            {
                 if (name.Contains(kvp.Key))
                     return kvp.Value;
+            }
             return 90f;
         }
 
@@ -150,15 +186,17 @@ namespace AIRefactored.AI.Combat
 
         private float GetBurstCadence(BotPersonalityProfile profile)
         {
-            float baseDelay = Mathf.Lerp(0.8f, 0.25f, profile.AggressionLevel);
-            float chaos = UnityEngine.Random.Range(-0.1f, 0.2f) * profile.ChaosFactor;
-            return Mathf.Clamp(baseDelay + chaos, 0.2f, 1.0f);
+            float baseDelay = Mathf.Lerp(0.75f, 0.25f, profile.AggressionLevel);
+            float reaction = Mathf.Lerp(0.1f, 0.35f, 1f - profile.ReactionTime);
+            float chaos = UnityEngine.Random.Range(-0.1f, 0.25f) * profile.ChaosFactor;
+            return Mathf.Clamp(baseDelay + chaos + reaction, 0.2f, 1.25f);
         }
 
         private float GetHealthRatio()
         {
             var health = _botOwner.GetPlayer?.HealthController;
-            if (health == null) return 1f;
+            if (health == null)
+                return 1f;
 
             float cur = 0f, max = 0f;
             foreach (var part in BodyParts)
@@ -167,6 +205,7 @@ namespace AIRefactored.AI.Combat
                 cur += hp.Current;
                 max += hp.Maximum;
             }
+
             return max > 0f ? cur / max : 1f;
         }
 
@@ -175,14 +214,19 @@ namespace AIRefactored.AI.Combat
             if (_cache?.PathCache == null)
                 return;
 
-            Vector3 threatDirection = _botOwner.LookDirection.normalized;
-            List<Vector3> path = BotCoverRetreatPlanner.GetCoverRetreatPath(_botOwner, threatDirection, _cache.PathCache);
+            Vector3 dir = _botOwner.LookDirection.normalized;
+            List<Vector3> path = BotCoverRetreatPlanner.GetCoverRetreatPath(_botOwner, dir, _cache.PathCache);
 
             if (path.Count > 0)
             {
-                Vector3 target = path[path.Count - 1];
-                BotMovementHelper.SmoothMoveTo(_botOwner, target, false, profile.Cohesion);
+                Vector3 fallback = path[path.Count - 1];
+                if (NavMesh.SamplePosition(fallback, out NavMeshHit hit, 2f, NavMesh.AllAreas))
+                {
+                    BotMovementHelper.SmoothMoveTo(_botOwner, hit.position, false, profile.Cohesion);
+                }
             }
         }
+
+        #endregion
     }
 }

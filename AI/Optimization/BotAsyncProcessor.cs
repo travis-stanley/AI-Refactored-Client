@@ -16,32 +16,40 @@ using UnityEngine;
 namespace AIRefactored.AI.Optimization
 {
     /// <summary>
-    /// Performs async-safe, low-frequency personality initialization and runtime optimization.
-    /// On headless servers, offloads processing to background threads for higher tick frequency and throughput.
+    /// Handles asynchronous and low-frequency logic for bot personality tuning and mission processing.
+    /// Supports headless environments via thread pooling and optimized tick intervals.
     /// </summary>
     public class BotAsyncProcessor
     {
+        #region Fields
+
+        private static readonly ManualLogSource Logger = AIRefactoredController.Logger;
+
         private BotOwner? _bot;
         private BotComponentCache? _cache;
+
+        private BotMissionSystem? _mission;
+        private BotBehaviorEnhancer? _behavior;
+        private BotOwnerStateCache? _stateCache;
+
         private bool _hasInitialized;
+        private float _lastThinkTime = 0f;
 
         private const float InitDelay = 0.5f;
         private const float HeadlessThinkCooldown = 1.5f;
         private const float NormalThinkCooldown = 3.5f;
 
-        private BotOwnerStateCache? _stateCache;
         private readonly BotOwnerGroupOptimization _groupOptimizer = new();
 
-        private BotMissionSystem? _mission;
-        private BotBehaviorEnhancer? _behavior;
+        #endregion
 
-        private float _lastThinkTime = 0f;
-
-        private static readonly ManualLogSource _log = AIRefactoredController.Logger;
+        #region Initialization
 
         /// <summary>
-        /// Initializes the async processor with a bot and its component cache.
+        /// Assigns the bot owner and cache, and defers runtime initialization.
         /// </summary>
+        /// <param name="botOwner">The BotOwner instance.</param>
+        /// <param name="cache">Initialized bot component cache.</param>
         public void Initialize(BotOwner botOwner, BotComponentCache cache)
         {
             _bot = botOwner;
@@ -58,26 +66,35 @@ namespace AIRefactored.AI.Optimization
             {
                 await Task.Delay((int)(InitDelay * 1000f));
                 if (_bot != null && !_hasInitialized)
+                {
                     await ProcessBotOwnerAsync(_bot);
+                }
             });
         }
 
         /// <summary>
-        /// Applies tuning logic after bot is fully loaded.
+        /// Completes the async personality tuning stage once the bot is loaded.
         /// </summary>
+        /// <param name="botOwner">The bot to initialize.</param>
         public async Task ProcessBotOwnerAsync(BotOwner botOwner)
         {
             if (_hasInitialized || botOwner?.Settings?.FileSettings?.Mind == null)
                 return;
 
-            await Task.Yield();
+            await Task.Yield(); // Let Unity thread breathe before continuing
+
             ApplyPersonalityModifiers(botOwner);
             _hasInitialized = true;
         }
 
+        #endregion
+
+        #region Tick Logic
+
         /// <summary>
-        /// Executes low-frequency logic ticks for squad sync, thinking, and async ops.
+        /// Executes async-aware logic and schedules AI ticks at low frequency.
         /// </summary>
+        /// <param name="time">Current world time.</param>
         public void Tick(float time)
         {
             if (!_hasInitialized || _bot == null || _bot.IsDead)
@@ -85,43 +102,49 @@ namespace AIRefactored.AI.Optimization
 
             _stateCache?.UpdateBotOwnerStateIfNeeded(_bot);
 
-            var groupId = _bot.Profile?.Info?.GroupId;
+            string? groupId = _bot.Profile?.Info?.GroupId;
             if (!string.IsNullOrEmpty(groupId))
             {
-                var teammates = BotTeamTracker.GetGroup(groupId);
+                var teammates = BotTeamTracker.GetGroup(groupId!);
                 _groupOptimizer.OptimizeGroupAI(teammates);
             }
 
             float cooldown = FikaHeadlessDetector.IsHeadless ? HeadlessThinkCooldown : NormalThinkCooldown;
-            if (time - _lastThinkTime >= cooldown)
-            {
-                _lastThinkTime = time;
+            if (time - _lastThinkTime < cooldown)
+                return;
 
-                if (FikaHeadlessDetector.IsHeadless)
+            _lastThinkTime = time;
+
+            if (FikaHeadlessDetector.IsHeadless)
+            {
+                ThreadPool.QueueUserWorkItem(_ =>
                 {
-                    ThreadPool.QueueUserWorkItem(_ =>
+                    try
                     {
-                        try { ThinkThreaded(); }
-                        catch (Exception ex)
-                        {
-                            _log.LogWarning($"[AIRefactored-Async] ❌ Headless thinker crash: {ex.Message}");
-                        }
-                    });
-                }
-                else
-                {
-                    ThinkThreaded();
-                }
+                        ThinkThreaded();
+                    }
+                    catch (Exception ex)
+                    {
+                        Logger.LogWarning($"[AIRefactored-Async] ❌ Headless thinker crash: {ex}");
+                    }
+                });
+            }
+            else
+            {
+                ThinkThreaded();
             }
         }
 
         /// <summary>
-        /// Main decision loop executed either inline or from thread pool.
+        /// Called on cooldown to process mission and behavior ticks.
+        /// Runs on thread pool if headless.
         /// </summary>
         private void ThinkThreaded()
         {
-            _mission?.Tick(Time.time);
-            _behavior?.Tick(Time.time);
+            float time = Time.time;
+
+            _mission?.Tick(time);
+            _behavior?.Tick(time);
 
             if (_bot != null && UnityEngine.Random.value < 0.01f)
             {
@@ -132,23 +155,34 @@ namespace AIRefactored.AI.Optimization
             }
         }
 
+        #endregion
+
+        #region Personality Tuning
+
         /// <summary>
-        /// Applies baseline behavior modifiers from personality to EFT mind parameters.
+        /// Applies tuning from personality traits to EFT internal mind parameters.
         /// </summary>
+        /// <param name="botOwner">Target bot owner for modification.</param>
         private void ApplyPersonalityModifiers(BotOwner botOwner)
         {
-            var mind = botOwner.Settings.FileSettings.Mind;
-            var personality = BotRegistry.Get(botOwner.Profile.Id);
+            var mind = botOwner.Settings?.FileSettings?.Mind;
+            var profileId = botOwner.Profile?.Id;
 
-            if (mind == null || personality == null)
+            if (mind == null || string.IsNullOrEmpty(profileId))
                 return;
 
-            mind.PANIC_RUN_WEIGHT = Mathf.Lerp(0.5f, 2f, personality.RiskTolerance);
-            mind.PANIC_SIT_WEIGHT = Mathf.Lerp(10f, 80f, 1f - personality.RiskTolerance);
-            mind.DIST_TO_FOUND_SQRT = Mathf.Lerp(200f, 600f, 1f - personality.Cohesion);
-            mind.FRIEND_AGR_KILL = Mathf.Lerp(0f, 0.4f, personality.AggressionLevel);
+            var personality = BotRegistry.Get(profileId!); // Safe due to above null check
+            if (personality == null)
+                return;
 
-            _log.LogInfo($"[AIRefactored-Async] ✅ Personality tuned → {botOwner.Profile?.Info?.Nickname ?? "Unnamed Bot"}");
+            mind.PANIC_RUN_WEIGHT = Mathf.Lerp(0.5f, 2.0f, personality.RiskTolerance);
+            mind.PANIC_SIT_WEIGHT = Mathf.Lerp(10.0f, 80.0f, 1f - personality.RiskTolerance);
+            mind.DIST_TO_FOUND_SQRT = Mathf.Lerp(200f, 600f, 1f - personality.Cohesion);
+            mind.FRIEND_AGR_KILL = Mathf.Lerp(0.0f, 0.4f, personality.AggressionLevel);
+
+            Logger.LogInfo($"[AIRefactored-Async] ✅ Personality tuned → {botOwner.Profile?.Info?.Nickname ?? "Unnamed Bot"}");
         }
+
+        #endregion
     }
 }

@@ -2,6 +2,7 @@
 
 using AIRefactored.AI.Core;
 using AIRefactored.AI.Groups;
+using AIRefactored.AI.Helpers;
 using AIRefactored.Runtime;
 using BepInEx.Logging;
 using EFT;
@@ -10,7 +11,7 @@ using UnityEngine;
 namespace AIRefactored.AI.Perception
 {
     /// <summary>
-    /// Modifies bot visual perception based on flashbangs, flares, and suppression exposure.
+    /// Modifies bot visual perception based on flashbangs, flashlights, flares, and suppression exposure.
     /// Dynamically adjusts visible distance and tracks blindness states.
     /// </summary>
     public class BotPerceptionSystem : IFlashReactiveBot
@@ -30,17 +31,28 @@ namespace AIRefactored.AI.Perception
         private const float BlindSpeechThreshold = 0.4f;
         private const float PanicTriggerThreshold = 0.6f;
 
-        private static readonly ManualLogSource _log = AIRefactoredController.Logger;
-        private static readonly bool _debug = false;
+        private static readonly ManualLogSource Logger = AIRefactoredController.Logger;
+        private static readonly bool DebugEnabled = false;
 
         #endregion
 
         #region Initialization
 
+        /// <summary>
+        /// Initializes the perception system with references to the bot and its vision profile.
+        /// </summary>
+        /// <param name="cache">Bot component cache reference.</param>
         public void Initialize(BotComponentCache cache)
         {
             _cache = cache;
             _bot = cache.Bot;
+
+            if (_bot?.GetPlayer == null)
+            {
+                _profile = null;
+                return;
+            }
+
             _profile = BotVisionProfiles.Get(_bot.GetPlayer);
         }
 
@@ -49,16 +61,24 @@ namespace AIRefactored.AI.Perception
         #region Tick Loop
 
         /// <summary>
-        /// Called every frame by BotBrain to apply recovery and perception penalties.
+        /// Called by BotBrain.Tick to update current perception modifiers and handle reactive behaviors.
         /// </summary>
+        /// <param name="deltaTime">Delta time since last tick.</param>
         public void Tick(float deltaTime)
         {
-            if (_bot == null || _profile == null || _cache == null || _bot.IsDead)
+            if (_bot == null || _cache == null || _profile == null || _bot.IsDead)
                 return;
 
             var player = _bot.GetPlayer;
             if (player == null || player.IsYourPlayer)
                 return;
+
+            // Flashlight exposure detection
+            Transform? head = BotCacheUtility.Head(_cache);
+            if (head != null && FlashlightRegistry.IsExposingBot(head, out _))
+            {
+                ApplyFlashBlindness(0.25f);
+            }
 
             float penalty = Mathf.Max(_flashBlindness, _flareIntensity, _suppressionFactor);
             float baseRange = Mathf.Lerp(15f, 70f, 1f - penalty);
@@ -67,8 +87,11 @@ namespace AIRefactored.AI.Perception
             _cache.IsBlinded = _flashBlindness > 0.3f;
             _cache.BlindUntilTime = Time.time + Mathf.Clamp01(_flashBlindness) * 3f;
 
-            if (_debug)
-                _log.LogDebug($"[Perception] Penalty: {penalty:F2}, Blind: {_cache.IsBlinded}, Range: {_bot.LookSensor.ClearVisibleDist:F1}");
+            if (DebugEnabled)
+            {
+                string name = _bot.Profile?.Info?.Nickname ?? "bot";
+                Logger.LogDebug($"[Perception] {name} penalty={penalty:F2}, blind={_cache.IsBlinded}, range={_bot.LookSensor.ClearVisibleDist:F1}");
+            }
 
             TryTriggerPanic();
             RecoverPerception(deltaTime);
@@ -79,6 +102,10 @@ namespace AIRefactored.AI.Perception
 
         #region Reactive Modifiers
 
+        /// <summary>
+        /// Increases flash blindness based on incoming flashlight or flashbang exposure.
+        /// </summary>
+        /// <param name="intensity">Flash intensity to apply (0-1 scale).</param>
         public void ApplyFlashBlindness(float intensity)
         {
             if (_profile == null || _cache == null || _bot?.GetPlayer?.IsYourPlayer == true)
@@ -88,13 +115,19 @@ namespace AIRefactored.AI.Perception
             _cache.LastFlashTime = Time.time;
             _blindStartTime = Time.time;
 
-            if (_debug)
-                _log.LogDebug($"[Perception] FlashBlindness: {_flashBlindness:F2} after exposure");
+            if (DebugEnabled)
+                Logger.LogDebug($"[Perception] FlashBlindness now {_flashBlindness:F2}");
 
             if (_flashBlindness > BlindSpeechThreshold)
+            {
                 _bot?.BotTalk?.TrySay(EPhraseTrigger.OnBeingHurt);
+            }
         }
 
+        /// <summary>
+        /// Applies temporary visual suppression from flares.
+        /// </summary>
+        /// <param name="strength">Flare light strength as a 0-1 factor.</param>
         public void ApplyFlareExposure(float strength)
         {
             if (_bot?.GetPlayer?.IsYourPlayer == true)
@@ -103,6 +136,10 @@ namespace AIRefactored.AI.Perception
             _flareIntensity = Mathf.Clamp(strength * 0.6f, 0f, 0.8f);
         }
 
+        /// <summary>
+        /// Applies suppression modifier from gunfire or sustained threat.
+        /// </summary>
+        /// <param name="severity">Suppression severity value (0-1).</param>
         public void ApplySuppression(float severity)
         {
             if (_profile == null || _bot?.GetPlayer?.IsYourPlayer == true)
@@ -110,10 +147,14 @@ namespace AIRefactored.AI.Perception
 
             _suppressionFactor = Mathf.Clamp(severity * _profile.AggressionResponse, 0f, 1f);
 
-            if (_debug)
-                _log.LogDebug($"[Perception] SuppressionFactor updated to {_suppressionFactor:F2}");
+            if (DebugEnabled)
+                Logger.LogDebug($"[Perception] SuppressionFactor = {_suppressionFactor:F2}");
         }
 
+        /// <summary>
+        /// Handler for unified flash exposure events (used by grenades and global sources).
+        /// </summary>
+        /// <param name="lightOrigin">Origin point of light burst.</param>
         public void OnFlashExposure(Vector3 lightOrigin)
         {
             if (_bot?.GetPlayer?.IsYourPlayer == true)
@@ -124,8 +165,12 @@ namespace AIRefactored.AI.Perception
 
         #endregion
 
-        #region Internals
+        #region Internal Logic
 
+        /// <summary>
+        /// Gradually recovers from flash, flare, and suppression exposure over time.
+        /// </summary>
+        /// <param name="deltaTime">Time step for decay.</param>
         private void RecoverPerception(float deltaTime)
         {
             _flashBlindness = Mathf.MoveTowards(_flashBlindness, 0f, FlashRecoverySpeed * deltaTime);
@@ -133,6 +178,9 @@ namespace AIRefactored.AI.Perception
             _suppressionFactor = Mathf.MoveTowards(_suppressionFactor, 0f, 0.3f * deltaTime);
         }
 
+        /// <summary>
+        /// Triggers panic state if flash blindness crosses threshold during early recovery period.
+        /// </summary>
         private void TryTriggerPanic()
         {
             if (_cache?.PanicHandler == null || _bot == null)
@@ -142,16 +190,26 @@ namespace AIRefactored.AI.Perception
             {
                 _cache.PanicHandler.TriggerPanic();
 
-                if (_debug)
-                    _log.LogDebug($"[Perception] Panic triggered by flash blindness on {_bot.Profile?.Info?.Nickname}");
+                if (DebugEnabled)
+                {
+                    string name = _bot.Profile?.Info?.Nickname ?? "bot";
+                    Logger.LogDebug($"[Perception] Panic triggered by blindness on {name}");
+                }
             }
         }
 
+        /// <summary>
+        /// Shares target knowledge with squadmates if enemy is seen and valid.
+        /// </summary>
         private void TryShareEnemy()
         {
-            if (_bot?.Memory?.GoalEnemy?.Person != null)
+            if (_bot == null)
+                return;
+
+            var enemy = _bot.Memory?.GoalEnemy?.Person;
+            if (enemy != null)
             {
-                BotTeamLogic.AddEnemy(_bot, _bot.Memory.GoalEnemy.Person);
+                BotTeamLogic.AddEnemy(_bot, enemy);
             }
         }
 

@@ -9,8 +9,14 @@ using UnityEngine;
 
 namespace AIRefactored.AI.Movement
 {
+    /// <summary>
+    /// Controls advanced bot movement logic including inertia, smooth look, combat strafe, lean, and flank mechanics.
+    /// Designed for natural, player-like behavior and fluid real-time responsiveness.
+    /// </summary>
     public class BotMovementController
     {
+        #region Fields
+
         private BotOwner? _bot;
         private BotComponentCache? _cache;
         private BotMovementTrajectoryPlanner? _trajectory;
@@ -34,15 +40,29 @@ namespace AIRefactored.AI.Movement
         private static readonly ManualLogSource _log = AIRefactoredController.Logger;
         private static readonly bool _debug = false;
 
+        #endregion
+
+        #region Initialization
+
+        /// <summary>
+        /// Initializes the movement controller with the bot's component cache.
+        /// </summary>
         public void Initialize(BotComponentCache cache)
         {
             _cache = cache;
             _bot = cache.Bot;
 
-            if (_bot != null && _cache != null)
-                _trajectory = new BotMovementTrajectoryPlanner(_bot, _cache);
+            if (_bot != null)
+                _trajectory = new BotMovementTrajectoryPlanner(_bot, cache);
         }
 
+        #endregion
+
+        #region Tick
+
+        /// <summary>
+        /// Called every frame to drive bot movement behavior.
+        /// </summary>
         public void Tick(float deltaTime)
         {
             if (_bot == null || _bot.IsDead)
@@ -76,6 +96,10 @@ namespace AIRefactored.AI.Movement
             }
         }
 
+        #endregion
+
+        #region Look Rotation
+
         private void SmoothLookTo(Vector3 target, float deltaTime)
         {
             if (_bot == null)
@@ -92,6 +116,10 @@ namespace AIRefactored.AI.Movement
             Quaternion targetRotation = Quaternion.LookRotation(direction);
             _bot.Transform.rotation = Quaternion.Lerp(_bot.Transform.rotation, targetRotation, LookSmoothSpeed * deltaTime);
         }
+
+        #endregion
+
+        #region Inertia Movement
 
         private void ApplyInertia(float deltaTime)
         {
@@ -113,6 +141,10 @@ namespace AIRefactored.AI.Movement
             _bot.GetPlayer.CharacterController?.Move(_lastVelocity * deltaTime, deltaTime);
         }
 
+        #endregion
+
+        #region Combat Strafing
+
         private void CombatStrafe(float deltaTime)
         {
             if (_bot == null || _bot.Mover == null || _bot.GetPlayer == null)
@@ -122,12 +154,12 @@ namespace AIRefactored.AI.Movement
             if (_strafeTimer <= 0f)
             {
                 _isStrafingRight = UnityEngine.Random.value > 0.5f;
-                _strafeTimer = UnityEngine.Random.Range(0.4f, 0.8f);
+                _strafeTimer = UnityEngine.Random.Range(0.4f, 0.7f);
             }
 
             Vector3 baseStrafe = _isStrafingRight ? _bot.Transform.right : -_bot.Transform.right;
-
             Vector3 avoidVector = Vector3.zero;
+
             if (_bot.BotsGroup != null)
             {
                 for (int i = 0; i < _bot.BotsGroup.MembersCount; i++)
@@ -138,24 +170,22 @@ namespace AIRefactored.AI.Movement
 
                     float dist = Vector3.Distance(_bot.Position, mate.Position);
                     if (dist < 2f && dist > 0.01f)
-                    {
                         avoidVector += (_bot.Position - mate.Position).normalized / dist;
-                    }
                 }
             }
 
             Vector3 strafeDir = (baseStrafe + avoidVector * 1.2f).normalized;
-            float strafeSpeed = 1.25f;
-
+            float strafeSpeed = 1.2f + UnityEngine.Random.Range(-0.1f, 0.15f);
             _bot.GetPlayer.CharacterController?.Move(strafeDir * strafeSpeed * deltaTime, deltaTime);
         }
 
+        #endregion
+
+        #region Combat Leaning
+
         private void TryCombatLean()
         {
-            if (_bot == null || _cache == null || _cache.Tilt == null)
-                return;
-
-            if (Time.time < _nextLeanAllowed)
+            if (_bot == null || _cache?.Tilt == null || Time.time < _nextLeanAllowed)
                 return;
 
             var personality = _cache.AIRefactoredBotOwner?.PersonalityProfile;
@@ -172,8 +202,8 @@ namespace AIRefactored.AI.Movement
             Vector3 origin = _bot.Position + Vector3.up * 1.5f;
             Vector3 left = -_bot.Transform.right;
             Vector3 right = _bot.Transform.right;
-
             float checkDist = 1.5f;
+
             bool wallLeft = Physics.Raycast(origin, left, checkDist);
             bool wallRight = Physics.Raycast(origin, right, checkDist);
 
@@ -206,26 +236,32 @@ namespace AIRefactored.AI.Movement
             _nextLeanAllowed = Time.time + LeanCooldown;
         }
 
+        #endregion
+
+        #region Combat Flanking
+
         private void TryFlankAroundEnemy()
         {
-            if (_cache == null || _bot == null || _bot.Memory?.GoalEnemy == null)
+            if (_cache == null || _bot?.Memory?.GoalEnemy == null)
                 return;
 
-            var enemy = _bot.Memory.GoalEnemy;
             Vector3 botPos = _bot.Position;
-            Vector3 enemyPos = enemy.CurrPosition;
+            Vector3 enemyPos = _bot.Memory.GoalEnemy.CurrPosition;
 
-            if (Vector3.Distance(botPos, enemyPos) < 25f)
+            if (Vector3.Distance(botPos, enemyPos) < 22f)
             {
                 if (FlankPositionPlanner.TryFindFlankPosition(botPos, enemyPos, out Vector3 flankPoint))
                 {
                     BotMovementHelper.SmoothMoveTo(_bot, flankPoint, false, 1.0f);
-
                     if (_debug)
-                        _log.LogDebug($"[AIRefactored-Movement] {_bot.Profile.Info.Nickname} flanking to {flankPoint}.");
+                        _log.LogDebug($"[AIRefactored-Movement] {_bot.Profile.Info.Nickname} flanking to {flankPoint}");
                 }
             }
         }
+
+        #endregion
+
+        #region Obstacle Awareness
 
         private void ScanAhead()
         {
@@ -237,11 +273,13 @@ namespace AIRefactored.AI.Movement
 
             if (Physics.SphereCast(origin, ScanRadius, forward, out RaycastHit hit, ScanDistance))
             {
-                if (hit.collider != null)
+                if (hit.collider != null && _bot.BotTalk != null)
                 {
-                    _bot.BotTalk?.TrySay(EPhraseTrigger.Look);
+                    _bot.BotTalk.TrySay(EPhraseTrigger.Look);
                 }
             }
         }
+
+        #endregion
     }
 }

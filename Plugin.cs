@@ -23,6 +23,9 @@ namespace AIRefactored
 
         #region Unity Lifecycle
 
+        /// <summary>
+        /// Called by BepInEx on plugin load. Initializes mod systems and Harmony patches.
+        /// </summary>
         private void Awake()
         {
             _log = Logger;
@@ -33,19 +36,22 @@ namespace AIRefactored
             else
                 _log.LogInfo("[AIRefactored] 🧠 Running in Client/Interactive mode.");
 
-            // === Core Boot ===
+            // === Core System Init ===
             AIRefactoredController.Initialize(_log);
 
-            // === Bot brain protection & attach hook ===
+            // === World & Bot Hooking ===
             GameWorldHandler.HookBotSpawns();
 
-            // === Harmony Patches ===
+            // === Harmony Patch Application ===
             _harmony = new Harmony("com.spock.airefactored");
             _harmony.PatchAll();
 
             _log.LogInfo("[AIRefactored] ✅ Initialization complete. Systems are online.");
         }
 
+        /// <summary>
+        /// Called by Unity on shutdown. Cleans up patching and detaches runtime hooks.
+        /// </summary>
         private void OnDestroy()
         {
             GameWorldHandler.UnhookBotSpawns();
@@ -59,6 +65,9 @@ namespace AIRefactored
 
         #region Public Access
 
+        /// <summary>
+        /// Provides safe access to the logger once initialized.
+        /// </summary>
         public static ManualLogSource LoggerInstance =>
             _log ?? throw new System.NullReferenceException("[AIRefactored] LoggerInstance was accessed before plugin Awake().");
 

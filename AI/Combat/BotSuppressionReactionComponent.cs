@@ -3,14 +3,16 @@
 using AIRefactored.AI.Core;
 using AIRefactored.AI.Helpers;
 using AIRefactored.AI.Optimization;
+using AIRefactored.Runtime;
+using BepInEx.Logging;
 using EFT;
 using UnityEngine;
 
 namespace AIRefactored.AI.Combat
 {
     /// <summary>
-    /// Simulates bot suppression response — evasive movement and flinch retreat under threat.
-    /// Intended to be triggered externally by audio cues or visible fire.
+    /// Handles bot suppression logic: retreat, sprint, and flinch reactions under heavy fire.
+    /// Typically invoked from vision, sound, or damage input.
     /// </summary>
     public class BotSuppressionReactionComponent
     {
@@ -24,10 +26,17 @@ namespace AIRefactored.AI.Combat
 
         private const float SuppressionDuration = 2.0f;
 
+        private static readonly ManualLogSource Logger = AIRefactoredController.Logger;
+        private static readonly bool DebugEnabled = false;
+
         #endregion
 
-        #region Init
+        #region Initialization
 
+        /// <summary>
+        /// Initializes suppression logic with required bot context.
+        /// </summary>
+        /// <param name="cache">Component cache for the bot.</param>
         public void Initialize(BotComponentCache cache)
         {
             _cache = cache;
@@ -36,20 +45,20 @@ namespace AIRefactored.AI.Combat
 
         #endregion
 
-        #region Tick Logic
+        #region Tick
 
         /// <summary>
-        /// Invoked externally by BotBrain for suppression decay.
+        /// Updates suppression state for decay/expiration.
+        /// Called periodically by BotBrain or logic tick.
         /// </summary>
+        /// <param name="now">Current time (Time.time).</param>
         public void Tick(float now)
         {
-            if (!_isSuppressed || _bot == null || !_bot.IsAI || _bot.IsDead)
+            if (!_isSuppressed || _bot == null || _bot.IsDead || !_bot.IsAI)
                 return;
 
-            if (now - _suppressionStartTime > SuppressionDuration)
-            {
+            if (now - _suppressionStartTime >= SuppressionDuration)
                 _isSuppressed = false;
-            }
         }
 
         #endregion
@@ -57,57 +66,65 @@ namespace AIRefactored.AI.Combat
         #region Suppression Triggers
 
         /// <summary>
-        /// Triggers suppression logic and evasive fallback sprinting.
+        /// Triggers suppression reaction and evasive retreat from threat direction.
         /// </summary>
+        /// <param name="from">Optional position to retreat from (e.g., bullet source).</param>
         public void TriggerSuppression(Vector3? from = null)
         {
             if (_isSuppressed || _bot == null || !_bot.IsAI || _bot.IsDead)
                 return;
 
+            if (_cache?.PanicHandler?.IsPanicking == true)
+                return;
+
             _isSuppressed = true;
             _suppressionStartTime = Time.time;
 
-            Vector3 threatDirection = from.HasValue
+            Vector3 threatDir = from.HasValue
                 ? (_bot.Position - from.Value).normalized
                 : -_bot.LookDirection.normalized;
 
-            float cohesion = 1.0f;
+            float cohesion = 1f;
             if (BotRegistry.Exists(_bot.ProfileId))
             {
-                var profile = BotRegistry.Get(_bot.ProfileId);
-                cohesion = Mathf.Clamp(profile.Cohesion, 0.5f, 1.5f);
+                cohesion = Mathf.Clamp(BotRegistry.Get(_bot.ProfileId)?.Cohesion ?? 1f, 0.5f, 1.5f);
             }
 
-            Vector3 fallback = _bot.Position + threatDirection * 6f;
+            Vector3 fallback = _bot.Position + threatDir * 6f;
 
             if (_cache?.PathCache != null)
             {
-                var path = BotCoverRetreatPlanner.GetCoverRetreatPath(_bot, threatDirection, _cache.PathCache);
+                var path = BotCoverRetreatPlanner.GetCoverRetreatPath(_bot, threatDir, _cache.PathCache);
                 if (path.Count > 0)
+                {
                     fallback = path[path.Count - 1];
+                }
             }
 
             _bot.Sprint(true);
             BotMovementHelper.SmoothMoveTo(_bot, fallback, false, cohesion);
             _bot.BotTalk?.TrySay(EPhraseTrigger.OnLostVisual);
 
-#if UNITY_EDITOR
-            Debug.DrawLine(_bot.Position, fallback, Color.red, 1.25f);
-#endif
+            if (DebugEnabled)
+                Logger.LogDebug($"[Suppression] {_bot.Profile?.Info?.Nickname ?? "Bot"} falling back to {fallback}");
         }
 
         /// <summary>
-        /// Triggers suppression from a known source location.
+        /// Reacts to suppression from a known position source.
         /// </summary>
+        /// <param name="source">World position the bot is being suppressed from.</param>
         public void ReactToSuppression(Vector3 source)
         {
             TriggerSuppression(source);
         }
 
         /// <summary>
-        /// Returns true if bot is currently suppressed.
+        /// Returns true if the bot is currently suppressed.
         /// </summary>
-        public bool IsSuppressed() => _isSuppressed;
+        public bool IsSuppressed()
+        {
+            return _isSuppressed;
+        }
 
         #endregion
     }

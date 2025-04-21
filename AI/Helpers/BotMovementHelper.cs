@@ -6,8 +6,8 @@ using UnityEngine;
 namespace AIRefactored.AI.Helpers
 {
     /// <summary>
-    /// Provides real-time, smooth movement logic for bots.
-    /// Includes pathing, strafing, and smooth look-at behaviors.
+    /// Provides real-time, smooth movement helpers for bots.
+    /// Includes pathing, strafing, and smooth aim/look-at rotation with human-like smoothing.
     /// </summary>
     public static class BotMovementHelper
     {
@@ -17,15 +17,18 @@ namespace AIRefactored.AI.Helpers
         private const float DefaultLookSpeed = 4f;
         private const float DefaultStrafeDistance = 3f;
 
-        private static readonly bool EnableDebug = false;
-
         #endregion
 
         #region Movement
 
         /// <summary>
-        /// Smoothly moves the bot toward a world position using cohesion-based buffering.
+        /// Smoothly moves the bot toward a target world-space position.
+        /// Uses cohesion-based spacing to avoid spam if already close.
         /// </summary>
+        /// <param name="bot">The bot to move.</param>
+        /// <param name="target">Target destination in world space.</param>
+        /// <param name="slow">If true, bot walks/cautious moves.</param>
+        /// <param name="cohesionScale">Optional cohesion buffer multiplier (default 1.0).</param>
         public static void SmoothMoveTo(BotOwner bot, Vector3 target, bool slow = true, float cohesionScale = 1.0f)
         {
             if (!IsEligible(bot))
@@ -34,75 +37,79 @@ namespace AIRefactored.AI.Helpers
             float buffer = DefaultRadius * Mathf.Clamp(cohesionScale, 0.7f, 1.3f);
             Vector3 position = bot.Position;
 
-            // If the bot is close enough to the target, skip movement
             if ((position - target).sqrMagnitude < buffer * buffer)
                 return;
 
-            if (EnableDebug)
-                Debug.DrawLine(position, target, Color.green, 0.1f);
-
-            // Issue the movement command with adjusted speed based on cohesion
             bot.Mover.GoToPoint(target, slow, cohesionScale);
         }
 
         /// <summary>
-        /// Smoothly rotates the bot to face a direction or target position.
-        /// Uses Slerp for human-like aim tracking.
+        /// Smoothly rotates the bot to face a given target point.
+        /// Uses Quaternion.Slerp for realistic natural turning.
         /// </summary>
+        /// <param name="bot">The bot to rotate.</param>
+        /// <param name="lookTarget">World-space position to look at.</param>
+        /// <param name="speed">Rotation speed scalar.</param>
         public static void SmoothLookTo(BotOwner bot, Vector3 lookTarget, float speed = DefaultLookSpeed)
         {
             if (!IsEligible(bot))
                 return;
 
-            Vector3 dir = lookTarget - bot.Position;
-            if (dir.sqrMagnitude < 0.01f)
+            Vector3 direction = lookTarget - bot.Position;
+            direction.y = 0f;
+
+            if (direction.sqrMagnitude < 0.01f)
                 return;
 
-            // Rotate bot smoothly towards the target using spherical interpolation
-            Quaternion targetRotation = Quaternion.LookRotation(dir.normalized, Vector3.up);
+            Quaternion targetRotation = Quaternion.LookRotation(direction.normalized, Vector3.up);
             bot.Transform.rotation = Quaternion.Slerp(bot.Transform.rotation, targetRotation, Time.deltaTime * speed);
-
-            if (EnableDebug)
-                Debug.DrawRay(bot.Position + Vector3.up * 1.5f, dir.normalized * 2f, Color.yellow, 0.05f);
         }
 
         /// <summary>
-        /// Issues a lateral movement order (strafe) away from a given direction.
+        /// Evasive lateral movement away from threat direction.
+        /// Strafes to the left/right from the perceived source of fire or aggression.
         /// </summary>
+        /// <param name="bot">The bot to strafe.</param>
+        /// <param name="threatDirection">Direction of perceived threat.</param>
+        /// <param name="scale">Scale multiplier for strafe range.</param>
         public static void SmoothStrafeFrom(BotOwner bot, Vector3 threatDirection, float scale = 1.0f)
         {
             if (!IsEligible(bot))
                 return;
 
-            // Calculate a strafe direction perpendicular to the threat direction
-            Vector3 right = Vector3.Cross(Vector3.up, threatDirection.normalized);
-            Vector3 offset = right * DefaultStrafeDistance * Mathf.Clamp(scale, 0.5f, 1.5f);
-            Vector3 strafeTarget = bot.Position + offset;
+            Vector3 strafeDir = Vector3.Cross(Vector3.up, threatDirection.normalized);
+            Vector3 strafeOffset = strafeDir * DefaultStrafeDistance * Mathf.Clamp(scale, 0.5f, 1.5f);
+            Vector3 strafeTarget = bot.Position + strafeOffset;
 
-            if (EnableDebug)
-                Debug.DrawLine(bot.Position, strafeTarget, Color.cyan, 0.1f);
-
-            // Move the bot to the calculated strafe target
-            bot.Mover.GoToPoint(strafeTarget, false, 1f); // fast movement
+            bot.Mover.GoToPoint(strafeTarget, false, 1f); // always move fast during strafe
         }
 
         #endregion
 
         #region Helpers
 
+        /// <summary>
+        /// Returns true if the bot is valid, AI-controlled, and has movement enabled.
+        /// </summary>
         private static bool IsEligible(BotOwner? bot)
         {
-            // Check if the bot is valid, not dead, and is AI-controlled
-            return bot != null && bot.Mover != null && !bot.IsDead && bot.GetPlayer?.IsAI == true;
+            return bot != null &&
+                   bot.Mover != null &&
+                   bot.GetPlayer != null &&
+                   bot.GetPlayer.IsAI &&
+                   !bot.IsDead;
         }
 
         #endregion
 
-        #region Legacy Stub
+        #region Legacy Compatibility
 
+        /// <summary>
+        /// Reserved hook for future reset logic if needed (compatibility stub).
+        /// </summary>
         public static void Reset(BotOwner bot)
         {
-            // No-op (for compatibility only)
+            // Intentionally left empty for now.
         }
 
         #endregion

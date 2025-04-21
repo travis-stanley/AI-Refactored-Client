@@ -5,12 +5,17 @@ using AIRefactored.AI.Helpers;
 using AIRefactored.AI.Memory;
 using AIRefactored.AI.Optimization;
 using AIRefactored.Core;
+using AIRefactored.Runtime;
+using BepInEx.Logging;
 using EFT;
 using System.Collections.Generic;
 using UnityEngine;
 
 namespace AIRefactored.AI.Combat
 {
+    /// <summary>
+    /// Handles bot panic behavior: suppression, flashbangs, low-health, and squad-based panic chaining.
+    /// </summary>
     public class BotPanicHandler
     {
         #region Fields
@@ -28,32 +33,52 @@ namespace AIRefactored.AI.Combat
         private const float RecoverySpeed = 0.2f;
         private const float SquadPanicRadiusSqr = 15f * 15f;
 
+        private static readonly ManualLogSource Logger = AIRefactoredController.Logger;
+
         #endregion
 
         #region Public Properties
 
+        /// <summary>
+        /// Whether the bot is currently panicking and unable to engage targets.
+        /// </summary>
         public bool IsPanicking => _isPanicking;
 
+        /// <summary>
+        /// Last known profile ID of the player that hit the bot.
+        /// </summary>
         public string? LastHitSource { get; private set; }
+
+        /// <summary>
+        /// Last known profile ID of the player that suppressed the bot.
+        /// </summary>
         public string? LastSuppressionSource { get; private set; }
 
         #endregion
 
         #region Initialization
 
+        /// <summary>
+        /// Initializes the panic handler with references and binds health damage triggers.
+        /// </summary>
         public void Initialize(BotComponentCache cache)
         {
             _cache = cache;
             _bot = cache.Bot;
 
             if (_bot?.GetPlayer?.HealthController is HealthControllerClass health)
+            {
                 health.ApplyDamageEvent += OnDamaged;
+            }
         }
 
         #endregion
 
-        #region Main Tick
+        #region Tick Logic
 
+        /// <summary>
+        /// Called every tick to update panic state and recovery.
+        /// </summary>
         public void Tick(float time)
         {
             if (!IsValid())
@@ -83,7 +108,7 @@ namespace AIRefactored.AI.Combat
 
         #endregion
 
-        #region Triggers
+        #region Panic Triggers
 
         private void OnDamaged(EBodyPart part, float damage, DamageInfoStruct info)
         {
@@ -99,6 +124,7 @@ namespace AIRefactored.AI.Combat
 
             var source = _bot.Memory?.GoalEnemy?.Person;
             LastHitSource = source?.ProfileId ?? "unknown";
+
             _cache?.LastShotTracker?.RegisterHitBy(source);
             _cache?.InjurySystem?.OnHit(part, damage);
             _cache?.GroupComms?.SayHit();
@@ -106,13 +132,14 @@ namespace AIRefactored.AI.Combat
 
         private bool ShouldTriggerPanic()
         {
-            if (!IsValid()) return false;
+            if (!IsValid())
+                return false;
 
             var profile = BotRegistry.Get(_bot!.ProfileId);
             if (profile == null || profile.IsFrenzied || profile.IsStubborn)
                 return false;
 
-            if (_cache!.FlashGrenade?.IsFlashed() == true)
+            if (_cache?.FlashGrenade?.IsFlashed() == true)
                 return true;
 
             var hp = _bot.HealthController.GetBodyPartHealth(EBodyPart.Common);
@@ -122,6 +149,7 @@ namespace AIRefactored.AI.Combat
         private bool CheckNearbySquadDanger(out Vector3 retreatDir)
         {
             retreatDir = Vector3.zero;
+
             if (string.IsNullOrEmpty(_bot?.Profile?.Info?.GroupId))
                 return false;
 
@@ -140,9 +168,16 @@ namespace AIRefactored.AI.Combat
             return false;
         }
 
+        /// <summary>
+        /// External trigger to manually induce panic behavior.
+        /// </summary>
         public void TriggerPanic()
         {
             if (!IsValid() || _isPanicking || Time.time < _lastPanicExitTime + PanicCooldown)
+                return;
+
+            var profile = BotRegistry.Get(_bot!.ProfileId);
+            if (profile == null || profile.IsFrenzied || profile.IsStubborn)
                 return;
 
             StartPanic(Time.time, -_bot!.LookDirection);
@@ -150,7 +185,7 @@ namespace AIRefactored.AI.Combat
 
         #endregion
 
-        #region Panic Start/Stop
+        #region Panic Lifecycle
 
         private void StartPanic(float now, Vector3 retreatDir)
         {
@@ -165,7 +200,7 @@ namespace AIRefactored.AI.Combat
             float cohesion = profile?.Cohesion ?? 1f;
 
             Vector3 fallback = _bot.Position + retreatDir * 8f;
-            List<Vector3> path = (_cache!.PathCache != null)
+            List<Vector3> path = (_cache?.PathCache != null)
                 ? BotCoverRetreatPlanner.GetCoverRetreatPath(_bot, retreatDir, _cache.PathCache)
                 : new List<Vector3> { fallback };
 

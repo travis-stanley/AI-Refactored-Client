@@ -11,15 +11,27 @@ namespace AIRefactored.AI.Perception
     /// </summary>
     public class TrackedEnemyVisibility
     {
+        #region Fields
+
         private readonly Transform? _botOrigin;
-
         private const float VisibilityTimeout = 0.5f;
-        private readonly Dictionary<string, BoneVisibilityInfo> _visibleBones = new(8);
 
+        private readonly Dictionary<string, BoneVisibilityInfo> _visibleBones = new Dictionary<string, BoneVisibilityInfo>(8);
+
+        #endregion
+
+        #region Constructor
+
+        /// <summary>
+        /// Creates a visibility tracker tied to the bot's vision origin.
+        /// </summary>
+        /// <param name="botOrigin">Transform of the bot's eye-level or camera root.</param>
         public TrackedEnemyVisibility(Transform botOrigin)
         {
             _botOrigin = botOrigin;
         }
+
+        #endregion
 
         #region Public API
 
@@ -37,14 +49,15 @@ namespace AIRefactored.AI.Perception
 
         /// <summary>
         /// Returns true if any tracked bone has been seen recently.
+        /// Expired entries are removed.
         /// </summary>
         public bool CanSeeAny(float now = -1f)
         {
             if (now < 0f)
                 now = Time.time;
 
-            List<string> toRemove = null!;
             bool seen = false;
+            List<string>? expired = null;
 
             foreach (var kvp in _visibleBones)
             {
@@ -54,16 +67,15 @@ namespace AIRefactored.AI.Perception
                 }
                 else
                 {
-                    if (toRemove == null)
-                        toRemove = new List<string>();
-                    toRemove.Add(kvp.Key);
+                    expired ??= new List<string>();
+                    expired.Add(kvp.Key);
                 }
             }
 
-            if (toRemove != null)
+            if (expired != null)
             {
-                for (int i = 0; i < toRemove.Count; i++)
-                    _visibleBones.Remove(toRemove[i]);
+                for (int i = 0; i < expired.Count; i++)
+                    _visibleBones.Remove(expired[i]);
             }
 
             return seen;
@@ -85,18 +97,15 @@ namespace AIRefactored.AI.Perception
 
             Vector3 origin = _botOrigin.position + Vector3.up * 1.4f;
             Vector3 target = info.WorldPosition;
-            float maxDist = Vector3.Distance(origin, target);
+            float dist = Vector3.Distance(origin, target);
 
-            if (Physics.Linecast(origin, target, out var hit))
-            {
-                return hit.collider != null && hit.distance >= maxDist - 0.15f;
-            }
-
-            return true;
+            return !Physics.Linecast(origin, target, out RaycastHit hit) ||
+                   (hit.collider != null && hit.distance >= dist - 0.15f);
         }
 
         /// <summary>
-        /// Returns the total number of bones currently exposed.
+        /// Returns the total number of bones currently exposed within the visibility timeout.
+        /// Expired entries are removed.
         /// </summary>
         public int ExposedBoneCount(float now = -1f)
         {
@@ -104,7 +113,7 @@ namespace AIRefactored.AI.Perception
                 now = Time.time;
 
             int count = 0;
-            List<string> toRemove = null!;
+            List<string>? expired = null;
 
             foreach (var kvp in _visibleBones)
             {
@@ -114,23 +123,22 @@ namespace AIRefactored.AI.Perception
                 }
                 else
                 {
-                    if (toRemove == null)
-                        toRemove = new List<string>();
-                    toRemove.Add(kvp.Key);
+                    expired ??= new List<string>();
+                    expired.Add(kvp.Key);
                 }
             }
 
-            if (toRemove != null)
+            if (expired != null)
             {
-                for (int i = 0; i < toRemove.Count; i++)
-                    _visibleBones.Remove(toRemove[i]);
+                for (int i = 0; i < expired.Count; i++)
+                    _visibleBones.Remove(expired[i]);
             }
 
             return count;
         }
 
         /// <summary>
-        /// Clears all memory (e.g., when target dies or bot resets).
+        /// Clears all bone visibility data immediately.
         /// </summary>
         public void Clear()
         {
@@ -139,7 +147,7 @@ namespace AIRefactored.AI.Perception
 
         #endregion
 
-        #region Internal Struct
+        #region Internal Types
 
         private struct BoneVisibilityInfo
         {

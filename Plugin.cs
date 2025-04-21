@@ -5,7 +5,6 @@ using AIRefactored.Runtime;
 using BepInEx;
 using BepInEx.Logging;
 using HarmonyLib;
-using UnityEngine;
 
 namespace AIRefactored
 {
@@ -37,7 +36,7 @@ namespace AIRefactored
             // === Core Boot ===
             AIRefactoredController.Initialize(_log);
 
-            // === Attach bot brains via GameWorld hook ===
+            // === Bot brain protection & attach hook ===
             GameWorldHandler.HookBotSpawns();
 
             // === Harmony Patches ===

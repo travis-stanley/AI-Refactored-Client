@@ -48,6 +48,8 @@ namespace AIRefactored.AI.Threads
         private BotLootScanner? _lootScanner;
         private BotDeadBodyScanner? _corpseScanner;
 
+        private bool _isValid;
+
         // Tick timestamps
         private float _nextPerceptionTick;
         private float _nextCombatTick;
@@ -60,7 +62,7 @@ namespace AIRefactored.AI.Threads
 
         private void Update()
         {
-            if (!IsValid())
+            if (!_isValid)
             {
                 enabled = false;
                 return;
@@ -88,7 +90,6 @@ namespace AIRefactored.AI.Threads
 
             float delta = Time.deltaTime;
 
-            // Always-realtime systems (movement must never tick-gate)
             _movement?.Tick(delta);
             _groupBehavior?.Tick(delta);
             _cornerScanner?.Tick(now);
@@ -104,13 +105,20 @@ namespace AIRefactored.AI.Threads
             _cache = new BotComponentCache();
             _cache.Initialize(bot);
 
-            if (!IsValid())
+            _isValid = _bot != null &&
+                       _player != null &&
+                       _player.IsAI &&
+                       !_player.IsYourPlayer &&
+                       !_bot.IsDead &&
+                       _cache != null;
+
+            if (!_isValid)
             {
                 enabled = false;
                 return;
             }
 
-            // === Pure logic systems ===
+            // === Core logic ===
             (_combat = new CombatStateMachine()).Initialize(_cache);
             (_mission = new BotMissionSystem()).Initialize(bot);
             (_behavior = new BotBehaviorEnhancer()).Initialize(_cache);
@@ -127,18 +135,21 @@ namespace AIRefactored.AI.Threads
             (_groupSync = new BotGroupSyncCoordinator()).Initialize(bot);
             (_tactical = new BotTacticalDeviceController()).Initialize(bot, _cache);
 
-            // === One-off components ===
             _hearingDamage = new HearingDamageComponent();
             _cornerScanner = new BotCornerScanner(bot, _cache);
             _poseController = new BotPoseController(bot, _cache);
             _tilt = _player?.GetComponent<BotTilt>() ?? new BotTilt(bot);
+
             _asyncProcessor = new BotAsyncProcessor();
             _asyncProcessor.Initialize(bot, _cache);
+
             _teamLogic = new BotTeamLogic(bot);
 
-            // === Register with scheduler (for headless tick balancing) ===
             if (FikaHeadlessDetector.IsHeadless)
                 BotWorkScheduler.RegisterBot(this);
+
+            // === Guard against overwrites ===
+            BotBrainGuardian.Enforce(_player!.gameObject);
         }
 
         public void TickPerception(float time)
@@ -165,16 +176,6 @@ namespace AIRefactored.AI.Threads
             _lootScanner?.Tick(Time.deltaTime);
             _corpseScanner?.Tick(time);
             _asyncProcessor?.Tick(time);
-        }
-
-        private bool IsValid()
-        {
-            return _bot != null &&
-                   _player != null &&
-                   _player.IsAI &&
-                   !_player.IsYourPlayer &&
-                   !_bot.IsDead &&
-                   _cache != null;
         }
     }
 }

@@ -34,9 +34,6 @@ namespace AIRefactored.Core
 
         #region Runtime Init
 
-        /// <summary>
-        /// Starts the runtime listener for bot spawning and world attach events.
-        /// </summary>
         public static void HookBotSpawns()
         {
             if (_bootstrapHost != null)
@@ -44,16 +41,16 @@ namespace AIRefactored.Core
 
             _bootstrapHost = new GameObject("AIRefactored.BootstrapHost");
             _bootstrapHost.AddComponent<WorldBootstrapper>();
-            Object.DontDestroyOnLoad(_bootstrapHost);
+            GameObject.DontDestroyOnLoad(_bootstrapHost);
 
-            Logger.LogInfo("[AIRefactored] ✅ GameWorldHandler initialized and watching for bots.");
+            Logger.LogInfo("[AIRefactored] ✅ GameWorldHandler initialized.");
         }
 
         public static void UnhookBotSpawns()
         {
             if (_bootstrapHost != null)
             {
-                Object.Destroy(_bootstrapHost);
+                GameObject.Destroy(_bootstrapHost);
                 _bootstrapHost = null;
                 Logger.LogInfo("[AIRefactored] 🔻 GameWorldHandler shut down.");
             }
@@ -148,6 +145,9 @@ namespace AIRefactored.Core
 
         private class WorldBootstrapper : MonoBehaviour
         {
+            private float _lastSweepTime = -999f;
+            private const float SweepInterval = 20f;
+
             private void Awake()
             {
                 StartCoroutine(WatchForGameWorld());
@@ -159,7 +159,7 @@ namespace AIRefactored.Core
                     yield return null;
 
                 Singleton<BotSpawner>.Instance.OnBotCreated += HandleBotCreated;
-                Logger.LogInfo("[AIRefactored] 🧠 Game world initialized. Now listening for bot spawns.");
+                Logger.LogInfo("[AIRefactored] 🧠 World bootstrapper now listening for bots.");
             }
 
             private void OnDestroy()
@@ -168,19 +168,37 @@ namespace AIRefactored.Core
                     Singleton<BotSpawner>.Instance.OnBotCreated -= HandleBotCreated;
             }
 
+            private void Update()
+            {
+                if (Time.time - _lastSweepTime > SweepInterval)
+                {
+                    EnforceBotBrains();
+                    _lastSweepTime = Time.time;
+                }
+            }
+
             private void HandleBotCreated(BotOwner bot)
             {
                 var player = bot.GetPlayer;
                 if (player == null || !player.IsAI || player.IsYourPlayer)
                     return;
 
-                if (player.gameObject.GetComponent<BotBrain>() != null)
-                    return;
+                var go = player.gameObject;
+                BotBrainGuardian.Enforce(go);
+            }
 
-                var brain = player.gameObject.AddComponent<BotBrain>();
-                brain.Initialize(bot);
+            private void EnforceBotBrains()
+            {
+                var world = Get();
+                if (world?.AllAlivePlayersList == null) return;
 
-                Logger.LogInfo($"[AIRefactored] 🤖 BotBrain attached to {bot.Profile?.Info?.Nickname ?? "unknown"}");
+                foreach (var player in world.AllAlivePlayersList)
+                {
+                    if (player == null || !player.IsAI || player.IsYourPlayer)
+                        continue;
+
+                    BotBrainGuardian.Enforce(player.gameObject);
+                }
             }
         }
 

@@ -58,5 +58,6 @@ All of my work is assisted by advanced LLMs. This saves me dev time. My mods are
 If this is something that bothers, please do not feel like you need to use my mods or support me.
 
 Thank you,
+
 Spock
 

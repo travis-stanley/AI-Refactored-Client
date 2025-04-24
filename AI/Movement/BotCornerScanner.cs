@@ -2,76 +2,71 @@
 
 using AIRefactored.AI.Core;
 using EFT;
+using System;
 using UnityEngine;
+using UnityEngine.AI;
 
 namespace AIRefactored.AI.Movement
 {
     /// <summary>
-    /// Detects corners, edges, and blind angles using raycasts.
-    /// Triggers lean or movement pauses for tactical entry into tight areas.
+    /// Scans for corners and ledges to trigger tactical lean and movement pauses.
+    /// Aggressive bots peek faster and lean sooner. Defensive bots avoid ledges and corners.
     /// </summary>
     public class BotCornerScanner
     {
         #region Constants
 
-        private const float WallCheckDistance = 1.5f;
-        private const float WallCheckHeight = 1.4f;
-        private const float PauseDuration = 0.4f;
+        private const float BaseWallCheckDistance = 1.5f;
+        private const float WallCheckHeight = 1.5f;
         private const float WallAngleThreshold = 0.7f;
-        private const float EdgeCheckDistance = 1.25f;
+        private const float BasePauseDuration = 0.4f;
         private const float EdgeRaySpacing = 0.25f;
+        private const float EdgeCheckDistance = 1.25f;
         private const float MinFallHeight = 2.2f;
+        private const float PrepCrouchTime = 0.75f;
+
+        private static readonly LayerMask CoverCheckMask =
+            LayerMask.GetMask("HighPolyCollider", "Terrain", "LowPolyCollider", "DoorLowPolyCollider");
 
         #endregion
 
         #region Fields
 
-        private readonly BotOwner _bot;
-        private readonly BotComponentCache _cache;
-        private readonly BotPersonalityProfile _personality;
-        private float _pauseUntil = 0f;
+        private BotOwner? _bot;
+        private BotComponentCache? _cache;
+        private BotPersonalityProfile? _profile;
+
+        private float _pauseUntil;
+        private float _prepCrouchUntil;
 
         #endregion
 
-        #region Constructor
+        #region Initialization
 
-        /// <summary>
-        /// Constructs a corner scanner for this bot.
-        /// </summary>
-        public BotCornerScanner(BotOwner bot, BotComponentCache cache)
+        public void Initialize(BotComponentCache cache)
         {
-            _bot = bot;
-            _cache = cache;
-            _personality = cache.AIRefactoredBotOwner?.PersonalityProfile ?? new BotPersonalityProfile();
+            _cache = cache ?? throw new ArgumentNullException(nameof(cache));
+            _bot = cache.Bot ?? throw new InvalidOperationException("Bot is null in cache.");
+            _profile = cache.AIRefactoredBotOwner?.PersonalityProfile ?? throw new InvalidOperationException("Missing personality profile.");
         }
 
         #endregion
 
-        #region Tick Logic
+        #region Public API
 
-        /// <summary>
-        /// Main logic to evaluate corner or edge checks.
-        /// </summary>
         public void Tick(float time)
         {
-            if (_bot.IsDead || _bot.Mover == null || _bot.Memory?.GoalEnemy != null)
-                return;
-
-            if (time < _pauseUntil)
-                return;
-
-            if (_personality.Caution < 0.35f && !_personality.IsSilentHunter && !_personality.IsCamper)
+            if (!IsEligible(time))
                 return;
 
             if (IsApproachingEdge())
             {
-                _cache.Tilt?.Stop();
-                _bot.Mover.MovementPause(PauseDuration);
-                _pauseUntil = time + PauseDuration;
+                _cache?.Tilt?.Stop();
+                PauseMovement(time);
                 return;
             }
 
-            if (TryScanForCornerPeek(time))
+            if (TryCornerPeekWithCrouch(time))
                 return;
 
             ResetLean(time);
@@ -79,55 +74,73 @@ namespace AIRefactored.AI.Movement
 
         #endregion
 
-        #region Core Scanning
+        #region Detection Logic
 
-        /// <summary>
-        /// Scans left and right for tight wall angles to peek.
-        /// </summary>
-        private bool TryScanForCornerPeek(float time)
+        private bool TryCornerPeekWithCrouch(float time)
         {
-            Vector3 origin = _bot.Position + Vector3.up * WallCheckHeight;
-            Vector3 left = -_bot.Transform.right;
-            Vector3 right = _bot.Transform.right;
+            if (_bot == null || _profile == null)
+                return false;
 
-            if (Physics.Raycast(origin, left, out RaycastHit hitLeft, WallCheckDistance))
+            Vector3 origin = _bot.Position + _bot.Transform.up * WallCheckHeight;
+            Vector3 right = _bot.Transform.right;
+            Vector3 left = -right;
+            float scanDistance = BaseWallCheckDistance + (1f - _profile.Caution) * 0.5f;
+
+            if (Physics.Raycast(origin, left, out var hitL, scanDistance, CoverCheckMask) &&
+                Vector3.Dot(hitL.normal, left) < WallAngleThreshold)
             {
-                if (IsAngledWall(hitLeft.normal, left))
-                {
-                    TriggerLean(BotTiltType.left, time);
+                if (AttemptCrouch(time))
                     return true;
-                }
+
+                TriggerLean(BotTiltType.left, time);
+                return true;
             }
 
-            if (Physics.Raycast(origin, right, out RaycastHit hitRight, WallCheckDistance))
+            if (Physics.Raycast(origin, right, out var hitR, scanDistance, CoverCheckMask) &&
+                Vector3.Dot(hitR.normal, right) < WallAngleThreshold)
             {
-                if (IsAngledWall(hitRight.normal, right))
-                {
-                    TriggerLean(BotTiltType.right, time);
+                if (AttemptCrouch(time))
                     return true;
-                }
+
+                TriggerLean(BotTiltType.right, time);
+                return true;
             }
 
             return false;
         }
 
-        /// <summary>
-        /// Checks directly ahead to see if bot is near a ledge.
-        /// </summary>
+        private bool AttemptCrouch(float time)
+        {
+            if (_cache?.PoseController is { } pose && pose.GetPoseLevel() > 30f)
+            {
+                pose.SetCrouch();
+                _prepCrouchUntil = time + PrepCrouchTime;
+                return true;
+            }
+
+            return false;
+        }
+
         private bool IsApproachingEdge()
         {
-            Vector3 start = _bot.Position + Vector3.up * 0.2f;
+            if (_bot == null)
+                return false;
+
+            Vector3 start = _bot.Position + _bot.Transform.up * 0.2f;
             Vector3 forward = _bot.Transform.forward;
 
-            for (float offset = -EdgeRaySpacing; offset <= EdgeRaySpacing; offset += EdgeRaySpacing)
-            {
-                Vector3 offsetDir = _bot.Transform.right * offset;
-                Vector3 origin = start + offsetDir + forward * EdgeCheckDistance;
-                Vector3 down = Vector3.down;
+            int rayCount = Mathf.CeilToInt((EdgeRaySpacing * 2f) / EdgeRaySpacing) + 1;
 
-                if (!Physics.Raycast(origin, down, MinFallHeight))
+            for (int i = 0; i < rayCount; i++)
+            {
+                float offset = (i - (rayCount - 1) / 2f) * EdgeRaySpacing;
+                Vector3 origin = start + _bot.Transform.right * offset + forward * EdgeCheckDistance;
+
+                if (!Physics.Raycast(origin, Vector3.down, MinFallHeight, CoverCheckMask))
                 {
-                    return true;
+                    // Optionally: fallback to NavMesh check to reduce false positives on stairs
+                    if (!NavMesh.SamplePosition(origin + Vector3.down * MinFallHeight, out _, 1.0f, NavMesh.AllAreas))
+                        return true;
                 }
             }
 
@@ -140,22 +153,36 @@ namespace AIRefactored.AI.Movement
 
         private void TriggerLean(BotTiltType side, float time)
         {
-            _cache.Tilt?.Set(side);
-            _pauseUntil = time + PauseDuration;
+            _cache?.Tilt?.Set(side);
+            PauseMovement(time);
+        }
+
+        private void PauseMovement(float time)
+        {
+            if (_bot == null || _profile == null)
+                return;
+
+            float duration = BasePauseDuration * (0.5f + _profile.Caution);
+            _bot.Mover.MovementPause(duration);
+            _pauseUntil = time + duration;
         }
 
         private void ResetLean(float time)
         {
-            if (_cache.Tilt != null && _cache.Tilt._coreTilt)
+            var tilt = _cache?.Tilt;
+            if (tilt != null && tilt._coreTilt)
             {
-                _cache.Tilt.tiltOff = time - 1f;
-                _cache.Tilt.ManualUpdate();
+                tilt.tiltOff = time - 1f;
+                tilt.ManualUpdate();
             }
         }
 
-        private static bool IsAngledWall(Vector3 wallNormal, Vector3 scanDir)
+        private bool IsEligible(float time)
         {
-            return Vector3.Dot(wallNormal, scanDir.normalized) < WallAngleThreshold;
+            return _bot is { IsDead: false, Mover: not null } &&
+                   time >= _pauseUntil &&
+                   time >= _prepCrouchUntil &&
+                   _bot.Memory?.GoalEnemy == null;
         }
 
         #endregion

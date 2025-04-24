@@ -7,12 +7,12 @@ using UnityEngine;
 namespace AIRefactored.AI.Helpers
 {
     /// <summary>
-    /// Runtime registry for tracking gunfire and footsteps from bots and players.
-    /// Used by AI hearing systems to simulate awareness of sound events.
+    /// Central registry for gunfire and footstep timestamps.
+    /// Bots use this for realistic hearing and directional threat modeling.
     /// </summary>
     public static class BotSoundRegistry
     {
-        #region Internal Data
+        #region Internal State
 
         private static readonly Dictionary<string, float> _shotTimestamps = new Dictionary<string, float>(64);
         private static readonly Dictionary<string, float> _footstepTimestamps = new Dictionary<string, float>(64);
@@ -22,82 +22,87 @@ namespace AIRefactored.AI.Helpers
         #region Notification API
 
         /// <summary>
-        /// Records that a shot has been fired by the given player.
+        /// Logs a gunshot for the given player if valid and AI or remote.
         /// </summary>
-        /// <param name="player">The player who fired the weapon.</param>
         public static void NotifyShot(Player? player)
         {
-            if (player == null || string.IsNullOrEmpty(player.ProfileId) || player.IsYourPlayer)
+            if (!IsTrackable(player))
                 return;
 
-            _shotTimestamps[player.ProfileId] = Time.time;
+            string profileId = player!.ProfileId;
+            _shotTimestamps[profileId] = Time.time;
         }
 
         /// <summary>
-        /// Records that a footstep sound occurred for the given player.
+        /// Logs a footstep for the given player if valid and AI or remote.
         /// </summary>
-        /// <param name="player">The player who stepped.</param>
         public static void NotifyStep(Player? player)
         {
-            if (player == null || string.IsNullOrEmpty(player.ProfileId) || player.IsYourPlayer)
+            if (!IsTrackable(player))
                 return;
 
-            _footstepTimestamps[player.ProfileId] = Time.time;
+            string profileId = player!.ProfileId;
+            _footstepTimestamps[profileId] = Time.time;
         }
 
-        #endregion
-
-        #region Query API
-
         /// <summary>
-        /// Returns true if the given player fired recently (within the specified duration).
+        /// Returns true if the player fired recently within a configurable time window.
         /// </summary>
-        /// <param name="player">The player to check.</param>
-        /// <param name="withinSeconds">Time window for "recent" in seconds.</param>
-        /// <param name="now">Current time, defaults to Time.time.</param>
-        /// <returns>True if shot occurred within the time window.</returns>
         public static bool FiredRecently(Player? player, float withinSeconds = 1.5f, float now = -1f)
         {
             if (player == null || string.IsNullOrEmpty(player.ProfileId))
                 return false;
 
-            if (now < 0f)
-                now = Time.time;
+            float lastShot;
+            if (!_shotTimestamps.TryGetValue(player.ProfileId, out lastShot))
+                return false;
 
-            return _shotTimestamps.TryGetValue(player.ProfileId, out float shotTime) &&
-                   (now - shotTime) <= withinSeconds;
+            float currentTime = (now >= 0f) ? now : Time.time;
+            return (currentTime - lastShot) <= withinSeconds;
         }
 
         /// <summary>
-        /// Returns true if the given player stepped recently (within the specified duration).
+        /// Returns true if the player stepped recently within a configurable time window.
         /// </summary>
-        /// <param name="player">The player to check.</param>
-        /// <param name="withinSeconds">Time window for "recent" in seconds.</param>
-        /// <param name="now">Current time, defaults to Time.time.</param>
-        /// <returns>True if step occurred within the time window.</returns>
         public static bool SteppedRecently(Player? player, float withinSeconds = 1.2f, float now = -1f)
         {
             if (player == null || string.IsNullOrEmpty(player.ProfileId))
                 return false;
 
-            if (now < 0f)
-                now = Time.time;
+            float lastStep;
+            if (!_footstepTimestamps.TryGetValue(player.ProfileId, out lastStep))
+                return false;
 
-            return _footstepTimestamps.TryGetValue(player.ProfileId, out float stepTime) &&
-                   (now - stepTime) <= withinSeconds;
+            float currentTime = (now >= 0f) ? now : Time.time;
+            return (currentTime - lastStep) <= withinSeconds;
         }
 
         #endregion
 
-        #region Maintenance
+        #region Maintenance API
 
         /// <summary>
-        /// Clears all tracked shot and footstep data. Call on session reset or cleanup.
+        /// Clears all tracked sound data. Should be called on map unload or session reset.
         /// </summary>
         public static void Clear()
         {
             _shotTimestamps.Clear();
             _footstepTimestamps.Clear();
+        }
+
+        #endregion
+
+        #region Helpers
+
+        /// <summary>
+        /// Determines if the player is a valid target for auditory memory.
+        /// Skips your player and null cases.
+        /// </summary>
+        private static bool IsTrackable(Player? player)
+        {
+            return player != null &&
+                   !player.IsYourPlayer &&
+                   !string.IsNullOrEmpty(player.ProfileId);
         }
 
         #endregion

@@ -3,18 +3,18 @@
 using AIRefactored.AI.Core;
 using AIRefactored.AI.Helpers;
 using AIRefactored.AI.Optimization;
-using AIRefactored.Runtime;
-using BepInEx.Logging;
 using EFT;
+using System;
+using System.Collections.Generic;
 using UnityEngine;
 
 namespace AIRefactored.AI.Combat
 {
     /// <summary>
-    /// Handles bot suppression logic: retreat, sprint, and flinch reactions under heavy fire.
-    /// Typically invoked from vision, sound, or damage input.
+    /// Handles bot suppression logic, including flinch, sprint retreat, and composure effects.
+    /// Suppression is triggered by incoming fire, sound cues, or visual threats.
     /// </summary>
-    public class BotSuppressionReactionComponent
+    public sealed class BotSuppressionReactionComponent
     {
         #region Fields
 
@@ -22,25 +22,22 @@ namespace AIRefactored.AI.Combat
         private BotComponentCache? _cache;
 
         private float _suppressionStartTime = -99f;
-        private bool _isSuppressed = false;
+        private bool _isSuppressed;
 
         private const float SuppressionDuration = 2.0f;
-
-        private static readonly ManualLogSource Logger = AIRefactoredController.Logger;
-        private static readonly bool DebugEnabled = false;
+        private const float MinSuppressionRetreatDistance = 6f;
 
         #endregion
 
         #region Initialization
 
         /// <summary>
-        /// Initializes suppression logic with required bot context.
+        /// Initializes the suppression logic with required bot cache and context.
         /// </summary>
-        /// <param name="cache">Component cache for the bot.</param>
         public void Initialize(BotComponentCache cache)
         {
-            _cache = cache;
-            _bot = cache.Bot;
+            _cache = cache ?? throw new ArgumentNullException(nameof(cache));
+            _bot = cache.Bot ?? throw new ArgumentNullException(nameof(cache.Bot));
         }
 
         #endregion
@@ -48,13 +45,11 @@ namespace AIRefactored.AI.Combat
         #region Tick
 
         /// <summary>
-        /// Updates suppression state for decay/expiration.
-        /// Called periodically by BotBrain or logic tick.
+        /// Updates suppression state and clears expired flags.
         /// </summary>
-        /// <param name="now">Current time (Time.time).</param>
         public void Tick(float now)
         {
-            if (!_isSuppressed || _bot == null || _bot.IsDead || !_bot.IsAI)
+            if (!_isSuppressed || !IsValid())
                 return;
 
             if (now - _suppressionStartTime >= SuppressionDuration)
@@ -63,67 +58,80 @@ namespace AIRefactored.AI.Combat
 
         #endregion
 
-        #region Suppression Triggers
+        #region Suppression Logic
 
         /// <summary>
-        /// Triggers suppression reaction and evasive retreat from threat direction.
+        /// Triggers bot suppression behavior, causing panic-based fallback with cohesion.
+        /// Skips suppression if bot is already suppressed or panicking.
         /// </summary>
-        /// <param name="from">Optional position to retreat from (e.g., bullet source).</param>
+        /// <param name="from">Optional position of incoming fire or danger.</param>
         public void TriggerSuppression(Vector3? from = null)
         {
-            if (_isSuppressed || _bot == null || !_bot.IsAI || _bot.IsDead)
-                return;
-
-            if (_cache?.PanicHandler?.IsPanicking == true)
+            if (!IsValid() || _isSuppressed || _cache?.PanicHandler?.IsPanicking == true)
                 return;
 
             _isSuppressed = true;
             _suppressionStartTime = Time.time;
 
-            Vector3 threatDir = from.HasValue
-                ? (_bot.Position - from.Value).normalized
-                : -_bot.LookDirection.normalized;
+            Vector3 retreatDir = from.HasValue
+                ? (_bot!.Position - from.Value).normalized
+                : -_bot!.LookDirection.normalized;
 
-            float cohesion = 1f;
-            if (BotRegistry.Exists(_bot.ProfileId))
-            {
-                cohesion = Mathf.Clamp(BotRegistry.Get(_bot.ProfileId)?.Cohesion ?? 1f, 0.5f, 1.5f);
-            }
-
-            Vector3 fallback = _bot.Position + threatDir * 6f;
-
-            if (_cache?.PathCache != null)
-            {
-                var path = BotCoverRetreatPlanner.GetCoverRetreatPath(_bot, threatDir, _cache.PathCache);
-                if (path.Count > 0)
-                {
-                    fallback = path[path.Count - 1];
-                }
-            }
+            Vector3 fallback = CalculateFallback(retreatDir);
+            float cohesion = BotRegistry.Get(_bot.ProfileId)?.Cohesion ?? 1f;
 
             _bot.Sprint(true);
             BotMovementHelper.SmoothMoveTo(_bot, fallback, false, cohesion);
-            _bot.BotTalk?.TrySay(EPhraseTrigger.OnLostVisual);
 
-            if (DebugEnabled)
-                Logger.LogDebug($"[Suppression] {_bot.Profile?.Info?.Nickname ?? "Bot"} falling back to {fallback}");
+            _cache?.PanicHandler?.TriggerPanic();
+            _bot.BotTalk?.TrySay(EPhraseTrigger.OnLostVisual);
         }
 
         /// <summary>
-        /// Reacts to suppression from a known position source.
+        /// Direct reaction wrapper for suppression from a known source.
         /// </summary>
-        /// <param name="source">World position the bot is being suppressed from.</param>
         public void ReactToSuppression(Vector3 source)
         {
             TriggerSuppression(source);
         }
 
         /// <summary>
-        /// Returns true if the bot is currently suppressed.
+        /// Returns true if the bot is actively suppressed.
         /// </summary>
         public bool IsSuppressed()
         {
             return _isSuppressed;
+        }
+
+        #endregion
+
+        #region Helpers
+
+        private Vector3 CalculateFallback(Vector3 retreatDir)
+        {
+            Vector3 fallback = _bot!.Position + retreatDir * MinSuppressionRetreatDistance;
+
+            if (_cache?.PathCache != null)
+            {
+                List<Vector3> path = BotCoverRetreatPlanner.GetCoverRetreatPath(_bot, retreatDir, _cache.PathCache);
+                if (path.Count > 0)
+                {
+                    fallback = Vector3.Distance(path[0], _bot.Position) < 1f && path.Count > 1
+                        ? path[1]
+                        : path[0];
+                }
+            }
+
+            return fallback;
+        }
+
+        private bool IsValid()
+        {
+            return _bot != null &&
+                   _cache != null &&
+                   !_bot.IsDead &&
+                   _bot.GetPlayer != null &&
+                   _bot.GetPlayer.IsAI;
         }
 
         #endregion

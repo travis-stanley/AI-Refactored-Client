@@ -1,18 +1,22 @@
 ﻿#nullable enable
 
-using AIRefactored.Runtime;
-using BepInEx.Logging;
 using EFT;
 using UnityEngine;
 
 namespace AIRefactored.AI.Combat
 {
     /// <summary>
-    /// Tracks who the bot last shot and who last shot them.
-    /// Enables memory-based targeting, suppression, and fallback logic.
+    /// Tracks recent shot and hit interactions for a bot.
+    /// Used to inform suppression, retaliation, and fallback logic.
     /// </summary>
-    public class BotLastShotTracker
+    public sealed class BotLastShotTracker
     {
+        #region Constants
+
+        private const float DefaultMemoryWindow = 10f;
+
+        #endregion
+
         #region Fields
 
         private string? _lastTargetId;
@@ -21,89 +25,83 @@ namespace AIRefactored.AI.Combat
         private string? _lastAttackerId;
         private float _lastHitTime;
 
-        private const float MemoryWindow = 10f;
-
-        private static readonly ManualLogSource Logger = AIRefactoredController.Logger;
-
         #endregion
 
-        #region Public API
+        #region Shot Tracking
 
         /// <summary>
-        /// Registers a shot fired by this bot toward a target.
+        /// Records a shot fired by this bot at a target.
         /// </summary>
-        /// <param name="target">The player that was targeted.</param>
+        /// <param name="target">The player this bot fired at.</param>
         public void RegisterShot(IPlayer? target)
         {
-            if (target?.ProfileId == null)
+            if (target == null || string.IsNullOrEmpty(target.ProfileId))
                 return;
 
             _lastTargetId = target.ProfileId;
             _lastShotTime = Time.time;
-
-            // Logger.LogDebug($"[ShotTracker] Fired at {target.ProfileId}");
         }
 
         /// <summary>
-        /// Registers a hit received by this bot from an attacker.
+        /// Returns true if the bot shot at this profile recently.
         /// </summary>
-        /// <param name="attacker">The player who hit the bot.</param>
+        /// <param name="profileId">Target profile ID.</param>
+        /// <param name="now">Optional override for current time.</param>
+        /// <param name="memoryWindow">Duration to remember the event.</param>
+        public bool DidRecentlyShoot(string profileId, float now = -1f, float memoryWindow = DefaultMemoryWindow)
+        {
+            if (string.IsNullOrEmpty(_lastTargetId) || _lastTargetId != profileId)
+                return false;
+
+            float currentTime = now >= 0f ? now : Time.time;
+            return (currentTime - _lastShotTime) <= memoryWindow;
+        }
+
+        #endregion
+
+        #region Hit Tracking
+
+        /// <summary>
+        /// Records that this bot was hit by a player.
+        /// </summary>
+        /// <param name="attacker">The player who hit this bot.</param>
         public void RegisterHitBy(IPlayer? attacker)
         {
-            if (attacker?.ProfileId == null)
+            if (attacker == null || string.IsNullOrEmpty(attacker.ProfileId))
                 return;
 
             _lastAttackerId = attacker.ProfileId;
             _lastHitTime = Time.time;
-
-            // Logger.LogDebug($"[ShotTracker] Hit by {attacker.ProfileId}");
         }
 
         /// <summary>
-        /// Returns true if the bot was recently hit by the specified player.
+        /// Returns true if the attacker hit this bot within the memory window.
         /// </summary>
-        /// <param name="profileId">The attacker's profile ID.</param>
-        /// <param name="now">Optional override of current time (useful for testing).</param>
-        /// <returns>True if attacker is recent.</returns>
-        public bool WasRecentlyShotBy(string profileId, float now = -1f)
+        /// <param name="profileId">Attacker profile ID.</param>
+        /// <param name="now">Optional override for current time.</param>
+        /// <param name="memoryWindow">Duration to remember the event.</param>
+        public bool WasRecentlyShotBy(string profileId, float now = -1f, float memoryWindow = DefaultMemoryWindow)
         {
-            if (_lastAttackerId != profileId)
+            if (string.IsNullOrEmpty(_lastAttackerId) || _lastAttackerId != profileId)
                 return false;
 
-            if (now < 0f)
-                now = Time.time;
-
-            return (now - _lastHitTime) <= MemoryWindow;
+            float currentTime = now >= 0f ? now : Time.time;
+            return (currentTime - _lastHitTime) <= memoryWindow;
         }
 
-        /// <summary>
-        /// Returns true if the bot recently shot at the specified player.
-        /// </summary>
-        /// <param name="profileId">The target's profile ID.</param>
-        /// <param name="now">Optional override of current time (useful for testing).</param>
-        /// <returns>True if target is recent.</returns>
-        public bool DidRecentlyShoot(string profileId, float now = -1f)
-        {
-            if (_lastTargetId != profileId)
-                return false;
+        #endregion
 
-            if (now < 0f)
-                now = Time.time;
-
-            return (now - _lastShotTime) <= MemoryWindow;
-        }
+        #region Maintenance
 
         /// <summary>
-        /// Clears all memory of recent shots and hits.
+        /// Clears the memory of shots and hits.
         /// </summary>
         public void Reset()
         {
             _lastTargetId = null;
-            _lastAttackerId = null;
             _lastShotTime = 0f;
+            _lastAttackerId = null;
             _lastHitTime = 0f;
-
-            // Logger.LogDebug("[ShotTracker] Memory reset.");
         }
 
         #endregion

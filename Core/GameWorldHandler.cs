@@ -1,110 +1,213 @@
 ﻿#nullable enable
 
 using AIRefactored.AI.Hotspots;
+using AIRefactored.AI.Looting;
+using AIRefactored.AI.Optimization;
 using AIRefactored.AI.Threads;
+using AIRefactored.Bootstrap;
 using AIRefactored.Runtime;
 using BepInEx.Logging;
 using Comfort.Common;
 using EFT;
-using System.Collections;
 using System.Collections.Generic;
+using System.Linq;
 using UnityEngine;
 
 namespace AIRefactored.Core
 {
     /// <summary>
-    /// Provides safe access to ClientGameWorld data: player location, map name, and squad proximity.
-    /// Manages runtime AIRefactored bootstrap, bot brain enforcement, and world-level system initialization.
+    /// Provides access to ClientGameWorld bots, squad checks, map info, and runtime bootstrap systems.
+    /// Fully player-independent. BotBrain is strictly limited to AI players only.
     /// </summary>
     public static class GameWorldHandler
     {
         #region Fields
 
-        private static Vector3 _cachedPlayerPosition = Vector3.zero;
-        private static float _lastUpdateTime = -1f;
-        private const float CacheRefreshRate = 0.1f;
-
         private static GameObject? _bootstrapHost;
-        private static readonly bool _debug = false;
+        private static readonly ManualLogSource Logger = AIRefactoredController.Logger;
+        private static readonly HashSet<int> KnownDeadBotIds = new(64);
+        private static float _lastCleanupTime = -999f;
+        private static bool _hasBootstrapped;
+        private static bool _hasWarnedNoWorld;
 
-        private static ManualLogSource Logger => AIRefactoredController.Logger;
+        private const float DeadCleanupInterval = 10f;
 
         private static ClientGameWorld? CachedWorld =>
             Singleton<ClientGameWorld>.Instantiated ? Singleton<ClientGameWorld>.Instance : null;
 
         #endregion
 
-        #region Runtime Initialization
+        #region Runtime Bootstrap
 
-        /// <summary>
-        /// Begins watching for world load and initializes world-level AI systems.
-        /// </summary>
+        public static void TryInitializeWorld()
+        {
+            if (_hasBootstrapped)
+                return;
+
+            var world = CachedWorld;
+
+            if (world == null)
+            {
+                if (!_hasWarnedNoWorld)
+                {
+                    Logger.LogWarning("[GameWorldHandler] ⚠ GameWorld is null — host may not have finished loading.");
+                    _hasWarnedNoWorld = true;
+                }
+                return;
+            }
+
+            if (world.AllAlivePlayersList == null)
+            {
+                if (!_hasWarnedNoWorld)
+                {
+                    Logger.LogWarning("[GameWorldHandler] ⚠ Player list is null — world not ready.");
+                    _hasWarnedNoWorld = true;
+                }
+                return;
+            }
+
+            _hasWarnedNoWorld = false;
+
+            HookBotSpawns();
+            _hasBootstrapped = true;
+        }
+
         public static void HookBotSpawns()
         {
             if (_bootstrapHost != null)
                 return;
 
             _bootstrapHost = new GameObject("AIRefactored.BootstrapHost");
+            Object.DontDestroyOnLoad(_bootstrapHost);
+
             _bootstrapHost.AddComponent<WorldBootstrapper>();
-            GameObject.DontDestroyOnLoad(_bootstrapHost);
+            if (FikaHeadlessDetector.IsHeadless)
+                _bootstrapHost.AddComponent<BotWorkGroupDispatcher>();
 
             Logger.LogInfo("[AIRefactored] ✅ GameWorldHandler initialized.");
         }
 
-        /// <summary>
-        /// Removes world-level hooks and cleanup logic.
-        /// </summary>
         public static void UnhookBotSpawns()
         {
             if (_bootstrapHost != null)
             {
-                GameObject.Destroy(_bootstrapHost);
+                Object.Destroy(_bootstrapHost);
                 _bootstrapHost = null;
-                HotspotLoader.Reset();
+            }
 
-                Logger.LogInfo("[AIRefactored] 🔻 GameWorldHandler shut down.");
+            HotspotRegistry.Clear();
+            LootRegistry.Clear();
+            _hasBootstrapped = false;
+            _hasWarnedNoWorld = false;
+
+            Logger.LogInfo("[GameWorldHandler] 🔻 GameWorldHandler shut down.");
+        }
+
+        #endregion
+
+        #region Bot AI Injection
+
+        public static void TryAttachBotBrain(BotOwner bot)
+        {
+            var player = bot.GetPlayer;
+            if (player == null || !player.IsAI || bot.IsDead)
+                return;
+
+            if (player.gameObject == null)
+                return;
+
+            BotBrainGuardian.Enforce(player.gameObject);
+
+            if (player.gameObject.GetComponent<BotBrain>() != null)
+                return;
+
+            var brain = player.gameObject.AddComponent<BotBrain>();
+            brain.Initialize(bot);
+        }
+
+        public static void EnforceBotBrains()
+        {
+            var world = CachedWorld;
+            if (world?.AllAlivePlayersList == null)
+                return;
+
+            for (int i = 0; i < world.AllAlivePlayersList.Count; i++)
+            {
+                var player = world.AllAlivePlayersList[i];
+                if (player != null && player.IsAI && player.gameObject != null)
+                {
+                    BotBrainGuardian.Enforce(player.gameObject);
+                }
             }
         }
 
         #endregion
 
-        #region Game World Accessors
+        #region Death Cleanup
 
-        public static ClientGameWorld? Get() => CachedWorld;
+        public static void CleanupDeadBotsSmoothly()
+        {
+            if (Time.time - _lastCleanupTime < DeadCleanupInterval)
+                return;
+
+            _lastCleanupTime = Time.time;
+            var world = CachedWorld;
+            if (world?.AllAlivePlayersList == null)
+                return;
+
+            for (int i = 0; i < world.AllAlivePlayersList.Count; i++)
+            {
+                var player = world.AllAlivePlayersList[i];
+                if (player == null || !player.IsAI)
+                    continue;
+
+                if (player.HealthController?.IsAlive == false)
+                {
+                    int id = player.GetInstanceID();
+                    if (!KnownDeadBotIds.Contains(id))
+                    {
+                        KnownDeadBotIds.Add(id);
+
+                        if (player.gameObject != null)
+                        {
+                            player.gameObject.SetActive(false);
+                            Object.Destroy(player.gameObject, 3f);
+                        }
+
+                        Logger.LogDebug($"[GameWorldHandler] 🧹 Cleaned up dead bot {player.Profile?.Info?.Nickname ?? "Unknown"}.");
+                    }
+                }
+            }
+        }
+
+        #endregion
+
+        #region Map Name Resolution (LocationSettingsClass)
 
         public static string GetCurrentMapName()
         {
-            if (CachedWorld?.MainPlayer == null)
-                return "unknown";
+            var locationSettings = Singleton<LocationSettingsClass>.Instance;
 
-            return CachedWorld.MainPlayer.Location ?? "unknown";
-        }
-
-        public static bool TryGetMainPlayerPosition(out Vector3 position, float refreshRate = CacheRefreshRate)
-        {
-            position = Vector3.zero;
-            var player = CachedWorld?.MainPlayer;
-            if (player == null || !player.HealthController.IsAlive)
-                return false;
-
-            if (Time.time - _lastUpdateTime > refreshRate)
+            if (locationSettings != null && locationSettings.locations != null)
             {
-                _cachedPlayerPosition = player.Transform.position;
-                _lastUpdateTime = Time.time;
-
-                if (_debug)
-                    Logger.LogDebug($"[GameWorldHandler] Cached main player position: {_cachedPlayerPosition}");
+                foreach (var kvp in locationSettings.locations)
+                {
+                    if (kvp.Value.Enabled &&
+                        LocationSettingsClass.Location.AvailableMaps.Contains(kvp.Key))
+                    {
+                        return kvp.Key.ToLowerInvariant(); // Scene-safe ID
+                    }
+                }
             }
 
-            position = _cachedPlayerPosition;
-            return true;
+            return "unknown";
         }
 
-        public static float DistanceToMainPlayer(Vector3 worldPos) =>
-            TryGetMainPlayerPosition(out var mainPos) ? Vector3.Distance(worldPos, mainPos) : float.MaxValue;
+        #endregion
 
-        public static bool IsWithinPlayerRange(Vector3 position, float range) =>
-            DistanceToMainPlayer(position) <= range;
+        #region Player Accessors
+
+        public static ClientGameWorld? Get() => CachedWorld;
 
         public static List<Player> GetAllAlivePlayers()
         {
@@ -123,13 +226,44 @@ namespace AIRefactored.Core
             return result;
         }
 
+        public static List<Player> GetAllHumanPlayers()
+        {
+            var result = new List<Player>();
+            var world = CachedWorld;
+            if (world?.AllAlivePlayersList == null)
+                return result;
+
+            for (int i = 0; i < world.AllAlivePlayersList.Count; i++)
+            {
+                var p = world.AllAlivePlayersList[i];
+                if (p != null && p.AIData == null && p.HealthController?.IsAlive == true)
+                    result.Add(p);
+            }
+
+            return result;
+        }
+
+        public static float GetNearestHumanPlayerDistance(Vector3 position)
+        {
+            float closest = float.MaxValue;
+            var humans = GetAllHumanPlayers();
+
+            for (int i = 0; i < humans.Count; i++)
+            {
+                float dist = Vector3.Distance(humans[i].Position, position);
+                if (dist < closest)
+                    closest = dist;
+            }
+
+            return closest;
+        }
+
         public static bool IsNearRealPlayer(Vector3 position, float radius)
         {
-            var players = GetAllAlivePlayers();
-            for (int i = 0; i < players.Count; i++)
+            var humans = GetAllHumanPlayers();
+            for (int i = 0; i < humans.Count; i++)
             {
-                var p = players[i];
-                if (!p.IsAI && Vector3.Distance(p.Position, position) <= radius)
+                if (Vector3.Distance(humans[i].Position, position) <= radius)
                     return true;
             }
 
@@ -141,12 +275,18 @@ namespace AIRefactored.Core
             if (string.IsNullOrEmpty(groupId))
                 return false;
 
-            var players = GetAllAlivePlayers();
-            for (int i = 0; i < players.Count; i++)
+            var world = CachedWorld;
+            if (world?.AllAlivePlayersList == null)
+                return false;
+
+            for (int i = 0; i < world.AllAlivePlayersList.Count; i++)
             {
-                var p = players[i];
+                var p = world.AllAlivePlayersList[i];
+                if (p == null || !p.IsAI || p.HealthController?.IsAlive != true)
+                    continue;
+
                 if (p.Profile?.Info?.GroupId == groupId &&
-                    Vector3.Distance(p.Transform.position, position) <= radius)
+                    Vector3.Distance(p.Position, position) <= radius)
                 {
                     return true;
                 }
@@ -157,79 +297,21 @@ namespace AIRefactored.Core
 
         #endregion
 
-        #region Embedded MonoBootstrapper
+        #region System Refresh
 
-        private class WorldBootstrapper : MonoBehaviour
+        public static void RefreshLootRegistry()
         {
-            private float _lastSweepTime = -999f;
-            private const float SweepInterval = 20f;
-
-            private void Awake()
-            {
-                StartCoroutine(WatchForGameWorld());
-            }
-
-            private IEnumerator WatchForGameWorld()
-            {
-                while (Singleton<BotSpawner>.Instance == null || Singleton<GameWorld>.Instance == null)
-                    yield return null;
-
-                Singleton<BotSpawner>.Instance.OnBotCreated += HandleBotCreated;
-
-                Logger.LogInfo("[AIRefactored] 🧠 World bootstrapper now listening for bots.");
-
-                InitializeWorldLevelSystems();
-            }
-
-            private void OnDestroy()
-            {
-                if (Singleton<BotSpawner>.Instantiated)
-                    Singleton<BotSpawner>.Instance.OnBotCreated -= HandleBotCreated;
-            }
-
-            private void Update()
-            {
-                if (Time.time - _lastSweepTime > SweepInterval)
-                {
-                    EnforceBotBrains();
-                    _lastSweepTime = Time.time;
-                }
-            }
-
-            private void HandleBotCreated(BotOwner bot)
-            {
-                var player = bot.GetPlayer;
-                if (player == null || !player.IsAI || player.IsYourPlayer)
-                    return;
-
-                BotBrainGuardian.Enforce(player.gameObject);
-            }
-
-            private void EnforceBotBrains()
-            {
-                var world = Get();
-                if (world?.AllAlivePlayersList == null)
-                    return;
-
-                for (int i = 0; i < world.AllAlivePlayersList.Count; i++)
-                {
-                    var player = world.AllAlivePlayersList[i];
-                    if (player != null && player.IsAI && !player.IsYourPlayer)
-                        BotBrainGuardian.Enforce(player.gameObject);
-                }
-            }
-
-            /// <summary>
-            /// Initializes all world-level AIRefactored systems once the map is fully loaded.
-            /// </summary>
-            private void InitializeWorldLevelSystems()
-            {
-                HotspotLoader.Reset();
-                HotspotLoader.LoadCurrentMap();
-
-                Logger.LogInfo("[AIRefactored] 🌐 World-level AI systems initialized.");
-            }
+            Logger.LogInfo("[GameWorldHandler] 🔄 Refreshing loot registries...");
+            LootRegistry.Clear();
+            LootBootstrapper.RegisterAllLoot();
+            BotDeadBodyScanner.ScanAll();
         }
+
+        #endregion
+
+        #region State Access
+
+        public static bool IsInitialized => _hasBootstrapped;
 
         #endregion
     }

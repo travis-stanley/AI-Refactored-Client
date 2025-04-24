@@ -5,39 +5,47 @@ using EFT;
 namespace AIRefactored.AI.Helpers
 {
     /// <summary>
-    /// Provides helper functions for detecting recent sound activity like gunfire or footsteps
-    /// from nearby AI or player entities. Used by the bot hearing system for auditory awareness.
+    /// Sound-based awareness utilities for bots.
+    /// Filters audio events based on recency and friend-or-foe logic.
     /// </summary>
     public static class BotSoundUtils
     {
         /// <summary>
-        /// Returns true if the specified player fired a weapon recently.
-        /// Relies on timestamps recorded in the BotSoundRegistry.
+        /// Determines if a non-teammate fired recently (e.g., gunshot detection).
         /// </summary>
-        /// <param name="player">Player to check.</param>
-        /// <param name="recentThreshold">Seconds to look back for recent fire.</param>
-        /// <param name="now">Optional current time override (use Time.time by default).</param>
-        public static bool DidFireRecently(Player? player, float recentThreshold = 1.5f, float now = -1f)
+        public static bool DidFireRecently(BotOwner self, Player? player, float recentThreshold = 1.5f, float now = -1f)
         {
-            if (player == null || player.IsYourPlayer || !player.IsAI || string.IsNullOrEmpty(player.ProfileId))
-                return false;
-
-            return BotSoundRegistry.FiredRecently(player, recentThreshold, now);
+            return IsValidSoundSource(self, player) &&
+                   BotSoundRegistry.FiredRecently(player, recentThreshold, now);
         }
 
         /// <summary>
-        /// Returns true if the specified player made a footstep sound recently.
-        /// Relies on timestamps recorded in the BotSoundRegistry.
+        /// Determines if a non-teammate stepped recently (e.g., footstep detection).
         /// </summary>
-        /// <param name="player">Player to check.</param>
-        /// <param name="recentThreshold">Seconds to look back for footstep detection.</param>
-        /// <param name="now">Optional current time override (use Time.time by default).</param>
-        public static bool DidStepRecently(Player? player, float recentThreshold = 1.5f, float now = -1f)
+        public static bool DidStepRecently(BotOwner self, Player? player, float recentThreshold = 1.2f, float now = -1f)
         {
-            if (player == null || player.IsYourPlayer || !player.IsAI || string.IsNullOrEmpty(player.ProfileId))
+            return IsValidSoundSource(self, player) &&
+                   BotSoundRegistry.SteppedRecently(player, recentThreshold, now);
+        }
+
+        /// <summary>
+        /// Returns true if the sound-emitting player is a valid target (not self or teammate, and not a human).
+        /// </summary>
+        private static bool IsValidSoundSource(BotOwner self, Player? player)
+        {
+            if (player == null || player.AIData == null || self.GetPlayer == null)
                 return false;
 
-            return BotSoundRegistry.SteppedRecently(player, recentThreshold, now);
+            if (player == self.GetPlayer)
+                return false;
+
+            string? selfGroupId = self.Profile?.Info?.GroupId;
+            string? sourceGroupId = player.Profile?.Info?.GroupId;
+
+            if (!string.IsNullOrEmpty(selfGroupId) && selfGroupId == sourceGroupId)
+                return false;
+
+            return true;
         }
     }
 }

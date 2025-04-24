@@ -1,64 +1,73 @@
 ﻿#nullable enable
 
+using AIRefactored.AI.Core;
 using AIRefactored.AI.Helpers;
+using AIRefactored.AI.Optimization;
 using EFT;
 using UnityEngine;
 
 namespace AIRefactored.AI.Memory
 {
     /// <summary>
-    /// Extension methods for enhancing bot memory, tactical transitions, auditory reactions, and search behaviors.
+    /// Tactical extensions for BotOwner memory and behavior.
+    /// Provides smart fallback, perception updates, state toggles, and auditory reactions.
     /// </summary>
     public static class BotMemoryExtensions
     {
         #region Tactical Movement
 
         /// <summary>
-        /// Moves the bot to a fallback position if not panicking or invalid.
+        /// Sends the bot to a fallback position if valid and not currently panicking.
         /// </summary>
+        /// <param name="bot">The bot requesting fallback movement.</param>
+        /// <param name="fallbackPosition">The target fallback position.</param>
         public static void FallbackTo(this BotOwner bot, Vector3 fallbackPosition)
         {
-            if (!IsValid(bot) || fallbackPosition.sqrMagnitude < 0.5f)
+            if (bot == null || fallbackPosition.sqrMagnitude < 0.5f)
                 return;
 
-            var cache = BotCacheUtility.GetCache(bot);
-            if (cache?.PanicHandler?.IsPanicking == true)
+            BotComponentCache? cache = BotCacheUtility.GetCache(bot);
+            if (cache == null)
                 return;
 
-            BotMovementHelper.SmoothMoveTo(bot, fallbackPosition, true, 1f);
+            var panicHandler = cache.PanicHandler;
+            if (panicHandler != null && panicHandler.IsPanicking)
+                return;
+
+            BotMovementHelper.SmoothMoveTo(bot, fallbackPosition);
         }
 
-        /// <summary>
-        /// Forces the bot to move to the target position regardless of panic or other states.
-        /// </summary>
+
         public static void ForceMoveTo(this BotOwner bot, Vector3 position)
         {
             if (!IsValid(bot) || position.sqrMagnitude < 0.5f)
                 return;
 
-            BotMovementHelper.SmoothMoveTo(bot, position, true, 1f);
+            BotMovementHelper.SmoothMoveTo(bot, position);
         }
 
-        /// <summary>
-        /// If current cover is exposed and the enemy is visible, the bot will reposition.
-        /// </summary>
         public static void ReevaluateCurrentCover(this BotOwner bot)
         {
-            if (!IsValid(bot) || bot.Memory?.GoalEnemy == null)
+            if (!IsValid(bot))
                 return;
 
-            var enemy = bot.Memory.GoalEnemy;
-            if (!enemy.IsVisible)
+            if (bot.Memory == null || bot.Memory.GoalEnemy == null || !bot.Memory.GoalEnemy.IsVisible)
                 return;
 
-            Vector3 toEnemy = enemy.CurrPosition - bot.Position;
-            float angle = Vector3.Angle(bot.LookDirection, toEnemy);
+            Vector3 toEnemy = bot.Memory.GoalEnemy.CurrPosition - bot.Position;
+            if (toEnemy.sqrMagnitude < 1f)
+                return;
 
+            float angle = Vector3.Angle(bot.LookDirection, toEnemy.normalized);
             if (angle < 20f && toEnemy.sqrMagnitude < 625f)
             {
                 Vector3 fallback = bot.Position - toEnemy.normalized * 5f;
-                BotMovementHelper.SmoothMoveTo(bot, fallback, true, 1f);
-                bot.BotTalk?.TrySay(EPhraseTrigger.OnLostVisual);
+                Vector3? navBased = HybridFallbackResolver.GetBestRetreatPoint(bot, toEnemy);
+                Vector3 destination = navBased.HasValue ? AlignY(navBased.Value, bot.Position.y) : fallback;
+
+                BotMovementHelper.SmoothMoveTo(bot, destination);
+                if (bot.BotTalk != null)
+                    bot.BotTalk.TrySay(EPhraseTrigger.OnLostVisual);
             }
         }
 
@@ -66,9 +75,6 @@ namespace AIRefactored.AI.Memory
 
         #region Behavior Mode Flags
 
-        /// <summary>
-        /// Puts the bot in a cautious search state without immediate attack.
-        /// </summary>
         public static void SetCautiousSearchMode(this BotOwner bot)
         {
             if (!IsValid(bot) || bot.Memory == null)
@@ -78,9 +84,6 @@ namespace AIRefactored.AI.Memory
             bot.Memory.IsPeace = false;
         }
 
-        /// <summary>
-        /// Enables aggressive combat mode where the bot will attack without hesitation.
-        /// </summary>
         public static void SetCombatAggressionMode(this BotOwner bot)
         {
             if (!IsValid(bot) || bot.Memory == null)
@@ -90,9 +93,6 @@ namespace AIRefactored.AI.Memory
             bot.Memory.IsPeace = false;
         }
 
-        /// <summary>
-        /// Sets the bot into peaceful mode (non-combat state).
-        /// </summary>
         public static void SetPeaceMode(this BotOwner bot)
         {
             if (!IsValid(bot) || bot.Memory == null)
@@ -107,26 +107,23 @@ namespace AIRefactored.AI.Memory
 
         #region Auditory Memory
 
-        /// <summary>
-        /// Records the last sound the bot heard and moves cautiously toward the sound source.
-        /// </summary>
         public static void SetLastHeardSound(this BotOwner bot, Player source)
         {
             if (!IsValid(bot) || source == null || source.ProfileId == bot.ProfileId)
                 return;
 
-            bot.BotsGroup?.LastSoundsController?.AddNeutralSound(source, source.Position);
+            if (bot.BotsGroup != null && bot.BotsGroup.LastSoundsController != null)
+                bot.BotsGroup.LastSoundsController.AddNeutralSound(source, source.Position);
+
             BotMemoryStore.AddHeardSound(bot.ProfileId, source.Position, Time.time);
 
             Vector3 cautiousAdvance = source.Position + (bot.Position - source.Position).normalized * 3f;
-            BotMovementHelper.SmoothMoveTo(bot, cautiousAdvance, false, 1f);
+            BotMovementHelper.SmoothMoveTo(bot, cautiousAdvance);
 
-            bot.BotTalk?.TrySay(EPhraseTrigger.OnEnemyShot);
+            if (bot.BotTalk != null)
+                bot.BotTalk.TrySay(EPhraseTrigger.OnEnemyShot);
         }
 
-        /// <summary>
-        /// Clears any auditory memory the bot is tracking.
-        /// </summary>
         public static void ClearLastHeardSound(this BotOwner bot)
         {
             if (!IsValid(bot))
@@ -139,28 +136,41 @@ namespace AIRefactored.AI.Memory
 
         #region Tactical Evaluation
 
-        /// <summary>
-        /// Attempts to get a general direction from which the bot is being flanked.
-        /// </summary>
         public static Vector3? TryGetFlankDirection(this BotOwner bot)
         {
-            if (!IsValid(bot) || bot.Memory?.GoalEnemy == null)
+            if (!IsValid(bot) || bot.Memory == null || bot.Memory.GoalEnemy == null)
                 return null;
 
             Vector3 toEnemy = bot.Memory.GoalEnemy.CurrPosition - bot.Position;
-            return Vector3.Cross(toEnemy.normalized, Vector3.up);
+            if (toEnemy.sqrMagnitude < 0.5f)
+                return null;
+
+            Vector3 botDir = bot.LookDirection.normalized;
+            Vector3 enemyDir = toEnemy.normalized;
+
+            float dot = Vector3.Dot(botDir, enemyDir);
+            if (dot < 0.25f)
+                return null;
+
+            return Vector3.Cross(enemyDir, Vector3.up);
         }
 
         #endregion
 
         #region Helpers
 
-        /// <summary>
-        /// Ensures the bot is valid, not dead, and under AI control.
-        /// </summary>
-        private static bool IsValid(BotOwner? bot)
+        private static bool IsValid(BotOwner bot)
         {
-            return bot != null && bot.GetPlayer != null && bot.GetPlayer.IsAI && !bot.IsDead;
+            return bot != null &&
+                   bot.GetPlayer != null &&
+                   bot.GetPlayer.IsAI &&
+                   !bot.GetPlayer.IsYourPlayer &&
+                   !bot.IsDead;
+        }
+
+        private static Vector3 AlignY(Vector3 pos, float y)
+        {
+            return new Vector3(pos.x, y, pos.z);
         }
 
         #endregion

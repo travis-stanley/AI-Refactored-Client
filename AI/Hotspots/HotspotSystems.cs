@@ -2,7 +2,6 @@
 
 using AIRefactored.AI.Core;
 using AIRefactored.AI.Helpers;
-using AIRefactored.AI.Optimization;
 using AIRefactored.Core;
 using AIRefactored.Runtime;
 using BepInEx.Logging;
@@ -14,18 +13,18 @@ using UnityEngine;
 namespace AIRefactored.AI.Hotspots
 {
     /// <summary>
-    /// Handles per-bot hotspot routing and memory of visited tactical areas.
-    /// Provides realistic patrol loops, defensive logic, and escalation triggers.
+    /// Drives bot navigation between tactical hotspots on a map.
+    /// Each bot maintains its own route or defense zone and adapts behavior based on combat state.
     /// </summary>
     public class HotspotSystem
     {
-        #region Nested
+        #region Inner Session
 
         private sealed class HotspotSession
         {
             private readonly BotOwner _bot;
             private readonly BotComponentCache? _cache;
-            private readonly List<Vector3> _route;
+            private readonly List<HotspotRegistry.Hotspot> _route;
             private readonly bool _isDefender;
             private readonly string _mapKey;
 
@@ -37,21 +36,20 @@ namespace AIRefactored.AI.Hotspots
             private const float BaseDefendRadius = 7f;
             private const float DamageCooldown = 6f;
 
-            public HotspotSession(BotOwner bot, List<Vector3> route, bool isDefender)
+            public HotspotSession(BotOwner bot, List<HotspotRegistry.Hotspot> route, bool isDefender)
             {
                 _bot = bot;
                 _route = route;
                 _isDefender = isDefender;
+                _mapKey = GameWorldHandler.GetCurrentMapName();
                 _cache = BotCacheUtility.GetCache(bot);
                 _index = 0;
-                _mapKey = GameWorldHandler.GetCurrentMapName();
                 _lastRouteStartTime = Time.time;
 
                 if (_bot.GetPlayer?.HealthController is HealthControllerClass health)
                     health.ApplyDamageEvent += OnDamaged;
 
                 _nextSwitchTime = Time.time + GetSwitchInterval();
-                HotspotMemory.MarkVisited(_mapKey, _route[0]);
             }
 
             private void OnDamaged(EBodyPart part, float damage, DamageInfoStruct info)
@@ -63,25 +61,22 @@ namespace AIRefactored.AI.Hotspots
             private float GetSwitchInterval()
             {
                 var profile = BotRegistry.Get(_bot.ProfileId);
-                if (profile == null)
-                    return 120f;
-
-                float baseTime = profile.Personality switch
+                float baseTime = profile?.Personality switch
                 {
                     PersonalityType.Cautious => 160f,
                     PersonalityType.TeamPlayer => 100f,
                     PersonalityType.Strategic => 90f,
                     PersonalityType.Explorer => 75f,
                     PersonalityType.Dumb => 45f,
-                    _ => 120f,
+                    _ => 120f
                 };
 
-                return baseTime * Mathf.Clamp01(1f + profile.ChaosFactor * 0.6f);
+                return baseTime * Mathf.Clamp01(1f + (profile?.ChaosFactor ?? 0f) * 0.6f);
             }
 
             public void Tick()
             {
-                if (_bot == null || _bot.IsDead || _route.Count == 0 || _bot.GetPlayer?.IsYourPlayer == true)
+                if (_bot.IsDead || _route.Count == 0 || _bot.GetPlayer?.IsYourPlayer == true)
                     return;
 
                 if (_bot.Memory?.GoalEnemy != null)
@@ -93,35 +88,28 @@ namespace AIRefactored.AI.Hotspots
                 if (Time.time - _lastHitTime < DamageCooldown)
                     return;
 
+                Vector3 target = _route[_index].Position;
+
                 if (_isDefender)
                 {
-                    float dist = Vector3.Distance(_bot.Position, _route[0]);
-                    float defendRadius = BaseDefendRadius;
+                    float dist = Vector3.Distance(_bot.Position, target);
                     float composure = _cache?.PanicHandler?.GetComposureLevel() ?? 1f;
-                    defendRadius *= Mathf.Clamp(1f + (1f - composure), 1f, 2f);
+                    float defendRadius = BaseDefendRadius * Mathf.Clamp(1f + (1f - composure), 1f, 2f);
 
                     if (dist > defendRadius)
-                        BotMovementHelper.SmoothMoveTo(_bot, _route[0]);
-
-                    return;
+                        BotMovementHelper.SmoothMoveTo(_bot, target);
                 }
-
-                Vector3 target = _route[_index];
-                float distToTarget = Vector3.Distance(_bot.Position, target);
-
-                if (Time.time >= _nextSwitchTime || distToTarget < 2f)
+                else
                 {
-                    _index = (_index + 1) % _route.Count;
-                    _nextSwitchTime = Time.time + GetSwitchInterval();
+                    float distToTarget = Vector3.Distance(_bot.Position, target);
+                    if (Time.time >= _nextSwitchTime || distToTarget < 2f)
+                    {
+                        _index = (_index + 1) % _route.Count;
+                        _nextSwitchTime = Time.time + GetSwitchInterval();
+                    }
 
-                    HotspotMemory.MarkVisited(_mapKey, _route[_index]);
-
-                    float visits = HotspotMemory.GetVisitCount(_mapKey, _route[_index]);
-                    if (visits >= 3 && Time.time - _lastRouteStartTime < 300f)
-                        AIOptimizationManager.TriggerEscalation(_bot);
+                    BotMovementHelper.SmoothMoveTo(_bot, AddJitterTo(target));
                 }
-
-                BotMovementHelper.SmoothMoveTo(_bot, AddJitterTo(target));
             }
 
             private Vector3 AddJitterTo(Vector3 target)
@@ -134,9 +122,9 @@ namespace AIRefactored.AI.Hotspots
                 float chaos = profile.ChaosFactor;
 
                 if (profile.IsFrenzied)
-                    jitter = Random.insideUnitSphere * 2.5f;
+                    jitter = UnityEngine.Random.insideUnitSphere * 2.5f;
                 else if (profile.IsSilentHunter)
-                    jitter = Random.insideUnitSphere * 0.25f;
+                    jitter = UnityEngine.Random.insideUnitSphere * 0.25f;
                 else if (chaos > 0.4f)
                     jitter = new Vector3(Mathf.Sin(Time.time), 0f, Mathf.Cos(Time.time)) * chaos;
 
@@ -149,25 +137,20 @@ namespace AIRefactored.AI.Hotspots
 
         #region Fields
 
-        private readonly Dictionary<BotOwner, HotspotSession> _sessions = new();
-        private static readonly List<BotOwner> _botList = new();
+        private readonly Dictionary<BotOwner, HotspotSession> _sessions = new Dictionary<BotOwner, HotspotSession>(64);
+        private static readonly List<BotOwner> _botList = new List<BotOwner>(64);
         private static readonly ManualLogSource _log = AIRefactoredController.Logger;
 
         #endregion
 
-        #region Public API
+        #region Lifecycle
 
-        /// <summary>
-        /// Clears old route sessions on startup.
-        /// </summary>
         public void Initialize()
         {
             _sessions.Clear();
+            HotspotRegistry.Initialize(GameWorldHandler.GetCurrentMapName());
         }
 
-        /// <summary>
-        /// Called every tick to manage bot hotspot behavior.
-        /// </summary>
         public void Tick()
         {
             var controller = Singleton<BotsController>.Instance;
@@ -194,100 +177,62 @@ namespace AIRefactored.AI.Hotspots
             }
         }
 
-        /// <summary>
-        /// Picks a random hotspot location for utility use.
-        /// </summary>
-        public static Vector3 GetRandomHotspot(BotOwner bot)
-        {
-            var list = HotspotLoader.GetAllHotspotsRaw();
-            return list.Count > 0
-                ? list[Random.Range(0, list.Count)]
-                : bot.Position + Random.insideUnitSphere * 5f;
-        }
-
         #endregion
 
-        #region Internals
+        #region Route Assignment
 
         private HotspotSession? AssignHotspotRoute(BotOwner bot)
         {
             var profile = BotRegistry.Get(bot.ProfileId);
-            var key = GameWorldHandler.GetCurrentMapName();
+            string map = GameWorldHandler.GetCurrentMapName();
+            var all = HotspotRegistry.GetAll();
 
-            var raw = HotspotLoader.GetAllHotspotsRaw();
-            var all = new List<Vector3>(raw);
             if (all.Count == 0)
             {
-                _log.LogWarning($"[AIRefactored] No hotspots found for map: {key}");
+                _log.LogWarning($"[HotspotSystem] ❌ No hotspots found for {map}");
                 return null;
             }
+
+            List<HotspotRegistry.Hotspot> nearby = HotspotRegistry.QueryNearby(bot.Position, 150f);
+            if (nearby.Count == 0)
+                nearby = new List<HotspotRegistry.Hotspot>(all);
 
             bool defendOnly = profile?.Personality switch
             {
                 PersonalityType.Camper => true,
-                PersonalityType.Cautious => Random.value < 0.5f,
+                PersonalityType.Cautious => UnityEngine.Random.value < 0.5f,
                 _ => false
             };
 
-            var available = new List<Vector3>(all);
-            available.RemoveAll(p => HotspotMemory.WasRecentlyVisited(key, p, 300f));
-            if (available.Count == 0)
-                available = all;
-
             if (defendOnly)
             {
-                Vector3 defend = available[Random.Range(0, available.Count)];
-                return new HotspotSession(bot, new List<Vector3> { defend }, true);
+                var defend = nearby[UnityEngine.Random.Range(0, nearby.Count)];
+                return new HotspotSession(bot, new List<HotspotRegistry.Hotspot> { defend }, true);
             }
 
-            int routeLen = Random.Range(2, 4);
-            var route = new List<Vector3>(routeLen);
-            var used = new HashSet<int>();
+            int routeLen = UnityEngine.Random.Range(2, 4);
+            List<HotspotRegistry.Hotspot> route = new List<HotspotRegistry.Hotspot>(routeLen);
+            HashSet<int> used = new HashSet<int>();
 
-            while (route.Count < routeLen && used.Count < available.Count)
+            while (route.Count < routeLen && used.Count < nearby.Count)
             {
-                int i = Random.Range(0, available.Count);
+                int i = UnityEngine.Random.Range(0, nearby.Count);
                 if (used.Add(i))
-                    route.Add(available[i]);
+                    route.Add(nearby[i]);
             }
 
             return new HotspotSession(bot, route, false);
         }
 
         #endregion
-    }
 
-    /// <summary>
-    /// Stores recent hotspot visits per map to avoid repetition.
-    /// </summary>
-    internal static class HotspotMemory
-    {
-        private static readonly Dictionary<string, Dictionary<Vector3, float>> Visited = new();
+        #region Utility
 
-        public static void MarkVisited(string map, Vector3 pos)
+        public static Vector3 GetRandomHotspotPosition(BotOwner bot)
         {
-            if (!Visited.TryGetValue(map, out var dict))
-            {
-                dict = new Dictionary<Vector3, float>();
-                Visited[map] = dict;
-            }
-
-            dict[pos] = Time.time;
+            return HotspotRegistry.GetRandomHotspot().Position;
         }
 
-        public static bool WasRecentlyVisited(string map, Vector3 pos, float cooldown)
-        {
-            return Visited.TryGetValue(map, out var dict)
-                && dict.TryGetValue(pos, out float time)
-                && Time.time - time < cooldown;
-        }
-
-        public static float GetVisitCount(string map, Vector3 pos)
-        {
-            if (!Visited.TryGetValue(map, out var dict))
-                return 0;
-
-            return dict.ContainsKey(pos) ? 1 : 0;
-        }
+        #endregion
     }
 }

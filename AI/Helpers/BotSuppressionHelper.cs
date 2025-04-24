@@ -1,125 +1,86 @@
 ﻿#nullable enable
 
 using AIRefactored.AI.Core;
-using AIRefactored.Runtime;
-using BepInEx.Logging;
 using EFT;
-using System;
-using System.Reflection;
 using UnityEngine;
 
 namespace AIRefactored.AI.Helpers
 {
     /// <summary>
-    /// Utility for triggering suppression or panic responses in AIRefactored bots.
-    /// Supports realistic simulation of enemy fire pressure and flash panic using fallback logic.
+    /// Triggers suppression and panic behavior in AIRefactored bots.
+    /// Used to simulate enemy fire pressure and flash-based fear effects.
     /// </summary>
     public static class BotSuppressionHelper
     {
-        #region Reflection
+        #region Constants
 
-        private static MethodInfo? _setUnderFireMethod;
-        private static readonly ManualLogSource _log = AIRefactoredController.Logger;
+        private const float FlashBlindDuration = 4.5f;
 
         #endregion
 
         #region Bot Accessors
 
         /// <summary>
-        /// Attempts to retrieve the BotOwner from an AI-controlled Player.
+        /// Gets the BotOwner instance from a Player, if AI-controlled.
         /// </summary>
-        /// <param name="bot">The player to inspect.</param>
-        /// <returns>BotOwner if AI and valid; otherwise null.</returns>
-        public static BotOwner? GetBotOwner(Player bot)
+        public static BotOwner? GetBotOwner(Player? player)
         {
-            return bot.IsAI && bot.AIData is BotOwner owner ? owner : null;
+            return player?.IsAI == true && player.AIData is BotOwner owner ? owner : null;
         }
 
         /// <summary>
-        /// Gets the BotComponentCache for a player (if AI-controlled).
+        /// Gets the BotComponentCache from a Player, if AI-controlled.
         /// </summary>
-        /// <param name="bot">The player to query.</param>
-        /// <returns>BotComponentCache instance or null.</returns>
-        public static BotComponentCache? GetCache(Player bot)
+        public static BotComponentCache? GetCache(Player? player)
         {
-            return BotCacheUtility.GetCache(bot);
+            return player?.IsAI == true ? BotCacheUtility.GetCache(player) : null;
         }
 
         #endregion
 
-        #region Suppression Triggers
+        #region Suppression Logic
 
         /// <summary>
-        /// Attempts to trigger the bot's internal "under fire" flag using reflection.
-        /// This simulates enemy fire perception without causing real damage.
+        /// Triggers suppression effects including panic or fallback visual impairment.
         /// </summary>
-        /// <param name="owner">The target BotOwner.</param>
-        public static void TrySetUnderFire(BotOwner? owner)
+        public static void TrySuppressBot(Player? player, Vector3 threatPosition, IPlayer? source = null)
         {
-            if (owner?.ShootData == null)
+            if (player?.IsAI != true)
                 return;
 
-            if (_setUnderFireMethod == null)
-            {
-                _setUnderFireMethod = owner.ShootData.GetType()
-                    .GetMethod("SetUnderFire", BindingFlags.Instance | BindingFlags.NonPublic | BindingFlags.Public);
-            }
+            BotOwner? owner = GetBotOwner(player);
+            BotComponentCache? cache = GetCache(player);
 
-            if (_setUnderFireMethod != null)
+            if (owner == null || cache == null || owner.IsDead)
+                return;
+
+            // Mark bot as under fire via valid EFT memory API
+            owner.Memory?.SetUnderFire(source);
+
+            // Panic if not already panicking, otherwise fallback to blindness
+            if (cache.PanicHandler?.IsPanicking != true)
             {
-                try
-                {
-                    _setUnderFireMethod.Invoke(owner.ShootData, null);
-                }
-                catch (Exception ex)
-                {
-                    _log.LogWarning($"[SuppressionHelper] Failed to invoke SetUnderFire: {ex.Message}");
-                }
+                cache.PanicHandler?.TriggerPanic();
+            }
+            else
+            {
+                cache.FlashGrenade?.ForceBlind(FlashBlindDuration);
             }
         }
 
         /// <summary>
-        /// Applies suppression effects (panic or blind) based on what components are available.
-        /// Flash-based suppression fallback will apply if panic is unavailable.
+        /// Evaluates if bot is in a situation likely to justify suppression based on visibility and ambient light.
         /// </summary>
-        /// <param name="bot">The AI player to affect.</param>
-        /// <param name="flashSource">The source position of the threat (for directionally-aware flash).</param>
-        public static void TrySuppressBot(Player bot, Vector3 flashSource)
+        public static bool ShouldTriggerSuppression(Player? player, float visibleDistThreshold = 12f, float ambientThreshold = 0.25f)
         {
-            if (!bot.IsAI || bot.AIData == null)
-                return;
-
-            var cache = GetCache(bot);
-            if (cache == null)
-                return;
-
-            if (cache.PanicHandler != null)
-            {
-                cache.PanicHandler.TriggerPanic();
-            }
-            else if (cache.FlashGrenade != null)
-            {
-                cache.FlashGrenade.AddBlindEffect(4.5f, flashSource);
-            }
-        }
-
-        /// <summary>
-        /// Determines whether the bot should be suppressed based on visibility range and ambient brightness.
-        /// </summary>
-        /// <param name="bot">Target AI player.</param>
-        /// <param name="visibleDistThreshold">Minimum distance at which bot is considered "trapped."</param>
-        /// <param name="ambientThreshold">Minimum ambient brightness considered safe.</param>
-        /// <returns>True if suppression logic should be triggered.</returns>
-        public static bool ShouldTriggerSuppression(Player bot, float visibleDistThreshold = 12f, float ambientThreshold = 0.25f)
-        {
-            var owner = GetBotOwner(bot);
+            BotOwner? owner = GetBotOwner(player);
             if (owner?.LookSensor == null)
                 return false;
 
             float visibleDist = owner.LookSensor.ClearVisibleDist;
-            float ambient = RenderSettings.ambientLight.grayscale;
+            float ambientLight = RenderSettings.ambientLight.grayscale;
 
-            return visibleDist < visibleDistThreshold || ambient < ambientThreshold;
+            return visibleDist < visibleDistThreshold || ambientLight < ambientThreshold;
         }
 
         #endregion

@@ -3,8 +3,6 @@
 using AIRefactored.AI.Core;
 using AIRefactored.AI.Helpers;
 using AIRefactored.AI.Memory;
-using AIRefactored.Runtime;
-using BepInEx.Logging;
 using EFT;
 using System.Collections.Generic;
 using UnityEngine;
@@ -12,28 +10,30 @@ using UnityEngine;
 namespace AIRefactored.AI.Perception
 {
     /// <summary>
-    /// Listens for nearby sounds like gunfire or movement and registers them with bot memory.
-    /// Adjusted by hearing damage and auditory range modifiers.
+    /// Detects footsteps and gunfire from nearby real players, filtered by hearing loss and range.
+    /// Events are registered with tactical memory for situational awareness.
     /// </summary>
-    public class BotHearingSystem
+    public sealed class BotHearingSystem
     {
+        #region Constants
+
+        private const float BaseHearingRange = 35f;
+        private const float TimeWindow = 3f;
+
+        #endregion
+
         #region Fields
 
         private BotOwner? _bot;
         private BotComponentCache? _cache;
-        private float _baseRange = 35f;
-
-        private static readonly ManualLogSource Logger = AIRefactoredController.Logger;
-        private static readonly bool DebugEnabled = false;
 
         #endregion
 
         #region Initialization
 
         /// <summary>
-        /// Initializes the hearing system with bot context and cache.
+        /// Initializes the hearing system with a bot's runtime cache.
         /// </summary>
-        /// <param name="cache">Bot component cache reference.</param>
         public void Initialize(BotComponentCache cache)
         {
             _cache = cache;
@@ -42,53 +42,72 @@ namespace AIRefactored.AI.Perception
 
         #endregion
 
-        #region Runtime Tick
+        #region Tick
 
         /// <summary>
-        /// Called from BotBrain.Tick() to check for new sound sources.
+        /// Performs a hearing scan based on nearby real players and sound events.
         /// </summary>
-        /// <param name="deltaTime">Time since last tick.</param>
         public void Tick(float deltaTime)
         {
-            if (_bot == null || _bot.IsDead || _bot.GetPlayer?.IsYourPlayer == true)
+            if (!CanEvaluate())
                 return;
 
-            var player = _bot.GetPlayer;
-            if (player == null || !player.IsAI)
+            float volumeMod = _cache?.HearingDamage?.VolumeModifier ?? 1f;
+            float effectiveRange = BaseHearingRange * volumeMod;
+            float effectiveRangeSqr = effectiveRange * effectiveRange;
+
+            if (_bot == null)
                 return;
 
-            Vector3 myPos = _bot.Position;
-            float deafnessScale = _cache?.HearingDamage?.VolumeModifier ?? 1f;
-            float maxRange = _baseRange * deafnessScale;
-
-            List<Player> players = BotMemoryStore.GetNearbyPlayers(myPos);
+            Vector3 origin = _bot.Position;
+            List<Player> players = BotMemoryStore.GetNearbyPlayers(origin, effectiveRange);
 
             for (int i = 0; i < players.Count; i++)
             {
-                var other = players[i];
-                if (other == null || other == player || other.HealthController?.IsAlive != false)
+                Player player = players[i];
+                if (!IsValidAudibleTarget(player, origin, effectiveRangeSqr))
                     continue;
 
-                // Only react to non-player, non-dead, valid sound emitters
-                if (!other.IsAI && !other.IsYourPlayer)
-                    continue;
-
-                float dist = Vector3.Distance(myPos, other.Position);
-                if (dist > maxRange)
-                    continue;
-
-                if (!BotSoundUtils.DidFireRecently(other) && !BotSoundUtils.DidStepRecently(other))
-                    continue;
-
-                _cache?.RegisterHeardSound(other.Position);
-
-                if (DebugEnabled)
+                if (HeardSomething(player, volumeMod))
                 {
-                    string botName = _bot?.Profile?.Info?.Nickname ?? "Bot";
-                    string target = other.Profile?.Info?.Nickname ?? "Unknown";
-                    Logger.LogDebug($"[BotHearing] {botName} heard {target} at {dist:F1}m.");
+                    _cache?.RegisterHeardSound(player.Position);
                 }
             }
+        }
+
+        #endregion
+
+        #region Evaluation
+
+        private bool CanEvaluate()
+        {
+            return _bot is { IsDead: false, GetPlayer: not null } &&
+                   _bot.GetPlayer.IsAI;
+        }
+
+        private static bool IsValidAudibleTarget(Player? target, Vector3 origin, float rangeSqr)
+        {
+            if (target == null || target.HealthController?.IsAlive != true)
+                return false;
+
+            if (!IsRealPlayer(target))
+                return false;
+
+            return (target.Position - origin).sqrMagnitude <= rangeSqr;
+        }
+
+        private bool HeardSomething(Player player, float volumeMod)
+        {
+            if (_bot == null)
+                return false;
+
+            return BotSoundUtils.DidFireRecently(_bot, player, volumeMod, TimeWindow) ||
+                   BotSoundUtils.DidStepRecently(_bot, player, volumeMod, TimeWindow);
+        }
+
+        private static bool IsRealPlayer(Player player)
+        {
+            return player.AIData == null || !player.AIData.IsAI;
         }
 
         #endregion

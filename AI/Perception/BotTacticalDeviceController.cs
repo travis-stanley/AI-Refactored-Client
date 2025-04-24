@@ -1,178 +1,154 @@
 ﻿#nullable enable
 
 using AIRefactored.AI.Core;
-using AIRefactored.Runtime;
-using BepInEx.Logging;
 using EFT;
 using EFT.InventoryLogic;
+using System;
 using System.Collections.Generic;
-using System.Reflection;
 using UnityEngine;
 
 namespace AIRefactored.AI.Perception
 {
     /// <summary>
-    /// Controls bot flashlight, laser, NVG, and thermal toggling based on light conditions and chaos behavior.
-    /// Devices are detected dynamically via weapon mod slots.
+    /// Manages flashlight, laser, NVG, and thermal toggling.
+    /// Reacts to ambient light, fog density, and chaos-driven bait behavior.
     /// </summary>
-    public class BotTacticalDeviceController
+    public sealed class BotTacticalDeviceController
     {
+        #region Config
+
+        private static class TacticalConfig
+        {
+            public const float CheckInterval = 2f;
+            public const float FogThreshold = 0.5f;
+            public const float LightThreshold = 0.3f;
+
+            public static readonly string[] Keywords = { "light", "laser", "nvg", "thermal", "flash" };
+        }
+
+        #endregion
+
         #region Fields
 
         private BotOwner? _bot;
         private BotComponentCache? _cache;
-
-        private readonly List<Item> _toggleableDevices = new();
-        private MethodInfo? _toggleMethod;
-
+        private readonly List<LightComponent> _devices = new();
         private float _nextDecisionTime;
-
-        private const float CheckInterval = 2.0f;
-        private const float FogThreshold = 0.5f;
-        private const float LightThreshold = 0.3f;
-
-        private static readonly string[] ToggleKeywords = { "light", "laser", "nvg", "thermal", "flash" };
-        private static readonly ManualLogSource Logger = AIRefactoredController.Logger;
-        private static readonly bool DebugEnabled = false;
 
         #endregion
 
         #region Initialization
 
-        /// <summary>
-        /// Initializes the tactical controller with references to bot and cache.
-        /// </summary>
-        public void Initialize(BotOwner bot, BotComponentCache cache)
+        public void Initialize(BotComponentCache cache)
         {
-            _bot = bot;
+            if (cache == null || cache.Bot == null)
+                throw new InvalidOperationException("Cannot initialize BotTacticalDeviceController without valid bot cache.");
+
             _cache = cache;
-            _toggleMethod = typeof(Item).GetMethod("Toggle", BindingFlags.Instance | BindingFlags.Public | BindingFlags.NonPublic);
+            _bot = cache.Bot;
         }
 
         #endregion
 
         #region Tick
 
-        /// <summary>
-        /// Evaluates environment and toggles tactical devices appropriately.
-        /// </summary>
-        public void UpdateTacticalLogic(BotOwner bot, BotComponentCache cache)
+        public void Tick()
         {
-            if (Time.time < _nextDecisionTime || bot.IsDead || bot.GetPlayer?.IsYourPlayer == true)
+            if (!CanThink())
                 return;
 
-            _bot = bot;
-            _cache = cache;
-            _nextDecisionTime = Time.time + CheckInterval;
+            _nextDecisionTime = Time.time + TacticalConfig.CheckInterval;
 
-            Weapon? weapon = bot.WeaponManager?.CurrentWeapon;
+            Weapon? weapon = _bot!.WeaponManager?.CurrentWeapon;
             if (weapon == null || weapon.AllSlots == null)
                 return;
 
-            ScanForToggleableDevices(weapon);
+            ScanMods(weapon);
 
-            bool isDark = IsEnvironmentDark();
-            bool baitMode = ShouldBait();
+            bool isLowVisibility = IsLowVisibility();
+            bool baitTrigger = UnityEngine.Random.value < ChaosBaitChance();
+            bool shouldEnable = isLowVisibility || baitTrigger;
 
-            if (DebugEnabled)
-                Logger.LogDebug($"[TacticalDevice] {bot.Profile?.Info?.Nickname ?? "Bot"}: dark={isDark}, bait={baitMode}");
-
-            for (int i = 0; i < _toggleableDevices.Count; i++)
+            for (int i = 0; i < _devices.Count; i++)
             {
-                var device = _toggleableDevices[i];
-                string name = device.Template?.Name?.ToLowerInvariant() ?? "";
-
-                bool enable = (name.Contains("nvg") || name.Contains("thermal")) ? isDark : (isDark || baitMode);
-                ToggleDevice(device, enable);
-            }
-
-            // Flash bait fake-out
-            if (baitMode)
-            {
-                _nextDecisionTime = Time.time + 1.5f;
-                for (int i = 0; i < _toggleableDevices.Count; i++)
+                var device = _devices[i];
+                var state = device.GetLightState(toggleActive: false, switchMod: false);
+                if (state.IsActive != shouldEnable)
                 {
-                    ToggleDevice(_toggleableDevices[i], false);
+                    state.IsActive = shouldEnable;
+                    device.SetLightState(state);
                 }
-
-                if (DebugEnabled)
-                    Logger.LogDebug($"[TacticalDevice] {bot.Profile?.Info?.Nickname ?? "Bot"} executed bait-light fake-out.");
             }
-        }
 
-        /// <summary>
-        /// Disables all tactical devices.
-        /// </summary>
-        public void DisableAllDevices()
-        {
-            for (int i = 0; i < _toggleableDevices.Count; i++)
+            if (baitTrigger)
             {
-                ToggleDevice(_toggleableDevices[i], false);
+                // Flash briefly then turn off
+                _nextDecisionTime = Time.time + 1.5f;
+                for (int i = 0; i < _devices.Count; i++)
+                {
+                    var device = _devices[i];
+                    var state = device.GetLightState(toggleActive: false, switchMod: false);
+                    state.IsActive = false;
+                    device.SetLightState(state);
+                }
             }
-
-            if (DebugEnabled)
-                Logger.LogDebug("[TacticalDevice] Disabled all tactical devices.");
         }
 
         #endregion
 
-        #region Helpers
+        #region Logic
 
-        private void ScanForToggleableDevices(Weapon weapon)
+        private bool CanThink()
         {
-            _toggleableDevices.Clear();
+            return _bot is { IsDead: false }
+                && _cache != null
+                && _bot.GetPlayer is { IsYourPlayer: false }
+                && Time.time >= _nextDecisionTime;
+        }
 
-            foreach (Slot? slot in weapon.AllSlots)
+        private bool IsLowVisibility()
+        {
+            float ambientLight = RenderSettings.ambientLight.grayscale;
+            float fogDensity = RenderSettings.fog ? RenderSettings.fogDensity : 0f;
+            return ambientLight < TacticalConfig.LightThreshold || fogDensity > TacticalConfig.FogThreshold;
+        }
+
+        private float ChaosBaitChance()
+        {
+            return (_cache?.AIRefactoredBotOwner?.PersonalityProfile.ChaosFactor ?? 0f) * 0.25f;
+        }
+
+        private void ScanMods(Weapon weapon)
+        {
+            _devices.Clear();
+
+            foreach (var slot in weapon.AllSlots)
             {
-                if (slot?.ContainedItem is not Item item)
+                var mod = slot?.ContainedItem;
+                if (mod == null)
                     continue;
 
-                string name = item.Template?.Name?.ToLowerInvariant() ?? "";
-                for (int i = 0; i < ToggleKeywords.Length; i++)
+                string name = mod.Template?.Name?.ToLowerInvariant() ?? "";
+                bool isTactical = false;
+                for (int j = 0; j < TacticalConfig.Keywords.Length; j++)
                 {
-                    if (name.Contains(ToggleKeywords[i]))
+                    if (name.Contains(TacticalConfig.Keywords[j]))
                     {
-                        _toggleableDevices.Add(item);
-
-                        if (DebugEnabled)
-                            Logger.LogDebug($"[TacticalDevice] Found toggleable device: {item.Template?.Name}");
-
+                        isTactical = true;
                         break;
                     }
                 }
+
+                if (!isTactical)
+                    continue;
+
+                if (mod is FlashlightItemClass fl && fl.Light != null)
+                    _devices.Add(fl.Light);
+                else if (mod is TacticalComboItemClass combo && combo.Light != null)
+                    _devices.Add(combo.Light);
+                else if (mod is LightLaserItemClass laser && laser.Light != null)
+                    _devices.Add(laser.Light);
             }
-        }
-
-        private void ToggleDevice(Item item, bool enable)
-        {
-            if (_toggleMethod == null)
-                return;
-
-            var prop = item.GetType().GetProperty("On", BindingFlags.Instance | BindingFlags.Public | BindingFlags.NonPublic);
-            if (prop == null || !prop.CanRead || !prop.CanWrite)
-                return;
-
-            bool isCurrentlyOn = (bool)(prop.GetValue(item) ?? false);
-            if (isCurrentlyOn == enable)
-                return;
-
-            prop.SetValue(item, enable);
-
-            if (DebugEnabled)
-                Logger.LogDebug($"[TacticalDevice] {(enable ? "Enabled" : "Disabled")} device: {item.Template?.Name}");
-        }
-
-        private bool IsEnvironmentDark()
-        {
-            float ambient = RenderSettings.ambientLight.grayscale;
-            float fogDensity = RenderSettings.fog ? RenderSettings.fogDensity : 0f;
-            return ambient < LightThreshold || fogDensity > FogThreshold;
-        }
-
-        private bool ShouldBait()
-        {
-            float chaos = _cache?.AIRefactoredBotOwner?.PersonalityProfile?.ChaosFactor ?? 0f;
-            return UnityEngine.Random.value < chaos * 0.25f;
         }
 
         #endregion

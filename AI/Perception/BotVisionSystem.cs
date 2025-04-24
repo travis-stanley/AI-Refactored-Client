@@ -10,27 +10,25 @@ using UnityEngine;
 namespace AIRefactored.AI.Perception
 {
     /// <summary>
-    /// Simulates realistic bot vision perception with real-time FOV and line-of-sight checks.
-    /// Detects enemies every frame for smooth visual reactions.
+    /// Simulates realistic bot visual perception using view cone, distance, fog/light occlusion,
+    /// bone confidence, suppression stress, and tactical memory.
     /// </summary>
-    public class BotVisionSystem
+    public sealed class BotVisionSystem
     {
         #region Constants
 
-        private const float MaxPlayerScanDistance = 120f;
-        private const float FieldOfViewDegrees = 120f;
-        private const float ProximityAutoDetectDistance = 4.0f;
+        private const float MaxDetectionDistance = 120f;
+        private const float BaseViewConeAngle = 120f;
+        private const float AutoDetectRadius = 4f;
+        private const float BoneConfidenceThreshold = 0.45f;
+        private const float BoneConfidenceDecay = 0.1f;
+        private const float SuppressionMissChance = 0.2f;
 
         private static readonly PlayerBoneType[] BonesToCheck =
         {
-            PlayerBoneType.Head,
-            PlayerBoneType.Spine,
-            PlayerBoneType.Ribcage,
-            PlayerBoneType.LeftShoulder,
-            PlayerBoneType.RightShoulder,
-            PlayerBoneType.Pelvis,
-            PlayerBoneType.LeftThigh1,
-            PlayerBoneType.RightThigh1
+            PlayerBoneType.Head, PlayerBoneType.Spine, PlayerBoneType.Ribcage,
+            PlayerBoneType.LeftShoulder, PlayerBoneType.RightShoulder,
+            PlayerBoneType.Pelvis, PlayerBoneType.LeftThigh1, PlayerBoneType.RightThigh1
         };
 
         #endregion
@@ -39,150 +37,179 @@ namespace AIRefactored.AI.Perception
 
         private BotOwner? _bot;
         private BotComponentCache? _cache;
-        private AIRefactoredBotOwner? _owner;
         private BotPersonalityProfile? _profile;
         private BotTacticalMemory? _memory;
+        private float _lastCommitTime = -999f;
 
         #endregion
 
         #region Initialization
 
-        /// <summary>
-        /// Sets up vision system with required bot context.
-        /// </summary>
         public void Initialize(BotComponentCache cache)
         {
             _cache = cache;
             _bot = cache.Bot;
-            _owner = cache.AIRefactoredBotOwner;
-            _profile = _owner?.PersonalityProfile;
+            _profile = cache.AIRefactoredBotOwner?.PersonalityProfile;
             _memory = cache.TacticalMemory;
         }
 
         #endregion
 
-        #region Tick Loop
+        #region Main Tick
 
-        /// <summary>
-        /// Called every frame by BotBrain for real-time vision processing.
-        /// </summary>
         public void Tick(float time)
         {
-            if (_bot == null || _bot.IsDead || _cache == null || _profile == null)
+            if (!IsValidContext())
                 return;
 
-            Player? botPlayer = _bot.GetPlayer;
-            if (botPlayer == null || botPlayer.IsYourPlayer)
-                return;
+            Vector3 eye = _bot!.Position + Vector3.up * 1.4f;
+            Vector3 forward = _bot.LookDirection;
 
-            var allPlayers = GameWorldHandler.GetAllAlivePlayers();
-            if (allPlayers == null)
-                return;
+            float fogPenalty = RenderSettings.fog ? Mathf.Clamp01(RenderSettings.fogDensity * 4f) : 0f;
+            float ambientLight = RenderSettings.ambientLight.grayscale;
+            float adjustedViewCone = Mathf.Lerp(BaseViewConeAngle, 60f, 1f - ambientLight);
 
-            for (int i = 0; i < allPlayers.Count; i++)
+            Player? bestTarget = null;
+            float bestScore = float.MaxValue;
+
+            foreach (var target in GameWorldHandler.GetAllAlivePlayers())
             {
-                Player? target = allPlayers[i];
-                if (target == null || target.ProfileId == _bot.ProfileId || !target.HealthController.IsAlive)
-                    continue;
+                if (!IsValidTarget(target)) continue;
 
-                if (!target.IsAI && target.IsYourPlayer)
-                    continue;
+                float dist = Vector3.Distance(eye, target.Position);
+                if (dist > MaxDetectionDistance * (1f - fogPenalty)) continue;
 
-                float distance = Vector3.Distance(_bot.Position, target.Position);
-                if (distance > MaxPlayerScanDistance)
-                    continue;
+                bool withinAutoRange = dist <= AutoDetectRadius;
+                bool inViewCone = IsInViewCone(forward, eye, target.Position, adjustedViewCone);
+                bool canSee = HasLineOfSight(eye, target);
 
-                if (distance <= ProximityAutoDetectDistance)
+                if ((withinAutoRange && canSee) || (inViewCone && canSee))
                 {
-                    ForceEnemyCommit(target);
-                    TrackVisibleBones(target);
-                    continue;
+                    float score = dist;
+                    if (score < bestScore)
+                    {
+                        bestTarget = target;
+                        bestScore = score;
+                    }
                 }
+            }
 
-                if (IsInViewCone(target) && HasLineOfSight(target))
-                {
-                    _memory?.RecordEnemyPosition(target.Position);
-
-                    if (_profile.ReactionSpeed >= 0.5f)
-                        ForceEnemyCommit(target);
-
-                    TrackVisibleBones(target);
-                }
+            if (bestTarget != null)
+            {
+                _memory!.RecordEnemyPosition(bestTarget.Position);
+                TrackVisibleBones(_bot.Position + Vector3.up * 1.4f, bestTarget);
+                EvaluateTargetConfidence(bestTarget, time);
             }
         }
 
         #endregion
 
-        #region Visibility Logic
+        #region Evaluation
 
-        private bool IsInViewCone(Player target)
+        private void EvaluateTargetConfidence(Player target, float time)
         {
-            if (_bot == null)
+            var tracker = _cache!.VisibilityTracker;
+            if (tracker == null || !tracker.HasEnoughData)
+                return;
+
+            float confidence = tracker.GetOverallConfidence();
+            if (confidence < BoneConfidenceThreshold)
+                return;
+
+            if (_cache.PanicHandler?.IsUnderSuppression == true && Random.value < SuppressionMissChance)
+                return;
+
+            CommitEnemyIfAllowed(target, time);
+        }
+
+        private bool IsValidContext()
+        {
+            return _bot?.IsDead == false &&
+                   _cache != null &&
+                   _profile != null &&
+                   _memory != null &&
+                   _bot.GetPlayer is { IsAI: true, IsYourPlayer: false };
+        }
+
+        private bool IsValidTarget(Player target)
+        {
+            if (target.HealthController?.IsAlive != true)
                 return false;
 
-            Vector3 toTarget = target.Position - _bot.Position;
-            float angle = Vector3.Angle(_bot.LookDirection, toTarget);
-            return angle <= FieldOfViewDegrees * 0.5f;
-        }
-
-        private bool HasLineOfSight(Player target)
-        {
-            if (_bot == null)
+            if (target.ProfileId == _bot!.ProfileId || target == _bot.GetPlayer)
                 return false;
 
-            Vector3 botEye = _bot.Position + Vector3.up * 1.4f;
-            Vector3 targetEye = target.Position + Vector3.up * 1.4f;
-
-            return !Physics.Linecast(botEye, targetEye, out var hit) ||
-                   (hit.collider != null && hit.collider.gameObject == target.gameObject);
+            return _bot.BotsGroup?.IsEnemy(target) == true;
         }
 
-        private void ForceEnemyCommit(Player target)
+        private static bool IsInViewCone(Vector3 forward, Vector3 origin, Vector3 targetPos, float viewCone)
         {
-            if (_bot == null || _bot.Memory == null || target == null)
-                return;
-
-            if (!_bot.EnemiesController.EnemyInfos.ContainsKey(target))
-            {
-                var group = _bot.BotsGroup;
-                var enemySettings = new BotSettingsClass(target, group, EBotEnemyCause.addPlayer);
-                _bot.EnemiesController.AddNew(group, target, enemySettings);
-                _bot.BotTalk?.TrySay(EPhraseTrigger.OnEnemyConversation);
-                BotTeamLogic.AddEnemy(_bot, target);
-            }
+            float angle = Vector3.Angle(forward, targetPos - origin);
+            return angle <= viewCone * 0.5f;
         }
 
-        private void TrackVisibleBones(Player target)
+        private static bool HasLineOfSight(Vector3 from, Player target)
         {
-            if (_cache == null || _bot == null)
+            Vector3 to = target.Position + Vector3.up * 1.4f;
+            if (Physics.Linecast(from, to, out RaycastHit hit))
+                return hit.collider?.transform.root == target.Transform?.Original?.root;
+
+            return true;
+        }
+
+        #endregion
+
+        #region Memory Commit
+
+        private void CommitEnemyIfAllowed(Player target, float time)
+        {
+            if (_bot == null || _profile == null || _bot.EnemiesController == null)
                 return;
 
-            var spirit = target.GetComponent<PlayerSpiritBones>();
-            if (spirit == null)
+            if (_bot.EnemiesController.EnemyInfos.ContainsKey(target))
                 return;
 
-            Vector3 origin = _bot.Position + Vector3.up * 1.4f;
+            float delay = Mathf.Lerp(0.1f, 0.6f, 1f - _profile.ReactionTime);
+            if (time - _lastCommitTime < delay)
+                return;
 
-            foreach (var boneType in BonesToCheck)
+            var group = _bot.BotsGroup;
+            var settings = new BotSettingsClass(target, group, EBotEnemyCause.addPlayer);
+
+            _bot.EnemiesController.AddNew(group, target, settings);
+            _bot.BotTalk?.TrySay(EPhraseTrigger.OnEnemyConversation);
+            BotTeamLogic.AddEnemy(_bot, target);
+
+            _lastCommitTime = time;
+        }
+
+        #endregion
+
+        #region Bone Visibility
+
+        private void TrackVisibleBones(Vector3 eye, Player target)
+        {
+            var tracker = _cache!.VisibilityTracker ??= new TrackedEnemyVisibility(_bot!.Transform.Original);
+
+            if (target.TryGetComponent<PlayerSpiritBones>(out var bones))
             {
-                var bone = spirit.GetBone(boneType);
-                if (bone?.Original == null)
-                    continue;
-
-                Vector3 point = bone.Original.position;
-                bool canSee = !Physics.Linecast(origin, point, out RaycastHit hit) ||
-                              hit.collider?.gameObject == target.gameObject;
-
-                if (canSee)
+                foreach (var type in BonesToCheck)
                 {
-                    if (_cache.VisibilityTracker == null && _bot.Transform?.Original != null)
-                    {
-                        _cache.VisibilityTracker = new TrackedEnemyVisibility(_bot.Transform.Original);
-                    }
+                    var bone = bones.GetBone(type)?.Original;
+                    if (bone == null)
+                        continue;
 
-                    _cache.VisibilityTracker?.UpdateBoneVisibility(boneType.ToString(), point);
+                    if (!Physics.Linecast(eye, bone.position, out RaycastHit hit) || hit.collider?.gameObject == target.gameObject)
+                        tracker.UpdateBoneVisibility(type.ToString(), bone.position);
                 }
             }
+            else if (Physics.Linecast(eye, target.Position, out RaycastHit fallbackHit) &&
+                     fallbackHit.collider?.transform.root == target.Transform?.Original?.root)
+            {
+                tracker.UpdateBoneVisibility("Body", target.Position);
+            }
+
+            tracker.DecayConfidence(BoneConfidenceDecay * Time.deltaTime);
         }
 
         #endregion

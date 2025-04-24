@@ -1,76 +1,75 @@
 ﻿#nullable enable
 
+using AIRefactored.AI.Optimization;
+using AIRefactored.Bootstrap;
 using AIRefactored.Core;
 using AIRefactored.Runtime;
 using BepInEx;
 using BepInEx.Logging;
-using HarmonyLib;
+using EFT;
+using UnityEngine;
 
 namespace AIRefactored
 {
-    /// <summary>
-    /// Entry point for the AI-Refactored mod. Registers BepInEx plugin metadata and bootstraps global systems.
-    /// </summary>
     [BepInPlugin("com.spock.airefactored", "AI-Refactored", "1.0.0")]
-    public class Plugin : BaseUnityPlugin
+    public sealed class Plugin : BaseUnityPlugin
     {
-        #region Fields
-
         private static ManualLogSource? _log;
-        private Harmony? _harmony;
 
-        #endregion
-
-        #region Unity Lifecycle
-
-        /// <summary>
-        /// Called by BepInEx on plugin load. Initializes mod systems and Harmony patches.
-        /// </summary>
         private void Awake()
         {
             _log = Logger;
-            _log.LogInfo("[AIRefactored] 🔧 Initializing AI-Refactored mod...");
+            _log.LogWarning("[AIRefactored] 🔧 Plugin starting...");
 
-            if (FikaHeadlessDetector.IsHeadless)
-                _log.LogInfo("[AIRefactored] 🧠 Running in FIKA Headless Host mode.");
-            else
-                _log.LogInfo("[AIRefactored] 🧠 Running in Client/Interactive mode.");
-
-            // === Core System Init ===
+            // Register logging and setup controller
             AIRefactoredController.Initialize(_log);
+            WorldBootstrapper.TryInitialize();
 
-            // === World & Bot Hooking ===
-            GameWorldHandler.HookBotSpawns();
+            // Run FIKA-safe flush hook
+            BotWorkScheduler.AutoInjectFlushHost();
 
-            // === Harmony Patch Application ===
-            _harmony = new Harmony("com.spock.airefactored");
-            _harmony.PatchAll();
+            // If not headless, wait for GameWorld (client)
+            if (!FikaHeadlessDetector.IsHeadless)
+            {
+                StartCoroutine(WaitForWorldBootstrap());
+            }
+            else
+            {
+                _log.LogWarning("[AIRefactored] 🧠 Headless mode detected — skipping GameWorld checks.");
+                GameWorldHandler.HookBotSpawns(); // Manually trigger bootstrap
+            }
 
-            _log.LogInfo("[AIRefactored] ✅ Initialization complete. Systems are online.");
+            _log.LogWarning("[AIRefactored] ✅ Plugin.cs startup complete.");
         }
 
         /// <summary>
-        /// Called by Unity on shutdown. Cleans up patching and detaches runtime hooks.
+        /// Coroutine retry loop for safe client multiplayer startup.
         /// </summary>
+        private System.Collections.IEnumerator WaitForWorldBootstrap()
+        {
+            float timeout = Time.time + 60f;
+
+            while (!Comfort.Common.Singleton<ClientGameWorld>.Instantiated && Time.time < timeout)
+                yield return null;
+
+            if (Comfort.Common.Singleton<ClientGameWorld>.Instantiated)
+            {
+                _log!.LogWarning("[AIRefactored] ✅ GameWorld detected — proceeding with AIRefactored initialization.");
+                GameWorldHandler.TryInitializeWorld();
+            }
+            else
+            {
+                _log!.LogWarning("[AIRefactored] ⚠ Timed out waiting for GameWorld. Skipping world hook.");
+            }
+        }
+
         private void OnDestroy()
         {
             GameWorldHandler.UnhookBotSpawns();
-
-            _harmony?.UnpatchSelf();
-            _log?.LogInfo("[AIRefactored] 🔻 Harmony patches removed.");
             _log?.LogInfo("[AIRefactored] 🔻 Plugin shutdown complete.");
         }
 
-        #endregion
-
-        #region Public Access
-
-        /// <summary>
-        /// Provides safe access to the logger once initialized.
-        /// </summary>
         public static ManualLogSource LoggerInstance =>
-            _log ?? throw new System.NullReferenceException("[AIRefactored] LoggerInstance was accessed before plugin Awake().");
-
-        #endregion
+            _log ?? throw new System.NullReferenceException("[AIRefactored] LoggerInstance accessed before Awake().");
     }
 }

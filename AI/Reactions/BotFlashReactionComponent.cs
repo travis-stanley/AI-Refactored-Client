@@ -2,49 +2,42 @@
 
 using AIRefactored.AI.Core;
 using AIRefactored.AI.Helpers;
-using AIRefactored.Runtime;
-using BepInEx.Logging;
+using AIRefactored.AI.Optimization;
 using EFT;
 using UnityEngine;
 
 namespace AIRefactored.AI.Reactions
 {
     /// <summary>
-    /// Handles bot reaction to intense light sources (e.g., flashbangs, flashlights) by triggering suppression,
-    /// fallback movement, and panic synchronization. Enhances realism under light-based threats.
+    /// Handles bot reactions to intense light exposure (e.g., flashlights or flashbangs).
+    /// Applies suppression, triggers scored fallback movement, and panic if threshold reached.
     /// </summary>
-    public class BotFlashReactionComponent
+    public sealed class BotFlashReactionComponent
     {
-        #region Public Properties
+        #region Constants
 
-        /// <summary>
-        /// Returns the bot instance associated with this component.
-        /// </summary>
-        public BotOwner? Bot => _cache?.Bot;
+        private const float MinSuppressionDuration = 1.0f;
+        private const float MaxSuppressionDuration = 5.0f;
+        private const float ReactionCooldown = 0.5f;
+
+        private const float FallbackDistance = 5f;
+        private const float FallbackJitter = 1.25f;
 
         #endregion
 
-        #region Private Fields
+        #region Fields
 
         private BotComponentCache? _cache;
         private float _suppressedUntil = -1f;
         private float _lastTriggerTime = -1f;
-
-        private const float MinDuration = 1.0f;
-        private const float MaxDuration = 5.0f;
-        private const float Cooldown = 0.5f;
-
-        private static readonly ManualLogSource Logger = AIRefactoredController.Logger;
-        private static readonly bool DebugEnabled = false;
 
         #endregion
 
         #region Initialization
 
         /// <summary>
-        /// Initializes the flash reaction component with the bot's component cache.
+        /// Links this flash reaction handler to the active bot's shared component cache.
         /// </summary>
-        /// <param name="cache">Bot component cache.</param>
         public void Initialize(BotComponentCache cache)
         {
             _cache = cache;
@@ -52,106 +45,86 @@ namespace AIRefactored.AI.Reactions
 
         #endregion
 
-        #region External Tick
+        #region Tick
 
         /// <summary>
-        /// Called each frame to update suppression status and clear expired states.
+        /// Call every frame from BotBrain. Updates suppression state.
         /// </summary>
-        /// <param name="time">Current world time.</param>
         public void Tick(float time)
         {
-            if (_suppressedUntil > 0f && time >= _suppressedUntil)
-            {
+            if (time >= _suppressedUntil)
                 _suppressedUntil = -1f;
-
-                if (DebugEnabled)
-                    Logger.LogDebug($"[BotFlashReaction] Suppression ended for {_cache?.Bot?.Profile?.Id}");
-            }
-        }
-
-        #endregion
-
-        #region Suppression Logic
-
-        /// <summary>
-        /// Triggers suppression behavior from light-based threats.
-        /// </summary>
-        /// <param name="strength">The intensity of the light or flash.</param>
-        public void TriggerSuppression(float strength = 0.6f)
-        {
-            if (_cache?.Bot is not BotOwner bot || bot.IsDead || bot.GetPlayer?.IsAI != true)
-                return;
-
-            float now = Time.time;
-            if (now - _lastTriggerTime < Cooldown)
-                return;
-
-            _lastTriggerTime = now;
-
-            float composure = _cache.PanicHandler?.GetComposureLevel() ?? 1f;
-            float finalStrength = Mathf.Clamp01(strength * (1f - (1f - composure)));
-            float duration = Mathf.Lerp(MinDuration, MaxDuration, finalStrength);
-
-            _suppressedUntil = now + duration;
-
-            if (DebugEnabled)
-                Logger.LogDebug($"[BotFlashReaction] Suppression triggered for {bot.Profile?.Id} → Duration: {duration:F2}s");
-
-            Vector3 fallbackDir = bot.Position - bot.LookDirection.normalized;
-            TriggerFallbackMovement(fallbackDir);
-            TriggerPanicSync();
         }
 
         /// <summary>
-        /// Returns true if the bot is currently suppressed.
+        /// Returns true if the bot is still suppressed from a flash reaction.
         /// </summary>
         public bool IsSuppressed() => Time.time < _suppressedUntil;
 
         #endregion
 
-        #region Fallback and Panic Integration
+        #region Reaction Logic
 
         /// <summary>
-        /// Moves the bot away from the light source in a randomized but realistic retreat path.
+        /// Triggers suppression, fallback, and panic if conditions are met.
         /// </summary>
-        /// <param name="from">The direction of threat to move away from.</param>
-        private void TriggerFallbackMovement(Vector3 from)
-        {
-            if (_cache?.Bot is not BotOwner bot || bot.IsDead)
-                return;
-
-            Vector3 fallbackDir = (bot.Position - from).normalized;
-            Vector3 retreat = bot.Position + fallbackDir * 5f + Random.insideUnitSphere * 1.25f;
-            retreat.y = bot.Position.y;
-
-            if (DebugEnabled)
-                Logger.LogDebug($"[BotFlashReaction] Retreat path calculated to {retreat}");
-
-            BotMovementHelper.SmoothMoveTo(bot, retreat, cohesionScale: 1f);
-        }
-
-        /// <summary>
-        /// Propagates panic event to bot’s internal panic component.
-        /// </summary>
-        private void TriggerPanicSync()
+        public void TriggerSuppression(float strength = 0.6f)
         {
             if (_cache == null)
                 return;
 
-            BotOwner? bot = _cache.Bot;
-            if (bot == null || bot.GetPlayer?.IsAI != true)
+            var bot = _cache.Bot;
+            if (bot == null || bot.IsDead || bot.GetPlayer is not { IsAI: true, IsYourPlayer: false })
                 return;
 
-            if (BotPanicUtility.TryGetPanicComponent(_cache, out var panic) && panic != null)
-            {
-                panic.TriggerPanic();
+            float now = Time.time;
+            if (now - _lastTriggerTime < ReactionCooldown)
+                return;
 
-                if (DebugEnabled)
-                {
-                    string id = bot.Profile?.Id ?? "unknown";
-                    Logger.LogDebug($"[BotFlashReaction] Panic triggered for {id}");
-                }
+            _lastTriggerTime = now;
+
+            float composure = _cache.PanicHandler?.GetComposureLevel() ?? 1f;
+            float scaled = Mathf.Clamp01(strength * composure);
+            float duration = Mathf.Lerp(MinSuppressionDuration, MaxSuppressionDuration, scaled);
+
+            _suppressedUntil = now + duration;
+
+            TriggerFallback(bot);
+            TriggerPanic(_cache);
+        }
+
+        #endregion
+
+        #region Fallback Logic
+
+        private static void TriggerFallback(BotOwner bot)
+        {
+            // Use scored fallback point if available
+            Vector3 threatDir = bot.LookDirection;
+            Vector3? scoredRetreat = HybridFallbackResolver.GetBestRetreatPoint(bot, threatDir);
+
+            if (scoredRetreat.HasValue)
+            {
+                BotMovementHelper.SmoothMoveTo(bot, scoredRetreat.Value);
+                return;
             }
+
+            // Fallback to inertial directional retreat if no cover found
+            Vector3 forward = bot.LookDirection;
+            Vector3 lateral = new Vector3(-forward.x, 0f, -forward.z).normalized;
+            Vector3 fallback = bot.Position + lateral * FallbackDistance + Random.insideUnitSphere * FallbackJitter;
+            fallback.y = bot.Position.y;
+
+            BotMovementHelper.SmoothMoveTo(bot, fallback);
+        }
+
+        private static void TriggerPanic(BotComponentCache? cache)
+        {
+            if (cache == null)
+                return;
+
+            if (BotPanicUtility.TryGetPanicComponent(cache, out var panic) && panic != null)
+                panic.TriggerPanic();
         }
 
         #endregion

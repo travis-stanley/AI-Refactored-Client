@@ -2,8 +2,6 @@
 
 using AIRefactored.AI.Core;
 using AIRefactored.Core;
-using AIRefactored.Runtime;
-using BepInEx.Logging;
 using EFT;
 using EFT.Interactive;
 using EFT.InventoryLogic;
@@ -13,39 +11,34 @@ using UnityEngine;
 namespace AIRefactored.AI.Looting
 {
     /// <summary>
-    /// Scans for dead bodies nearby and attempts to loot them if safe.
-    /// Used by BotMissionSystem to simulate realistic scavenging behavior.
+    /// Scans for nearby dead players and loots if safe and opportunistic.
+    /// Tracks previously looted corpses to avoid redundancy.
     /// </summary>
-    public class BotDeadBodyScanner
+    public sealed class BotDeadBodyScanner
     {
-        #region Config
+        #region Constants
 
         private const float ScanRadius = 12f;
         private const float MaxLootAngle = 120f;
-        private const float Cooldown = 10f;
+        private const float LootCooldown = 10f;
         private const float LootMemoryDuration = 15f;
+        private const float RaycastPadding = 0.3f;
 
         #endregion
 
-        #region State
+        #region Fields
 
         private BotOwner? _bot;
         private BotComponentCache? _cache;
         private float _nextScanTime;
 
-        private static readonly HashSet<string> _recentLootedBodies = new();
-        private static readonly Dictionary<string, float> _lootTimestamps = new();
-
-        private static readonly ManualLogSource Logger = AIRefactoredController.Logger;
-        private static readonly bool DebugEnabled = false;
+        private static readonly HashSet<string> _recentlyLooted = new(32);
+        private static readonly Dictionary<string, float> _lootTimestamps = new(32);
 
         #endregion
 
         #region Initialization
 
-        /// <summary>
-        /// Initializes this scanner with bot dependencies.
-        /// </summary>
         public void Initialize(BotComponentCache cache)
         {
             _cache = cache;
@@ -54,193 +47,189 @@ namespace AIRefactored.AI.Looting
 
         #endregion
 
-        #region Runtime Tick
+        #region Public API
 
-        /// <summary>
-        /// Called each frame to evaluate and possibly loot a body.
-        /// </summary>
         public void Tick(float time)
         {
             if (!CanEvaluate(time))
                 return;
 
-            if (TryFindDeadBody(out Player corpse))
-            {
-                if (DebugEnabled)
-                    Logger.LogDebug($"[DeadBodyScanner] Looting body of {corpse.Profile?.Info?.Nickname}");
-
-                TryLootCorpse(corpse);
-                _nextScanTime = time + Cooldown;
-
-                if (!string.IsNullOrEmpty(corpse.ProfileId))
-                    RegisterLooted(corpse.ProfileId);
-            }
+            _nextScanTime = time + LootCooldown;
+            TryLootOnce();
         }
 
-        /// <summary>
-        /// Called manually (e.g. on combat over) to attempt looting.
-        /// </summary>
-        public void TryLootNearby()
+        public void TryLootNearby() => TryLootOnce();
+
+        #endregion
+
+        #region Loot Execution
+
+        private void TryLootOnce()
         {
-            if (FikaHeadlessDetector.IsHeadless || !CanLootNow())
+            var corpse = FindLootableCorpse();
+            if (corpse == null)
                 return;
 
-            if (TryFindDeadBody(out Player corpse))
+            LootCorpse(corpse);
+            RememberLooted(corpse.ProfileId);
+        }
+
+        private Player? FindLootableCorpse()
+        {
+            if (_bot == null)
+                return null;
+
+            Vector3 origin = _bot.Position;
+            Vector3 forward = _bot.WeaponRoot.forward;
+            var players = GameWorldHandler.GetAllAlivePlayers();
+
+            for (int i = 0; i < players.Count; i++)
             {
-                if (DebugEnabled)
-                    Logger.LogDebug($"[DeadBodyScanner] (Manual) Looting body of {corpse.Profile?.Info?.Nickname}");
+                var player = players[i];
+                if (!IsValidCorpse(player))
+                    continue;
 
-                TryLootCorpse(corpse);
+                Vector3 toCorpse = player.Position - origin;
+                float distance = toCorpse.magnitude;
+                if (distance > ScanRadius)
+                    continue;
 
-                if (!string.IsNullOrEmpty(corpse.ProfileId))
-                    RegisterLooted(corpse.ProfileId);
+                if (Vector3.Angle(forward, toCorpse.normalized) > MaxLootAngle)
+                    continue;
+
+                if (!HasLineOfSight(origin, toCorpse, distance, player))
+                    continue;
+
+                return player;
             }
+
+            return null;
+        }
+
+        private bool IsValidCorpse(Player p)
+        {
+            return p != null &&
+                   p.HealthController?.IsAlive == false &&
+                   p != _bot?.GetPlayer &&
+                   !string.IsNullOrEmpty(p.ProfileId) &&
+                   !WasLootedRecently(p.ProfileId);
+        }
+
+        private bool HasLineOfSight(Vector3 origin, Vector3 direction, float dist, Player corpse)
+        {
+            if (!Physics.Raycast(origin, direction.normalized, out var hit, dist + RaycastPadding, LayerMaskClass.HighPolyWithTerrainMaskAI))
+                return false;
+
+            return hit.collider?.transform.root == corpse.Transform?.Original?.root;
         }
 
         #endregion
 
-        #region Evaluation Logic
+        #region Corpse Looting Logic
 
-        private bool CanEvaluate(float now)
+        private void LootCorpse(Player corpse)
         {
-            if (_bot == null || _bot.IsDead || _bot.GetPlayer?.IsYourPlayer == true)
-                return false;
+            var source = corpse.InventoryController;
+            var target = _bot?.GetPlayer?.InventoryController;
 
-            if (_cache == null || _cache.PanicHandler?.IsPanicking == true || now < _nextScanTime)
-                return false;
-
-            return CanLootNow();
-        }
-
-        private bool CanLootNow()
-        {
-            if (_bot == null || _bot.IsDead || _bot.GetPlayer?.IsYourPlayer == true)
-                return false;
-
-            if (_cache?.PanicHandler?.IsPanicking == true)
-                return false;
-
-            if (_bot.Memory?.GoalEnemy != null || (_bot.EnemiesController?.EnemyInfos.Count ?? 0) > 0)
-                return false;
-
-            var profile = BotRegistry.Get(_bot.ProfileId);
-            if (profile != null && profile.Caution > 0.7f)
-                return false;
-
-            return true;
-        }
-
-        private bool TryFindDeadBody(out Player corpse)
-        {
-            corpse = null!;
-            if (_bot == null)
-                return false;
-
-            Vector3 origin = _bot.Position;
-
-            foreach (var p in GameWorldHandler.GetAllAlivePlayers())
-            {
-                if (p == null || p == _bot.GetPlayer || p.HealthController?.IsAlive != false)
-                    continue;
-
-                if (!string.IsNullOrEmpty(p.ProfileId) && WasRecentlyLooted(p.ProfileId))
-                    continue;
-
-                float dist = Vector3.Distance(origin, p.Position);
-                if (dist > ScanRadius)
-                    continue;
-
-                Vector3 dir = (p.Position - origin).normalized;
-                float angle = Vector3.Angle(_bot.WeaponRoot.forward, dir);
-                if (angle > MaxLootAngle)
-                    continue;
-
-                if (Physics.Raycast(origin, dir, out RaycastHit hit, dist + 0.3f, LayerMaskClass.HighPolyWithTerrainMaskAI))
-                {
-                    if (hit.collider?.transform.root == p.Transform?.Original?.root)
-                    {
-                        corpse = p;
-                        return true;
-                    }
-                }
-            }
-
-            return false;
-        }
-
-        private void TryLootCorpse(Player deadPlayer)
-        {
-            if (_bot == null || _bot.IsDead || deadPlayer == null)
+            if (source == null || target == null)
                 return;
 
-            var sourceInv = deadPlayer.InventoryController;
-            var targetInv = _bot.GetPlayer?.InventoryController;
-
-            if (sourceInv == null || targetInv == null)
-                return;
-
-            var lootable = deadPlayer.GetComponent<LootableContainer>();
-            if (lootable != null && lootable.enabled)
+            if (DeadBodyContainerCache.Get(corpse.ProfileId) is { enabled: true } container)
             {
-                lootable.Interact(new InteractionResult(EInteractionType.Open));
-
-                if (DebugEnabled)
-                    Logger.LogDebug($"[DeadBodyScanner] Interacted with LootableContainer on {deadPlayer.Profile?.Info?.Nickname}");
-
+                container.Interact(new InteractionResult(EInteractionType.Open));
                 return;
             }
 
-            var slots = new[]
+            TryStealBestItem(source, target);
+        }
+
+        private void TryStealBestItem(InventoryController source, InventoryController target)
+        {
+            EquipmentSlot[] prioritySlots =
             {
                 EquipmentSlot.FirstPrimaryWeapon,
                 EquipmentSlot.SecondPrimaryWeapon,
                 EquipmentSlot.Holster,
-                EquipmentSlot.Backpack,
                 EquipmentSlot.TacticalVest,
+                EquipmentSlot.Backpack,
                 EquipmentSlot.Pockets
             };
 
-            for (int i = 0; i < slots.Length; i++)
+            for (int i = 0; i < prioritySlots.Length; i++)
             {
-                var item = sourceInv.Inventory.Equipment.GetSlot(slots[i]).ContainedItem;
+                var slot = prioritySlots[i];
+                var item = source.Inventory.Equipment.GetSlot(slot).ContainedItem;
                 if (item == null)
                     continue;
 
-                var dest = targetInv.FindSlotToPickUp(item);
-                if (dest == null)
+                var destination = target.FindSlotToPickUp(item);
+                if (destination == null)
                     continue;
 
-                var move = InteractionsHandlerClass.Move(item, dest, targetInv, true);
+                var move = InteractionsHandlerClass.Move(item, destination, target, true);
                 if (move.Succeeded)
                 {
-                    if (DebugEnabled)
-                        Logger.LogDebug($"[DeadBodyScanner] Picked up item {item.Name.Localized()} from {slots[i]}");
-
-                    targetInv.TryRunNetworkTransaction(move, null);
+                    target.TryRunNetworkTransaction(move, null);
                     return;
                 }
             }
-
-            if (DebugEnabled)
-                Logger.LogDebug($"[DeadBodyScanner] No items successfully looted from {deadPlayer.Profile?.Info?.Nickname}");
         }
 
         #endregion
 
-        #region Memory Logic
+        #region Loot Memory
 
-        private static void RegisterLooted(string profileId)
+        private void RememberLooted(string profileId)
         {
-            _recentLootedBodies.Add(profileId);
+            _recentlyLooted.Add(profileId);
             _lootTimestamps[profileId] = Time.time;
         }
 
-        private static bool WasRecentlyLooted(string profileId)
+        private bool WasLootedRecently(string profileId)
         {
-            if (_lootTimestamps.TryGetValue(profileId, out float time))
-                return (Time.time - time) < LootMemoryDuration;
+            return _lootTimestamps.TryGetValue(profileId, out float lastTime) &&
+                   (Time.time - lastTime) < LootMemoryDuration;
+        }
 
-            return false;
+        #endregion
+
+        #region Evaluation Guards
+
+        private bool CanEvaluate(float time)
+        {
+            return _bot != null &&
+                   !_bot.IsDead &&
+                   _bot.GetPlayer?.IsYourPlayer != true &&
+                   (_cache?.PanicHandler?.IsPanicking != true) &&
+                   time >= _nextScanTime;
+        }
+
+        #endregion
+
+        #region Startup Scan
+
+        public static void ScanAll()
+        {
+            int registered = 0;
+
+            foreach (var container in LootRegistry.Containers)
+            {
+                var players = GameWorldHandler.GetAllAlivePlayers();
+                for (int i = 0; i < players.Count; i++)
+                {
+                    var player = players[i];
+                    if (player == null || player.HealthController?.IsAlive != false || string.IsNullOrEmpty(player.ProfileId))
+                        continue;
+
+                    if (Vector3.Distance(player.Position, container.transform.position) < 0.75f)
+                    {
+                        DeadBodyContainerCache.Register(player, container);
+                        registered++;
+                        break;
+                    }
+                }
+            }
         }
 
         #endregion

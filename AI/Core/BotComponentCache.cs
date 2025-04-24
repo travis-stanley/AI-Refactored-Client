@@ -1,213 +1,194 @@
 ﻿#nullable enable
 
-using AIRefactored.AI.Behavior;
 using AIRefactored.AI.Combat;
 using AIRefactored.AI.Components;
 using AIRefactored.AI.Groups;
+using AIRefactored.AI.Looting;
 using AIRefactored.AI.Medical;
 using AIRefactored.AI.Memory;
 using AIRefactored.AI.Movement;
 using AIRefactored.AI.Optimization;
 using AIRefactored.AI.Perception;
 using AIRefactored.AI.Reactions;
+using AIRefactored.Runtime;
+using BepInEx.Logging;
+using Comfort.Common;
 using EFT;
+using System;
 using UnityEngine;
 
 namespace AIRefactored.AI.Core
 {
     /// <summary>
-    /// Central cache and coordinator for all AIRefactored logic on a bot.
-    /// Holds references to combat, movement, perception, and tactical modules.
+    /// Central runtime cache of all AIRefactored subsystems for an individual bot.
+    /// Used to streamline access, avoid reflection, and coordinate inter-system updates.
     /// </summary>
-    public class BotComponentCache
+    public sealed class BotComponentCache
     {
-        #region Core Bot Reference
+        #region Logger
 
-        /// <summary>
-        /// The primary BotOwner reference for this AI bot.
-        /// </summary>
-        public BotOwner? Bot { get; internal set; }
+        private static readonly ManualLogSource Logger = AIRefactoredController.Logger;
 
         #endregion
 
-        #region AI Subsystems
+        #region Core Identity
 
+        public BotOwner? Bot { get; internal set; }
+        public AIRefactoredBotOwner? AIRefactoredBotOwner { get; private set; }
+
+        #endregion
+
+        #region AI Systems
+
+        public BotThreatEscalationMonitor? Escalation { get; private set; }
         public FlashGrenadeComponent? FlashGrenade { get; private set; }
         public BotPanicHandler? PanicHandler { get; private set; }
         public BotSuppressionReactionComponent? Suppression { get; private set; }
-
-        public AIRefactoredBotOwner? AIRefactoredBotOwner { get; private set; }
-        public BotBehaviorEnhancer? BehaviorEnhancer { get; private set; }
         public BotGroupBehavior? GroupBehavior { get; private set; }
-
         public BotMovementController? Movement { get; private set; }
         public BotTacticalDeviceController? Tactical { get; private set; }
-
         public HearingDamageComponent? HearingDamage { get; private set; }
         public CombatStateMachine? Combat { get; private set; }
-
-        public BotOwnerPathfindingCache? PathCache { get; private set; }
-        public BotTilt? Tilt { get; private set; }
         public BotPoseController? PoseController { get; set; }
-
+        public BotTilt? Tilt { get; private set; }
+        public BotOwnerPathfindingCache? PathCache { get; private set; }
         public SquadPathCoordinator? SquadPath { get; private set; }
         public BotTacticalMemory? TacticalMemory { get; private set; }
+        public BotLootScanner? LootScanner { get; private set; }
+        public BotDeadBodyScanner? DeadBodyScanner { get; private set; }
+        public BotDoorOpener? DoorOpener { get; private set; }
+
+        public SquadPathCoordinator? Pathing => SquadPath;
 
         #endregion
 
         #region Tactical Modules
 
-        /// <summary>Target selector (updated each tick).</summary>
-        public BotThreatSelector ThreatSelector = null!;
-        /// <summary>Tracks bot injuries and healing needs.</summary>
-        public BotInjurySystem InjurySystem = null!;
-        /// <summary>Tracks last attackers and outgoing fire memory.</summary>
-        public BotLastShotTracker LastShotTracker = null!;
-        /// <summary>Handles group comms like fallback echos and spotted calls.</summary>
-        public BotGroupComms GroupComms = null!;
+        public BotThreatSelector? ThreatSelector { get; private set; }
+        public BotInjurySystem? InjurySystem { get; private set; }
+        public BotLastShotTracker? LastShotTracker { get; private set; }
+        public BotGroupComms? GroupComms { get; private set; }
 
         #endregion
 
-        #region Perception Flags
+        #region Squad Healing
 
-        /// <summary>True if the bot is currently blinded.</summary>
+        public BotHealAnotherTarget? SquadHealer { get; private set; }
+        public BotHealingBySomebody? HealReceiver { get; private set; }
+
+        #endregion
+
+        #region Perception Memory
+
         public bool IsBlinded { get; set; }
-
-        /// <summary>Time until bot vision recovers from flashbang.</summary>
         public float BlindUntilTime { get; set; }
-
-        /// <summary>Timestamp of last flash exposure.</summary>
         public float LastFlashTime { get; set; }
 
-        /// <summary>Optional real-time visibility data shared with vision/perception systems.</summary>
         public TrackedEnemyVisibility? VisibilityTracker;
 
-        #endregion
+        private float _lastHeardTime = -999f;
+        private Vector3? _lastHeardDirection;
 
-        #region Hearing Context
+        public Vector3? LastHeardDirection => _lastHeardDirection;
+        public float LastHeardTime => _lastHeardTime;
 
-        /// <summary>Last time the bot heard a sound.</summary>
-        public float LastHeardTime { get; private set; } = -999f;
-
-        /// <summary>Direction the last heard sound came from.</summary>
-        public Vector3? LastHeardDirection { get; private set; }
-
-        /// <summary>
-        /// Registers a sound heard by the bot. Updates direction and timestamp.
-        /// </summary>
-        /// <param name="source">World-space position the sound originated from.</param>
         public void RegisterHeardSound(Vector3 source)
         {
-            if (Bot == null || Bot.GetPlayer == null || !Bot.GetPlayer.IsAI)
-                return;
-
-            LastHeardTime = Time.time;
-            LastHeardDirection = source - Bot.Position;
+            if (Bot?.GetPlayer?.IsAI == true)
+            {
+                _lastHeardTime = Time.time;
+                _lastHeardDirection = source - Bot.Position;
+            }
         }
 
         #endregion
 
-        #region Shortcuts & Properties
+        #region Shortcuts
 
-        /// <summary>
-        /// Current bot world position (fallbacks to zero if bot null).
-        /// </summary>
         public Vector3 Position => Bot?.Position ?? Vector3.zero;
-
-        /// <summary>
-        /// Memory access helper for this bot.
-        /// </summary>
         public BotMemoryClass? Memory => Bot?.Memory;
-
-        /// <summary>
-        /// Shortcut alias for accessing panic handler (legacy).
-        /// </summary>
         public BotPanicHandler? Panic => PanicHandler;
+        public string Nickname => Bot?.Profile?.Info?.Nickname ?? "Unknown";
 
-        /// <summary>
-        /// Whether all core AIRefactored components are initialized.
-        /// </summary>
+        public bool HasPersonalityTrait(Func<BotPersonalityProfile, bool> predicate)
+        {
+            return AIRefactoredBotOwner?.PersonalityProfile != null &&
+                   predicate(AIRefactoredBotOwner.PersonalityProfile);
+        }
+
         public bool IsReady =>
             Bot != null &&
-            FlashGrenade != null &&
+            Movement != null &&
             PanicHandler != null &&
             Suppression != null &&
-            Movement != null &&
+            FlashGrenade != null &&
             Tactical != null;
 
         #endregion
 
         #region Initialization
 
-        /// <summary>
-        /// Initializes all AI subsystems and memory caches for this bot.
-        /// </summary>
-        /// <param name="bot">EFT BotOwner instance.</param>
         public void Initialize(BotOwner bot)
         {
+            if (bot == null) return;
             Bot = bot;
 
-            FlashGrenade = new FlashGrenadeComponent();
-            FlashGrenade.Initialize(this);
-
-            PanicHandler = new BotPanicHandler();
-            PanicHandler.Initialize(this);
-
-            Suppression = new BotSuppressionReactionComponent();
-            Suppression.Initialize(this);
-
-            BehaviorEnhancer = new BotBehaviorEnhancer();
-            BehaviorEnhancer.Initialize(this);
-
-            GroupBehavior = new BotGroupBehavior();
-            GroupBehavior.Initialize(this);
-
-            Movement = new BotMovementController();
-            Movement.Initialize(this);
-
-            Tactical = new BotTacticalDeviceController();
-            Tactical.Initialize(bot, this);
-
+            FlashGrenade = new FlashGrenadeComponent(); FlashGrenade.Initialize(this);
+            PanicHandler = new BotPanicHandler(); PanicHandler.Initialize(this);
+            Suppression = new BotSuppressionReactionComponent(); Suppression.Initialize(this);
+            Escalation = new BotThreatEscalationMonitor(); Escalation.Initialize(bot);
+            GroupBehavior = new BotGroupBehavior(); GroupBehavior.Initialize(this);
+            Movement = new BotMovementController(); Movement.Initialize(this);
+            Tactical = new BotTacticalDeviceController(); Tactical.Initialize(this);
             HearingDamage = new HearingDamageComponent();
-
-            Combat = new CombatStateMachine();
-            Combat.Initialize(this);
-
+            Combat = new CombatStateMachine(); Combat.Initialize(this);
             Tilt = new BotTilt(bot);
             PathCache = new BotOwnerPathfindingCache();
-
-            SquadPath = new SquadPathCoordinator();
-            SquadPath.Initialize(this);
-
-            TacticalMemory = new BotTacticalMemory();
-            TacticalMemory.Initialize(this);
-
-            AIRefactoredBotOwner = bot.GetPlayer?.GetComponent<AIRefactoredBotOwner>();
+            SquadPath = new SquadPathCoordinator(); SquadPath.Initialize(this);
+            TacticalMemory = new BotTacticalMemory(); TacticalMemory.Initialize(this);
+            LootScanner = new BotLootScanner(); LootScanner.Initialize(this);
+            DeadBodyScanner = new BotDeadBodyScanner(); DeadBodyScanner.Initialize(this);
+            DoorOpener = new BotDoorOpener(bot);
 
             ThreatSelector = new BotThreatSelector(this);
             InjurySystem = new BotInjurySystem(this);
             LastShotTracker = new BotLastShotTracker();
             GroupComms = new BotGroupComms(this);
+
+            SquadHealer = new BotHealAnotherTarget(bot);
+            HealReceiver = new BotHealingBySomebody(bot);
+
+            Logger.LogDebug($"[BotComponentCache] Initialized cache for: {Nickname}");
+        }
+
+        public void SetOwner(AIRefactoredBotOwner owner)
+        {
+            if (owner != null)
+                AIRefactoredBotOwner = owner;
         }
 
         #endregion
 
-        #region Reset & Clear
+        #region Reset
 
-        /// <summary>
-        /// Clears volatile runtime flags and perception markers.
-        /// Should be called on bot respawn or major state reset.
-        /// </summary>
         public void Reset()
         {
             IsBlinded = false;
             BlindUntilTime = 0f;
             LastFlashTime = 0f;
-            LastHeardTime = -999f;
-            LastHeardDirection = null;
+            _lastHeardTime = -999f;
+            _lastHeardDirection = null;
             VisibilityTracker = null;
-
             PathCache?.Clear();
+        }
+
+        #endregion
+
+        #region Debug
+
+        public void DebugPrint()
+        {
+            Logger.LogInfo($"[BotComponentCache] {Nickname} | Ready={IsReady} | Blinded={IsBlinded} | HeardSound={LastHeardTime:0.00}s ago");
         }
 
         #endregion

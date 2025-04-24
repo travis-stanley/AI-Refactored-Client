@@ -4,165 +4,138 @@ using AIRefactored.AI.Combat;
 using AIRefactored.AI.Helpers;
 using AIRefactored.AI.Missions;
 using AIRefactored.Core;
+using Comfort.Common;
 using EFT;
+using EFT.Bots;
+using System;
 using System.Collections.Generic;
+using System.Threading.Tasks;
 using UnityEngine;
+using MissionType = AIRefactored.AI.Missions.BotMissionController.MissionType;
 
 namespace AIRefactored.AI.Groups
 {
     /// <summary>
-    /// Provides tactical group logic for bots in the same squad, including enemy sharing, fallback, and regrouping.
+    /// Handles squad-level tactical coordination:
+    /// Enemy sharing, fallback broadcast, regrouping, and mission voice triggers.
     /// </summary>
-    public class BotTeamLogic
+    public sealed class BotTeamLogic
     {
         #region Fields
 
         private readonly BotOwner _bot;
-        private readonly List<BotOwner> _teammates = new();
+        private readonly List<BotOwner> _teammates = new(8);
+        private readonly Dictionary<BotOwner, CombatStateMachine> _combatMap = new(8);
+
+        private const float RegroupJitterRadius = 1.5f;
+        private const float RegroupThreshold = 2.5f;
 
         #endregion
 
         #region Constructor
 
-        /// <summary>
-        /// Creates a new BotTeamLogic instance for the given bot.
-        /// </summary>
-        /// <param name="bot">The bot owner associated with this logic controller.</param>
         public BotTeamLogic(BotOwner bot)
         {
-            _bot = bot;
+            _bot = bot ?? throw new ArgumentNullException(nameof(bot));
         }
 
         #endregion
 
-        #region Team Synchronization
+        #region Teammate Management
 
-        /// <summary>
-        /// Populates the internal teammate list based on all known AI bots that share the same group ID.
-        /// </summary>
-        /// <param name="allBots">A list of all active bot owners.</param>
         public void SetTeammates(List<BotOwner> allBots)
         {
             _teammates.Clear();
 
-            var player = _bot.GetPlayer;
-            if (player == null || !player.IsAI)
-                return;
-
-            string? groupId = player.Profile?.Info?.GroupId;
+            string? groupId = _bot.GetPlayer?.Profile?.Info?.GroupId;
             if (string.IsNullOrEmpty(groupId))
                 return;
 
-            for (int i = 0; i < allBots.Count; i++)
+            foreach (var other in allBots)
             {
-                var other = allBots[i];
                 if (other == null || other == _bot || other.IsDead)
                     continue;
 
-                var otherPlayer = other.GetPlayer;
-                if (otherPlayer?.IsAI != true)
-                    continue;
-
-                string? otherGroupId = otherPlayer.Profile?.Info?.GroupId;
-                if (otherGroupId == groupId)
+                var player = other.GetPlayer;
+                if (player?.AIData != null && player.Profile?.Info?.GroupId == groupId)
                     _teammates.Add(other);
             }
+        }
+
+        public void InjectCombatState(BotOwner mate, CombatStateMachine fsm)
+        {
+            if (mate == null || fsm == null || mate == _bot || _combatMap.ContainsKey(mate))
+                return;
+
+            _combatMap[mate] = fsm;
         }
 
         #endregion
 
         #region Enemy Sharing
 
-        /// <summary>
-        /// Pushes a known enemy to all current teammates, triggering group targeting logic and memory update.
-        /// </summary>
-        /// <param name="enemy">The IPlayer enemy to share with the group.</param>
         public void ShareTarget(IPlayer enemy)
         {
-            if (enemy == null || string.IsNullOrEmpty(enemy.ProfileId))
+            if (enemy == null || string.IsNullOrWhiteSpace(enemy.ProfileId))
                 return;
 
             var resolved = GameWorldHandler.Get()?.GetAlivePlayerByProfileID(enemy.ProfileId);
             if (resolved == null)
                 return;
 
-            for (int i = 0; i < _teammates.Count; i++)
+            foreach (var mate in _teammates)
+                ForceRegisterEnemy(mate, resolved);
+        }
+
+        public static void AddEnemy(BotOwner bot, IPlayer target)
+        {
+            if (bot == null || bot.IsDead || target == null || bot.BotsGroup == null || bot.Memory == null)
+                return;
+
+            var resolved = GameWorldHandler.Get()?.GetAlivePlayerByProfileID(target.ProfileId ?? "");
+            if (resolved == null)
+                return;
+
+            for (int i = 0; i < bot.BotsGroup.MembersCount; i++)
             {
-                var teammate = _teammates[i];
-                if (teammate == null || teammate.IsDead || teammate.GetPlayer?.IsAI != true)
+                var mate = bot.BotsGroup.Member(i);
+                if (mate == null || mate == bot || mate.IsDead || mate.BotsGroup == null || mate.Memory == null)
                     continue;
 
-                if (teammate.Memory?.GoalEnemy?.Person?.Id == resolved.Id)
-                    continue;
-
-                if (!teammate.BotsGroup?.IsEnemy(resolved) ?? true)
-                {
-                    if (!teammate.BotsGroup!.AddEnemy(resolved, EBotEnemyCause.zryachiyLogic))
-                        continue;
-                }
-
-                var enemies = teammate.BotsGroup?.Enemies;
-                if (enemies != null && enemies.TryGetValue(resolved, out var info))
-                {
-                    teammate.Memory?.AddEnemy(resolved, info, false);
-                }
+                ForceRegisterEnemy(mate, resolved);
             }
         }
 
-        /// <summary>
-        /// Static helper to add a shared enemy across all squad members from the given bot’s group.
-        /// </summary>
-        /// <param name="bot">The bot who initially saw the enemy.</param>
-        /// <param name="target">The IPlayer target to sync.</param>
-        public static void AddEnemy(BotOwner bot, IPlayer target)
+        private static void ForceRegisterEnemy(BotOwner receiver, IPlayer enemy)
         {
-            if (bot?.BotsGroup == null || target == null || bot.IsDead)
+            if (receiver == null || receiver.IsDead || enemy == null)
                 return;
 
-            var group = bot.BotsGroup;
+            if (!receiver.BotsGroup.IsEnemy(enemy))
+                receiver.BotsGroup.AddEnemy(enemy, EBotEnemyCause.zryachiyLogic);
 
-            for (int i = 0; i < group.MembersCount; i++)
+            if (!receiver.EnemiesController.EnemyInfos.ContainsKey(enemy))
             {
-                var teammate = group.Member(i);
-                if (teammate == null || teammate.IsDead || teammate == bot || teammate.GetPlayer?.IsAI != true)
-                    continue;
-
-                if (teammate.Memory?.GoalEnemy?.Person?.Id == target.Id)
-                    continue;
-
-                if (!teammate.BotsGroup?.IsEnemy(target) ?? true)
-                {
-                    if (!teammate.BotsGroup!.AddEnemy(target, EBotEnemyCause.zryachiyLogic))
-                        continue;
-                }
-
-                var enemies = teammate.BotsGroup?.Enemies;
-                if (enemies != null && enemies.TryGetValue(target, out var info))
-                {
-                    teammate.Memory?.AddEnemy(target, info, false);
-                }
+                var fallbackSettings = new BotSettingsClass(enemy as Player, receiver.BotsGroup, EBotEnemyCause.zryachiyLogic);
+                receiver.Memory.AddEnemy(enemy, fallbackSettings, false);
             }
         }
 
         #endregion
 
-        #region Squad Movement
+        #region Movement Coordination
 
-        /// <summary>
-        /// Moves this bot toward the average squad center position with slight randomization.
-        /// </summary>
         public void CoordinateMovement()
         {
-            if (_bot.GetPlayer?.IsAI != true || _bot.IsDead || _teammates.Count == 0)
+            if (_bot.IsDead || _teammates.Count == 0)
                 return;
 
             Vector3 center = Vector3.zero;
             int count = 0;
 
-            for (int i = 0; i < _teammates.Count; i++)
+            foreach (var mate in _teammates)
             {
-                var mate = _teammates[i];
-                if (mate == null || mate.IsDead || mate.GetPlayer?.IsAI != true)
+                if (mate == null || mate.IsDead)
                     continue;
 
                 center += mate.Position;
@@ -173,61 +146,63 @@ namespace AIRefactored.AI.Groups
                 return;
 
             center /= count;
+            Vector3 jitter = UnityEngine.Random.insideUnitSphere * RegroupJitterRadius;
+            jitter.y = 0f;
 
-            Vector3 offset = UnityEngine.Random.insideUnitSphere * 1.5f;
-            offset.y = 0f;
-            Vector3 regroupPoint = center + offset;
+            Vector3 target = center + jitter;
+            float distSq = (_bot.Position - target).sqrMagnitude;
 
-            if (Vector3.Distance(_bot.Position, regroupPoint) > 2.5f)
-            {
-                BotMovementHelper.SmoothMoveTo(_bot, regroupPoint, false, 1.0f);
-            }
-        }
-
-        /// <summary>
-        /// Instructs all squadmates to fallback to a shared retreat location.
-        /// </summary>
-        /// <param name="bot">The bot initiating the fallback.</param>
-        /// <param name="retreatPoint">The position to fall back to.</param>
-        public static void BroadcastFallback(BotOwner bot, Vector3 retreatPoint)
-        {
-            if (bot?.BotsGroup == null || bot.IsDead)
-                return;
-
-            for (int i = 0; i < bot.BotsGroup.MembersCount; i++)
-            {
-                var teammate = bot.BotsGroup.Member(i);
-                if (teammate == null || teammate.IsDead || teammate == bot)
-                    continue;
-
-                var stateMachine = teammate.GetComponent<CombatStateMachine>();
-                stateMachine?.TriggerFallback(retreatPoint);
-            }
+            if (distSq > RegroupThreshold * RegroupThreshold)
+                BotMovementHelper.SmoothMoveTo(_bot, target, false, 1f);
         }
 
         #endregion
 
-        #region Mission Coordination
+        #region Fallback Coordination
 
-        /// <summary>
-        /// Announces the mission type to squadmates and optionally plays cooperation VO.
-        /// </summary>
-        /// <param name="bot">The broadcasting bot.</param>
-        /// <param name="mission">The mission type (Quest, Loot, etc).</param>
-        public static void BroadcastMissionType(BotOwner bot, BotMissionSystem.MissionType mission)
+        public void BroadcastFallback(Vector3 retreatPoint)
         {
-            if (bot?.BotsGroup == null || bot.IsDead)
-                return;
-
-            for (int i = 0; i < bot.BotsGroup.MembersCount; i++)
+            foreach (var kv in _combatMap)
             {
-                var teammate = bot.BotsGroup.Member(i);
-                if (teammate == null || teammate == bot || teammate.IsDead)
+                var mate = kv.Key;
+                var fsm = kv.Value;
+
+                if (mate == null || mate == _bot || mate.IsDead)
                     continue;
 
-                if (teammate.GetPlayer?.IsAI == true && !FikaHeadlessDetector.IsHeadless)
+                TriggerDelayedFallback(fsm, retreatPoint);
+            }
+        }
+
+        private static void TriggerDelayedFallback(CombatStateMachine fsm, Vector3 point)
+        {
+            Task.Run(async () =>
+            {
+                float delay = UnityEngine.Random.Range(0.15f, 0.4f);
+                await Task.Delay((int)(delay * 1000f));
+                fsm.TriggerFallback(point);
+            });
+        }
+
+        #endregion
+
+        #region Squad Voice
+
+        public static void BroadcastMissionType(BotOwner bot, MissionType mission)
+        {
+            if (bot == null || bot.IsDead || FikaHeadlessDetector.IsHeadless || bot.GetPlayer?.AIData == null)
+                return;
+
+            var group = bot.BotsGroup;
+            if (group == null)
+                return;
+
+            for (int i = 0; i < group.MembersCount; i++)
+            {
+                var mate = group.Member(i);
+                if (mate != null && mate != bot && !mate.IsDead && mate.GetPlayer?.AIData != null)
                 {
-                    teammate.BotTalk?.TrySay(EPhraseTrigger.Cooperation);
+                    mate.BotTalk?.TrySay(EPhraseTrigger.Cooperation);
                 }
             }
         }

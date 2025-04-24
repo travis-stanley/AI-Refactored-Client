@@ -9,25 +9,26 @@ using UnityEngine;
 namespace AIRefactored.AI.Helpers
 {
     /// <summary>
-    /// Utility methods for safely accessing bot components, transforms, and AI metadata.
+    /// Centralized utility for managing and querying bot component caches and related AI metadata.
+    /// Used to streamline access, avoid reflection, and coordinate bot-wide logic.
     /// </summary>
     public static class BotCacheUtility
     {
         #region Registry
 
-        private static readonly Dictionary<BotOwner, BotComponentCache> CacheRegistry = new Dictionary<BotOwner, BotComponentCache>(64);
+        private static readonly Dictionary<BotOwner, BotComponentCache> CacheRegistry = new(64);
 
         /// <summary>
-        /// Registers a bot and its associated cache into the global bot registry.
+        /// Registers a bot and its cache into the global registry.
         /// </summary>
         public static void Register(BotOwner bot, BotComponentCache cache)
         {
             if (bot != null && !CacheRegistry.ContainsKey(bot))
-                CacheRegistry.Add(bot, cache);
+                CacheRegistry[bot] = cache;
         }
 
         /// <summary>
-        /// Removes a bot from the global registry.
+        /// Unregisters a bot from the registry.
         /// </summary>
         public static void Unregister(BotOwner bot)
         {
@@ -36,23 +37,27 @@ namespace AIRefactored.AI.Helpers
         }
 
         /// <summary>
-        /// Gets the BotComponentCache associated with a given BotOwner.
+        /// Attempts to retrieve the cache for a given bot.
         /// </summary>
         public static BotComponentCache? GetCache(BotOwner bot)
         {
-            return bot != null && CacheRegistry.TryGetValue(bot, out var cache) ? cache : null;
+            return bot != null && CacheRegistry.TryGetValue(bot, out var cache)
+                ? cache
+                : null;
         }
 
         /// <summary>
-        /// Gets the BotComponentCache for a given EFT Player if it is AI-controlled.
+        /// Attempts to retrieve the cache from a Player instance.
         /// </summary>
         public static BotComponentCache? GetCache(Player player)
         {
-            return player?.AIData?.BotOwner is BotOwner bot ? GetCache(bot) : null;
+            return player?.AIData?.BotOwner is BotOwner bot
+                ? GetCache(bot)
+                : null;
         }
 
         /// <summary>
-        /// Returns all alive bots currently in the registry.
+        /// Returns all alive bots currently registered in the system.
         /// </summary>
         public static IEnumerable<BotComponentCache> AllActiveBots()
         {
@@ -63,56 +68,80 @@ namespace AIRefactored.AI.Helpers
             }
         }
 
+        /// <summary>
+        /// Returns the closest bot (non-dead) to a given position within range.
+        /// </summary>
+        public static BotComponentCache? GetClosestBot(Vector3 origin, float maxDistance = 40f)
+        {
+            BotComponentCache? closest = null;
+            float minDistSq = maxDistance * maxDistance;
+
+            foreach (var pair in CacheRegistry)
+            {
+                var bot = pair.Key;
+                if (bot == null || bot.IsDead) continue;
+
+                float distSq = (bot.Position - origin).sqrMagnitude;
+                if (distSq < minDistSq)
+                {
+                    minDistSq = distSq;
+                    closest = pair.Value;
+                }
+            }
+
+            return closest;
+        }
+
         #endregion
 
-        #region Metadata & Personality
+        #region Personality Metadata
 
         /// <summary>
-        /// Returns the personality profile for a given bot cache if available.
+        /// Returns the bot's registered personality profile (null if not found).
         /// </summary>
         public static BotPersonalityProfile? GetPersonality(BotComponentCache cache)
         {
-            if (cache == null || cache.Bot?.ProfileId == null)
-                return null;
-
-            return BotRegistry.Get(cache.Bot.ProfileId);
+            return cache?.Bot?.ProfileId != null
+                ? BotRegistry.Get(cache.Bot.ProfileId)
+                : null;
         }
 
         /// <summary>
-        /// Returns a formatted display name for the bot using nickname and side.
+        /// Formats a debug-friendly bot name + side (e.g., "Gluhar (Savage)").
         /// </summary>
-        public static string GetBotName(BotComponentCache cache)
+        /// <summary>
+        /// Returns a readable bot name with faction. Falls back to "Unknown" if invalid.
+        /// </summary>
+        /// <param name="cache">Bot component cache containing identity and profile info.</param>
+        /// <returns>Formatted bot nickname with side, or "Unknown".</returns>
+        public static string GetBotName(BotComponentCache? cache)
         {
-            if (cache?.Bot?.Profile?.Info == null)
+            if (cache == null)
                 return "Unknown";
 
-            string name = cache.Bot.Profile.Info.Nickname;
-            string side = cache.Bot.Profile.Side.ToString();
-            return $"{name} ({side})";
+            var bot = cache.Bot;
+            if (bot == null || bot.Profile == null || bot.Profile.Info == null)
+                return "Unknown";
+
+            var info = bot.Profile.Info;
+            return $"{info.Nickname} ({bot.Profile.Side})";
         }
+
 
         #endregion
 
-        #region Tactical & Transform Access
+        #region Transforms
 
-        /// <summary>
-        /// Returns the world-space head transform for this bot using EFT’s internal EnemyPart.
-        /// </summary>
         public static Transform? Head(BotComponentCache cache)
         {
             if (cache?.Bot?.MainParts == null)
                 return null;
 
-            EnemyPart? part;
-            if (!cache.Bot.MainParts.TryGetValue(BodyPartType.head, out part))
-                return null;
-
-            return part?._transform?.Original;
+            return cache.Bot.MainParts.TryGetValue(BodyPartType.head, out var part)
+                ? part?._transform?.Original
+                : null;
         }
 
-        /// <summary>
-        /// Returns the fireport transform used for aiming direction.
-        /// </summary>
         public static Transform? GetLookTransform(BotComponentCache cache)
         {
             return cache?.Bot?.Fireport?.Original;
@@ -120,11 +149,27 @@ namespace AIRefactored.AI.Helpers
 
         #endregion
 
-        #region Panic Support
+        #region Pose Helpers
 
-        /// <summary>
-        /// Attempts to retrieve the panic handler from the bot’s cache.
-        /// </summary>
+        public static string GetStance(BotComponentCache cache)
+        {
+            var pose = cache?.PoseController;
+            if (pose == null)
+                return "Unknown";
+
+            float poseLevel = pose.GetPoseLevel();
+
+            if (poseLevel < 25f)
+                return "Prone";
+            if (poseLevel < 75f)
+                return "Crouching";
+            return "Standing";
+        }
+
+        #endregion
+
+        #region Panic + Perception
+
         public static bool TryGetPanicComponent(BotComponentCache cache, out BotPanicHandler? panic)
         {
             panic = cache?.PanicHandler;
@@ -133,22 +178,33 @@ namespace AIRefactored.AI.Helpers
 
         #endregion
 
-        #region Human Player Checks
+        #region Player Type Helpers
 
-        /// <summary>
-        /// Returns true if the given player is a human (non-AI) player.
-        /// </summary>
         public static bool IsHumanPlayer(Player? player)
         {
             return player != null && !player.IsAI;
         }
 
-        /// <summary>
-        /// Returns true if the bot represents a human player.
-        /// </summary>
         public static bool IsHumanPlayer(BotOwner? bot)
         {
             return bot?.GetPlayer != null && !bot.GetPlayer.IsAI;
+        }
+
+        #endregion
+
+        #region Debug Tools
+
+        public static void DumpCache()
+        {
+            Debug.Log($"[BotCacheUtility] Dumping {CacheRegistry.Count} bot caches:");
+
+            foreach (var kv in CacheRegistry)
+            {
+                var bot = kv.Key;
+                var cache = kv.Value;
+                string name = GetBotName(cache);
+                Debug.Log($" → {name}, Position={bot.Position}, Alive={!bot.IsDead}");
+            }
         }
 
         #endregion

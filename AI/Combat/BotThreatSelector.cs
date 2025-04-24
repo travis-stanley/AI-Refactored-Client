@@ -3,20 +3,21 @@
 using AIRefactored.AI.Core;
 using AIRefactored.Core;
 using EFT;
+using System;
 using UnityEngine;
 
 namespace AIRefactored.AI.Combat
 {
     /// <summary>
-    /// Selects and maintains the most viable threat target based on visibility, proximity, and personality bias.
-    /// Prevents unnecessary target snapping and handles scoring logic per-frame.
+    /// Selects and maintains the most viable threat target based on distance, visibility, and bot personality.
+    /// Avoids excessive switching and prefers visible, nearby enemies under pressure.
     /// </summary>
     public class BotThreatSelector
     {
         #region Fields
 
-        private readonly BotComponentCache _cache;
         private readonly BotOwner _bot;
+        private readonly BotComponentCache _cache;
         private readonly BotPersonalityProfile _profile;
 
         private IPlayer? _currentTarget;
@@ -32,7 +33,7 @@ namespace AIRefactored.AI.Combat
         #region Properties
 
         /// <summary>
-        /// Currently selected threat target, if any.
+        /// The currently selected threat target.
         /// </summary>
         public IPlayer? CurrentTarget => _currentTarget;
 
@@ -41,14 +42,16 @@ namespace AIRefactored.AI.Combat
         #region Constructor
 
         /// <summary>
-        /// Constructs a new threat selector for the specified bot.
+        /// Initializes a new threat selector for the specified bot.
         /// </summary>
-        /// <param name="cache">Component cache for the bot.</param>
         public BotThreatSelector(BotComponentCache cache)
         {
+            if (cache == null || cache.Bot == null || cache.AIRefactoredBotOwner == null)
+                throw new ArgumentNullException(nameof(cache));
+
             _cache = cache;
             _bot = cache.Bot!;
-            _profile = cache.AIRefactoredBotOwner?.PersonalityProfile ?? new BotPersonalityProfile();
+            _profile = cache.AIRefactoredBotOwner.PersonalityProfile;
         }
 
         #endregion
@@ -56,9 +59,8 @@ namespace AIRefactored.AI.Combat
         #region Main Logic
 
         /// <summary>
-        /// Called each tick to re-evaluate the most viable threat.
+        /// Called each tick to evaluate and potentially update the current enemy target.
         /// </summary>
-        /// <param name="time">Current world time.</param>
         public void Tick(float time)
         {
             if (_bot == null || _bot.IsDead || !_bot.IsAI || _bot.GetPlayer == null)
@@ -69,25 +71,27 @@ namespace AIRefactored.AI.Combat
 
             _nextEvaluateTime = time + EvaluationCooldown;
 
-            var candidates = GameWorldHandler.GetAllAlivePlayers();
+            var players = GameWorldHandler.GetAllAlivePlayers();
+            if (players == null || players.Count == 0)
+                return;
 
             IPlayer? bestTarget = null;
             float bestScore = float.MinValue;
 
-            for (int i = 0; i < candidates.Count; i++)
+            for (int i = 0; i < players.Count; i++)
             {
-                var other = candidates[i];
-                if (other == null || other.ProfileId == _bot.ProfileId || !other.HealthController.IsAlive)
+                var candidate = players[i];
+                if (candidate == null || candidate.ProfileId == _bot.ProfileId || candidate.HealthController?.IsAlive != true)
                     continue;
 
-                if (_bot.BotsGroup == null || !_bot.BotsGroup.IsEnemy(other))
+                if (_bot.BotsGroup == null || !_bot.BotsGroup.IsEnemy(candidate))
                     continue;
 
-                float score = ScoreTarget(other, time);
+                float score = ScoreTarget(candidate, time);
                 if (score > bestScore)
                 {
                     bestScore = score;
-                    bestTarget = other;
+                    bestTarget = candidate;
                 }
             }
 
@@ -102,7 +106,10 @@ namespace AIRefactored.AI.Combat
             }
 
             float currentScore = ScoreTarget(_currentTarget, time);
-            if (bestScore > currentScore + 10f && time > _lastTargetSwitchTime + SwitchCooldown)
+            float switchThreshold = 10f;
+            float cooldown = SwitchCooldown * (1f - _profile.AggressionLevel * 0.5f);
+
+            if (bestScore > currentScore + switchThreshold && time > _lastTargetSwitchTime + cooldown)
             {
                 _currentTarget = bestTarget;
                 _lastTargetSwitchTime = time;
@@ -114,36 +121,33 @@ namespace AIRefactored.AI.Combat
         #region Scoring
 
         /// <summary>
-        /// Calculates a threat score based on distance, visibility, and personality modifiers.
+        /// Returns a dynamic threat score for the given target.
         /// </summary>
-        /// <param name="candidate">Candidate enemy to score.</param>
-        /// <param name="time">Current world time.</param>
-        /// <returns>Score for prioritization.</returns>
         private float ScoreTarget(IPlayer candidate, float time)
         {
             float distance = Vector3.Distance(_bot.Position, candidate.Position);
             if (distance > MaxScanDistance)
                 return float.MinValue;
 
-            float distScore = Mathf.Clamp(MaxScanDistance - distance, 0f, MaxScanDistance);
-            float visibilityBonus = 0f;
+            float score = MaxScanDistance - distance;
 
-            if (_bot.EnemiesController?.EnemyInfos != null &&
-                _bot.EnemiesController.EnemyInfos.TryGetValue(candidate, out var info))
+            var infos = _bot.EnemiesController?.EnemyInfos;
+            if (infos != null && infos.ContainsKey(candidate))
             {
-                if (info.IsVisible)
+                var info = infos[candidate];
+                if (info != null && info.IsVisible)
                 {
-                    visibilityBonus += 25f;
+                    score += 25f;
 
-                    if (info.PersonalLastSeenTime + 2.0f > time)
-                        visibilityBonus += 10f;
+                    if (info.PersonalLastSeenTime + 2f > time)
+                        score += 10f;
 
                     if (_profile.Caution > 0.6f)
-                        visibilityBonus += 5f;
+                        score += 5f;
                 }
             }
 
-            return distScore + visibilityBonus;
+            return score;
         }
 
         #endregion
@@ -151,7 +155,7 @@ namespace AIRefactored.AI.Combat
         #region Reset
 
         /// <summary>
-        /// Clears the current target, forcing re-selection.
+        /// Clears the current target.
         /// </summary>
         public void ResetTarget()
         {

@@ -3,32 +3,77 @@
 namespace AIRefactored.AI.Perception
 {
     /// <summary>
-    /// Defines light sensitivity, adaptation rate, and suppression vision penalties for bots.
-    /// Used by <see cref="BotPerceptionSystem"/> to simulate human-like vision response.
+    /// Defines a bot's visual perception profile.
+    /// Simulates response to light, suppression, and temporary blindness for realism.
+    /// Used by <see cref="BotPerceptionSystem"/> to adjust sensory behavior dynamically.
     /// </summary>
     public sealed class BotVisionProfile
     {
-        #region Vision Modulation
+        #region Defaults
+
+        private const float _defaultAdaptationSpeed = 1.25f;
+        private const float _defaultMaxBlindness = 1.0f;
+        private const float _defaultLightSensitivity = 1.0f;
+        private const float _defaultAggressionResponse = 0.85f;
+
+        #endregion
+
+        #region Properties: Flash / Flare Sensitivity
 
         /// <summary>
-        /// Multiplier applied to visual range recovery. Higher = faster recovery from flash effects.
+        /// Speed of recovery from flash or flare blindness.
+        /// Higher values = faster visual clarity return. Default: 1.25
         /// </summary>
-        public float AdaptationSpeed { get; set; } = 1.5f;
+        public float AdaptationSpeed { get; set; } = _defaultAdaptationSpeed;
 
         /// <summary>
-        /// Maximum visual impairment caused by flash blindness (0 = no effect, 1 = fully blind).
+        /// Max flash blindness level. 1 = fully blind, 0 = immune.
         /// </summary>
-        public float MaxBlindness { get; set; } = 1.0f;
+        public float MaxBlindness { get; set; } = _defaultMaxBlindness;
 
         /// <summary>
-        /// Sensitivity to intense lighting such as flares or flashlights. Affects blindness scaling.
+        /// How sensitive the bot is to flashlight glare or flare bursts.
         /// </summary>
-        public float LightSensitivity { get; set; } = 1.0f;
+        public float LightSensitivity { get; set; } = _defaultLightSensitivity;
+
+        #endregion
+
+        #region Properties: Suppression Response
 
         /// <summary>
-        /// Vision penalty factor during suppression. Higher = greater reduction under fire.
+        /// Visual penalty multiplier while under suppression.
+        /// Higher values cause more tunnel vision and reduced perception.
         /// </summary>
-        public float AggressionResponse { get; set; } = 1.0f;
+        public float AggressionResponse { get; set; } = _defaultAggressionResponse;
+
+        #endregion
+
+        #region Utilities
+
+        /// <summary>
+        /// Resets all profile values to their default balanced configuration.
+        /// </summary>
+        public void Reset()
+        {
+            AdaptationSpeed = _defaultAdaptationSpeed;
+            MaxBlindness = _defaultMaxBlindness;
+            LightSensitivity = _defaultLightSensitivity;
+            AggressionResponse = _defaultAggressionResponse;
+        }
+
+        /// <summary>
+        /// Creates a new default-configured vision profile.
+        /// </summary>
+        public static BotVisionProfile CreateDefault()
+        {
+            return new BotVisionProfile
+            {
+                AdaptationSpeed = _defaultAdaptationSpeed,
+                MaxBlindness = _defaultMaxBlindness,
+                LightSensitivity = _defaultLightSensitivity,
+                AggressionResponse = _defaultAggressionResponse
+            };
+        }
 
         #endregion
     }

@@ -1,13 +1,14 @@
 ﻿#nullable enable
 
+using AIRefactored.AI.Optimization;
 using EFT;
 using UnityEngine;
 
 namespace AIRefactored.AI.Helpers
 {
     /// <summary>
-    /// Provides real-time, smooth movement helpers for bots.
-    /// Includes pathing, strafing, and smooth aim/look-at rotation with human-like smoothing.
+    /// Provides smooth, human-like movement and aim transitions for AIRefactored bots.
+    /// Includes pathing, strafing, fallback, and gradual rotation logic.
     /// </summary>
     public static class BotMovementHelper
     {
@@ -19,37 +20,28 @@ namespace AIRefactored.AI.Helpers
 
         #endregion
 
-        #region Movement
+        #region Public Movement API
 
         /// <summary>
-        /// Smoothly moves the bot toward a target world-space position.
-        /// Uses cohesion-based spacing to avoid spam if already close.
+        /// Smoothly navigates the bot to a world-space position using GoToPoint.
         /// </summary>
-        /// <param name="bot">The bot to move.</param>
-        /// <param name="target">Target destination in world space.</param>
-        /// <param name="slow">If true, bot walks/cautious moves.</param>
-        /// <param name="cohesionScale">Optional cohesion buffer multiplier (default 1.0).</param>
         public static void SmoothMoveTo(BotOwner bot, Vector3 target, bool slow = true, float cohesionScale = 1.0f)
         {
             if (!IsEligible(bot))
                 return;
 
             float buffer = DefaultRadius * Mathf.Clamp(cohesionScale, 0.7f, 1.3f);
-            Vector3 position = bot.Position;
+            Vector3 pos = bot.Position;
 
-            if ((position - target).sqrMagnitude < buffer * buffer)
+            if ((pos - target).sqrMagnitude < buffer * buffer)
                 return;
 
             bot.Mover.GoToPoint(target, slow, cohesionScale);
         }
 
         /// <summary>
-        /// Smoothly rotates the bot to face a given target point.
-        /// Uses Quaternion.Slerp for realistic natural turning.
+        /// Smoothly rotates the bot’s body to face the specified world-space target.
         /// </summary>
-        /// <param name="bot">The bot to rotate.</param>
-        /// <param name="lookTarget">World-space position to look at.</param>
-        /// <param name="speed">Rotation speed scalar.</param>
         public static void SmoothLookTo(BotOwner bot, Vector3 lookTarget, float speed = DefaultLookSpeed)
         {
             if (!IsEligible(bot))
@@ -62,35 +54,68 @@ namespace AIRefactored.AI.Helpers
                 return;
 
             Quaternion targetRotation = Quaternion.LookRotation(direction.normalized, Vector3.up);
-            bot.Transform.rotation = Quaternion.Slerp(bot.Transform.rotation, targetRotation, Time.deltaTime * speed);
+            bot.Transform.rotation = Quaternion.Slerp(
+                bot.Transform.rotation,
+                targetRotation,
+                Time.deltaTime * Mathf.Clamp(speed, 1f, 8f)
+            );
         }
 
         /// <summary>
-        /// Evasive lateral movement away from threat direction.
-        /// Strafes to the left/right from the perceived source of fire or aggression.
+        /// Strafes the bot laterally from a known threat direction using a realistic sidestep.
         /// </summary>
-        /// <param name="bot">The bot to strafe.</param>
-        /// <param name="threatDirection">Direction of perceived threat.</param>
-        /// <param name="scale">Scale multiplier for strafe range.</param>
         public static void SmoothStrafeFrom(BotOwner bot, Vector3 threatDirection, float scale = 1.0f)
         {
             if (!IsEligible(bot))
                 return;
 
             Vector3 strafeDir = Vector3.Cross(Vector3.up, threatDirection.normalized);
-            Vector3 strafeOffset = strafeDir * DefaultStrafeDistance * Mathf.Clamp(scale, 0.5f, 1.5f);
-            Vector3 strafeTarget = bot.Position + strafeOffset;
+            Vector3 offset = strafeDir * DefaultStrafeDistance * Mathf.Clamp(scale, 0.75f, 1.25f);
+            Vector3 target = bot.Position + offset;
 
-            bot.Mover.GoToPoint(strafeTarget, false, 1f); // always move fast during strafe
+            bot.Mover.GoToPoint(
+                pos: target,
+                slowAtTheEnd: false,
+                reachDist: 1f,
+                getUpWithCheck: false,
+                mustHaveWay: true,
+                onlyShortTrie: false,
+                force: false
+            );
+        }
+
+        /// <summary>
+        /// Retreats the bot toward cover using dynamic fallback scoring. Includes sprint flag.
+        /// </summary>
+        public static void RetreatToCover(BotOwner bot, Vector3 threatDirection)
+        {
+            if (!IsEligible(bot))
+                return;
+
+            Vector3 best = bot.Position - threatDirection.normalized * 6f;
+
+            var cache = BotCacheUtility.GetCache(bot);
+            if (cache != null && cache.PathCache != null)
+            {
+                var path = BotCoverRetreatPlanner.GetCoverRetreatPath(bot, threatDirection, cache.PathCache);
+                if (path.Count > 0)
+                    best = path[path.Count - 1];
+            }
+
+            float cohesion = 1f;
+            var profile = BotRegistry.TryGet(bot.ProfileId);
+            if (profile != null)
+                cohesion = Mathf.Clamp(profile.Cohesion, 0.7f, 1.3f);
+
+            BotCoverHelper.MarkUsed(best);
+            bot.Mover.GoToPoint(best, true, cohesion);
+            bot.Sprint(true);
         }
 
         #endregion
 
-        #region Helpers
+        #region Validation
 
-        /// <summary>
-        /// Returns true if the bot is valid, AI-controlled, and has movement enabled.
-        /// </summary>
         private static bool IsEligible(BotOwner? bot)
         {
             return bot != null &&
@@ -102,14 +127,11 @@ namespace AIRefactored.AI.Helpers
 
         #endregion
 
-        #region Legacy Compatibility
+        #region Reset Stub
 
-        /// <summary>
-        /// Reserved hook for future reset logic if needed (compatibility stub).
-        /// </summary>
         public static void Reset(BotOwner bot)
         {
-            // Intentionally left empty for now.
+            // Reserved for future movement resets or AI interruption
         }
 
         #endregion

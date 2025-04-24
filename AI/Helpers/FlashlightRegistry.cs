@@ -1,54 +1,51 @@
 ﻿#nullable enable
 
-using AIRefactored.Runtime;
-using BepInEx.Logging;
 using System.Collections.Generic;
 using UnityEngine;
 
 namespace AIRefactored.AI.Helpers
 {
     /// <summary>
-    /// Tracks active tactical flashlights in the scene.
-    /// Used by AI perception systems to simulate flashblindness, evasion, and visual discomfort.
+    /// Tracks and exposes active tactical flashlights in the scene.
+    /// Used by AI perception systems for flashblindness, evasion, and visual panic triggers.
     /// </summary>
     public static class FlashlightRegistry
     {
-        #region Configuration
+        #region Constants
 
-        private const float INTENSITY_THRESHOLD = 1.5f;
-        private const float ANGLE_THRESHOLD = 60f;
-        private const float FLASH_EXPOSE_CONE = 35f;
-        private const float FLASH_EXPOSE_DIST = 28f;
-        private const float FLASH_EXPOSE_RAY_BIAS = 0.22f;
+        private const float IntensityThreshold = 1.5f;
+        private const float AngleThreshold = 60f;
+        private const float ExposureConeAngle = 35f;
+        private const float MaxExposureDistance = 28f;
+        private const float EyeRayBias = 0.22f;
 
         #endregion
 
-        #region Internal State
+        #region State
 
         private static readonly List<Light> _activeLights = new List<Light>(32);
-        private static readonly List<Vector3> _lastKnownFlashlightPositions = new List<Vector3>(32);
-        private static readonly ManualLogSource _log = AIRefactoredController.Logger;
+        private static readonly List<Vector3> _lastKnownFlashPositions = new List<Vector3>(32);
 
         #endregion
 
         #region Public API
 
         /// <summary>
-        /// Scans for all tactical flashlights currently active in the scene and caches their positions.
+        /// Scans the scene for active tactical flashlights.
         /// </summary>
         public static IEnumerable<Light> GetActiveFlashlights()
         {
             _activeLights.Clear();
-            _lastKnownFlashlightPositions.Clear();
+            _lastKnownFlashPositions.Clear();
 
-            Light[] lights = Object.FindObjectsOfType<Light>();
-            for (int i = 0; i < lights.Length; i++)
+            var allLights = Object.FindObjectsOfType<Light>();
+            for (int i = 0; i < allLights.Length; i++)
             {
-                Light light = lights[i];
-                if (IsTacticalFlashlight(light))
+                Light light = allLights[i];
+                if (IsValidTacticalLight(light))
                 {
                     _activeLights.Add(light);
-                    _lastKnownFlashlightPositions.Add(light.transform.position);
+                    _lastKnownFlashPositions.Add(light.transform.position);
                 }
             }
 
@@ -56,43 +53,41 @@ namespace AIRefactored.AI.Helpers
         }
 
         /// <summary>
-        /// Returns cached positions of previously scanned tactical flashlights.
+        /// Returns the last-known positions of visible flashlights.
         /// </summary>
-        public static IReadOnlyList<Vector3> GetLastKnownFlashlightPositions()
-        {
-            return _lastKnownFlashlightPositions;
-        }
+        public static IReadOnlyList<Vector3> GetLastKnownFlashlightPositions() => _lastKnownFlashPositions;
 
         /// <summary>
-        /// Returns true if any tactical flashlight is currently exposing the bot's eyes.
+        /// Returns true if any flashlight is currently hitting this bot in the eyes.
         /// </summary>
-        /// <param name="botHead">Head or eye-level transform of the bot.</param>
-        /// <param name="blindingLight">The detected light causing blindness.</param>
-        /// <param name="customMaxDist">Optional override for max detection distance.</param>
-        public static bool IsExposingBot(Transform botHead, out Light? blindingLight, float customMaxDist = FLASH_EXPOSE_DIST)
+        public static bool IsExposingBot(Transform botHead, out Light? blindingLight, float customMaxDist = MaxExposureDistance)
         {
             blindingLight = null;
             if (botHead == null)
                 return false;
 
-            var lights = GetActiveFlashlights();
-            Vector3 eyePos = botHead.position + Vector3.up * FLASH_EXPOSE_RAY_BIAS;
+            Vector3 eyePos = botHead.position + Vector3.up * EyeRayBias;
 
-            foreach (var light in lights)
+            foreach (Light light in _activeLights)
             {
                 if (light == null || !light.enabled || !light.gameObject.activeInHierarchy)
                     continue;
 
-                Vector3 lightToBot = eyePos - light.transform.position;
-                float dist = lightToBot.magnitude;
-                if (dist > customMaxDist)
+                Vector3 toBot = eyePos - light.transform.position;
+                float distance = toBot.magnitude;
+                if (distance > customMaxDist)
                     continue;
 
-                float coneAngle = Vector3.Angle(light.transform.forward, lightToBot);
-                if (coneAngle > FLASH_EXPOSE_CONE)
+                float angle = Vector3.Angle(light.transform.forward, toBot);
+                if (angle > ExposureConeAngle)
                     continue;
 
-                if (Physics.Raycast(light.transform.position, lightToBot.normalized, out RaycastHit hit, dist + 0.1f, LayerMaskClass.HighPolyWithTerrainMaskAI))
+                if (Physics.Raycast(
+                    light.transform.position,
+                    toBot.normalized,
+                    out RaycastHit hit,
+                    distance + 0.1f,
+                    LayerMaskClass.HighPolyWithTerrainMaskAI))
                 {
                     if (hit.transform == botHead || hit.collider.transform == botHead)
                     {
@@ -100,7 +95,7 @@ namespace AIRefactored.AI.Helpers
                         return true;
                     }
                 }
-                else if (coneAngle < (FLASH_EXPOSE_CONE / 2f) && dist < 4.5f)
+                else if (angle < (ExposureConeAngle / 2f) && distance < 4.5f)
                 {
                     blindingLight = light;
                     return true;
@@ -111,28 +106,25 @@ namespace AIRefactored.AI.Helpers
         }
 
         /// <summary>
-        /// Returns true if any flashlight is rapidly toggling or flickering.
+        /// Whether any flashlight is flickering (not implemented yet).
         /// </summary>
         public static bool IsFlickeringFlashlightActive()
         {
-            // [TODO]: Add flicker state tracking for future versions.
+            // Reserved for future realism upgrades (e.g. flicker-based fear triggers)
             return false;
         }
 
         #endregion
 
-        #region Private Helpers
+        #region Helpers
 
-        /// <summary>
-        /// Determines if a light qualifies as a tactical flashlight.
-        /// </summary>
-        private static bool IsTacticalFlashlight(Light light)
+        private static bool IsValidTacticalLight(Light light)
         {
             return light != null &&
                    light.enabled &&
                    light.type == LightType.Spot &&
-                   light.intensity >= INTENSITY_THRESHOLD &&
-                   light.spotAngle <= ANGLE_THRESHOLD &&
+                   light.intensity >= IntensityThreshold &&
+                   light.spotAngle <= AngleThreshold &&
                    light.gameObject.activeInHierarchy;
         }
 

@@ -1,8 +1,6 @@
 ﻿#nullable enable
 
 using AIRefactored.AI.Helpers;
-using AIRefactored.Runtime;
-using BepInEx.Logging;
 using EFT;
 using System.Collections.Generic;
 using UnityEngine;
@@ -11,15 +9,12 @@ namespace AIRefactored.AI.Optimization
 {
     /// <summary>
     /// Tracks tactical state deltas (aggression, caution, sneaky) and triggers behavior shifts.
-    /// Used to detect and react to mid-mission personality changes.
+    /// Used to detect and respond to mid-mission personality changes.
     /// </summary>
     public class BotOwnerStateCache
     {
-        #region Snapshot Struct
+        #region Internal Types
 
-        /// <summary>
-        /// Stores snapshot of bot’s personality values.
-        /// </summary>
         private struct BotStateSnapshot
         {
             public float Aggression;
@@ -37,20 +32,24 @@ namespace AIRefactored.AI.Optimization
 
             public override bool Equals(object? obj)
             {
-                if (obj is BotStateSnapshot other)
-                {
-                    return Mathf.Abs(Aggression - other.Aggression) < 0.05f &&
-                           Mathf.Abs(Caution - other.Caution) < 0.05f &&
-                           Mathf.Abs(Composure - other.Composure) < 0.05f &&
-                           IsSneaky == other.IsSneaky;
-                }
-
-                return false;
+                return obj is BotStateSnapshot other &&
+                       Mathf.Abs(Aggression - other.Aggression) < 0.05f &&
+                       Mathf.Abs(Caution - other.Caution) < 0.05f &&
+                       Mathf.Abs(Composure - other.Composure) < 0.05f &&
+                       IsSneaky == other.IsSneaky;
             }
 
             public override int GetHashCode()
             {
-                return (Aggression, Caution, Composure, IsSneaky).GetHashCode();
+                unchecked
+                {
+                    int hash = 17;
+                    hash = hash * 23 + Aggression.GetHashCode();
+                    hash = hash * 23 + Caution.GetHashCode();
+                    hash = hash * 23 + Composure.GetHashCode();
+                    hash = hash * 23 + IsSneaky.GetHashCode();
+                    return hash;
+                }
             }
         }
 
@@ -58,141 +57,90 @@ namespace AIRefactored.AI.Optimization
 
         #region Fields
 
-        private readonly Dictionary<string, BotStateSnapshot> _cache = new Dictionary<string, BotStateSnapshot>();
-        private static readonly bool EnableDebug = false;
-        private static readonly ManualLogSource Logger = AIRefactoredController.Logger;
+        private readonly Dictionary<string, BotStateSnapshot> _cache = new(64);
 
         #endregion
 
         #region Public API
 
-        /// <summary>
-        /// Caches the bot’s tactical state on first evaluation.
-        /// </summary>
-        /// <param name="botOwner">Bot to evaluate and store state for.</param>
         public void CacheBotOwnerState(BotOwner botOwner)
         {
-            if (!IsAIBot(botOwner))
+            if (!IsAIBot(botOwner) || botOwner.Profile == null)
                 return;
 
-            string? id = botOwner.Profile?.Id;
-            if (string.IsNullOrEmpty(id))
+            string id = botOwner.Profile.Id;
+            if (string.IsNullOrEmpty(id) || _cache.ContainsKey(id))
                 return;
 
-            string key = id!;
-
-            if (!_cache.ContainsKey(key))
-            {
-                _cache[key] = CaptureSnapshot(botOwner);
-            }
+            _cache[id] = CaptureSnapshot(botOwner);
         }
 
-
-        /// <summary>
-        /// Checks if the bot's state has changed and applies any necessary re-alignment.
-        /// </summary>
-        /// <param name="botOwner">Bot to monitor for tactical changes.</param>
         public void UpdateBotOwnerStateIfNeeded(BotOwner botOwner)
         {
-            if (!IsAIBot(botOwner))
+            if (!IsAIBot(botOwner) || botOwner.Profile == null)
                 return;
 
-            string? id = botOwner.Profile?.Id;
+            string id = botOwner.Profile.Id;
             if (string.IsNullOrEmpty(id))
                 return;
 
-            string key = id!;
+            BotStateSnapshot current = CaptureSnapshot(botOwner);
 
-            var current = CaptureSnapshot(botOwner);
-
-            if (_cache.TryGetValue(key, out var previous) && !previous.Equals(current))
+            if (_cache.TryGetValue(id, out BotStateSnapshot previous) && !previous.Equals(current))
             {
-                _cache[key] = current;
-                UpdateBotOwnerAI(botOwner, current);
-
-                if (EnableDebug)
-                {
-                    string name = botOwner.Profile?.Info?.Nickname ?? key;
-                    Logger.LogDebug($"[AIRefactored-State] {name} → Tactical shift: Agg={current.Aggression:F2} Cau={current.Caution:F2} Comp={current.Composure:F2}");
-                }
+                _cache[id] = current;
+                ApplyStateChange(botOwner, current);
             }
         }
-
 
         #endregion
 
         #region Snapshot Logic
 
-        /// <summary>
-        /// Captures current bot aggression, caution, composure, and sneaky values.
-        /// </summary>
-        /// <param name="botOwner">Bot from which to capture tactical state.</param>
-        /// <returns>A snapshot struct of key AI values.</returns>
         private BotStateSnapshot CaptureSnapshot(BotOwner botOwner)
         {
             var profile = BotRegistry.Get(botOwner.ProfileId);
             var cache = BotCacheUtility.GetCache(botOwner);
+            float composure = cache?.PanicHandler?.GetComposureLevel() ?? 1f;
 
-            if (profile == null)
-                return new BotStateSnapshot(0.5f, 0.5f, 1.0f, false);
-
-            float composure = cache?.PanicHandler?.GetComposureLevel() ?? 1.0f;
-
-            return new BotStateSnapshot(
-                aggression: profile.AggressionLevel,
-                caution: profile.Caution,
-                composure: composure,
-                isSneaky: profile.IsSilentHunter
-            );
+            return profile == null
+                ? new BotStateSnapshot(0.5f, 0.5f, composure, false)
+                : new BotStateSnapshot(profile.AggressionLevel, profile.Caution, composure, profile.IsSilentHunter);
         }
 
         #endregion
 
-        #region Behavior Adjustment
+        #region Behavior Realignment
 
-        /// <summary>
-        /// Applies re-alignment logic based on tactical state shift.
-        /// </summary>
-        /// <param name="botOwner">Bot to modify behavior for.</param>
-        /// <param name="snapshot">Current tactical state snapshot.</param>
-        private void UpdateBotOwnerAI(BotOwner botOwner, BotStateSnapshot snapshot)
+        private void ApplyStateChange(BotOwner botOwner, BotStateSnapshot snapshot)
         {
-            if (botOwner == null || botOwner.gameObject == null)
-                return;
+            bool isAggressive = snapshot.Aggression > 0.7f && snapshot.Composure > 0.8f;
+            bool isCautious = snapshot.Caution > 0.7f || snapshot.Composure < 0.3f;
 
-            // Shift toward forward zone if aggressive and composed
-            if (snapshot.Aggression > 0.7f && snapshot.Composure > 0.8f)
-            {
-                ReassignZoneBehavior(botOwner, preferForward: true);
-            }
-            // Fall back slightly if very cautious or panicking
-            else if (snapshot.Caution > 0.7f || snapshot.Composure < 0.3f)
-            {
-                ReassignZoneBehavior(botOwner, preferForward: false);
-            }
+            if (isAggressive)
+                TriggerZoneShift(botOwner, advance: true);
+            else if (isCautious)
+                TriggerZoneShift(botOwner, advance: false);
             else
-            {
-                ReassignZoneBehavior(botOwner, preferForward: null);
-            }
+                TriggerZoneShift(botOwner, advance: null);
         }
 
-        /// <summary>
-        /// Adjusts movement to simulate zone reassignment based on bot's tactical orientation.
-        /// </summary>
-        /// <param name="botOwner">Bot to move.</param>
-        /// <param name="preferForward">Whether to simulate aggressive advance or fallback behavior.</param>
-        private void ReassignZoneBehavior(BotOwner botOwner, bool? preferForward)
+        private void TriggerZoneShift(BotOwner botOwner, bool? advance)
         {
-            Vector3 fallback = botOwner.Position + Vector3.back * 6f;
-            Vector3 advance = botOwner.Position + Vector3.forward * 8f;
+            if (botOwner.Transform == null)
+                return;
 
-            if (preferForward == true)
+            Vector3 shift = advance switch
             {
-                BotMovementHelper.SmoothMoveTo(botOwner, advance, false, 1f);
-            }
-            else if (preferForward == false)
+                true => botOwner.Transform.forward * 8f,
+                false => -botOwner.Transform.forward * 6f,
+                _ => Vector3.zero
+            };
+
+            if (shift.sqrMagnitude > 0.1f)
             {
-                BotMovementHelper.SmoothMoveTo(botOwner, fallback, false, 1f);
+                Vector3 target = botOwner.Position + shift;
+                BotMovementHelper.SmoothMoveTo(botOwner, target);
             }
         }
 
@@ -200,15 +148,10 @@ namespace AIRefactored.AI.Optimization
 
         #region Utility
 
-        /// <summary>
-        /// Checks whether bot is a real AI (not player or coop controlled).
-        /// </summary>
-        /// <param name="bot">Bot to verify.</param>
-        /// <returns>True if the bot is an AI and not player-controlled.</returns>
         private static bool IsAIBot(BotOwner? bot)
         {
             var player = bot?.GetPlayer;
-            return player != null && player.IsAI && !player.IsYourPlayer;
+            return player is { IsAI: true, IsYourPlayer: false };
         }
 
         #endregion

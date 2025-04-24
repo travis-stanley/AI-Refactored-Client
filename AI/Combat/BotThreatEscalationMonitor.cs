@@ -4,26 +4,30 @@ using AIRefactored.AI.Optimization;
 using AIRefactored.Runtime;
 using BepInEx.Logging;
 using EFT;
+using System;
 using UnityEngine;
 
 namespace AIRefactored.AI.Combat
 {
     /// <summary>
-    /// Monitors panic duration, enemy count, and squad losses to trigger threat escalation.
-    /// Invoked via BotBrain to dynamically adjust bot tuning and combat posture.
+    /// Tracks panic events, visible enemies, and squad losses to trigger escalation behavior.
+    /// Applies tuning changes and personality adaptations based on threat severity.
     /// </summary>
     public class BotThreatEscalationMonitor
     {
         #region Fields
 
-        private BotOwner? _bot;
+        private BotOwner _bot = null!;
+        private bool _hasEscalated;
+
         private float _panicStartTime = -1f;
         private float _lastCheckTime = -1f;
-        private bool _hasEscalated = false;
 
         private const float CheckInterval = 1.0f;
         private const float PanicDurationThreshold = 4.0f;
         private const float SquadCasualtyThreshold = 0.4f;
+        private const float SquadRadiusMeters = 15f;
+        private static readonly float SquadRadiusSqr = SquadRadiusMeters * SquadRadiusMeters;
 
         private static readonly ManualLogSource Logger = AIRefactoredController.Logger;
 
@@ -32,22 +36,20 @@ namespace AIRefactored.AI.Combat
         #region Initialization
 
         /// <summary>
-        /// Initializes the monitor with the bot instance.
+        /// Links this monitor to a bot. Must be called once before Tick.
         /// </summary>
-        /// <param name="bot">Bot owner instance to track.</param>
         public void Initialize(BotOwner bot)
         {
-            _bot = bot;
+            _bot = bot ?? throw new ArgumentNullException(nameof(bot));
         }
 
         #endregion
 
-        #region Tick Logic
+        #region Tick
 
         /// <summary>
-        /// Main update loop. Evaluates whether escalation should be triggered.
+        /// Called regularly to evaluate escalation conditions.
         /// </summary>
-        /// <param name="time">Current world time (Time.time).</param>
         public void Tick(float time)
         {
             if (_hasEscalated || !IsValid())
@@ -58,16 +60,14 @@ namespace AIRefactored.AI.Combat
 
             _lastCheckTime = time + CheckInterval;
 
-            if (ShouldEscalate())
-            {
+            if (ShouldEscalate(time))
                 EscalateBot();
-            }
         }
 
-        /// <summary>
-        /// Notifies the monitor that a panic event has occurred.
-        /// Used to track panic duration.
-        /// </summary>
+        #endregion
+
+        #region Panic Notification
+
         public void NotifyPanicTriggered()
         {
             if (_panicStartTime < 0f)
@@ -76,30 +76,29 @@ namespace AIRefactored.AI.Combat
 
         #endregion
 
-        #region Evaluation Checks
+        #region Escalation Evaluation
 
-        /// <summary>
-        /// Determines if escalation conditions are met.
-        /// </summary>
-        private bool ShouldEscalate()
+        private bool ShouldEscalate(float time)
         {
-            return PanicDurationExceeded() || MultipleEnemiesVisible() || SquadHasLostTeammates();
+            return PanicDurationExceeded(time)
+                || MultipleEnemiesVisible()
+                || SquadHasLostTeammates();
         }
 
-        private bool PanicDurationExceeded()
+        private bool PanicDurationExceeded(float time)
         {
-            return _panicStartTime > 0f && (Time.time - _panicStartTime) > PanicDurationThreshold;
+            return _panicStartTime >= 0f && (time - _panicStartTime) > PanicDurationThreshold;
         }
 
         private bool MultipleEnemiesVisible()
         {
-            var enemies = _bot?.EnemiesController?.EnemyInfos;
-            return enemies != null && enemies.Count >= 2;
+            var infos = _bot.EnemiesController?.EnemyInfos;
+            return infos != null && infos.Count >= 2;
         }
 
         private bool SquadHasLostTeammates()
         {
-            var group = _bot?.BotsGroup;
+            var group = _bot.BotsGroup;
             if (group == null)
                 return false;
 
@@ -122,86 +121,70 @@ namespace AIRefactored.AI.Combat
 
         #region Escalation Logic
 
-        /// <summary>
-        /// Escalates bot tuning and personality once trigger conditions are met.
-        /// </summary>
         private void EscalateBot()
         {
-            if (_bot == null)
-                return;
-
             _hasEscalated = true;
 
             string name = _bot.Profile?.Info?.Nickname ?? "Unknown";
-            Logger.LogInfo($"[AIRefactored-Escalation] 🔺 Bot {name} is escalating behavior due to threat conditions.");
+            Logger.LogInfo($"[AIRefactored-Escalation] Escalating behavior for bot '{name}'.");
 
-            // Reset and re-apply optimizations
             AIOptimizationManager.Reset(_bot);
             AIOptimizationManager.Apply(_bot);
 
-            // Adjust internal tuning
             ApplyEscalationTuning();
             ApplyPersonalityTuning();
         }
 
-        /// <summary>
-        /// Applies internal EFT bot parameter tuning for escalation.
-        /// </summary>
         private void ApplyEscalationTuning()
         {
-            if (_bot?.Settings?.FileSettings == null)
+            var settings = _bot.Settings?.FileSettings;
+            if (settings == null)
                 return;
 
-            var mind = _bot.Settings.FileSettings.Mind;
-            var look = _bot.Settings.FileSettings.Look;
-            var shoot = _bot.Settings.FileSettings.Shoot;
-
+            var shoot = settings.Shoot;
             if (shoot != null)
                 shoot.RECOIL_PER_METER = Mathf.Clamp(shoot.RECOIL_PER_METER * 0.85f, 0.1f, 2f);
 
+            var mind = settings.Mind;
             if (mind != null)
             {
                 mind.DIST_TO_FOUND_SQRT = Mathf.Clamp(mind.DIST_TO_FOUND_SQRT * 1.2f, 200f, 800f);
                 mind.ENEMY_LOOK_AT_ME_ANG = Mathf.Clamp(mind.ENEMY_LOOK_AT_ME_ANG * 0.75f, 5f, 45f);
-                mind.CHANCE_TO_RUN_CAUSE_DAMAGE_0_100 = Mathf.Clamp(mind.CHANCE_TO_RUN_CAUSE_DAMAGE_0_100 + 20f, 0f, 100f);
+                mind.CHANCE_TO_RUN_CAUSE_DAMAGE_0_100 = Mathf.Clamp(
+                    mind.CHANCE_TO_RUN_CAUSE_DAMAGE_0_100 + 20f, 0f, 100f);
             }
 
+            var look = settings.Look;
             if (look != null)
                 look.MAX_VISION_GRASS_METERS = Mathf.Clamp(look.MAX_VISION_GRASS_METERS + 5f, 5f, 40f);
 
-            Logger.LogInfo($"[AIRefactored-Tuning] ✅ Escalation tuning applied to {_bot.Profile?.Info?.Nickname ?? "Unknown"}.");
+            Logger.LogInfo($"[AIRefactored-Tuning] Escalation tuning applied to {_bot.Profile?.Info?.Nickname ?? "Unknown"}.");
         }
 
-        /// <summary>
-        /// Adjusts the bot's personality profile to reflect a more aggressive stance.
-        /// </summary>
         private void ApplyPersonalityTuning()
         {
-            if (_bot == null || _bot.Profile == null)
+            var prof = BotRegistry.Get(_bot.ProfileId);
+            if (prof == null)
                 return;
 
-            var profile = BotRegistry.Get(_bot.ProfileId);
-            if (profile == null)
-                return;
+            prof.AggressionLevel = Mathf.Clamp01(prof.AggressionLevel + 0.25f);
+            prof.Caution = Mathf.Clamp01(prof.Caution - 0.25f);
+            prof.SuppressionSensitivity = Mathf.Clamp01(prof.SuppressionSensitivity * 0.75f);
+            prof.AccuracyUnderFire = Mathf.Clamp01(prof.AccuracyUnderFire + 0.2f);
+            prof.CommunicationLevel = Mathf.Clamp01(prof.CommunicationLevel + 0.2f);
 
-            profile.AggressionLevel = Mathf.Clamp01(profile.AggressionLevel + 0.25f);
-            profile.Caution = Mathf.Clamp01(profile.Caution - 0.25f);
-            profile.SuppressionSensitivity = Mathf.Clamp01(profile.SuppressionSensitivity * 0.75f);
-            profile.AccuracyUnderFire = Mathf.Clamp01(profile.AccuracyUnderFire + 0.2f);
-            profile.CommunicationLevel = Mathf.Clamp01(profile.CommunicationLevel + 0.2f);
-
-            Logger.LogInfo($"[AIRefactored-Tuning] 🔥 Personality escalation applied to {_bot.Profile.Info.Nickname}: " +
-                           $"Aggression={profile.AggressionLevel:F2}, Caution={profile.Caution:F2}, " +
-                           $"Suppression={profile.SuppressionSensitivity:F2}, AccuracyUnderFire={profile.AccuracyUnderFire:F2}");
+            string name = _bot.Profile?.Info?.Nickname ?? "Unknown";
+            Logger.LogInfo(
+                $"[AIRefactored-Tuning] Personality tuned for {name}: " +
+                $"Agg={prof.AggressionLevel:F2}, Caution={prof.Caution:F2}, " +
+                $"Supp={prof.SuppressionSensitivity:F2}, UnderFireAcc={prof.AccuracyUnderFire:F2}"
+            );
         }
 
         #endregion
 
         #region Validation
 
-        /// <summary>
-        /// Ensures bot is valid, alive, and AI-controlled.
-        /// </summary>
         private bool IsValid()
         {
             return _bot != null &&

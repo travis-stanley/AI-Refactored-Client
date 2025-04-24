@@ -1,7 +1,10 @@
 ﻿#nullable enable
 
 using AIRefactored.AI.Memory;
+using AIRefactored.AI.Navigation;
 using AIRefactored.Core;
+using AIRefactored.Runtime;
+using BepInEx.Logging;
 using EFT;
 using System.Collections.Generic;
 using UnityEngine;
@@ -10,28 +13,34 @@ using UnityEngine.AI;
 namespace AIRefactored.AI.Optimization
 {
     /// <summary>
-    /// Caches per-bot NavMesh paths and retreat scoring to avoid redundant computation.
-    /// Also supports scoring fallback cover positions and squad-level broadcast logic.
+    /// Caches NavMesh paths and fallback scoring for individual bots.
+    /// Optimizes retreat and navigation behaviors with smart path reuse and avoidance heuristics.
     /// </summary>
     public class BotOwnerPathfindingCache
     {
         #region Fields
 
-        private readonly Dictionary<string, List<Vector3>> _pathCache = new Dictionary<string, List<Vector3>>();
-        private readonly Dictionary<string, float> _coverWeights = new Dictionary<string, float>();
-        private readonly HashSet<string> _usedKeysThisFrame = new HashSet<string>();
+        private readonly Dictionary<string, List<Vector3>> _pathCache = new(64);
+        private readonly Dictionary<string, float> _coverWeights = new(64);
+        private readonly Dictionary<string, List<Vector3>> _fallbackCache = new(64);
+
+        private BotTacticalMemory? _tacticalMemory;
+
+        private const float BlockCheckHeight = 1.2f;
+        private const float BlockCheckMargin = 0.5f;
+
+        private static readonly ManualLogSource Logger = AIRefactoredController.Logger;
+
+        #endregion
+
+        #region Initialization
+
+        public void SetTacticalMemory(BotTacticalMemory memory) => _tacticalMemory = memory;
 
         #endregion
 
         #region Path Caching
 
-        /// <summary>
-        /// Returns a cached or newly computed NavMesh path from bot to destination.
-        /// Falls back to a straight-line path if NavMesh fails.
-        /// </summary>
-        /// <param name="botOwner">Bot requesting path.</param>
-        /// <param name="destination">Target destination vector.</param>
-        /// <returns>Cached or computed list of Vector3 waypoints.</returns>
         public List<Vector3> GetOptimizedPath(BotOwner botOwner, Vector3 destination)
         {
             if (!IsAIBot(botOwner))
@@ -41,89 +50,141 @@ namespace AIRefactored.AI.Optimization
             if (string.IsNullOrEmpty(botId))
                 return new List<Vector3> { destination };
 
-            string key = botId + "_" + destination.ToString("F2");
+            string key = $"{botId}_{destination:F2}";
 
-            if (_pathCache.TryGetValue(key, out var cached))
+            if (_pathCache.TryGetValue(key, out var cached) && !IsPathBlocked(cached))
                 return cached;
 
-            List<Vector3> path = BuildNavPath(botOwner.Position, destination);
+            var path = BuildNavPath(botOwner.Position, destination);
             _pathCache[key] = path;
-
             return path;
         }
 
-        /// <summary>
-        /// Clears all cached paths and transient keys.
-        /// </summary>
+        public bool TryGetValidPath(BotOwner botOwner, Vector3 destination, out List<Vector3> path)
+        {
+            path = GetOptimizedPath(botOwner, destination);
+            return path.Count >= 2 && !IsPathBlocked(path);
+        }
+
         public void Clear()
         {
             _pathCache.Clear();
-            _usedKeysThisFrame.Clear();
+            _fallbackCache.Clear();
         }
 
         #endregion
 
-        #region NavMesh Logic
+        #region NavMesh Utilities
 
-        /// <summary>
-        /// Computes a NavMesh path between two points. Falls back to a 2-point line if invalid.
-        /// </summary>
-        /// <param name="origin">Start position.</param>
-        /// <param name="target">Target destination.</param>
-        /// <returns>List of waypoints forming a valid NavMesh path or fallback.</returns>
         private List<Vector3> BuildNavPath(Vector3 origin, Vector3 target)
         {
             var navPath = new NavMeshPath();
-            if (NavMesh.CalculatePath(origin, target, NavMesh.AllAreas, navPath) &&
-                navPath.status == NavMeshPathStatus.PathComplete)
+            bool valid = NavMesh.CalculatePath(origin, target, NavMesh.AllAreas, navPath);
+
+            return (valid && navPath.status == NavMeshPathStatus.PathComplete)
+                ? new List<Vector3>(navPath.corners)
+                : new List<Vector3> { origin, target };
+        }
+
+        private bool IsPathBlocked(List<Vector3> path)
+        {
+            if (path.Count < 2)
+                return false;
+
+            Vector3 origin = path[0] + Vector3.up * BlockCheckHeight;
+            Vector3 next = path[1];
+            Vector3 dir = (next - path[0]).normalized;
+            float dist = Vector3.Distance(path[0], next);
+
+            return Physics.Raycast(origin, dir, dist + BlockCheckMargin, LayerMaskClass.DoorLayer);
+        }
+
+        #endregion
+
+        #region Fallback Caching
+
+        public List<Vector3> GetFallbackPath(BotOwner bot, Vector3 direction)
+        {
+            string? id = bot.Profile?.Id;
+            if (string.IsNullOrEmpty(id))
+                return new List<Vector3>();
+
+            Vector3 origin = bot.Position;
+            Vector3 fallbackTarget = origin - direction.normalized * 8f;
+            string key = $"{id}_fb_{HashVecDir(origin, direction)}";
+
+            if (_fallbackCache.TryGetValue(key, out var cached) && cached.Count > 1 && !IsPathBlocked(cached))
+                return cached;
+
+            // Priority 1: Query fallback-tagged NavPoints
+            List<Vector3> navFallbacks = NavPointRegistry.QueryNearby(origin, 25f,
+                pos => NavPointRegistry.GetTag(pos) == "fallback");
+
+            foreach (var candidate in navFallbacks)
             {
-                return new List<Vector3>(navPath.corners);
+                if (IsPathInClearedZone(new List<Vector3> { candidate }))
+                    continue;
+
+                var navPath = BuildNavPath(origin, candidate);
+                if (navPath.Count > 1 && !IsPathBlocked(navPath))
+                {
+                    _fallbackCache[key] = navPath;
+                    return navPath;
+                }
             }
 
-            return new List<Vector3> { origin, target };
+            // Priority 2: Raw fallback vector
+            var raw = BuildNavPath(origin, fallbackTarget);
+            if (raw.Count > 1 && !IsPathBlocked(raw) && !IsPathInClearedZone(raw))
+            {
+                _fallbackCache[key] = raw;
+                return raw;
+            }
+
+            return new List<Vector3>();
+        }
+
+        private bool IsPathInClearedZone(List<Vector3> path)
+        {
+            if (_tacticalMemory == null || path.Count == 0)
+                return false;
+
+            foreach (var point in path)
+            {
+                if (_tacticalMemory.WasRecentlyCleared(point))
+                    return true;
+            }
+
+            return false;
+        }
+
+        private static string HashVecDir(Vector3 pos, Vector3 dir)
+        {
+            Vector3 hashVec = pos + dir.normalized * 2f;
+            return $"{hashVec.x:F1}_{hashVec.y:F1}_{hashVec.z:F1}";
         }
 
         #endregion
 
         #region Cover Scoring
 
-        /// <summary>
-        /// Stores a desirability score for a specific cover point on a map.
-        /// </summary>
-        /// <param name="mapId">Map identifier.</param>
-        /// <param name="pos">Cover location.</param>
-        /// <param name="score">Scored value between 0.1 and 10.</param>
         public void RegisterCoverNode(string mapId, Vector3 pos, float score)
         {
-            string key = mapId + "_" + RoundVector3ToKey(pos);
+            string key = $"{mapId}_{RoundVector3ToKey(pos)}";
             if (!_coverWeights.ContainsKey(key))
-            {
                 _coverWeights[key] = Mathf.Clamp(score, 0.1f, 10f);
-            }
         }
 
-        /// <summary>
-        /// Retrieves cover score for a location, or 1.0 (neutral) if unknown.
-        /// </summary>
-        /// <param name="mapId">Map name or ID.</param>
-        /// <param name="pos">Cover position to query.</param>
-        /// <returns>Score between 0.1–10, or 1.0 default.</returns>
         public float GetCoverWeight(string mapId, Vector3 pos)
         {
-            string key = mapId + "_" + RoundVector3ToKey(pos);
+            string key = $"{mapId}_{RoundVector3ToKey(pos)}";
             return _coverWeights.TryGetValue(key, out float weight) ? weight : 1f;
         }
 
         #endregion
 
-        #region Group Danger Broadcast
+        #region Danger Zone Sync
 
-        /// <summary>
-        /// Broadcasts a fallback position to other bots via squad memory.
-        /// Useful for group panic or shared danger awareness.
-        /// </summary>
-        /// <param name="botOwner">Bot broadcasting the danger zone.</param>
-        /// <param name="point">Location of threat or fallback trigger.</param>
         public void BroadcastRetreat(BotOwner botOwner, Vector3 point)
         {
             if (!IsAIBot(botOwner) || botOwner.BotsGroup == null || string.IsNullOrEmpty(botOwner.ProfileId))
@@ -137,22 +198,12 @@ namespace AIRefactored.AI.Optimization
 
         #region Helpers
 
-        /// <summary>
-        /// Determines if the bot is a non-player AI entity.
-        /// </summary>
-        /// <param name="bot">BotOwner instance.</param>
-        /// <returns>True if controlled by AI.</returns>
         private static bool IsAIBot(BotOwner? bot)
         {
             var player = bot?.GetPlayer;
             return player != null && player.IsAI && !player.IsYourPlayer;
         }
 
-        /// <summary>
-        /// Converts a Vector3 into a rounded string key for consistent cache access.
-        /// </summary>
-        /// <param name="v">Vector3 to format.</param>
-        /// <returns>Rounded string representation for cache keys.</returns>
         private static string RoundVector3ToKey(Vector3 v)
         {
             return $"{v.x:F1}_{v.y:F1}_{v.z:F1}";

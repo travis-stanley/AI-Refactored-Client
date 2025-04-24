@@ -35,11 +35,6 @@ namespace AIRefactored.AI
         public float FlinchThreshold { get; set; } = 0.4f;
         public float SuppressionSensitivity { get; set; } = 0.4f;
         public float ReactionSpeed { get; set; } = 0.65f;
-
-        /// <summary>
-        /// How fast the bot reacts to threats or events (lower is faster).
-        /// Typical range: 0.15 (chad) to 0.45 (slow)
-        /// </summary>
         public float ReactionTime { get; set; } = 0.25f;
 
         #endregion
@@ -50,7 +45,7 @@ namespace AIRefactored.AI
         public float RetreatThreshold { get; set; } = 0.3f;
         public float SuppressiveFireBias { get; set; } = 0.2f;
         public float CommunicationLevel { get; set; } = 0.6f;
-        public float ChaosFactor { get; set; } = 0.0f;
+        public float ChaosFactor { get; set; } = 0f;
         public float AccuracyUnderFire { get; set; } = 0.4f;
 
         #endregion
@@ -84,6 +79,7 @@ namespace AIRefactored.AI
 
         #region Utilities
 
+        /// <summary>Creates a shallow clone of this profile.</summary>
         public BotPersonalityProfile Clone() => (BotPersonalityProfile)MemberwiseClone();
 
         public override string ToString() =>
@@ -94,6 +90,9 @@ namespace AIRefactored.AI
 
     #region Enums
 
+    /// <summary>
+    /// Personality types define high-level AI behavior identity and bias.
+    /// </summary>
     public enum PersonalityType
     {
         Adaptive,
@@ -107,7 +106,11 @@ namespace AIRefactored.AI
         Explorer,
         Fearful,
         Frenzied,
+        Greedy,
+        Heroic,
         Loner,
+        Methodical,
+        Paranoid,
         Patient,
         Reckless,
         RiskTaker,
@@ -118,9 +121,13 @@ namespace AIRefactored.AI
         Tactical,
         TeamPlayer,
         Unpredictable,
-        Vengeful
+        Vengeful,
+        Vigilant
     }
 
+    /// <summary>
+    /// Mission bias affects what the bot prefers to do on a match (loot, fight, quest).
+    /// </summary>
     public enum MissionBias
     {
         Random,
@@ -129,6 +136,9 @@ namespace AIRefactored.AI
         Quest
     }
 
+    /// <summary>
+    /// Defines how often bots lean from cover during peeking or scanning.
+    /// </summary>
     public enum LeanPreference
     {
         Never,

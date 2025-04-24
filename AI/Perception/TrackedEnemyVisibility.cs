@@ -6,26 +6,29 @@ using UnityEngine;
 namespace AIRefactored.AI.Perception
 {
     /// <summary>
-    /// Tracks visibility of multiple enemy bones to simulate partial exposure and realistic detection.
-    /// Used by bots to assess if any body part is exposed (e.g., shoulder, thigh, spine).
+    /// Tracks enemy bone visibility from the bot's perspective.
+    /// Simulates partial body exposure, confidence-based decisions, and occlusion over time.
     /// </summary>
-    public class TrackedEnemyVisibility
+    public sealed class TrackedEnemyVisibility
     {
+        #region Constants
+
+        private const float BoneVisibilityDuration = 0.5f;
+        private const float LinecastSlack = 0.15f;
+
+        private static readonly Queue<string> ExpiredKeys = new(8);
+
+        #endregion
+
         #region Fields
 
-        private readonly Transform? _botOrigin;
-        private const float VisibilityTimeout = 0.5f;
-
-        private readonly Dictionary<string, BoneVisibilityInfo> _visibleBones = new Dictionary<string, BoneVisibilityInfo>(8);
+        private readonly Transform _botOrigin;
+        private readonly Dictionary<string, BoneInfo> _visibleBones = new(8);
 
         #endregion
 
         #region Constructor
 
-        /// <summary>
-        /// Creates a visibility tracker tied to the bot's vision origin.
-        /// </summary>
-        /// <param name="botOrigin">Transform of the bot's eye-level or camera root.</param>
         public TrackedEnemyVisibility(Transform botOrigin)
         {
             _botOrigin = botOrigin;
@@ -36,109 +39,82 @@ namespace AIRefactored.AI.Perception
         #region Public API
 
         /// <summary>
-        /// Records visibility of a specific bone at the given world position.
+        /// Updates visibility tracking for a specific bone.
         /// </summary>
         public void UpdateBoneVisibility(string boneName, Vector3 worldPosition)
         {
-            _visibleBones[boneName] = new BoneVisibilityInfo
-            {
-                WorldPosition = worldPosition,
-                LastSeenTime = Time.time
-            };
+            _visibleBones[boneName] = new BoneInfo(worldPosition, Time.time);
         }
 
         /// <summary>
-        /// Returns true if any tracked bone has been seen recently.
-        /// Expired entries are removed.
+        /// Returns true if any bones are visible and unexpired.
         /// </summary>
-        public bool CanSeeAny(float now = -1f)
+        public bool CanSeeAny()
         {
-            if (now < 0f)
-                now = Time.time;
-
-            bool seen = false;
-            List<string>? expired = null;
-
-            foreach (var kvp in _visibleBones)
-            {
-                if (now - kvp.Value.LastSeenTime <= VisibilityTimeout)
-                {
-                    seen = true;
-                }
-                else
-                {
-                    expired ??= new List<string>();
-                    expired.Add(kvp.Key);
-                }
-            }
-
-            if (expired != null)
-            {
-                for (int i = 0; i < expired.Count; i++)
-                    _visibleBones.Remove(expired[i]);
-            }
-
-            return seen;
+            CleanExpired(Time.time);
+            return _visibleBones.Count > 0;
         }
 
         /// <summary>
-        /// Returns true if this bot has a clear shot path to the specified bone.
+        /// Checks whether a previously seen bone is still shootable (unobstructed).
         /// </summary>
         public bool CanShootTo(string boneName)
         {
             if (!_visibleBones.TryGetValue(boneName, out var info))
                 return false;
 
-            if (Time.time - info.LastSeenTime > VisibilityTimeout)
+            float now = Time.time;
+            if (now - info.Timestamp > BoneVisibilityDuration)
                 return false;
 
-            if (_botOrigin == null)
-                return false;
+            Vector3 eye = _botOrigin.position + Vector3.up * 1.4f;
+            float dist = Vector3.Distance(eye, info.Position);
 
-            Vector3 origin = _botOrigin.position + Vector3.up * 1.4f;
-            Vector3 target = info.WorldPosition;
-            float dist = Vector3.Distance(origin, target);
-
-            return !Physics.Linecast(origin, target, out RaycastHit hit) ||
-                   (hit.collider != null && hit.distance >= dist - 0.15f);
+            return !Physics.Linecast(eye, info.Position, out var hit) || hit.distance >= dist - LinecastSlack;
         }
 
         /// <summary>
-        /// Returns the total number of bones currently exposed within the visibility timeout.
-        /// Expired entries are removed.
+        /// Number of tracked visible bones.
         /// </summary>
-        public int ExposedBoneCount(float now = -1f)
+        public int ExposedBoneCount()
         {
-            if (now < 0f)
-                now = Time.time;
-
-            int count = 0;
-            List<string>? expired = null;
-
-            foreach (var kvp in _visibleBones)
-            {
-                if (now - kvp.Value.LastSeenTime <= VisibilityTimeout)
-                {
-                    count++;
-                }
-                else
-                {
-                    expired ??= new List<string>();
-                    expired.Add(kvp.Key);
-                }
-            }
-
-            if (expired != null)
-            {
-                for (int i = 0; i < expired.Count; i++)
-                    _visibleBones.Remove(expired[i]);
-            }
-
-            return count;
+            CleanExpired(Time.time);
+            return _visibleBones.Count;
         }
 
         /// <summary>
-        /// Clears all bone visibility data immediately.
+        /// Confidence score from 0.0 to 1.0 based on bone exposure.
+        /// </summary>
+        public float GetOverallConfidence()
+        {
+            CleanExpired(Time.time);
+            return Mathf.Clamp01(_visibleBones.Count / 8f);
+        }
+
+        /// <summary>
+        /// Returns true if enough body parts are visible to make a confident decision.
+        /// </summary>
+        public bool HasEnoughData => _visibleBones.Count >= 2;
+
+        /// <summary>
+        /// Simulates memory decay by aging out timestamps.
+        /// </summary>
+        public void DecayConfidence(float decayAmount)
+        {
+            float now = Time.time;
+
+            foreach (var key in _visibleBones.Keys)
+            {
+                BoneInfo info = _visibleBones[key];
+                float newTimestamp = Mathf.Max(0f, info.Timestamp - decayAmount);
+                _visibleBones[key] = new BoneInfo(info.Position, newTimestamp);
+            }
+
+            CleanExpired(now);
+        }
+
+        /// <summary>
+        /// Clears all tracked visibility data.
         /// </summary>
         public void Clear()
         {
@@ -147,12 +123,38 @@ namespace AIRefactored.AI.Perception
 
         #endregion
 
-        #region Internal Types
+        #region Cleanup
 
-        private struct BoneVisibilityInfo
+        private void CleanExpired(float now)
         {
-            public Vector3 WorldPosition;
-            public float LastSeenTime;
+            ExpiredKeys.Clear();
+
+            foreach (var kvp in _visibleBones)
+            {
+                if (now - kvp.Value.Timestamp > BoneVisibilityDuration)
+                    ExpiredKeys.Enqueue(kvp.Key);
+            }
+
+            while (ExpiredKeys.Count > 0)
+            {
+                _visibleBones.Remove(ExpiredKeys.Dequeue());
+            }
+        }
+
+        #endregion
+
+        #region Structs
+
+        private readonly struct BoneInfo
+        {
+            public Vector3 Position { get; }
+            public float Timestamp { get; }
+
+            public BoneInfo(Vector3 position, float timestamp)
+            {
+                Position = position;
+                Timestamp = timestamp;
+            }
         }
 
         #endregion

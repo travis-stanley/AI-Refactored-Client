@@ -5,18 +5,17 @@ using AIRefactored.AI.Helpers;
 using AIRefactored.AI.Memory;
 using AIRefactored.AI.Optimization;
 using AIRefactored.Core;
-using AIRefactored.Runtime;
-using BepInEx.Logging;
 using EFT;
-using System.Collections.Generic;
+using System;
 using UnityEngine;
 
 namespace AIRefactored.AI.Combat
 {
     /// <summary>
-    /// Handles bot panic behavior: suppression, flashbangs, low-health, and squad-based panic chaining.
+    /// Handles suppression, flash, injury, and squad danger panic behavior.
+    /// Manages composure, retreat direction, danger zones, and voice triggers.
     /// </summary>
-    public class BotPanicHandler
+    public sealed class BotPanicHandler
     {
         #region Fields
 
@@ -26,59 +25,44 @@ namespace AIRefactored.AI.Combat
         private float _panicStartTime = -1f;
         private float _lastPanicExitTime = -99f;
         private float _composureLevel = 1f;
-        private bool _isPanicking = false;
+        private bool _isPanicking;
+
+        private string? _lastHitSource;
+        private string? _lastSuppressionSource;
 
         private const float PanicDuration = 3.5f;
         private const float PanicCooldown = 5.0f;
         private const float RecoverySpeed = 0.2f;
-        private const float SquadPanicRadiusSqr = 15f * 15f;
-
-        private static readonly ManualLogSource Logger = AIRefactoredController.Logger;
+        private const float SquadRadiusSqr = 15f * 15f;
 
         #endregion
 
-        #region Public Properties
+        #region Properties
 
-        /// <summary>
-        /// Whether the bot is currently panicking and unable to engage targets.
-        /// </summary>
         public bool IsPanicking => _isPanicking;
-
-        /// <summary>
-        /// Last known profile ID of the player that hit the bot.
-        /// </summary>
-        public string? LastHitSource { get; private set; }
-
-        /// <summary>
-        /// Last known profile ID of the player that suppressed the bot.
-        /// </summary>
-        public string? LastSuppressionSource { get; private set; }
+        public bool IsUnderSuppression => _isPanicking;
+        public float GetComposureLevel() => _composureLevel;
+        public string? LastHitSource => _lastHitSource;
+        public string? LastSuppressionSource => _lastSuppressionSource;
 
         #endregion
 
         #region Initialization
 
-        /// <summary>
-        /// Initializes the panic handler with references and binds health damage triggers.
-        /// </summary>
         public void Initialize(BotComponentCache cache)
         {
-            _cache = cache;
-            _bot = cache.Bot;
+            _cache = cache ?? throw new ArgumentNullException(nameof(cache));
+            _bot = cache.Bot ?? throw new ArgumentNullException(nameof(cache.Bot));
 
-            if (_bot?.GetPlayer?.HealthController is HealthControllerClass health)
-            {
+            var health = _bot.GetPlayer?.HealthController;
+            if (health != null)
                 health.ApplyDamageEvent += OnDamaged;
-            }
         }
 
         #endregion
 
         #region Tick Logic
 
-        /// <summary>
-        /// Called every tick to update panic state and recovery.
-        /// </summary>
         public void Tick(float time)
         {
             if (!IsValid())
@@ -96,7 +80,7 @@ namespace AIRefactored.AI.Combat
             if (time <= _lastPanicExitTime + PanicCooldown)
                 return;
 
-            if (ShouldTriggerPanic())
+            if (ShouldPanicFromThreat())
             {
                 StartPanic(time, -_bot!.LookDirection);
             }
@@ -108,7 +92,19 @@ namespace AIRefactored.AI.Combat
 
         #endregion
 
-        #region Panic Triggers
+        #region Triggers
+
+        public void TriggerPanic()
+        {
+            if (_bot == null || !IsValid() || _isPanicking || Time.time < _lastPanicExitTime + PanicCooldown)
+                return;
+
+            var profile = BotRegistry.Get(_bot.ProfileId);
+            if (profile == null || profile.IsFrenzied || profile.IsStubborn)
+                return;
+
+            StartPanic(Time.time, -_bot.LookDirection);
+        }
 
         private void OnDamaged(EBodyPart part, float damage, DamageInfoStruct info)
         {
@@ -119,22 +115,23 @@ namespace AIRefactored.AI.Combat
             if (profile == null || profile.IsFrenzied || profile.IsStubborn || profile.AggressionLevel > 0.8f)
                 return;
 
-            Vector3 threatDir = (_bot.Position - info.HitPoint).normalized;
-            StartPanic(Time.time, threatDir);
+            Vector3 retreatDir = (_bot.Position - info.HitPoint).normalized;
+            StartPanic(Time.time, retreatDir);
 
             var source = _bot.Memory?.GoalEnemy?.Person;
-            LastHitSource = source?.ProfileId ?? "unknown";
+            _lastHitSource = source?.ProfileId ?? "unknown";
 
             _cache?.LastShotTracker?.RegisterHitBy(source);
             _cache?.InjurySystem?.OnHit(part, damage);
             _cache?.GroupComms?.SayHit();
         }
 
-        private bool ShouldTriggerPanic()
-        {
-            if (!IsValid())
-                return false;
+        #endregion
 
+        #region Evaluation
+
+        private bool ShouldPanicFromThreat()
+        {
             var profile = BotRegistry.Get(_bot!.ProfileId);
             if (profile == null || profile.IsFrenzied || profile.IsStubborn)
                 return false;
@@ -149,38 +146,22 @@ namespace AIRefactored.AI.Combat
         private bool CheckNearbySquadDanger(out Vector3 retreatDir)
         {
             retreatDir = Vector3.zero;
-
-            if (string.IsNullOrEmpty(_bot?.Profile?.Info?.GroupId))
+            if (_bot?.Profile?.Info?.GroupId == null)
                 return false;
 
-            List<BotMemoryStore.DangerZone> zones = BotMemoryStore.GetZonesForMap(GameWorldHandler.GetCurrentMapName());
-            Vector3 pos = _bot!.Position;
+            var zones = BotMemoryStore.GetZonesForMap(GameWorldHandler.GetCurrentMapName());
+            Vector3 myPos = _bot.Position;
 
             foreach (var zone in zones)
             {
-                if ((zone.Position - pos).sqrMagnitude <= SquadPanicRadiusSqr)
+                if ((zone.Position - myPos).sqrMagnitude <= SquadRadiusSqr)
                 {
-                    retreatDir = (pos - zone.Position).normalized;
+                    retreatDir = (myPos - zone.Position).normalized;
                     return true;
                 }
             }
 
             return false;
-        }
-
-        /// <summary>
-        /// External trigger to manually induce panic behavior.
-        /// </summary>
-        public void TriggerPanic()
-        {
-            if (!IsValid() || _isPanicking || Time.time < _lastPanicExitTime + PanicCooldown)
-                return;
-
-            var profile = BotRegistry.Get(_bot!.ProfileId);
-            if (profile == null || profile.IsFrenzied || profile.IsStubborn)
-                return;
-
-            StartPanic(Time.time, -_bot!.LookDirection);
         }
 
         #endregion
@@ -196,23 +177,31 @@ namespace AIRefactored.AI.Combat
             _panicStartTime = now;
             _composureLevel = 0f;
 
-            var profile = BotRegistry.Get(_bot!.ProfileId);
-            float cohesion = profile?.Cohesion ?? 1f;
+            float cohesion = BotRegistry.Get(_bot!.ProfileId)?.Cohesion ?? 1f;
+            Vector3 fallback = _bot.Position + retreatDir.normalized * 8f;
 
-            Vector3 fallback = _bot.Position + retreatDir * 8f;
-            List<Vector3> path = (_cache?.PathCache != null)
-                ? BotCoverRetreatPlanner.GetCoverRetreatPath(_bot, retreatDir, _cache.PathCache)
-                : new List<Vector3> { fallback };
+            if (_cache?.PathCache != null)
+            {
+                var path = BotCoverRetreatPlanner.GetCoverRetreatPath(_bot, retreatDir, _cache.PathCache);
+                if (path.Count > 0)
+                {
+                    fallback = (Vector3.Distance(path[0], _bot.Position) < 1f && path.Count > 1)
+                        ? path[1]
+                        : path[0];
+                }
+            }
 
-            if (path.Count >= 2)
-                BotMovementHelper.SmoothMoveTo(_bot, path[1], false, cohesion);
-            else
-                BotMovementHelper.SmoothMoveTo(_bot, fallback, false, cohesion);
+            BotMovementHelper.SmoothMoveTo(_bot, fallback, false, cohesion);
+            BotCoverHelper.TrySetStanceFromNearbyCover(_cache!, fallback);
 
-            BotMemoryStore.AddDangerZone(GameWorldHandler.GetCurrentMapName(), _bot.Position, DangerTriggerType.Panic, 0.6f);
+            BotMemoryStore.AddDangerZone(
+                GameWorldHandler.GetCurrentMapName(),
+                _bot.Position,
+                DangerTriggerType.Panic,
+                0.6f
+            );
 
-            var source = _bot.Memory?.GoalEnemy?.Person;
-            LastSuppressionSource = source?.ProfileId ?? "unknown";
+            _lastSuppressionSource = _bot.Memory?.GoalEnemy?.Person?.ProfileId ?? "unknown";
 
             _bot.Sprint(true);
             _bot.BotTalk?.TrySay(EPhraseTrigger.OnBeingHurt);
@@ -223,38 +212,25 @@ namespace AIRefactored.AI.Combat
             _isPanicking = false;
             _lastPanicExitTime = now;
 
-            if (_bot?.Memory != null)
-            {
-                _bot.Memory.SetLastTimeSeeEnemy();
-                _bot.Memory.CheckIsPeace();
-            }
+            _bot?.Memory?.SetLastTimeSeeEnemy();
+            _bot?.Memory?.CheckIsPeace();
         }
 
         #endregion
 
-        #region Composure
+        #region Utility
 
         private void RecoverComposure(float deltaTime)
         {
             _composureLevel = Mathf.Clamp01(_composureLevel + deltaTime * RecoverySpeed);
         }
 
-        public float GetComposureLevel()
-        {
-            return _composureLevel;
-        }
-
-        #endregion
-
-        #region Validation
-
         private bool IsValid()
         {
             return _bot != null &&
                    _cache != null &&
                    !_bot.IsDead &&
-                   _bot.GetPlayer != null &&
-                   _bot.GetPlayer.IsAI;
+                   _bot.GetPlayer?.IsAI == true;
         }
 
         #endregion

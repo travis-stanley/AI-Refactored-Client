@@ -1,42 +1,48 @@
 ﻿#nullable enable
 
 using AIRefactored.AI.Core;
-using AIRefactored.Runtime;
-using BepInEx.Logging;
 using EFT;
 using UnityEngine;
 
 namespace AIRefactored.AI.Groups
 {
     /// <summary>
-    /// Applies squad-aware offset to movement destinations to prevent pathing collisions and clumping.
-    /// Dynamically staggers formation using radial patterns based on bot index.
+    /// Offsets squad member movement targets to prevent clumping.
+    /// Applies radial spacing patterns based on squad index and stabilized spread.
     /// </summary>
-    public class SquadPathCoordinator
+    public sealed class SquadPathCoordinator
     {
-        #region Fields
-
-        private BotOwner? _bot;
-        private BotsGroup? _group;
+        #region Constants
 
         private const float BaseSpacing = 2.25f;
         private const float MinSpacing = 1.25f;
         private const float MaxSpacing = 6.5f;
 
-        private static readonly ManualLogSource _log = AIRefactoredController.Logger;
+        #endregion
+
+        #region Fields
+
+        private BotOwner? _bot;
+        private BotsGroup? _group;
+        private Vector3 _cachedOffset = Vector3.zero;
+        private bool _offsetInitialized;
+        private int _lastGroupSize = -1;
 
         #endregion
 
         #region Initialization
 
         /// <summary>
-        /// Initializes the squad path coordinator using the provided bot component cache.
+        /// Initializes the squad path logic for the given bot cache.
         /// </summary>
-        /// <param name="cache">Reference to the bot's AI component cache.</param>
         public void Initialize(BotComponentCache cache)
         {
+            if (cache == null)
+                return;
+
             _bot = cache.Bot;
             _group = _bot?.BotsGroup;
+            _offsetInitialized = false;
         }
 
         #endregion
@@ -44,71 +50,69 @@ namespace AIRefactored.AI.Groups
         #region Public API
 
         /// <summary>
-        /// Applies a squad-based offset to a target destination to prevent unit overlap.
+        /// Returns a destination offset from a shared group destination, unique to this bot.
         /// </summary>
-        /// <param name="sharedDestination">The squad’s common destination.</param>
-        /// <returns>Offset destination for this specific bot.</returns>
         public Vector3 ApplyOffsetTo(Vector3 sharedDestination)
         {
             return sharedDestination + GetCurrentOffset();
         }
 
         /// <summary>
-        /// Calculates the current squad offset for this bot based on its index and staggered radius.
+        /// Gets this bot's current spacing offset from group destination.
+        /// Recomputes if group size changes or not initialized.
         /// </summary>
-        /// <returns>Offset vector to apply to target destination.</returns>
         public Vector3 GetCurrentOffset()
         {
-            if (_bot == null || _group == null || _group.MembersCount <= 1)
+            if (_bot == null || _group == null)
                 return Vector3.zero;
 
-            int index = GetBotIndexInGroup();
-            if (index == -1)
+            int groupSize = _group.MembersCount;
+
+            if (!_offsetInitialized || groupSize != _lastGroupSize)
             {
-                _log.LogWarning($"[SquadPathCoordinator] Could not determine index for bot {_bot.Profile?.Info?.Nickname ?? "unknown"}.");
-                return RandomInsideCircle(1.25f); // Fallback jitter
+                _cachedOffset = ComputeOffset();
+                _offsetInitialized = true;
+                _lastGroupSize = groupSize;
             }
 
-            float spacing = Mathf.Clamp(BaseSpacing + Random.Range(-0.4f, 0.4f), MinSpacing, MaxSpacing);
-            float angleStep = 360f / Mathf.Max(2, _group.MembersCount);
-            float angleDeg = index * angleStep + Random.Range(-12f, 12f);
-            float radians = angleDeg * Mathf.Deg2Rad;
-
-            return new Vector3(Mathf.Cos(radians), 0f, Mathf.Sin(radians)) * spacing;
+            return _cachedOffset;
         }
 
         #endregion
 
-        #region Internal Helpers
+        #region Offset Computation
 
-        /// <summary>
-        /// Attempts to retrieve this bot’s current index within the BotsGroup.
-        /// </summary>
-        /// <returns>Index in the group, or -1 if not found.</returns>
-        private int GetBotIndexInGroup()
+        private Vector3 ComputeOffset()
         {
-            if (_bot == null || _group == null)
-                return -1;
+            if (_bot == null || _group == null || _group.MembersCount < 2)
+                return Vector3.zero;
 
-            for (int i = 0; i < _group.MembersCount; i++)
+            int index = -1;
+            int total = _group.MembersCount;
+
+            for (int i = 0; i < total; i++)
             {
                 var member = _group.Member(i);
                 if (member != null && member.ProfileId == _bot.ProfileId)
-                    return i;
+                {
+                    index = i;
+                    break;
+                }
             }
 
-            return -1;
-        }
+            if (index < 0)
+                return Vector3.zero;
 
-        /// <summary>
-        /// Generates a random offset in a circular radius for fallback spacing.
-        /// </summary>
-        /// <param name="radius">Circle radius for random point generation.</param>
-        /// <returns>Vector offset in circle plane.</returns>
-        private Vector3 RandomInsideCircle(float radius)
-        {
-            float angle = Random.Range(0f, 360f) * Mathf.Deg2Rad;
-            return new Vector3(Mathf.Cos(angle), 0f, Mathf.Sin(angle)) * radius;
+            // Realistic spread using seeded radial jitter
+            int seed = _bot.ProfileId.GetHashCode() ^ total;
+            UnityEngine.Random.InitState(seed);
+
+            float spacing = Mathf.Clamp(BaseSpacing + UnityEngine.Random.Range(-0.4f, 0.4f), MinSpacing, MaxSpacing);
+            float angleStep = 360f / total;
+            float angle = index * angleStep + UnityEngine.Random.Range(-8f, 8f);
+            float rad = angle * Mathf.Deg2Rad;
+
+            return new Vector3(Mathf.Cos(rad), 0f, Mathf.Sin(rad)) * spacing;
         }
 
         #endregion

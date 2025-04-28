@@ -1,38 +1,34 @@
 ﻿#nullable enable
 
-using AIRefactored.Core;
-using BepInEx.Logging;
-using System.Collections;
-using UnityEngine;
-
 namespace AIRefactored.Runtime
 {
+    using System;
+    using System.Collections;
+
+    using AIRefactored.Core;
+
+    using BepInEx.Logging;
+
+    using UnityEngine;
+
     /// <summary>
-    /// Global runtime controller for AI-Refactored.
-    /// Initializes subsystems and holds persistent references for global logic, logging, and lifecycle safety.
+    ///     Global runtime controller for AI-Refactored.
+    ///     Initializes subsystems and holds persistent references for global logic, logging, and lifecycle safety.
     /// </summary>
     public sealed class AIRefactoredController : MonoBehaviour
     {
-        #region Static Fields
-
-        private static AIRefactoredController? _instance;
-        private static ManualLogSource? _logger;
-        private bool _bootstrapped;
-
-        #endregion
-
         #region Unity Lifecycle
 
         private void Awake()
         {
             if (_instance != null && _instance != this)
             {
-                Destroy(gameObject);
+                Destroy(this.gameObject);
                 return;
             }
 
             _instance = this;
-            DontDestroyOnLoad(gameObject);
+            DontDestroyOnLoad(this.gameObject);
         }
 
         #endregion
@@ -40,7 +36,7 @@ namespace AIRefactored.Runtime
         #region Initialization
 
         /// <summary>
-        /// Initializes the global AIRefactored controller. Registers logging and ensures boot loop.
+        ///     Initializes the global AIRefactored controller. Registers logging and ensures boot loop.
         /// </summary>
         public static void Initialize(ManualLogSource logger)
         {
@@ -52,7 +48,7 @@ namespace AIRefactored.Runtime
 
             _logger = logger;
 
-            GameObject host = new GameObject("AIRefactoredController");
+            var host = new GameObject("AIRefactoredController");
             _instance = host.AddComponent<AIRefactoredController>();
             DontDestroyOnLoad(host);
 
@@ -65,14 +61,14 @@ namespace AIRefactored.Runtime
         #region World Bootstrap Coroutine
 
         /// <summary>
-        /// Periodically attempts to bootstrap world systems after scene load.
-        /// Ensures reliable startup without race conditions.
+        ///     Periodically attempts to bootstrap world systems after scene load.
+        ///     Ensures reliable startup without race conditions.
         /// </summary>
         private IEnumerator LateBootCoroutine()
         {
-            float waitUntil = Time.time + 60f;
+            var waitUntil = Time.time + 60f;
 
-            while (!_bootstrapped)
+            while (!this._bootstrapped)
             {
                 try
                 {
@@ -80,20 +76,21 @@ namespace AIRefactored.Runtime
 
                     if (GameWorldHandler.IsInitialized)
                     {
-                        _bootstrapped = true;
+                        this._bootstrapped = true;
                         _logger?.LogInfo("[AIRefactored] ✅ World systems bootstrapped.");
                         yield break;
                     }
 
                     if (FikaHeadlessDetector.IsHeadless && Time.time > waitUntil)
                     {
-                        _logger?.LogWarning("[AIRefactored] ⚠ Headless fallback triggered. Proceeding with manual spawn hook.");
+                        _logger?.LogWarning(
+                            "[AIRefactored] ⚠ Headless fallback triggered. Proceeding with manual spawn hook.");
                         GameWorldHandler.HookBotSpawns();
-                        _bootstrapped = true;
+                        this._bootstrapped = true;
                         yield break;
                     }
                 }
-                catch (System.Exception ex)
+                catch (Exception ex)
                 {
                     _logger?.LogError($"[AIRefactored] ❌ GameWorld bootstrap failed: {ex.Message}\n{ex.StackTrace}");
                 }
@@ -104,18 +101,28 @@ namespace AIRefactored.Runtime
 
         #endregion
 
+        #region Static Fields
+
+        private static AIRefactoredController? _instance;
+
+        private static ManualLogSource? _logger;
+
+        private bool _bootstrapped;
+
+        #endregion
+
         #region Public API
 
         /// <summary>
-        /// True if the global controller is initialized and active.
+        ///     True if the global controller is initialized and active.
         /// </summary>
         public static bool IsInitialized => _instance != null;
 
         /// <summary>
-        /// Accesses the registered logger. Throws if accessed before plugin boot.
+        ///     Accesses the registered logger. Throws if accessed before plugin boot.
         /// </summary>
         public static ManualLogSource Logger =>
-            _logger ?? throw new System.InvalidOperationException("[AIRefactored] Logger accessed before initialization.");
+            _logger ?? throw new InvalidOperationException("[AIRefactored] Logger accessed before initialization.");
 
         #endregion
     }

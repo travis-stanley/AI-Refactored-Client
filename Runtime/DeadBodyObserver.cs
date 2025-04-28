@@ -1,15 +1,17 @@
 ﻿#nullable enable
 
-using AIRefactored.AI.Looting;
-using AIRefactored.Core;
-using EFT.Interactive;
-using UnityEngine;
-
 namespace AIRefactored.Runtime
 {
+    using AIRefactored.AI.Looting;
+    using AIRefactored.Core;
+
+    using EFT.Interactive;
+
+    using UnityEngine;
+
     /// <summary>
-    /// Watches for loot containers associated with dead players and registers them.
-    /// Prevents redundant looting and ensures corpse-container association is maintained.
+    ///     Watches for loot containers associated with dead players and registers them.
+    ///     Prevents redundant looting and ensures corpse-container association is maintained.
     /// </summary>
     public sealed class DeadBodyObserver : MonoBehaviour
     {
@@ -21,7 +23,7 @@ namespace AIRefactored.Runtime
 
         #region State
 
-        private float _nextScanTime = 0f;
+        private float _nextScanTime;
 
         #endregion
 
@@ -32,11 +34,11 @@ namespace AIRefactored.Runtime
             if (!GameWorldHandler.IsInitialized || FikaHeadlessDetector.IsHeadless)
                 return;
 
-            float now = Time.time;
-            if (now < _nextScanTime)
+            var now = Time.time;
+            if (now < this._nextScanTime)
                 return;
 
-            _nextScanTime = now + ScanInterval;
+            this._nextScanTime = now + ScanInterval;
 
             var containers = FindObjectsOfType<LootableContainer>();
             if (containers == null || containers.Length == 0)
@@ -46,13 +48,13 @@ namespace AIRefactored.Runtime
             if (players == null || players.Count == 0)
                 return;
 
-            for (int i = 0; i < players.Count; i++)
+            for (var i = 0; i < players.Count; i++)
             {
                 var player = players[i];
                 if (player == null || player.HealthController == null || player.HealthController.IsAlive)
                     continue;
 
-                string profileId = player.ProfileId;
+                var profileId = player.ProfileId;
                 if (string.IsNullOrEmpty(profileId) || DeadBodyContainerCache.Contains(profileId))
                     continue;
 
@@ -60,7 +62,7 @@ namespace AIRefactored.Runtime
                 if (root == null)
                     continue;
 
-                for (int j = 0; j < containers.Length; j++)
+                for (var j = 0; j < containers.Length; j++)
                 {
                     var container = containers[j];
                     if (container == null || !container.enabled)

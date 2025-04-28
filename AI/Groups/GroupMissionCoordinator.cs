@@ -1,40 +1,47 @@
 ﻿#nullable enable
 
-using AIRefactored.AI.Missions;
-using AIRefactored.Core;
-using EFT;
-using System.Collections.Generic;
-
 namespace AIRefactored.AI.Groups
 {
+    using System.Collections.Generic;
+
+    using AIRefactored.AI.Missions;
+    using AIRefactored.Core;
+
+    using EFT;
+
+    using UnityEngine;
+
     /// <summary>
-    /// Assigns and caches group missions for squads and solo bots.
-    /// Mission types are weighted based on map, personality, and combat role.
+    ///     Assigns and caches group missions for squads and solo bots.
+    ///     Mission types are weighted based on map, personality, and combat role.
     /// </summary>
     public static class GroupMissionCoordinator
     {
-        #region Fields
-
-        private static readonly Dictionary<string, BotMissionSystem.MissionType> AssignedMissions = new Dictionary<string, BotMissionSystem.MissionType>(32);
-
-        #endregion
-
-        #region Public API
+        private static readonly Dictionary<string, BotMissionController.MissionType> AssignedMissions = new(32);
 
         /// <summary>
-        /// Gets the mission assigned to this bot’s group.
-        /// Falls back to solo assignment if group is invalid or absent.
+        ///     Force-assigns a specific mission type to a group ID.
         /// </summary>
-        public static BotMissionSystem.MissionType GetMissionForGroup(BotOwner? bot)
+        public static void ForceMissionForGroup(string groupId, BotMissionController.MissionType mission)
+        {
+            if (!string.IsNullOrEmpty(groupId))
+                AssignedMissions[groupId] = mission;
+        }
+
+        /// <summary>
+        ///     Gets the mission assigned to this bot’s group.
+        ///     Falls back to solo assignment if group is invalid or absent.
+        /// </summary>
+        public static BotMissionController.MissionType GetMissionForGroup(BotOwner? bot)
         {
             if (bot?.GetPlayer == null || !bot.GetPlayer.IsAI)
-                return BotMissionSystem.MissionType.Loot;
+                return BotMissionController.MissionType.Loot;
 
             var profile = bot.Profile;
             if (profile?.Info == null)
-                return BotMissionSystem.MissionType.Loot;
+                return BotMissionController.MissionType.Loot;
 
-            string groupId = profile.Info.GroupId;
+            var groupId = profile.Info.GroupId;
             if (string.IsNullOrEmpty(groupId))
                 return PickMission(bot); // solo fallback
 
@@ -48,7 +55,7 @@ namespace AIRefactored.AI.Groups
         }
 
         /// <summary>
-        /// Registers the group mission for this bot’s group, if unassigned.
+        ///     Registers the group mission for this bot’s group, if unassigned.
         /// </summary>
         public static void RegisterFromBot(BotOwner? bot)
         {
@@ -59,42 +66,24 @@ namespace AIRefactored.AI.Groups
             if (profile?.Info == null)
                 return;
 
-            string groupId = profile.Info.GroupId;
+            var groupId = profile.Info.GroupId;
             if (!string.IsNullOrEmpty(groupId) && !AssignedMissions.ContainsKey(groupId))
-            {
                 AssignedMissions[groupId] = PickMission(bot);
-            }
         }
 
         /// <summary>
-        /// Force-assigns a specific mission type to a group ID.
-        /// </summary>
-        public static void ForceMissionForGroup(string groupId, BotMissionSystem.MissionType mission)
-        {
-            if (!string.IsNullOrEmpty(groupId))
-                AssignedMissions[groupId] = mission;
-        }
-
-        /// <summary>
-        /// Clears all group mission data. Use on session reset or map change.
+        ///     Clears all group mission data. Use on session reset or map change.
         /// </summary>
         public static void Reset()
         {
             AssignedMissions.Clear();
         }
 
-        #endregion
-
-        #region Internal Logic
-
-        /// <summary>
-        /// Dynamically picks a mission based on bot personality and current map.
-        /// </summary>
-        private static BotMissionSystem.MissionType PickMission(BotOwner bot)
+        private static BotMissionController.MissionType PickMission(BotOwner bot)
         {
             float loot = 1f, fight = 1f, quest = 1f;
 
-            string map = GameWorldHandler.GetCurrentMapName()?.ToLowerInvariant() ?? "unknown";
+            var map = GameWorldHandler.GetCurrentMapName()?.ToLowerInvariant() ?? "unknown";
 
             switch (map)
             {
@@ -129,7 +118,7 @@ namespace AIRefactored.AI.Groups
                     loot += 0.5f;
                     break;
                 case "laboratory":
-                    fight += 2f;
+                    fight += 2.0f;
                     break;
                 case "sandbox":
                 case "sandbox_high":
@@ -153,17 +142,15 @@ namespace AIRefactored.AI.Groups
                 if (personality.IsCamper) quest += 0.75f;
             }
 
-            float total = loot + fight + quest;
-            float roll = UnityEngine.Random.value * total;
+            var total = loot + fight + quest;
+            var roll = Random.value * total;
 
             if (roll < loot)
-                return BotMissionSystem.MissionType.Loot;
+                return BotMissionController.MissionType.Loot;
             if (roll < loot + fight)
-                return BotMissionSystem.MissionType.Fight;
+                return BotMissionController.MissionType.Fight;
 
-            return BotMissionSystem.MissionType.Quest;
+            return BotMissionController.MissionType.Quest;
         }
-
-        #endregion
     }
 }

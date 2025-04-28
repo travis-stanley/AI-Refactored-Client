@@ -1,101 +1,94 @@
 ﻿#nullable enable
 
-using System;
-using System.Collections.Generic;
-using UnityEngine;
-
 namespace AIRefactored.AI.Navigation
 {
+    using System;
+    using System.Collections.Generic;
+
+    using UnityEngine;
+
+    /// <summary>
+    ///     Quadtree-based spatial index for NavPointData.
+    ///     Supports fast lookup with optional filtering by zone, elevation, and cover tag.
+    /// </summary>
     public class QuadtreeNavGrid
     {
-        #region Constants
-
-        private const int MaxPointsPerNode = 8;
         private const int MaxDepth = 6;
 
-        #endregion
-
-        #region Node Definition
-
-        private class Node
-        {
-            public Rect Bounds;
-            public List<CustomNavigationPoint> NavPoints;
-            public List<Vector3> RawPoints;
-            public Node[]? Children;
-            public int Depth;
-
-            public Node(Rect bounds, int depth)
-            {
-                Bounds = bounds;
-                NavPoints = new List<CustomNavigationPoint>(MaxPointsPerNode);
-                RawPoints = new List<Vector3>(MaxPointsPerNode);
-                Depth = depth;
-            }
-
-            public bool IsLeaf => Children == null;
-        }
-
-        #endregion
-
-        #region Fields
+        private const int MaxPointsPerNode = 8;
 
         private Node _root;
 
-        #endregion
-
-        #region Constructor
-
         public QuadtreeNavGrid(Vector2 center, float size)
         {
-            float half = size * 0.5f;
-            _root = new Node(new Rect(center.x - half, center.y - half, size, size), 0);
+            var half = size * 0.5f;
+            this._root = new Node(new Rect(center.x - half, center.y - half, size, size), 0);
         }
-
-        #endregion
-
-        #region Public API
 
         public void Clear()
         {
-            _root = new Node(_root.Bounds, 0);
+            this._root = new Node(this._root.Bounds, 0);
         }
 
-        public void Insert(CustomNavigationPoint point)
+        public void Insert(NavPointData point)
         {
             if (point == null) return;
-            Insert(_root, point);
+            this.Insert(this._root, point);
         }
 
         public void Insert(Vector3 point)
         {
-            Insert(_root, point);
+            this.Insert(this._root, point);
         }
 
-        public List<CustomNavigationPoint> Query(Vector3 position, float radius, Predicate<CustomNavigationPoint>? filter = null)
+        public List<NavPointData> Query(Vector3 position, float radius, Predicate<NavPointData>? filter = null)
         {
-            var result = new List<CustomNavigationPoint>();
-            Query(_root, position, radius * radius, result, filter);
+            var result = new List<NavPointData>();
+            this.Query(this._root, position, radius * radius, result, filter);
             return result;
+        }
+
+        /// <summary>
+        ///     Performs compound queries against zone, elevation band, and cover tag.
+        /// </summary>
+        public List<NavPointData> QueryCombined(
+            Vector3 position,
+            float radius,
+            string? zone = null,
+            string? elevationBand = null,
+            string? coverTag = null)
+        {
+            Predicate<NavPointData> filter = (NavPointData p) =>
+                {
+                    if (zone != null && !string.Equals(p.Zone, zone, StringComparison.OrdinalIgnoreCase))
+                        return false;
+
+                    if (elevationBand != null && !string.Equals(
+                            p.ElevationBand,
+                            elevationBand,
+                            StringComparison.OrdinalIgnoreCase))
+                        return false;
+
+                    if (coverTag != null && !string.Equals(p.Tag, coverTag, StringComparison.OrdinalIgnoreCase))
+                        return false;
+
+                    return true;
+                };
+
+            return this.Query(position, radius, filter);
         }
 
         public List<Vector3> QueryRaw(Vector3 position, float radius, Predicate<Vector3>? filter = null)
         {
             var result = new List<Vector3>();
-            QueryRaw(_root, position, radius * radius, result, filter);
+            this.QueryRaw(this._root, position, radius * radius, result, filter);
             return result;
         }
 
-        #endregion
-
-        #region Internal Insert (NavPoints)
-
-        private void Insert(Node node, CustomNavigationPoint point)
+        private void Insert(Node node, NavPointData point)
         {
-            Vector2 pos2D = new Vector2(point.Position.x, point.Position.z);
-
-            if (!node.Bounds.Contains(pos2D))
-                return;
+            var pos2D = new Vector2(point.Position.x, point.Position.z);
+            if (!node.Bounds.Contains(pos2D)) return;
 
             if (node.IsLeaf)
             {
@@ -103,23 +96,20 @@ namespace AIRefactored.AI.Navigation
 
                 if (node.NavPoints.Count > MaxPointsPerNode && node.Depth < MaxDepth)
                 {
-                    Subdivide(node);
-                    ReinsertPoints(node);
+                    this.Subdivide(node);
+                    this.ReinsertPoints(node);
                 }
             }
             else
             {
-                foreach (var child in node.Children!)
-                    Insert(child, point);
+                foreach (var child in node.Children!) this.Insert(child, point);
             }
         }
 
         private void Insert(Node node, Vector3 point)
         {
-            Vector2 pos2D = new Vector2(point.x, point.z);
-
-            if (!node.Bounds.Contains(pos2D))
-                return;
+            var pos2D = new Vector2(point.x, point.z);
+            if (!node.Bounds.Contains(pos2D)) return;
 
             if (node.IsLeaf)
             {
@@ -127,100 +117,126 @@ namespace AIRefactored.AI.Navigation
 
                 if (node.RawPoints.Count > MaxPointsPerNode && node.Depth < MaxDepth)
                 {
-                    Subdivide(node);
-                    ReinsertPoints(node);
+                    this.Subdivide(node);
+                    this.ReinsertPoints(node);
                 }
             }
             else
             {
-                foreach (var child in node.Children!)
-                    Insert(child, point);
+                foreach (var child in node.Children!) this.Insert(child, point);
             }
         }
 
-        private void Subdivide(Node node)
+        private void Query(
+            Node node,
+            Vector3 worldPos,
+            float radiusSq,
+            List<NavPointData> result,
+            Predicate<NavPointData>? filter)
         {
-            node.Children = new Node[4];
-            float halfW = node.Bounds.width * 0.5f;
-            float halfH = node.Bounds.height * 0.5f;
+            var pos2D = new Vector2(worldPos.x, worldPos.z);
+            var radius = Mathf.Sqrt(radiusSq);
+            var queryRect = new Rect(pos2D.x - radius, pos2D.y - radius, radius * 2f, radius * 2f);
 
-            node.Children[0] = new Node(new Rect(node.Bounds.x, node.Bounds.y, halfW, halfH), node.Depth + 1);                      // Bottom Left
-            node.Children[1] = new Node(new Rect(node.Bounds.x + halfW, node.Bounds.y, halfW, halfH), node.Depth + 1);              // Bottom Right
-            node.Children[2] = new Node(new Rect(node.Bounds.x, node.Bounds.y + halfH, halfW, halfH), node.Depth + 1);              // Top Left
-            node.Children[3] = new Node(new Rect(node.Bounds.x + halfW, node.Bounds.y + halfH, halfW, halfH), node.Depth + 1);      // Top Right
+            if (!node.Bounds.Overlaps(queryRect))
+                return;
+
+            if (node.IsLeaf)
+                foreach (var point in node.NavPoints)
+                {
+                    var distSq = (point.Position - worldPos).sqrMagnitude;
+                    if (distSq <= radiusSq && (filter == null || filter(point)))
+                        result.Add(point);
+                }
+            else
+                foreach (var child in node.Children!)
+                    this.Query(child, worldPos, radiusSq, result, filter);
+        }
+
+        private void QueryRaw(
+            Node node,
+            Vector3 worldPos,
+            float radiusSq,
+            List<Vector3> result,
+            Predicate<Vector3>? filter)
+        {
+            var pos2D = new Vector2(worldPos.x, worldPos.z);
+            var radius = Mathf.Sqrt(radiusSq);
+            var queryRect = new Rect(pos2D.x - radius, pos2D.y - radius, radius * 2f, radius * 2f);
+
+            if (!node.Bounds.Overlaps(queryRect))
+                return;
+
+            if (node.IsLeaf)
+                foreach (var point in node.RawPoints)
+                {
+                    var distSq = (point - worldPos).sqrMagnitude;
+                    if (distSq <= radiusSq && (filter == null || filter(point)))
+                        result.Add(point);
+                }
+            else
+                foreach (var child in node.Children!)
+                    this.QueryRaw(child, worldPos, radiusSq, result, filter);
         }
 
         private void ReinsertPoints(Node node)
         {
             var navCopy = node.NavPoints;
-            node.NavPoints = new List<CustomNavigationPoint>();
+            node.NavPoints = new List<NavPointData>();
 
             foreach (var point in navCopy)
-            {
-                foreach (var child in node.Children!)
-                    Insert(child, point);
-            }
+            foreach (var child in node.Children!)
+                this.Insert(child, point);
 
             var rawCopy = node.RawPoints;
             node.RawPoints = new List<Vector3>();
 
             foreach (var point in rawCopy)
-            {
-                foreach (var child in node.Children!)
-                    Insert(child, point);
-            }
+            foreach (var child in node.Children!)
+                this.Insert(child, point);
         }
 
-        #endregion
-
-        #region Internal Query
-
-        private void Query(Node node, Vector3 worldPos, float radiusSq, List<CustomNavigationPoint> result, Predicate<CustomNavigationPoint>? filter)
+        private void Subdivide(Node node)
         {
-            Vector2 pos2D = new Vector2(worldPos.x, worldPos.z);
-            if (!node.Bounds.Overlaps(new Rect(pos2D.x - radiusSq, pos2D.y - radiusSq, radiusSq * 2f, radiusSq * 2f)))
-                return;
+            node.Children = new Node[4];
+            var halfW = node.Bounds.width * 0.5f;
+            var halfH = node.Bounds.height * 0.5f;
 
-            if (node.IsLeaf)
-            {
-                foreach (var point in node.NavPoints)
-                {
-                    if (point == null) continue;
-
-                    float distSq = (point.Position - worldPos).sqrMagnitude;
-                    if (distSq <= radiusSq && (filter == null || filter(point)))
-                        result.Add(point);
-                }
-            }
-            else
-            {
-                foreach (var child in node.Children!)
-                    Query(child, worldPos, radiusSq, result, filter);
-            }
+            node.Children[0] = new Node(
+                new Rect(node.Bounds.x, node.Bounds.y, halfW, halfH),
+                node.Depth + 1); // Bottom Left
+            node.Children[1] = new Node(
+                new Rect(node.Bounds.x + halfW, node.Bounds.y, halfW, halfH),
+                node.Depth + 1); // Bottom Right
+            node.Children[2] = new Node(
+                new Rect(node.Bounds.x, node.Bounds.y + halfH, halfW, halfH),
+                node.Depth + 1); // Top Left
+            node.Children[3] = new Node(
+                new Rect(node.Bounds.x + halfW, node.Bounds.y + halfH, halfW, halfH),
+                node.Depth + 1); // Top Right
         }
 
-        private void QueryRaw(Node node, Vector3 worldPos, float radiusSq, List<Vector3> result, Predicate<Vector3>? filter)
+        private class Node
         {
-            Vector2 pos2D = new Vector2(worldPos.x, worldPos.z);
-            if (!node.Bounds.Overlaps(new Rect(pos2D.x - radiusSq, pos2D.y - radiusSq, radiusSq * 2f, radiusSq * 2f)))
-                return;
+            public readonly int Depth;
 
-            if (node.IsLeaf)
+            public Rect Bounds;
+
+            public Node[]? Children;
+
+            public List<NavPointData> NavPoints;
+
+            public List<Vector3> RawPoints;
+
+            public Node(Rect bounds, int depth)
             {
-                foreach (var point in node.RawPoints)
-                {
-                    float distSq = (point - worldPos).sqrMagnitude;
-                    if (distSq <= radiusSq && (filter == null || filter(point)))
-                        result.Add(point);
-                }
+                this.Bounds = bounds;
+                this.NavPoints = new List<NavPointData>(MaxPointsPerNode);
+                this.RawPoints = new List<Vector3>(MaxPointsPerNode);
+                this.Depth = depth;
             }
-            else
-            {
-                foreach (var child in node.Children!)
-                    QueryRaw(child, worldPos, radiusSq, result, filter);
-            }
+
+            public bool IsLeaf => this.Children == null;
         }
-
-        #endregion
     }
 }

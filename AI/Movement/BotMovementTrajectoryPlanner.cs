@@ -1,116 +1,114 @@
 ﻿#nullable enable
 
-using AIRefactored.AI.Core;
-using EFT;
-using System;
-using UnityEngine;
-
 namespace AIRefactored.AI.Movement
 {
+    using System;
+
+    using AIRefactored.AI.Core;
+
+    using EFT;
+
+    using UnityEngine;
+
+    using Random = UnityEngine.Random;
+
     /// <summary>
-    /// Modifies a bot’s movement vector by applying chaos wobble, squad staggering offsets,
-    /// and teammate collision avoidance. Produces natural movement flow and reduces clustering.
+    ///     Modifies a bot’s movement vector by applying chaos wobble, squad staggering offsets,
+    ///     and teammate collision avoidance. Produces natural movement flow and reduces clustering.
     /// </summary>
-    public class BotMovementTrajectoryPlanner
+    public sealed class BotMovementTrajectoryPlanner
     {
-        #region Constants
-
-        private const float BaseChaosInterval = 0.4f;
-        private const float BaseChaosRadius = 0.65f;
         private const float AvoidanceRadius = 2.0f;
-        private const float SquadOffsetStrength = 0.75f;
-        private const float AvoidanceStrength = 1.25f;
 
-        #endregion
+        private const float AvoidanceScale = 1.25f;
 
-        #region Fields
+        private const float ChaosInterval = 0.4f;
+
+        private const float ChaosRadius = 0.65f;
+
+        private const float SquadOffsetScale = 0.75f;
 
         private readonly BotOwner _bot;
+
         private readonly BotComponentCache _cache;
 
         private Vector3 _chaosOffset = Vector3.zero;
+
         private float _nextChaosUpdate;
 
-        #endregion
-
-        #region Constructor
-
-        /// <summary>
-        /// Constructs a movement planner tied to the bot’s personality and squad behavior.
-        /// </summary>
         public BotMovementTrajectoryPlanner(BotOwner bot, BotComponentCache cache)
         {
-            _bot = bot ?? throw new ArgumentNullException(nameof(bot));
-            _cache = cache ?? throw new ArgumentNullException(nameof(cache));
+            this._bot = bot ?? throw new ArgumentNullException(nameof(bot));
+            this._cache = cache ?? throw new ArgumentNullException(nameof(cache));
         }
 
-        #endregion
-
-        #region Public API
-
         /// <summary>
-        /// Modifies a target movement vector by applying chaotic offset, squad offset,
-        /// and dynamic teammate avoidance.
+        ///     Adjusts the input movement direction using chaos wobble, squad offset, and teammate avoidance.
         /// </summary>
         public Vector3 ModifyTrajectory(Vector3 targetDir, float deltaTime)
         {
-            float now = Time.time;
+            var now = Time.unscaledTime;
 
-            // === Chaos wobble from personality caution ===
-            if (now >= _nextChaosUpdate)
+            if (now >= this._nextChaosUpdate) this.UpdateChaosOffset(now);
+
+            var baseDir = targetDir.normalized;
+
+            var offset = baseDir + this._chaosOffset;
+
+            // Apply squad staggering offset
+            if (this._cache.SquadPath is { } squadPath)
             {
-                float caution = _cache.AIRefactoredBotOwner?.PersonalityProfile?.Caution ?? 0.5f;
-                float chaosRange = BaseChaosRadius * (1f - caution);
-
-                _chaosOffset = new Vector3(
-                    UnityEngine.Random.Range(-chaosRange, chaosRange),
-                    0f,
-                    UnityEngine.Random.Range(-chaosRange, chaosRange)
-                );
-
-                _nextChaosUpdate = now + BaseChaosInterval;
+                var squadOffset = squadPath.GetCurrentOffset();
+                if (squadOffset.sqrMagnitude > 0.01f)
+                    offset += squadOffset.normalized * SquadOffsetScale;
             }
 
-            Vector3 baseDir = targetDir.normalized;
+            // Apply teammate avoidance
+            var avoidance = this.ComputeAvoidance();
+            if (avoidance.sqrMagnitude > 0.01f)
+                offset += avoidance.normalized * AvoidanceScale;
 
-            // === Squad staggering ===
-            Vector3 squadOffset = _cache.SquadPath?.GetCurrentOffset() ?? Vector3.zero;
-            if (squadOffset.sqrMagnitude > 0.01f)
-                squadOffset = squadOffset.normalized * SquadOffsetStrength;
+            offset.y = 0f;
+            return offset.sqrMagnitude > 0.01f ? offset.normalized : baseDir;
+        }
 
-            // === Teammate proximity avoidance ===
-            Vector3 avoidance = Vector3.zero;
-            int nearby = 0;
+        private Vector3 ComputeAvoidance()
+        {
+            var result = Vector3.zero;
+            var count = 0;
 
-            var group = _bot.BotsGroup;
-            if (group != null)
+            var group = this._bot.BotsGroup;
+            if (group == null)
+                return result;
+
+            for (var i = 0; i < group.MembersCount; i++)
             {
-                int count = group.MembersCount;
-                for (int i = 0; i < count; i++)
-                {
-                    var mate = group.Member(i);
-                    if (mate == null || mate == _bot || mate.IsDead)
-                        continue;
+                var mate = group.Member(i);
+                if (mate == null || mate == this._bot || mate.IsDead)
+                    continue;
 
-                    float dist = Vector3.Distance(_bot.Position, mate.Position);
-                    if (dist < AvoidanceRadius && dist > 0.01f)
-                    {
-                        avoidance += (_bot.Position - mate.Position).normalized / dist;
-                        nearby++;
-                    }
+                var dist = Vector3.Distance(this._bot.Position, mate.Position);
+                if (dist < AvoidanceRadius && dist > 0.01f)
+                {
+                    result += (this._bot.Position - mate.Position).normalized / dist;
+                    count++;
                 }
             }
 
-            if (nearby > 0)
-                avoidance = (avoidance / nearby).normalized * AvoidanceStrength;
-
-            // === Compose final direction ===
-            Vector3 final = baseDir + _chaosOffset + squadOffset + avoidance;
-            final.y = 0f;
-
-            return final.sqrMagnitude > 0.01f ? final.normalized : baseDir;
+            return count > 0 ? result / count : Vector3.zero;
         }
 
-        #endregion
+        private void UpdateChaosOffset(float now)
+        {
+            var caution = this._cache.AIRefactoredBotOwner?.PersonalityProfile?.Caution ?? 0.5f;
+            var chaosRange = ChaosRadius * (1f - caution);
+
+            this._chaosOffset = new Vector3(
+                Random.Range(-chaosRange, chaosRange),
+                0f,
+                Random.Range(-chaosRange, chaosRange));
+
+            this._nextChaosUpdate = now + ChaosInterval;
+        }
     }
 }

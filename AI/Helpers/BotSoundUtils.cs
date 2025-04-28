@@ -1,50 +1,51 @@
 ﻿#nullable enable
 
-using EFT;
-
 namespace AIRefactored.AI.Helpers
 {
+    using EFT;
+
     /// <summary>
-    /// Sound-based awareness utilities for bots.
-    /// Filters audio events based on recency and friend-or-foe logic.
+    ///     Sound-based awareness utilities for bots.
+    ///     Filters audio events based on recency and friend-or-foe logic.
     /// </summary>
     public static class BotSoundUtils
     {
         /// <summary>
-        /// Determines if a non-teammate fired recently (e.g., gunshot detection).
+        ///     Returns true if a non-teammate fired recently.
         /// </summary>
-        public static bool DidFireRecently(BotOwner self, Player? player, float recentThreshold = 1.5f, float now = -1f)
+        public static bool DidFireRecently(BotOwner self, Player? source, float recentThreshold = 1.5f, float now = -1f)
         {
-            return IsValidSoundSource(self, player) &&
-                   BotSoundRegistry.FiredRecently(player, recentThreshold, now);
+            return IsValidSoundSource(self, source) && BotSoundRegistry.FiredRecently(source, recentThreshold, now);
         }
 
         /// <summary>
-        /// Determines if a non-teammate stepped recently (e.g., footstep detection).
+        ///     Returns true if a non-teammate stepped recently.
         /// </summary>
-        public static bool DidStepRecently(BotOwner self, Player? player, float recentThreshold = 1.2f, float now = -1f)
+        public static bool DidStepRecently(BotOwner self, Player? source, float recentThreshold = 1.2f, float now = -1f)
         {
-            return IsValidSoundSource(self, player) &&
-                   BotSoundRegistry.SteppedRecently(player, recentThreshold, now);
+            return IsValidSoundSource(self, source) && BotSoundRegistry.SteppedRecently(source, recentThreshold, now);
         }
 
         /// <summary>
-        /// Returns true if the sound-emitting player is a valid target (not self or teammate, and not a human).
+        ///     Filters out invalid sound sources: null, same player, same group, or invalid profile.
         /// </summary>
-        private static bool IsValidSoundSource(BotOwner self, Player? player)
+        private static bool IsValidSoundSource(BotOwner self, Player? source)
         {
-            if (player == null || player.AIData == null || self.GetPlayer == null)
+            if (self == null || self.GetPlayer == null || source == null || source.AIData == null)
                 return false;
 
-            if (player == self.GetPlayer)
+            if (source == self.GetPlayer)
                 return false;
 
-            string? selfGroupId = self.Profile?.Info?.GroupId;
-            string? sourceGroupId = player.Profile?.Info?.GroupId;
+            var selfGroup = self.Profile?.Info?.GroupId;
+            var sourceGroup = source.Profile?.Info?.GroupId;
 
-            if (!string.IsNullOrEmpty(selfGroupId) && selfGroupId == sourceGroupId)
+            if (!string.IsNullOrEmpty(selfGroup) && selfGroup == sourceGroup)
                 return false;
 
+            // Optional: ignore human players if needed
+            // if (!source.IsAI)
+            // return false;
             return true;
         }
     }

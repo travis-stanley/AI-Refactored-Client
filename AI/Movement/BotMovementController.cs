@@ -1,242 +1,284 @@
 ﻿#nullable enable
 
-using AIRefactored.AI.Core;
-using AIRefactored.AI.Helpers;
-using AIRefactored.Runtime;
-using BepInEx.Logging;
-using EFT;
-using System;
-using UnityEngine;
-using UnityEngine.AI;
-
 namespace AIRefactored.AI.Movement
 {
+    using System;
+
+    using AIRefactored.AI.Core;
+    using AIRefactored.AI.Helpers;
+    using AIRefactored.Runtime;
+
+    using BepInEx.Logging;
+
+    using EFT;
+
+    using UnityEngine;
+    using UnityEngine.AI;
+
+    using Random = UnityEngine.Random;
+
     /// <summary>
-    /// Controls advanced bot movement logic including inertia, smooth look, combat strafe, lean, jump, and flank mechanics.
-    /// Designed for natural, player-like behavior and fluid real-time responsiveness.
+    ///     Controls advanced bot movement logic including inertia, smooth look, combat strafe, lean, jump, and flank
+    ///     mechanics.
+    ///     Designed for natural, player-like behavior and fluid real-time responsiveness.
     /// </summary>
     public class BotMovementController
     {
-        #region Constants
-
         private const float CornerScanInterval = 1.2f;
-        private const float ScanDistance = 2.5f;
-        private const float ScanRadius = 0.25f;
 
-        private const float LookSmoothSpeed = 6f;
         private const float InertiaWeight = 8f;
-        private const float MinMoveThreshold = 0.05f;
+
         private const float LeanCooldown = 1.5f;
 
-        private const float StuckThreshold = 0.1f;
+        private const float LookSmoothSpeed = 6f;
+
         private const float MaxStuckDuration = 1.5f;
 
-        #endregion
+        private const float MinMoveThreshold = 0.05f;
 
-        #region Fields
+        private const float ScanDistance = 2.5f;
 
-        private BotOwner? _bot;
-        private BotComponentCache? _cache;
-        private BotMovementTrajectoryPlanner? _trajectory;
-        private BotJumpController? _jump;
+        private const float ScanRadius = 0.25f;
+
+        private const float StuckThreshold = 0.1f;
 
         private readonly ManualLogSource _logger = AIRefactoredController.Logger;
 
-        private float _nextScanTime;
-        private Vector3 _lastVelocity;
+        private BotOwner? _bot;
 
-        private float _stuckTimer;
-        private float _lastMoveCheckTime;
-        private Vector3 _lastSampledTarget = Vector3.zero;
+        private BotComponentCache? _cache;
 
-        private bool _isStrafingRight = true;
-        private float _strafeTimer;
-        private float _nextLeanAllowed;
         private bool _inLootingMode;
 
-        #endregion
+        private bool _isStrafingRight = true;
 
-        #region Initialization
+        private BotJumpController? _jump;
+
+        private float _lastMoveCheckTime;
+
+        private Vector3 _lastSampledTarget = Vector3.zero;
+
+        private Vector3 _lastVelocity;
+
+        private float _nextLeanAllowed;
+
+        private float _nextScanTime;
+
+        private float _strafeTimer;
+
+        private float _stuckTimer;
+
+        private BotMovementTrajectoryPlanner? _trajectory;
+
+        public void EnterLootingMode()
+        {
+            this._inLootingMode = true;
+        }
+
+        public void ExitLootingMode()
+        {
+            this._inLootingMode = false;
+        }
 
         /// <summary>
-        /// Initializes all movement dependencies with core references.
+        ///     Initializes all movement dependencies with core references.
         /// </summary>
         public void Initialize(BotComponentCache cache)
         {
-            _cache = cache ?? throw new ArgumentNullException(nameof(cache));
-            _bot = cache.Bot ?? throw new ArgumentNullException(nameof(cache.Bot));
-            _trajectory = new BotMovementTrajectoryPlanner(_bot, cache);
-            _jump = new BotJumpController(_bot, cache);
+            this._cache = cache ?? throw new ArgumentNullException(nameof(cache));
+            this._bot = cache.Bot ?? throw new ArgumentNullException(nameof(cache.Bot));
+            this._trajectory = new BotMovementTrajectoryPlanner(this._bot, cache);
+            this._jump = new BotJumpController(this._bot, cache);
 
-            _nextScanTime = Time.time;
-            _lastVelocity = Vector3.zero;
+            this._nextScanTime = Time.time;
+            this._lastVelocity = Vector3.zero;
         }
 
-        #endregion
-
-        #region Main Tick
-
         /// <summary>
-        /// Ticks all runtime logic for movement, leaning, inertia, and directional control.
+        ///     Ticks all runtime logic for movement, leaning, inertia, and directional control.
         /// </summary>
         public void Tick(float deltaTime)
         {
-            if (_bot?.IsDead != false || _cache == null || _bot.GetPlayer == null || !_bot.GetPlayer.IsAI)
+            if (this._bot?.IsDead != false || this._cache == null || this._bot.GetPlayer == null
+                || !this._bot.GetPlayer.IsAI)
                 return;
 
-            if (_bot.GetPlayer.HealthController?.IsAlive != true || _cache.PanicHandler?.IsPanicking == true)
+            if (this._bot.GetPlayer.HealthController?.IsAlive != true || this._cache.PanicHandler?.IsPanicking == true)
                 return;
 
-            _jump?.Tick(deltaTime);
+            this._jump?.Tick(deltaTime);
 
-            if (_cache.DoorOpener != null && !_cache.DoorOpener.Update())
+            if (this._cache.DoorOpener != null && !this._cache.DoorOpener.Update())
             {
-                _logger.LogDebug($"[Movement] {_bot.Profile.Info.Nickname} is blocked by door interaction.");
+                this._logger.LogDebug($"[Movement] {this._bot.Profile.Info.Nickname} is blocked by door interaction.");
                 return;
             }
 
-            if (Time.time >= _nextScanTime)
+            if (Time.time >= this._nextScanTime)
             {
-                ScanAhead();
-                _nextScanTime = Time.time + CornerScanInterval;
+                this.ScanAhead();
+                this._nextScanTime = Time.time + CornerScanInterval;
             }
 
-            if (_bot.Mover != null)
+            if (this._bot.Mover != null)
             {
-                Vector3 lookAt = _bot.Mover.LastTargetPoint(1.0f);
-                SmoothLookTo(lookAt, deltaTime);
+                var lookAt = this._bot.Mover.LastTargetPoint(1.0f);
+                this.SmoothLookTo(lookAt, deltaTime);
             }
 
-            ApplyInertia(deltaTime);
+            this.ApplyInertia(deltaTime);
 
-            if (!_inLootingMode && _bot.Memory?.GoalEnemy != null && _bot.WeaponManager?.IsReady == true)
+            if (!this._inLootingMode && this._bot.Memory?.GoalEnemy != null && this._bot.WeaponManager?.IsReady == true)
             {
-                CombatStrafe(deltaTime);
-                TryCombatLean();
-                TryFlankAroundEnemy();
+                this.CombatStrafe(deltaTime);
+                this.TryCombatLean();
+                this.TryFlankAroundEnemy();
             }
 
-            DetectStuck(deltaTime);
+            this.DetectStuck(deltaTime);
         }
 
-        #endregion
-
-        #region Looting Control
-
-        public void EnterLootingMode() => _inLootingMode = true;
-        public void ExitLootingMode() => _inLootingMode = false;
-
-        #endregion
-
-        #region Look Logic
-
         /// <summary>
-        /// Smoothly rotates bot to face a target position over time.
-        /// </summary>
-        private void SmoothLookTo(Vector3 target, float deltaTime)
-        {
-            Vector3 dir = target - _bot!.Transform.position;
-            dir.y = 0f;
-            if (dir.sqrMagnitude < 0.01f)
-                return;
-
-            if (_cache?.Tilt?._coreTilt == true && Vector3.Angle(_bot.Transform.forward, dir) > 80f)
-                return;
-
-            Quaternion desired = Quaternion.LookRotation(dir);
-            _bot.Transform.rotation = Quaternion.Lerp(_bot.Transform.rotation, desired, LookSmoothSpeed * deltaTime);
-        }
-
-        #endregion
-
-        #region Inertia
-
-        /// <summary>
-        /// Applies smooth movement transitions to simulate momentum and weighted response.
+        ///     Applies smooth movement transitions to simulate momentum and weighted response.
         /// </summary>
         private void ApplyInertia(float deltaTime)
         {
-            if (_bot?.Mover == null || _bot.GetPlayer == null)
+            if (this._bot?.Mover == null || this._bot.GetPlayer == null)
                 return;
 
-            Vector3 direction = _bot.Mover.LastTargetPoint(1.0f) - _bot.Position;
+            var direction = this._bot.Mover.LastTargetPoint(1.0f) - this._bot.Position;
             direction.y = 0f;
 
             if (direction.magnitude < MinMoveThreshold)
                 return;
 
             const float speed = 1.65f;
-            Vector3 adjusted = _trajectory!.ModifyTrajectory(direction, deltaTime);
-            Vector3 velocity = adjusted.normalized * speed;
-            _lastVelocity = Vector3.Lerp(_lastVelocity, velocity, InertiaWeight * deltaTime);
+            var adjusted = this._trajectory!.ModifyTrajectory(direction, deltaTime);
+            var velocity = adjusted.normalized * speed;
+            this._lastVelocity = Vector3.Lerp(this._lastVelocity, velocity, InertiaWeight * deltaTime);
 
-            _bot.GetPlayer.CharacterController?.Move(_lastVelocity * deltaTime, deltaTime);
+            this._bot.GetPlayer.CharacterController?.Move(this._lastVelocity * deltaTime, deltaTime);
         }
 
-        #endregion
-
-        #region Strafing
-
         /// <summary>
-        /// Executes combat-style strafe and avoidance near allies.
+        ///     Executes combat-style strafe and avoidance near allies.
         /// </summary>
         private void CombatStrafe(float deltaTime)
         {
-            if (_bot?.Mover == null || _bot.GetPlayer == null)
+            if (this._bot?.Mover == null || this._bot.GetPlayer == null)
                 return;
 
-            _strafeTimer -= deltaTime;
-            if (_strafeTimer <= 0f)
+            this._strafeTimer -= deltaTime;
+            if (this._strafeTimer <= 0f)
             {
-                _isStrafingRight = UnityEngine.Random.value > 0.5f;
-                _strafeTimer = UnityEngine.Random.Range(0.4f, 0.7f);
+                this._isStrafingRight = Random.value > 0.5f;
+                this._strafeTimer = Random.Range(0.4f, 0.7f);
             }
 
-            Vector3 baseStrafe = _isStrafingRight ? _bot.Transform.right : -_bot.Transform.right;
-            Vector3 avoid = Vector3.zero;
+            var baseStrafe = this._isStrafingRight ? this._bot.Transform.right : -this._bot.Transform.right;
+            var avoid = Vector3.zero;
 
-            var group = _bot.BotsGroup;
+            var group = this._bot.BotsGroup;
             if (group != null)
-            {
-                for (int i = 0; i < group.MembersCount; i++)
+                for (var i = 0; i < group.MembersCount; i++)
                 {
                     var mate = group.Member(i);
-                    if (mate != null && mate != _bot && !mate.IsDead)
+                    if (mate != null && mate != this._bot && !mate.IsDead)
                     {
-                        float dist = Vector3.Distance(_bot.Position, mate.Position);
+                        var dist = Vector3.Distance(this._bot.Position, mate.Position);
                         if (dist < 2f && dist > 0.01f)
-                            avoid += (_bot.Position - mate.Position).normalized / dist;
+                            avoid += (this._bot.Position - mate.Position).normalized / dist;
                     }
                 }
-            }
 
-            Vector3 dir = (baseStrafe + avoid * 1.2f).normalized;
-            float strafeSpeed = 1.2f + UnityEngine.Random.Range(-0.1f, 0.15f);
+            var dir = (baseStrafe + avoid * 1.2f).normalized;
+            var strafeSpeed = 1.2f + Random.Range(-0.1f, 0.15f);
 
-            _bot.GetPlayer.CharacterController?.Move(dir * strafeSpeed * deltaTime, deltaTime);
+            this._bot.GetPlayer.CharacterController?.Move(dir * strafeSpeed * deltaTime, deltaTime);
         }
 
-        #endregion
+        /// <summary>
+        ///     Detects if the bot is stuck (no motion for several frames) and triggers soft repath.
+        /// </summary>
+        private void DetectStuck(float deltaTime)
+        {
+            if (this._bot?.Mover == null || this._bot.GetPlayer == null || this._inLootingMode)
+                return;
 
-        #region Leaning
+            var target = this._bot.Mover.LastTargetPoint(1.0f);
+            if (!this.ValidateNavMeshTarget(target))
+                return;
+
+            var movement = this._bot.GetPlayer.Velocity;
+            var speedSq = movement.sqrMagnitude;
+
+            if (speedSq < StuckThreshold * StuckThreshold)
+            {
+                this._stuckTimer += deltaTime;
+                if (this._stuckTimer > MaxStuckDuration)
+                {
+                    BotMovementHelper.SmoothMoveTo(this._bot, target, false);
+                    this._logger.LogDebug(
+                        $"[Movement] {this._bot.Profile.Info.Nickname} triggered soft repath due to low velocity.");
+                    this._stuckTimer = 0f;
+                }
+            }
+            else
+            {
+                this._stuckTimer = 0f;
+            }
+        }
+
+        private void ScanAhead()
+        {
+            if (this._bot?.Mover == null)
+                return;
+
+            var origin = this._bot.Position + Vector3.up * 1.5f;
+            var forward = this._bot.LookDirection;
+
+            if (Physics.SphereCast(origin, ScanRadius, forward, out var _, ScanDistance))
+                if (Random.value < 0.2f)
+                    this._bot.BotTalk?.TrySay(EPhraseTrigger.Look);
+        }
 
         /// <summary>
-        /// Determines if a lean is safe or tactically appropriate and executes it.
+        ///     Smoothly rotates bot to face a target position over time.
+        /// </summary>
+        private void SmoothLookTo(Vector3 target, float deltaTime)
+        {
+            var dir = target - this._bot!.Transform.position;
+            dir.y = 0f;
+            if (dir.sqrMagnitude < 0.01f)
+                return;
+
+            if (this._cache?.Tilt?._coreTilt == true && Vector3.Angle(this._bot.Transform.forward, dir) > 80f)
+                return;
+
+            var desired = Quaternion.LookRotation(dir);
+            this._bot.Transform.rotation = Quaternion.Lerp(
+                this._bot.Transform.rotation,
+                desired,
+                LookSmoothSpeed * deltaTime);
+        }
+
+        /// <summary>
+        ///     Determines if a lean is safe or tactically appropriate and executes it.
         /// </summary>
         private void TryCombatLean()
         {
-            if (Time.time < _nextLeanAllowed || _cache?.Tilt == null)
+            if (Time.time < this._nextLeanAllowed || this._cache?.Tilt == null)
                 return;
 
-            var profile = _cache.AIRefactoredBotOwner?.PersonalityProfile;
-            if (profile == null || profile.LeaningStyle == LeanPreference.Never || _bot?.Memory?.GoalEnemy == null)
+            var profile = this._cache.AIRefactoredBotOwner?.PersonalityProfile;
+            if (profile == null || profile.LeaningStyle == LeanPreference.Never || this._bot?.Memory?.GoalEnemy == null)
                 return;
 
-            Vector3 origin = _bot.Position + Vector3.up * 1.5f;
-            bool wallLeft = Physics.Raycast(origin, -_bot.Transform.right, 1.5f);
-            bool wallRight = Physics.Raycast(origin, _bot.Transform.right, 1.5f);
+            var origin = this._bot.Position + Vector3.up * 1.5f;
+            var wallLeft = Physics.Raycast(origin, -this._bot.Transform.right, 1.5f);
+            var wallRight = Physics.Raycast(origin, this._bot.Transform.right, 1.5f);
 
-            Vector3? coverPos = _bot.Memory.BotCurrentCoverInfo?.LastCover?.Position;
+            var coverPos = this._bot.Memory.BotCurrentCoverInfo?.LastCover?.Position;
 
             if (profile.LeaningStyle == LeanPreference.Conservative && !coverPos.HasValue && !wallLeft && !wallRight)
                 return;
@@ -244,116 +286,54 @@ namespace AIRefactored.AI.Movement
             if (coverPos.HasValue && !BotCoverHelper.WasRecentlyUsed(coverPos.Value))
             {
                 BotCoverHelper.MarkUsed(coverPos.Value);
-                float side = Vector3.Dot((_bot.Position - coverPos.Value).normalized, _bot.Transform.right);
-                _cache.Tilt.Set(side > 0f ? BotTiltType.right : BotTiltType.left);
+                var side = Vector3.Dot((this._bot.Position - coverPos.Value).normalized, this._bot.Transform.right);
+                this._cache.Tilt.Set(side > 0f ? BotTiltType.right : BotTiltType.left);
             }
             else if (wallLeft && !wallRight)
             {
-                _cache.Tilt.Set(BotTiltType.right);
+                this._cache.Tilt.Set(BotTiltType.right);
             }
             else if (wallRight && !wallLeft)
             {
-                _cache.Tilt.Set(BotTiltType.left);
+                this._cache.Tilt.Set(BotTiltType.left);
             }
             else
             {
-                Vector3 toEnemy = _bot.Memory.GoalEnemy.CurrPosition - _bot.Position;
-                float dot = Vector3.Dot(toEnemy.normalized, _bot.Transform.right);
-                _cache.Tilt.Set(dot > 0f ? BotTiltType.right : BotTiltType.left);
+                var toEnemy = this._bot.Memory.GoalEnemy.CurrPosition - this._bot.Position;
+                var dot = Vector3.Dot(toEnemy.normalized, this._bot.Transform.right);
+                this._cache.Tilt.Set(dot > 0f ? BotTiltType.right : BotTiltType.left);
             }
 
-            _nextLeanAllowed = Time.time + LeanCooldown;
+            this._nextLeanAllowed = Time.time + LeanCooldown;
         }
-
-        #endregion
-
-        #region Flanking
 
         private void TryFlankAroundEnemy()
         {
-            if (_bot?.Memory?.GoalEnemy == null)
+            if (this._bot?.Memory?.GoalEnemy == null)
                 return;
 
-            Vector3 pos = _bot.Position;
-            Vector3 enemy = _bot.Memory.GoalEnemy.CurrPosition;
-            float dist = Vector3.Distance(pos, enemy);
+            var pos = this._bot.Position;
+            var enemy = this._bot.Memory.GoalEnemy.CurrPosition;
+            var dist = Vector3.Distance(pos, enemy);
 
             if (dist < 22f && FlankPositionPlanner.TryFindFlankPosition(pos, enemy, out var flank))
             {
-                BotMovementHelper.SmoothMoveTo(_bot, flank, false, 1f);
-                _logger.LogDebug($"[Movement] {_bot.Profile.Info.Nickname} flanking to {flank}");
-            }
-        }
-
-        #endregion
-
-        #region Obstacle Scanning
-
-        private void ScanAhead()
-        {
-            if (_bot?.Mover == null)
-                return;
-
-            Vector3 origin = _bot.Position + Vector3.up * 1.5f;
-            Vector3 forward = _bot.LookDirection;
-
-            if (Physics.SphereCast(origin, ScanRadius, forward, out RaycastHit _, ScanDistance))
-            {
-                if (UnityEngine.Random.value < 0.2f)
-                    _bot.BotTalk?.TrySay(EPhraseTrigger.Look);
-            }
-        }
-
-        #endregion
-
-        #region Stuck Detection
-
-        /// <summary>
-        /// Detects if the bot is stuck (no motion for several frames) and triggers soft repath.
-        /// </summary>
-        private void DetectStuck(float deltaTime)
-        {
-            if (_bot?.Mover == null || _bot.GetPlayer == null || _inLootingMode)
-                return;
-
-            Vector3 target = _bot.Mover.LastTargetPoint(1.0f);
-            if (!ValidateNavMeshTarget(target))
-                return;
-
-            Vector3 movement = _bot.GetPlayer.Velocity;
-            float speedSq = movement.sqrMagnitude;
-
-            if (speedSq < StuckThreshold * StuckThreshold)
-            {
-                _stuckTimer += deltaTime;
-                if (_stuckTimer > MaxStuckDuration)
-                {
-                    BotMovementHelper.SmoothMoveTo(_bot, target, false, 1f);
-                    _logger.LogDebug($"[Movement] {_bot.Profile.Info.Nickname} triggered soft repath due to low velocity.");
-                    _stuckTimer = 0f;
-                }
-            }
-            else
-            {
-                _stuckTimer = 0f;
+                BotMovementHelper.SmoothMoveTo(this._bot, flank, false);
+                this._logger.LogDebug($"[Movement] {this._bot.Profile.Info.Nickname} flanking to {flank}");
             }
         }
 
         /// <summary>
-        /// Validates if a move destination is located on the NavMesh.
+        ///     Validates if a move destination is located on the NavMesh.
         /// </summary>
         private bool ValidateNavMeshTarget(Vector3 position)
         {
             if (NavMesh.SamplePosition(position, out var hit, 1.5f, NavMesh.AllAreas))
-            {
                 if ((hit.position - position).sqrMagnitude < 1f)
                     return true;
-            }
 
-            _logger.LogWarning($"[Movement] Invalid NavMesh target: {position}");
+            this._logger.LogWarning($"[Movement] Invalid NavMesh target: {position}");
             return false;
         }
-
-        #endregion
     }
 }

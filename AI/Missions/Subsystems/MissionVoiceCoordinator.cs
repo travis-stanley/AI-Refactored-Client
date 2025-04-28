@@ -1,52 +1,68 @@
 ﻿#nullable enable
 
-using AIRefactored.Core;
-using AIRefactored.Runtime;
-using BepInEx.Logging;
-using EFT;
-using UnityEngine;
-
 namespace AIRefactored.AI.Missions.Subsystems
 {
+    using System;
+
+    using AIRefactored.Core;
+    using AIRefactored.Runtime;
+
+    using BepInEx.Logging;
+
+    using EFT;
+
     /// <summary>
-    /// Handles voice lines for looting, extraction, and coordination.
-    /// Supports multiplayer-safe VO routing.
+    ///     Handles voice lines for looting, extraction, and coordination.
+    ///     VO routing is multiplayer-safe and avoids triggering on headless hosts.
     /// </summary>
     public sealed class MissionVoiceCoordinator
     {
+        private static readonly ManualLogSource Logger = AIRefactoredController.Logger;
+
         private readonly BotOwner _bot;
-        private static readonly ManualLogSource _log = AIRefactoredController.Logger;
 
         public MissionVoiceCoordinator(BotOwner bot)
         {
-            _bot = bot;
+            this._bot = bot;
         }
 
-        public void OnLoot()
-        {
-            TrySay(EPhraseTrigger.OnLoot);
-        }
-
+        /// <summary>
+        ///     Plays extraction found voice line.
+        /// </summary>
         public void OnExitLocated()
         {
-            TrySay(EPhraseTrigger.ExitLocated);
+            this.TrySay(EPhraseTrigger.ExitLocated);
         }
 
+        /// <summary>
+        ///     Plays loot acknowledgment voice line.
+        /// </summary>
+        public void OnLoot()
+        {
+            this.TrySay(EPhraseTrigger.OnLoot);
+        }
+
+        /// <summary>
+        ///     Plays coordination or mission switch voice line.
+        /// </summary>
         public void OnMissionSwitch()
         {
-            TrySay(EPhraseTrigger.Cooperation);
+            this.TrySay(EPhraseTrigger.Cooperation);
         }
 
         private void TrySay(EPhraseTrigger phrase)
         {
+            if (FikaHeadlessDetector.IsHeadless)
+                return;
+
             try
             {
-                if (!FikaHeadlessDetector.IsHeadless)
-                    _bot.GetPlayer?.Say(phrase);
+                this._bot.GetPlayer?.Say(phrase);
             }
-            catch (System.Exception ex)
+            catch (Exception ex)
             {
-                _log.LogWarning($"[MissionVoiceCoordinator] VO failed: {ex.Message}");
+                Logger.LogWarning(
+                    $"[MissionVoiceCoordinator] VO failed for bot '{this._bot.Profile?.Info?.Nickname ?? "Unknown"}': {ex.Message}");
             }
         }
     }

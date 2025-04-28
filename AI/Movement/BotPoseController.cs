@@ -1,206 +1,213 @@
 ﻿#nullable enable
 
-using AIRefactored.AI.Core;
-using AIRefactored.AI.Helpers;
-using AIRefactored.AI.Memory;
-using AIRefactored.AI.Navigation;
-using EFT;
-using System;
-using UnityEngine;
-
 namespace AIRefactored.AI.Movement
 {
+    using System;
+
+    using AIRefactored.AI.Core;
+    using AIRefactored.AI.Helpers;
+    using AIRefactored.AI.Memory;
+    using AIRefactored.AI.Navigation;
+
+    using EFT;
+
+    using UnityEngine;
+
     /// <summary>
-    /// Controls bot stance transitions (standing, crouching, prone) based on combat, panic, suppression, and cover logic.
-    /// Smoothly blends transitions for realistic animation flow.
+    ///     Controls bot stance transitions (standing, crouching, prone) based on combat, panic, suppression, and cover logic.
+    ///     Smoothly blends transitions for realistic animation flow.
     /// </summary>
     public class BotPoseController
     {
-        #region Fields
-
-        private readonly BotOwner _bot;
-        private readonly BotComponentCache _cache;
-        private readonly MovementContext _movement;
-        private readonly BotPersonalityProfile _personality;
-
-        private float _targetPoseLevel;
-        private float _currentPoseLevel;
-        private float _nextPoseCheck;
-        private float _suppressedUntil;
-        private bool _isPoseLocked;
-
-        private const float PoseCheckInterval = 0.3f;
-        private const float SuppressionCrouchDuration = 2.5f;
         private const float FlankAngleThreshold = 120f;
-        private const float PoseBlendSpeedBase = 140f;
+
         private const float MinPoseThreshold = 0.1f;
 
-        #endregion
+        private const float PoseBlendSpeedBase = 140f;
 
-        #region Constructor
+        private const float PoseCheckInterval = 0.3f;
+
+        private const float SuppressionCrouchDuration = 2.5f;
+
+        private readonly BotOwner _bot;
+
+        private readonly BotComponentCache _cache;
+
+        private readonly MovementContext _movement;
+
+        private readonly BotPersonalityProfile _personality;
+
+        private float _currentPoseLevel;
+
+        private bool _isPoseLocked;
+
+        private float _nextPoseCheck;
+
+        private float _suppressedUntil;
+
+        private float _targetPoseLevel;
 
         public BotPoseController(BotOwner bot, BotComponentCache cache)
         {
-            _bot = bot ?? throw new ArgumentNullException(nameof(bot));
-            _cache = cache ?? throw new ArgumentNullException(nameof(cache));
-            _movement = bot.GetPlayer?.MovementContext ?? throw new InvalidOperationException("Missing MovementContext.");
-            _personality = cache.AIRefactoredBotOwner?.PersonalityProfile ?? throw new InvalidOperationException("Missing PersonalityProfile.");
+            this._bot = bot ?? throw new ArgumentNullException(nameof(bot));
+            this._cache = cache ?? throw new ArgumentNullException(nameof(cache));
+            this._movement = bot.GetPlayer?.MovementContext
+                             ?? throw new InvalidOperationException("Missing MovementContext.");
+            this._personality = cache.AIRefactoredBotOwner?.PersonalityProfile
+                                ?? throw new InvalidOperationException("Missing PersonalityProfile.");
 
-            _currentPoseLevel = _movement.PoseLevel;
-            _targetPoseLevel = _currentPoseLevel;
-            _nextPoseCheck = Time.time;
+            this._currentPoseLevel = this._movement.PoseLevel;
+            this._targetPoseLevel = this._currentPoseLevel;
+            this._nextPoseCheck = Time.time;
         }
 
-        #endregion
-
-        #region Public API
-
-        public float GetPoseLevel() => _movement.PoseLevel;
-
-        public void Tick(float currentTime)
+        public float GetPoseLevel()
         {
-            if (_bot.IsDead)
-                return;
-
-            if (_isPoseLocked)
-            {
-                BlendPose(Time.deltaTime);
-                return;
-            }
-
-            if (currentTime >= _nextPoseCheck)
-            {
-                _nextPoseCheck = currentTime + PoseCheckInterval;
-                EvaluatePoseIntent(currentTime);
-            }
-
-            BlendPose(Time.deltaTime);
+            return this._movement.PoseLevel;
         }
-
-        public void SetStand() => _targetPoseLevel = 100f;
-        public void SetCrouch(bool anticipate = false) => _targetPoseLevel = anticipate ? 60f : 50f;
-        public void SetProne(bool anticipate = false) => _targetPoseLevel = anticipate ? 20f : 0f;
 
         public void LockCrouchPose()
         {
-            _targetPoseLevel = 50f;
-            _isPoseLocked = true;
+            this._targetPoseLevel = 50f;
+            this._isPoseLocked = true;
         }
 
-        public void UnlockPose() => _isPoseLocked = false;
+        public void SetCrouch(bool anticipate = false)
+        {
+            this._targetPoseLevel = anticipate ? 60f : 50f;
+        }
+
+        public void SetProne(bool anticipate = false)
+        {
+            this._targetPoseLevel = anticipate ? 20f : 0f;
+        }
+
+        public void SetStand()
+        {
+            this._targetPoseLevel = 100f;
+        }
+
+        public void Tick(float currentTime)
+        {
+            if (this._bot.IsDead)
+                return;
+
+            if (this._isPoseLocked)
+            {
+                this.BlendPose(Time.deltaTime);
+                return;
+            }
+
+            if (currentTime >= this._nextPoseCheck)
+            {
+                this._nextPoseCheck = currentTime + PoseCheckInterval;
+                this.EvaluatePoseIntent(currentTime);
+            }
+
+            this.BlendPose(Time.deltaTime);
+        }
 
         /// <summary>
-        /// Sets pose level based on nearby cover (uses NavPointRegistry scan).
+        ///     Sets pose level based on nearby cover (uses NavPointRegistry scan).
         /// </summary>
         public void TrySetStanceFromNearbyCover(Vector3 position)
         {
-            var nearbyPoints = NavPointRegistry.QueryNearby(position, 4f, point =>
-            {
-                float distSq = (point - position).sqrMagnitude;
-                return distSq <= 16f && (
-                    BotCoverHelper.IsProneCover(point) ||
-                    BotCoverHelper.IsLowCover(point)
-                );
-            });
+            var nearbyPoints = NavPointRegistry.QueryNearby(
+                position,
+                4f,
+                (Vector3 point) =>
+                    {
+                        var distSq = (point - position).sqrMagnitude;
+                        return distSq <= 16f
+                               && (BotCoverHelper.IsProneCover(point) || BotCoverHelper.IsLowCover(point));
+                    });
 
             foreach (var point in nearbyPoints)
             {
-                if (BotCoverHelper.IsProneCover(point))
-                {
-                    SetProne(true);
-                }
-                else if (BotCoverHelper.IsLowCover(point))
-                {
-                    SetCrouch(true);
-                }
-                else
-                {
-                    SetStand();
-                }
+                if (BotCoverHelper.IsProneCover(point)) this.SetProne(true);
+                else if (BotCoverHelper.IsLowCover(point)) this.SetCrouch(true);
+                else this.SetStand();
 
                 break;
             }
         }
 
-        #endregion
+        public void UnlockPose()
+        {
+            this._isPoseLocked = false;
+        }
 
-        #region Pose Evaluation
+        private void BlendPose(float deltaTime)
+        {
+            if (Mathf.Abs(this._currentPoseLevel - this._targetPoseLevel) < MinPoseThreshold)
+                return;
+
+            var panicFactor = this._cache.PanicHandler?.IsPanicking == true ? 0.6f : 1f;
+            var combatFactor = this._cache.Combat?.IsInCombatState() == true ? 1f : 0.4f;
+            var blendSpeed = PoseBlendSpeedBase * panicFactor * combatFactor;
+
+            this._currentPoseLevel = Mathf.MoveTowards(
+                this._currentPoseLevel,
+                this._targetPoseLevel,
+                blendSpeed * deltaTime);
+            this._movement.SetPoseLevel(this._currentPoseLevel);
+        }
 
         private void EvaluatePoseIntent(float currentTime)
         {
-            if (_cache.PanicHandler?.IsPanicking == true)
+            if (this._cache.PanicHandler?.IsPanicking == true)
             {
-                _targetPoseLevel = 0f;
+                this._targetPoseLevel = 0f;
                 return;
             }
 
-            if (_cache.Suppression?.IsSuppressed() == true)
-                _suppressedUntil = currentTime + SuppressionCrouchDuration;
+            if (this._cache.Suppression?.IsSuppressed() == true)
+                this._suppressedUntil = currentTime + SuppressionCrouchDuration;
 
-            if (currentTime < _suppressedUntil)
+            if (currentTime < this._suppressedUntil)
             {
-                _targetPoseLevel = 50f;
+                this._targetPoseLevel = 50f;
                 return;
             }
 
-            if (_personality.IsFrenzied || _personality.IsFearful || _personality.Personality == PersonalityType.Sniper)
-            {
-                if (BotMemoryExtensions.TryGetFlankDirection(_bot) is Vector3 flankDir)
+            if (this._personality.IsFrenzied || this._personality.IsFearful
+                                             || this._personality.Personality == PersonalityType.Sniper)
+                if (this._bot.TryGetFlankDirection() is Vector3 flankDir)
                 {
-                    float flankAngle = Vector3.Angle(_bot.LookDirection, flankDir.normalized);
+                    var flankAngle = Vector3.Angle(this._bot.LookDirection, flankDir.normalized);
                     if (flankAngle > FlankAngleThreshold)
                     {
-                        _targetPoseLevel = 0f;
+                        this._targetPoseLevel = 0f;
                         return;
                     }
                 }
-            }
 
-            var maybeCover = _bot.Memory?.BotCurrentCoverInfo?.LastCover;
+            var maybeCover = this._bot.Memory?.BotCurrentCoverInfo?.LastCover;
             if (maybeCover != null)
             {
-                Vector3 coverPos = maybeCover.Position;
-                float dist = Vector3.Distance(_bot.Position, coverPos);
+                var coverPos = maybeCover.Position;
+                var dist = Vector3.Distance(this._bot.Position, coverPos);
 
                 if (dist < 2.5f)
                 {
                     if (BotCoverHelper.IsProneCover(maybeCover))
                     {
-                        _targetPoseLevel = 0f;
+                        this._targetPoseLevel = 0f;
                         return;
                     }
 
                     if (BotCoverHelper.IsLowCover(maybeCover))
                     {
-                        _targetPoseLevel = 50f;
+                        this._targetPoseLevel = 50f;
                         return;
                     }
                 }
             }
 
-            bool inCombat = _cache.Combat?.IsInCombatState() == true;
-            bool preferCrouch = _personality.Caution > 0.6f || _personality.IsCamper;
+            var inCombat = this._cache.Combat?.IsInCombatState() == true;
+            var preferCrouch = this._personality.Caution > 0.6f || this._personality.IsCamper;
 
-            _targetPoseLevel = (inCombat && preferCrouch) ? 50f : 100f;
+            this._targetPoseLevel = inCombat && preferCrouch ? 50f : 100f;
         }
-
-        #endregion
-
-        #region Pose Transition
-
-        private void BlendPose(float deltaTime)
-        {
-            if (Mathf.Abs(_currentPoseLevel - _targetPoseLevel) < MinPoseThreshold)
-                return;
-
-            float panicFactor = _cache.PanicHandler?.IsPanicking == true ? 0.6f : 1f;
-            float combatFactor = _cache.Combat?.IsInCombatState() == true ? 1f : 0.4f;
-            float blendSpeed = PoseBlendSpeedBase * panicFactor * combatFactor;
-
-            _currentPoseLevel = Mathf.MoveTowards(_currentPoseLevel, _targetPoseLevel, blendSpeed * deltaTime);
-            _movement.SetPoseLevel(_currentPoseLevel);
-        }
-
-        #endregion
     }
 }

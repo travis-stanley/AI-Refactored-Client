@@ -1,19 +1,22 @@
 ﻿#nullable enable
 
-using System;
-using System.Collections.Generic;
-using UnityEngine;
-
 namespace AIRefactored.AI
 {
+    using System;
+    using System.Collections.Generic;
+
+    using UnityEngine;
+
+    using Random = UnityEngine.Random;
+
     /// <summary>
-    /// Provides randomized, personality-based bot profile presets.
-    /// Supports type-driven defaults blended with organic trait variance.
+    ///     Provides randomized, personality-based bot profile presets.
+    ///     Supports type-driven defaults blended with organic trait variance.
     /// </summary>
     public static class BotPersonalityPresets
     {
         /// <summary>
-        /// Cached personality preset mappings, generated at startup.
+        ///     Cached personality preset mappings, generated at startup.
         /// </summary>
         public static readonly Dictionary<PersonalityType, BotPersonalityProfile> Presets;
 
@@ -22,7 +25,7 @@ namespace AIRefactored.AI
             var types = (PersonalityType[])Enum.GetValues(typeof(PersonalityType));
             Presets = new Dictionary<PersonalityType, BotPersonalityProfile>(types.Length);
 
-            for (int i = 0; i < types.Length; i++)
+            for (var i = 0; i < types.Length; i++)
             {
                 var type = types[i];
                 Presets[type] = GenerateProfile(type);
@@ -30,19 +33,19 @@ namespace AIRefactored.AI
         }
 
         /// <summary>
-        /// Generates a randomized bot profile using base traits and blended variance.
+        ///     Generates a randomized bot profile using base traits and blended variance.
         /// </summary>
         public static BotPersonalityProfile GenerateProfile(PersonalityType type)
         {
             var p = new BotPersonalityProfile
-            {
-                Personality = type,
-                PreferredMission = MissionBias.Random,
-                MovementJitter = 0.2f,
-                SideStepBias = 0.5f,
-                LeanPeekFrequency = 0.5f,
-                CornerCheckPauseTime = 0.35f
-            };
+                        {
+                            Personality = type,
+                            PreferredMission = MissionBias.Random,
+                            MovementJitter = 0.2f,
+                            SideStepBias = 0.5f,
+                            LeanPeekFrequency = 0.5f,
+                            CornerCheckPauseTime = 0.35f
+                        };
 
             switch (type)
             {
@@ -167,29 +170,29 @@ namespace AIRefactored.AI
         }
 
         /// <summary>
-        /// Adds random variation to create behavioral diversity among same-type bots.
+        ///     Adds random variation to create behavioral diversity among same-type bots.
         /// </summary>
         private static void ApplyRandomBlend(BotPersonalityProfile p)
         {
-            float chaos = p.ChaosFactor;
-            float range = 0.1f + chaos * 0.3f;
+            var chaos = p.ChaosFactor;
+            var range = 0.1f + chaos * 0.3f;
 
-            p.Accuracy += UnityEngine.Random.Range(-0.1f, 0.15f);
-            p.AggressionLevel += UnityEngine.Random.Range(-0.1f, 0.15f);
-            p.Cohesion += UnityEngine.Random.Range(-0.2f, 0.2f);
-            p.CommunicationLevel += UnityEngine.Random.Range(-0.1f, 0.15f);
-            p.MovementJitter += UnityEngine.Random.Range(-0.1f, 0.15f);
-            p.LeanPeekFrequency += UnityEngine.Random.Range(-0.2f, 0.2f);
-            p.CornerCheckPauseTime += UnityEngine.Random.Range(-0.1f, 0.15f);
-            p.SideStepBias += UnityEngine.Random.Range(-0.15f, 0.2f);
-            p.ReactionSpeed += UnityEngine.Random.Range(-0.1f, 0.1f);
-            p.ReactionTime += UnityEngine.Random.Range(-0.05f, 0.1f);
-            p.FlankBias += UnityEngine.Random.Range(-0.1f, 0.15f);
-            p.SuppressionSensitivity += UnityEngine.Random.Range(-0.1f, 0.1f);
-            p.FlinchThreshold += UnityEngine.Random.Range(-0.1f, 0.1f);
-            p.RetreatThreshold += UnityEngine.Random.Range(-0.1f, 0.1f);
-            p.RepositionPriority += UnityEngine.Random.Range(-0.1f, 0.1f);
-            p.RiskTolerance += UnityEngine.Random.Range(-0.1f, 0.1f);
+            p.Accuracy += Random.Range(-0.1f, 0.15f);
+            p.AggressionLevel += Random.Range(-0.1f, 0.15f);
+            p.Cohesion += Random.Range(-0.2f, 0.2f);
+            p.CommunicationLevel += Random.Range(-0.1f, 0.15f);
+            p.MovementJitter += Random.Range(-0.1f, 0.15f);
+            p.LeanPeekFrequency += Random.Range(-0.2f, 0.2f);
+            p.CornerCheckPauseTime += Random.Range(-0.1f, 0.15f);
+            p.SideStepBias += Random.Range(-0.15f, 0.2f);
+            p.ReactionSpeed += Random.Range(-0.1f, 0.1f);
+            p.ReactionTime += Random.Range(-0.05f, 0.1f);
+            p.FlankBias += Random.Range(-0.1f, 0.15f);
+            p.SuppressionSensitivity += Random.Range(-0.1f, 0.1f);
+            p.FlinchThreshold += Random.Range(-0.1f, 0.1f);
+            p.RetreatThreshold += Random.Range(-0.1f, 0.1f);
+            p.RepositionPriority += Random.Range(-0.1f, 0.1f);
+            p.RiskTolerance += Random.Range(-0.1f, 0.1f);
 
             // Clamp to valid 0–1 values where appropriate
             p.Accuracy = Mathf.Clamp01(p.Accuracy);

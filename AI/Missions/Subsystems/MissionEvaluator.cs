@@ -1,119 +1,121 @@
 ﻿#nullable enable
 
-using AIRefactored.AI.Core;
-using AIRefactored.AI.Helpers;
-using AIRefactored.AI.Optimization;
-using AIRefactored.Core;
-using BepInEx.Logging;
-using EFT;
-using EFT.InventoryLogic;
-using EFT.Interactive;
-using System;
-using System.Collections.Generic;
-using System.Linq;
-using UnityEngine;
-using AIRefactored.AI.Groups;
-using AIRefactored.Runtime;
-using MissionType = AIRefactored.AI.Missions.BotMissionController.MissionType;
-
 namespace AIRefactored.AI.Missions.Subsystems
 {
+    using System;
+    using System.Collections.Generic;
+
+    using AIRefactored.AI.Core;
+    using AIRefactored.AI.Groups;
+    using AIRefactored.AI.Helpers;
+    using AIRefactored.AI.Optimization;
+    using AIRefactored.Core;
+    using AIRefactored.Runtime;
+
+    using BepInEx.Logging;
+
+    using EFT;
+    using EFT.Interactive;
+    using EFT.InventoryLogic;
+
+    using UnityEngine;
+
     /// <summary>
-    /// Evaluates combat, squad alignment, loot threshold, and stuck logic
-    /// to guide mission reassessment and fallback behavior.
+    ///     Evaluates combat, squad alignment, loot threshold, and stuck logic
+    ///     to guide mission reassessment and fallback behavior.
     /// </summary>
     public sealed class MissionEvaluator
     {
-        private readonly BotOwner _bot;
-        private readonly BotComponentCache _cache;
-        private readonly BotPersonalityProfile _profile;
-        private readonly BotGroupSyncCoordinator? _group;
+        private const int LootItemCountThreshold = 40;
 
-        private Vector3 _lastPos;
-        private float _lastMoveTime;
-        private float _stuckSince;
-        private int _fallbackAttempts;
+        private const float SquadCohesionRange = 10f;
+
+        private const float StuckCooldown = 30f;
 
         private const float StuckDuration = 25f;
-        private const float StuckCooldown = 30f;
-        private const int LootItemCountThreshold = 40;
-        private const float SquadCohesionRange = 10f;
+
         private static readonly ManualLogSource _log = AIRefactoredController.Logger;
+
+        private readonly BotOwner _bot;
+
+        private readonly BotComponentCache _cache;
+
+        private readonly BotGroupSyncCoordinator? _group;
+
+        private readonly BotPersonalityProfile _profile;
+
+        private int _fallbackAttempts;
+
+        private float _lastMoveTime;
+
+        private Vector3 _lastPos;
+
+        private float _stuckSince;
 
         public MissionEvaluator(BotOwner bot, BotComponentCache cache)
         {
-            _bot = bot;
-            _cache = cache;
-            _profile = BotRegistry.Get(bot.Profile.Id);
-            _group = cache.GroupBehavior?.GroupSync;
-            _lastPos = bot.Position;
-            _lastMoveTime = Time.time;
-        }
-
-        public void UpdateStuckCheck(float time)
-        {
-            float moved = Vector3.Distance(_bot.Position, _lastPos);
-            if (moved > 0.3f)
-            {
-                _lastPos = _bot.Position;
-                _lastMoveTime = time;
-                _fallbackAttempts = 0;
-                return;
-            }
-
-            if (time - _lastMoveTime > StuckDuration && time - _stuckSince > StuckCooldown && _fallbackAttempts < 2)
-            {
-                _stuckSince = time;
-                _fallbackAttempts++;
-
-                Vector3? fallback = HybridFallbackResolver.GetBestRetreatPoint(_bot, _bot.LookDirection);
-                if (fallback.HasValue)
-                {
-                    _log.LogInfo($"[MissionEvaluator] {_bot.Profile.Info.Nickname} fallback #{_fallbackAttempts} → {fallback.Value}");
-                    BotMovementHelper.SmoothMoveTo(_bot, fallback.Value);
-                }
-            }
-        }
-
-        public bool ShouldExtractEarly()
-        {
-            float threshold = _profile.RetreatThreshold;
-            var backpack = _bot.GetPlayer?.Inventory?.Equipment?.GetSlot(EquipmentSlot.Backpack)?.ContainedItem;
-            if (backpack == null) return false;
-
-            int count = 0;
-            foreach (var item in backpack.GetAllItems())
-                if (item != null) count++;
-
-            float fullness = (float)count / LootItemCountThreshold;
-            return fullness >= threshold && _profile.Caution > 0.6f && !_profile.IsFrenzied;
+            this._bot = bot;
+            this._cache = cache;
+            this._profile = BotRegistry.Get(bot.Profile.Id);
+            this._group = BotCacheUtility.GetGroupSync(cache);
+            this._lastPos = bot.Position;
+            this._lastMoveTime = Time.time;
         }
 
         public bool IsGroupAligned()
         {
-            if (_group == null)
+            if (this._group == null)
                 return true;
 
-            var mates = _group.GetTeammates();
-            int near = mates.Count(m => m != null && Vector3.Distance(m.Position, _bot.Position) < SquadCohesionRange);
-            return near >= Mathf.CeilToInt(mates.Count * 0.6f);
+            var teammates = new List<BotOwner>(this._group.GetTeammates());
+            var near = 0;
+
+            for (var i = 0; i < teammates.Count; i++)
+            {
+                var mate = teammates[i];
+                if (mate != null && Vector3.Distance(mate.Position, this._bot.Position) < SquadCohesionRange)
+                    near++;
+            }
+
+            var required = Mathf.CeilToInt(teammates.Count * 0.6f);
+            return near >= required;
+        }
+
+        public bool ShouldExtractEarly()
+        {
+            var threshold = this._profile.RetreatThreshold;
+            var backpack = this._bot.GetPlayer?.Inventory?.Equipment?.GetSlot(EquipmentSlot.Backpack)?.ContainedItem;
+            if (backpack == null)
+                return false;
+
+            var count = 0;
+            var items = new List<Item>(backpack.GetAllItems());
+            for (var i = 0; i < items.Count; i++)
+                if (items[i] != null)
+                    count++;
+
+            var fullness = (float)count / LootItemCountThreshold;
+            return fullness >= threshold && this._profile.Caution > 0.6f && !this._profile.IsFrenzied;
         }
 
         public void TryExtract()
         {
-            if (_bot == null || _bot.IsDead)
+            if (this._bot == null || this._bot.IsDead)
                 return;
 
             try
             {
                 ExfiltrationPoint? closest = null;
-                float minDist = float.MaxValue;
+                var minDist = float.MaxValue;
 
-                foreach (var point in GameObject.FindObjectsOfType<ExfiltrationPoint>())
+                var allPoints = GameObject.FindObjectsOfType<ExfiltrationPoint>();
+                for (var i = 0; i < allPoints.Length; i++)
                 {
-                    if (point.Status != EExfiltrationStatus.RegularMode) continue;
+                    var point = allPoints[i];
+                    if (point == null || point.Status != EExfiltrationStatus.RegularMode)
+                        continue;
 
-                    float dist = Vector3.Distance(_bot.Position, point.transform.position);
+                    var dist = Vector3.Distance(this._bot.Position, point.transform.position);
                     if (dist < minDist)
                     {
                         minDist = dist;
@@ -123,8 +125,8 @@ namespace AIRefactored.AI.Missions.Subsystems
 
                 if (closest != null)
                 {
-                    BotMovementHelper.SmoothMoveTo(_bot, closest.transform.position);
-                    Say(EPhraseTrigger.ExitLocated);
+                    BotMovementHelper.SmoothMoveTo(this._bot, closest.transform.position);
+                    this.Say(EPhraseTrigger.ExitLocated);
                 }
             }
             catch (Exception ex)
@@ -133,12 +135,38 @@ namespace AIRefactored.AI.Missions.Subsystems
             }
         }
 
+        public void UpdateStuckCheck(float time)
+        {
+            var moved = Vector3.Distance(this._bot.Position, this._lastPos);
+            if (moved > 0.3f)
+            {
+                this._lastPos = this._bot.Position;
+                this._lastMoveTime = time;
+                this._fallbackAttempts = 0;
+                return;
+            }
+
+            if (time - this._lastMoveTime > StuckDuration && time - this._stuckSince > StuckCooldown
+                                                          && this._fallbackAttempts < 2)
+            {
+                this._stuckSince = time;
+                this._fallbackAttempts++;
+
+                var fallback = HybridFallbackResolver.GetBestRetreatPoint(this._bot, this._bot.LookDirection);
+                if (fallback.HasValue)
+                {
+                    _log.LogInfo(
+                        $"[MissionEvaluator] {this._bot.Profile.Info.Nickname} fallback #{this._fallbackAttempts} → {fallback.Value}");
+                    BotMovementHelper.SmoothMoveTo(this._bot, fallback.Value);
+                }
+            }
+        }
+
         private void Say(EPhraseTrigger phrase)
         {
             try
             {
-                if (!FikaHeadlessDetector.IsHeadless)
-                    _bot.GetPlayer?.Say(phrase);
+                if (!FikaHeadlessDetector.IsHeadless) this._bot.GetPlayer?.Say(phrase);
             }
             catch (Exception ex)
             {

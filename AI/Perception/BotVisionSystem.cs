@@ -1,91 +1,88 @@
 ﻿#nullable enable
 
-using AIRefactored.AI.Core;
-using AIRefactored.AI.Groups;
-using AIRefactored.AI.Memory;
-using AIRefactored.Core;
-using EFT;
-using UnityEngine;
-
 namespace AIRefactored.AI.Perception
 {
+    using AIRefactored.AI.Core;
+    using AIRefactored.AI.Groups;
+    using AIRefactored.AI.Memory;
+    using AIRefactored.Core;
+
+    using EFT;
+
+    using UnityEngine;
+
     /// <summary>
-    /// Simulates realistic bot visual perception using view cone, distance, fog/light occlusion,
-    /// bone confidence, suppression stress, and tactical memory.
+    ///     Simulates realistic bot visual perception using view cone, distance, fog/light occlusion,
+    ///     bone confidence, suppression stress, and tactical memory.
     /// </summary>
     public sealed class BotVisionSystem
     {
-        #region Constants
+        private const float AutoDetectRadius = 4f;
+
+        private const float BaseViewConeAngle = 120f;
+
+        private const float BoneConfidenceDecay = 0.1f;
+
+        private const float BoneConfidenceThreshold = 0.45f;
 
         private const float MaxDetectionDistance = 120f;
-        private const float BaseViewConeAngle = 120f;
-        private const float AutoDetectRadius = 4f;
-        private const float BoneConfidenceThreshold = 0.45f;
-        private const float BoneConfidenceDecay = 0.1f;
+
         private const float SuppressionMissChance = 0.2f;
 
         private static readonly PlayerBoneType[] BonesToCheck =
-        {
-            PlayerBoneType.Head, PlayerBoneType.Spine, PlayerBoneType.Ribcage,
-            PlayerBoneType.LeftShoulder, PlayerBoneType.RightShoulder,
-            PlayerBoneType.Pelvis, PlayerBoneType.LeftThigh1, PlayerBoneType.RightThigh1
-        };
-
-        #endregion
-
-        #region Fields
+            {
+                PlayerBoneType.Head, PlayerBoneType.Spine, PlayerBoneType.Ribcage, PlayerBoneType.LeftShoulder,
+                PlayerBoneType.RightShoulder, PlayerBoneType.Pelvis, PlayerBoneType.LeftThigh1,
+                PlayerBoneType.RightThigh1
+            };
 
         private BotOwner? _bot;
+
         private BotComponentCache? _cache;
-        private BotPersonalityProfile? _profile;
-        private BotTacticalMemory? _memory;
+
         private float _lastCommitTime = -999f;
 
-        #endregion
+        private BotTacticalMemory? _memory;
 
-        #region Initialization
+        private BotPersonalityProfile? _profile;
 
         public void Initialize(BotComponentCache cache)
         {
-            _cache = cache;
-            _bot = cache.Bot;
-            _profile = cache.AIRefactoredBotOwner?.PersonalityProfile;
-            _memory = cache.TacticalMemory;
+            this._cache = cache;
+            this._bot = cache.Bot;
+            this._profile = cache.AIRefactoredBotOwner?.PersonalityProfile;
+            this._memory = cache.TacticalMemory;
         }
-
-        #endregion
-
-        #region Main Tick
 
         public void Tick(float time)
         {
-            if (!IsValidContext())
+            if (!this.IsValidContext())
                 return;
 
-            Vector3 eye = _bot!.Position + Vector3.up * 1.4f;
-            Vector3 forward = _bot.LookDirection;
+            var eye = this._bot!.Position + Vector3.up * 1.4f;
+            var forward = this._bot.LookDirection;
 
-            float fogPenalty = RenderSettings.fog ? Mathf.Clamp01(RenderSettings.fogDensity * 4f) : 0f;
-            float ambientLight = RenderSettings.ambientLight.grayscale;
-            float adjustedViewCone = Mathf.Lerp(BaseViewConeAngle, 60f, 1f - ambientLight);
+            var fogPenalty = RenderSettings.fog ? Mathf.Clamp01(RenderSettings.fogDensity * 4f) : 0f;
+            var ambientLight = RenderSettings.ambientLight.grayscale;
+            var adjustedViewCone = Mathf.Lerp(BaseViewConeAngle, 60f, 1f - ambientLight);
 
             Player? bestTarget = null;
-            float bestScore = float.MaxValue;
+            var bestScore = float.MaxValue;
 
             foreach (var target in GameWorldHandler.GetAllAlivePlayers())
             {
-                if (!IsValidTarget(target)) continue;
+                if (!this.IsValidTarget(target)) continue;
 
-                float dist = Vector3.Distance(eye, target.Position);
+                var dist = Vector3.Distance(eye, target.Position);
                 if (dist > MaxDetectionDistance * (1f - fogPenalty)) continue;
 
-                bool withinAutoRange = dist <= AutoDetectRadius;
-                bool inViewCone = IsInViewCone(forward, eye, target.Position, adjustedViewCone);
-                bool canSee = HasLineOfSight(eye, target);
+                var withinAutoRange = dist <= AutoDetectRadius;
+                var inViewCone = IsInViewCone(forward, eye, target.Position, adjustedViewCone);
+                var canSee = HasLineOfSight(eye, target);
 
                 if ((withinAutoRange && canSee) || (inViewCone && canSee))
                 {
-                    float score = dist;
+                    var score = dist;
                     if (score < bestScore)
                     {
                         bestTarget = target;
@@ -96,39 +93,69 @@ namespace AIRefactored.AI.Perception
 
             if (bestTarget != null)
             {
-                _memory!.RecordEnemyPosition(bestTarget.Position);
-                TrackVisibleBones(_bot.Position + Vector3.up * 1.4f, bestTarget);
-                EvaluateTargetConfidence(bestTarget, time);
+                this._memory!.RecordEnemyPosition(bestTarget.Position);
+                this.TrackVisibleBones(this._bot.Position + Vector3.up * 1.4f, bestTarget);
+                this.EvaluateTargetConfidence(bestTarget, time);
             }
         }
 
-        #endregion
+        private static bool HasLineOfSight(Vector3 from, Player target)
+        {
+            var to = target.Position + Vector3.up * 1.4f;
+            if (Physics.Linecast(from, to, out var hit))
+                return hit.collider?.transform.root == target.Transform?.Original?.root;
 
-        #region Evaluation
+            return true;
+        }
+
+        private static bool IsInViewCone(Vector3 forward, Vector3 origin, Vector3 targetPos, float viewCone)
+        {
+            var angle = Vector3.Angle(forward, targetPos - origin);
+            return angle <= viewCone * 0.5f;
+        }
+
+        private void CommitEnemyIfAllowed(Player target, float time)
+        {
+            if (this._bot == null || this._profile == null || this._bot.EnemiesController == null)
+                return;
+
+            if (this._bot.EnemiesController.EnemyInfos.ContainsKey(target))
+                return;
+
+            var delay = Mathf.Lerp(0.1f, 0.6f, 1f - this._profile.ReactionTime);
+            if (time - this._lastCommitTime < delay)
+                return;
+
+            var group = this._bot.BotsGroup;
+            var settings = new BotSettingsClass(target, group, EBotEnemyCause.addPlayer);
+
+            this._bot.EnemiesController.AddNew(group, target, settings);
+            this._bot.BotTalk?.TrySay(EPhraseTrigger.OnEnemyConversation);
+            BotTeamLogic.AddEnemy(this._bot, target);
+
+            this._lastCommitTime = time;
+        }
 
         private void EvaluateTargetConfidence(Player target, float time)
         {
-            var tracker = _cache!.VisibilityTracker;
+            var tracker = this._cache!.VisibilityTracker;
             if (tracker == null || !tracker.HasEnoughData)
                 return;
 
-            float confidence = tracker.GetOverallConfidence();
+            var confidence = tracker.GetOverallConfidence();
             if (confidence < BoneConfidenceThreshold)
                 return;
 
-            if (_cache.PanicHandler?.IsUnderSuppression == true && Random.value < SuppressionMissChance)
+            if (this._cache.PanicHandler?.IsUnderSuppression == true && Random.value < SuppressionMissChance)
                 return;
 
-            CommitEnemyIfAllowed(target, time);
+            this.CommitEnemyIfAllowed(target, time);
         }
 
         private bool IsValidContext()
         {
-            return _bot?.IsDead == false &&
-                   _cache != null &&
-                   _profile != null &&
-                   _memory != null &&
-                   _bot.GetPlayer is { IsAI: true, IsYourPlayer: false };
+            return this._bot?.IsDead == false && this._cache != null && this._profile != null && this._memory != null
+                   && this._bot.GetPlayer is { IsAI: true, IsYourPlayer: false };
         }
 
         private bool IsValidTarget(Player target)
@@ -136,82 +163,32 @@ namespace AIRefactored.AI.Perception
             if (target.HealthController?.IsAlive != true)
                 return false;
 
-            if (target.ProfileId == _bot!.ProfileId || target == _bot.GetPlayer)
+            if (target.ProfileId == this._bot!.ProfileId || target == this._bot.GetPlayer)
                 return false;
 
-            return _bot.BotsGroup?.IsEnemy(target) == true;
+            return this._bot.BotsGroup?.IsEnemy(target) == true;
         }
-
-        private static bool IsInViewCone(Vector3 forward, Vector3 origin, Vector3 targetPos, float viewCone)
-        {
-            float angle = Vector3.Angle(forward, targetPos - origin);
-            return angle <= viewCone * 0.5f;
-        }
-
-        private static bool HasLineOfSight(Vector3 from, Player target)
-        {
-            Vector3 to = target.Position + Vector3.up * 1.4f;
-            if (Physics.Linecast(from, to, out RaycastHit hit))
-                return hit.collider?.transform.root == target.Transform?.Original?.root;
-
-            return true;
-        }
-
-        #endregion
-
-        #region Memory Commit
-
-        private void CommitEnemyIfAllowed(Player target, float time)
-        {
-            if (_bot == null || _profile == null || _bot.EnemiesController == null)
-                return;
-
-            if (_bot.EnemiesController.EnemyInfos.ContainsKey(target))
-                return;
-
-            float delay = Mathf.Lerp(0.1f, 0.6f, 1f - _profile.ReactionTime);
-            if (time - _lastCommitTime < delay)
-                return;
-
-            var group = _bot.BotsGroup;
-            var settings = new BotSettingsClass(target, group, EBotEnemyCause.addPlayer);
-
-            _bot.EnemiesController.AddNew(group, target, settings);
-            _bot.BotTalk?.TrySay(EPhraseTrigger.OnEnemyConversation);
-            BotTeamLogic.AddEnemy(_bot, target);
-
-            _lastCommitTime = time;
-        }
-
-        #endregion
-
-        #region Bone Visibility
 
         private void TrackVisibleBones(Vector3 eye, Player target)
         {
-            var tracker = _cache!.VisibilityTracker ??= new TrackedEnemyVisibility(_bot!.Transform.Original);
+            var tracker = this._cache!.VisibilityTracker ??= new TrackedEnemyVisibility(this._bot!.Transform.Original);
 
             if (target.TryGetComponent<PlayerSpiritBones>(out var bones))
-            {
                 foreach (var type in BonesToCheck)
                 {
                     var bone = bones.GetBone(type)?.Original;
                     if (bone == null)
                         continue;
 
-                    if (!Physics.Linecast(eye, bone.position, out RaycastHit hit) || hit.collider?.gameObject == target.gameObject)
+                    if (!Physics.Linecast(eye, bone.position, out var hit)
+                        || hit.collider?.gameObject == target.gameObject)
                         tracker.UpdateBoneVisibility(type.ToString(), bone.position);
                 }
-            }
-            else if (Physics.Linecast(eye, target.Position, out RaycastHit fallbackHit) &&
-                     fallbackHit.collider?.transform.root == target.Transform?.Original?.root)
-            {
+            else if (Physics.Linecast(eye, target.Position, out var fallbackHit)
+                     && fallbackHit.collider?.transform.root == target.Transform?.Original?.root)
                 tracker.UpdateBoneVisibility("Body", target.Position);
-            }
 
             tracker.DecayConfidence(BoneConfidenceDecay * Time.deltaTime);
         }
-
-        #endregion
     }
 }

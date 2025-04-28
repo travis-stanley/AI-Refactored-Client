@@ -1,26 +1,24 @@
 ﻿#nullable enable
 
-using AIRefactored.Runtime;
-using BepInEx.Logging;
-using EFT;
-using System.Collections.Generic;
-using UnityEngine;
-
 namespace AIRefactored.AI.Optimization
 {
+    using System.Collections.Generic;
+
+    using AIRefactored.Runtime;
+
+    using BepInEx.Logging;
+
+    using EFT;
+
+    using UnityEngine;
+
     /// <summary>
     /// Applies synchronized personality-based tuning across an AI squad.
     /// Enhances cohesion, group alert radius, and retaliation logic.
     /// </summary>
     public class BotOwnerGroupOptimization
     {
-        #region Fields
-
         private static readonly ManualLogSource Logger = AIRefactoredController.Logger;
-
-        #endregion
-
-        #region Public API
 
         /// <summary>
         /// Applies group cohesion and perception modifiers to all valid AI bots in a squad.
@@ -47,31 +45,8 @@ namespace AIRefactored.AI.Optimization
                 if (personality == null || settings == null)
                     continue;
 
-                ApplyModifiers(bot, personality, settings);
+                this.ApplyModifiers(bot, personality, settings);
             }
-        }
-
-        #endregion
-
-        #region Internal Logic
-
-        /// <summary>
-        /// Applies per-bot group modifiers to enhance reactivity and team cohesion based on personality.
-        /// </summary>
-        private void ApplyModifiers(BotOwner bot, BotPersonalityProfile profile, BotGlobalsMindSettings mind)
-        {
-            mind.DIST_TO_FOUND_SQRT = Mathf.Lerp(300f, 600f, 1f - profile.Cohesion);
-            mind.FRIEND_AGR_KILL = Mathf.Clamp(
-                mind.FRIEND_AGR_KILL + profile.AggressionLevel * 0.15f,
-                0f, 1f
-            );
-            mind.ENEMY_LOOK_AT_ME_ANG = Mathf.Clamp(
-                mind.ENEMY_LOOK_AT_ME_ANG - profile.Cohesion * 5f,
-                5f, 30f
-            );
-
-            string name = bot.Profile?.Info?.Nickname ?? "UnknownBot";
-            Logger.LogDebug($"[GroupOpt] {name} → Cohesion={profile.Cohesion:F2}, FRIEND_AGR_KILL={mind.FRIEND_AGR_KILL:F2}, ANG={mind.ENEMY_LOOK_AT_ME_ANG:F1}°");
         }
 
         /// <summary>
@@ -79,10 +54,21 @@ namespace AIRefactored.AI.Optimization
         /// </summary>
         private static bool IsValidAIBot(BotOwner? bot)
         {
-            return bot is { IsDead: false } &&
-                   bot.GetPlayer is { IsAI: true, IsYourPlayer: false };
+            return bot is { IsDead: false } && bot.GetPlayer is { IsAI: true, IsYourPlayer: false };
         }
 
-        #endregion
+        /// <summary>
+        /// Applies per-bot group modifiers to enhance reactivity and team cohesion based on personality.
+        /// </summary>
+        private void ApplyModifiers(BotOwner bot, BotPersonalityProfile profile, BotGlobalsMindSettings mind)
+        {
+            mind.DIST_TO_FOUND_SQRT = Mathf.Lerp(300f, 600f, 1f - profile.Cohesion);
+            mind.FRIEND_AGR_KILL = Mathf.Clamp(mind.FRIEND_AGR_KILL + profile.AggressionLevel * 0.15f, 0f, 1f);
+            mind.ENEMY_LOOK_AT_ME_ANG = Mathf.Clamp(mind.ENEMY_LOOK_AT_ME_ANG - profile.Cohesion * 5f, 5f, 30f);
+
+            string name = bot.Profile?.Info?.Nickname ?? "UnknownBot";
+            Logger.LogDebug(
+                $"[GroupOpt] {name} → Cohesion={profile.Cohesion:F2}, FRIEND_AGR_KILL={mind.FRIEND_AGR_KILL:F2}, ANG={mind.ENEMY_LOOK_AT_ME_ANG:F1}°");
+        }
     }
 }

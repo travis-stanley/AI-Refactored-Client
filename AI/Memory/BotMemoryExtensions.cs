@@ -1,42 +1,39 @@
 ﻿#nullable enable
 
-using AIRefactored.AI.Core;
-using AIRefactored.AI.Helpers;
-using AIRefactored.AI.Optimization;
-using EFT;
-using UnityEngine;
-
 namespace AIRefactored.AI.Memory
 {
+    using AIRefactored.AI.Helpers;
+    using AIRefactored.AI.Optimization;
+
+    using EFT;
+
+    using UnityEngine;
+
     /// <summary>
     /// Tactical extensions for BotOwner memory and behavior.
     /// Provides smart fallback, perception updates, state toggles, and auditory reactions.
     /// </summary>
     public static class BotMemoryExtensions
     {
-        #region Tactical Movement
+        public static void ClearLastHeardSound(this BotOwner bot)
+        {
+            if (!IsValid(bot))
+                return;
 
-        /// <summary>
-        /// Sends the bot to a fallback position if valid and not currently panicking.
-        /// </summary>
-        /// <param name="bot">The bot requesting fallback movement.</param>
-        /// <param name="fallbackPosition">The target fallback position.</param>
+            BotMemoryStore.ClearHeardSound(bot.ProfileId);
+        }
+
         public static void FallbackTo(this BotOwner bot, Vector3 fallbackPosition)
         {
-            if (bot == null || fallbackPosition.sqrMagnitude < 0.5f)
+            if (!IsValid(bot) || fallbackPosition.sqrMagnitude < 0.5f)
                 return;
 
-            BotComponentCache? cache = BotCacheUtility.GetCache(bot);
-            if (cache == null)
-                return;
-
-            var panicHandler = cache.PanicHandler;
-            if (panicHandler != null && panicHandler.IsPanicking)
+            var cache = BotCacheUtility.GetCache(bot);
+            if (cache?.PanicHandler?.IsPanicking == true)
                 return;
 
             BotMovementHelper.SmoothMoveTo(bot, fallbackPosition);
         }
-
 
         public static void ForceMoveTo(this BotOwner bot, Vector3 position)
         {
@@ -46,12 +43,13 @@ namespace AIRefactored.AI.Memory
             BotMovementHelper.SmoothMoveTo(bot, position);
         }
 
+        /// <summary>
+        /// Triggers fallback movement if bot is in poor cover facing visible enemy.
+        /// Updated to use BotCoverRetreatPlanner instead of HybridFallbackResolver.
+        /// </summary>
         public static void ReevaluateCurrentCover(this BotOwner bot)
         {
-            if (!IsValid(bot))
-                return;
-
-            if (bot.Memory == null || bot.Memory.GoalEnemy == null || !bot.Memory.GoalEnemy.IsVisible)
+            if (!IsValid(bot) || bot.Memory?.GoalEnemy?.IsVisible != true)
                 return;
 
             Vector3 toEnemy = bot.Memory.GoalEnemy.CurrPosition - bot.Position;
@@ -62,18 +60,21 @@ namespace AIRefactored.AI.Memory
             if (angle < 20f && toEnemy.sqrMagnitude < 625f)
             {
                 Vector3 fallback = bot.Position - toEnemy.normalized * 5f;
-                Vector3? navBased = HybridFallbackResolver.GetBestRetreatPoint(bot, toEnemy);
-                Vector3 destination = navBased.HasValue ? AlignY(navBased.Value, bot.Position.y) : fallback;
+                Vector3 destination = fallback;
 
+                var cache = BotCacheUtility.GetCache(bot);
+                if (cache?.PathCache != null)
+                {
+                    var path = BotCoverRetreatPlanner.GetCoverRetreatPath(bot, toEnemy, cache.PathCache);
+                    if (path.Count > 0)
+                        destination = path[path.Count - 1];
+                }
+
+                destination = AlignY(destination, bot.Position.y);
                 BotMovementHelper.SmoothMoveTo(bot, destination);
-                if (bot.BotTalk != null)
-                    bot.BotTalk.TrySay(EPhraseTrigger.OnLostVisual);
+                bot.BotTalk?.TrySay(EPhraseTrigger.OnLostVisual);
             }
         }
-
-        #endregion
-
-        #region Behavior Mode Flags
 
         public static void SetCautiousSearchMode(this BotOwner bot)
         {
@@ -93,6 +94,20 @@ namespace AIRefactored.AI.Memory
             bot.Memory.IsPeace = false;
         }
 
+        public static void SetLastHeardSound(this BotOwner bot, Player source)
+        {
+            if (!IsValid(bot) || source == null || source.ProfileId == bot.ProfileId)
+                return;
+
+            bot.BotsGroup?.LastSoundsController?.AddNeutralSound(source, source.Position);
+            BotMemoryStore.AddHeardSound(bot.ProfileId, source.Position, Time.time);
+
+            Vector3 cautiousAdvance = source.Position + (bot.Position - source.Position).normalized * 3f;
+            BotMovementHelper.SmoothMoveTo(bot, cautiousAdvance);
+
+            bot.BotTalk?.TrySay(EPhraseTrigger.OnEnemyShot);
+        }
+
         public static void SetPeaceMode(this BotOwner bot)
         {
             if (!IsValid(bot) || bot.Memory == null)
@@ -103,42 +118,9 @@ namespace AIRefactored.AI.Memory
             bot.Memory.CheckIsPeace();
         }
 
-        #endregion
-
-        #region Auditory Memory
-
-        public static void SetLastHeardSound(this BotOwner bot, Player source)
-        {
-            if (!IsValid(bot) || source == null || source.ProfileId == bot.ProfileId)
-                return;
-
-            if (bot.BotsGroup != null && bot.BotsGroup.LastSoundsController != null)
-                bot.BotsGroup.LastSoundsController.AddNeutralSound(source, source.Position);
-
-            BotMemoryStore.AddHeardSound(bot.ProfileId, source.Position, Time.time);
-
-            Vector3 cautiousAdvance = source.Position + (bot.Position - source.Position).normalized * 3f;
-            BotMovementHelper.SmoothMoveTo(bot, cautiousAdvance);
-
-            if (bot.BotTalk != null)
-                bot.BotTalk.TrySay(EPhraseTrigger.OnEnemyShot);
-        }
-
-        public static void ClearLastHeardSound(this BotOwner bot)
-        {
-            if (!IsValid(bot))
-                return;
-
-            BotMemoryStore.ClearHeardSound(bot.ProfileId);
-        }
-
-        #endregion
-
-        #region Tactical Evaluation
-
         public static Vector3? TryGetFlankDirection(this BotOwner bot)
         {
-            if (!IsValid(bot) || bot.Memory == null || bot.Memory.GoalEnemy == null)
+            if (!IsValid(bot) || bot.Memory?.GoalEnemy == null)
                 return null;
 
             Vector3 toEnemy = bot.Memory.GoalEnemy.CurrPosition - bot.Position;
@@ -155,24 +137,15 @@ namespace AIRefactored.AI.Memory
             return Vector3.Cross(enemyDir, Vector3.up);
         }
 
-        #endregion
-
-        #region Helpers
-
-        private static bool IsValid(BotOwner bot)
-        {
-            return bot != null &&
-                   bot.GetPlayer != null &&
-                   bot.GetPlayer.IsAI &&
-                   !bot.GetPlayer.IsYourPlayer &&
-                   !bot.IsDead;
-        }
-
         private static Vector3 AlignY(Vector3 pos, float y)
         {
             return new Vector3(pos.x, y, pos.z);
         }
 
-        #endregion
+        private static bool IsValid(BotOwner bot)
+        {
+            return bot != null && bot.GetPlayer != null && bot.GetPlayer.IsAI && !bot.GetPlayer.IsYourPlayer
+                   && !bot.IsDead;
+        }
     }
 }

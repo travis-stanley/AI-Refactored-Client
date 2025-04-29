@@ -32,7 +32,11 @@ namespace AIRefactored.AI.Core
     /// </summary>
     public sealed class BotComponentCache
     {
+        #region Fields
+
         private static readonly ManualLogSource Logger = AIRefactoredController.Logger;
+
+        #endregion
 
         #region Core References
 
@@ -96,6 +100,14 @@ namespace AIRefactored.AI.Core
 
         #region Properties
 
+        public bool IsReady =>
+            this.Bot != null &&
+            this.Movement != null &&
+            this.PanicHandler != null &&
+            this.Suppression != null &&
+            this.FlashGrenade != null &&
+            this.Tactical != null;
+
         public float BlindUntilTime { get; set; }
 
         public bool IsBlinded { get; set; }
@@ -105,14 +117,6 @@ namespace AIRefactored.AI.Core
         public float LastHeardTime { get; private set; } = -999f;
 
         public Vector3? LastHeardDirection { get; private set; }
-
-        public bool IsReady =>
-            this.Bot != null
-            && this.Movement != null
-            && this.PanicHandler != null
-            && this.Suppression != null
-            && this.FlashGrenade != null
-            && this.Tactical != null;
 
         public BotMemoryClass? Memory => this.Bot?.Memory;
 
@@ -131,6 +135,7 @@ namespace AIRefactored.AI.Core
         /// <summary>
         /// Fully initializes the bot component cache with all AIRefactored systems.
         /// </summary>
+        /// <param name="bot">The bot to initialize for.</param>
         public void Initialize(BotOwner bot)
         {
             if (bot == null)
@@ -198,6 +203,7 @@ namespace AIRefactored.AI.Core
         /// <summary>
         /// Registers that the bot heard a sound from a specific direction.
         /// </summary>
+        /// <param name="source">The world-space position the sound came from.</param>
         public void RegisterHeardSound(Vector3 source)
         {
             if (this.Bot?.GetPlayer?.IsAI == true)
@@ -208,7 +214,7 @@ namespace AIRefactored.AI.Core
         }
 
         /// <summary>
-        /// Clears runtime dynamic states like blind, hearing, and path cache.
+        /// Clears runtime dynamic states like blindness, hearing, and memory cache.
         /// </summary>
         public void Reset()
         {
@@ -222,8 +228,9 @@ namespace AIRefactored.AI.Core
         }
 
         /// <summary>
-        /// Links the AIRefactoredBotOwner to the cache.
+        /// Sets the AIRefactored bot owner for this cache.
         /// </summary>
+        /// <param name="owner">The AIRefactored bot owner instance.</param>
         public void SetOwner(AIRefactoredBotOwner owner)
         {
             if (owner != null)
@@ -233,7 +240,7 @@ namespace AIRefactored.AI.Core
         }
 
         /// <summary>
-        /// Prints debug information about cache status.
+        /// Prints debug information about the current cache status.
         /// </summary>
         public void DebugPrint()
         {
@@ -242,8 +249,10 @@ namespace AIRefactored.AI.Core
         }
 
         /// <summary>
-        /// Checks if the bot has a specific personality trait.
+        /// Determines if the bot has a specific personality trait.
         /// </summary>
+        /// <param name="predicate">A predicate function checking the personality profile.</param>
+        /// <returns>True if the trait is present.</returns>
         public bool HasPersonalityTrait(Func<BotPersonalityProfile, bool> predicate)
         {
             return this.AIRefactoredBotOwner?.PersonalityProfile != null

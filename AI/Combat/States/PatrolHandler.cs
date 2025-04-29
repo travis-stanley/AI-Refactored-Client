@@ -84,14 +84,14 @@ namespace AIRefactored.AI.Combat.States
                     return;
                 }
 
-                List<Vector3> fallbackPath = BotCoverRetreatPlanner.GetCoverRetreatPath(
+                var fallbackPath = BotCoverRetreatPlanner.GetCoverRetreatPath(
                     this._bot,
                     this._bot.LookDirection.normalized,
                     this._cache.Pathing);
 
-                Vector3 fallbackDestination = fallbackPath.Count >= 2
-                                                  ? fallbackPath[fallbackPath.Count - 1]
-                                                  : this._bot.Position;
+                var fallbackDestination = fallbackPath.Count >= 2
+                                              ? fallbackPath[fallbackPath.Count - 1]
+                                              : this._bot.Position;
 
                 this._cache.Combat?.TriggerFallback(fallbackDestination);
                 return;
@@ -102,9 +102,9 @@ namespace AIRefactored.AI.Combat.States
                 return;
             }
 
-            HotspotRegistry.Hotspot hotspot = HotspotRegistry.GetRandomHotspot();
-            Vector3 baseTarget = hotspot.Position;
-            Vector3 destination = this._cache.Pathing?.ApplyOffsetTo(baseTarget) ?? baseTarget;
+            var hotspot = HotspotRegistry.GetRandomHotspot();
+            var baseTarget = hotspot.Position;
+            var destination = this._cache.SquadPath?.ApplyOffsetTo(baseTarget) ?? baseTarget;
 
             BotMovementHelper.SmoothMoveTo(this._bot, destination);
             BotCoverHelper.TrySetStanceFromNearbyCover(this._cache, destination);
@@ -118,7 +118,6 @@ namespace AIRefactored.AI.Combat.States
                 this._bot.BotTalk?.TrySay(EPhraseTrigger.GoForward);
             }
         }
-
 
         /// <summary>
         /// Checks panic, injuries, suppression, or nearby dead squadmates to trigger fallback.

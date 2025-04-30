@@ -1,5 +1,4 @@
 <Project Sdk="Microsoft.NET.Sdk">
-
   <PropertyGroup>
     <TargetFramework>net472</TargetFramework>
     <OutputType>Library</OutputType>
@@ -8,14 +7,13 @@
     <LangVersion>9.0</LangVersion>
     <AllowUnsafeBlocks>true</AllowUnsafeBlocks>
     <Optimize>true</Optimize>
+    <GenerateAssemblyInfo>false</GenerateAssemblyInfo>
   </PropertyGroup>
-
   <ItemGroup>
     <Compile Remove="dependencies\**" />
     <EmbeddedResource Remove="dependencies\**" />
     <None Remove="dependencies\**" />
   </ItemGroup>
-
   <ItemGroup>
     <Reference Include="0Harmony">
       <HintPath>..\dependencies\0Harmony.dll</HintPath>
@@ -28,9 +26,6 @@
     </Reference>
     <Reference Include="Comfort">
       <HintPath>..\dependencies\Comfort.dll</HintPath>
-    </Reference>
-    <Reference Include="DissonanceVoip">
-      <HintPath>..\dependencies\DissonanceVoip.dll</HintPath>
     </Reference>
     <Reference Include="Fika.Core">
       <HintPath>..\dependencies\Fika.Core.dll</HintPath>
@@ -57,5 +52,4 @@
       <HintPath>..\dependencies\UnityEngine.PhysicsModule.dll</HintPath>
     </Reference>
   </ItemGroup>
-
 </Project>

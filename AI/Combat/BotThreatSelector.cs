@@ -100,24 +100,32 @@ namespace AIRefactored.AI.Combat
             }
 
             IPlayer? bestTarget = null;
-            var bestScore = float.MinValue;
+            float bestScore = float.MinValue;
 
-            for (var i = 0; i < players.Count; i++)
+            for (int i = 0; i < players.Count; i++)
             {
-                var candidate = players[i];
-                if (candidate == null ||
-                    candidate.ProfileId == this.bot.ProfileId ||
-                    candidate.HealthController?.IsAlive != true)
+                object raw = players[i];
+                EFT.IPlayer? candidate = raw as EFT.IPlayer;
+
+                if (candidate == null)
                 {
                     continue;
                 }
 
-                if (this.bot.BotsGroup == null || !this.bot.BotsGroup.IsEnemy(candidate))
+                if (candidate.ProfileId == this.bot.ProfileId ||
+                    candidate.HealthController == null ||
+                    !candidate.HealthController.IsAlive)
                 {
                     continue;
                 }
 
-                var score = this.ScoreTarget(candidate, time);
+                BotsGroup? group = this.bot.BotsGroup;
+                if (group == null || !group.IsEnemy(candidate))
+                {
+                    continue;
+                }
+
+                float score = this.ScoreTarget(candidate, time);
                 if (score > bestScore)
                 {
                     bestScore = score;

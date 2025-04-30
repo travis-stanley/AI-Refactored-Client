@@ -76,7 +76,13 @@ namespace AIRefactored.AI.Combat
                     continue;
                 }
 
-                var health = mate.GetPlayer?.HealthController;
+                Player? matePlayer = EFTPlayerUtil.ResolvePlayer(mate);
+                if (!EFTPlayerUtil.IsValidGroupPlayer(matePlayer))
+                {
+                    continue;
+                }
+
+                IHealthController? health = matePlayer?.HealthController;
                 if (health == null || !health.IsAlive)
                 {
                     continue;
@@ -87,18 +93,16 @@ namespace AIRefactored.AI.Combat
                     continue;
                 }
 
-                if (this._cache.SquadHealer != null && !this._cache.SquadHealer.IsInProcess)
+                if (this._cache.SquadHealer != null && !this._cache.SquadHealer.IsInProcess && matePlayer != null)
                 {
-                    var matePlayer = mate.GetPlayer;
-                    if (matePlayer != null)
-                    {
-                        this._cache.SquadHealer.HealAsk(matePlayer);
-                        this.TrySaySupport(EPhraseTrigger.Cooperation);
-                        return;
-                    }
+                    object raw = matePlayer;
+                    EFT.IPlayer iMatePlayer = (EFT.IPlayer)raw;
+                    this._cache.SquadHealer.HealAsk(iMatePlayer);
+                    this.TrySaySupport(EPhraseTrigger.Cooperation);
+                    return;
                 }
 
-                this.TryDropStimForMate();
+                this.TrySaySupport(EPhraseTrigger.NeedHelp);
             }
         }
 
@@ -106,30 +110,25 @@ namespace AIRefactored.AI.Combat
 
         #region Private Methods
 
-        /// <summary>
-        /// Determines if a squadmate is valid for healing operations.
-        /// </summary>
-        /// <param name="mate">The BotOwner squadmate.</param>
-        /// <returns>True if the mate is valid, false otherwise.</returns>
         private bool IsValidMate(BotOwner? mate)
         {
-            return mate != null
-                && mate != this._bot
-                && !mate.IsDead
-                && Vector3.Distance(this._bot.Position, mate.Position) <= HealTriggerRange;
+            if (mate == null || mate == this._bot || mate.IsDead)
+            {
+                return false;
+            }
+
+            Vector3 selfPos = EFTPlayerUtil.GetPosition(this._bot.GetPlayer as Player);
+            Vector3 matePos = EFTPlayerUtil.GetPosition(mate.GetPlayer as Player);
+
+            return Vector3.Distance(selfPos, matePos) <= HealTriggerRange;
         }
 
-        /// <summary>
-        /// Determines whether a bot needs healing.
-        /// </summary>
-        /// <param name="health">The health controller to evaluate.</param>
-        /// <returns>True if healing is needed, false otherwise.</returns>
         private static bool NeedsHealing(IHealthController health)
         {
             foreach (EBodyPart part in Enum.GetValues(typeof(EBodyPart)))
             {
-                var hp = health.GetBodyPartHealth(part);
-                if (hp.Current < hp.Maximum * HealthThreshold)
+                ValueStruct value = health.GetBodyPartHealth(part);
+                if (value.Maximum > 0f && value.Current < value.Maximum * HealthThreshold)
                 {
                     return true;
                 }
@@ -138,35 +137,11 @@ namespace AIRefactored.AI.Combat
             return false;
         }
 
-        /// <summary>
-        /// Attempts to drop a stimulator for the squadmate.
-        /// </summary>
-        private void TryDropStimForMate()
-        {
-            var stimulators = this._bot.Medecine?.Stimulators;
-            if (stimulators == null || !stimulators.HaveSmt || !stimulators.CanUseNow())
-            {
-                return;
-            }
-
-            stimulators.StartApplyToTarget(success =>
-            {
-                if (success)
-                {
-                    this.TrySaySupport(EPhraseTrigger.NeedHelp);
-                }
-            });
-        }
-
-        /// <summary>
-        /// Attempts to play a squad support voice line.
-        /// </summary>
-        /// <param name="phrase">The phrase trigger to use.</param>
         private void TrySaySupport(EPhraseTrigger phrase)
         {
-            if (!FikaHeadlessDetector.IsHeadless)
+            if (!FikaHeadlessDetector.IsHeadless && this._bot.BotTalk != null)
             {
-                this._bot.BotTalk?.TrySay(phrase);
+                this._bot.BotTalk.TrySay(phrase);
             }
         }
 

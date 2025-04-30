@@ -169,27 +169,34 @@ namespace AIRefactored.AI.Combat
 
             for (int i = 0; i < bot.BotsGroup.MembersCount; i++)
             {
-                var mate = bot.BotsGroup.Member(i);
+                BotOwner? mate = bot.BotsGroup.Member(i);
                 if (mate == null || mate == bot || mate.IsDead)
                 {
                     continue;
                 }
 
-                var matePlayer = mate.GetPlayer;
-                if (matePlayer == null || !matePlayer.IsAI || !matePlayer.HealthController.IsAlive)
+                Player? matePlayer = EFTPlayerUtil.ResolvePlayer(mate);
+                if (!EFTPlayerUtil.IsValidGroupPlayer(matePlayer))
                 {
                     continue;
                 }
 
-                if (Vector3.Distance(bot.Position, mate.Position) < HealSquadRange)
+                Vector3 botPos = EFTPlayerUtil.GetPosition(bot.GetPlayer as Player);
+                Vector3 matePos = EFTPlayerUtil.GetPosition(matePlayer);
+
+                if (Vector3.Distance(botPos, matePos) < HealSquadRange && matePlayer != null)
                 {
-                    bot.HealAnotherTarget.HealAsk(matePlayer);
+                    object raw = matePlayer;
+                    EFT.IPlayer iTarget = (EFT.IPlayer)raw;
+                    bot.HealAnotherTarget.HealAsk(iTarget);
                     return true;
                 }
+
             }
 
             return false;
         }
+
 
         private void TrySelfHeal(BotOwner bot)
         {

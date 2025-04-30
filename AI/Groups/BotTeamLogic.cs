@@ -53,26 +53,49 @@ namespace AIRefactored.AI.Groups
 
         #region Public Methods
 
-        public static void AddEnemy(BotOwner bot, IPlayer target)
+        public static void AddEnemy(BotOwner bot, global::EFT.IPlayer target)
         {
             if (bot == null || bot.IsDead || target == null || bot.BotsGroup == null || bot.Memory == null)
             {
                 return;
             }
 
-            var resolved = GameWorldHandler.Get()?.GetAlivePlayerByProfileID(target.ProfileId ?? string.Empty);
-            if (resolved == null)
+            // Resolve EFT.Player from incoming target
+            Player? targetPlayer = EFTPlayerUtil.AsEFTPlayer(target);
+            if (!EFTPlayerUtil.IsValid(targetPlayer))
             {
                 return;
             }
 
-            for (var i = 0; i < bot.BotsGroup.MembersCount; i++)
+            string? profileId = targetPlayer?.ProfileId;
+            if (profileId == null || profileId.Length == 0)
             {
-                var mate = bot.BotsGroup.Member(i);
-                if (mate != null && mate != bot && !mate.IsDead && mate.BotsGroup != null && mate.Memory != null)
+                return;
+            }
+
+            // Resolve fresh copy from world by profileId to avoid stale refs
+            Player? resolvedPlayer = EFTPlayerUtil.ResolvePlayerById(profileId);
+            if (!EFTPlayerUtil.IsValid(resolvedPlayer))
+            {
+                return;
+            }
+
+            global::EFT.IPlayer? safeTarget = EFTPlayerUtil.AsSafeIPlayer(resolvedPlayer);
+            if (safeTarget == null)
+            {
+                return;
+            }
+
+            // Share enemy with squadmates
+            for (int i = 0; i < bot.BotsGroup.MembersCount; i++)
+            {
+                BotOwner? mate = bot.BotsGroup.Member(i);
+                if (mate == null || mate == bot || mate.IsDead || mate.BotsGroup == null || mate.Memory == null)
                 {
-                    ForceRegisterEnemy(mate, resolved);
+                    continue;
                 }
+
+                ForceRegisterEnemy(mate, safeTarget);
             }
         }
 
@@ -83,15 +106,15 @@ namespace AIRefactored.AI.Groups
                 return;
             }
 
-            var group = bot.BotsGroup;
+            BotsGroup? group = bot.BotsGroup;
             if (group == null)
             {
                 return;
             }
 
-            for (var i = 0; i < group.MembersCount; i++)
+            for (int i = 0; i < group.MembersCount; i++)
             {
-                var mate = group.Member(i);
+                BotOwner? mate = group.Member(i);
                 if (mate != null && mate != bot && !mate.IsDead && mate.GetPlayer?.IsAI == true)
                 {
                     mate.BotTalk?.TrySay(EPhraseTrigger.Cooperation);
@@ -101,10 +124,10 @@ namespace AIRefactored.AI.Groups
 
         public void BroadcastFallback(Vector3 retreatPoint)
         {
-            foreach (var entry in this.combatMap)
+            foreach (KeyValuePair<BotOwner, CombatStateMachine> entry in this.combatMap)
             {
-                var mate = entry.Key;
-                var fsm = entry.Value;
+                BotOwner mate = entry.Key;
+                CombatStateMachine fsm = entry.Value;
 
                 if (mate != null && mate != this.bot && !mate.IsDead)
                 {
@@ -120,14 +143,15 @@ namespace AIRefactored.AI.Groups
                 return;
             }
 
-            var center = Vector3.zero;
-            var count = 0;
+            Vector3 center = Vector3.zero;
+            int count = 0;
 
-            foreach (var mate in this.teammates)
+            for (int i = 0; i < this.teammates.Count; i++)
             {
+                BotOwner mate = this.teammates[i];
                 if (mate != null && !mate.IsDead)
                 {
-                    center += mate.Position;
+                    center += mate.Transform.position;
                     count++;
                 }
             }
@@ -138,11 +162,11 @@ namespace AIRefactored.AI.Groups
             }
 
             center /= count;
-            var jitter = Random.insideUnitSphere * RegroupJitterRadius;
+            Vector3 jitter = Random.insideUnitSphere * RegroupJitterRadius;
             jitter.y = 0f;
 
-            var target = center + jitter;
-            var distSq = (this.bot.Position - target).sqrMagnitude;
+            Vector3 target = center + jitter;
+            float distSq = (this.bot.Transform.position - target).sqrMagnitude;
 
             if (distSq > (RegroupThreshold * RegroupThreshold))
             {
@@ -162,55 +186,65 @@ namespace AIRefactored.AI.Groups
         {
             this.teammates.Clear();
 
-            var player = this.bot.GetPlayer;
-            if (player == null || player.Profile?.Info == null)
+            Player? player = this.bot.GetPlayer;
+            if (player == null || player.Profile == null)
             {
                 return;
             }
 
-            var groupId = player.Profile.Info.GroupId;
+            string? groupId = player.Profile.Info?.GroupId;
             if (string.IsNullOrEmpty(groupId))
             {
                 return;
             }
 
-            foreach (var other in allBots)
+            for (int i = 0; i < allBots.Count; i++)
             {
+                BotOwner other = allBots[i];
                 if (other == null || other == this.bot || other.IsDead)
                 {
                     continue;
                 }
 
-                var otherPlayer = other.GetPlayer;
-                if (otherPlayer == null || !otherPlayer.IsAI)
+                Player? otherPlayer = other.GetPlayer;
+                if (otherPlayer == null || !otherPlayer.IsAI || otherPlayer.Profile == null)
                 {
                     continue;
                 }
 
-                var otherInfo = otherPlayer.Profile?.Info;
-                if (otherInfo != null && otherInfo.GroupId == groupId)
+                string? otherGroupId = otherPlayer.Profile.Info?.GroupId;
+                if (!string.IsNullOrEmpty(otherGroupId) && otherGroupId == groupId)
                 {
                     this.teammates.Add(other);
                 }
             }
         }
 
-        public void ShareTarget(IPlayer enemy)
+        public void ShareTarget(global::EFT.IPlayer enemy)
         {
             if (enemy == null || string.IsNullOrEmpty(enemy.ProfileId))
             {
                 return;
             }
-
-            var resolved = GameWorldHandler.Get()?.GetAlivePlayerByProfileID(enemy.ProfileId);
-            if (resolved == null)
+            Player? resolvedPlayer = EFTPlayerUtil.ResolvePlayerById(enemy.ProfileId);
+            if (!EFTPlayerUtil.IsValid(resolvedPlayer))
             {
                 return;
             }
 
-            foreach (var mate in this.teammates)
+            global::EFT.IPlayer? safeTarget = EFTPlayerUtil.AsSafeIPlayer(resolvedPlayer);
+            if (safeTarget == null)
             {
-                ForceRegisterEnemy(mate, resolved);
+                return;
+            }
+
+            for (int i = 0; i < this.teammates.Count; i++)
+            {
+                BotOwner mate = this.teammates[i];
+                if (mate != null && !mate.IsDead)
+                {
+                    ForceRegisterEnemy(mate, safeTarget);
+                }
             }
         }
 
@@ -218,7 +252,7 @@ namespace AIRefactored.AI.Groups
 
         #region Private Methods
 
-        private static void ForceRegisterEnemy(BotOwner receiver, IPlayer enemy)
+        private static void ForceRegisterEnemy(BotOwner receiver, EFT.IPlayer enemy)
         {
             if (receiver == null || receiver.IsDead || enemy == null)
             {
@@ -232,7 +266,7 @@ namespace AIRefactored.AI.Groups
 
             if (!receiver.EnemiesController.EnemyInfos.ContainsKey(enemy))
             {
-                var settings = new BotSettingsClass(enemy as Player, receiver.BotsGroup, EBotEnemyCause.zryachiyLogic);
+                BotSettingsClass settings = new BotSettingsClass(enemy as Player, receiver.BotsGroup, EBotEnemyCause.zryachiyLogic);
                 receiver.Memory.AddEnemy(enemy, settings, false);
             }
         }

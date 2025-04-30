@@ -13,6 +13,7 @@ namespace AIRefactored.AI.Memory
     using AIRefactored.AI.Core;
     using AIRefactored.AI.Helpers;
     using AIRefactored.AI.Optimization;
+    using AIRefactored.Core;
     using EFT;
     using System.Collections.Generic;
     using UnityEngine;
@@ -120,22 +121,36 @@ namespace AIRefactored.AI.Memory
             bot.Memory.IsPeace = false;
         }
 
+        /// <summary>
+        /// Sets the last heard sound from a target player.
+        /// Safely disambiguates all EFT-specific fields from Dissonance.
+        /// </summary>
         public static void SetLastHeardSound(this BotOwner bot, Player source)
         {
-            if (!IsValid(bot) || source == null || source.ProfileId == bot.ProfileId)
+            if (!EFTPlayerUtil.IsValid(source) || source.ProfileId == bot.ProfileId)
             {
                 return;
             }
 
-            Vector3 sourcePos = source.Transform.position;
+            Vector3 sourcePos = EFTPlayerUtil.GetPosition(source);
 
-            bot.BotsGroup?.LastSoundsController?.AddNeutralSound(source, sourcePos);
+            object raw = source;
+            EFT.IPlayer sourceIPlayer = (EFT.IPlayer)raw;
+
+            if (bot.BotsGroup?.LastSoundsController != null)
+            {
+                bot.BotsGroup.LastSoundsController.AddNeutralSound(sourceIPlayer, sourcePos);
+            }
+
             BotMemoryStore.AddHeardSound(bot.ProfileId, sourcePos, Time.time);
 
             Vector3 cautiousAdvance = sourcePos + (bot.Position - sourcePos).normalized * 3f;
             BotMovementHelper.SmoothMoveTo(bot, cautiousAdvance);
 
-            bot.BotTalk?.TrySay(EPhraseTrigger.OnEnemyShot);
+            if (bot.BotTalk != null && !FikaHeadlessDetector.IsHeadless)
+            {
+                bot.BotTalk.TrySay(EPhraseTrigger.OnEnemyShot);
+            }
         }
 
         public static void SetPeaceMode(this BotOwner bot)

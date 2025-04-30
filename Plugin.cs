@@ -93,14 +93,14 @@ namespace AIRefactored
         {
             float timeout = Time.time + 60f;
 
-            while (!Singleton<ClientGameWorld>.Instantiated && Time.time < timeout)
+            while (!Singleton<ClientGameWorld>.Instantiated && !Singleton<GameWorld>.Instantiated && Time.time < timeout)
             {
                 yield return null;
             }
 
-            if (Singleton<ClientGameWorld>.Instantiated)
+            if (Singleton<ClientGameWorld>.Instantiated || Singleton<GameWorld>.Instantiated)
             {
-                _log?.LogWarning("[AIRefactored] ✅ GameWorld detected — proceeding with AIRefactored initialization.");
+                _log?.LogInfo("[AIRefactored] ✅ World detected — proceeding with AIRefactored initialization.");
                 GameWorldHandler.TryInitializeWorld();
             }
             else

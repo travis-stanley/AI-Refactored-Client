@@ -104,14 +104,22 @@ namespace AIRefactored.Core
                 return null;
             }
 
-            var world = GameWorldHandler.Get();
-            if (world == null)
+            GameWorld? world = GameWorldHandler.Get();
+            if (world == null || world.AllAlivePlayersList == null)
             {
                 return null;
             }
 
-            object? resolved = world.GetAlivePlayerByProfileID(profileId);
-            return resolved is Player player ? player : null;
+            for (int i = 0; i < world.AllAlivePlayersList.Count; i++)
+            {
+                Player? player = world.AllAlivePlayersList[i];
+                if (player != null && player.ProfileId == profileId)
+                {
+                    return player;
+                }
+            }
+
+            return null;
         }
 
         /// <summary>

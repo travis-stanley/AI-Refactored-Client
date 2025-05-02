@@ -11,18 +11,29 @@
 namespace AIRefactored.AI.Threads
 {
     using System;
+    using System.Reflection;
+    using AIRefactored.AI.Core;
     using AIRefactored.Runtime;
+    using BepInEx.Logging;
+    using HarmonyLib;
     using UnityEngine;
 
     /// <summary>
-    /// Ensures only AIRefactored.BotBrain is active on AI-controlled bots.
-    /// Scans the bot GameObject and removes conflicting brain MonoBehaviours injected by other mods.
+    /// Scans bot GameObjects for unauthorized logic and removes all non-AIRefactored MonoBehaviours.
+    /// Prevents logic injection by external mods or Harmony patches.
     /// </summary>
     public static class BotBrainGuardian
     {
+        #region Logger
+
+        private static readonly ManualLogSource Logger = AIRefactoredController.Logger;
+
+        #endregion
+
+        #region Public API
+
         /// <summary>
-        /// Scans a bot GameObject for conflicting or injected MonoBehaviours.
-        /// Removes AI logic from other mods (e.g., SAIN, SPT, LuaBrains).
+        /// Enforces AIRefactored control by destroying any foreign brain logic on the given GameObject.
         /// </summary>
         /// <param name="botGameObject">The bot GameObject to sanitize.</param>
         public static void Enforce(GameObject botGameObject)
@@ -46,51 +57,94 @@ namespace AIRefactored.AI.Threads
                     continue;
                 }
 
-                Type type = comp.GetType();
-                string ns = type.Namespace != null ? type.Namespace.ToLowerInvariant() : string.Empty;
+                Type? type = comp.GetType();
+                if (type == null)
+                {
+                    continue;
+                }
+
                 string name = type.Name.ToLowerInvariant();
+                string ns = type.Namespace != null ? type.Namespace.ToLowerInvariant() : string.Empty;
 
-                // Preserve AIRefactored.BotBrain only
-                if (type == typeof(BotBrain))
+                // Whitelist known AIRefactored core components
+                if (type == typeof(BotBrain) || type == typeof(BotComponentCache))
                 {
                     continue;
                 }
 
-                // Allow UnityEngine, EFT, or Comfort.Common components
-                if (ns.StartsWith("unity") || ns.StartsWith("eft") || ns.Contains("comfort"))
+                // Allow Unity/EFT native components
+                if (IsSafeComponent(ns))
                 {
                     continue;
                 }
 
-                // Strip conflicting AI logic from mods
-                if (IsConflictingBrain(name, ns))
+                // Remove foreign or patched components
+                if (IsConflictingBrain(name, ns) || IsHarmonyPatched(type) || HasSuspiciousMethods(type))
                 {
                     UnityEngine.Object.Destroy(comp);
-                    AIRefactoredController.Logger.LogWarning(
-                        $"[BotBrainGuardian] ⚠ Removed conflicting AI component '{type.FullName}' from GameObject '{botGameObject.name}'.");
+                    Logger.LogWarning(
+                        "[BotBrainGuardian] ⚠ Removed unauthorized AI component: "
+                        + type.FullName + " from GameObject: " + botGameObject.name);
                 }
             }
         }
 
-        /// <summary>
-        /// Determines whether the component appears to be a conflicting AI brain or logic controller.
-        /// </summary>
-        /// <param name="name">The lowercase name of the component type.</param>
-        /// <param name="ns">The lowercase namespace of the component type.</param>
-        /// <returns>True if the component is considered conflicting; otherwise, false.</returns>
+        #endregion
+
+        #region Internal Checks
+
+        private static bool IsSafeComponent(string ns)
+        {
+            return ns.StartsWith("unity", StringComparison.Ordinal)
+                || ns.StartsWith("eft", StringComparison.Ordinal)
+                || ns.Contains("comfort");
+        }
+
         private static bool IsConflictingBrain(string name, string ns)
         {
             return name.Contains("brain")
-                   || name.StartsWith("pmc", StringComparison.Ordinal)
-                   || name.StartsWith("boss", StringComparison.Ordinal)
-                   || name.StartsWith("follower", StringComparison.Ordinal)
-                   || name.StartsWith("assault", StringComparison.Ordinal)
-                   || name.StartsWith("exusec", StringComparison.Ordinal)
-                   || name.StartsWith("spt", StringComparison.Ordinal)
-                   || name.StartsWith("lua", StringComparison.Ordinal)
-                   || ns.Contains("sain")
-                   || ns.Contains("lua")
-                   || ns.Contains("spt");
+                || name.StartsWith("pmc")
+                || name.StartsWith("spt")
+                || name.StartsWith("lua")
+                || name.StartsWith("boss")
+                || name.StartsWith("follower")
+                || name.StartsWith("assault")
+                || name.StartsWith("exusec")
+                || ns.Contains("sain")
+                || ns.Contains("mod")
+                || ns.Contains("spt")
+                || ns.Contains("lua")
+                || !ns.Contains("tarkov"); // suspicious if not in EFT or Comfort or Tarkov space
         }
+
+        private static bool IsHarmonyPatched(Type type)
+        {
+            MethodInfo? updateMethod = type.GetMethod(
+                "Update",
+                BindingFlags.Instance | BindingFlags.Public | BindingFlags.NonPublic);
+
+            return updateMethod != null && Harmony.GetPatchInfo(updateMethod) != null;
+        }
+
+        private static bool HasSuspiciousMethods(Type type)
+        {
+            string[] suspicious = { "Update", "LateUpdate", "FixedUpdate", "Tick" };
+
+            for (int i = 0; i < suspicious.Length; i++)
+            {
+                MethodInfo? m = type.GetMethod(
+                    suspicious[i],
+                    BindingFlags.Instance | BindingFlags.Public | BindingFlags.NonPublic);
+
+                if (m != null && m.DeclaringType != typeof(MonoBehaviour))
+                {
+                    return true;
+                }
+            }
+
+            return false;
+        }
+
+        #endregion
     }
 }

@@ -79,13 +79,14 @@ namespace AIRefactored.AI.Navigation
         /// </summary>
         public static List<ISpawnPoint> GetSpawnPoints(string zone)
         {
-            List<ISpawnPoint>? list;
-            if (_zoneSpawns.TryGetValue(zone, out list) && list != null)
+            if (string.IsNullOrWhiteSpace(zone))
             {
-                return list;
+                return new List<ISpawnPoint>();
             }
 
-            return new List<ISpawnPoint>();
+            return _zoneSpawns.TryGetValue(zone, out List<ISpawnPoint>? list) && list != null
+                ? list
+                : new List<ISpawnPoint>();
         }
 
         /// <summary>
@@ -93,8 +94,9 @@ namespace AIRefactored.AI.Navigation
         /// </summary>
         public static Vector3 GetZoneCenter(string zone)
         {
-            Vector3 pos;
-            return _zoneCenters.TryGetValue(zone, out pos) ? pos : Vector3.zero;
+            return _zoneCenters.TryGetValue(zone, out Vector3 pos)
+                ? pos
+                : Vector3.zero;
         }
 
         /// <summary>
@@ -102,8 +104,9 @@ namespace AIRefactored.AI.Navigation
         /// </summary>
         public static float GetZoneWeight(string zone)
         {
-            float value;
-            return _zoneWeights.TryGetValue(zone, out value) ? value : 1f;
+            return _zoneWeights.TryGetValue(zone, out float value)
+                ? value
+                : 1f;
         }
 
         /// <summary>
@@ -126,14 +129,13 @@ namespace AIRefactored.AI.Navigation
             _zoneNames.Clear();
 
             List<string> zoneList = new List<string>(zones.ZoneNames(includeSnipingZones));
-
             for (int z = 0; z < zoneList.Count; z++)
             {
                 string zoneName = zoneList[z];
                 _zoneNames.Add(zoneName);
 
                 ISpawnPoint[] spawns = zones.ZoneSpawnPoints(zoneName);
-                if (spawns.Length == 0)
+                if (spawns == null || spawns.Length == 0)
                 {
                     continue;
                 }
@@ -153,8 +155,7 @@ namespace AIRefactored.AI.Navigation
 
                 float weight = 1f;
 
-                int zoneId;
-                if (int.TryParse(zoneName, out zoneId))
+                if (int.TryParse(zoneName, out int zoneId))
                 {
                     BotZone botZone = new BotZone { Id = zoneId };
                     Vector3? bossPos = zones.GetBossPosition(botZone);

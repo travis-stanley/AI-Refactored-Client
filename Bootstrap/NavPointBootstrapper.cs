@@ -29,26 +29,26 @@ namespace AIRefactored.AI.Navigation
     {
         #region Constants
 
-        private const float ForwardCoverCheckDistance = 4f;
-        private const float MaxSampleHeight = 30f;
+        private const float ForwardCoverCheckDistance = 4.0f;
+        private const float MaxSampleHeight = 30.0f;
         private const float MinNavPointClearance = 1.6f;
-        private const float RoofRaycastHeight = 12f;
-        private const float ScanRadius = 80f;
+        private const float RoofRaycastHeight = 12.0f;
+        private const float ScanRadius = 80.0f;
         private const float ScanSpacing = 2.5f;
-        private const float VerticalProbeMax = 24f;
-        private const float VerticalStep = 2f;
+        private const float VerticalProbeMax = 24.0f;
+        private const float VerticalStep = 2.0f;
 
         #endregion
 
-        #region Fields
+        #region State
 
-        private static readonly List<Vector3> _backgroundPending = new List<Vector3>(512);
-        private static readonly Queue<Vector3> _scanQueue = new Queue<Vector3>(2048);
+        private static readonly List<Vector3> BackgroundPending = new List<Vector3>(512);
+        private static readonly Queue<Vector3> ScanQueue = new Queue<Vector3>(2048);
         private static readonly ManualLogSource Logger = AIRefactoredController.Logger;
 
         private static Vector3 _center = Vector3.zero;
-        private static bool _isRunning = false;
-        private static int _registered = 0;
+        private static bool _isRunning;
+        private static int _registered;
 
         #endregion
 
@@ -67,24 +67,23 @@ namespace AIRefactored.AI.Navigation
 
             _isRunning = true;
             _registered = 0;
-            _scanQueue.Clear();
-            _backgroundPending.Clear();
+            ScanQueue.Clear();
+            BackgroundPending.Clear();
 
-            NavMeshSurface surface = Object.FindObjectOfType<NavMeshSurface>();
+            NavMeshSurface? surface = Object.FindObjectOfType<NavMeshSurface>();
             _center = surface != null ? surface.transform.position : Vector3.zero;
 
             float half = ScanRadius * 0.5f;
-
             for (float x = -half; x <= half; x += ScanSpacing)
             {
                 for (float z = -half; z <= half; z += ScanSpacing)
                 {
                     Vector3 basePos = _center + new Vector3(x, MaxSampleHeight, z);
-                    _scanQueue.Enqueue(basePos);
+                    ScanQueue.Enqueue(basePos);
                 }
             }
 
-            Logger.LogInfo("[NavPointBootstrapper] Queued " + _scanQueue.Count + " surface points for scanning.");
+            Logger.LogInfo("[NavPointBootstrapper] Queued " + ScanQueue.Count + " primary surface points.");
             Task.Run(PrequeueVerticalPoints);
         }
 
@@ -101,11 +100,12 @@ namespace AIRefactored.AI.Navigation
             int perFrameLimit = FikaHeadlessDetector.IsHeadless ? 80 : 40;
             int processed = 0;
 
-            while (_scanQueue.Count > 0 && processed++ < perFrameLimit)
+            while (ScanQueue.Count > 0 && processed++ < perFrameLimit)
             {
-                Vector3 basePos = _scanQueue.Dequeue();
+                Vector3 probe = ScanQueue.Dequeue();
 
-                if (!Physics.Raycast(basePos, Vector3.down, out RaycastHit hit, MaxSampleHeight))
+                RaycastHit hit;
+                if (!Physics.Raycast(probe, Vector3.down, out hit, MaxSampleHeight))
                 {
                     continue;
                 }
@@ -124,80 +124,37 @@ namespace AIRefactored.AI.Navigation
                 }
 
                 Vector3 worldPos = navHit.position;
-                bool isCover = IsCoverPoint(worldPos);
-                bool isIndoor = Physics.Raycast(worldPos + Vector3.up * 1.4f, Vector3.up, RoofRaycastHeight);
                 float elevation = worldPos.y - _center.y;
 
+                bool isCover = IsCoverPoint(worldPos);
+                bool isIndoor = IsIndoorPoint(worldPos);
                 string tag = ClassifyNavPoint(elevation, isCover, isIndoor);
 
-                NavPointRegistry.Register(
-                    worldPos,
-                    isCover,
-                    tag,
-                    elevation,
-                    isIndoor);
-
+                NavPointRegistry.Register(worldPos, isCover, tag, elevation, isIndoor);
                 _registered++;
             }
 
-            if (_scanQueue.Count == 0 && _backgroundPending.Count > 0)
+            if (ScanQueue.Count == 0 && BackgroundPending.Count > 0)
             {
-                for (int i = 0; i < _backgroundPending.Count; i++)
+                for (int i = 0; i < BackgroundPending.Count; i++)
                 {
-                    _scanQueue.Enqueue(_backgroundPending[i]);
+                    ScanQueue.Enqueue(BackgroundPending[i]);
                 }
 
-                _backgroundPending.Clear();
-                Logger.LogInfo("[NavPointBootstrapper] Added vertical fallback scan layer.");
+                BackgroundPending.Clear();
+                Logger.LogInfo("[NavPointBootstrapper] Queued vertical fallback points.");
             }
 
-            if (_scanQueue.Count == 0)
+            if (ScanQueue.Count == 0)
             {
                 _isRunning = false;
-                Logger.LogInfo("[NavPointBootstrapper] Completed: " + _registered + " nav points registered.");
+                Logger.LogInfo("[NavPointBootstrapper] ✅ Completed: " + _registered + " nav points registered.");
             }
         }
 
         #endregion
 
-        #region Private Helpers
-
-        private static string ClassifyNavPoint(float elevation, bool isCover, bool isIndoor)
-        {
-            if (isIndoor)
-            {
-                return "indoor";
-            }
-
-            if (elevation > 6f)
-            {
-                return "roof";
-            }
-
-            if (isCover)
-            {
-                return "fallback";
-            }
-
-            return "flank";
-        }
-
-        private static bool IsCoverPoint(Vector3 pos)
-        {
-            Vector3 eye = pos + Vector3.up * 1.4f;
-
-            for (float angle = -45f; angle <= 45f; angle += 15f)
-            {
-                Vector3 dir = Quaternion.Euler(0f, angle, 0f) * Vector3.forward;
-
-                if (Physics.Raycast(eye, dir, out RaycastHit _, ForwardCoverCheckDistance, LayerMaskClass.HighPolyCollider))
-                {
-                    return true;
-                }
-            }
-
-            return false;
-        }
+        #region Internal Helpers
 
         private static void PrequeueVerticalPoints()
         {
@@ -207,13 +164,49 @@ namespace AIRefactored.AI.Navigation
             {
                 for (float z = -half; z <= half; z += ScanSpacing)
                 {
-                    for (float height = 5f; height <= VerticalProbeMax; height += VerticalStep)
+                    for (float y = 5.0f; y <= VerticalProbeMax; y += VerticalStep)
                     {
-                        Vector3 pos = _center + new Vector3(x, height, z);
-                        _backgroundPending.Add(pos);
+                        BackgroundPending.Add(_center + new Vector3(x, y, z));
                     }
                 }
             }
+        }
+
+        private static bool IsCoverPoint(Vector3 pos)
+        {
+            Vector3 eye = pos + Vector3.up * 1.4f;
+
+            for (float angle = -45.0f; angle <= 45.0f; angle += 15.0f)
+            {
+                Vector3 dir = Quaternion.Euler(0.0f, angle, 0.0f) * Vector3.forward;
+                RaycastHit hit;
+                if (Physics.Raycast(eye, dir, out hit, ForwardCoverCheckDistance, AIRefactoredLayerMasks.HighPolyCollider))
+                {
+                    return true;
+                }
+            }
+
+            return false;
+        }
+
+        private static bool IsIndoorPoint(Vector3 pos)
+        {
+            return Physics.Raycast(pos + Vector3.up * 1.4f, Vector3.up, RoofRaycastHeight);
+        }
+
+        private static string ClassifyNavPoint(float elevation, bool isCover, bool isIndoor)
+        {
+            if (isIndoor)
+            {
+                return "indoor";
+            }
+
+            if (elevation > 6.0f)
+            {
+                return "roof";
+            }
+
+            return isCover ? "fallback" : "flank";
         }
 
         #endregion

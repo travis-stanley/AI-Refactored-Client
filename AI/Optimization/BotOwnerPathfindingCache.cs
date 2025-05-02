@@ -24,7 +24,7 @@ namespace AIRefactored.AI.Optimization
     /// Caches NavMesh paths and fallback scoring for individual bots.
     /// Optimizes retreat and navigation behaviors with smart path reuse and avoidance heuristics.
     /// </summary>
-    public class BotOwnerPathfindingCache
+    public sealed class BotOwnerPathfindingCache
     {
         private const float BlockCheckHeight = 1.2f;
         private const float BlockCheckMargin = 0.5f;
@@ -37,6 +37,9 @@ namespace AIRefactored.AI.Optimization
 
         private BotTacticalMemory? _tacticalMemory;
 
+        /// <summary>
+        /// Registers a fallback retreat trigger point in shared memory.
+        /// </summary>
         public void BroadcastRetreat(BotOwner botOwner, Vector3 point)
         {
             if (!IsAIBot(botOwner) || botOwner.BotsGroup == null || string.IsNullOrEmpty(botOwner.ProfileId))
@@ -48,18 +51,27 @@ namespace AIRefactored.AI.Optimization
             BotMemoryStore.AddDangerZone(map, point, DangerTriggerType.Panic, 5f);
         }
 
+        /// <summary>
+        /// Clears cached paths and fallback data.
+        /// </summary>
         public void Clear()
         {
-            _pathCache.Clear();
-            _fallbackCache.Clear();
+            this._pathCache.Clear();
+            this._fallbackCache.Clear();
         }
 
+        /// <summary>
+        /// Returns a weighted multiplier for cover position scoring, based on map data.
+        /// </summary>
         public float GetCoverWeight(string mapId, Vector3 pos)
         {
             string key = mapId + "_" + RoundVector3ToKey(pos);
-            return _coverWeights.TryGetValue(key, out float weight) ? weight : 1f;
+            return this._coverWeights.TryGetValue(key, out float weight) ? weight : 1f;
         }
 
+        /// <summary>
+        /// Returns the best fallback retreat path, based on tactical history and zone scoring.
+        /// </summary>
         public List<Vector3> GetFallbackPath(BotOwner bot, Vector3 direction)
         {
             string? id = bot.Profile?.Id;
@@ -72,9 +84,9 @@ namespace AIRefactored.AI.Optimization
             Vector3 fallbackTarget = origin - direction.normalized * 8f;
             string key = id + "_fb_" + HashVecDir(origin, direction);
 
-            if (_fallbackCache.TryGetValue(key, out List<Vector3>? cached)
+            if (this._fallbackCache.TryGetValue(key, out List<Vector3>? cached)
                 && cached.Count > 1
-                && !IsPathBlocked(cached))
+                && !this.IsPathBlocked(cached))
             {
                 return cached;
             }
@@ -87,30 +99,32 @@ namespace AIRefactored.AI.Optimization
             for (int i = 0; i < navFallbacks.Count; i++)
             {
                 Vector3 candidate = navFallbacks[i];
-
-                if (IsPathInClearedZone(new List<Vector3> { candidate }))
+                if (this.IsPathInClearedZone(new List<Vector3> { candidate }))
                 {
                     continue;
                 }
 
-                List<Vector3> navPath = BuildNavPath(origin, candidate);
-                if (navPath.Count > 1 && !IsPathBlocked(navPath))
+                List<Vector3> navPath = this.BuildNavPath(origin, candidate);
+                if (navPath.Count > 1 && !this.IsPathBlocked(navPath))
                 {
-                    _fallbackCache[key] = navPath;
+                    this._fallbackCache[key] = navPath;
                     return navPath;
                 }
             }
 
-            List<Vector3> raw = BuildNavPath(origin, fallbackTarget);
-            if (raw.Count > 1 && !IsPathBlocked(raw) && !IsPathInClearedZone(raw))
+            List<Vector3> raw = this.BuildNavPath(origin, fallbackTarget);
+            if (raw.Count > 1 && !this.IsPathBlocked(raw) && !this.IsPathInClearedZone(raw))
             {
-                _fallbackCache[key] = raw;
+                this._fallbackCache[key] = raw;
                 return raw;
             }
 
             return new List<Vector3>();
         }
 
+        /// <summary>
+        /// Returns a safe and optimized cached path to the destination, or recalculates if invalid.
+        /// </summary>
         public List<Vector3> GetOptimizedPath(BotOwner botOwner, Vector3 destination)
         {
             if (!IsAIBot(botOwner))
@@ -126,34 +140,43 @@ namespace AIRefactored.AI.Optimization
 
             string key = botId + "_" + destination.ToString("F2");
 
-            if (_pathCache.TryGetValue(key, out List<Vector3>? cached) && !IsPathBlocked(cached))
+            if (this._pathCache.TryGetValue(key, out List<Vector3>? cached) && !this.IsPathBlocked(cached))
             {
                 return cached;
             }
 
-            List<Vector3> path = BuildNavPath(botOwner.Position, destination);
-            _pathCache[key] = path;
+            List<Vector3> path = this.BuildNavPath(botOwner.Position, destination);
+            this._pathCache[key] = path;
             return path;
         }
 
+        /// <summary>
+        /// Registers the score of a cover point for map-aware decision making.
+        /// </summary>
         public void RegisterCoverNode(string mapId, Vector3 pos, float score)
         {
             string key = mapId + "_" + RoundVector3ToKey(pos);
-            if (!_coverWeights.ContainsKey(key))
+            if (!this._coverWeights.ContainsKey(key))
             {
-                _coverWeights[key] = Mathf.Clamp(score, 0.1f, 10f);
+                this._coverWeights[key] = Mathf.Clamp(score, 0.1f, 10f);
             }
         }
 
+        /// <summary>
+        /// Assigns a tactical memory module for zone safety scoring.
+        /// </summary>
         public void SetTacticalMemory(BotTacticalMemory memory)
         {
-            _tacticalMemory = memory;
+            this._tacticalMemory = memory;
         }
 
+        /// <summary>
+        /// Attempts to get a valid path that is neither blocked nor cleared.
+        /// </summary>
         public bool TryGetValidPath(BotOwner botOwner, Vector3 destination, out List<Vector3> path)
         {
-            path = GetOptimizedPath(botOwner, destination);
-            return path.Count >= 2 && !IsPathBlocked(path);
+            path = this.GetOptimizedPath(botOwner, destination);
+            return path.Count >= 2 && !this.IsPathBlocked(path);
         }
 
         private static bool IsAIBot(BotOwner? bot)
@@ -195,22 +218,36 @@ namespace AIRefactored.AI.Optimization
 
             Vector3 origin = path[0] + Vector3.up * BlockCheckHeight;
             Vector3 next = path[1];
-            Vector3 dir = (next - path[0]).normalized;
-            float dist = Vector3.Distance(path[0], next);
+            Vector3 direction = (next - path[0]).normalized;
+            float distance = Vector3.Distance(path[0], next) + BlockCheckMargin;
 
-            return Physics.Raycast(origin, dir, dist + BlockCheckMargin, LayerMaskClass.DoorLayer);
+            if (Physics.Raycast(origin, direction, out RaycastHit hit, distance, AIRefactoredLayerMasks.DoorColliderMask))
+            {
+                int hitLayer = hit.collider.gameObject.layer;
+                if (AIRefactoredLayerMasks.IsDoorLayer(hitLayer))
+                {
+                    NavMeshPath navPath = new NavMeshPath();
+                    if (!NavMesh.CalculatePath(origin, next, NavMesh.AllAreas, navPath) ||
+                        navPath.status != NavMeshPathStatus.PathComplete)
+                    {
+                        return true;
+                    }
+                }
+            }
+
+            return false;
         }
 
         private bool IsPathInClearedZone(List<Vector3> path)
         {
-            if (_tacticalMemory == null || path.Count == 0)
+            if (this._tacticalMemory == null || path.Count == 0)
             {
                 return false;
             }
 
             for (int i = 0; i < path.Count; i++)
             {
-                if (_tacticalMemory.WasRecentlyCleared(path[i]))
+                if (this._tacticalMemory.WasRecentlyCleared(path[i]))
                 {
                     return true;
                 }

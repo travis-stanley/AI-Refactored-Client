@@ -13,12 +13,12 @@ namespace AIRefactored.AI.Movement
     using System;
     using AIRefactored.AI.Core;
     using AIRefactored.AI.Helpers;
+    using AIRefactored.Core;
     using AIRefactored.Runtime;
     using BepInEx.Logging;
     using EFT;
     using UnityEngine;
     using UnityEngine.AI;
-    using Random = UnityEngine.Random;
 
     /// <summary>
     /// Controls advanced bot movement logic including inertia, smooth look, combat strafe, lean, jump, and flank
@@ -26,6 +26,8 @@ namespace AIRefactored.AI.Movement
     /// </summary>
     public class BotMovementController
     {
+        #region Constants
+
         private const float CornerScanInterval = 1.2f;
         private const float InertiaWeight = 8f;
         private const float LeanCooldown = 1.5f;
@@ -36,60 +38,92 @@ namespace AIRefactored.AI.Movement
         private const float ScanRadius = 0.25f;
         private const float StuckThreshold = 0.1f;
 
+        #endregion
+
+        #region Fields
+
         private static readonly ManualLogSource Logger = AIRefactoredController.Logger;
 
         private BotOwner? _bot;
         private BotComponentCache? _cache;
-        private bool _inLootingMode;
-        private bool _isStrafingRight = true;
         private BotJumpController? _jump;
-        private Vector3 _lastSampledTarget = Vector3.zero;
-        private Vector3 _lastVelocity;
+        private BotMovementTrajectoryPlanner? _trajectory;
+
+        private Vector3 _lastVelocity = Vector3.zero;
         private float _nextLeanAllowed;
         private float _nextScanTime;
         private float _strafeTimer;
         private float _stuckTimer;
-        private BotMovementTrajectoryPlanner? _trajectory;
+        private bool _inLootingMode;
+        private bool _isStrafingRight = true;
 
+        #endregion
+
+        #region Public API
+
+        /// <summary>
+        /// Puts the bot into looting stance (disabling combat/lean logic).
+        /// </summary>
         public void EnterLootingMode()
         {
             this._inLootingMode = true;
         }
 
+        /// <summary>
+        /// Exits looting stance and resumes combat movement logic.
+        /// </summary>
         public void ExitLootingMode()
         {
             this._inLootingMode = false;
         }
 
+        /// <summary>
+        /// Initializes movement subsystems with bot and shared component references.
+        /// </summary>
+        /// <param name="cache">Bot component cache.</param>
         public void Initialize(BotComponentCache cache)
         {
-            this._cache = cache ?? throw new ArgumentNullException(nameof(cache));
-            this._bot = cache.Bot ?? throw new ArgumentNullException(nameof(cache.Bot));
+            if (cache == null || cache.Bot == null)
+            {
+                throw new ArgumentNullException(nameof(cache));
+            }
+
+            this._cache = cache;
+            this._bot = cache.Bot;
             this._trajectory = new BotMovementTrajectoryPlanner(this._bot, cache);
             this._jump = new BotJumpController(this._bot, cache);
-
             this._nextScanTime = Time.time;
-            this._lastVelocity = Vector3.zero;
         }
 
+        /// <summary>
+        /// Executes real-time bot movement logic every frame.
+        /// </summary>
+        /// <param name="deltaTime">Time since last frame.</param>
         public void Tick(float deltaTime)
         {
-            if (this._bot?.IsDead != false || this._cache == null || this._bot.GetPlayer == null
-                || !this._bot.GetPlayer.IsAI)
+            if (this._bot == null || this._cache == null || this._bot.GetPlayer == null || !this._bot.GetPlayer.IsAI)
             {
                 return;
             }
 
-            if (this._bot.GetPlayer.HealthController?.IsAlive != true || this._cache.PanicHandler?.IsPanicking == true)
+            if (this._bot.IsDead || this._bot.GetPlayer.HealthController == null || !this._bot.GetPlayer.HealthController.IsAlive)
             {
                 return;
             }
 
-            this._jump?.Tick(deltaTime);
+            if (this._cache.PanicHandler != null && this._cache.PanicHandler.IsPanicking)
+            {
+                return;
+            }
+
+            if (this._jump != null)
+            {
+                this._jump.Tick(deltaTime);
+            }
 
             if (this._cache.DoorOpener != null && !this._cache.DoorOpener.Update())
             {
-                Logger.LogDebug($"[Movement] {this._bot.Profile.Info.Nickname} is blocked by door interaction.");
+                Logger.LogDebug($"[Movement] {this._bot.Profile.Info.Nickname} is blocked by door.");
                 return;
             }
 
@@ -101,13 +135,14 @@ namespace AIRefactored.AI.Movement
 
             if (this._bot.Mover != null)
             {
-                Vector3 lookAt = this._bot.Mover.LastTargetPoint(1.0f);
-                this.SmoothLookTo(lookAt, deltaTime);
+                Vector3 target = this._bot.Mover.LastTargetPoint(1.0f);
+                this.SmoothLookTo(target, deltaTime);
             }
 
             this.ApplyInertia(deltaTime);
 
-            if (!this._inLootingMode && this._bot.Memory?.GoalEnemy != null && this._bot.WeaponManager?.IsReady == true)
+            if (!this._inLootingMode && this._bot.Memory != null && this._bot.Memory.GoalEnemy != null &&
+                this._bot.WeaponManager != null && this._bot.WeaponManager.IsReady)
             {
                 this.CombatStrafe(deltaTime);
                 this.TryCombatLean();
@@ -117,14 +152,19 @@ namespace AIRefactored.AI.Movement
             this.DetectStuck(deltaTime);
         }
 
+        #endregion
+
+        #region Helpers
+
         private void ApplyInertia(float deltaTime)
         {
-            if (this._bot?.Mover == null || this._bot.GetPlayer == null || this._trajectory == null)
+            if (this._bot == null || this._bot.Mover == null || this._trajectory == null || this._bot.GetPlayer == null)
             {
                 return;
             }
 
-            Vector3 direction = this._bot.Mover.LastTargetPoint(1.0f) - this._bot.Position;
+            Vector3 target = this._bot.Mover.LastTargetPoint(1.0f);
+            Vector3 direction = target - this._bot.Position;
             direction.y = 0f;
 
             if (direction.magnitude < MinMoveThreshold)
@@ -132,17 +172,60 @@ namespace AIRefactored.AI.Movement
                 return;
             }
 
-            const float speed = 1.65f;
             Vector3 adjusted = this._trajectory.ModifyTrajectory(direction, deltaTime);
-            Vector3 velocity = adjusted.normalized * speed;
+            Vector3 velocity = adjusted.normalized * 1.65f;
             this._lastVelocity = Vector3.Lerp(this._lastVelocity, velocity, InertiaWeight * deltaTime);
 
             this._bot.GetPlayer.CharacterController?.Move(this._lastVelocity * deltaTime, deltaTime);
         }
 
+        private void SmoothLookTo(Vector3 target, float deltaTime)
+        {
+            if (this._bot == null || this._bot.Transform == null)
+            {
+                return;
+            }
+
+            Vector3 direction = target - this._bot.Transform.position;
+            direction.y = 0f;
+
+            if (direction.sqrMagnitude < 0.01f)
+            {
+                return;
+            }
+
+            if (this._cache != null && this._cache.Tilt != null && this._cache.Tilt._coreTilt &&
+                Vector3.Angle(this._bot.Transform.forward, direction) > 80f)
+            {
+                return;
+            }
+
+            Quaternion desired = Quaternion.LookRotation(direction);
+            this._bot.Transform.rotation = Quaternion.Lerp(this._bot.Transform.rotation, desired, LookSmoothSpeed * deltaTime);
+        }
+
+        private void ScanAhead()
+        {
+            if (this._bot == null)
+            {
+                return;
+            }
+
+            Vector3 origin = this._bot.Position + Vector3.up * 1.5f;
+            Vector3 direction = this._bot.LookDirection;
+
+            if (Physics.SphereCast(origin, ScanRadius, direction, out _, ScanDistance, AIRefactoredLayerMasks.VisionBlockers))
+            {
+                if (UnityEngine.Random.value < 0.2f && this._bot.BotTalk != null)
+                {
+                    this._bot.BotTalk.TrySay(EPhraseTrigger.Look);
+                }
+            }
+        }
+
         private void CombatStrafe(float deltaTime)
         {
-            if (this._bot?.Mover == null || this._bot.GetPlayer == null)
+            if (this._bot == null || this._bot.GetPlayer == null)
             {
                 return;
             }
@@ -150,8 +233,8 @@ namespace AIRefactored.AI.Movement
             this._strafeTimer -= deltaTime;
             if (this._strafeTimer <= 0f)
             {
-                this._isStrafingRight = Random.value > 0.5f;
-                this._strafeTimer = Random.Range(0.4f, 0.7f);
+                this._isStrafingRight = UnityEngine.Random.value > 0.5f;
+                this._strafeTimer = UnityEngine.Random.Range(0.4f, 0.7f);
             }
 
             Vector3 baseStrafe = this._isStrafingRight ? this._bot.Transform.right : -this._bot.Transform.right;
@@ -162,128 +245,53 @@ namespace AIRefactored.AI.Movement
             {
                 for (int i = 0; i < group.MembersCount; i++)
                 {
-                    BotOwner? mate = group.Member(i);
-                    if (mate != null && mate != this._bot && !mate.IsDead)
+                    BotOwner? other = group.Member(i);
+                    if (other != null && !other.IsDead && other != this._bot)
                     {
-                        float dist = Vector3.Distance(this._bot.Position, mate.Position);
-                        if (dist < 2f && dist > 0.01f)
+                        float distance = Vector3.Distance(this._bot.Position, other.Position);
+                        if (distance < 2f && distance > 0.01f)
                         {
-                            avoid += (this._bot.Position - mate.Position).normalized / dist;
+                            avoid += (this._bot.Position - other.Position).normalized / distance;
                         }
                     }
                 }
             }
 
-            Vector3 dir = (baseStrafe + avoid * 1.2f).normalized;
-            float strafeSpeed = 1.2f + Random.Range(-0.1f, 0.15f);
-
-            this._bot.GetPlayer.CharacterController?.Move(dir * strafeSpeed * deltaTime, deltaTime);
-        }
-
-        private void DetectStuck(float deltaTime)
-        {
-            if (this._bot?.Mover == null || this._bot.GetPlayer == null || this._inLootingMode)
-            {
-                return;
-            }
-
-            Vector3 target = this._bot.Mover.LastTargetPoint(1.0f);
-            if (!this.ValidateNavMeshTarget(target))
-            {
-                return;
-            }
-
-            Vector3 movement = this._bot.GetPlayer.Velocity;
-            float speedSq = movement.sqrMagnitude;
-
-            if (speedSq < StuckThreshold * StuckThreshold)
-            {
-                this._stuckTimer += deltaTime;
-                if (this._stuckTimer > MaxStuckDuration)
-                {
-                    Vector3 fallback = target + Random.insideUnitSphere * 1.0f;
-                    fallback.y = target.y;
-                    BotMovementHelper.SmoothMoveTo(this._bot, fallback, false);
-                    Logger.LogDebug($"[Movement] {this._bot.Profile.Info.Nickname} triggered soft fallback.");
-                    this._stuckTimer = 0f;
-                }
-            }
-            else
-            {
-                this._stuckTimer = 0f;
-            }
-        }
-
-        private void ScanAhead()
-        {
-            if (this._bot?.Mover == null)
-            {
-                return;
-            }
-
-            Vector3 origin = this._bot.Position + Vector3.up * 1.5f;
-            Vector3 forward = this._bot.LookDirection;
-
-            if (Physics.SphereCast(origin, ScanRadius, forward, out _, ScanDistance) && Random.value < 0.2f)
-            {
-                this._bot.BotTalk?.TrySay(EPhraseTrigger.Look);
-            }
-        }
-
-        private void SmoothLookTo(Vector3 target, float deltaTime)
-        {
-            if (this._bot == null || this._bot.Transform == null)
-            {
-                return;
-            }
-
-            Vector3 dir = target - this._bot.Transform.position;
-            dir.y = 0f;
-            if (dir.sqrMagnitude < 0.01f)
-            {
-                return;
-            }
-
-            if (this._cache?.Tilt != null && this._cache.Tilt._coreTilt && Vector3.Angle(this._bot.Transform.forward, dir) > 80f)
-            {
-                return;
-            }
-
-            Quaternion desired = Quaternion.LookRotation(dir);
-            this._bot.Transform.rotation = Quaternion.Lerp(
-                this._bot.Transform.rotation,
-                desired,
-                LookSmoothSpeed * deltaTime);
+            Vector3 strafeDir = (baseStrafe + avoid * 1.2f).normalized;
+            float strafeSpeed = 1.2f + UnityEngine.Random.Range(-0.1f, 0.15f);
+            this._bot.GetPlayer.CharacterController?.Move(strafeDir * strafeSpeed * deltaTime, deltaTime);
         }
 
         private void TryCombatLean()
         {
-            if (Time.time < this._nextLeanAllowed || this._cache?.Tilt == null)
+            if (this._bot == null || this._cache == null || this._cache.Tilt == null ||
+                Time.time < this._nextLeanAllowed)
             {
                 return;
             }
 
             BotPersonalityProfile? profile = this._cache.AIRefactoredBotOwner?.PersonalityProfile;
-            if (profile == null || profile.LeaningStyle == LeanPreference.Never || this._bot?.Memory?.GoalEnemy == null)
+            if (profile == null || profile.LeaningStyle == LeanPreference.Never ||
+                this._bot.Memory == null || this._bot.Memory.GoalEnemy == null)
             {
                 return;
             }
 
             Vector3 origin = this._bot.Position + Vector3.up * 1.5f;
-            bool wallLeft = Physics.Raycast(origin, -this._bot.Transform.right, 1.5f);
-            bool wallRight = Physics.Raycast(origin, this._bot.Transform.right, 1.5f);
+            bool wallLeft = Physics.Raycast(origin, -this._bot.Transform.right, 1.5f, AIRefactoredLayerMasks.VisionBlockers);
+            bool wallRight = Physics.Raycast(origin, this._bot.Transform.right, 1.5f, AIRefactoredLayerMasks.VisionBlockers);
 
-            Vector3? coverPos = this._bot.Memory.BotCurrentCoverInfo?.LastCover?.Position;
+            Vector3? cover = this._bot.Memory.BotCurrentCoverInfo?.LastCover?.Position;
 
-            if (profile.LeaningStyle == LeanPreference.Conservative && !coverPos.HasValue && !wallLeft && !wallRight)
+            if (profile.LeaningStyle == LeanPreference.Conservative && !cover.HasValue && !wallLeft && !wallRight)
             {
                 return;
             }
 
-            if (coverPos.HasValue && !BotCoverHelper.WasRecentlyUsed(coverPos.Value))
+            if (cover.HasValue && !BotCoverHelper.WasRecentlyUsed(cover.Value))
             {
-                BotCoverHelper.MarkUsed(coverPos.Value);
-                float side = Vector3.Dot((this._bot.Position - coverPos.Value).normalized, this._bot.Transform.right);
+                BotCoverHelper.MarkUsed(cover.Value);
+                float side = Vector3.Dot((this._bot.Position - cover.Value).normalized, this._bot.Transform.right);
                 this._cache.Tilt.Set(side > 0f ? BotTiltType.right : BotTiltType.left);
             }
             else if (wallLeft && !wallRight)
@@ -294,7 +302,7 @@ namespace AIRefactored.AI.Movement
             {
                 this._cache.Tilt.Set(BotTiltType.left);
             }
-            else
+            else if (this._bot.Memory.GoalEnemy != null)
             {
                 Vector3 toEnemy = this._bot.Memory.GoalEnemy.CurrPosition - this._bot.Position;
                 float dot = Vector3.Dot(toEnemy.normalized, this._bot.Transform.right);
@@ -306,36 +314,69 @@ namespace AIRefactored.AI.Movement
 
         private void TryFlankAroundEnemy()
         {
-            if (this._bot?.Memory?.GoalEnemy == null)
+            if (this._bot == null || this._bot.Memory == null || this._bot.Memory.GoalEnemy == null)
             {
                 return;
             }
 
-            Vector3 pos = this._bot.Position;
+            Vector3 self = this._bot.Position;
             Vector3 enemy = this._bot.Memory.GoalEnemy.CurrPosition;
-            float dist = Vector3.Distance(pos, enemy);
 
-            float maxFlankDist = this._cache?.AIRefactoredBotOwner?.PersonalityProfile.AggressionLevel > 0.7f ? 30f : 22f;
+            float aggression = this._cache?.AIRefactoredBotOwner?.PersonalityProfile.AggressionLevel ?? 0.5f;
+            float flankDist = aggression > 0.7f ? 30f : 22f;
 
-            if (dist < maxFlankDist && FlankPositionPlanner.TryFindFlankPosition(pos, enemy, out var flank))
+            if (Vector3.Distance(self, enemy) < flankDist &&
+                FlankPositionPlanner.TryFindFlankPosition(self, enemy, out Vector3 flank))
             {
                 BotMovementHelper.SmoothMoveTo(this._bot, flank, false);
                 Logger.LogDebug($"[Movement] {this._bot.Profile.Info.Nickname} flanking to {flank}");
             }
         }
 
+        private void DetectStuck(float deltaTime)
+        {
+            if (this._bot == null || this._bot.Mover == null || this._bot.GetPlayer == null || this._inLootingMode)
+            {
+                return;
+            }
+
+            Vector3 target = this._bot.Mover.LastTargetPoint(1.0f);
+            if (!this.ValidateNavMeshTarget(target))
+            {
+                return;
+            }
+
+            Vector3 velocity = this._bot.GetPlayer.Velocity;
+            if (velocity.sqrMagnitude < StuckThreshold * StuckThreshold)
+            {
+                this._stuckTimer += deltaTime;
+                if (this._stuckTimer > MaxStuckDuration)
+                {
+                    Vector3 retry = target + UnityEngine.Random.insideUnitSphere * 1.0f;
+                    retry.y = target.y;
+                    BotMovementHelper.SmoothMoveTo(this._bot, retry, false);
+                    Logger.LogDebug($"[Movement] {this._bot.Profile.Info.Nickname} triggered fallback.");
+                    this._stuckTimer = 0f;
+                }
+            }
+            else
+            {
+                this._stuckTimer = 0f;
+            }
+        }
+
         private bool ValidateNavMeshTarget(Vector3 position)
         {
-            if (NavMesh.SamplePosition(position, out var hit, 1.5f, NavMesh.AllAreas))
+            NavMeshHit hit;
+            if (NavMesh.SamplePosition(position, out hit, 1.5f, NavMesh.AllAreas))
             {
-                if ((hit.position - position).sqrMagnitude < 1f)
-                {
-                    return true;
-                }
+                return (hit.position - position).sqrMagnitude < 1f;
             }
 
             Logger.LogWarning($"[Movement] Invalid NavMesh target: {position}");
             return false;
         }
+
+        #endregion
     }
 }

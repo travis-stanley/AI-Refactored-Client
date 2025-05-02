@@ -11,6 +11,7 @@
 namespace AIRefactored.AI.Combat
 {
     using EFT;
+    using System;
     using UnityEngine;
 
     /// <summary>
@@ -34,24 +35,50 @@ namespace AIRefactored.AI.Combat
 
         #endregion
 
-        #region Public Methods
+        #region Public API
 
-        /// <summary>
-        /// Returns true if the bot shot at this profile recently.
-        /// </summary>
-        /// <param name="profileId">The target profile ID.</param>
-        /// <param name="now">Optional override for current time. If negative, uses <see cref="Time.time"/>.</param>
-        /// <param name="memoryWindow">Memory duration to check.</param>
-        /// <returns>True if the shot occurred recently, false otherwise.</returns>
-        public bool DidRecentlyShoot(string profileId, float now = -1f, float memoryWindow = DefaultMemoryWindow)
+        public bool DidRecentlyShoot(string? profileId, float now = -1f, float memoryWindow = DefaultMemoryWindow)
         {
-            if (string.IsNullOrEmpty(this._lastTargetId) || this._lastTargetId != profileId)
+            if (string.IsNullOrWhiteSpace(profileId))
+            {
+                return false;
+            }
+
+            string? lastTarget = this._lastTargetId;
+            if (string.IsNullOrWhiteSpace(lastTarget))
+            {
+                return false;
+            }
+
+            if (!string.Equals(lastTarget, profileId, StringComparison.Ordinal))
             {
                 return false;
             }
 
             float currentTime = now >= 0f ? now : Time.time;
             return currentTime - this._lastShotTime <= memoryWindow;
+        }
+
+        public bool WasRecentlyShotBy(string? profileId, float now = -1f, float memoryWindow = DefaultMemoryWindow)
+        {
+            if (string.IsNullOrWhiteSpace(profileId))
+            {
+                return false;
+            }
+
+            string? lastAttacker = this._lastAttackerId;
+            if (string.IsNullOrWhiteSpace(lastAttacker))
+            {
+                return false;
+            }
+
+            if (!string.Equals(lastAttacker, profileId, StringComparison.Ordinal))
+            {
+                return false;
+            }
+
+            float currentTime = now >= 0f ? now : Time.time;
+            return currentTime - this._lastHitTime <= memoryWindow;
         }
 
         /// <summary>
@@ -89,28 +116,10 @@ namespace AIRefactored.AI.Combat
         /// </summary>
         public void Reset()
         {
-            this._lastTargetId = null;
-            this._lastShotTime = 0f;
             this._lastAttackerId = null;
+            this._lastTargetId = null;
             this._lastHitTime = 0f;
-        }
-
-        /// <summary>
-        /// Returns true if the given attacker profile ID shot this bot recently.
-        /// </summary>
-        /// <param name="profileId">The attacker profile ID.</param>
-        /// <param name="now">Optional override for current time. If negative, uses <see cref="Time.time"/>.</param>
-        /// <param name="memoryWindow">Memory duration to check.</param>
-        /// <returns>True if the hit occurred recently, false otherwise.</returns>
-        public bool WasRecentlyShotBy(string profileId, float now = -1f, float memoryWindow = DefaultMemoryWindow)
-        {
-            if (string.IsNullOrEmpty(this._lastAttackerId) || this._lastAttackerId != profileId)
-            {
-                return false;
-            }
-
-            float currentTime = now >= 0f ? now : Time.time;
-            return currentTime - this._lastHitTime <= memoryWindow;
+            this._lastShotTime = 0f;
         }
 
         #endregion

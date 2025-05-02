@@ -15,7 +15,6 @@ namespace AIRefactored.AI.Reactions
     using AIRefactored.AI.Helpers;
     using AIRefactored.AI.Optimization;
     using AIRefactored.Core;
-
     using EFT;
     using UnityEngine;
 
@@ -32,6 +31,7 @@ namespace AIRefactored.AI.Reactions
         private const float MaxSuppressionDuration = 5.0f;
         private const float MinSuppressionDuration = 1.0f;
         private const float ReactionCooldown = 0.5f;
+        private const float TriggerIntensityThreshold = 0.35f;
 
         #endregion
 
@@ -64,14 +64,39 @@ namespace AIRefactored.AI.Reactions
         }
 
         /// <summary>
-        /// Called every frame from BotBrain. Updates suppression state.
+        /// Called every frame from BotBrain. Updates suppression state and performs exposure checks.
         /// </summary>
         /// <param name="time">The current time in seconds.</param>
         public void Tick(float time)
         {
+            if (this._cache == null || this._cache.Bot == null)
+            {
+                return;
+            }
+
             if (time >= this._suppressedUntil)
             {
                 this._suppressedUntil = -1f;
+            }
+
+            Transform? head = BotCacheUtility.Head(this._cache);
+            if (head == null)
+            {
+                return;
+            }
+
+            for (int i = 0; i < FlashlightRegistry.GetLastKnownFlashlightPositions().Count; i++)
+            {
+                Light? light;
+                if (FlashlightRegistry.IsExposingBot(head, out light) && light != null)
+                {
+                    float score = FlashLightUtils.CalculateFlashScore(light.transform, head, 20f);
+                    if (score >= TriggerIntensityThreshold)
+                    {
+                        this.TriggerSuppression(score);
+                        break;
+                    }
+                }
             }
         }
 
@@ -107,8 +132,8 @@ namespace AIRefactored.AI.Reactions
             this._lastTriggerTime = now;
 
             float composure = this._cache.PanicHandler != null
-                                  ? this._cache.PanicHandler.GetComposureLevel()
-                                  : 1f;
+                ? this._cache.PanicHandler.GetComposureLevel()
+                : 1f;
 
             float scaled = Mathf.Clamp01(strength * composure);
             float duration = Mathf.Lerp(MinSuppressionDuration, MaxSuppressionDuration, scaled);

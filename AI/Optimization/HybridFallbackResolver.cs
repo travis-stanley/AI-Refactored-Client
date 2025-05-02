@@ -14,6 +14,7 @@ namespace AIRefactored.AI.Optimization
     using AIRefactored.AI.Helpers;
     using AIRefactored.AI.Hotspots;
     using AIRefactored.AI.Navigation;
+    using AIRefactored.Core;
     using EFT;
     using UnityEngine;
 
@@ -23,38 +24,45 @@ namespace AIRefactored.AI.Optimization
     /// </summary>
     public static class HybridFallbackResolver
     {
+        private const float NavpointSearchRadius = 30f;
+        private const float HotspotSearchRadius = 40f;
+        private const float MinDotCover = 0.4f;
+        private const float MinDotHotspot = 0.5f;
+
         /// <summary>
         /// Resolves the best possible retreat point using multiple strategies in order of priority.
         /// </summary>
+        /// <param name="bot">The bot evaluating retreat options.</param>
+        /// <param name="threatDirection">Direction from which the threat is coming.</param>
+        /// <returns>The most suitable fallback point, or null if none is found.</returns>
         public static Vector3? GetBestRetreatPoint(BotOwner bot, Vector3 threatDirection)
         {
             Vector3 origin = bot.Position;
             Vector3 retreatDirection = -threatDirection.normalized;
 
-            // === Priority 1: NavPoint-based cover scoring ===
+            // === Priority 1: NavPoint-based cover ===
             List<Vector3> navCoverPoints = NavPointRegistry.QueryNearby(
                 origin,
-                30f,
+                NavpointSearchRadius,
                 delegate (Vector3 pos)
                 {
                     Vector3 toCandidate = (pos - origin).normalized;
-                    return NavPointRegistry.IsCoverPoint(pos) && Vector3.Dot(toCandidate, retreatDirection) > 0.4f;
+                    return NavPointRegistry.IsCoverPoint(pos) && Vector3.Dot(toCandidate, retreatDirection) > MinDotCover;
                 },
                 true);
 
             if (navCoverPoints.Count > 0)
             {
-                float bestScore = float.MinValue;
                 Vector3 bestPoint = Vector3.zero;
+                float bestScore = float.MinValue;
 
                 for (int i = 0; i < navCoverPoints.Count; i++)
                 {
-                    Vector3 point = navCoverPoints[i];
-                    float score = CoverScorer.ScoreCoverPoint(bot, point, threatDirection);
+                    float score = CoverScorer.ScoreCoverPoint(bot, navCoverPoints[i], threatDirection);
                     if (score > bestScore)
                     {
                         bestScore = score;
-                        bestPoint = point;
+                        bestPoint = navCoverPoints[i];
                     }
                 }
 
@@ -64,29 +72,29 @@ namespace AIRefactored.AI.Optimization
             // === Priority 2: Hotspot fallback zones ===
             List<HotspotRegistry.Hotspot> fallbackHotspots = HotspotRegistry.QueryNearby(
                 origin,
-                40f,
+                HotspotSearchRadius,
                 delegate (HotspotRegistry.Hotspot h)
                 {
                     Vector3 toHotspot = (h.Position - origin).normalized;
-                    return Vector3.Dot(toHotspot, retreatDirection) > 0.5f;
+                    return Vector3.Dot(toHotspot, retreatDirection) > MinDotHotspot;
                 });
 
             if (fallbackHotspots.Count > 0)
             {
-                float bestDist = float.MaxValue;
-                Vector3 closestHotspot = Vector3.zero;
+                Vector3 closest = Vector3.zero;
+                float minDist = float.MaxValue;
 
                 for (int i = 0; i < fallbackHotspots.Count; i++)
                 {
                     float dist = Vector3.Distance(origin, fallbackHotspots[i].Position);
-                    if (dist < bestDist)
+                    if (dist < minDist)
                     {
-                        bestDist = dist;
-                        closestHotspot = fallbackHotspots[i].Position;
+                        minDist = dist;
+                        closest = fallbackHotspots[i].Position;
                     }
                 }
 
-                return closestHotspot;
+                return closest;
             }
 
             // === Priority 3: Dynamic fallback path ===
@@ -94,45 +102,54 @@ namespace AIRefactored.AI.Optimization
             if (pathCache != null)
             {
                 List<Vector3> path = BotCoverRetreatPlanner.GetCoverRetreatPath(bot, threatDirection, pathCache);
-                if (path.Count >= 2)
+                if (path != null && path.Count >= 2)
                 {
                     return path[path.Count - 1];
                 }
             }
 
-            // === Priority 4: LOS Blocker ===
-            Vector3 losResult;
-            if (TryLOSBlocker(origin, threatDirection, out losResult))
+            // === Priority 4: LOS-blocking fallback ===
+            Vector3 losBreak;
+            if (TryLOSBlocker(origin, threatDirection, out losBreak))
             {
-                return losResult;
+                return losBreak;
             }
 
-            // No valid fallback found
             return null;
         }
 
         /// <summary>
-        /// Attempts to find a last-resort fallback that simply breaks line-of-sight.
+        /// Attempts to find a line-of-sight blocking position by raycasting behind the bot.
         /// </summary>
+        /// <param name="origin">Bot's current position.</param>
+        /// <param name="threatDir">Direction from which threat is expected.</param>
+        /// <param name="result">Final position if successful.</param>
+        /// <returns>True if a valid LOS blocker was found.</returns>
         private static bool TryLOSBlocker(Vector3 origin, Vector3 threatDir, out Vector3 result)
         {
-            Vector3 dir = -threatDir.normalized;
-            Vector3 eye = origin + Vector3.up * 1.5f;
-            const float maxSearchDist = 12f;
+            const float EyeHeight = 1.5f;
+            const float MaxSearchDist = 12f;
+            const float StepSize = 1.5f;
 
-            for (float dist = 2f; dist <= maxSearchDist; dist += 1.5f)
+            Vector3 backwards = -threatDir.normalized;
+            Vector3 eyeOrigin = origin + Vector3.up * EyeHeight;
+
+            for (float dist = 2f; dist <= MaxSearchDist; dist += StepSize)
             {
-                Vector3 probe = origin + dir * dist + Vector3.up * 1.5f;
+                Vector3 probe = origin + backwards * dist + Vector3.up * EyeHeight;
 
-                if (Physics.Raycast(probe, threatDir, out RaycastHit hit, 20f))
+                if (Physics.Raycast(
+                    probe,
+                    threatDir,
+                    out RaycastHit hit,
+                    20f,
+                    AIRefactoredLayerMasks.VisionBlockers))
                 {
-                    if (!CoverScorer.IsSolid(hit.collider))
+                    if (CoverScorer.IsSolid(hit.collider))
                     {
-                        continue;
+                        result = hit.point - threatDir.normalized * 1f;
+                        return true;
                     }
-
-                    result = hit.point - threatDir.normalized * 1.0f;
-                    return true;
                 }
             }
 

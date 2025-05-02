@@ -10,10 +10,10 @@
 
 namespace AIRefactored.AI.Groups
 {
+    using System;
     using AIRefactored.AI.Core;
     using AIRefactored.AI.Helpers;
     using EFT;
-    using System;
     using UnityEngine;
 
     /// <summary>
@@ -32,8 +32,8 @@ namespace AIRefactored.AI.Groups
 
         #region Fields
 
-        private readonly BotComponentCache cache;
-        private float nextVoiceTime;
+        private readonly BotComponentCache _cache;
+        private float _nextVoiceTime;
 
         #endregion
 
@@ -47,7 +47,7 @@ namespace AIRefactored.AI.Groups
 
         #endregion
 
-        #region Constructors
+        #region Constructor
 
         /// <summary>
         /// Initializes a new instance of the <see cref="BotGroupComms"/> class.
@@ -55,7 +55,7 @@ namespace AIRefactored.AI.Groups
         /// <param name="cache">The bot's component cache.</param>
         public BotGroupComms(BotComponentCache cache)
         {
-            this.cache = cache ?? throw new ArgumentNullException(nameof(cache));
+            this._cache = cache ?? throw new ArgumentNullException(nameof(cache));
         }
 
         #endregion
@@ -70,7 +70,7 @@ namespace AIRefactored.AI.Groups
         {
             if (!this.IsMuted && this.IsEligible())
             {
-                this.cache.Bot?.BotTalk?.TrySay(phrase);
+                this._cache.Bot?.BotTalk?.TrySay(phrase);
             }
         }
 
@@ -108,50 +108,53 @@ namespace AIRefactored.AI.Groups
 
         #endregion
 
-        #region Private Methods
+        #region Internal Logic
 
         private bool IsEligible()
         {
-            var bot = this.cache.Bot;
-            return bot != null && bot.GetPlayer?.IsAI == true && !bot.IsDead && bot.BotTalk != null;
+            BotOwner? bot = this._cache.Bot;
+            return bot != null &&
+                   bot.GetPlayer != null &&
+                   bot.GetPlayer.IsAI &&
+                   !bot.IsDead &&
+                   bot.BotTalk != null;
         }
 
         private bool HasNearbyAlly()
         {
-            var bot = this.cache.Bot;
+            BotOwner? bot = this._cache.Bot;
             if (bot == null)
             {
                 return false;
             }
 
-            var groupId = bot.Profile?.Info?.GroupId;
+            string? groupId = bot.Profile?.Info?.GroupId;
             if (string.IsNullOrEmpty(groupId))
             {
                 return false;
             }
 
-            var myPos = bot.Position;
+            Vector3 myPos = bot.Position;
 
-            foreach (var otherCache in BotCacheUtility.AllActiveBots())
+            foreach (BotComponentCache otherCache in BotCacheUtility.AllActiveBots())
             {
-                if (otherCache == null || otherCache == this.cache)
+                if (otherCache == null || otherCache == this._cache)
                 {
                     continue;
                 }
 
-                var mate = otherCache.Bot;
+                BotOwner? mate = otherCache.Bot;
                 if (mate == null || mate.IsDead)
                 {
                     continue;
                 }
 
-                var otherGroup = mate.Profile?.Info?.GroupId;
-                if (!string.IsNullOrEmpty(otherGroup) && otherGroup == groupId)
+                string? mateGroup = mate.Profile?.Info?.GroupId;
+                if (!string.IsNullOrEmpty(mateGroup) &&
+                    mateGroup == groupId &&
+                    (mate.Position - myPos).sqrMagnitude <= AllyRadiusSq)
                 {
-                    if ((mate.Position - myPos).sqrMagnitude <= AllyRadiusSq)
-                    {
-                        return true;
-                    }
+                    return true;
                 }
             }
 
@@ -160,13 +163,13 @@ namespace AIRefactored.AI.Groups
 
         private void TriggerVoice(EPhraseTrigger phrase, float chance = 1f)
         {
-            if (!this.IsEligible() || this.IsMuted)
+            if (this.IsMuted || !this.IsEligible())
             {
                 return;
             }
 
-            var now = Time.time;
-            if (now < this.nextVoiceTime)
+            float now = Time.time;
+            if (now < this._nextVoiceTime)
             {
                 return;
             }
@@ -176,8 +179,8 @@ namespace AIRefactored.AI.Groups
                 return;
             }
 
-            this.nextVoiceTime = now + (VoiceCooldown * UnityEngine.Random.Range(0.8f, 1.2f));
-            this.cache.Bot?.BotTalk?.TrySay(phrase);
+            this._nextVoiceTime = now + (VoiceCooldown * UnityEngine.Random.Range(0.8f, 1.2f));
+            this._cache.Bot?.BotTalk?.TrySay(phrase);
         }
 
         #endregion

@@ -31,7 +31,8 @@ namespace AIRefactored.AI.Looting
         private const float ScanRadius = 12f;
 
         private static readonly Dictionary<string, float> _lootTimestamps = new Dictionary<string, float>(32);
-        private static readonly HashSet<string> _recentlyLooted = new HashSet<string>(32);
+        private static readonly HashSet<string> _recentlyLooted = new HashSet<string>();
+
 
         private BotOwner? _bot;
         private BotComponentCache? _cache;
@@ -144,7 +145,7 @@ namespace AIRefactored.AI.Looting
 
         private bool HasLineOfSight(Vector3 origin, Vector3 direction, float dist, Player corpse)
         {
-            if (Physics.Raycast(origin, direction.normalized, out RaycastHit hit, dist + RaycastPadding, LayerMaskClass.HighPolyWithTerrainMaskAI))
+            if (Physics.Raycast(origin, direction.normalized, out RaycastHit hit, dist + RaycastPadding, AIRefactoredLayerMasks.HighPolyWithTerrainMaskAI))
             {
                 Transform? hitRoot = hit.collider?.transform.root;
                 Transform? corpseRoot = corpse.Transform?.Original?.root;

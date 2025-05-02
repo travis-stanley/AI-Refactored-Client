@@ -15,7 +15,7 @@ namespace AIRefactored.AI.Perception
 
     /// <summary>
     /// Tracks enemy bone visibility from the bot's perspective.
-    /// Simulates partial body exposure, confidence-based decisions, and occlusion over time.
+    /// Simulates partial body exposure, confidence decay, ambient occlusion, and motion weighting.
     /// </summary>
     public sealed class TrackedEnemyVisibility
     {
@@ -106,9 +106,9 @@ namespace AIRefactored.AI.Perception
         }
 
         /// <summary>
-        /// Simulates memory decay by aging out bone visibility timestamps.
+        /// Applies aging to confidence by reducing timestamps.
         /// </summary>
-        /// <param name="decayAmount">The amount of timestamp reduction to apply.</param>
+        /// <param name="decayAmount">Time to subtract from each visible bone's timestamp.</param>
         public void DecayConfidence(float decayAmount)
         {
             float now = Time.time;
@@ -126,9 +126,8 @@ namespace AIRefactored.AI.Perception
         }
 
         /// <summary>
-        /// Gets the number of currently visible bones.
+        /// Gets number of bones currently visible.
         /// </summary>
-        /// <returns>The count of visible bones.</returns>
         public int ExposedBoneCount()
         {
             this.CleanExpired(Time.time);
@@ -136,9 +135,8 @@ namespace AIRefactored.AI.Perception
         }
 
         /// <summary>
-        /// Gets a confidence value based on visible bone count (range 0.0 to 1.0).
+        /// Returns total bone confidence scaled to [0,1].
         /// </summary>
-        /// <returns>The confidence value from bone exposure.</returns>
         public float GetOverallConfidence()
         {
             this.CleanExpired(Time.time);
@@ -146,13 +144,26 @@ namespace AIRefactored.AI.Perception
         }
 
         /// <summary>
-        /// Updates the visibility record for a specific bone.
+        /// Updates the visibility record for a bone with default visibility weight.
         /// </summary>
-        /// <param name="boneName">The name of the bone.</param>
-        /// <param name="worldPosition">The world position of the bone.</param>
         public void UpdateBoneVisibility(string boneName, Vector3 worldPosition)
         {
             this._visibleBones[boneName] = new BoneInfo(worldPosition, Time.time);
+        }
+
+        /// <summary>
+        /// Updates the visibility record with optional motion and occlusion bonuses.
+        /// </summary>
+        /// <param name="boneName">Bone name (e.g. "Head", "Spine").</param>
+        /// <param name="worldPosition">Bone world-space location.</param>
+        /// <param name="motionBonus">Optional motion confidence boost [0..1].</param>
+        /// <param name="ambientOcclusionFactor">Optional decay penalty from ambient occlusion [0..1].</param>
+        public void UpdateBoneVisibility(string boneName, Vector3 worldPosition, float motionBonus, float ambientOcclusionFactor)
+        {
+            float now = Time.time;
+            float timestamp = now + Mathf.Clamp(motionBonus, 0f, 0.4f);
+            float decay = Mathf.Lerp(0f, 0.2f, 1f - ambientOcclusionFactor);
+            this._visibleBones[boneName] = new BoneInfo(worldPosition, timestamp - decay);
         }
 
         #endregion

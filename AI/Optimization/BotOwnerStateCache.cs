@@ -11,6 +11,7 @@
 namespace AIRefactored.AI.Optimization
 {
     using System.Collections.Generic;
+    using AIRefactored.AI.Core;
     using AIRefactored.AI.Helpers;
     using EFT;
     using UnityEngine;
@@ -19,12 +20,12 @@ namespace AIRefactored.AI.Optimization
     /// Tracks tactical state deltas (aggression, caution, sneaky) and triggers behavior shifts.
     /// Used to detect and respond to mid-mission personality changes.
     /// </summary>
-    public class BotOwnerStateCache
+    public sealed class BotOwnerStateCache
     {
         private readonly Dictionary<string, BotStateSnapshot> _cache = new Dictionary<string, BotStateSnapshot>(64);
 
         /// <summary>
-        /// Captures the bot's personality state into the cache.
+        /// Captures the bot's personality state into the cache at mission start.
         /// </summary>
         public void CacheBotOwnerState(BotOwner botOwner)
         {
@@ -34,16 +35,16 @@ namespace AIRefactored.AI.Optimization
             }
 
             string id = botOwner.Profile.Id;
-            if (string.IsNullOrEmpty(id) || _cache.ContainsKey(id))
+            if (string.IsNullOrEmpty(id) || this._cache.ContainsKey(id))
             {
                 return;
             }
 
-            _cache[id] = CaptureSnapshot(botOwner);
+            this._cache[id] = this.CaptureSnapshot(botOwner);
         }
 
         /// <summary>
-        /// Checks for state change and triggers response if personality shifts significantly.
+        /// Checks for personality state changes and applies behavior adjustments if needed.
         /// </summary>
         public void UpdateBotOwnerStateIfNeeded(BotOwner botOwner)
         {
@@ -58,12 +59,19 @@ namespace AIRefactored.AI.Optimization
                 return;
             }
 
-            BotStateSnapshot current = CaptureSnapshot(botOwner);
+            BotStateSnapshot current = this.CaptureSnapshot(botOwner);
 
-            if (_cache.TryGetValue(id, out BotStateSnapshot previous) && !previous.Equals(current))
+            if (this._cache.TryGetValue(id, out BotStateSnapshot previous))
             {
-                _cache[id] = current;
-                ApplyStateChange(botOwner, current);
+                if (!previous.Equals(current))
+                {
+                    this._cache[id] = current;
+                    this.ApplyStateChange(botOwner, current);
+                }
+            }
+            else
+            {
+                this._cache[id] = current;
             }
         }
 
@@ -73,29 +81,10 @@ namespace AIRefactored.AI.Optimization
             return player != null && player.IsAI && !player.IsYourPlayer;
         }
 
-        private void ApplyStateChange(BotOwner botOwner, BotStateSnapshot snapshot)
-        {
-            bool isAggressive = snapshot.Aggression > 0.7f && snapshot.Composure > 0.8f;
-            bool isCautious = snapshot.Caution > 0.7f || snapshot.Composure < 0.3f;
-
-            if (isAggressive)
-            {
-                TriggerZoneShift(botOwner, true);
-            }
-            else if (isCautious)
-            {
-                TriggerZoneShift(botOwner, false);
-            }
-            else
-            {
-                TriggerZoneShift(botOwner, null);
-            }
-        }
-
         private BotStateSnapshot CaptureSnapshot(BotOwner botOwner)
         {
             BotPersonalityProfile? profile = BotRegistry.Get(botOwner.ProfileId);
-            var cache = BotCacheUtility.GetCache(botOwner);
+            BotComponentCache? cache = BotCacheUtility.GetCache(botOwner);
             float composure = cache?.PanicHandler?.GetComposureLevel() ?? 1f;
 
             if (profile == null)
@@ -108,6 +97,25 @@ namespace AIRefactored.AI.Optimization
                 profile.Caution,
                 composure,
                 profile.IsSilentHunter);
+        }
+
+        private void ApplyStateChange(BotOwner botOwner, BotStateSnapshot snapshot)
+        {
+            bool isAggressive = snapshot.Aggression > 0.7f && snapshot.Composure > 0.8f;
+            bool isCautious = snapshot.Caution > 0.6f || snapshot.Composure < 0.35f;
+
+            if (isAggressive)
+            {
+                this.TriggerZoneShift(botOwner, advance: true);
+            }
+            else if (isCautious)
+            {
+                this.TriggerZoneShift(botOwner, advance: false);
+            }
+            else
+            {
+                this.TriggerZoneShift(botOwner, advance: null);
+            }
         }
 
         private void TriggerZoneShift(BotOwner botOwner, bool? advance)
@@ -127,7 +135,7 @@ namespace AIRefactored.AI.Optimization
                 shift = -botOwner.Transform.forward * 6f;
             }
 
-            if (shift.sqrMagnitude > 0.1f)
+            if (shift.sqrMagnitude > 0.01f)
             {
                 Vector3 target = botOwner.Position + shift;
                 BotMovementHelper.SmoothMoveTo(botOwner, target);
@@ -136,30 +144,32 @@ namespace AIRefactored.AI.Optimization
 
         private struct BotStateSnapshot
         {
-            public float Aggression;
-            public float Caution;
-            public float Composure;
-            public bool IsSneaky;
+            public readonly float Aggression;
+            public readonly float Caution;
+            public readonly float Composure;
+            public readonly bool IsSneaky;
 
             public BotStateSnapshot(float aggression, float caution, float composure, bool isSneaky)
             {
-                Aggression = aggression;
-                Caution = caution;
-                Composure = composure;
-                IsSneaky = isSneaky;
+                this.Aggression = aggression;
+                this.Caution = caution;
+                this.Composure = composure;
+                this.IsSneaky = isSneaky;
             }
 
             public override bool Equals(object? obj)
             {
-                if (obj is BotStateSnapshot other)
+                if (obj == null || !(obj is BotStateSnapshot))
                 {
-                    return Mathf.Abs(Aggression - other.Aggression) < 0.05f
-                        && Mathf.Abs(Caution - other.Caution) < 0.05f
-                        && Mathf.Abs(Composure - other.Composure) < 0.05f
-                        && IsSneaky == other.IsSneaky;
+                    return false;
                 }
 
-                return false;
+                BotStateSnapshot other = (BotStateSnapshot)obj;
+
+                return Mathf.Abs(this.Aggression - other.Aggression) < 0.05f &&
+                       Mathf.Abs(this.Caution - other.Caution) < 0.05f &&
+                       Mathf.Abs(this.Composure - other.Composure) < 0.05f &&
+                       this.IsSneaky == other.IsSneaky;
             }
 
             public override int GetHashCode()
@@ -167,10 +177,10 @@ namespace AIRefactored.AI.Optimization
                 unchecked
                 {
                     int hash = 17;
-                    hash = hash * 23 + Aggression.GetHashCode();
-                    hash = hash * 23 + Caution.GetHashCode();
-                    hash = hash * 23 + Composure.GetHashCode();
-                    hash = hash * 23 + IsSneaky.GetHashCode();
+                    hash = (hash * 23) + this.Aggression.GetHashCode();
+                    hash = (hash * 23) + this.Caution.GetHashCode();
+                    hash = (hash * 23) + this.Composure.GetHashCode();
+                    hash = (hash * 23) + this.IsSneaky.GetHashCode();
                     return hash;
                 }
             }

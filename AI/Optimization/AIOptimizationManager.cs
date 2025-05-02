@@ -61,7 +61,12 @@ namespace AIRefactored.AI.Optimization
         /// </summary>
         public static void TriggerEscalation(BotOwner? bot)
         {
-            if (bot == null || bot.GetPlayer == null || !bot.GetPlayer.IsAI || bot.IsDead)
+            if (bot == null)
+            {
+                return;
+            }
+
+            if (bot.GetPlayer == null || !bot.GetPlayer.IsAI || bot.IsDead)
             {
                 return;
             }
@@ -90,21 +95,29 @@ namespace AIRefactored.AI.Optimization
                 0f,
                 100f);
 
-            Logger?.LogInfo($"[AIRefactored] Escalation triggered for bot: {BotName(bot)}");
+            string botName = bot.Profile != null && bot.Profile.Info != null
+                                 ? bot.Profile.Info.Nickname
+                                 : "Unknown";
+
+            Logger?.LogInfo("[AIRefactored] Escalation triggered for bot: " + botName);
         }
+
 
         #endregion
 
         #region Private Helpers
 
-        private static string BotName(BotOwner? bot)
+        private static string GetBotName(BotOwner? bot)
         {
             return bot?.Profile?.Info?.Nickname ?? "Unknown";
         }
 
         private static bool IsValidBot(BotOwner? bot)
         {
-            return bot != null && bot.GetPlayer != null && bot.GetPlayer.IsAI && !bot.IsDead;
+            return bot != null &&
+                   bot.GetPlayer != null &&
+                   bot.GetPlayer.IsAI &&
+                   !bot.IsDead;
         }
 
         #endregion

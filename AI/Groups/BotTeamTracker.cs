@@ -27,7 +27,7 @@ namespace AIRefactored.AI.Groups
 
         #endregion
 
-        #region Public Methods
+        #region Public API
 
         /// <summary>
         /// Clears all registered group states. Call this on session reset.
@@ -51,14 +51,16 @@ namespace AIRefactored.AI.Groups
         /// Returns a defensive new list.
         /// </summary>
         /// <param name="groupId">Group identifier.</param>
+        /// <returns>List of BotOwner entries in group.</returns>
         public static List<BotOwner> GetGroup(string groupId)
         {
             TempResult.Clear();
 
-            if (Groups.TryGetValue(groupId, out var group))
+            if (Groups.TryGetValue(groupId, out List<BotOwner>? group))
             {
-                foreach (var bot in group)
+                for (int i = 0; i < group.Count; i++)
                 {
+                    BotOwner bot = group[i];
                     if (bot != null && !bot.IsDead && bot.GetPlayer?.IsAI == true)
                     {
                         TempResult.Add(bot);
@@ -74,9 +76,9 @@ namespace AIRefactored.AI.Groups
         /// </summary>
         public static void PrintGroups()
         {
-            foreach (var kvp in Groups)
+            foreach (KeyValuePair<string, List<BotOwner>> entry in Groups)
             {
-                Debug.Log($"[BotTeamTracker] Group '{kvp.Key}': {kvp.Value.Count} member(s)");
+                Debug.Log($"[BotTeamTracker] Group '{entry.Key}': {entry.Value.Count} member(s)");
             }
         }
 
@@ -92,13 +94,13 @@ namespace AIRefactored.AI.Groups
                 return;
             }
 
-            var player = bot.GetPlayer;
+            Player? player = bot.GetPlayer;
             if (player == null || !player.IsAI)
             {
                 return;
             }
 
-            if (!Groups.TryGetValue(groupId, out var list))
+            if (!Groups.TryGetValue(groupId, out List<BotOwner>? list))
             {
                 list = new List<BotOwner>(4);
                 Groups[groupId] = list;
@@ -121,8 +123,14 @@ namespace AIRefactored.AI.Groups
                 return;
             }
 
-            var player = bot.GetPlayer;
-            if (player?.Profile?.Info?.GroupId is string groupId && !string.IsNullOrEmpty(groupId))
+            Player? player = bot.GetPlayer;
+            if (player == null || player.Profile == null || player.Profile.Info == null)
+            {
+                return;
+            }
+
+            string groupId = player.Profile.Info.GroupId;
+            if (!string.IsNullOrWhiteSpace(groupId))
             {
                 Register(groupId, bot);
             }
@@ -142,9 +150,9 @@ namespace AIRefactored.AI.Groups
 
             string? toDelete = null;
 
-            foreach (var kvp in Groups)
+            foreach (KeyValuePair<string, List<BotOwner>> kvp in Groups)
             {
-                var list = kvp.Value;
+                List<BotOwner> list = kvp.Value;
                 if (list.Remove(bot))
                 {
                     if (list.Count == 0)

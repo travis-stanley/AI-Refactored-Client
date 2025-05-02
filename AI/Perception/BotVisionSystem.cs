@@ -13,6 +13,7 @@ namespace AIRefactored.AI.Perception
     using System.Collections.Generic;
     using AIRefactored.AI.Core;
     using AIRefactored.AI.Groups;
+    using AIRefactored.AI.Helpers;
     using AIRefactored.AI.Memory;
     using AIRefactored.Core;
     using EFT;
@@ -20,8 +21,8 @@ namespace AIRefactored.AI.Perception
     using UnityEngine;
 
     /// <summary>
-    /// Simulates realistic bot visual perception using view cone, distance, fog/light occlusion,
-    /// bone confidence, suppression stress, and tactical memory.
+    /// Simulates realistic bot visual perception using view cone, fog/light occlusion,
+    /// bone confidence, motion detection, suppression, and squad memory sharing.
     /// </summary>
     public sealed class BotVisionSystem
     {
@@ -33,14 +34,15 @@ namespace AIRefactored.AI.Perception
         private const float BoneConfidenceThreshold = 0.45f;
         private const float MaxDetectionDistance = 120f;
         private const float SuppressionMissChance = 0.2f;
+        private const float MotionBoost = 0.2f;
 
         private static readonly Vector3 EyeOffset = new Vector3(0f, 1.4f, 0f);
 
         #endregion
 
-        #region Static
+        #region Static Data
 
-        private static readonly PlayerBoneType[] BonesToCheck =
+        private static readonly PlayerBoneType[] BonesToCheck = new PlayerBoneType[]
         {
             PlayerBoneType.Head,
             PlayerBoneType.Spine,
@@ -64,11 +66,8 @@ namespace AIRefactored.AI.Perception
 
         #endregion
 
-        #region Public API
+        #region Public Methods
 
-        /// <summary>
-        /// Initializes the bot vision system with the given component cache.
-        /// </summary>
         public void Initialize(BotComponentCache cache)
         {
             this._cache = cache;
@@ -77,12 +76,19 @@ namespace AIRefactored.AI.Perception
             this._memory = cache.TacticalMemory;
         }
 
-        /// <summary>
-        /// Performs a single visual detection tick.
-        /// </summary>
         public void Tick(float time)
         {
-            if (!this.IsValidContext() || this._bot == null)
+            if (!this.IsValidContext())
+            {
+                return;
+            }
+
+            if (this._cache == null || this._bot == null || this._memory == null)
+            {
+                return;
+            }
+
+            if (this._cache.IsBlinded || time < this._cache.BlindUntilTime)
             {
                 return;
             }
@@ -90,98 +96,115 @@ namespace AIRefactored.AI.Perception
             Vector3 eye = this._bot.Position + EyeOffset;
             Vector3 forward = this._bot.LookDirection;
 
-            float fogPenalty = RenderSettings.fog ? Mathf.Clamp01(RenderSettings.fogDensity * 4f) : 0f;
-            float ambientLight = RenderSettings.ambientLight.grayscale;
-            float adjustedViewCone = Mathf.Lerp(BaseViewConeAngle, 60f, 1f - ambientLight);
+            float fogFactor = RenderSettings.fog ? Mathf.Clamp01(RenderSettings.fogDensity * 4f) : 0f;
+            float ambient = RenderSettings.ambientLight.grayscale;
+            float adjustedViewCone = Mathf.Lerp(BaseViewConeAngle, 60f, 1f - ambient);
 
-            Player? bestTarget = null;
-            float bestScore = float.MaxValue;
+            Transform? head = BotCacheUtility.Head(this._cache);
+            if (head != null && FlashlightRegistry.IsExposingBot(head, out _))
+            {
+                adjustedViewCone *= 0.6f;
+            }
 
             List<Player> players = GameWorldHandler.GetAllAlivePlayers();
+            Player? bestTarget = null;
+            float closestDist = float.MaxValue;
+
             for (int i = 0; i < players.Count; i++)
             {
-                Player? target = players[i];
+                Player target = players[i];
                 if (!this.IsValidTarget(target))
                 {
                     continue;
                 }
 
                 Vector3 targetPos = EFTPlayerUtil.GetPosition(target);
-                float dist = Vector3.Distance(eye, targetPos);
-                if (dist > MaxDetectionDistance * (1f - fogPenalty))
+                float distance = Vector3.Distance(eye, targetPos);
+                if (distance > MaxDetectionDistance * (1f - fogFactor))
                 {
                     continue;
                 }
 
-                bool inViewCone = IsInViewCone(forward, eye, targetPos, adjustedViewCone);
-                bool withinAutoRange = dist <= AutoDetectRadius;
-                bool canSee = HasLineOfSight(eye, target);
+                bool inCone = IsInViewCone(forward, eye, targetPos, adjustedViewCone);
+                bool close = distance <= AutoDetectRadius;
+                bool canSee = this.HasLineOfSight(eye, target);
 
-                if ((withinAutoRange && canSee) || (inViewCone && canSee))
+                if ((inCone && canSee) || (close && canSee))
                 {
-                    if (dist < bestScore)
+                    if (distance < closestDist)
                     {
-                        bestScore = dist;
+                        closestDist = distance;
                         bestTarget = target;
                     }
                 }
+                else if ((inCone || close) && !canSee && !FikaHeadlessDetector.IsHeadless)
+                {
+                    this._bot.BotTalk?.TrySay(EPhraseTrigger.OnBeingHurt);
+                }
             }
 
-            if (bestTarget != null && this._memory != null)
+            if (bestTarget != null)
             {
-                Vector3 botEye = this._bot.Position + EyeOffset;
-                Vector3 enemyPos = EFTPlayerUtil.GetPosition(bestTarget);
+                string id = bestTarget.ProfileId ?? "unknown";
+                Vector3 position = EFTPlayerUtil.GetPosition(bestTarget);
 
-                this._memory.RecordEnemyPosition(enemyPos);
-                this.TrackVisibleBones(botEye, bestTarget);
+                this._memory.RecordEnemyPosition(position, "Visual", id);
+
+                if (this._cache.GroupSync != null)
+                {
+                    List<BotComponentCache> teammates = new List<BotComponentCache>(8);
+                    foreach (BotOwner teammate in this._cache.GroupSync.GetTeammates())
+                    {
+                        BotComponentCache? mateCache = BotRegistry.TryGetCache(teammate.ProfileId);
+                        if (mateCache != null)
+                        {
+                            teammates.Add(mateCache);
+                        }
+                    }
+
+                    this._memory.ShareMemoryWith(teammates);
+                }
+
+                this.TrackVisibleBones(eye, bestTarget, fogFactor);
                 this.EvaluateTargetConfidence(bestTarget, time);
             }
         }
 
         #endregion
 
-        #region Private Helpers
+        #region Private Methods
 
-        private static bool HasLineOfSight(Vector3 from, Player target)
+        private bool HasLineOfSight(Vector3 from, Player target)
         {
-            Transform? toTransform = EFTPlayerUtil.GetTransform(target);
-            if (toTransform == null)
+            Transform? t = EFTPlayerUtil.GetTransform(target);
+            if (t == null)
             {
                 return false;
             }
 
-            Vector3 to = toTransform.position + EyeOffset;
-            return !Physics.Linecast(from, to, out RaycastHit hit) ||
-                   hit.collider != null && hit.collider.transform.root == toTransform.root;
+            Vector3 to = t.position + EyeOffset;
+            if (Physics.Linecast(from, to, out RaycastHit hit, AIRefactoredLayerMasks.LineOfSightMask))
+            {
+                return hit.collider != null && hit.collider.transform.root == t.root;
+            }
+
+            return true;
         }
 
-        private static bool IsInViewCone(Vector3 forward, Vector3 origin, Vector3 target, float viewCone)
+        private static bool IsInViewCone(Vector3 forward, Vector3 origin, Vector3 target, float coneAngle)
         {
             float angle = Vector3.Angle(forward, target - origin);
-            return angle <= viewCone * 0.5f;
+            return angle <= coneAngle * 0.5f;
         }
 
-        /// <summary>
-        ///     Registers the target as an enemy if enough confidence has been built.
-        ///     Avoids Dissonance ambiguity via safe casting.
-        /// </summary>
-        private void CommitEnemyIfAllowed(Player? target, float time)
+        private void CommitEnemyIfAllowed(Player target, float time)
         {
-            if (target == null || this._bot == null || this._profile == null || this._bot.BotTalk == null)
+            if (this._bot == null || this._profile == null)
             {
                 return;
             }
 
-            BotsGroup? group = this._bot.BotsGroup;
-            if (group == null)
-            {
-                return;
-            }
-
-            object raw = target;
-            EFT.IPlayer iTarget = (EFT.IPlayer)raw;
-
-            if (group.IsEnemy(iTarget))
+            if (!EFTPlayerUtil.IsEnemyOf(this._bot, target))
             {
                 return;
             }
@@ -192,70 +215,50 @@ namespace AIRefactored.AI.Perception
                 return;
             }
 
-            group.AddEnemy(iTarget, EBotEnemyCause.addPlayer);
+            IPlayer? enemy = EFTPlayerUtil.AsSafeIPlayer(target);
+            if (enemy == null || this._bot.BotsGroup == null)
+            {
+                return;
+            }
+
+            this._bot.BotsGroup.AddEnemy(enemy, EBotEnemyCause.addPlayer);
+            this._lastCommitTime = time;
 
             if (!FikaHeadlessDetector.IsHeadless)
             {
-                this._bot.BotTalk.TrySay(EPhraseTrigger.OnEnemyConversation);
+                this._bot.BotTalk?.TrySay(EPhraseTrigger.OnEnemyConversation);
             }
-
-            this._lastCommitTime = time;
         }
 
         private void EvaluateTargetConfidence(Player target, float time)
         {
-            TrackedEnemyVisibility? tracker = this._cache?.VisibilityTracker;
+            if (this._cache == null || this._bot == null)
+            {
+                return;
+            }
+
+            TrackedEnemyVisibility? tracker = this._cache.VisibilityTracker;
             if (tracker == null || !tracker.HasEnoughData)
             {
                 return;
             }
 
-            if (tracker.GetOverallConfidence() < BoneConfidenceThreshold)
+            float confidence = tracker.GetOverallConfidence();
+
+            if (this._bot.Memory.IsUnderFire && Random.value < SuppressionMissChance)
             {
                 return;
             }
 
-            if (this._bot != null && this._bot.Memory.IsUnderFire)
+            if (confidence < BoneConfidenceThreshold)
             {
-                if (Random.value < SuppressionMissChance)
-                {
-                    return;
-                }
+                return;
             }
 
             this.CommitEnemyIfAllowed(target, time);
         }
 
-        private bool IsValidContext()
-        {
-            if (this._bot == null || this._cache == null || this._profile == null || this._memory == null)
-            {
-                return false;
-            }
-
-            Player? player = this._bot.GetPlayer as Player;
-            return player != null && player.IsAI && !player.IsYourPlayer && !this._bot.IsDead;
-        }
-
-        /// <summary>
-        ///     Validates that the target is a live enemy distinct from the bot.
-        /// </summary>
-        private bool IsValidTarget(Player target)
-        {
-            if (!EFTPlayerUtil.IsValid(target) || this._bot == null)
-            {
-                return false;
-            }
-
-            if (target.ProfileId == this._bot.ProfileId)
-            {
-                return false;
-            }
-
-            return EFTPlayerUtil.IsEnemyOf(this._bot, target);
-        }
-
-        private void TrackVisibleBones(Vector3 eye, Player target)
+        private void TrackVisibleBones(Vector3 eye, Player target, float ambientOcclusionFactor)
         {
             if (this._cache == null || this._bot == null)
             {
@@ -279,26 +282,51 @@ namespace AIRefactored.AI.Perception
                         continue;
                     }
 
-                    if (!Physics.Linecast(eye, bone.position, out RaycastHit hit)
-                        || (hit.collider != null && hit.collider.gameObject == target.gameObject))
+                    if (!Physics.Linecast(eye, bone.position, out RaycastHit hit, AIRefactoredLayerMasks.LineOfSightMask))
                     {
-                        tracker.UpdateBoneVisibility(BonesToCheck[i].ToString(), bone.position);
+                        float bonus = this.IsMovingFast(target) ? MotionBoost : 0f;
+                        tracker.UpdateBoneVisibility(BonesToCheck[i].ToString(), bone.position, bonus, ambientOcclusionFactor);
                     }
                 }
             }
             else
             {
-                Transform? targetTransform = EFTPlayerUtil.GetTransform(target);
-                if (targetTransform != null &&
-                    Physics.Linecast(eye, targetTransform.position, out RaycastHit fallbackHit) &&
-                    fallbackHit.collider != null &&
-                    fallbackHit.collider.transform.root == targetTransform.root)
+                Transform? tf = EFTPlayerUtil.GetTransform(target);
+                if (tf != null && !Physics.Linecast(eye, tf.position, out RaycastHit hit, AIRefactoredLayerMasks.LineOfSightMask))
                 {
-                    tracker.UpdateBoneVisibility("Body", targetTransform.position);
+                    tracker.UpdateBoneVisibility("Body", tf.position);
                 }
             }
 
             tracker.DecayConfidence(BoneConfidenceDecay * Time.deltaTime);
+        }
+
+        private bool IsMovingFast(Player player)
+        {
+            return player.Velocity.magnitude > 1.5f;
+        }
+
+        private bool IsValidContext()
+        {
+            return this._bot != null &&
+                   this._cache != null &&
+                   this._profile != null &&
+                   this._memory != null &&
+                   this._bot.GetPlayer != null &&
+                   this._bot.GetPlayer.IsAI &&
+                   !this._bot.GetPlayer.IsYourPlayer &&
+                   !this._bot.IsDead;
+        }
+
+        private bool IsValidTarget(Player target)
+        {
+            if (this._bot == null || !EFTPlayerUtil.IsValid(target))
+            {
+                return false;
+            }
+
+            return target.ProfileId != this._bot.ProfileId &&
+                   EFTPlayerUtil.IsEnemyOf(this._bot, target);
         }
 
         #endregion

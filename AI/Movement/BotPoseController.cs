@@ -11,6 +11,8 @@
 namespace AIRefactored.AI.Movement
 {
     using System;
+    using System.Collections.Generic;
+
     using AIRefactored.AI.Core;
     using AIRefactored.AI.Helpers;
     using AIRefactored.AI.Memory;
@@ -54,10 +56,6 @@ namespace AIRefactored.AI.Movement
         /// <summary>
         /// Initializes a new instance of the <see cref="BotPoseController"/> class.
         /// </summary>
-        /// <param name="bot">Bot owner instance.</param>
-        /// <param name="cache">Bot component cache instance.</param>
-        /// <exception cref="ArgumentNullException">Thrown if bot or cache is null.</exception>
-        /// <exception cref="InvalidOperationException">Thrown if MovementContext or PersonalityProfile is missing.</exception>
         public BotPoseController(BotOwner bot, BotComponentCache cache)
         {
             if (bot == null)
@@ -80,130 +78,100 @@ namespace AIRefactored.AI.Movement
                 throw new InvalidOperationException("Missing PersonalityProfile.");
             }
 
-            _bot = bot;
-            _cache = cache;
-            _movement = bot.GetPlayer.MovementContext;
-            _personality = cache.AIRefactoredBotOwner.PersonalityProfile;
+            this._bot = bot;
+            this._cache = cache;
+            this._movement = bot.GetPlayer.MovementContext;
+            this._personality = cache.AIRefactoredBotOwner.PersonalityProfile;
 
-            _currentPoseLevel = _movement.PoseLevel;
-            _targetPoseLevel = _currentPoseLevel;
-            _nextPoseCheck = Time.time;
+            this._currentPoseLevel = this._movement.PoseLevel;
+            this._targetPoseLevel = this._currentPoseLevel;
+            this._nextPoseCheck = Time.time;
         }
 
         #endregion
 
-        #region Public API
+        #region Public Methods
 
-        /// <summary>
-        /// Gets the current pose level.
-        /// </summary>
-        /// <returns>Current pose level value.</returns>
         public float GetPoseLevel()
         {
-            return _movement.PoseLevel;
+            return this._movement.PoseLevel;
         }
 
-        /// <summary>
-        /// Locks the bot into crouch pose.
-        /// </summary>
         public void LockCrouchPose()
         {
-            _targetPoseLevel = 50f;
-            _isPoseLocked = true;
+            this._targetPoseLevel = 50f;
+            this._isPoseLocked = true;
         }
 
-        /// <summary>
-        /// Requests the bot to crouch.
-        /// </summary>
-        /// <param name="anticipate">Whether to anticipate slightly higher crouch value.</param>
         public void SetCrouch(bool anticipate = false)
         {
-            _targetPoseLevel = anticipate ? 60f : 50f;
+            this._targetPoseLevel = anticipate ? 60f : 50f;
         }
 
-        /// <summary>
-        /// Requests the bot to go prone.
-        /// </summary>
-        /// <param name="anticipate">Whether to anticipate partial prone value.</param>
         public void SetProne(bool anticipate = false)
         {
-            _targetPoseLevel = anticipate ? 20f : 0f;
+            this._targetPoseLevel = anticipate ? 20f : 0f;
         }
 
-        /// <summary>
-        /// Requests the bot to stand upright.
-        /// </summary>
         public void SetStand()
         {
-            _targetPoseLevel = 100f;
+            this._targetPoseLevel = 100f;
         }
 
-        /// <summary>
-        /// Unlocks pose transitions (resumes normal pose behavior).
-        /// </summary>
         public void UnlockPose()
         {
-            _isPoseLocked = false;
+            this._isPoseLocked = false;
         }
 
-        /// <summary>
-        /// Ticks pose controller logic.
-        /// </summary>
-        /// <param name="currentTime">Current world time.</param>
         public void Tick(float currentTime)
         {
-            if (_bot.IsDead)
+            if (this._bot.IsDead)
             {
                 return;
             }
 
-            if (_isPoseLocked)
+            if (this._isPoseLocked)
             {
-                BlendPose(Time.deltaTime);
+                this.BlendPose(Time.deltaTime);
                 return;
             }
 
-            if (currentTime >= _nextPoseCheck)
+            if (currentTime >= this._nextPoseCheck)
             {
-                _nextPoseCheck = currentTime + PoseCheckInterval;
-                EvaluatePoseIntent(currentTime);
+                this._nextPoseCheck = currentTime + PoseCheckInterval;
+                this.EvaluatePoseIntent(currentTime);
             }
 
-            BlendPose(Time.deltaTime);
+            this.BlendPose(Time.deltaTime);
         }
 
-        /// <summary>
-        /// Sets pose based on nearby NavPointRegistry cover detection.
-        /// </summary>
-        /// <param name="position">Position to scan from.</param>
         public void TrySetStanceFromNearbyCover(Vector3 position)
         {
             var nearbyPoints = NavPointRegistry.QueryNearby(
                 position,
                 4f,
-                (Vector3 point) =>
-                {
-                    float distSq = (point - position).sqrMagnitude;
-                    return distSq <= 16f &&
-                        (BotCoverHelper.IsProneCover(point) || BotCoverHelper.IsLowCover(point));
-                });
+                p =>
+                    {
+                        float distSq = (p.Position - position).sqrMagnitude;
+                        return distSq <= 16f &&
+                               (BotCoverHelper.IsProneCover(p) || BotCoverHelper.IsLowCover(p));
+                    });
 
-            foreach (Vector3 point in nearbyPoints)
+            for (int i = 0; i < nearbyPoints.Count; i++)
             {
+                NavPointData point = nearbyPoints[i];
+
                 if (BotCoverHelper.IsProneCover(point))
                 {
-                    SetProne(true);
-                }
-                else if (BotCoverHelper.IsLowCover(point))
-                {
-                    SetCrouch(true);
-                }
-                else
-                {
-                    SetStand();
+                    this.SetProne(true);
+                    break;
                 }
 
-                break;
+                if (BotCoverHelper.IsLowCover(point))
+                {
+                    this.SetCrouch(true);
+                    break;
+                }
             }
         }
 
@@ -213,82 +181,82 @@ namespace AIRefactored.AI.Movement
 
         private void BlendPose(float deltaTime)
         {
-            if (Mathf.Abs(_currentPoseLevel - _targetPoseLevel) < MinPoseThreshold)
+            if (Mathf.Abs(this._currentPoseLevel - this._targetPoseLevel) < MinPoseThreshold)
             {
                 return;
             }
 
-            float panicFactor = _cache.PanicHandler != null && _cache.PanicHandler.IsPanicking ? 0.6f : 1f;
-            float combatFactor = _cache.Combat != null && _cache.Combat.IsInCombatState() ? 1f : 0.4f;
+            float panicFactor = this._cache.PanicHandler?.IsPanicking == true ? 0.6f : 1f;
+            float combatFactor = this._cache.Combat?.IsInCombatState() == true ? 1f : 0.4f;
             float blendSpeed = PoseBlendSpeedBase * panicFactor * combatFactor;
 
-            _currentPoseLevel = Mathf.MoveTowards(
-                _currentPoseLevel,
-                _targetPoseLevel,
+            this._currentPoseLevel = Mathf.MoveTowards(
+                this._currentPoseLevel,
+                this._targetPoseLevel,
                 blendSpeed * deltaTime);
 
-            _movement.SetPoseLevel(_currentPoseLevel);
+            this._movement.SetPoseLevel(this._currentPoseLevel);
         }
 
         private void EvaluatePoseIntent(float currentTime)
         {
-            if (_cache.PanicHandler != null && _cache.PanicHandler.IsPanicking)
+            if (this._cache.PanicHandler?.IsPanicking == true)
             {
-                _targetPoseLevel = 0f;
+                this._targetPoseLevel = 0f;
                 return;
             }
 
-            if (_cache.Suppression != null && _cache.Suppression.IsSuppressed())
+            if (this._cache.Suppression?.IsSuppressed() == true)
             {
-                _suppressedUntil = currentTime + SuppressionCrouchDuration;
+                this._suppressedUntil = currentTime + SuppressionCrouchDuration;
             }
 
-            if (currentTime < _suppressedUntil)
+            if (currentTime < this._suppressedUntil)
             {
-                _targetPoseLevel = 50f;
+                this._targetPoseLevel = 50f;
                 return;
             }
 
-            if (_personality.IsFrenzied || _personality.IsFearful || _personality.Personality == PersonalityType.Sniper)
+            if (this._personality.IsFrenzied || this._personality.IsFearful || this._personality.Personality == PersonalityType.Sniper)
             {
-                Vector3? flankDir = _bot.TryGetFlankDirection();
+                Vector3? flankDir = this._bot.TryGetFlankDirection();
                 if (flankDir.HasValue)
                 {
-                    float flankAngle = Vector3.Angle(_bot.LookDirection, flankDir.Value.normalized);
+                    float flankAngle = Vector3.Angle(this._bot.LookDirection, flankDir.Value.normalized);
                     if (flankAngle > FlankAngleThreshold)
                     {
-                        _targetPoseLevel = 0f;
+                        this._targetPoseLevel = 0f;
                         return;
                     }
                 }
             }
 
-            var coverInfo = _bot.Memory?.BotCurrentCoverInfo?.LastCover;
+            var coverInfo = this._bot.Memory?.BotCurrentCoverInfo?.LastCover;
             if (coverInfo != null)
             {
                 Vector3 coverPos = coverInfo.Position;
-                float distance = Vector3.Distance(_bot.Position, coverPos);
+                float dist = Vector3.Distance(this._bot.Position, coverPos);
 
-                if (distance < 2.5f)
+                if (dist < 2.5f)
                 {
                     if (BotCoverHelper.IsProneCover(coverInfo))
                     {
-                        _targetPoseLevel = 0f;
+                        this._targetPoseLevel = 0f;
                         return;
                     }
 
                     if (BotCoverHelper.IsLowCover(coverInfo))
                     {
-                        _targetPoseLevel = 50f;
+                        this._targetPoseLevel = 50f;
                         return;
                     }
                 }
             }
 
-            bool inCombat = _cache.Combat != null && _cache.Combat.IsInCombatState();
-            bool preferCrouch = _personality.Caution > 0.6f || _personality.IsCamper;
+            bool inCombat = this._cache.Combat?.IsInCombatState() == true;
+            bool preferCrouch = this._personality.Caution > 0.6f || this._personality.IsCamper;
 
-            _targetPoseLevel = inCombat && preferCrouch ? 50f : 100f;
+            this._targetPoseLevel = inCombat && preferCrouch ? 50f : 100f;
         }
 
         #endregion

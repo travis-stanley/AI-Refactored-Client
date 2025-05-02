@@ -27,16 +27,24 @@ namespace AIRefactored.AI.Optimization
     /// </summary>
     public static class BotWorkScheduler
     {
-        private static readonly ConcurrentQueue<Action> _mainThreadQueue = new ConcurrentQueue<Action>();
-        private static readonly Queue<Action> _spawnQueue = new Queue<Action>(64);
-        private static readonly ManualLogSource Logger = AIRefactoredController.Logger;
+        #region Fields
 
         private const int MaxSpawnsPerSecond = 5;
+        private const int MaxSpawnQueueSize = 256;
+
+        private static readonly ConcurrentQueue<Action> _mainThreadQueue = new ConcurrentQueue<Action>();
+        private static readonly Queue<Action> _spawnQueue = new Queue<Action>(MaxSpawnQueueSize);
+        private static readonly object _spawnLock = new object();
+        private static readonly ManualLogSource Logger = AIRefactoredController.Logger;
 
         private static int _queuedCount;
         private static int _executedCount;
         private static int _errorCount;
         private static bool _initialized;
+
+        #endregion
+
+        #region Public API
 
         /// <summary>
         /// Injects an invisible MonoBehaviour to run Flush() automatically each frame.
@@ -63,24 +71,9 @@ namespace AIRefactored.AI.Optimization
         }
 
         /// <summary>
-        /// Enqueues GameObject.Instantiate or similar load-heavy logic for deferred spawn throttling.
-        /// </summary>
-        public static void EnqueueSpawnSmoothed(Action? spawnAction)
-        {
-            if (spawnAction == null || FikaHeadlessDetector.IsHeadless)
-            {
-                return;
-            }
-
-            lock (_spawnQueue)
-            {
-                _spawnQueue.Enqueue(spawnAction);
-            }
-        }
-
-        /// <summary>
         /// Schedules a Unity-safe action from a background thread to be executed on main thread.
         /// </summary>
+        /// <param name="action">The task to execute on main thread.</param>
         public static void EnqueueToMainThread(Action? action)
         {
             if (action == null || FikaHeadlessDetector.IsHeadless)
@@ -90,6 +83,30 @@ namespace AIRefactored.AI.Optimization
 
             _mainThreadQueue.Enqueue(action);
             Interlocked.Increment(ref _queuedCount);
+        }
+
+        /// <summary>
+        /// Enqueues GameObject.Instantiate or similar load-heavy logic for deferred spawn throttling.
+        /// </summary>
+        /// <param name="spawnAction">The action to enqueue.</param>
+        public static void EnqueueSpawnSmoothed(Action? spawnAction)
+        {
+            if (spawnAction == null || FikaHeadlessDetector.IsHeadless)
+            {
+                return;
+            }
+
+            lock (_spawnLock)
+            {
+                if (_spawnQueue.Count < MaxSpawnQueueSize)
+                {
+                    _spawnQueue.Enqueue(spawnAction);
+                }
+                else
+                {
+                    Logger.LogWarning("[BotWorkScheduler] Spawn queue full. Task dropped.");
+                }
+            }
         }
 
         /// <summary>
@@ -103,7 +120,7 @@ namespace AIRefactored.AI.Optimization
                 return;
             }
 
-            // === Main Thread Task Queue ===
+            // Main-thread execution
             while (_mainThreadQueue.TryDequeue(out Action? action))
             {
                 try
@@ -118,16 +135,15 @@ namespace AIRefactored.AI.Optimization
                 }
             }
 
-            // === Smoothed Spawn Execution ===
+            // Smooth spawns per frame
             int allowedThisFrame = Mathf.Max(1, Mathf.FloorToInt(MaxSpawnsPerSecond * Time.unscaledDeltaTime));
             int executed = 0;
 
-            lock (_spawnQueue)
+            lock (_spawnLock)
             {
                 while (executed < allowedThisFrame && _spawnQueue.Count > 0)
                 {
                     Action? next = _spawnQueue.Dequeue();
-
                     try
                     {
                         next?.Invoke();
@@ -144,10 +160,15 @@ namespace AIRefactored.AI.Optimization
         /// <summary>
         /// Returns current diagnostic snapshot of workload and execution metrics.
         /// </summary>
+        /// <returns>Formatted status string.</returns>
         public static string GetStats()
         {
             return $"[BotWorkScheduler] Queued: {_queuedCount}, Executed: {_executedCount}, Errors: {_errorCount}, SpawnQueue: {_spawnQueue.Count}";
         }
+
+        #endregion
+
+        #region Internal Types
 
         /// <summary>
         /// Injected runtime MonoBehaviour for auto-calling Flush from Unity Update().
@@ -159,5 +180,7 @@ namespace AIRefactored.AI.Optimization
                 Flush();
             }
         }
+
+        #endregion
     }
 }

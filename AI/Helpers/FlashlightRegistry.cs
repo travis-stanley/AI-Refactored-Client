@@ -73,15 +73,17 @@ namespace AIRefactored.AI.Helpers
             float customMaxDist = MaxExposureDistance)
         {
             blindingLight = null;
+
             if (botHead == null)
             {
                 return false;
             }
 
-            Vector3 eyePos = botHead.position + Vector3.up * EyeRayBias;
+            Vector3 eyePos = botHead.position + (Vector3.up * EyeRayBias);
 
-            foreach (Light light in ActiveLights)
+            for (int i = 0; i < ActiveLights.Count; i++)
             {
+                Light light = ActiveLights[i];
                 if (light == null || !light.enabled || !light.gameObject.activeInHierarchy)
                 {
                     continue;
@@ -100,12 +102,18 @@ namespace AIRefactored.AI.Helpers
                     continue;
                 }
 
-                if (Physics.Raycast(
-                    light.transform.position,
-                    toBot.normalized,
+                Vector3 origin = light.transform.position;
+                Vector3 direction = toBot.normalized;
+                float rayDistance = distance + 0.1f;
+
+                bool hitSomething = Physics.Raycast(
+                    origin,
+                    direction,
                     out RaycastHit hit,
-                    distance + 0.1f,
-                    LayerMaskClass.HighPolyWithTerrainMaskAI))
+                    rayDistance,
+                    LayerMaskClass.HighPolyWithTerrainMaskAI);
+
+                if (hitSomething)
                 {
                     if (hit.transform == botHead || hit.collider.transform == botHead)
                     {
@@ -113,7 +121,7 @@ namespace AIRefactored.AI.Helpers
                         return true;
                     }
                 }
-                else if (angle < ExposureConeAngle / 2f && distance < 4.5f)
+                else if (angle < (ExposureConeAngle * 0.5f) && distance < 4.5f)
                 {
                     blindingLight = light;
                     return true;
@@ -132,14 +140,19 @@ namespace AIRefactored.AI.Helpers
             return false;
         }
 
+        /// <summary>
+        /// Determines if a light is a valid tactical flashlight.
+        /// </summary>
+        /// <param name="light">The light to check.</param>
+        /// <returns>True if the light matches tactical specs.</returns>
         private static bool IsValidTacticalLight(Light light)
         {
-            return light != null
-                && light.enabled
-                && light.type == LightType.Spot
-                && light.intensity >= IntensityThreshold
-                && light.spotAngle <= AngleThreshold
-                && light.gameObject.activeInHierarchy;
+            return light != null &&
+                light.enabled &&
+                light.type == LightType.Spot &&
+                light.intensity >= IntensityThreshold &&
+                light.spotAngle <= AngleThreshold &&
+                light.gameObject.activeInHierarchy;
         }
     }
 }

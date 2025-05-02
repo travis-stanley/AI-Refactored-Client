@@ -12,46 +12,69 @@ namespace AIRefactored.AI.Memory
 {
     using System;
     using System.Collections.Generic;
+    using AIRefactored.AI.Combat;
     using AIRefactored.AI.Core;
     using AIRefactored.Core;
     using UnityEngine;
 
     /// <summary>
-    /// Stores recent enemy sightings and cleared safe zones.
-    /// Helps bots avoid repeat danger and synchronize fallback intel.
+    /// Tracks enemy sightings and cleared tactical zones.
+    /// Used to prevent over-investigation, support fallback, and enable squad memory sync.
     /// </summary>
     public sealed class BotTacticalMemory
     {
-        private const float ClearedMemoryDuration = 10f;
+        #region Constants
+
+        private const float ClearedMemoryDuration = 10.0f;
         private const float GridSnapSize = 0.5f;
-        private const float MaxMemoryTime = 14f;
+        private const float MaxMemoryTime = 14.0f;
         private const float PositionToleranceSqr = 0.25f;
 
-        private readonly Dictionary<Vector3, float> ClearedSpots = new Dictionary<Vector3, float>(32, new Vector3EqualityComparer());
-        private readonly Dictionary<string, SeenEnemyRecord> EnemyMemoryById = new Dictionary<string, SeenEnemyRecord>(4, StringComparer.OrdinalIgnoreCase);
-        private readonly List<SeenEnemyRecord> EnemyMemoryList = new List<SeenEnemyRecord>(4);
+        #endregion
+
+        #region Fields
+
+        private readonly Dictionary<Vector3, float> _clearedSpots = new Dictionary<Vector3, float>(32, new Vector3EqualityComparer());
+        private readonly Dictionary<string, SeenEnemyRecord> _enemyMemoryById = new Dictionary<string, SeenEnemyRecord>(4, StringComparer.OrdinalIgnoreCase);
+        private readonly List<SeenEnemyRecord> _enemyMemoryList = new List<SeenEnemyRecord>(4);
 
         private BotComponentCache? _cache;
+        private bool _extractionStarted;
+
+        #endregion
+
+        #region Initialization
 
         /// <summary>
-        /// Initializes the tactical memory system with bot context.
+        /// Injects bot memory references from the AI cache.
         /// </summary>
-        /// <param name="cache">Reference to bot component cache.</param>
+        /// <param name="cache">Bot's component cache.</param>
         public void Initialize(BotComponentCache cache)
         {
             this._cache = cache;
         }
 
+        #endregion
+
+        #region Memory Management
+
         /// <summary>
-        /// Clears memory that is too old to be reliable.
+        /// Clears expired tactical memory entries.
         /// </summary>
         public void CullExpired()
         {
             float now = Time.time;
-            this.EnemyMemoryList.RemoveAll(memory => now - memory.TimeSeen > MaxMemoryTime);
+
+            for (int i = this._enemyMemoryList.Count - 1; i >= 0; i--)
+            {
+                if (now - this._enemyMemoryList[i].TimeSeen > MaxMemoryTime)
+                {
+                    this._enemyMemoryList.RemoveAt(i);
+                }
+            }
 
             List<string> toRemove = new List<string>();
-            foreach (KeyValuePair<string, SeenEnemyRecord> kvp in this.EnemyMemoryById)
+            foreach (KeyValuePair<string, SeenEnemyRecord> kvp in this._enemyMemoryById)
             {
                 if (now - kvp.Value.TimeSeen > MaxMemoryTime)
                 {
@@ -61,55 +84,59 @@ namespace AIRefactored.AI.Memory
 
             for (int i = 0; i < toRemove.Count; i++)
             {
-                this.EnemyMemoryById.Remove(toRemove[i]);
+                this._enemyMemoryById.Remove(toRemove[i]);
             }
         }
 
         /// <summary>
-        /// Returns all known enemy memories.
+        /// Clears all enemy and zone memory instantly.
         /// </summary>
-        public List<SeenEnemyRecord> GetAllMemory()
+        public void ResetMemory()
         {
-            return this.EnemyMemoryList;
+            this._enemyMemoryList.Clear();
+            this._enemyMemoryById.Clear();
+            this._clearedSpots.Clear();
+            this._extractionStarted = false;
         }
 
         /// <summary>
-        /// Gets the most recently seen enemy position, if any.
+        /// Clears memory structures (used during bot reset).
         /// </summary>
-        public Vector3? GetRecentEnemyMemory()
+        public void ClearAll()
         {
-            float now = Time.time;
-            SeenEnemyRecord? freshest = null;
+            this._enemyMemoryList.Clear();
+            this._enemyMemoryById.Clear();
+            this._clearedSpots.Clear();
+            this._extractionStarted = false;
+        }
 
-            for (int i = 0; i < this.EnemyMemoryList.Count; i++)
+        #endregion
+
+        #region Enemy Memory
+
+        /// <summary>
+        /// Records an enemy sighting in memory.
+        /// </summary>
+        /// <summary>
+        /// Records an enemy sighting in memory.
+        /// </summary>
+        /// <param name="position">World position of the enemy.</param>
+        /// <param name="tag">Optional tag (e.g. "Sniper", "Boss").</param>
+        /// <param name="enemyId">Optional enemy identifier.</param>
+        public void RecordEnemyPosition(Vector3 position, string? tag, string? enemyId)
+        {
+            if (this._cache == null)
             {
-                SeenEnemyRecord mem = this.EnemyMemoryList[i];
-                if (now - mem.TimeSeen <= MaxMemoryTime)
-                {
-                    if (!freshest.HasValue || mem.TimeSeen > freshest.Value.TimeSeen)
-                    {
-                        freshest = mem;
-                    }
-                }
+                return;
             }
 
-            return freshest?.Position;
-        }
+            if (this._cache.IsBlinded)
+            {
+                return;
+            }
 
-        /// <summary>
-        /// Marks a position as cleared of threats.
-        /// </summary>
-        public void MarkCleared(Vector3 position)
-        {
-            this.ClearedSpots[SnapToGrid(position)] = Time.time;
-        }
-
-        /// <summary>
-        /// Records the last known position of an enemy.
-        /// </summary>
-        public void RecordEnemyPosition(Vector3 position, string? tag = "Generic", string? enemyId = null)
-        {
-            if (this._cache == null || this._cache.IsBlinded || (this._cache.PanicHandler?.IsPanicking ?? false))
+            BotPanicHandler? panicHandler = this._cache.PanicHandler;
+            if (panicHandler != null && panicHandler.IsPanicking)
             {
                 return;
             }
@@ -121,7 +148,7 @@ namespace AIRefactored.AI.Memory
             if (tag != null)
             {
                 string trimmedTag = tag.Trim();
-                if (!string.IsNullOrEmpty(trimmedTag))
+                if (trimmedTag.Length > 0)
                 {
                     finalTag = trimmedTag;
                 }
@@ -130,84 +157,85 @@ namespace AIRefactored.AI.Memory
             if (enemyId != null)
             {
                 string trimmedId = enemyId.Trim();
-                if (!string.IsNullOrEmpty(trimmedId))
+                if (trimmedId.Length > 0)
                 {
-                    this.EnemyMemoryById[trimmedId] = new SeenEnemyRecord(gridPos, now, finalTag);
+                    if (this._enemyMemoryById.ContainsKey(trimmedId))
+                    {
+                        this._enemyMemoryById[trimmedId] = new SeenEnemyRecord(gridPos, now, finalTag);
+                    }
+                    else
+                    {
+                        this._enemyMemoryById.Add(trimmedId, new SeenEnemyRecord(gridPos, now, finalTag));
+                    }
                 }
             }
 
-            for (int i = 0; i < this.EnemyMemoryList.Count; i++)
+            for (int i = 0; i < this._enemyMemoryList.Count; i++)
             {
-                if ((gridPos - this.EnemyMemoryList[i].Position).sqrMagnitude < PositionToleranceSqr)
+                if ((gridPos - this._enemyMemoryList[i].Position).sqrMagnitude < PositionToleranceSqr)
                 {
-                    this.EnemyMemoryList[i] = new SeenEnemyRecord(gridPos, now, finalTag);
+                    this._enemyMemoryList[i] = new SeenEnemyRecord(gridPos, now, finalTag);
                     return;
                 }
             }
 
-            this.EnemyMemoryList.Add(new SeenEnemyRecord(gridPos, now, finalTag));
+            this._enemyMemoryList.Add(new SeenEnemyRecord(gridPos, now, finalTag));
         }
 
         /// <summary>
-        /// Determines whether a position is considered unsafe.
+        /// Gets the freshest known enemy position in memory.
         /// </summary>
-        public bool IsZoneUnsafe(Vector3 position)
+        public Vector3? GetRecentEnemyMemory()
         {
-            if (this._cache?.Bot == null)
-            {
-                return false;
-            }
-
-            string map = GameWorldHandler.GetCurrentMapName();
-            Vector3 gridPos = SnapToGrid(position);
             float now = Time.time;
+            SeenEnemyRecord? freshest = null;
 
-            for (int i = 0; i < this.EnemyMemoryList.Count; i++)
+            for (int i = 0; i < this._enemyMemoryList.Count; i++)
             {
-                if ((gridPos - this.EnemyMemoryList[i].Position).sqrMagnitude < PositionToleranceSqr)
+                SeenEnemyRecord record = this._enemyMemoryList[i];
+                if (now - record.TimeSeen <= MaxMemoryTime)
                 {
-                    return true;
+                    if (!freshest.HasValue || record.TimeSeen > freshest.Value.TimeSeen)
+                    {
+                        freshest = record;
+                    }
                 }
             }
 
-            foreach (KeyValuePair<Vector3, float> kvp in this.ClearedSpots)
-            {
-                if ((kvp.Key - gridPos).sqrMagnitude < PositionToleranceSqr && now - kvp.Value < ClearedMemoryDuration)
-                {
-                    return true;
-                }
-            }
-
-            return BotMemoryStore.IsPositionInDangerZone(map, position);
+            return freshest?.Position;
         }
 
         /// <summary>
-        /// Checks if a zone was recently cleared.
+        /// Returns all known enemy memory entries.
         /// </summary>
-        public bool WasRecentlyCleared(Vector3 position)
+        public List<SeenEnemyRecord> GetAllMemory()
         {
-            Vector3 gridPos = SnapToGrid(position);
-            return this.ClearedSpots.TryGetValue(gridPos, out float lastTime) && Time.time - lastTime < ClearedMemoryDuration;
+            return this._enemyMemoryList;
         }
 
         /// <summary>
-        /// Resets all tactical memory.
+        /// Adds a remote position to memory (e.g. ally ping).
         /// </summary>
-        public void ResetMemory()
+        public void SyncMemory(Vector3 position, string tag = "AllyEcho")
         {
-            this.EnemyMemoryList.Clear();
-            this.EnemyMemoryById.Clear();
-            this.ClearedSpots.Clear();
+            this.RecordEnemyPosition(position, tag, null);
         }
 
         /// <summary>
-        /// Shares enemy memory with teammates.
+        /// Shares enemy memory with allied bots in squad.
         /// </summary>
         public void ShareMemoryWith(List<BotComponentCache> teammates)
         {
-            for (int i = 0; i < this.EnemyMemoryList.Count; i++)
+            if (teammates == null || teammates.Count == 0)
             {
-                SeenEnemyRecord record = this.EnemyMemoryList[i];
+                return;
+            }
+
+            string selfId = this._cache?.Bot?.Profile?.Id ?? "unknown";
+
+            for (int i = 0; i < this._enemyMemoryList.Count; i++)
+            {
+                SeenEnemyRecord record = this._enemyMemoryList[i];
                 for (int j = 0; j < teammates.Count; j++)
                 {
                     BotComponentCache mate = teammates[j];
@@ -216,19 +244,87 @@ namespace AIRefactored.AI.Memory
                         continue;
                     }
 
-                    string id = this._cache?.Bot?.Profile?.Id ?? "unknown";
-                    mate.TacticalMemory?.SyncMemory(record.Position, "Echo:" + id);
+                    mate.TacticalMemory?.SyncMemory(record.Position, "Echo:" + selfId);
                 }
             }
         }
 
+        #endregion
+
+        #region Zone Memory
+
         /// <summary>
-        /// Receives shared memory from another bot.
+        /// Marks a position as recently cleared (safe).
         /// </summary>
-        public void SyncMemory(Vector3 position, string tag = "AllyEcho")
+        public void MarkCleared(Vector3 position)
         {
-            this.RecordEnemyPosition(position, tag);
+            this._clearedSpots[SnapToGrid(position)] = Time.time;
         }
+
+        /// <summary>
+        /// Returns true if a zone was recently cleared and safe.
+        /// </summary>
+        public bool WasRecentlyCleared(Vector3 position)
+        {
+            Vector3 gridPos = SnapToGrid(position);
+            float lastTime;
+            return this._clearedSpots.TryGetValue(gridPos, out lastTime)
+                && Time.time - lastTime < ClearedMemoryDuration;
+        }
+
+        /// <summary>
+        /// Returns true if the specified zone is dangerous or untrusted.
+        /// </summary>
+        public bool IsZoneUnsafe(Vector3 position)
+        {
+            if (this._cache?.Bot == null)
+            {
+                return false;
+            }
+
+            float now = Time.time;
+            Vector3 gridPos = SnapToGrid(position);
+
+            for (int i = 0; i < this._enemyMemoryList.Count; i++)
+            {
+                if ((gridPos - this._enemyMemoryList[i].Position).sqrMagnitude < PositionToleranceSqr)
+                {
+                    return true;
+                }
+            }
+
+            foreach (KeyValuePair<Vector3, float> kvp in this._clearedSpots)
+            {
+                if ((kvp.Key - gridPos).sqrMagnitude < PositionToleranceSqr && now - kvp.Value < ClearedMemoryDuration)
+                {
+                    return true;
+                }
+            }
+
+            string mapId = GameWorldHandler.GetCurrentMapName();
+            return BotMemoryStore.IsPositionInDangerZone(mapId, position);
+        }
+
+        /// <summary>
+        /// Marks that this bot has started extraction.
+        /// Prevents reuse of mission memory and fallback queries.
+        /// </summary>
+        public void MarkExtractionStarted()
+        {
+            this._extractionStarted = true;
+        }
+
+        /// <summary>
+        /// Returns true if this bot is currently exiting or has committed to extract.
+        /// </summary>
+        public bool IsExtracting()
+        {
+            return this._extractionStarted;
+        }
+
+        #endregion
+
+        #region Utility
 
         private static Vector3 SnapToGrid(Vector3 pos)
         {
@@ -238,8 +334,12 @@ namespace AIRefactored.AI.Memory
                 Mathf.Round(pos.z / GridSnapSize) * GridSnapSize);
         }
 
+        #endregion
+
+        #region Structs
+
         /// <summary>
-        /// Simple enemy memory record structure.
+        /// Record of a single enemy memory slot.
         /// </summary>
         public struct SeenEnemyRecord
         {
@@ -267,12 +367,14 @@ namespace AIRefactored.AI.Memory
                 unchecked
                 {
                     int hash = 17;
-                    hash = hash * 23 + Mathf.RoundToInt(v.x * 10f);
-                    hash = hash * 23 + Mathf.RoundToInt(v.y * 10f);
-                    hash = hash * 23 + Mathf.RoundToInt(v.z * 10f);
+                    hash = (hash * 23) + Mathf.RoundToInt(v.x * 10f);
+                    hash = (hash * 23) + Mathf.RoundToInt(v.y * 10f);
+                    hash = (hash * 23) + Mathf.RoundToInt(v.z * 10f);
                     return hash;
                 }
             }
         }
+
+        #endregion
     }
 }

@@ -15,6 +15,7 @@ namespace AIRefactored.AI.Optimization
     using BepInEx.Logging;
     using EFT;
 
+
     /// <summary>
     /// Logs and verifies runtime bot AI settings like reaction thresholds, run chance, and role assignment.
     /// Used during development to confirm bot configuration consistency and behavioral tuning.
@@ -36,17 +37,22 @@ namespace AIRefactored.AI.Optimization
         /// </summary>
         public void Optimize(BotOwner? botOwner)
         {
-            if (!IsValidBot(botOwner))
+            if (botOwner == null)
             {
                 return;
             }
 
-            if (botOwner == null || botOwner.Profile == null)
+            if (botOwner.GetPlayer == null || !botOwner.GetPlayer.IsAI || botOwner.IsDead)
             {
                 return;
             }
 
-            string botId = botOwner.Profile.Id ?? string.Empty;
+            if (botOwner.Profile == null)
+            {
+                return;
+            }
+
+            string botId = botOwner.Profile.Id;
             if (string.IsNullOrEmpty(botId))
             {
                 return;
@@ -69,17 +75,22 @@ namespace AIRefactored.AI.Optimization
         /// </summary>
         public void ResetOptimization(BotOwner? botOwner)
         {
-            if (!IsValidBot(botOwner))
+            if (botOwner == null)
             {
                 return;
             }
 
-            if (botOwner == null || botOwner.Profile == null)
+            if (botOwner.GetPlayer == null || !botOwner.GetPlayer.IsAI || botOwner.IsDead)
             {
                 return;
             }
 
-            string botId = botOwner.Profile.Id ?? string.Empty;
+            if (botOwner.Profile == null)
+            {
+                return;
+            }
+
+            string botId = botOwner.Profile.Id;
             if (!string.IsNullOrEmpty(botId))
             {
                 _optimizationApplied[botId] = false;
@@ -90,53 +101,83 @@ namespace AIRefactored.AI.Optimization
 
         #region Private Helpers
 
-        private static bool IsValidBot(BotOwner? botOwner)
-        {
-            return botOwner != null
-                && botOwner.GetPlayer != null
-                && botOwner.GetPlayer.IsAI
-                && !botOwner.GetPlayer.IsYourPlayer
-                && !botOwner.IsDead;
-        }
-
         private void LogCognition(BotOwner bot)
         {
-            var look = bot.Settings?.FileSettings?.Look;
-            string name = bot.Profile?.Info?.Nickname ?? "UnknownBot";
+            string name = "UnknownBot";
 
-            if (look != null)
+            if (bot.Profile != null && bot.Profile.Info != null)
             {
-                Logger?.LogInfo(
-                    $"[BotDiagnostics][Cognition] {name} → GrassVision={look.MAX_VISION_GRASS_METERS:F1}m (read-only), LightBonus={look.ENEMY_LIGHT_ADD:F1}m");
+                name = bot.Profile.Info.Nickname;
             }
-            else
+
+            if (bot.Settings == null)
             {
-                Logger?.LogWarning($"[BotDiagnostics][Cognition] {name} → No Look config found.");
+                Logger?.LogWarning("[BotDiagnostics][Cognition] " + name + " → No Settings found.");
+                return;
             }
+
+            BotSettingsComponents components = bot.Settings.FileSettings;
+            if (components == null || components.Look == null)
+            {
+                Logger?.LogWarning("[BotDiagnostics][Cognition] " + name + " → No Look config found.");
+                return;
+            }
+
+            BotGlobalLookData look = components.Look;
+
+            Logger?.LogInfo(
+                "[BotDiagnostics][Cognition] " + name +
+                " → GrassVision=" + look.MAX_VISION_GRASS_METERS.ToString("F1") +
+                "m (read-only), LightBonus=" + look.ENEMY_LIGHT_ADD.ToString("F1") + "m");
         }
 
         private void LogMind(BotOwner bot)
         {
-            var mind = bot.Settings?.FileSettings?.Mind;
-            string name = bot.Profile?.Info?.Nickname ?? "UnknownBot";
+            string name = "UnknownBot";
 
-            if (mind != null)
+            if (bot.Profile != null && bot.Profile.Info != null)
             {
-                Logger?.LogInfo(
-                    $"[BotDiagnostics][Mind] {name} → ScareThreshold={mind.MIN_DAMAGE_SCARE:F1}, RunChance={mind.CHANCE_TO_RUN_CAUSE_DAMAGE_0_100:F0}%");
+                name = bot.Profile.Info.Nickname;
             }
-            else
+
+            if (bot.Settings == null)
             {
-                Logger?.LogWarning($"[BotDiagnostics][Mind] {name} → No Mind config found.");
+                Logger?.LogWarning("[BotDiagnostics][Mind] " + name + " → No Settings found.");
+                return;
             }
+
+            BotSettingsComponents components = bot.Settings.FileSettings;
+            if (components == null || components.Mind == null)
+            {
+                Logger?.LogWarning("[BotDiagnostics][Mind] " + name + " → No Mind config found.");
+                return;
+            }
+
+            BotGlobalsMindSettings mind = components.Mind;
+
+            Logger?.LogInfo(
+                "[BotDiagnostics][Mind] " + name +
+                " → ScareThreshold=" + mind.MIN_DAMAGE_SCARE.ToString("F1") +
+                ", RunChance=" + mind.CHANCE_TO_RUN_CAUSE_DAMAGE_0_100.ToString("F0") + "%");
         }
 
         private void LogRole(BotOwner bot)
         {
-            string name = bot.Profile?.Info?.Nickname ?? "UnknownBot";
-            WildSpawnType role = bot.Profile?.Info?.Settings?.Role ?? WildSpawnType.assault;
+            string name = "UnknownBot";
+            if (bot.Profile != null && bot.Profile.Info != null)
+            {
+                name = bot.Profile.Info.Nickname;
+            }
 
-            Logger?.LogInfo($"[BotDiagnostics][Role] {name} → ProfileRole={role}");
+            WildSpawnType role = WildSpawnType.assault;
+            if (bot.Profile != null &&
+                bot.Profile.Info != null &&
+                bot.Profile.Info.Settings != null)
+            {
+                role = bot.Profile.Info.Settings.Role;
+            }
+
+            Logger?.LogInfo("[BotDiagnostics][Role] " + name + " → ProfileRole=" + role);
         }
 
         #endregion

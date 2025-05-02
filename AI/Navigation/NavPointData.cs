@@ -71,15 +71,6 @@ namespace AIRefactored.AI.Navigation
         /// <summary>
         /// Initializes a new instance of the <see cref="NavPointData"/> class.
         /// </summary>
-        /// <param name="position">World position of the navigation point.</param>
-        /// <param name="isCover">Indicates if the point provides cover.</param>
-        /// <param name="tag">Navigation zone tag assigned to the point.</param>
-        /// <param name="elevation">Vertical elevation of the point.</param>
-        /// <param name="isIndoor">Indicates if the point is located indoors.</param>
-        /// <param name="isJumpable">Indicates if the point is jumpable.</param>
-        /// <param name="coverAngle">Optimal cover angle relative to incoming threats.</param>
-        /// <param name="zone">Zone name the point belongs to.</param>
-        /// <param name="elevationBand">Elevation classification band (e.g., Low, Mid, High).</param>
         public NavPointData(
             Vector3 position,
             bool isCover,
@@ -91,15 +82,15 @@ namespace AIRefactored.AI.Navigation
             string zone,
             string elevationBand)
         {
-            Position = position;
-            IsCover = isCover;
-            Tag = tag;
-            Elevation = elevation;
-            IsIndoor = isIndoor;
-            IsJumpable = isJumpable;
-            CoverAngle = coverAngle;
-            Zone = zone;
-            ElevationBand = elevationBand;
+            this.Position = position;
+            this.IsCover = isCover;
+            this.Tag = tag;
+            this.Elevation = elevation;
+            this.IsIndoor = isIndoor;
+            this.IsJumpable = isJumpable;
+            this.CoverAngle = coverAngle;
+            this.Zone = zone;
+            this.ElevationBand = elevationBand;
         }
 
         #endregion
@@ -109,11 +100,17 @@ namespace AIRefactored.AI.Navigation
         /// <summary>
         /// Calculates the squared distance to a target point for efficient proximity checks.
         /// </summary>
-        /// <param name="point">Target world position.</param>
-        /// <returns>Squared distance between this navigation point and the target.</returns>
-        public float DistanceSqr(Vector3 point)
+        public float DistanceSqr(Vector3 target)
         {
-            return (Position - point).sqrMagnitude;
+            return (this.Position - target).sqrMagnitude;
+        }
+
+        /// <summary>
+        /// Returns a short description of this point for debugging.
+        /// </summary>
+        public override string ToString()
+        {
+            return $"[{this.Tag}] {this.Position} | Cover={this.IsCover} Jump={this.IsJumpable} Indoor={this.IsIndoor} Zone={this.Zone}";
         }
 
         #endregion

@@ -28,7 +28,8 @@ namespace AIRefactored.AI.Helpers
         /// <returns>True if the source fired recently and is valid for tracking.</returns>
         public static bool DidFireRecently(BotOwner self, Player? source, float recentThreshold = 1.5f, float now = -1f)
         {
-            return IsValidSoundSource(self, source) && BotSoundRegistry.FiredRecently(source, recentThreshold, now);
+            return IsValidSoundSource(self, source) &&
+                   BotSoundRegistry.FiredRecently(source, recentThreshold, now);
         }
 
         /// <summary>
@@ -41,7 +42,8 @@ namespace AIRefactored.AI.Helpers
         /// <returns>True if the source stepped recently and is valid for tracking.</returns>
         public static bool DidStepRecently(BotOwner self, Player? source, float recentThreshold = 1.2f, float now = -1f)
         {
-            return IsValidSoundSource(self, source) && BotSoundRegistry.SteppedRecently(source, recentThreshold, now);
+            return IsValidSoundSource(self, source) &&
+                   BotSoundRegistry.SteppedRecently(source, recentThreshold, now);
         }
 
         /// <summary>
@@ -62,8 +64,8 @@ namespace AIRefactored.AI.Helpers
                 return false;
             }
 
-            var selfGroup = self.Profile?.Info?.GroupId;
-            var sourceGroup = source.Profile?.Info?.GroupId;
+            string? selfGroup = self.Profile?.Info?.GroupId;
+            string? sourceGroup = source.Profile?.Info?.GroupId;
 
             if (!string.IsNullOrEmpty(selfGroup) && selfGroup == sourceGroup)
             {

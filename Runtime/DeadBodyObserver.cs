@@ -10,35 +10,41 @@
 
 namespace AIRefactored.Runtime
 {
+    using System.Collections.Generic;
     using AIRefactored.AI.Core;
     using AIRefactored.AI.Looting;
     using AIRefactored.Core;
+    using EFT;
     using EFT.Interactive;
     using UnityEngine;
 
     /// <summary>
-    /// Watches for loot containers associated with dead players and registers them.
-    /// Prevents redundant looting and ensures corpse-container association is maintained.
+    /// Periodically checks for dead players and associates their corpse with a nearby loot container.
+    /// Ensures bots prioritize relevant containers and avoids redundant corpse scans.
     /// </summary>
     public sealed class DeadBodyObserver : MonoBehaviour
     {
-        #region Configuration
+        #region Constants
 
-        private const float ScanInterval = 1.0f;
-
-        #endregion
-
-        #region State
-
-        private float _nextScanTime;
+        private const float ScanIntervalSeconds = 1.0f;
+        private const float MaxAssociationDistance = 1.5f;
 
         #endregion
 
-        #region Unity Loop
+        #region Fields
 
+        private float _nextScanTime = -1f;
+
+        #endregion
+
+        #region Unity Lifecycle
+
+        /// <summary>
+        /// Unity update loop. Triggers corpse-container association logic periodically.
+        /// </summary>
         private void Update()
         {
-            if (!GameWorldHandler.IsInitialized || FikaHeadlessDetector.IsHeadless)
+            if (!Application.isPlaying || !GameWorldHandler.IsInitialized)
             {
                 return;
             }
@@ -49,7 +55,7 @@ namespace AIRefactored.Runtime
                 return;
             }
 
-            this._nextScanTime = now + ScanInterval;
+            this._nextScanTime = now + ScanIntervalSeconds;
 
             LootableContainer[] containers = Object.FindObjectsOfType<LootableContainer>();
             if (containers == null || containers.Length == 0)
@@ -57,7 +63,7 @@ namespace AIRefactored.Runtime
                 return;
             }
 
-            System.Collections.Generic.List<EFT.Player> players = GameWorldHandler.GetAllAlivePlayers();
+            List<Player> players = GameWorldHandler.GetAllAlivePlayers();
             if (players == null || players.Count == 0)
             {
                 return;
@@ -65,8 +71,7 @@ namespace AIRefactored.Runtime
 
             for (int i = 0; i < players.Count; i++)
             {
-                EFT.Player? player = players[i];
-
+                Player player = players[i];
                 if (player == null || player.HealthController == null || player.HealthController.IsAlive)
                 {
                     continue;
@@ -78,21 +83,27 @@ namespace AIRefactored.Runtime
                     continue;
                 }
 
-                Transform? root = player.Transform != null ? player.Transform.Original?.root : null;
-                if (root == null)
-                {
-                    continue;
-                }
+                Vector3 corpsePosition = EFTPlayerUtil.GetPosition(player);
+                Transform? playerRoot = player.Transform != null ? player.Transform.Original?.root : null;
 
                 for (int j = 0; j < containers.Length; j++)
                 {
-                    LootableContainer? container = containers[j];
+                    LootableContainer container = containers[j];
                     if (container == null || !container.enabled)
                     {
                         continue;
                     }
 
-                    if (container.transform.root == root)
+                    Transform containerTransform = container.transform;
+                    if (containerTransform == null)
+                    {
+                        continue;
+                    }
+
+                    bool rootMatch = playerRoot != null && containerTransform.root == playerRoot;
+                    bool closeEnough = Vector3.Distance(containerTransform.position, corpsePosition) <= MaxAssociationDistance;
+
+                    if (rootMatch || closeEnough)
                     {
                         DeadBodyContainerCache.Register(player, container);
                         break;

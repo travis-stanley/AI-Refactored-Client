@@ -26,8 +26,7 @@ namespace AIRefactored.AI.Reactions
         #region Constants
 
         private const float BaseBlindDuration = 4.5f;
-        private const float FlashlightMinIntensity = 2f;
-        private const float MaxFlashlightAngle = 25f;
+        private const float TriggerScoreThreshold = 0.35f;
 
         #endregion
 
@@ -62,14 +61,11 @@ namespace AIRefactored.AI.Reactions
         }
 
         /// <summary>
-        /// Forces the bot into a blind state, optionally with suppression if a source is known.
+        /// Forces the bot into a blind state, optionally triggering suppression logic from a known source.
         /// </summary>
         /// <param name="duration">Duration of blindness.</param>
         /// <param name="source">Optional world position of flash source.</param>
-        /// <summary>
-        ///     Forces the bot into a blind state, optionally triggering suppression logic from a known source.
-        /// </summary>
-        public void ForceBlind(float duration = BaseBlindDuration, Vector3? source = null)
+        public void ForceBlind(float duration = BaseBlindDuration, Vector3? source = default)
         {
             if (this._bot == null || this._bot.IsDead)
             {
@@ -93,10 +89,6 @@ namespace AIRefactored.AI.Reactions
         /// Evaluates exposure to light and clears blindness after recovery.
         /// </summary>
         /// <param name="time">The current time in seconds.</param>
-        /// <summary>
-        ///     Evaluates exposure to light and clears blindness after recovery.
-        /// </summary>
-        /// <param name="time">The current game time.</param>
         public void Tick(float time)
         {
             if (this._bot == null || this._bot.IsDead)
@@ -122,9 +114,6 @@ namespace AIRefactored.AI.Reactions
 
         #region Private Methods
 
-        /// <summary>
-        /// Scans for nearby high-intensity flashlights within the bot's frontal cone.
-        /// </summary>
         private void CheckForFlashlightExposure()
         {
             if (this._cache == null || this._bot == null)
@@ -138,57 +127,33 @@ namespace AIRefactored.AI.Reactions
                 return;
             }
 
-            Vector3 eyePos = head.position;
-            Vector3 viewDir = head.forward;
-
-            IEnumerable<Light>? flashlightEnumerable = FlashlightRegistry.GetActiveFlashlights();
-            if (flashlightEnumerable == null)
+            for (int i = 0; i < FlashlightRegistry.GetLastKnownFlashlightPositions().Count; i++)
             {
-                return;
-            }
-
-            List<Light> flashlights = new List<Light>(flashlightEnumerable);
-            if (flashlights.Count == 0)
-            {
-                return;
-            }
-
-            for (int i = 0; i < flashlights.Count; i++)
-            {
-                Light light = flashlights[i];
-                if (light == null || !light.enabled || light.intensity < FlashlightMinIntensity)
+                Light? light;
+                if (FlashlightRegistry.IsExposingBot(head, out light) && light != null)
                 {
-                    continue;
+                    float score = FlashLightUtils.CalculateFlashScore(light.transform, head, 20f);
+                    if (score >= TriggerScoreThreshold)
+                    {
+                        this._lastFlashTime = Time.time;
+                        this._isBlinded = true;
+
+                        Player? player = EFTPlayerUtil.ResolvePlayer(this._bot);
+                        if (player != null)
+                        {
+                            BotSuppressionHelper.TrySuppressBot(player, light.transform.position);
+                        }
+
+                        break;
+                    }
                 }
-
-                Vector3 toLight = (light.transform.position - eyePos).normalized;
-                float angleToLight = Vector3.Angle(viewDir, toLight);
-
-                if (angleToLight > MaxFlashlightAngle)
-                {
-                    continue;
-                }
-
-                this._lastFlashTime = Time.time;
-                this._isBlinded = true;
-
-                Player? player = EFTPlayerUtil.ResolvePlayer(this._bot);
-                if (player is Player eftPlayer)
-                {
-                    BotSuppressionHelper.TrySuppressBot(eftPlayer, light.transform.position);
-                }
-
-                break;
             }
         }
 
-        /// <summary>
-        /// Computes recovery time based on bot composure. Higher composure recovers faster.
-        /// </summary>
-        /// <returns>Computed blind recovery time.</returns>
         private float GetBlindRecoveryTime()
         {
             float composure = 1f;
+
             if (this._cache != null && this._cache.PanicHandler != null)
             {
                 composure = this._cache.PanicHandler.GetComposureLevel();

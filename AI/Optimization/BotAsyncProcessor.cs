@@ -83,7 +83,10 @@ namespace AIRefactored.AI.Optimization
                 return;
             }
 
-            _stateCache?.UpdateBotOwnerStateIfNeeded(_bot);
+            if (_stateCache != null)
+            {
+                _stateCache.UpdateBotOwnerStateIfNeeded(_bot);
+            }
 
             TryOptimizeGroup();
 
@@ -105,7 +108,7 @@ namespace AIRefactored.AI.Optimization
                     }
                     catch (Exception ex)
                     {
-                        Logger?.LogWarning($"[AIRefactored] Headless async task failed: {ex}");
+                        Logger?.LogWarning("[AIRefactored] Headless async task failed: " + ex.Message);
                     }
                 });
             }
@@ -126,8 +129,17 @@ namespace AIRefactored.AI.Optimization
                 return;
             }
 
-            var settings = botOwner.Settings;
-            if (settings?.FileSettings?.Mind == null)
+            if (botOwner.Settings == null)
+            {
+                return;
+            }
+
+            if (botOwner.Settings.FileSettings == null)
+            {
+                return;
+            }
+
+            if (botOwner.Settings.FileSettings.Mind == null)
             {
                 return;
             }
@@ -140,15 +152,35 @@ namespace AIRefactored.AI.Optimization
 
         private void ApplyPersonalityModifiers(BotOwner botOwner)
         {
-            var mind = botOwner.Settings?.FileSettings?.Mind;
-            string profileId = botOwner.Profile?.Id ?? string.Empty;
-
-            if (mind == null || string.IsNullOrEmpty(profileId))
+            if (botOwner.Settings == null)
             {
                 return;
             }
 
-            var personality = BotRegistry.Get(profileId);
+            if (botOwner.Settings.FileSettings == null)
+            {
+                return;
+            }
+
+            if (botOwner.Settings.FileSettings.Mind == null)
+            {
+                return;
+            }
+
+            string profileId = string.Empty;
+            if (botOwner.Profile != null)
+            {
+                profileId = botOwner.Profile.Id;
+            }
+
+            if (string.IsNullOrEmpty(profileId))
+            {
+                return;
+            }
+
+            BotGlobalsMindSettings mind = botOwner.Settings.FileSettings.Mind;
+            BotPersonalityProfile? personality = BotRegistry.Get(profileId);
+
             if (personality == null)
             {
                 return;
@@ -159,12 +191,17 @@ namespace AIRefactored.AI.Optimization
             mind.DIST_TO_FOUND_SQRT = Mathf.Lerp(200f, 600f, 1f - personality.Cohesion);
             mind.FRIEND_AGR_KILL = Mathf.Lerp(0.0f, 0.4f, personality.AggressionLevel);
 
-            Logger?.LogInfo($"[AIRefactored] Applied personality to bot: {BotName()}");
+            Logger?.LogInfo("[AIRefactored] Applied personality to bot: " + BotName());
         }
 
         private string BotName()
         {
-            return _bot?.Profile?.Info?.Nickname ?? "UnknownBot";
+            if (_bot != null && _bot.Profile != null && _bot.Profile.Info != null)
+            {
+                return _bot.Profile.Info.Nickname;
+            }
+
+            return "UnknownBot";
         }
 
         private void Think()
@@ -180,11 +217,14 @@ namespace AIRefactored.AI.Optimization
                 {
                     try
                     {
-                        _bot?.GetPlayer?.Say(EPhraseTrigger.MumblePhrase);
+                        if (_bot != null && _bot.GetPlayer != null)
+                        {
+                            _bot.GetPlayer.Say(EPhraseTrigger.MumblePhrase);
+                        }
                     }
                     catch (Exception ex)
                     {
-                        Logger?.LogWarning($"[AIRefactored] VO mumble dispatch failed: {ex.Message}");
+                        Logger?.LogWarning("[AIRefactored] VO mumble dispatch failed: " + ex.Message);
                     }
                 });
             }
@@ -192,13 +232,21 @@ namespace AIRefactored.AI.Optimization
 
         private void TryOptimizeGroup()
         {
-            string? maybeGroupId = _bot?.Profile?.Info?.GroupId;
-            if (maybeGroupId == null || maybeGroupId.Length == 0)
+            if (_bot == null)
             {
                 return;
             }
 
-            string groupId = (string)maybeGroupId;
+            if (_bot.Profile == null || _bot.Profile.Info == null)
+            {
+                return;
+            }
+
+            string groupId = _bot.Profile.Info.GroupId;
+            if (string.IsNullOrEmpty(groupId))
+            {
+                return;
+            }
 
             List<BotOwner> teammates = BotTeamTracker.GetGroup(groupId);
             if (teammates.Count == 0)

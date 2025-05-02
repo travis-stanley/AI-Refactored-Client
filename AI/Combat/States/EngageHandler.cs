@@ -18,12 +18,20 @@ namespace AIRefactored.AI.Combat.States
 
     /// <summary>
     /// Handles tactical movement toward enemy last-known-positions during engagements.
+    /// Guides advance cautiously while coordinating stance and squad path offsets.
     /// </summary>
     public sealed class EngageHandler
     {
         #region Fields
 
+        /// <summary>
+        /// The bot owner entity.
+        /// </summary>
         private readonly BotOwner _bot;
+
+        /// <summary>
+        /// The component cache containing bot systems and helpers.
+        /// </summary>
         private readonly BotComponentCache _cache;
 
         #endregion
@@ -36,8 +44,13 @@ namespace AIRefactored.AI.Combat.States
         /// <param name="cache">The bot component cache reference.</param>
         public EngageHandler(BotComponentCache cache)
         {
-            _cache = cache ?? throw new ArgumentNullException(nameof(cache));
-            _bot = cache.Bot ?? throw new ArgumentNullException(nameof(cache.Bot));
+            if (cache == null || cache.Bot == null)
+            {
+                throw new ArgumentNullException(nameof(cache));
+            }
+
+            this._cache = cache;
+            this._bot = cache.Bot;
         }
 
         #endregion
@@ -45,48 +58,63 @@ namespace AIRefactored.AI.Combat.States
         #region Public API
 
         /// <summary>
-        /// Determines if the bot is close enough to transition to Attack state.
-        /// </summary>
-        /// <returns>True if ready to attack; otherwise, false.</returns>
-        public bool CanAttack()
-        {
-            Vector3? enemyPosition = _cache.Combat?.LastKnownEnemyPos;
-            if (!enemyPosition.HasValue)
-            {
-                return false;
-            }
-
-            float distance = Vector3.Distance(_bot.Position, enemyPosition.Value);
-            float engagementRange = _cache.AIRefactoredBotOwner?.PersonalityProfile.EngagementRange ?? 25f;
-
-            return distance < engagementRange;
-        }
-
-        /// <summary>
         /// Determines whether the Engage state should be active.
         /// </summary>
         /// <returns>True if the bot should continue engaging; otherwise, false.</returns>
         public bool ShallUseNow()
         {
-            return _cache.Combat?.LastKnownEnemyPos.HasValue == true
-                   && !this.CanAttack();
+            if (this._cache.Combat == null)
+            {
+                return false;
+            }
+
+            return this._cache.Combat.LastKnownEnemyPos.HasValue && !this.CanAttack();
         }
 
         /// <summary>
-        /// Moves the bot toward the last known enemy position.
+        /// Determines if the bot is close enough to transition to Attack state.
+        /// </summary>
+        /// <returns>True if ready to attack; otherwise, false.</returns>
+        public bool CanAttack()
+        {
+            if (this._cache.Combat == null || !this._cache.Combat.LastKnownEnemyPos.HasValue)
+            {
+                return false;
+            }
+
+            Vector3 enemyPos = this._cache.Combat.LastKnownEnemyPos.Value;
+            float distance = Vector3.Distance(this._bot.Position, enemyPos);
+            float range = 25.0f;
+
+            if (this._cache.AIRefactoredBotOwner != null &&
+                this._cache.AIRefactoredBotOwner.PersonalityProfile != null)
+            {
+                range = this._cache.AIRefactoredBotOwner.PersonalityProfile.EngagementRange;
+            }
+
+            return distance < range;
+        }
+
+        /// <summary>
+        /// Guides the bot toward the last known enemy position with cautious stance updates.
         /// </summary>
         public void Tick()
         {
-            Vector3? lastKnownEnemyPos = _cache.Combat?.LastKnownEnemyPos;
-            if (!lastKnownEnemyPos.HasValue)
+            if (this._cache.Combat == null || !this._cache.Combat.LastKnownEnemyPos.HasValue)
             {
                 return;
             }
 
-            Vector3 destination = _cache.SquadPath?.ApplyOffsetTo(lastKnownEnemyPos.Value) ?? lastKnownEnemyPos.Value;
+            Vector3 targetPos = this._cache.Combat.LastKnownEnemyPos.Value;
+            Vector3 destination = targetPos;
 
-            BotMovementHelper.SmoothMoveTo(_bot, destination);
-            _cache.Combat?.TrySetStanceFromNearbyCover(destination);
+            if (this._cache.SquadPath != null)
+            {
+                destination = this._cache.SquadPath.ApplyOffsetTo(targetPos);
+            }
+
+            BotMovementHelper.SmoothMoveTo(this._bot, destination);
+            this._cache.Combat.TrySetStanceFromNearbyCover(destination);
         }
 
         #endregion

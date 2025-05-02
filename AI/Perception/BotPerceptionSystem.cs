@@ -31,43 +31,13 @@ namespace AIRefactored.AI.Perception
         private const float SuppressionRecoverySpeed = 0.3f;
 
         private float _blindStartTime = -1f;
-        private BotOwner? _bot;
-        private BotComponentCache? _cache;
         private float _flareIntensity;
         private float _flashBlindness;
-        private BotVisionProfile? _profile;
         private float _suppressionFactor;
 
-        public void ApplyFlareExposure(float strength)
-        {
-            this._flareIntensity = Mathf.Clamp(strength * 0.6f, 0f, 0.8f);
-        }
-
-        public void ApplyFlashBlindness(float intensity)
-        {
-            if (!this.IsValid() || this._profile == null)
-            {
-                return;
-            }
-
-            this._flashBlindness = Mathf.Clamp01(this._flashBlindness + intensity * this._profile.MaxBlindness);
-            this._blindStartTime = Time.time;
-
-            if (this._flashBlindness > BlindSpeechThreshold)
-            {
-                this._bot?.BotTalk?.TrySay(EPhraseTrigger.OnBeingHurt);
-            }
-        }
-
-        public void ApplySuppression(float severity)
-        {
-            if (!this.IsValid() || this._profile == null)
-            {
-                return;
-            }
-
-            this._suppressionFactor = Mathf.Clamp01(severity * this._profile.AggressionResponse);
-        }
+        private BotOwner? _bot;
+        private BotComponentCache? _cache;
+        private BotVisionProfile? _profile;
 
         public void Initialize(BotComponentCache cache)
         {
@@ -76,22 +46,12 @@ namespace AIRefactored.AI.Perception
 
             if (this._bot != null)
             {
-                EFT.Player? player = this._bot.GetPlayer;
+                Player? player = this._bot.GetPlayer;
                 if (player != null && player.IsAI)
                 {
                     this._profile = BotVisionProfiles.Get(player);
                 }
             }
-        }
-
-        public void OnFlashExposure(Vector3 lightOrigin)
-        {
-            if (!this.IsValid())
-            {
-                return;
-            }
-
-            this.ApplyFlashBlindness(0.4f);
         }
 
         public void Tick(float deltaTime)
@@ -124,6 +84,47 @@ namespace AIRefactored.AI.Perception
             this.SyncEnemyIfVisible();
         }
 
+        public void ApplyFlareExposure(float strength)
+        {
+            this._flareIntensity = Mathf.Clamp(strength * 0.6f, 0f, 0.8f);
+        }
+
+        public void ApplyFlashBlindness(float intensity)
+        {
+            if (!this.IsValid() || this._profile == null)
+            {
+                return;
+            }
+
+            this._flashBlindness = Mathf.Clamp01(this._flashBlindness + intensity * this._profile.MaxBlindness);
+            this._blindStartTime = Time.time;
+
+            if (this._flashBlindness > BlindSpeechThreshold)
+            {
+                this._bot?.BotTalk?.TrySay(EPhraseTrigger.OnBeingHurt);
+            }
+        }
+
+        public void ApplySuppression(float severity)
+        {
+            if (!this.IsValid() || this._profile == null)
+            {
+                return;
+            }
+
+            this._suppressionFactor = Mathf.Clamp01(severity * this._profile.AggressionResponse);
+        }
+
+        public void OnFlashExposure(Vector3 lightOrigin)
+        {
+            if (!this.IsValid())
+            {
+                return;
+            }
+
+            this.ApplyFlashBlindness(0.4f);
+        }
+
         private void HandleFlashlightExposure()
         {
             if (this._cache == null)
@@ -132,21 +133,24 @@ namespace AIRefactored.AI.Perception
             }
 
             Transform? head = BotCacheUtility.Head(this._cache);
-            if (head != null && FlashlightRegistry.IsExposingBot(head, out _))
+            if (head == null)
             {
-                this.ApplyFlashBlindness(0.25f);
-            }
-        }
-
-        private bool IsValid()
-        {
-            if (this._bot == null || this._bot.IsDead || this._cache == null || this._profile == null)
-            {
-                return false;
+                return;
             }
 
-            EFT.Player? player = this._bot.GetPlayer;
-            return player != null && player.IsAI;
+            Light? blindingLight;
+            if (FlashlightRegistry.IsExposingBot(head, out blindingLight))
+            {
+                float intensity = FlashLightUtils.CalculateFlashScore(
+                    blindingLight?.transform,
+                    head,
+                    20f);
+
+                if (intensity > 0.25f)
+                {
+                    this.ApplyFlashBlindness(intensity);
+                }
+            }
         }
 
         private void RecoverVisualClarity(float deltaTime)
@@ -177,10 +181,22 @@ namespace AIRefactored.AI.Perception
                 return;
             }
 
-            if (this._flashBlindness >= PanicTriggerThreshold && Time.time - this._blindStartTime < 2.5f)
+            if (this._flashBlindness >= PanicTriggerThreshold &&
+                Time.time - this._blindStartTime < 2.5f)
             {
                 this._cache.PanicHandler.TriggerPanic();
             }
+        }
+
+        private bool IsValid()
+        {
+            if (this._bot == null || this._bot.IsDead || this._cache == null || this._profile == null)
+            {
+                return false;
+            }
+
+            Player? player = this._bot.GetPlayer;
+            return player != null && player.IsAI;
         }
     }
 }

@@ -77,12 +77,12 @@ namespace AIRefactored.AI.Combat
                 }
 
                 Player? matePlayer = EFTPlayerUtil.ResolvePlayer(mate);
-                if (!EFTPlayerUtil.IsValidGroupPlayer(matePlayer))
+                if (matePlayer == null || !EFTPlayerUtil.IsValidGroupPlayer(matePlayer))
                 {
                     continue;
                 }
 
-                IHealthController? health = matePlayer?.HealthController;
+                IHealthController? health = matePlayer.HealthController;
                 if (health == null || !health.IsAlive)
                 {
                     continue;
@@ -93,10 +93,11 @@ namespace AIRefactored.AI.Combat
                     continue;
                 }
 
-                if (this._cache.SquadHealer != null && !this._cache.SquadHealer.IsInProcess && matePlayer != null)
+                if (this._cache.SquadHealer != null && !this._cache.SquadHealer.IsInProcess)
                 {
                     object raw = matePlayer;
                     EFT.IPlayer iMatePlayer = (EFT.IPlayer)raw;
+
                     this._cache.SquadHealer.HealAsk(iMatePlayer);
                     this.TrySaySupport(EPhraseTrigger.Cooperation);
                     return;
@@ -117,8 +118,16 @@ namespace AIRefactored.AI.Combat
                 return false;
             }
 
-            Vector3 selfPos = EFTPlayerUtil.GetPosition(this._bot.GetPlayer as Player);
-            Vector3 matePos = EFTPlayerUtil.GetPosition(mate.GetPlayer as Player);
+            Player? selfPlayer = EFTPlayerUtil.ResolvePlayer(this._bot);
+            Player? matePlayer = EFTPlayerUtil.ResolvePlayer(mate);
+
+            if (selfPlayer == null || matePlayer == null)
+            {
+                return false;
+            }
+
+            Vector3 selfPos = EFTPlayerUtil.GetPosition(selfPlayer);
+            Vector3 matePos = EFTPlayerUtil.GetPosition(matePlayer);
 
             return Vector3.Distance(selfPos, matePos) <= HealTriggerRange;
         }

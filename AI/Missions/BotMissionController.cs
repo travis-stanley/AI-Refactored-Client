@@ -12,7 +12,10 @@ namespace AIRefactored.AI.Missions
 {
     using System;
     using AIRefactored.AI.Core;
+    using AIRefactored.AI.Groups;
     using AIRefactored.AI.Missions.Subsystems;
+    using AIRefactored.Runtime;
+    using BepInEx.Logging;
     using EFT;
     using UnityEngine;
     using Random = UnityEngine.Random;
@@ -24,7 +27,15 @@ namespace AIRefactored.AI.Missions
     /// </summary>
     public sealed class BotMissionController
     {
+        #region Constants
+
         private const float GroupRejoinTimeout = 20f;
+
+        #endregion
+
+        #region Fields
+
+        private static readonly ManualLogSource Logger = AIRefactoredController.Logger;
 
         private readonly BotOwner _bot;
         private readonly BotComponentCache _cache;
@@ -32,15 +43,19 @@ namespace AIRefactored.AI.Missions
         private readonly ObjectiveController _objectives;
         private readonly MissionSwitcher _switcher;
         private readonly MissionVoiceCoordinator _voice;
+        private readonly BotExtractionDecisionSystem _extraction;
 
         private bool _forcedMission;
         private bool _inCombatPause;
         private float _groupWaitStart = -1f;
-
         private float _lastCombatTime;
         private float _lastUpdate;
 
         private MissionType _missionType;
+
+        #endregion
+
+        #region Enums
 
         /// <summary>
         /// Defines major mission modes the bot can follow.
@@ -51,6 +66,10 @@ namespace AIRefactored.AI.Missions
             Fight,
             Quest
         }
+
+        #endregion
+
+        #region Constructor
 
         /// <summary>
         /// Constructs and initializes the bot mission controller.
@@ -64,12 +83,20 @@ namespace AIRefactored.AI.Missions
             this._objectives = new ObjectiveController(bot, cache);
             this._evaluator = new MissionEvaluator(bot, cache);
             this._voice = new MissionVoiceCoordinator(bot);
+            this._extraction = new BotExtractionDecisionSystem(bot, cache, cache.AIRefactoredBotOwner?.PersonalityProfile ?? new BotPersonalityProfile());
 
-            this._missionType = this.PickDefaultMission();
+            GroupMissionCoordinator.RegisterFromBot(bot);
+            this._missionType = GroupMissionCoordinator.GetMissionForGroup(bot);
+
             this._objectives.SetInitialObjective(this._missionType);
-
             this._cache.AIRefactoredBotOwner?.SetMissionController(this);
+
+            Logger.LogDebug($"[BotMissionController] Assigned mission: {this._missionType} for bot {bot.Profile?.Info?.Nickname ?? "Unknown"}");
         }
+
+        #endregion
+
+        #region Public Methods
 
         /// <summary>
         /// Assigns a forced mission mode, disabling automatic switching.
@@ -85,7 +112,10 @@ namespace AIRefactored.AI.Missions
         /// </summary>
         public void Tick(float time)
         {
-            if (this._bot.IsDead || this._bot.GetPlayer == null || !this._bot.GetPlayer.HealthController?.IsAlive == true)
+            if (this._bot.IsDead ||
+                this._bot.GetPlayer == null ||
+                this._bot.GetPlayer.HealthController == null ||
+                !this._bot.GetPlayer.HealthController.IsAlive)
             {
                 return;
             }
@@ -123,16 +153,11 @@ namespace AIRefactored.AI.Missions
                 this._objectives.ResumeQuesting();
             }
 
-            if ((this._missionType == MissionType.Loot || this._missionType == MissionType.Quest)
-                && this._evaluator.ShouldExtractEarly())
-            {
-                this._evaluator.TryExtract();
-                return;
-            }
+            // Evaluate extraction logic
+            this._extraction.Tick(time);
 
             if (!this._evaluator.IsGroupAligned() && this._missionType != MissionType.Fight)
             {
-
                 if (this._groupWaitStart < 0f)
                 {
                     this._groupWaitStart = time;
@@ -163,6 +188,10 @@ namespace AIRefactored.AI.Missions
             }
         }
 
+        #endregion
+
+        #region Private Methods
+
         private void OnObjectiveReached()
         {
             if (this._missionType == MissionType.Loot)
@@ -178,56 +207,26 @@ namespace AIRefactored.AI.Missions
             this._objectives.OnObjectiveReached(this._missionType);
         }
 
-        private MissionType PickDefaultMission()
-        {
-            EPlayerSide? side = this._bot.Profile?.Info?.Side;
-            bool isPmc = side == EPlayerSide.Usec || side == EPlayerSide.Bear;
-
-            BotPersonalityProfile? profile = BotRegistry.TryGet(this._bot.ProfileId);
-            if (profile?.PreferredMission == null)
-            {
-                return this.RandomizeDefault(isPmc);
-            }
-
-            switch (profile.PreferredMission)
-            {
-                case MissionBias.Quest:
-                    return isPmc ? MissionType.Quest : MissionType.Loot;
-                case MissionBias.Fight:
-                    return MissionType.Fight;
-                case MissionBias.Loot:
-                    return MissionType.Loot;
-                default:
-                    return this.RandomizeDefault(isPmc);
-            }
-        }
-
-        private MissionType RandomizeDefault(bool isPmc)
-        {
-            int roll = Random.Range(0, 100);
-            if (roll < 30)
-            {
-                return MissionType.Loot;
-            }
-
-            if (roll < 65)
-            {
-                return MissionType.Fight;
-            }
-
-            return isPmc ? MissionType.Quest : MissionType.Loot;
-        }
-
         private void SwitchToFight()
         {
             this._missionType = MissionType.Fight;
             this._objectives.SetInitialObjective(this._missionType);
             this._voice.OnMissionSwitch();
+
+            if (this._bot != null &&
+                this._bot.Profile != null &&
+                this._bot.Profile.Info != null &&
+                !string.IsNullOrWhiteSpace(this._bot.Profile.Info.GroupId))
+            {
+                GroupMissionCoordinator.ForceMissionForGroup(this._bot.Profile.Info.GroupId, MissionType.Fight);
+            }
         }
 
         private float GetCooldown()
         {
             return 10f + Random.Range(0f, 5f);
         }
+
+        #endregion
     }
 }

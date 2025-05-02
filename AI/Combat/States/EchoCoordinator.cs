@@ -10,6 +10,7 @@
 
 namespace AIRefactored.AI.Combat.States
 {
+    using System;
     using AIRefactored.AI.Core;
     using AIRefactored.AI.Helpers;
     using EFT;
@@ -23,9 +24,9 @@ namespace AIRefactored.AI.Combat.States
     {
         #region Constants
 
-        private const float EchoCooldown = 4f;
-        private const float MaxEchoRange = 40f;
-        private const float BaseFallbackDistance = 6f;
+        private const float EchoCooldown = 4.0f;
+        private const float MaxEchoRange = 40.0f;
+        private const float BaseFallbackDistance = 6.0f;
 
         #endregion
 
@@ -34,8 +35,8 @@ namespace AIRefactored.AI.Combat.States
         private readonly BotOwner _bot;
         private readonly BotComponentCache _cache;
 
-        private float _lastEchoFallbackTime;
-        private float _lastEchoInvestigateTime;
+        private float _lastEchoFallbackTime = -999.0f;
+        private float _lastEchoInvestigateTime = -999.0f;
 
         #endregion
 
@@ -44,129 +45,170 @@ namespace AIRefactored.AI.Combat.States
         /// <summary>
         /// Initializes a new instance of the <see cref="EchoCoordinator"/> class.
         /// </summary>
-        /// <param name="cache">Bot component cache reference.</param>
+        /// <param name="cache">The bot component cache.</param>
         public EchoCoordinator(BotComponentCache cache)
         {
-            _cache = cache ?? throw new System.ArgumentNullException(nameof(cache));
-            _bot = cache.Bot ?? throw new System.ArgumentNullException(nameof(cache.Bot));
+            if (cache == null || cache.Bot == null)
+            {
+                throw new ArgumentNullException(nameof(cache));
+            }
+
+            this._cache = cache;
+            this._bot = cache.Bot;
         }
 
         #endregion
 
-        #region Public API
+        #region Public Methods
 
         /// <summary>
-        /// Orders nearby squadmates to fallback from danger.
+        /// Broadcasts a fallback signal to nearby squadmates within echo range.
         /// </summary>
-        /// <param name="retreatPosition">Position to fallback from.</param>
+        /// <param name="retreatPosition">The retreat direction to broadcast.</param>
         public void EchoFallbackToSquad(Vector3 retreatPosition)
         {
-            if (_bot.BotsGroup == null || Time.time - _lastEchoFallbackTime < EchoCooldown)
+            if (this._bot.BotsGroup == null)
             {
                 return;
             }
 
-            for (int i = 0; i < _bot.BotsGroup.MembersCount; i++)
+            float now = Time.time;
+            if (now - this._lastEchoFallbackTime < EchoCooldown)
             {
-                BotOwner? mate = _bot.BotsGroup.Member(i);
-                if (!IsValidSquadmate(mate))
+                return;
+            }
+
+            int count = this._bot.BotsGroup.MembersCount;
+            for (int i = 0; i < count; i++)
+            {
+                BotOwner? mate = this._bot.BotsGroup.Member(i);
+                if (!this.IsValidSquadmate(mate))
                 {
                     continue;
                 }
 
                 BotComponentCache? mateCache = BotCacheUtility.GetCache(mate);
-                if (mateCache == null || mateCache.Combat == null || !CanAcceptEcho(mateCache))
+                if (mateCache == null || mateCache.Combat == null || !this.CanAcceptEcho(mateCache))
                 {
                     continue;
                 }
 
-                Vector3 direction = mate.LookDirection.normalized;
-                Vector3 fallback = mate.Position - direction * BaseFallbackDistance;
+                Vector3 threatDir = this._bot.Position - mate.Position;
+                Vector3 normalized = threatDir.sqrMagnitude > 0.01f ? threatDir.normalized : -mate.LookDirection.normalized;
+                Vector3 fallback = mate.Position - normalized * BaseFallbackDistance;
 
                 mateCache.Combat.TriggerFallback(fallback);
+
+                if (!FikaHeadlessDetector.IsHeadless && mate.BotTalk != null)
+                {
+                    mate.BotTalk.TrySay(EPhraseTrigger.CoverMe);
+                }
             }
 
-            _lastEchoFallbackTime = Time.time;
+            this._lastEchoFallbackTime = now;
         }
 
         /// <summary>
-        /// Orders nearby squadmates to investigate a disturbance.
+        /// Broadcasts an investigate signal to nearby squadmates.
         /// </summary>
         public void EchoInvestigateToSquad()
         {
-            if (_bot.BotsGroup == null || Time.time - _lastEchoInvestigateTime < EchoCooldown)
+            if (this._bot.BotsGroup == null)
             {
                 return;
             }
 
-            for (int i = 0; i < _bot.BotsGroup.MembersCount; i++)
+            float now = Time.time;
+            if (now - this._lastEchoInvestigateTime < EchoCooldown)
             {
-                BotOwner? mate = _bot.BotsGroup.Member(i);
-                if (!IsValidSquadmate(mate))
+                return;
+            }
+
+            int count = this._bot.BotsGroup.MembersCount;
+            for (int i = 0; i < count; i++)
+            {
+                BotOwner? mate = this._bot.BotsGroup.Member(i);
+                if (!this.IsValidSquadmate(mate))
                 {
                     continue;
                 }
 
                 BotComponentCache? mateCache = BotCacheUtility.GetCache(mate);
-                if (mateCache == null || mateCache.Combat == null || !CanAcceptEcho(mateCache))
+                if (mateCache == null || mateCache.Combat == null || !this.CanAcceptEcho(mateCache))
                 {
                     continue;
                 }
 
                 mateCache.Combat.NotifyEchoInvestigate();
+
+                if (!FikaHeadlessDetector.IsHeadless && mate.BotTalk != null)
+                {
+                    mate.BotTalk.TrySay(EPhraseTrigger.CheckHim);
+                }
             }
 
-            _lastEchoInvestigateTime = Time.time;
+            this._lastEchoInvestigateTime = now;
         }
 
         /// <summary>
-        /// Broadcasts enemy position to squadmates within echo range.
+        /// Broadcasts known enemy position to all squadmates within range.
         /// </summary>
         /// <param name="enemyPosition">Enemy's last known position.</param>
         public void EchoSpottedEnemyToSquad(Vector3 enemyPosition)
         {
-            if (_bot.BotsGroup == null)
+            if (this._bot.BotsGroup == null)
             {
                 return;
             }
 
-            for (int i = 0; i < _bot.BotsGroup.MembersCount; i++)
+            string? enemyId = this._cache.ThreatSelector?.CurrentTarget?.ProfileId;
+
+            int count = this._bot.BotsGroup.MembersCount;
+            for (int i = 0; i < count; i++)
             {
-                BotOwner? mate = _bot.BotsGroup.Member(i);
-                if (!IsValidSquadmate(mate))
+                BotOwner? mate = this._bot.BotsGroup.Member(i);
+                if (!this.IsValidSquadmate(mate))
                 {
                     continue;
                 }
 
                 BotComponentCache? mateCache = BotCacheUtility.GetCache(mate);
-                if (mateCache != null)
+                if (mateCache?.TacticalMemory != null)
                 {
-                    mateCache.TacticalMemory?.RecordEnemyPosition(enemyPosition);
+                    mateCache.TacticalMemory.RecordEnemyPosition(enemyPosition, "SquadEcho", enemyId);
                 }
             }
         }
 
         #endregion
 
-        #region Internal Logic
+        #region Private Methods
 
         private bool CanAcceptEcho(BotComponentCache cache)
         {
-            if (cache.IsBlinded || (cache.PanicHandler?.IsPanicking ?? false))
+            if (cache.IsBlinded)
+            {
+                return false;
+            }
+
+            if (cache.PanicHandler != null && cache.PanicHandler.IsPanicking)
             {
                 return false;
             }
 
             BotPersonalityProfile? profile = cache.AIRefactoredBotOwner?.PersonalityProfile;
-            return profile != null && profile.Caution >= 0.2f;
+            return profile != null && profile.Caution >= 0.15f;
         }
 
         private bool IsValidSquadmate(BotOwner? mate)
         {
-            return mate != null &&
-                   mate != _bot &&
-                   !mate.IsDead &&
-                   Vector3.Distance(mate.Position, _bot.Position) <= MaxEchoRange;
+            if (mate == null || mate.IsDead || mate == this._bot)
+            {
+                return false;
+            }
+
+            Vector3 offset = mate.Position - this._bot.Position;
+            return offset.sqrMagnitude <= (MaxEchoRange * MaxEchoRange);
         }
 
         #endregion

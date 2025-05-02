@@ -27,12 +27,12 @@ namespace AIRefactored.AI.Core
     using UnityEngine;
 
     /// <summary>
-    /// Central runtime cache of all AIRefactored subsystems for an individual bot.
-    /// Used to streamline access, avoid reflection, and coordinate inter-system updates.
+    /// Runtime container for all bot-specific AIRefactored logic systems.
+    /// Attached to each bot during initialization.
     /// </summary>
     public sealed class BotComponentCache
     {
-        #region Fields
+        #region Logger
 
         private static readonly ManualLogSource Logger = AIRefactoredController.Logger;
 
@@ -44,9 +44,29 @@ namespace AIRefactored.AI.Core
 
         public AIRefactoredBotOwner? AIRefactoredBotOwner { get; private set; }
 
+        public BotMemoryClass? Memory => this.Bot?.Memory;
+
+        public string Nickname => this.Bot?.Profile?.Info?.Nickname ?? "Unknown";
+
+        public Vector3 Position => this.Bot?.Position ?? Vector3.zero;
+
         #endregion
 
-        #region Behavior Components
+        #region Runtime Flags
+
+        public bool IsBlinded { get; set; }
+
+        public float BlindUntilTime { get; set; }
+
+        public float LastFlashTime { get; set; }
+
+        public float LastHeardTime { get; private set; } = -999f;
+
+        public Vector3? LastHeardDirection { get; private set; }
+
+        #endregion
+
+        #region AI Subsystems
 
         public CombatStateMachine? Combat { get; private set; }
 
@@ -56,9 +76,9 @@ namespace AIRefactored.AI.Core
 
         public BotTilt? Tilt { get; private set; }
 
-        public BotGroupBehavior? GroupBehavior { get; private set; }
-
         public BotTacticalDeviceController? Tactical { get; private set; }
+
+        public BotGroupBehavior? GroupBehavior { get; private set; }
 
         public BotThreatSelector? ThreatSelector { get; private set; }
 
@@ -96,51 +116,38 @@ namespace AIRefactored.AI.Core
 
         public TrackedEnemyVisibility? VisibilityTracker { get; set; }
 
+        public BotGroupSyncCoordinator? GroupSync => this.GroupBehavior?.GroupSync;
+
+        public BotPanicHandler? Panic => this.PanicHandler;
+
         #endregion
 
         #region Properties
 
+        /// <summary>
+        /// Gets a value indicating whether the bot systems are ready.
+        /// </summary>
         public bool IsReady =>
             this.Bot != null &&
             this.Movement != null &&
-            this.PanicHandler != null &&
             this.Suppression != null &&
-            this.FlashGrenade != null &&
-            this.Tactical != null;
-
-        public float BlindUntilTime { get; set; }
-
-        public bool IsBlinded { get; set; }
-
-        public float LastFlashTime { get; set; }
-
-        public float LastHeardTime { get; private set; } = -999f;
-
-        public Vector3? LastHeardDirection { get; private set; }
-
-        public BotMemoryClass? Memory => this.Bot?.Memory;
-
-        public Vector3 Position => this.Bot?.Position ?? Vector3.zero;
-
-        public string Nickname => this.Bot?.Profile?.Info?.Nickname ?? "Unknown";
-
-        public BotPanicHandler? Panic => this.PanicHandler;
-
-        public BotGroupSyncCoordinator? GroupSync => this.GroupBehavior?.GroupSync;
+            this.PanicHandler != null &&
+            this.Tactical != null &&
+            this.FlashGrenade != null;
 
         #endregion
 
-        #region Public Methods
+        #region Initialization
 
         /// <summary>
-        /// Fully initializes the bot component cache with all AIRefactored systems.
+        /// Fully initializes the bot component cache and wires all AI subsystems.
         /// </summary>
-        /// <param name="bot">The bot to initialize for.</param>
+        /// <param name="bot">The BotOwner instance.</param>
         public void Initialize(BotOwner bot)
         {
             if (bot == null)
             {
-                return;
+                throw new ArgumentNullException(nameof(bot));
             }
 
             this.Bot = bot;
@@ -197,24 +204,15 @@ namespace AIRefactored.AI.Core
             this.SquadHealer = bot.HealAnotherTarget ?? new BotHealAnotherTarget(bot);
             this.HealReceiver = bot.HealingBySomebody ?? new BotHealingBySomebody(bot);
 
-            Logger.LogDebug($"[BotComponentCache] Initialized for bot: {this.Nickname}");
+            Logger.LogDebug("[BotComponentCache] ✅ Initialized for bot: " + this.Nickname);
         }
 
-        /// <summary>
-        /// Registers that the bot heard a sound from a specific direction.
-        /// </summary>
-        /// <param name="source">The world-space position the sound came from.</param>
-        public void RegisterHeardSound(Vector3 source)
-        {
-            if (this.Bot?.GetPlayer?.IsAI == true)
-            {
-                this.LastHeardTime = Time.time;
-                this.LastHeardDirection = source - this.Bot.Position;
-            }
-        }
+        #endregion
+
+        #region Runtime Helpers
 
         /// <summary>
-        /// Clears runtime dynamic states like blindness, hearing, and memory cache.
+        /// Clears transient runtime state like flash, audio, and tactical memory.
         /// </summary>
         public void Reset()
         {
@@ -224,13 +222,35 @@ namespace AIRefactored.AI.Core
             this.LastHeardTime = -999f;
             this.LastHeardDirection = null;
             this.VisibilityTracker = null;
-            this.Pathing?.Clear();
+
+            if (this.Pathing != null)
+            {
+                this.Pathing.Clear();
+            }
+
+            if (this.TacticalMemory != null)
+            {
+                this.TacticalMemory.ClearAll();
+            }
         }
 
         /// <summary>
-        /// Sets the AIRefactored bot owner for this cache.
+        /// Registers a directional sound heard by the bot.
         /// </summary>
-        /// <param name="owner">The AIRefactored bot owner instance.</param>
+        /// <param name="source">The sound origin.</param>
+        public void RegisterHeardSound(Vector3 source)
+        {
+            if (this.Bot != null && this.Bot.GetPlayer?.IsAI == true)
+            {
+                this.LastHeardTime = Time.time;
+                this.LastHeardDirection = source - this.Position;
+            }
+        }
+
+        /// <summary>
+        /// Sets the AIRefactored wrapper owner for this bot.
+        /// </summary>
+        /// <param name="owner">The associated wrapper.</param>
         public void SetOwner(AIRefactoredBotOwner owner)
         {
             if (owner != null)
@@ -240,23 +260,26 @@ namespace AIRefactored.AI.Core
         }
 
         /// <summary>
-        /// Prints debug information about the current cache status.
+        /// Returns true if the bot’s assigned personality passes a given test.
+        /// </summary>
+        /// <param name="predicate">The trait evaluator.</param>
+        public bool HasPersonalityTrait(Func<BotPersonalityProfile, bool> predicate)
+        {
+            return this.AIRefactoredBotOwner != null &&
+                   this.AIRefactoredBotOwner.PersonalityProfile != null &&
+                   predicate(this.AIRefactoredBotOwner.PersonalityProfile);
+        }
+
+        /// <summary>
+        /// Logs debug info about current runtime flags and subsystems.
         /// </summary>
         public void DebugPrint()
         {
             Logger.LogInfo(
-                $"[BotComponentCache] {this.Nickname} | Ready={this.IsReady} | Blinded={this.IsBlinded} | HeardSound={this.LastHeardTime:0.00}s ago");
-        }
-
-        /// <summary>
-        /// Determines if the bot has a specific personality trait.
-        /// </summary>
-        /// <param name="predicate">A predicate function checking the personality profile.</param>
-        /// <returns>True if the trait is present.</returns>
-        public bool HasPersonalityTrait(Func<BotPersonalityProfile, bool> predicate)
-        {
-            return this.AIRefactoredBotOwner?.PersonalityProfile != null
-                   && predicate(this.AIRefactoredBotOwner.PersonalityProfile);
+                "[BotComponentCache] " + this.Nickname +
+                " | Ready=" + this.IsReady +
+                " | Blinded=" + this.IsBlinded +
+                " | Heard=" + this.LastHeardTime.ToString("F2") + "s ago");
         }
 
         #endregion

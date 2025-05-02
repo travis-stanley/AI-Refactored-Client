@@ -40,18 +40,12 @@ namespace AIRefactored.AI.Looting
         /// <returns>True if a corpse container is cached for the given profile ID.</returns>
         public static bool Contains(string? profileId)
         {
-            if (profileId == null)
+            if (!TryGetSafeKey(profileId, out string key))
             {
                 return false;
             }
 
-            string trimmedId = profileId.Trim();
-            if (string.IsNullOrWhiteSpace(trimmedId))
-            {
-                return false;
-            }
-
-            return Containers.ContainsKey(trimmedId);
+            return Containers.ContainsKey(key);
         }
 
         /// <summary>
@@ -61,18 +55,12 @@ namespace AIRefactored.AI.Looting
         /// <returns>The associated lootable container, or null if not found.</returns>
         public static LootableContainer? Get(string? profileId)
         {
-            if (profileId == null)
+            if (!TryGetSafeKey(profileId, out string key))
             {
                 return null;
             }
 
-            string trimmedId = profileId.Trim();
-            if (string.IsNullOrWhiteSpace(trimmedId))
-            {
-                return null;
-            }
-
-            return Containers.TryGetValue(trimmedId, out LootableContainer? container) ? container : null;
+            return Containers.TryGetValue(key, out LootableContainer? container) ? container : null;
         }
 
         /// <summary>
@@ -82,24 +70,47 @@ namespace AIRefactored.AI.Looting
         /// <param name="container">The corpse's lootable container.</param>
         public static void Register(Player? player, LootableContainer? container)
         {
-            if (player == null || container == null)
+            if (player == null || container == null || player.ProfileId == null)
             {
                 return;
             }
 
-            string? rawId = player.ProfileId;
-            if (rawId == null)
+            if (!TryGetSafeKey(player.ProfileId, out string profileId))
             {
                 return;
             }
 
-            string profileId = rawId.Trim();
-            if (string.IsNullOrEmpty(profileId) || Containers.ContainsKey(profileId))
+            if (Containers.ContainsKey(profileId))
             {
                 return;
             }
 
             Containers[profileId] = container;
+        }
+
+        /// <summary>
+        /// Trims and validates a string profile ID for safe dictionary usage.
+        /// </summary>
+        /// <param name="profileId">The input profile ID.</param>
+        /// <param name="key">The trimmed output key.</param>
+        /// <returns>True if valid; otherwise, false.</returns>
+        private static bool TryGetSafeKey(string? profileId, out string key)
+        {
+            key = string.Empty;
+
+            if (profileId == null)
+            {
+                return false;
+            }
+
+            string trimmed = profileId.Trim();
+            if (trimmed.Length == 0)
+            {
+                return false;
+            }
+
+            key = trimmed;
+            return true;
         }
     }
 }

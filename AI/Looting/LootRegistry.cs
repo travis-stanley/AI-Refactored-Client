@@ -23,95 +23,86 @@ namespace AIRefactored.AI.Looting
     /// </summary>
     public static class LootRegistry
     {
-        private static readonly List<LootableContainer> ContainerBuffer = new List<LootableContainer>(32);
-        private static readonly HashSet<LootableContainer> Containers = new HashSet<LootableContainer>(128);
+        #region Buffers
 
-        private static readonly List<LootItem> ItemBuffer = new List<LootItem>(64);
-        private static readonly HashSet<LootItem> Items = new HashSet<LootItem>(256);
+        private static readonly List<LootableContainer> _containerBuffer = new List<LootableContainer>(32);
+        private static readonly List<LootItem> _itemBuffer = new List<LootItem>(64);
 
-        private static readonly HashSet<GameObject> WatchedObjects = new HashSet<GameObject>(256);
+        #endregion
 
-        /// <summary>
-        /// Gets a copy of all known lootable containers.
-        /// </summary>
+        #region State
+
+        private static readonly HashSet<LootableContainer> _containers = new HashSet<LootableContainer>();
+        private static readonly HashSet<LootItem> _items = new HashSet<LootItem>();
+        private static readonly HashSet<GameObject> _watchedObjects = new HashSet<GameObject>();
+
+        #endregion
+
+        #region Public API
+
         public static List<LootableContainer> GetAllContainers()
         {
-            return new List<LootableContainer>(Containers);
+            return new List<LootableContainer>(_containers);
         }
 
-        /// <summary>
-        /// Gets a copy of all known lootable loose items.
-        /// </summary>
         public static List<LootItem> GetAllItems()
         {
-            return new List<LootItem>(Items);
+            return new List<LootItem>(_items);
         }
 
-        /// <summary>
-        /// Clears all container, item, and watcher references.
-        /// </summary>
         public static void Clear()
         {
-            Containers.Clear();
-            Items.Clear();
-            WatchedObjects.Clear();
-            ContainerBuffer.Clear();
-            ItemBuffer.Clear();
+            _containers.Clear();
+            _items.Clear();
+            _watchedObjects.Clear();
+            _containerBuffer.Clear();
+            _itemBuffer.Clear();
         }
 
-        /// <summary>
-        /// Returns all lootable containers within a radius of a position.
-        /// </summary>
         public static List<LootableContainer> GetNearbyContainers(Vector3 origin, float radius)
         {
-            ContainerBuffer.Clear();
-            float radiusSq = radius * radius;
+            _containerBuffer.Clear();
+            float radiusSqr = radius * radius;
 
-            foreach (LootableContainer container in Containers)
+            foreach (LootableContainer container in _containers)
             {
                 if (container == null)
                 {
                     continue;
                 }
 
-                float distSq = (container.transform.position - origin).sqrMagnitude;
-                if (distSq <= radiusSq)
+                Vector3 pos = container.transform.position;
+                if ((pos - origin).sqrMagnitude <= radiusSqr)
                 {
-                    ContainerBuffer.Add(container);
+                    _containerBuffer.Add(container);
                 }
             }
 
-            return new List<LootableContainer>(ContainerBuffer);
+            return new List<LootableContainer>(_containerBuffer);
         }
 
-        /// <summary>
-        /// Returns all loose loot items within a radius of a position.
-        /// </summary>
         public static List<LootItem> GetNearbyItems(Vector3 origin, float radius)
         {
-            ItemBuffer.Clear();
-            float radiusSq = radius * radius;
+            _itemBuffer.Clear();
+            float radiusSqr = radius * radius;
 
-            foreach (LootItem item in Items)
+            foreach (LootItem item in _items)
             {
                 if (item == null)
                 {
                     continue;
                 }
 
-                float distSq = (item.transform.position - origin).sqrMagnitude;
-                if (distSq <= radiusSq)
+                Vector3 pos = item.transform.position;
+                if ((pos - origin).sqrMagnitude <= radiusSqr)
                 {
-                    ItemBuffer.Add(item);
+                    _itemBuffer.Add(item);
                 }
             }
 
-            return new List<LootItem>(ItemBuffer);
+            return new List<LootItem>(_itemBuffer);
         }
 
-        /// <summary>
-        /// Adds a new lootable container to the registry and injects runtime tracking.
-        /// </summary>
         public static void RegisterContainer(LootableContainer? container)
         {
             if (container == null)
@@ -119,17 +110,15 @@ namespace AIRefactored.AI.Looting
                 return;
             }
 
-            if (!Containers.Add(container))
+            if (_containers.Contains(container))
             {
                 return;
             }
 
+            _containers.Add(container);
             InjectWatcherIfNeeded(container.gameObject);
         }
 
-        /// <summary>
-        /// Adds a loose loot item to the registry and injects runtime tracking.
-        /// </summary>
         public static void RegisterItem(LootItem? item)
         {
             if (item == null)
@@ -137,20 +126,25 @@ namespace AIRefactored.AI.Looting
                 return;
             }
 
-            if (!Items.Add(item))
+            if (_items.Contains(item))
             {
                 return;
             }
 
+            _items.Add(item);
             InjectWatcherIfNeeded(item.gameObject);
         }
 
-        /// <summary>
-        /// Tries to find a registered container by name.
-        /// </summary>
-        public static bool TryGetContainerByName(string name, out LootableContainer? found)
+        public static bool TryGetContainerByName(string? name, out LootableContainer? found)
         {
-            foreach (LootableContainer container in Containers)
+            found = null;
+
+            if (string.IsNullOrEmpty(name))
+            {
+                return false;
+            }
+
+            foreach (LootableContainer container in _containers)
             {
                 if (container != null && container.name.Equals(name, StringComparison.OrdinalIgnoreCase))
                 {
@@ -159,16 +153,19 @@ namespace AIRefactored.AI.Looting
                 }
             }
 
-            found = null;
             return false;
         }
 
-        /// <summary>
-        /// Tries to find a registered loot item by name.
-        /// </summary>
-        public static bool TryGetItemByName(string name, out LootItem? found)
+        public static bool TryGetItemByName(string? name, out LootItem? found)
         {
-            foreach (LootItem item in Items)
+            found = null;
+
+            if (string.IsNullOrEmpty(name))
+            {
+                return false;
+            }
+
+            foreach (LootItem item in _items)
             {
                 if (item != null && item.name.Equals(name, StringComparison.OrdinalIgnoreCase))
                 {
@@ -177,19 +174,24 @@ namespace AIRefactored.AI.Looting
                 }
             }
 
-            found = null;
             return false;
         }
 
+        #endregion
+
+        #region Internal Logic
+
         private static void InjectWatcherIfNeeded(GameObject? go)
         {
-            if (go == null || WatchedObjects.Contains(go))
+            if (go == null || _watchedObjects.Contains(go))
             {
                 return;
             }
 
             go.AddComponent<LootRuntimeWatcher>();
-            WatchedObjects.Add(go);
+            _watchedObjects.Add(go);
         }
+
+        #endregion
     }
 }

@@ -10,7 +10,6 @@
 
 namespace AIRefactored
 {
-    using System;
     using System.Collections;
     using AIRefactored.AI.Core;
     using AIRefactored.AI.Optimization;
@@ -24,89 +23,112 @@ namespace AIRefactored
     using UnityEngine;
 
     /// <summary>
-    /// Plugin entry point for AI-Refactored. Registers systems, hooks, and world-level bootstrap routines.
+    /// Entry point for AI-Refactored mod. Registers world bootstrap, logging, and AI system hooks.
+    /// Supports both headless and client-hosted environments.
     /// </summary>
     [BepInPlugin("com.spock.airefactored", "AI-Refactored", "1.0.0")]
     public sealed class Plugin : BaseUnityPlugin
     {
+        #region Fields
+
         private static ManualLogSource? _log;
 
+        #endregion
+
+        #region Properties
+
         /// <summary>
-        /// Global logger instance for AIRefactored systems. Valid after Awake().
+        /// Global logger reference, safe after Awake().
         /// </summary>
-        public static ManualLogSource LoggerInstance
-        {
-            get
-            {
-                if (_log == null)
-                {
-                    throw new NullReferenceException("[AIRefactored] LoggerInstance accessed before Awake().");
-                }
+        public static ManualLogSource LoggerInstance =>
+            _log ?? throw new System.NullReferenceException("[AIRefactored] Logger accessed before plugin initialization.");
 
-                return _log;
-            }
-        }
+        #endregion
+
+        #region Unity Lifecycle
 
         /// <summary>
-        /// Called once by BepInEx when the plugin is loaded.
+        /// Unity lifecycle entry point. Initializes all AIRefactored systems.
         /// </summary>
         private void Awake()
         {
             _log = this.Logger;
-            _log.LogWarning("[AIRefactored] 🔧 Plugin starting...");
+            _log.LogInfo("[AIRefactored] [Init] Plugin starting...");
 
-            // Register logger with controller
             AIRefactoredController.Initialize(_log);
-
-            // Inject world bootstrapper
+            BotWorkScheduler.AutoInjectFlushHost();
             WorldBootstrapper.TryInitialize();
 
-            // Run FIKA-safe flush hook
-            BotWorkScheduler.AutoInjectFlushHost();
-
-            if (!FikaHeadlessDetector.IsHeadless)
+            if (FikaHeadlessDetector.IsHeadless)
             {
-                this.StartCoroutine(this.WaitForWorldBootstrap());
+                _log.LogInfo("[AIRefactored] [Headless] Detected headless mode — skipping camera or UI-bound bootstrap.");
+                GameWorldHandler.HookBotSpawns();
             }
             else
             {
-                _log.LogWarning("[AIRefactored] 🧠 Headless mode detected — skipping GameWorld checks.");
-                GameWorldHandler.HookBotSpawns();
+                this.StartCoroutine(this.WaitForWorldBootstrap());
             }
 
-            _log.LogWarning("[AIRefactored] ✅ Plugin.cs startup complete.");
+            this.StartCoroutine(this.MonitorGameWorldAvailability());
+            _log.LogInfo("[AIRefactored] [Init] Plugin startup complete.");
         }
 
         /// <summary>
-        /// Called when the plugin is unloaded or the game shuts down.
+        /// Called when plugin is unloaded. Cleans up all global AI systems.
         /// </summary>
         private void OnDestroy()
         {
             GameWorldHandler.UnhookBotSpawns();
-            _log?.LogInfo("[AIRefactored] 🔻 Plugin shutdown complete.");
+            _log?.LogInfo("[AIRefactored] [Shutdown] Plugin shutdown complete.");
         }
 
+        #endregion
+
+        #region Coroutine Logic
+
         /// <summary>
-        /// Coroutine retry loop for client-side multiplayer startup. Ensures GameWorld is valid before boot.
+        /// Waits for a valid GameWorld instance before proceeding with initialization (non-headless only).
         /// </summary>
         private IEnumerator WaitForWorldBootstrap()
         {
             float timeout = Time.time + 60f;
 
-            while (!Singleton<ClientGameWorld>.Instantiated && !Singleton<GameWorld>.Instantiated && Time.time < timeout)
+            while (!Singleton<ClientGameWorld>.Instantiated &&
+                   !Singleton<GameWorld>.Instantiated &&
+                   Time.time < timeout)
             {
                 yield return null;
             }
 
             if (Singleton<ClientGameWorld>.Instantiated || Singleton<GameWorld>.Instantiated)
             {
-                _log?.LogInfo("[AIRefactored] ✅ World detected — proceeding with AIRefactored initialization.");
+                _log?.LogInfo("[AIRefactored] [Bootstrap] GameWorld detected — continuing bootstrap.");
                 GameWorldHandler.TryInitializeWorld();
             }
             else
             {
-                _log?.LogWarning("[AIRefactored] ⚠ Timed out waiting for GameWorld. Skipping world hook.");
+                _log?.LogWarning("[AIRefactored] [Bootstrap] Timed out waiting for GameWorld. Skipping bootstrap.");
             }
         }
+
+        /// <summary>
+        /// Periodically checks for GameWorld reinitialization or late-booted servers and enforces AI system hooks.
+        /// </summary>
+        private IEnumerator MonitorGameWorldAvailability()
+        {
+            while (true)
+            {
+                if (!GameWorldHandler.IsInitialized &&
+                    (Singleton<ClientGameWorld>.Instantiated || Singleton<GameWorld>.Instantiated))
+                {
+                    _log?.LogInfo("[AIRefactored] [Recovery] Late GameWorld detected — enforcing initialization.");
+                    GameWorldHandler.TryInitializeWorld();
+                }
+
+                yield return new WaitForSeconds(2f);
+            }
+        }
+
+        #endregion
     }
 }

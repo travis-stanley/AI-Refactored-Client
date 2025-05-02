@@ -11,14 +11,15 @@
 namespace AIRefactored.AI.Perception
 {
     using AIRefactored.AI.Core;
+    using AIRefactored.AI.Groups;
     using AIRefactored.AI.Helpers;
     using AIRefactored.AI.Memory;
     using EFT;
     using UnityEngine;
 
     /// <summary>
-    /// Detects footsteps and gunfire from nearby real players, filtered by hearing range.
-    /// Events are registered with tactical memory for situational awareness.
+    /// Detects footsteps and gunfire from nearby bots and players, filtered by hearing range.
+    /// Ignores self and squadmates based on GroupId.
     /// </summary>
     public sealed class BotHearingSystem
     {
@@ -49,7 +50,7 @@ namespace AIRefactored.AI.Perception
         }
 
         /// <summary>
-        /// Performs a hearing scan based on nearby real players and sound events.
+        /// Performs a hearing scan based on nearby players and sound events.
         /// </summary>
         /// <param name="deltaTime">Frame delta time.</param>
         public void Tick(float deltaTime)
@@ -59,30 +60,26 @@ namespace AIRefactored.AI.Perception
                 return;
             }
 
-            float effectiveRange = BaseHearingRange;
-            float effectiveRangeSqr = effectiveRange * effectiveRange;
-
             if (this._bot == null)
             {
                 return;
             }
 
             Vector3 origin = this._bot.Position;
-            var players = BotMemoryStore.GetNearbyPlayers(origin, effectiveRange);
+            float rangeSqr = BaseHearingRange * BaseHearingRange;
 
+            var players = BotMemoryStore.GetNearbyPlayers(origin, BaseHearingRange);
             for (int i = 0; i < players.Count; i++)
             {
                 EFT.Player player = players[i];
-                Vector3 targetPos = player.Transform.position;
-
-                if (!IsValidAudibleTarget(player, origin, effectiveRangeSqr, targetPos))
+                if (!this.IsAudibleSource(player, origin, rangeSqr))
                 {
                     continue;
                 }
 
                 if (this.HeardSomething(player))
                 {
-                    this._cache?.RegisterHeardSound(targetPos);
+                    this._cache?.RegisterHeardSound(player.Transform.position);
                 }
             }
         }
@@ -91,34 +88,9 @@ namespace AIRefactored.AI.Perception
 
         #region Private Methods
 
-        private static bool IsRealPlayer(EFT.Player player)
-        {
-            return player.AIData == null || !player.AIData.IsAI;
-        }
-
-        private static bool IsValidAudibleTarget(EFT.Player? target, Vector3 origin, float rangeSqr, Vector3 targetPos)
-        {
-            if (target == null || target.HealthController?.IsAlive != true)
-            {
-                return false;
-            }
-
-            if (!IsRealPlayer(target))
-            {
-                return false;
-            }
-
-            return (targetPos - origin).sqrMagnitude <= rangeSqr;
-        }
-
         private bool CanEvaluate()
         {
-            if (this._bot == null)
-            {
-                return false;
-            }
-
-            if (this._bot.IsDead)
+            if (this._bot == null || this._bot.IsDead)
             {
                 return false;
             }
@@ -136,6 +108,40 @@ namespace AIRefactored.AI.Perception
 
             return BotSoundUtils.DidFireRecently(this._bot, player, 1f, TimeWindow)
                    || BotSoundUtils.DidStepRecently(this._bot, player, 1f, TimeWindow);
+        }
+
+        private bool IsAudibleSource(EFT.Player player, Vector3 origin, float rangeSqr)
+        {
+            if (player == null || player.HealthController?.IsAlive != true)
+            {
+                return false;
+            }
+
+            if (this._bot == null || player.ProfileId == this._bot.ProfileId)
+            {
+                return false;
+            }
+
+            if (AreInSameTeam(this._bot, player))
+            {
+                return false;
+            }
+
+            Vector3 targetPos = player.Transform.position;
+            return (targetPos - origin).sqrMagnitude <= rangeSqr;
+        }
+
+        private static bool AreInSameTeam(BotOwner self, EFT.Player target)
+        {
+            string? selfGroup = self.GetPlayer?.Profile?.Info?.GroupId;
+            string? targetGroup = target.Profile?.Info?.GroupId;
+
+            if (string.IsNullOrEmpty(selfGroup) || string.IsNullOrEmpty(targetGroup))
+            {
+                return false;
+            }
+
+            return selfGroup == targetGroup;
         }
 
         #endregion

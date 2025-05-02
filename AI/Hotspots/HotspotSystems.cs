@@ -10,6 +10,7 @@
 
 namespace AIRefactored.AI.Hotspots
 {
+    using System;
     using System.Collections.Generic;
     using AIRefactored.AI.Core;
     using AIRefactored.AI.Helpers;
@@ -24,12 +25,18 @@ namespace AIRefactored.AI.Hotspots
     /// Drives bot navigation between tactical hotspots on a map.
     /// Each bot maintains its own route or defense zone and adapts behavior based on combat state.
     /// </summary>
-    public class HotspotSystem
+    public sealed class HotspotSystem
     {
+        #region Fields
+
         private static readonly List<BotOwner> BotList = new List<BotOwner>(64);
-        private static readonly ManualLogSource Log = AIRefactoredController.Logger;
+        private static readonly ManualLogSource Logger = AIRefactoredController.Logger;
 
         private readonly Dictionary<BotOwner, HotspotSession> _sessions = new Dictionary<BotOwner, HotspotSession>(64);
+
+        #endregion
+
+        #region Public API
 
         /// <summary>
         /// Gets a random hotspot for fallback routing.
@@ -55,8 +62,8 @@ namespace AIRefactored.AI.Hotspots
         /// </summary>
         public void Tick()
         {
-            BotsController? controller = Singleton<BotsController>.Instance;
-            if (controller == null || controller.Bots?.BotOwners == null)
+            BotsController controller = Singleton<BotsController>.Instance;
+            if (controller == null || controller.Bots == null || controller.Bots.BotOwners == null)
             {
                 return;
             }
@@ -66,13 +73,14 @@ namespace AIRefactored.AI.Hotspots
 
             for (int i = 0; i < BotList.Count; i++)
             {
-                BotOwner? bot = BotList[i];
-                if (bot == null || bot.IsDead || bot.GetPlayer?.IsYourPlayer == true)
+                BotOwner bot = BotList[i];
+                if (bot == null || bot.IsDead || bot.GetPlayer != null && bot.GetPlayer.IsYourPlayer)
                 {
                     continue;
                 }
 
-                if (!this._sessions.TryGetValue(bot, out HotspotSession? session))
+                HotspotSession? session = null;
+                if (!this._sessions.TryGetValue(bot, out session))
                 {
                     session = this.AssignHotspotRoute(bot);
                     if (session != null)
@@ -81,19 +89,26 @@ namespace AIRefactored.AI.Hotspots
                     }
                 }
 
-                session?.Tick();
+                if (session != null)
+                {
+                    session.Tick();
+                }
             }
         }
 
+        #endregion
+
+        #region Internal Helpers
+
         private HotspotSession? AssignHotspotRoute(BotOwner bot)
         {
-            var profile = BotRegistry.Get(bot.ProfileId);
+            BotPersonalityProfile profile = BotRegistry.Get(bot.ProfileId);
             string map = GameWorldHandler.GetCurrentMapName();
             IReadOnlyList<HotspotRegistry.Hotspot> all = HotspotRegistry.GetAll();
 
             if (all.Count == 0)
             {
-                Log.LogWarning($"[HotspotSystem] ❌ No hotspots found for {map}");
+                Logger.LogWarning("[HotspotSystem] ❌ No hotspots found for " + map);
                 return null;
             }
 
@@ -103,37 +118,34 @@ namespace AIRefactored.AI.Hotspots
                 nearby = new List<HotspotRegistry.Hotspot>(all);
             }
 
-            bool defendOnly = false;
-            if (profile?.Personality == PersonalityType.Camper)
-            {
-                defendOnly = true;
-            }
-            else if (profile?.Personality == PersonalityType.Cautious && Random.value < 0.5f)
-            {
-                defendOnly = true;
-            }
+            bool defendOnly = profile.Personality == PersonalityType.Camper ||
+                              (profile.Personality == PersonalityType.Cautious && UnityEngine.Random.value < 0.5f);
 
             if (defendOnly)
             {
-                HotspotRegistry.Hotspot defend = nearby[Random.Range(0, nearby.Count)];
+                HotspotRegistry.Hotspot defend = nearby[UnityEngine.Random.Range(0, nearby.Count)];
                 return new HotspotSession(bot, new List<HotspotRegistry.Hotspot> { defend }, true);
             }
 
-            int routeLen = Random.Range(2, 4);
+            int routeLen = UnityEngine.Random.Range(2, 4);
             List<HotspotRegistry.Hotspot> route = new List<HotspotRegistry.Hotspot>(routeLen);
             HashSet<int> used = new HashSet<int>();
 
             while (route.Count < routeLen && used.Count < nearby.Count)
             {
-                int i = Random.Range(0, nearby.Count);
-                if (used.Add(i))
+                int index = UnityEngine.Random.Range(0, nearby.Count);
+                if (used.Add(index))
                 {
-                    route.Add(nearby[i]);
+                    route.Add(nearby[index]);
                 }
             }
 
             return new HotspotSession(bot, route, false);
         }
+
+        #endregion
+
+        #region Nested Class
 
         private sealed class HotspotSession
         {
@@ -143,12 +155,10 @@ namespace AIRefactored.AI.Hotspots
             private readonly BotOwner _bot;
             private readonly BotComponentCache? _cache;
             private readonly bool _isDefender;
-            private readonly string _mapKey;
             private readonly List<HotspotRegistry.Hotspot> _route;
 
             private int _index;
-            private float _lastHitTime = -999f;
-            private float _lastRouteStartTime;
+            private float _lastHitTime;
             private float _nextSwitchTime;
 
             public HotspotSession(BotOwner bot, List<HotspotRegistry.Hotspot> route, bool isDefender)
@@ -156,27 +166,26 @@ namespace AIRefactored.AI.Hotspots
                 this._bot = bot;
                 this._route = route;
                 this._isDefender = isDefender;
-                this._mapKey = GameWorldHandler.GetCurrentMapName();
                 this._cache = BotCacheUtility.GetCache(bot);
+                this._lastHitTime = -999f;
                 this._index = 0;
-                this._lastRouteStartTime = Time.time;
+                this._nextSwitchTime = Time.time + this.GetSwitchInterval();
 
-                if (bot.GetPlayer?.HealthController is HealthControllerClass health)
+                HealthControllerClass? health = bot.GetPlayer?.HealthController as HealthControllerClass;
+                if (health != null)
                 {
                     health.ApplyDamageEvent += this.OnDamaged;
                 }
-
-                this._nextSwitchTime = Time.time + this.GetSwitchInterval();
             }
 
             public void Tick()
             {
-                if (this._bot.IsDead || this._route.Count == 0 || this._bot.GetPlayer?.IsYourPlayer == true)
+                if (this._bot.IsDead || this._route.Count == 0 || this._bot.GetPlayer != null && this._bot.GetPlayer.IsYourPlayer)
                 {
                     return;
                 }
 
-                if (this._bot.Memory?.GoalEnemy != null)
+                if (this._bot.Memory != null && this._bot.Memory.GoalEnemy != null)
                 {
                     this._bot.Sprint(true);
                     return;
@@ -192,7 +201,10 @@ namespace AIRefactored.AI.Hotspots
                 if (this._isDefender)
                 {
                     float dist = Vector3.Distance(this._bot.Position, target);
-                    float composure = this._cache?.PanicHandler?.GetComposureLevel() ?? 1f;
+                    float composure = this._cache != null && this._cache.PanicHandler != null
+                        ? this._cache.PanicHandler.GetComposureLevel()
+                        : 1f;
+
                     float defendRadius = BaseDefendRadius * Mathf.Clamp(1f + (1f - composure), 1f, 2f);
 
                     if (dist > defendRadius)
@@ -215,7 +227,12 @@ namespace AIRefactored.AI.Hotspots
 
             private Vector3 AddJitterTo(Vector3 target)
             {
-                BotPersonalityProfile? profile = this._cache?.AIRefactoredBotOwner?.PersonalityProfile;
+                if (this._cache == null || this._cache.AIRefactoredBotOwner == null)
+                {
+                    return target;
+                }
+
+                BotPersonalityProfile? profile = this._cache.AIRefactoredBotOwner.PersonalityProfile;
                 if (profile == null)
                 {
                     return target;
@@ -226,11 +243,11 @@ namespace AIRefactored.AI.Hotspots
 
                 if (profile.IsFrenzied)
                 {
-                    jitter = Random.insideUnitSphere * 2.5f;
+                    jitter = UnityEngine.Random.insideUnitSphere * 2.5f;
                 }
                 else if (profile.IsSilentHunter)
                 {
-                    jitter = Random.insideUnitSphere * 0.25f;
+                    jitter = UnityEngine.Random.insideUnitSphere * 0.25f;
                 }
                 else if (chaos > 0.4f)
                 {
@@ -243,41 +260,41 @@ namespace AIRefactored.AI.Hotspots
 
             private float GetSwitchInterval()
             {
-                var profile = BotRegistry.Get(this._bot.ProfileId);
-
+                BotPersonalityProfile profile = BotRegistry.Get(this._bot.ProfileId);
                 float baseTime = 120f;
-                if (profile != null)
-                {
-                    switch (profile.Personality)
-                    {
-                        case PersonalityType.Cautious:
-                            baseTime = 160f;
-                            break;
-                        case PersonalityType.TeamPlayer:
-                            baseTime = 100f;
-                            break;
-                        case PersonalityType.Strategic:
-                            baseTime = 90f;
-                            break;
-                        case PersonalityType.Explorer:
-                            baseTime = 75f;
-                            break;
-                        case PersonalityType.Dumb:
-                            baseTime = 45f;
-                            break;
-                    }
 
-                    baseTime *= Mathf.Clamp01(1f + profile.ChaosFactor * 0.6f);
+                switch (profile.Personality)
+                {
+                    case PersonalityType.Cautious:
+                        baseTime = 160f;
+                        break;
+                    case PersonalityType.TeamPlayer:
+                        baseTime = 100f;
+                        break;
+                    case PersonalityType.Strategic:
+                        baseTime = 90f;
+                        break;
+                    case PersonalityType.Explorer:
+                        baseTime = 75f;
+                        break;
+                    case PersonalityType.Dumb:
+                        baseTime = 45f;
+                        break;
                 }
 
-                return baseTime;
+                return baseTime * Mathf.Clamp01(1f + profile.ChaosFactor * 0.6f);
             }
 
             private void OnDamaged(EBodyPart part, float damage, DamageInfoStruct info)
             {
                 this._lastHitTime = Time.time;
-                this._cache?.PanicHandler?.TriggerPanic();
+                if (this._cache != null && this._cache.PanicHandler != null)
+                {
+                    this._cache.PanicHandler.TriggerPanic();
+                }
             }
         }
+
+        #endregion
     }
 }

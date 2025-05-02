@@ -10,7 +10,10 @@
 
 namespace AIRefactored.AI.Helpers
 {
+    using System.Collections.Generic;
+    using AIRefactored.AI.Core;
     using AIRefactored.AI.Optimization;
+    using AIRefactored.Core;
     using EFT;
     using UnityEngine;
 
@@ -37,7 +40,7 @@ namespace AIRefactored.AI.Helpers
         /// <param name="bot">The bot to reset movement for.</param>
         public static void Reset(BotOwner bot)
         {
-            // No-op for now.
+            // Reserved for future use
         }
 
         /// <summary>
@@ -54,29 +57,40 @@ namespace AIRefactored.AI.Helpers
                 return;
             }
 
-            var fallback = bot.Position - threatDirection.normalized * distance;
+            Vector3 fallback = bot.Position - threatDirection.normalized * distance;
 
-            var cache = BotCacheUtility.GetCache(bot);
-            if (cache != null && cache.Pathing!= null)
+            BotComponentCache? cache = BotCacheUtility.GetCache(bot);
+            if (cache != null && cache.Pathing != null)
             {
-                var path = BotCoverRetreatPlanner.GetCoverRetreatPath(bot, threatDirection, cache.Pathing);
-                if (path.Count > 0)
+                List<Vector3> path = BotCoverRetreatPlanner.GetCoverRetreatPath(bot, threatDirection, cache.Pathing);
+                for (int i = path.Count - 1; i >= 0; i--)
                 {
-                    fallback = path[path.Count - 1];
+                    Vector3 candidate = path[i];
+                    if (!BotCoverHelper.WasRecentlyUsed(candidate))
+                    {
+                        fallback = candidate;
+                        break;
+                    }
                 }
             }
 
-            var cohesion = 1f;
-            var profile = BotRegistry.TryGet(bot.ProfileId);
+            float cohesion = 1f;
+            bool prefersSprint = sprint;
+
+            BotPersonalityProfile? profile = BotRegistry.TryGet(bot.ProfileId);
             if (profile != null)
             {
                 cohesion = Mathf.Clamp(profile.Cohesion, 0.7f, 1.3f);
+                if (profile.IsFearful || profile.IsFrenzied)
+                {
+                    prefersSprint = true;
+                }
             }
 
             BotCoverHelper.MarkUsed(fallback);
             bot.Mover.GoToPoint(fallback, true, cohesion);
 
-            if (sprint)
+            if (prefersSprint)
             {
                 bot.Sprint(true);
             }
@@ -95,7 +109,7 @@ namespace AIRefactored.AI.Helpers
                 return;
             }
 
-            var direction = lookTarget - bot.Position;
+            Vector3 direction = lookTarget - bot.Position;
             direction.y = 0f;
 
             if (direction.sqrMagnitude < 0.01f)
@@ -103,7 +117,7 @@ namespace AIRefactored.AI.Helpers
                 return;
             }
 
-            var targetRotation = Quaternion.LookRotation(direction.normalized, Vector3.up);
+            Quaternion targetRotation = Quaternion.LookRotation(direction.normalized, Vector3.up);
             bot.Transform.rotation = Quaternion.Slerp(
                 bot.Transform.rotation,
                 targetRotation,
@@ -124,8 +138,8 @@ namespace AIRefactored.AI.Helpers
                 return;
             }
 
-            var buffer = DefaultRadius * Mathf.Clamp(cohesionScale, 0.7f, 1.3f);
-            var pos = bot.Position;
+            float buffer = DefaultRadius * Mathf.Clamp(cohesionScale, 0.7f, 1.3f);
+            Vector3 pos = bot.Position;
 
             if ((pos - target).sqrMagnitude < buffer * buffer)
             {
@@ -133,6 +147,30 @@ namespace AIRefactored.AI.Helpers
             }
 
             bot.Mover.GoToPoint(target, slow, cohesionScale);
+        }
+
+        /// <summary>
+        /// Navigates the bot to a presumed extraction zone, respecting danger checks and safe zone flags.
+        /// </summary>
+        /// <param name="bot">The bot to move to extraction.</param>
+        public static void SmoothMoveToSafeExit(BotOwner bot)
+        {
+            if (!IsEligible(bot))
+            {
+                return;
+            }
+
+            BotComponentCache? cache = BotCacheUtility.GetCache(bot);
+            if (cache == null || cache.Pathing == null)
+            {
+                return;
+            }
+
+            Vector3? exitPoint = BotCoverRetreatPlanner.GetSafeExtractionPoint(bot, cache.Pathing);
+            if (exitPoint.HasValue)
+            {
+                bot.Mover.GoToPoint(exitPoint.Value, true, 1f);
+            }
         }
 
         /// <summary>
@@ -148,14 +186,14 @@ namespace AIRefactored.AI.Helpers
                 return;
             }
 
-            var safeDir = Vector3.Cross(Vector3.up, threatDirection.normalized);
+            Vector3 safeDir = Vector3.Cross(Vector3.up, threatDirection.normalized);
             if (safeDir.sqrMagnitude < 0.01f)
             {
                 safeDir = Vector3.right;
             }
 
-            var offset = safeDir.normalized * DefaultStrafeDistance * Mathf.Clamp(scale, 0.75f, 1.25f);
-            var target = bot.Position + offset;
+            Vector3 offset = safeDir.normalized * DefaultStrafeDistance * Mathf.Clamp(scale, 0.75f, 1.25f);
+            Vector3 target = bot.Position + offset;
 
             bot.Mover.GoToPoint(target, false, 1f);
         }
@@ -166,7 +204,11 @@ namespace AIRefactored.AI.Helpers
 
         private static bool IsEligible(BotOwner? bot)
         {
-            return bot != null && !bot.IsDead && bot.GetPlayer?.IsAI == true && bot.Mover != null;
+            return bot != null &&
+                   !bot.IsDead &&
+                   bot.GetPlayer != null &&
+                   bot.GetPlayer.IsAI &&
+                   bot.Mover != null;
         }
 
         #endregion

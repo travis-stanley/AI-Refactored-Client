@@ -11,6 +11,7 @@
 namespace AIRefactored.AI.Helpers
 {
     using System.Collections.Generic;
+    using AIRefactored.AI.Core;
     using EFT;
     using UnityEngine;
 
@@ -41,7 +42,8 @@ namespace AIRefactored.AI.Helpers
         /// </summary>
         public static bool FiredRecently(Player? player, float withinSeconds = 1.5f, float now = -1f)
         {
-            return TryGetLastShot(player, out var time) && (now >= 0f ? now : Time.time) - time <= withinSeconds;
+            return TryGetLastShot(player, out float time) &&
+                ((now >= 0f ? now : Time.time) - time <= withinSeconds);
         }
 
         /// <summary>
@@ -49,21 +51,19 @@ namespace AIRefactored.AI.Helpers
         /// </summary>
         public static void NotifyShot(Player? player)
         {
-            if (!IsTrackable(player))
+            if (player == null || player.IsYourPlayer || string.IsNullOrEmpty(player.ProfileId))
             {
                 return;
             }
 
-            if (player != null)
-            {
-                string id = player.ProfileId;
-                ShotTimestamps[id] = Time.time;
+            string id = player.ProfileId;
+            ShotTimestamps[id] = Time.time;
 
-                if (player is EFT.Player concretePlayer)
-                {
-                    SoundZones[id] = concretePlayer.Transform.position;
-                    TriggerSquadPing(id, concretePlayer.Transform.position, true);
-                }
+            if (player is EFT.Player concrete)
+            {
+                Vector3 position = concrete.Transform.position;
+                SoundZones[id] = position;
+                TriggerSquadPing(id, position, true);
             }
         }
 
@@ -72,23 +72,19 @@ namespace AIRefactored.AI.Helpers
         /// </summary>
         public static void NotifyStep(Player? player)
         {
-            if (!IsTrackable(player))
+            if (player == null || player.IsYourPlayer || string.IsNullOrEmpty(player.ProfileId))
             {
                 return;
             }
 
-            if (player != null)
+            string id = player.ProfileId;
+            FootstepTimestamps[id] = Time.time;
+
+            if (player is EFT.Player concrete)
             {
-                string id = player.ProfileId;
-
-                // Force cast only at usage, not at variable assignment.
-                FootstepTimestamps[id] = Time.time;
-
-                if (player is EFT.Player concretePlayer)
-                {
-                    SoundZones[id] = concretePlayer.Transform.position;
-                    TriggerSquadPing(id, concretePlayer.Transform.position, false);
-                }
+                Vector3 position = concrete.Transform.position;
+                SoundZones[id] = position;
+                TriggerSquadPing(id, position, false);
             }
         }
 
@@ -97,7 +93,8 @@ namespace AIRefactored.AI.Helpers
         /// </summary>
         public static bool SteppedRecently(Player? player, float withinSeconds = 1.2f, float now = -1f)
         {
-            return TryGetLastStep(player, out var time) && (now >= 0f ? now : Time.time) - time <= withinSeconds;
+            return TryGetLastStep(player, out float time) &&
+                ((now >= 0f ? now : Time.time) - time <= withinSeconds);
         }
 
         /// <summary>
@@ -106,8 +103,10 @@ namespace AIRefactored.AI.Helpers
         public static bool TryGetLastShot(Player? player, out float time)
         {
             time = -1f;
-            return player != null && !string.IsNullOrEmpty(player.ProfileId)
-                && ShotTimestamps.TryGetValue(player.ProfileId, out time);
+
+            return player != null &&
+                !string.IsNullOrEmpty(player.ProfileId) &&
+                ShotTimestamps.TryGetValue(player.ProfileId, out time);
         }
 
         /// <summary>
@@ -116,8 +115,10 @@ namespace AIRefactored.AI.Helpers
         public static bool TryGetLastStep(Player? player, out float time)
         {
             time = -1f;
-            return player != null && !string.IsNullOrEmpty(player.ProfileId)
-                && FootstepTimestamps.TryGetValue(player.ProfileId, out time);
+
+            return player != null &&
+                !string.IsNullOrEmpty(player.ProfileId) &&
+                FootstepTimestamps.TryGetValue(player.ProfileId, out time);
         }
 
         /// <summary>
@@ -126,27 +127,30 @@ namespace AIRefactored.AI.Helpers
         public static bool TryGetSoundPosition(Player? player, out Vector3 pos)
         {
             pos = Vector3.zero;
-            return player != null && !string.IsNullOrEmpty(player.ProfileId)
-                && SoundZones.TryGetValue(player.ProfileId, out pos);
+
+            return player != null &&
+                !string.IsNullOrEmpty(player.ProfileId) &&
+                SoundZones.TryGetValue(player.ProfileId, out pos);
         }
 
-        private static bool IsTrackable(Player? player)
-        {
-            return player != null && !player.IsYourPlayer && !string.IsNullOrEmpty(player.ProfileId);
-        }
-
+        /// <summary>
+        /// Notifies nearby bots of a squad sound event.
+        /// </summary>
+        /// <param name="sourceId">Profile ID of the sound emitter.</param>
+        /// <param name="location">Sound origin point.</param>
+        /// <param name="isGunshot">Whether this is a gunshot event.</param>
         private static void TriggerSquadPing(string sourceId, Vector3 location, bool isGunshot)
         {
-            foreach (var cache in BotCacheUtility.AllActiveBots())
+            foreach (BotComponentCache cache in BotCacheUtility.AllActiveBots())
             {
-                var bot = cache.Bot;
+                BotOwner? bot = cache.Bot;
                 if (bot == null || bot.IsDead || bot.ProfileId == sourceId)
                 {
                     continue;
                 }
 
-                var dist = Vector3.Distance(bot.Position, location);
-                if (dist > DefaultHearingRadius)
+                float distance = (bot.Position - location).sqrMagnitude;
+                if (distance > DefaultHearingRadius * DefaultHearingRadius)
                 {
                     continue;
                 }

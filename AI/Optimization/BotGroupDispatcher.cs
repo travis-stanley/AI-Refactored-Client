@@ -25,6 +25,22 @@ namespace AIRefactored.AI.Optimization
     /// </summary>
     public sealed class BotWorkGroupDispatcher : MonoBehaviour
     {
+        #region Configuration
+
+        private const int MaxThreadsCap = 16;
+        private const int MaxWorkPerFrame = 256;
+
+        #endregion
+
+        #region Static Fields
+
+        private static readonly List<IBotWorkload> _pendingWorkloads = new List<IBotWorkload>(MaxWorkPerFrame);
+        private static readonly object _lock = new object();
+        private static readonly ManualLogSource Logger = AIRefactoredController.Logger;
+        private static readonly int LogicalThreadCount = Mathf.Clamp(Environment.ProcessorCount, 1, MaxThreadsCap);
+
+        #endregion
+
         #region Unity Lifecycle
 
         private void Update()
@@ -34,15 +50,15 @@ namespace AIRefactored.AI.Optimization
                 return;
             }
 
-            if (_pendingWorkloads.Count == 0)
-            {
-                return;
-            }
-
             List<IBotWorkload> batch;
 
             lock (_lock)
             {
+                if (_pendingWorkloads.Count == 0)
+                {
+                    return;
+                }
+
                 int count = Mathf.Min(_pendingWorkloads.Count, MaxWorkPerFrame);
                 batch = new List<IBotWorkload>(_pendingWorkloads.GetRange(0, count));
                 _pendingWorkloads.RemoveRange(0, count);
@@ -77,9 +93,10 @@ namespace AIRefactored.AI.Optimization
                     {
                         try
                         {
-                            if (batch[j] != null)
+                            IBotWorkload? work = batch[j];
+                            if (work != null)
                             {
-                                batch[j].RunBackgroundWork();
+                                work.RunBackgroundWork();
                             }
                         }
                         catch (Exception ex)
@@ -118,22 +135,6 @@ namespace AIRefactored.AI.Optimization
                 _pendingWorkloads.Add(workload);
             }
         }
-
-        #endregion
-
-        #region Configuration
-
-        private const int MaxThreadsCap = 16;
-        private const int MaxWorkPerFrame = 256;
-
-        #endregion
-
-        #region Static State
-
-        private static readonly List<IBotWorkload> _pendingWorkloads = new List<IBotWorkload>(MaxWorkPerFrame);
-        private static readonly object _lock = new object();
-        private static readonly ManualLogSource Logger = AIRefactoredController.Logger;
-        private static readonly int LogicalThreadCount = Mathf.Clamp(Environment.ProcessorCount, 1, MaxThreadsCap);
 
         #endregion
     }

@@ -10,6 +10,7 @@
 
 namespace AIRefactored.AI.Groups
 {
+    using System;
     using System.Collections.Generic;
     using AIRefactored.AI.Missions;
     using AIRefactored.Core;
@@ -37,7 +38,7 @@ namespace AIRefactored.AI.Groups
         /// <param name="mission">The mission type to assign.</param>
         public static void ForceMissionForGroup(string groupId, BotMissionController.MissionType mission)
         {
-            if (!string.IsNullOrEmpty(groupId))
+            if (!string.IsNullOrWhiteSpace(groupId))
             {
                 AssignedMissions[groupId] = mission;
             }
@@ -47,26 +48,27 @@ namespace AIRefactored.AI.Groups
         /// Retrieves the assigned mission for the bot's group, or picks one dynamically if unassigned.
         /// </summary>
         /// <param name="bot">The bot querying for its group mission.</param>
+        /// <returns>The assigned or dynamically chosen mission type.</returns>
         public static BotMissionController.MissionType GetMissionForGroup(BotOwner? bot)
         {
-            if (bot?.GetPlayer == null || !bot.GetPlayer.IsAI)
+            if (bot == null || bot.GetPlayer == null || !bot.GetPlayer.IsAI)
             {
                 return BotMissionController.MissionType.Loot;
             }
 
-            var profile = bot.Profile;
-            if (profile?.Info == null)
+            Profile profile = bot.Profile;
+            if (profile == null || profile.Info == null)
             {
                 return BotMissionController.MissionType.Loot;
             }
 
-            var groupId = profile.Info.GroupId;
+            string groupId = profile.Info.GroupId;
             if (string.IsNullOrEmpty(groupId))
             {
                 return PickMission(bot);
             }
 
-            if (!AssignedMissions.TryGetValue(groupId, out var mission))
+            if (!AssignedMissions.TryGetValue(groupId, out BotMissionController.MissionType mission))
             {
                 mission = PickMission(bot);
                 AssignedMissions[groupId] = mission;
@@ -81,18 +83,18 @@ namespace AIRefactored.AI.Groups
         /// <param name="bot">The bot whose group to register.</param>
         public static void RegisterFromBot(BotOwner? bot)
         {
-            if (bot?.GetPlayer == null || !bot.GetPlayer.IsAI)
+            if (bot == null || bot.GetPlayer == null || !bot.GetPlayer.IsAI)
             {
                 return;
             }
 
-            var profile = bot.Profile;
-            if (profile?.Info == null)
+            Profile profile = bot.Profile;
+            if (profile == null || profile.Info == null)
             {
                 return;
             }
 
-            var groupId = profile.Info.GroupId;
+            string groupId = profile.Info.GroupId;
             if (!string.IsNullOrEmpty(groupId) && !AssignedMissions.ContainsKey(groupId))
             {
                 AssignedMissions[groupId] = PickMission(bot);
@@ -114,79 +116,84 @@ namespace AIRefactored.AI.Groups
 
         private static BotMissionController.MissionType PickMission(BotOwner bot)
         {
-            float loot = 1f, fight = 1f, quest = 1f;
-            var map = GameWorldHandler.GetCurrentMapName()?.ToLowerInvariant() ?? "unknown";
+            float loot = 1f;
+            float fight = 1f;
+            float quest = 1f;
 
-            switch (map)
+            string map = GameWorldHandler.GetCurrentMapName();
+            if (!string.IsNullOrEmpty(map))
             {
-                case "factory4_day":
-                case "factory4_night":
-                    fight += 1.5f;
-                    break;
-                case "woods":
-                    loot += 1.5f;
-                    break;
-                case "bigmap":
-                    quest += 0.75f;
-                    fight += 0.25f;
-                    break;
-                case "interchange":
-                    loot += 1.2f;
-                    break;
-                case "rezervbase":
-                    fight += 1.0f;
-                    loot += 0.4f;
-                    break;
-                case "lighthouse":
-                    quest += 1.2f;
-                    loot += 1.0f;
-                    break;
-                case "shoreline":
-                    quest += 1.4f;
-                    loot += 0.6f;
-                    break;
-                case "tarkovstreets":
-                    fight += 1.3f;
-                    loot += 0.5f;
-                    break;
-                case "laboratory":
-                    fight += 2.0f;
-                    break;
-                case "sandbox":
-                case "sandbox_high":
-                case "groundzero":
-                    loot += 1.0f;
-                    break;
-                default:
-                    loot += 0.5f;
-                    break;
-            }
-
-            var personality = BotRegistry.TryGet(bot.ProfileId);
-            if (personality != null)
-            {
-                loot += personality.Caution;
-                quest += personality.Caution * 0.5f;
-                fight += personality.AggressionLevel * 1.2f;
-
-                if (personality.IsFrenzied)
+                switch (map.ToLowerInvariant())
                 {
-                    fight += 1.5f;
-                }
-
-                if (personality.IsFearful)
-                {
-                    loot += 1.0f;
-                }
-
-                if (personality.IsCamper)
-                {
-                    quest += 0.75f;
+                    case "factory4_day":
+                    case "factory4_night":
+                        fight += 1.5f;
+                        break;
+                    case "woods":
+                        loot += 1.5f;
+                        break;
+                    case "bigmap":
+                        quest += 0.75f;
+                        fight += 0.25f;
+                        break;
+                    case "interchange":
+                        loot += 1.2f;
+                        break;
+                    case "rezervbase":
+                        fight += 1.0f;
+                        loot += 0.4f;
+                        break;
+                    case "lighthouse":
+                        quest += 1.2f;
+                        loot += 1.0f;
+                        break;
+                    case "shoreline":
+                        quest += 1.4f;
+                        loot += 0.6f;
+                        break;
+                    case "tarkovstreets":
+                        fight += 1.3f;
+                        loot += 0.5f;
+                        break;
+                    case "laboratory":
+                        fight += 2.0f;
+                        break;
+                    case "sandbox":
+                    case "sandbox_high":
+                    case "groundzero":
+                        loot += 1.0f;
+                        break;
+                    default:
+                        loot += 0.5f;
+                        break;
                 }
             }
 
-            var total = loot + fight + quest;
-            var roll = Random.value * total;
+            BotPersonalityProfile? profile = BotRegistry.TryGet(bot.ProfileId);
+            if (profile != null)
+            {
+                loot += profile.Caution;
+                quest += profile.Caution * 0.5f;
+                fight += profile.AggressionLevel * 1.2f;
+
+                if (profile.IsFrenzied)
+                {
+                    fight += 1.5f;
+                }
+
+                if (profile.IsFearful)
+                {
+                    loot += 1.0f;
+                }
+
+                if (profile.IsCamper)
+                {
+                    quest += 0.75f;
+                }
+            }
+
+            float total = loot + fight + quest;
+            float roll = UnityEngine.Random.value * total;
 
             if (roll < loot)
             {

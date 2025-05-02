@@ -18,60 +18,96 @@ namespace AIRefactored.AI.Navigation
     /// Spatial grid-based indexing for NavPointData.
     /// Used to accelerate nearby queries over large maps.
     /// </summary>
-    public class SpatialNavGrid
+    public sealed class SpatialNavGrid
     {
+        #region Fields
+
         private readonly float _cellSize;
         private readonly Dictionary<Vector2Int, List<NavPointData>> _grid;
+
+        #endregion
+
+        #region Constructor
 
         /// <summary>
         /// Initializes a new instance of the <see cref="SpatialNavGrid"/> class.
         /// </summary>
-        /// <param name="cellSize">Grid cell size, defaults to 10 world units.</param>
-        public SpatialNavGrid(float cellSize = 10f)
+        /// <param name="cellSize">Grid cell size in world units (defaults to 10).</param>
+        public SpatialNavGrid(float cellSize)
         {
-            _cellSize = Mathf.Max(1f, cellSize);
-            _grid = new Dictionary<Vector2Int, List<NavPointData>>(256);
+            this._cellSize = Mathf.Max(1f, cellSize);
+            this._grid = new Dictionary<Vector2Int, List<NavPointData>>(256);
         }
+
+        #endregion
+
+        #region Public API
 
         /// <summary>
         /// Clears the entire spatial index.
         /// </summary>
         public void Clear()
         {
-            _grid.Clear();
+            this._grid.Clear();
+        }
+
+        /// <summary>
+        /// Adds a navigation point into the appropriate spatial cell.
+        /// </summary>
+        /// <param name="point">The navigation point to register.</param>
+        public void Register(NavPointData point)
+        {
+            Vector2Int cell = this.WorldToCell(point.Position);
+            List<NavPointData>? list;
+
+            if (!this._grid.TryGetValue(cell, out list) || list == null)
+            {
+                list = new List<NavPointData>(8);
+                this._grid[cell] = list;
+            }
+
+            for (int i = 0; i < list.Count; i++)
+            {
+                if (list[i].Position == point.Position)
+                {
+                    return;
+                }
+            }
+
+            list.Add(point);
         }
 
         /// <summary>
         /// Returns all navigation points within the given radius of a position.
         /// Optionally filter by predicate.
         /// </summary>
-        /// <param name="position">World-space position to search from.</param>
+        /// <param name="position">World-space origin position.</param>
         /// <param name="radius">Search radius in world units.</param>
-        /// <param name="filter">Optional filter predicate.</param>
-        /// <returns>List of matching NavPointData objects.</returns>
-        public List<NavPointData> Query(Vector3 position, float radius, Predicate<NavPointData>? filter = null)
+        /// <param name="filter">Optional predicate filter.</param>
+        /// <returns>List of nearby matching points.</returns>
+        public List<NavPointData> Query(Vector3 position, float radius, Predicate<NavPointData>? filter)
         {
             float radiusSq = radius * radius;
-            Vector2Int minCell = WorldToCell(position - Vector3.one * radius);
-            Vector2Int maxCell = WorldToCell(position + Vector3.one * radius);
+            Vector2Int minCell = this.WorldToCell(position - new Vector3(radius, 0f, radius));
+            Vector2Int maxCell = this.WorldToCell(position + new Vector3(radius, 0f, radius));
 
-            List<NavPointData> result = new List<NavPointData>();
+            List<NavPointData> result = new List<NavPointData>(16);
 
             for (int x = minCell.x; x <= maxCell.x; x++)
             {
-                for (int y = minCell.y; y <= maxCell.y; y++)
+                for (int z = minCell.y; z <= maxCell.y; z++)
                 {
-                    Vector2Int cell = new Vector2Int(x, y);
-                    List<NavPointData>? list;
+                    Vector2Int cell = new Vector2Int(x, z);
+                    List<NavPointData>? bucket;
 
-                    if (!_grid.TryGetValue(cell, out list) || list == null)
+                    if (!this._grid.TryGetValue(cell, out bucket) || bucket == null)
                     {
                         continue;
                     }
 
-                    for (int i = 0; i < list.Count; i++)
+                    for (int i = 0; i < bucket.Count; i++)
                     {
-                        NavPointData point = list[i];
+                        NavPointData point = bucket[i];
                         float distSq = (point.Position - position).sqrMagnitude;
 
                         if (distSq <= radiusSq && (filter == null || filter(point)))
@@ -85,37 +121,22 @@ namespace AIRefactored.AI.Navigation
             return result;
         }
 
-        /// <summary>
-        /// Adds a navigation point into the appropriate spatial cell.
-        /// </summary>
-        /// <param name="point">The navigation point to register.</param>
-        public void Register(NavPointData point)
-        {
-            Vector2Int cell = WorldToCell(point.Position);
-            List<NavPointData>? list;
+        #endregion
 
-            if (!_grid.TryGetValue(cell, out list) || list == null)
-            {
-                list = new List<NavPointData>(8);
-                _grid[cell] = list;
-            }
-
-            if (!list.Contains(point))
-            {
-                list.Add(point);
-            }
-        }
+        #region Internal Helpers
 
         /// <summary>
-        /// Converts a world position to a spatial grid cell.
+        /// Converts a world position to a 2D grid cell index.
         /// </summary>
         /// <param name="pos">World-space position.</param>
         /// <returns>Grid cell coordinates.</returns>
         private Vector2Int WorldToCell(Vector3 pos)
         {
-            int x = Mathf.FloorToInt(pos.x / _cellSize);
-            int z = Mathf.FloorToInt(pos.z / _cellSize);
+            int x = Mathf.FloorToInt(pos.x / this._cellSize);
+            int z = Mathf.FloorToInt(pos.z / this._cellSize);
             return new Vector2Int(x, z);
         }
+
+        #endregion
     }
 }

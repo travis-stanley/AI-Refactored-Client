@@ -42,11 +42,6 @@ namespace AIRefactored.AI.Combat
 
         #region Constructor
 
-        /// <summary>
-        /// Initializes a new instance of the <see cref="BotMedicLogic"/> class.
-        /// </summary>
-        /// <param name="cache">The bot's component cache.</param>
-        /// <param name="injurySystem">The bot's injury tracking system.</param>
         public BotMedicLogic(BotComponentCache cache, BotInjurySystem injurySystem)
         {
             this._cache = cache ?? throw new ArgumentNullException(nameof(cache));
@@ -69,14 +64,10 @@ namespace AIRefactored.AI.Combat
             }
         }
 
-
         #endregion
 
         #region Public Methods
 
-        /// <summary>
-        /// Resets the healing state and injury tracking.
-        /// </summary>
         public void Reset()
         {
             this._isHealing = false;
@@ -84,10 +75,6 @@ namespace AIRefactored.AI.Combat
             this.UnsubscribeFromFirstAid();
         }
 
-        /// <summary>
-        /// Updates bot healing logic, including self-heal and squadmate heal attempts.
-        /// </summary>
-        /// <param name="time">Current game time.</param>
         public void Tick(float time)
         {
             BotOwner? bot = this._cache.Bot;
@@ -124,7 +111,6 @@ namespace AIRefactored.AI.Combat
 
             this.TrySelfHeal(bot);
         }
-
 
         #endregion
 
@@ -167,6 +153,14 @@ namespace AIRefactored.AI.Combat
                 return false;
             }
 
+            Player? selfPlayer = EFTPlayerUtil.ResolvePlayer(bot);
+            if (!EFTPlayerUtil.IsValidGroupPlayer(selfPlayer))
+            {
+                return false;
+            }
+
+            Vector3 botPos = EFTPlayerUtil.GetPosition(selfPlayer);
+
             for (int i = 0; i < bot.BotsGroup.MembersCount; i++)
             {
                 BotOwner? mate = bot.BotsGroup.Member(i);
@@ -181,17 +175,17 @@ namespace AIRefactored.AI.Combat
                     continue;
                 }
 
-                Vector3 botPos = EFTPlayerUtil.GetPosition(bot.GetPlayer as Player);
                 Vector3 matePos = EFTPlayerUtil.GetPosition(matePlayer);
 
-                if (Vector3.Distance(botPos, matePos) < HealSquadRange && matePlayer != null)
+                if (Vector3.Distance(botPos, matePos) <= HealSquadRange)
                 {
-                    object raw = matePlayer;
-                    EFT.IPlayer iTarget = (EFT.IPlayer)raw;
-                    bot.HealAnotherTarget.HealAsk(iTarget);
-                    return true;
+                    EFT.IPlayer? iTarget = EFTPlayerUtil.AsSafeIPlayer(matePlayer);
+                    if (iTarget != null)
+                    {
+                        bot.HealAnotherTarget.HealAsk(iTarget);
+                        return true;
+                    }
                 }
-
             }
 
             return false;

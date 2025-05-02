@@ -10,12 +10,12 @@
 
 namespace AIRefactored.AI.Memory
 {
+    using System.Collections.Generic;
     using AIRefactored.AI.Core;
     using AIRefactored.AI.Helpers;
     using AIRefactored.AI.Optimization;
     using AIRefactored.Core;
     using EFT;
-    using System.Collections.Generic;
     using UnityEngine;
 
     /// <summary>
@@ -24,6 +24,11 @@ namespace AIRefactored.AI.Memory
     /// </summary>
     public static class BotMemoryExtensions
     {
+        private const float MinMoveThreshold = 0.5f;
+        private const float FlankDotThreshold = 0.25f;
+        private const float EnemyTooCloseSqr = 1.0f;
+        private const float InvestigateRangeSqr = 625f;
+
         public static void ClearLastHeardSound(this BotOwner bot)
         {
             if (!IsValid(bot))
@@ -36,7 +41,7 @@ namespace AIRefactored.AI.Memory
 
         public static void FallbackTo(this BotOwner bot, Vector3 fallbackPosition)
         {
-            if (!IsValid(bot) || fallbackPosition.sqrMagnitude < 0.5f)
+            if (!IsValid(bot) || fallbackPosition.sqrMagnitude < MinMoveThreshold)
             {
                 return;
             }
@@ -52,7 +57,7 @@ namespace AIRefactored.AI.Memory
 
         public static void ForceMoveTo(this BotOwner bot, Vector3 position)
         {
-            if (!IsValid(bot) || position.sqrMagnitude < 0.5f)
+            if (!IsValid(bot) || position.sqrMagnitude < MinMoveThreshold)
             {
                 return;
             }
@@ -60,10 +65,6 @@ namespace AIRefactored.AI.Memory
             BotMovementHelper.SmoothMoveTo(bot, position);
         }
 
-        /// <summary>
-        /// Triggers fallback movement if bot is in poor cover facing visible enemy.
-        /// Uses BotCoverRetreatPlanner.
-        /// </summary>
         public static void ReevaluateCurrentCover(this BotOwner bot)
         {
             if (!IsValid(bot) || bot.Memory?.GoalEnemy?.IsVisible != true)
@@ -72,13 +73,13 @@ namespace AIRefactored.AI.Memory
             }
 
             Vector3 toEnemy = bot.Memory.GoalEnemy.CurrPosition - bot.Position;
-            if (toEnemy.sqrMagnitude < 1f)
+            if (toEnemy.sqrMagnitude < EnemyTooCloseSqr)
             {
                 return;
             }
 
             float angle = Vector3.Angle(bot.LookDirection, toEnemy.normalized);
-            if (angle < 20f && toEnemy.sqrMagnitude < 625f)
+            if (angle < 20f && toEnemy.sqrMagnitude < InvestigateRangeSqr)
             {
                 Vector3 fallback = bot.Position - toEnemy.normalized * 5f;
                 Vector3 destination = fallback;
@@ -87,7 +88,7 @@ namespace AIRefactored.AI.Memory
                 if (cache?.Pathing != null)
                 {
                     List<Vector3> path = BotCoverRetreatPlanner.GetCoverRetreatPath(bot, toEnemy, cache.Pathing);
-                    if (path.Count > 0)
+                    if (path != null && path.Count != 0)
                     {
                         destination = path[path.Count - 1];
                     }
@@ -95,36 +96,42 @@ namespace AIRefactored.AI.Memory
 
                 destination = AlignY(destination, bot.Position.y);
                 BotMovementHelper.SmoothMoveTo(bot, destination);
-                bot.BotTalk?.TrySay(EPhraseTrigger.OnLostVisual);
+
+                if (!FikaHeadlessDetector.IsHeadless)
+                {
+                    bot.BotTalk?.TrySay(EPhraseTrigger.OnLostVisual);
+                }
             }
         }
 
         public static void SetCautiousSearchMode(this BotOwner bot)
         {
-            if (!IsValid(bot) || bot.Memory == null)
+            if (IsValid(bot) && bot.Memory != null)
             {
-                return;
+                bot.Memory.AttackImmediately = false;
+                bot.Memory.IsPeace = false;
             }
-
-            bot.Memory.AttackImmediately = false;
-            bot.Memory.IsPeace = false;
         }
 
         public static void SetCombatAggressionMode(this BotOwner bot)
         {
-            if (!IsValid(bot) || bot.Memory == null)
+            if (IsValid(bot) && bot.Memory != null)
             {
-                return;
+                bot.Memory.AttackImmediately = true;
+                bot.Memory.IsPeace = false;
             }
-
-            bot.Memory.AttackImmediately = true;
-            bot.Memory.IsPeace = false;
         }
 
-        /// <summary>
-        /// Sets the last heard sound from a target player.
-        /// Safely disambiguates all EFT-specific fields from Dissonance.
-        /// </summary>
+        public static void SetPeaceMode(this BotOwner bot)
+        {
+            if (IsValid(bot) && bot.Memory != null)
+            {
+                bot.Memory.AttackImmediately = false;
+                bot.Memory.IsPeace = true;
+                bot.Memory.CheckIsPeace();
+            }
+        }
+
         public static void SetLastHeardSound(this BotOwner bot, Player source)
         {
             if (!EFTPlayerUtil.IsValid(source) || source.ProfileId == bot.ProfileId)
@@ -133,36 +140,27 @@ namespace AIRefactored.AI.Memory
             }
 
             Vector3 sourcePos = EFTPlayerUtil.GetPosition(source);
-
-            object raw = source;
-            EFT.IPlayer sourceIPlayer = (EFT.IPlayer)raw;
-
-            if (bot.BotsGroup?.LastSoundsController != null)
+            if (sourcePos.sqrMagnitude < 0.01f)
             {
-                bot.BotsGroup.LastSoundsController.AddNeutralSound(sourceIPlayer, sourcePos);
+                return;
             }
 
+            IPlayer? resolved = EFTPlayerUtil.AsSafeIPlayer(source);
+            if (resolved == null)
+            {
+                return;
+            }
+
+            bot.BotsGroup?.LastSoundsController?.AddNeutralSound(resolved, sourcePos);
             BotMemoryStore.AddHeardSound(bot.ProfileId, sourcePos, Time.time);
 
             Vector3 cautiousAdvance = sourcePos + (bot.Position - sourcePos).normalized * 3f;
             BotMovementHelper.SmoothMoveTo(bot, cautiousAdvance);
 
-            if (bot.BotTalk != null && !FikaHeadlessDetector.IsHeadless)
+            if (!FikaHeadlessDetector.IsHeadless)
             {
-                bot.BotTalk.TrySay(EPhraseTrigger.OnEnemyShot);
+                bot.BotTalk?.TrySay(EPhraseTrigger.OnEnemyShot);
             }
-        }
-
-        public static void SetPeaceMode(this BotOwner bot)
-        {
-            if (!IsValid(bot) || bot.Memory == null)
-            {
-                return;
-            }
-
-            bot.Memory.AttackImmediately = false;
-            bot.Memory.IsPeace = true;
-            bot.Memory.CheckIsPeace();
         }
 
         public static Vector3? TryGetFlankDirection(this BotOwner bot)
@@ -173,16 +171,16 @@ namespace AIRefactored.AI.Memory
             }
 
             Vector3 toEnemy = bot.Memory.GoalEnemy.CurrPosition - bot.Position;
-            if (toEnemy.sqrMagnitude < 0.5f)
+            if (toEnemy.sqrMagnitude < MinMoveThreshold)
             {
                 return null;
             }
 
-            Vector3 botDir = bot.LookDirection.normalized;
             Vector3 enemyDir = toEnemy.normalized;
-            float dot = Vector3.Dot(botDir, enemyDir);
+            Vector3 botDir = bot.LookDirection.normalized;
 
-            if (dot < 0.25f)
+            float dot = Vector3.Dot(botDir, enemyDir);
+            if (dot < FlankDotThreshold)
             {
                 return null;
             }

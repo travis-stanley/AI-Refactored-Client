@@ -10,47 +10,47 @@
 
 namespace AIRefactored.Runtime
 {
-    using AIRefactored.AI.Core;
     using AIRefactored.Core;
     using UnityEngine;
 
     /// <summary>
-    /// Monitors dynamically spawned loot (e.g., from dead players or quest events).
-    /// Automatically triggers a registry update after scene settle delay.
+    /// Monitors runtime loot additions from dynamic events (e.g. player death, mission drops).
+    /// Triggers a one-time registry refresh shortly after object enable.
     /// </summary>
     public sealed class LootRuntimeWatcher : MonoBehaviour
     {
-        #region Configuration
+        #region Constants
 
-        private const float RefreshDelay = 0.1f;
+        private const float RefreshDelaySeconds = 0.1f;
 
         #endregion
 
         #region Unity Lifecycle
 
         /// <summary>
-        /// Called when this component is enabled. Schedules a loot registry refresh if conditions allow.
+        /// Called when this component is enabled. Schedules a loot registry refresh.
         /// </summary>
         private void OnEnable()
         {
-            if (!Application.isPlaying || FikaHeadlessDetector.IsHeadless)
+            if (!Application.isPlaying)
             {
                 return;
             }
 
-            this.Invoke(nameof(this.NotifyLootChanged), RefreshDelay);
+            this.Invoke("TriggerRefresh", RefreshDelaySeconds);
         }
 
         #endregion
 
-        #region Refresh Trigger
+        #region Internal Logic
 
         /// <summary>
-        /// Notifies the world handler to rescan loot objects.
+        /// Invoked after delay to rescan loot objects once world is stable.
+        /// Works in both headless and client environments.
         /// </summary>
-        private void NotifyLootChanged()
+        private void TriggerRefresh()
         {
-            if (!Application.isPlaying || FikaHeadlessDetector.IsHeadless)
+            if (!Application.isPlaying)
             {
                 return;
             }

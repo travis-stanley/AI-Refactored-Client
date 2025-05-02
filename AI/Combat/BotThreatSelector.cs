@@ -105,7 +105,7 @@ namespace AIRefactored.AI.Combat
             for (int i = 0; i < players.Count; i++)
             {
                 object raw = players[i];
-                EFT.IPlayer? candidate = raw as EFT.IPlayer;
+                IPlayer? candidate = raw as IPlayer;
 
                 if (candidate == null)
                 {
@@ -144,11 +144,12 @@ namespace AIRefactored.AI.Combat
                 return;
             }
 
-            var currentScore = this.ScoreTarget(this.CurrentTarget, time);
-            var switchThreshold = 10f;
-            var cooldown = SwitchCooldown * (1f - this.profile.AggressionLevel * 0.5f);
+            float currentScore = this.ScoreTarget(this.CurrentTarget, time);
+            float switchThreshold = 10f;
+            float cooldown = SwitchCooldown * (1f - this.profile.AggressionLevel * 0.5f);
 
-            if (bestScore > currentScore + switchThreshold && time > this.lastTargetSwitchTime + cooldown)
+            if (bestScore > currentScore + switchThreshold &&
+                time > this.lastTargetSwitchTime + cooldown)
             {
                 this.SetTarget(bestTarget, time);
             }
@@ -160,13 +161,18 @@ namespace AIRefactored.AI.Combat
 
         private float ScoreTarget(IPlayer candidate, float time)
         {
-            var distance = Vector3.Distance(this.bot.Position, candidate.Position);
+            if (candidate == null)
+            {
+                return float.MinValue;
+            }
+
+            float distance = Vector3.Distance(this.bot.Position, candidate.Position);
             if (distance > MaxScanDistance)
             {
                 return float.MinValue;
             }
 
-            var score = MaxScanDistance - distance;
+            float score = MaxScanDistance - distance;
 
             var infos = this.bot.EnemiesController?.EnemyInfos;
             if (infos != null && infos.TryGetValue(candidate, out var info) && info != null)
@@ -184,7 +190,29 @@ namespace AIRefactored.AI.Combat
                     {
                         score += 5f;
                     }
+
+                    if (this.cache.IsBlinded && this.cache.BlindUntilTime > time)
+                    {
+                        score -= 20f;
+                    }
                 }
+                else
+                {
+                    score -= 5f;
+                }
+
+                if (!info.IsVisible && this.profile.AggressionLevel > 0.7f)
+                {
+                    float unseenTime = time - info.PersonalLastSeenTime;
+                    if (unseenTime < 6f)
+                    {
+                        score += Mathf.Lerp(0f, 15f, 1f - (unseenTime / 6f));
+                    }
+                }
+            }
+            else
+            {
+                score -= 10f;
             }
 
             return score;
@@ -195,8 +223,10 @@ namespace AIRefactored.AI.Combat
             this.CurrentTarget = target;
             this.lastTargetSwitchTime = time;
 
-            this.cache.TacticalMemory?.RecordEnemyPosition(target.Position);
+            this.cache.TacticalMemory?.RecordEnemyPosition(target.Position, "Target", target.ProfileId);
             this.cache.LastShotTracker?.RegisterHitBy(target);
+
+            // Optional: perception/threat sync hooks can go here if added later
         }
 
         #endregion

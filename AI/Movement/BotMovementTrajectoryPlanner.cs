@@ -15,25 +15,33 @@ namespace AIRefactored.AI.Movement
     using EFT;
     using UnityEngine;
 
-    using Random = UnityEngine.Random;
-
     /// <summary>
     /// Modifies a bot’s movement vector by applying chaos wobble, squad staggering offsets,
     /// and teammate collision avoidance. Produces natural movement flow and reduces clustering.
     /// </summary>
     public sealed class BotMovementTrajectoryPlanner
     {
+        #region Constants
+
         private const float AvoidanceRadius = 2.0f;
         private const float AvoidanceScale = 1.25f;
         private const float ChaosInterval = 0.4f;
         private const float ChaosRadius = 0.65f;
         private const float SquadOffsetScale = 0.75f;
 
+        #endregion
+
+        #region Fields
+
         private readonly BotOwner _bot;
         private readonly BotComponentCache _cache;
 
         private Vector3 _chaosOffset = Vector3.zero;
         private float _nextChaosUpdate;
+
+        #endregion
+
+        #region Constructor
 
         /// <summary>
         /// Initializes a new instance of the <see cref="BotMovementTrajectoryPlanner"/> class.
@@ -42,13 +50,30 @@ namespace AIRefactored.AI.Movement
         /// <param name="cache">Component cache.</param>
         public BotMovementTrajectoryPlanner(BotOwner bot, BotComponentCache cache)
         {
-            this._bot = bot ?? throw new ArgumentNullException(nameof(bot));
-            this._cache = cache ?? throw new ArgumentNullException(nameof(cache));
+            if (bot == null)
+            {
+                throw new ArgumentNullException(nameof(bot));
+            }
+
+            if (cache == null)
+            {
+                throw new ArgumentNullException(nameof(cache));
+            }
+
+            this._bot = bot;
+            this._cache = cache;
         }
+
+        #endregion
+
+        #region Public API
 
         /// <summary>
         /// Adjusts the input movement direction using chaos wobble, squad offset, and teammate avoidance.
         /// </summary>
+        /// <param name="targetDir">The intended move direction.</param>
+        /// <param name="deltaTime">Elapsed frame time.</param>
+        /// <returns>Smoothed and modified trajectory vector.</returns>
         public Vector3 ModifyTrajectory(Vector3 targetDir, float deltaTime)
         {
             float now = Time.unscaledTime;
@@ -80,23 +105,28 @@ namespace AIRefactored.AI.Movement
             return offset.sqrMagnitude > 0.01f ? offset.normalized : baseDir;
         }
 
+        #endregion
+
+        #region Private Helpers
+
         /// <summary>
         /// Computes directional offset to avoid nearby teammates.
         /// </summary>
+        /// <returns>A normalized vector away from close teammates.</returns>
         private Vector3 ComputeAvoidance()
         {
             Vector3 result = Vector3.zero;
             int count = 0;
 
-            var group = this._bot.BotsGroup;
+            BotsGroup? group = this._bot.BotsGroup;
             if (group == null)
             {
-                return result;
+                return Vector3.zero;
             }
 
             for (int i = 0; i < group.MembersCount; i++)
             {
-                var mate = group.Member(i);
+                BotOwner? mate = group.Member(i);
                 if (mate == null || mate == this._bot || mate.IsDead)
                 {
                     continue;
@@ -105,7 +135,8 @@ namespace AIRefactored.AI.Movement
                 float dist = Vector3.Distance(this._bot.Position, mate.Position);
                 if (dist < AvoidanceRadius && dist > 0.01f)
                 {
-                    result += (this._bot.Position - mate.Position).normalized / dist;
+                    Vector3 repulsion = (this._bot.Position - mate.Position).normalized / dist;
+                    result += repulsion;
                     count++;
                 }
             }
@@ -116,18 +147,25 @@ namespace AIRefactored.AI.Movement
         /// <summary>
         /// Updates random chaos wobble offset based on bot caution level.
         /// </summary>
+        /// <param name="now">Current unscaled time.</param>
         private void UpdateChaosOffset(float now)
         {
-            float caution = this._cache.AIRefactoredBotOwner?.PersonalityProfile?.Caution ?? 0.5f;
+            float caution = 0.5f;
+            if (this._cache.AIRefactoredBotOwner != null && this._cache.AIRefactoredBotOwner.PersonalityProfile != null)
+            {
+                caution = this._cache.AIRefactoredBotOwner.PersonalityProfile.Caution;
+            }
+
             float chaosRange = ChaosRadius * (1f - caution);
 
-            // Slight forward bias for realism (no sidestepping bots)
-            this._chaosOffset = new Vector3(
-                Random.Range(-chaosRange * 0.5f, chaosRange * 0.5f),
-                0f,
-                Random.Range(0f, chaosRange));
+            // Forward-biased jitter to simulate natural step variance
+            float x = UnityEngine.Random.Range(-chaosRange * 0.5f, chaosRange * 0.5f);
+            float z = UnityEngine.Random.Range(0f, chaosRange);
 
+            this._chaosOffset = new Vector3(x, 0f, z);
             this._nextChaosUpdate = now + ChaosInterval;
         }
+
+        #endregion
     }
 }

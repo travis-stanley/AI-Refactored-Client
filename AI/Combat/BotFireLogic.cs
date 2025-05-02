@@ -28,8 +28,6 @@ namespace AIRefactored.AI.Combat
     /// </summary>
     public sealed class BotFireLogic
     {
-        #region Constants
-
         private const float MaxAimPitch = 70f;
 
         private static readonly EBodyPart[] AllBodyParts = (EBodyPart[])Enum.GetValues(typeof(EBodyPart));
@@ -45,69 +43,55 @@ namespace AIRefactored.AI.Combat
             { "pistol", 35f }
         };
 
-        #endregion
-
-        #region Fields
-
         private readonly BotOwner _bot;
         private readonly BotComponentCache _cache;
+
         private Vector3 _idleLookDirection = Vector3.forward;
         private float _lastLookAroundTime;
         private float _nextDecisionTime;
 
-        #endregion
-
-        #region Constructor
-
         public BotFireLogic(BotOwner bot, BotComponentCache cache)
         {
-            _bot = bot ?? throw new ArgumentNullException(nameof(bot));
-            _cache = cache ?? throw new ArgumentNullException(nameof(cache));
+            this._bot = bot ?? throw new ArgumentNullException(nameof(bot));
+            this._cache = cache ?? throw new ArgumentNullException(nameof(cache));
         }
 
-        #endregion
-
-        #region Public API
-
-        /// <summary>
-        /// Updates the bot's aiming, fire decision, and fallback behavior each frame.
-        /// </summary>
         public void Tick(float time)
         {
-            if (_bot == null || _bot.IsDead || !_bot.IsAI || _bot.Memory == null)
+            if (this._bot == null || this._bot.IsDead || !this._bot.IsAI || this._bot.Memory == null)
             {
                 return;
             }
 
-            BotWeaponManager? weaponManager = _bot.WeaponManager;
-            ShootData? shootData = _bot.ShootData;
+            BotWeaponManager? weaponManager = this._bot.WeaponManager;
+            ShootData? shootData = this._bot.ShootData;
             BotWeaponInfo? weaponInfo = weaponManager?._currentWeaponInfo;
             Weapon? weapon = weaponInfo?.weapon;
-            GClass592? settings = _bot.Settings?.FileSettings?.Core;
-            BotPersonalityProfile? profile = BotRegistry.Get(_bot.ProfileId);
+            GClass592? settings = this._bot.Settings?.FileSettings?.Core;
+            BotPersonalityProfile? profile = BotRegistry.Get(this._bot.ProfileId);
 
             if (weaponManager == null || shootData == null || weaponInfo == null || weapon == null || settings == null || profile == null)
             {
                 return;
             }
 
-            IPlayer? target = _cache.ThreatSelector?.CurrentTarget ?? _bot.Memory.GoalEnemy?.Person;
-            Vector3 aimPosition = GetValidatedAimPosition(target, time);
+            IPlayer? target = this._cache.ThreatSelector?.CurrentTarget ?? this._bot.Memory.GoalEnemy?.Person;
+            Vector3 aimPosition = this.GetValidatedAimPosition(target, time);
 
-            UpdateBotAiming(aimPosition);
+            this.UpdateBotAiming(aimPosition);
 
             if (target?.HealthController?.IsAlive != true)
             {
                 return;
             }
 
-            float distance = Vector3.Distance(_bot.Position, aimPosition);
-            float weaponRange = EstimateWeaponRange(weapon);
+            float distance = Vector3.Distance(this._bot.Position, aimPosition);
+            float weaponRange = this.EstimateWeaponRange(weapon);
             float maxRange = Mathf.Min(profile.EngagementRange, weaponRange, 200f);
 
-            if (_bot.Memory.IsUnderFire && GetHealthRatio() <= profile.RetreatThreshold)
+            if (this._bot.Memory.IsUnderFire && this.GetHealthRatio() <= profile.RetreatThreshold)
             {
-                TriggerFallback();
+                this.TriggerFallback();
                 return;
             }
 
@@ -115,17 +99,18 @@ namespace AIRefactored.AI.Combat
             {
                 if (Random.value < profile.ChaosFactor)
                 {
-                    BotMovementHelper.SmoothMoveTo(_bot, aimPosition, false, profile.Cohesion);
+                    BotMovementHelper.SmoothMoveTo(this._bot, aimPosition, false, profile.Cohesion);
                 }
+
                 return;
             }
 
-            if (time < _nextDecisionTime)
+            if (time < this._nextDecisionTime)
             {
                 return;
             }
 
-            _nextDecisionTime = time + GetBurstCadence(profile);
+            this._nextDecisionTime = time + this.GetBurstCadence(profile);
 
             if (weaponInfo.BulletCount <= 0 && !weaponInfo.CheckHaveAmmoForReload())
             {
@@ -134,22 +119,18 @@ namespace AIRefactored.AI.Combat
                 return;
             }
 
-            ApplyFireMode(weaponInfo, weapon, distance, profile, settings);
+            this.ApplyFireMode(weaponInfo, weapon, distance, profile, settings);
 
             if (weaponManager.IsWeaponReady)
             {
                 shootData.Shoot();
-                _cache.LastShotTracker?.RegisterShot(target);
+                this._cache.LastShotTracker?.RegisterShot(target);
             }
         }
 
-        #endregion
-
-        #region Aiming
-
         private void UpdateBotAiming(Vector3 aimPosition)
         {
-            Vector3 direction = aimPosition - _bot.Position;
+            Vector3 direction = aimPosition - this._bot.Position;
             if (direction == Vector3.zero)
             {
                 return;
@@ -159,7 +140,7 @@ namespace AIRefactored.AI.Combat
             Vector3 euler = targetRotation.eulerAngles;
             euler.x = Mathf.Clamp(euler.x > 180f ? euler.x - 360f : euler.x, -MaxAimPitch, MaxAimPitch);
 
-            _bot.AimingManager?.CurrentAiming?.SetTarget(Quaternion.Euler(euler) * Vector3.forward);
+            this._bot.AimingManager?.CurrentAiming?.SetTarget(Quaternion.Euler(euler) * Vector3.forward);
         }
 
         private Vector3 GetValidatedAimPosition(IPlayer? target, float time)
@@ -173,43 +154,39 @@ namespace AIRefactored.AI.Combat
                 }
             }
 
-            if (_bot.Memory?.LastEnemy != null && _bot.Memory.LastEnemy.CurrPosition != Vector3.zero)
+            if (this._bot.Memory?.LastEnemy != null && this._bot.Memory.LastEnemy.CurrPosition != Vector3.zero)
             {
-                return _bot.Memory.LastEnemy.CurrPosition;
+                return this._bot.Memory.LastEnemy.CurrPosition;
             }
 
-            if (time - _lastLookAroundTime > 1.5f)
+            if (time - this._lastLookAroundTime > 1.5f)
             {
                 float yaw = Random.Range(-75f, 75f);
                 float pitch = Random.Range(-10f, 10f);
                 Quaternion offset = Quaternion.Euler(pitch, yaw, 0f);
-                _idleLookDirection = offset * _bot.Transform.forward;
-                _lastLookAroundTime = time;
+                this._idleLookDirection = offset * this._bot.Transform.forward;
+                this._lastLookAroundTime = time;
             }
 
-            return _bot.Position + _idleLookDirection.normalized * 10f;
+            return this._bot.Position + this._idleLookDirection.normalized * 10f;
         }
-
-        #endregion
-
-        #region Weapon Handling
 
         private void ApplyFireMode(BotWeaponInfo info, Weapon weapon, float distance, BotPersonalityProfile profile, GClass592 settings)
         {
             if (distance <= 40f)
             {
-                SetFireMode(info, Weapon.EFireMode.fullauto);
-                RecoverAccuracy(settings);
+                this.SetFireMode(info, Weapon.EFireMode.fullauto);
+                this.RecoverAccuracy(settings);
             }
-            else if (distance <= 100f && SupportsFireMode(weapon, Weapon.EFireMode.burst))
+            else if (distance <= 100f && this.SupportsFireMode(weapon, Weapon.EFireMode.burst))
             {
-                SetFireMode(info, Weapon.EFireMode.burst);
-                ApplyScatter(settings, true, profile);
+                this.SetFireMode(info, Weapon.EFireMode.burst);
+                this.ApplyScatter(settings, true, profile);
             }
             else
             {
-                SetFireMode(info, Weapon.EFireMode.single);
-                ApplyScatter(settings, true, profile);
+                this.SetFireMode(info, Weapon.EFireMode.single);
+                this.ApplyScatter(settings, true, profile);
             }
         }
 
@@ -230,6 +207,7 @@ namespace AIRefactored.AI.Combat
                     return true;
                 }
             }
+
             return false;
         }
 
@@ -241,7 +219,7 @@ namespace AIRefactored.AI.Combat
 
         private void ApplyScatter(GClass592 settings, bool underFire, BotPersonalityProfile profile)
         {
-            float composure = _cache.PanicHandler?.GetComposureLevel() ?? 1f;
+            float composure = this._cache.PanicHandler?.GetComposureLevel() ?? 1f;
             float scatterPenalty = underFire ? (1f - profile.AccuracyUnderFire) * (1f - composure) : 0f;
             float scatterFactor = 1.1f + scatterPenalty;
 
@@ -268,10 +246,6 @@ namespace AIRefactored.AI.Combat
             return 90f;
         }
 
-        #endregion
-
-        #region Utilities
-
         private float GetBurstCadence(BotPersonalityProfile profile)
         {
             float baseDelay = Mathf.Lerp(0.75f, 0.25f, profile.AggressionLevel);
@@ -283,7 +257,7 @@ namespace AIRefactored.AI.Combat
 
         private float GetHealthRatio()
         {
-            HealthControllerClass? health = _bot.HealthController as HealthControllerClass;
+            HealthControllerClass? health = this._bot.HealthController as HealthControllerClass;
             if (health == null || health.Dictionary_0 == null)
             {
                 return 1f;
@@ -307,15 +281,15 @@ namespace AIRefactored.AI.Combat
 
         private void TriggerFallback()
         {
-            if (_cache.Pathing == null)
+            if (this._cache.Pathing == null)
             {
                 return;
             }
 
             List<Vector3> path = BotCoverRetreatPlanner.GetCoverRetreatPath(
-                _bot,
-                _bot.LookDirection.normalized,
-                _cache.Pathing);
+                this._bot,
+                this._bot.LookDirection.normalized,
+                this._cache.Pathing);
 
             if (path.Count < 2)
             {
@@ -323,13 +297,9 @@ namespace AIRefactored.AI.Combat
             }
 
             Vector3 fallback = path[path.Count - 1];
-
-            BotMovementHelper.SmoothMoveTo(_bot, fallback, false);
-            BotCoverHelper.TrySetStanceFromNearbyCover(_cache, fallback);
-
-            _bot.BotTalk?.TrySay(EPhraseTrigger.OnLostVisual);
+            BotMovementHelper.SmoothMoveTo(this._bot, fallback, false);
+            BotCoverHelper.TrySetStanceFromNearbyCover(this._cache, fallback);
+            this._bot.BotTalk?.TrySay(EPhraseTrigger.OnLostVisual);
         }
-
-        #endregion
     }
 }

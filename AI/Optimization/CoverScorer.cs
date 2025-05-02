@@ -21,13 +21,19 @@ namespace AIRefactored.AI.Optimization
     /// </summary>
     public static class CoverScorer
     {
-        private const float BackWallDistance = 3f;
-        private const float ExposureCheckDistance = 5f;
+        #region Constants
+
+        private const float BackWallDistance = 3.0f;
+        private const float ExposureCheckDistance = 5.0f;
         private const float EyeHeightOffset = 1.5f;
         private const float FlankRayDistance = 2.5f;
-        private const float IdealFallbackDistance = 8f;
-        private const float MaxScore = 10f;
-        private const float MinScore = 1f;
+        private const float IdealFallbackDistance = 8.0f;
+        private const float MaxScore = 10.0f;
+        private const float MinScore = 1.0f;
+
+        #endregion
+
+        #region Static Fields
 
         private static readonly Vector3[] FlankAngles = new Vector3[]
         {
@@ -39,6 +45,10 @@ namespace AIRefactored.AI.Optimization
 
         private static readonly ManualLogSource Logger = AIRefactoredController.Logger;
 
+        #endregion
+
+        #region Public API
+
         /// <summary>
         /// Evaluates a fallback point for tactical use.
         /// </summary>
@@ -48,55 +58,53 @@ namespace AIRefactored.AI.Optimization
         /// <returns>Score between 1 and 10 based on tactical safety.</returns>
         public static float ScoreCoverPoint(BotOwner bot, Vector3 candidate, Vector3 threatDirection)
         {
-            Vector3 eyePos = candidate + Vector3.up * EyeHeightOffset;
+            Vector3 eyePos = candidate + (Vector3.up * EyeHeightOffset);
             Vector3 toThreat = threatDirection.normalized;
             Vector3 fromThreat = -toThreat;
 
-            float score = 1f;
+            float score = 1.0f;
 
-            // Wall behind = bonus for protection
-            if (Physics.Raycast(eyePos, fromThreat, out RaycastHit backHit, BackWallDistance))
+            // Wall behind bonus
+            if (Physics.Raycast(eyePos, fromThreat, out RaycastHit backHit, BackWallDistance) && IsSolid(backHit.collider))
             {
-                if (IsSolid(backHit.collider))
-                {
-                    score += 3f;
-                }
+                score += 3.0f;
             }
 
-            // Front exposure = penalty if no cover between point and threat
+            // Exposure penalty
             if (!Physics.Raycast(eyePos, toThreat, ExposureCheckDistance))
             {
-                score -= 2f;
+                score -= 2.0f;
             }
 
-            // Flank checks
+            // Flank protection bonus
             for (int i = 0; i < FlankAngles.Length; i++)
             {
                 Vector3 flankDir = Quaternion.Euler(0f, FlankAngles[i].x, 0f) * toThreat;
 
-                if (Physics.Raycast(eyePos, flankDir, out RaycastHit flankHit, FlankRayDistance))
+                if (Physics.Raycast(eyePos, flankDir, out RaycastHit flankHit, FlankRayDistance) &&
+                    IsSolid(flankHit.collider))
                 {
-                    if (IsSolid(flankHit.collider))
-                    {
-                        score += 0.5f;
-                    }
+                    score += 0.5f;
                 }
             }
 
-            // Distance penalty if too far
-            float distance = Vector3.Distance(bot.Position, candidate);
-            if (distance > IdealFallbackDistance)
+            // Distance modifier (encourages reasonably close fallback)
+            float dist = Vector3.Distance(bot.Position, candidate);
+            if (dist > IdealFallbackDistance)
             {
-                float excess = distance - IdealFallbackDistance;
-                float penalty = Mathf.Min(excess * 0.25f, 3f);
-                score -= penalty;
+                float excess = dist - IdealFallbackDistance;
+                score -= Mathf.Min(excess * 0.25f, 3.0f);
             }
 
             Logger.LogDebug(
-                $"[CoverScorer] Score={score:F2} at {candidate} | From={bot.Position} | ThreatDir={threatDirection.normalized}");
+                $"[CoverScorer] Score={score:F2} @ {candidate} | From={bot.Position} | Dir={threatDirection.normalized}");
 
             return Mathf.Clamp(score, MinScore, MaxScore);
         }
+
+        #endregion
+
+        #region Internal API
 
         /// <summary>
         /// Determines whether a collider represents solid, safe cover.
@@ -106,28 +114,7 @@ namespace AIRefactored.AI.Optimization
         /// <returns>True if considered solid tactical cover.</returns>
         internal static bool IsSolid(Collider? collider)
         {
-            if (collider == null)
-            {
-                return false;
-            }
-
-            string tag = collider.tag.ToLowerInvariant();
-            string mat = collider.sharedMaterial?.name.ToLowerInvariant() ?? string.Empty;
-
-            // Reject non-solid tags
-            if (tag.Contains("glass") || tag.Contains("foliage") || tag.Contains("banner") || tag.Contains("transparent"))
-            {
-                return false;
-            }
-
-            // Reject non-solid materials
-            if (mat.Contains("leaf") || mat.Contains("bush") || mat.Contains("net")
-                || mat.Contains("fabric") || mat.Contains("cloth"))
-            {
-                return false;
-            }
-
-            if (collider.isTrigger)
+            if (collider == null || collider.isTrigger)
             {
                 return false;
             }
@@ -137,7 +124,23 @@ namespace AIRefactored.AI.Optimization
                 return false;
             }
 
+            string tag = collider.tag.ToLowerInvariant();
+            string mat = collider.sharedMaterial?.name?.ToLowerInvariant() ?? string.Empty;
+
+            if (tag.Contains("glass") || tag.Contains("foliage") || tag.Contains("banner") || tag.Contains("transparent"))
+            {
+                return false;
+            }
+
+            if (mat.Contains("leaf") || mat.Contains("bush") || mat.Contains("net") ||
+                mat.Contains("fabric") || mat.Contains("cloth"))
+            {
+                return false;
+            }
+
             return true;
         }
+
+        #endregion
     }
 }

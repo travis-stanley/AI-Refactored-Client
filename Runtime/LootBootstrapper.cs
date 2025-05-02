@@ -14,19 +14,27 @@ namespace AIRefactored.Runtime
     using AIRefactored.AI.Core;
     using AIRefactored.AI.Looting;
     using AIRefactored.Core;
+    using Comfort.Common;
     using EFT;
     using EFT.Interactive;
     using UnityEngine;
 
     /// <summary>
-    /// Registers all lootable objects on the map, including containers and loose loot.
-    /// Associates loot containers with nearby corpses for AI logic.
-    /// Should be executed once per scene during world initialization.
+    /// Registers all lootable objects in the current scene for bot interaction.
+    /// Includes lootable containers and loose items, and links containers to corpses where applicable.
     /// </summary>
     public static class LootBootstrapper
     {
+        #region Constants
+
+        private const float MaxCorpseAssociationDistance = 1.5f;
+
+        #endregion
+
+        #region Public API
+
         /// <summary>
-        /// Registers all lootable containers and loose items in the scene for AI interaction.
+        /// Registers all loot containers and loose loot objects found in the scene.
         /// </summary>
         public static void RegisterAllLoot()
         {
@@ -35,42 +43,37 @@ namespace AIRefactored.Runtime
                 return;
             }
 
-            LootableContainer[] containers = UnityEngine.Object.FindObjectsOfType<LootableContainer>();
-            LootItem[] items = UnityEngine.Object.FindObjectsOfType<LootItem>();
+            LootableContainer[] containers = Object.FindObjectsOfType<LootableContainer>();
+            LootItem[] items = Object.FindObjectsOfType<LootItem>();
             List<Player> players = GameWorldHandler.GetAllAlivePlayers();
 
-            if (containers.Length == 0 && items.Length == 0)
-            {
-                return;
-            }
-
-            if (containers.Length > 0)
+            if (containers != null && containers.Length > 0)
             {
                 RegisterContainers(containers, players);
             }
 
-            if (items.Length > 0)
+            if (items != null && items.Length > 0)
             {
                 RegisterLooseItems(items);
             }
         }
 
+        #endregion
+
+        #region Private Methods
+
         private static void RegisterContainers(LootableContainer[] containers, List<Player> players)
         {
             for (int i = 0; i < containers.Length; i++)
             {
-                LootableContainer? container = containers[i];
+                LootableContainer container = containers[i];
                 if (container == null || !container.enabled)
                 {
                     continue;
                 }
 
                 LootRegistry.RegisterContainer(container);
-
-                if (!FikaHeadlessDetector.IsHeadless)
-                {
-                    TryRegisterCorpseContainer(container, players);
-                }
+                TryLinkToCorpse(container, players);
             }
         }
 
@@ -78,7 +81,7 @@ namespace AIRefactored.Runtime
         {
             for (int i = 0; i < items.Length; i++)
             {
-                LootItem? item = items[i];
+                LootItem item = items[i];
                 if (item == null || !item.enabled)
                 {
                     continue;
@@ -88,59 +91,56 @@ namespace AIRefactored.Runtime
             }
         }
 
-        /// <summary>
-        /// Associates a loot container with a dead player if it's nearby or shares transform root.
-        /// </summary>
-        private static void TryRegisterCorpseContainer(LootableContainer? container, List<Player> players)
+        private static void TryLinkToCorpse(LootableContainer container, List<Player> players)
         {
-            if (container == null || players.Count == 0)
+            if (container == null || players == null || players.Count == 0)
             {
                 return;
             }
 
-            Transform? containerTransform = container.transform;
+            Transform containerTransform = container.transform;
             if (containerTransform == null)
             {
                 return;
             }
 
-            Transform? containerRoot = containerTransform.root;
-            if (containerRoot == null)
-            {
-                return;
-            }
-
+            Transform containerRoot = containerTransform.root;
             Vector3 containerPosition = containerTransform.position;
 
             for (int i = 0; i < players.Count; i++)
             {
-                Player? player = players[i];
+                Player player = players[i];
                 if (player == null || player.HealthController == null || player.HealthController.IsAlive)
                 {
                     continue;
                 }
 
-                Transform? playerOriginal = player.Transform != null ? player.Transform.Original : null;
-                if (playerOriginal == null)
+                string profileId = player.ProfileId;
+                if (string.IsNullOrEmpty(profileId) || DeadBodyContainerCache.Contains(profileId))
                 {
                     continue;
                 }
 
-                Transform? playerRoot = playerOriginal.root;
-                if (playerRoot == null)
+                Transform? playerTransform = player.Transform != null ? player.Transform.Original : null;
+                if (playerTransform == null)
                 {
                     continue;
                 }
 
-                bool isSameRoot = playerRoot == containerRoot;
-                bool isClose = Vector3.Distance(playerOriginal.position, containerPosition) < 1.0f;
+                Transform playerRoot = playerTransform.root;
+                Vector3 playerPosition = EFTPlayerUtil.GetPosition(player);
 
-                if (isSameRoot || isClose)
+                bool rootMatch = playerRoot == containerRoot;
+                bool closeEnough = Vector3.Distance(playerPosition, containerPosition) <= MaxCorpseAssociationDistance;
+
+                if (rootMatch || closeEnough)
                 {
                     DeadBodyContainerCache.Register(player, container);
                     break;
                 }
             }
         }
+
+        #endregion
     }
 }

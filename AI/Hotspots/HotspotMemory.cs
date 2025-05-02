@@ -19,10 +19,16 @@ namespace AIRefactored.AI.Hotspots
     /// </summary>
     internal static class HotspotMemory
     {
+        #region Fields
+
         /// <summary>
         /// Structure: mapId → (position → lastVisitTime).
         /// </summary>
-        private static readonly Dictionary<string, Dictionary<Vector3, float>> Visited = new Dictionary<string, Dictionary<Vector3, float>>(8);
+        private static readonly Dictionary<string, Dictionary<Vector3, float>> _visited = new Dictionary<string, Dictionary<Vector3, float>>(8);
+
+        #endregion
+
+        #region Public API
 
         /// <summary>
         /// Clears all stored visited hotspots across all maps.
@@ -30,7 +36,7 @@ namespace AIRefactored.AI.Hotspots
         /// </summary>
         public static void Clear()
         {
-            Visited.Clear();
+            _visited.Clear();
         }
 
         /// <summary>
@@ -51,19 +57,24 @@ namespace AIRefactored.AI.Hotspots
         /// <param name="position">The world-space position of the hotspot.</param>
         public static void MarkVisited(string mapId, Vector3 position)
         {
-            if (string.IsNullOrWhiteSpace(mapId))
+            if (string.IsNullOrEmpty(mapId))
             {
                 return;
             }
 
-            if (!Visited.TryGetValue(mapId, out var mapDict))
+            Dictionary<Vector3, float> mapDict;
+            if (!_visited.TryGetValue(mapId, out mapDict))
             {
                 mapDict = new Dictionary<Vector3, float>(32);
-                Visited[mapId] = mapDict;
+                _visited[mapId] = mapDict;
             }
 
             mapDict[position] = Time.time;
         }
+
+        #endregion
+
+        #region Internal Logic
 
         /// <summary>
         /// Checks whether a hotspot was visited recently.
@@ -74,22 +85,26 @@ namespace AIRefactored.AI.Hotspots
         /// <returns>True if visited within cooldown; otherwise false.</returns>
         private static bool WasRecentlyVisited(string mapId, Vector3 position, float cooldown)
         {
-            if (string.IsNullOrWhiteSpace(mapId))
+            if (string.IsNullOrEmpty(mapId))
             {
                 return false;
             }
 
-            if (!Visited.TryGetValue(mapId, out var mapDict))
+            Dictionary<Vector3, float> mapDict;
+            if (!_visited.TryGetValue(mapId, out mapDict))
             {
                 return false;
             }
 
-            if (!mapDict.TryGetValue(position, out var lastVisitTime))
+            float lastVisitTime;
+            if (!mapDict.TryGetValue(position, out lastVisitTime))
             {
                 return false;
             }
 
             return Time.time - lastVisitTime < cooldown;
         }
+
+        #endregion
     }
 }

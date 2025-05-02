@@ -11,10 +11,12 @@
 namespace AIRefactored.AI.Helpers
 {
     using System.Collections.Generic;
+    using AIRefactored;
     using AIRefactored.AI.Combat;
     using AIRefactored.AI.Core;
     using AIRefactored.AI.Groups;
     using AIRefactored.AI.Missions;
+    using AIRefactored.AI.Movement;
     using EFT;
     using UnityEngine;
 
@@ -35,7 +37,7 @@ namespace AIRefactored.AI.Helpers
 
         public static IEnumerable<BotComponentCache> AllActiveBots()
         {
-            foreach (var kvp in CacheRegistry)
+            foreach (KeyValuePair<BotOwner, BotComponentCache> kvp in CacheRegistry)
             {
                 if (kvp.Key != null && !kvp.Key.IsDead)
                 {
@@ -46,14 +48,14 @@ namespace AIRefactored.AI.Helpers
 
         public static void DumpCache()
         {
-            Debug.Log($"[BotCacheUtility] Dumping {CacheRegistry.Count} bot caches:");
+            Plugin.LoggerInstance.LogInfo($"[BotCacheUtility] Dumping {CacheRegistry.Count} bot caches:");
 
-            foreach (var kvp in CacheRegistry)
+            foreach (KeyValuePair<BotOwner, BotComponentCache> kvp in CacheRegistry)
             {
-                var bot = kvp.Key;
-                var cache = kvp.Value;
+                BotOwner bot = kvp.Key;
+                BotComponentCache cache = kvp.Value;
 
-                Debug.Log($" → {GetBotName(cache)}, Pos={bot.Position}, Alive={!bot.IsDead}");
+                Plugin.LoggerInstance.LogInfo($" → {GetBotName(cache)}, Pos={bot.Position}, Alive={!bot.IsDead}");
             }
         }
 
@@ -69,7 +71,7 @@ namespace AIRefactored.AI.Helpers
 
         public static BotComponentCache? GetCache(BotOwner bot)
         {
-            return CacheRegistry.TryGetValue(bot, out var cache) ? cache : null;
+            return CacheRegistry.TryGetValue(bot, out BotComponentCache? cache) ? cache : null;
         }
 
         public static BotComponentCache? GetCache(Player player)
@@ -84,23 +86,28 @@ namespace AIRefactored.AI.Helpers
                 return null;
             }
 
-            return ProfileIdLookup.TryGetValue(profileId, out var cache) ? cache : null;
+            return ProfileIdLookup.TryGetValue(profileId, out BotComponentCache? cache) ? cache : null;
         }
 
         public static BotComponentCache? GetClosestBot(Vector3 origin, float maxDistance = 40f)
         {
             BotComponentCache? closest = null;
-            var minDistSq = maxDistance * maxDistance;
+            float minDistSq = maxDistance * maxDistance;
 
-            foreach (var kvp in CacheRegistry)
+            foreach (KeyValuePair<BotOwner, BotComponentCache> kvp in CacheRegistry)
             {
-                var bot = kvp.Key;
+                BotOwner bot = kvp.Key;
                 if (bot == null || bot.IsDead)
                 {
                     continue;
                 }
 
-                var distSq = (bot.Position - origin).sqrMagnitude;
+                Vector3 botPos = bot.Position;
+                float dx = botPos.x - origin.x;
+                float dy = botPos.y - origin.y;
+                float dz = botPos.z - origin.z;
+                float distSq = (dx * dx) + (dy * dy) + (dz * dz);
+
                 if (distSq < minDistSq)
                 {
                     minDistSq = distSq;
@@ -118,7 +125,13 @@ namespace AIRefactored.AI.Helpers
                 return null;
             }
 
-            return cache.Bot.MainParts.TryGetValue(BodyPartType.leftLeg, out var part) ? part?._transform?.Original : null;
+            EnemyPart part;
+            if (cache.Bot.MainParts.TryGetValue(BodyPartType.leftLeg, out part) && part._transform != null)
+            {
+                return part._transform.Original;
+            }
+
+            return null;
         }
 
         public static BotGroupSyncCoordinator? GetGroupSync(BotComponentCache cache)
@@ -143,13 +156,13 @@ namespace AIRefactored.AI.Helpers
 
         public static string GetStance(BotComponentCache cache)
         {
-            var pose = cache?.PoseController;
+            BotPoseController? pose = cache?.PoseController;
             if (pose == null)
             {
                 return "Unknown";
             }
 
-            var level = pose.GetPoseLevel();
+            float level = pose.GetPoseLevel();
             if (level < 25f)
             {
                 return "Prone";
@@ -175,7 +188,13 @@ namespace AIRefactored.AI.Helpers
                 return null;
             }
 
-            return cache.Bot.MainParts.TryGetValue(BodyPartType.head, out var part) ? part?._transform?.Original : null;
+            EnemyPart part;
+            if (cache.Bot.MainParts.TryGetValue(BodyPartType.head, out part) && part._transform != null)
+            {
+                return part._transform.Original;
+            }
+
+            return null;
         }
 
         public static bool IsFollower(BotComponentCache cache)
@@ -185,7 +204,7 @@ namespace AIRefactored.AI.Helpers
 
         public static bool IsLeader(BotComponentCache cache)
         {
-            var group = cache.Bot?.BotsGroup;
+            BotsGroup? group = cache.Bot?.BotsGroup;
             if (group == null || group.MembersCount == 0)
             {
                 return false;

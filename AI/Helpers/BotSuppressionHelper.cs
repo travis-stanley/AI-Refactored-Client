@@ -29,7 +29,12 @@ namespace AIRefactored.AI.Helpers
         /// <returns>The BotOwner instance, or null if not AI.</returns>
         public static BotOwner? GetBotOwner(Player? player)
         {
-            return player?.IsAI == true && player.AIData is BotOwner owner ? owner : null;
+            if (player?.IsAI == true && player.AIData is BotOwner owner)
+            {
+                return owner;
+            }
+
+            return null;
         }
 
         /// <summary>
@@ -39,7 +44,12 @@ namespace AIRefactored.AI.Helpers
         /// <returns>The bot's BotComponentCache, or null if not AI.</returns>
         public static BotComponentCache? GetCache(Player? player)
         {
-            return player?.IsAI == true ? BotCacheUtility.GetCache(player) : null;
+            if (player?.IsAI == true)
+            {
+                return BotCacheUtility.GetCache(player);
+            }
+
+            return null;
         }
 
         /// <summary>
@@ -54,14 +64,14 @@ namespace AIRefactored.AI.Helpers
             float visibleDistThreshold = 12f,
             float ambientThreshold = 0.25f)
         {
-            var owner = GetBotOwner(player);
+            BotOwner? owner = GetBotOwner(player);
             if (owner?.LookSensor == null)
             {
                 return false;
             }
 
-            var visibleDist = owner.LookSensor.ClearVisibleDist;
-            var ambientLight = 0.5f;
+            float visibleDist = owner.LookSensor.ClearVisibleDist;
+            float ambientLight = 0.5f;
 
             try
             {
@@ -69,7 +79,7 @@ namespace AIRefactored.AI.Helpers
             }
             catch
             {
-                // Fail-safe: assume medium light if unavailable
+                // Fallback value
             }
 
             return visibleDist < visibleDistThreshold || ambientLight < ambientThreshold;
@@ -84,24 +94,27 @@ namespace AIRefactored.AI.Helpers
         /// <param name="source">The enemy player causing the suppression, if known.</param>
         public static void TrySuppressBot(Player? player, Vector3 threatPosition, IPlayer? source = null)
         {
-            if (player?.IsAI != true)
+            if (player == null || player.IsAI != true)
             {
                 return;
             }
 
-            var owner = GetBotOwner(player);
-            var cache = GetCache(player);
+            BotOwner? owner = GetBotOwner(player);
+            BotComponentCache? cache = GetCache(player);
 
             if (owner == null || cache == null || owner.IsDead)
             {
                 return;
             }
 
-            owner.Memory?.SetUnderFire(source);
-
-            if (cache.PanicHandler?.IsPanicking != true)
+            if (owner.Memory != null)
             {
-                cache.PanicHandler?.TriggerPanic();
+                owner.Memory.SetUnderFire(source);
+            }
+
+            if (cache.PanicHandler != null && !cache.PanicHandler.IsPanicking)
+            {
+                cache.PanicHandler.TriggerPanic();
             }
             else
             {

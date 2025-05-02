@@ -46,11 +46,6 @@ namespace AIRefactored.AI.Groups
         /// <param name="cache">The bot component cache.</param>
         public void Initialize(BotComponentCache cache)
         {
-            if (cache == null)
-            {
-                return;
-            }
-
             this.bot = cache.Bot;
             this.group = this.bot?.BotsGroup;
             this.offsetInitialized = false;
@@ -75,13 +70,13 @@ namespace AIRefactored.AI.Groups
                 return Vector3.zero;
             }
 
-            var groupSize = this.group.MembersCount;
+            int currentSize = this.group.MembersCount;
 
-            if (!this.offsetInitialized || groupSize != this.lastGroupSize)
+            if (!this.offsetInitialized || currentSize != this.lastGroupSize)
             {
                 this.cachedOffset = this.ComputeOffset();
                 this.offsetInitialized = true;
-                this.lastGroupSize = groupSize;
+                this.lastGroupSize = currentSize;
             }
 
             return this.cachedOffset;
@@ -98,31 +93,30 @@ namespace AIRefactored.AI.Groups
                 return Vector3.zero;
             }
 
-            var index = GetBotIndexInGroup(this.bot, this.group);
-            if (index < 0)
+            int botIndex = GetBotIndexInGroup(this.bot, this.group);
+            if (botIndex < 0)
             {
                 return Vector3.zero;
             }
 
-            var total = this.group.MembersCount;
+            int squadSize = this.group.MembersCount;
 
-            // Stable, deterministic seed based on bot identity
-            var seed = this.bot.ProfileId.GetHashCode() ^ total;
+            int seed = this.bot.ProfileId.GetHashCode() ^ squadSize;
             Random.InitState(seed);
 
-            var spacing = Mathf.Clamp(BaseSpacing + Random.Range(-0.4f, 0.4f), MinSpacing, MaxSpacing);
-            var angleStep = 360f / total;
-            var angle = index * angleStep + Random.Range(-8f, 8f);
-            var radians = angle * Mathf.Deg2Rad;
+            float spacing = Mathf.Clamp(BaseSpacing + Random.Range(-0.4f, 0.4f), MinSpacing, MaxSpacing);
+            float angleStep = 360f / squadSize;
+            float angle = botIndex * angleStep + Random.Range(-8f, 8f);
+            float radians = angle * Mathf.Deg2Rad;
 
             return new Vector3(Mathf.Cos(radians), 0f, Mathf.Sin(radians)) * spacing;
         }
 
         private static int GetBotIndexInGroup(BotOwner bot, BotsGroup group)
         {
-            for (var i = 0; i < group.MembersCount; i++)
+            for (int i = 0; i < group.MembersCount; i++)
             {
-                var member = group.Member(i);
+                BotOwner? member = group.Member(i);
                 if (member != null && member.ProfileId == bot.ProfileId)
                 {
                     return i;

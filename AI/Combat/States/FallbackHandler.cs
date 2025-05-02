@@ -33,8 +33,7 @@ namespace AIRefactored.AI.Combat.States
 
         private readonly BotOwner _bot;
         private readonly BotComponentCache _cache;
-
-        private readonly List<Vector3> _currentFallbackPath = new List<Vector3>();
+        private readonly List<Vector3> _currentFallbackPath;
         private Vector3 _fallbackTarget;
 
         #endregion
@@ -54,12 +53,13 @@ namespace AIRefactored.AI.Combat.States
 
             if (cache.Bot == null)
             {
-                throw new ArgumentNullException(nameof(cache.Bot));
+                throw new ArgumentException("Bot is null on cache.", nameof(cache));
             }
 
             this._cache = cache;
             this._bot = cache.Bot;
             this._fallbackTarget = this._bot.Position;
+            this._currentFallbackPath = new List<Vector3>(8);
         }
 
         #endregion
@@ -73,6 +73,16 @@ namespace AIRefactored.AI.Combat.States
         public Vector3 GetFallbackPosition()
         {
             return this._fallbackTarget;
+        }
+
+        /// <summary>
+        /// Gets a fallback target if valid, or returns the current position.
+        /// </summary>
+        /// <param name="defaultPos">Default fallback if none set.</param>
+        /// <returns>Resolved fallback target.</returns>
+        public Vector3 GetFallbackPositionOrDefault(Vector3 defaultPos)
+        {
+            return this.HasValidFallbackPath() ? this._fallbackTarget : defaultPos;
         }
 
         /// <summary>
@@ -96,7 +106,11 @@ namespace AIRefactored.AI.Combat.States
             }
 
             this._currentFallbackPath.Clear();
-            this._currentFallbackPath.AddRange(path);
+            for (int i = 0; i < path.Count; i++)
+            {
+                this._currentFallbackPath.Add(path[i]);
+            }
+
             this._fallbackTarget = path[path.Count - 1];
         }
 
@@ -116,7 +130,8 @@ namespace AIRefactored.AI.Combat.States
         /// <returns>True if fallback should be active; otherwise, false.</returns>
         public bool ShallUseNow(float time)
         {
-            return Vector3.Distance(this._bot.Position, this._fallbackTarget) > MinArrivalDistance;
+            float distance = Vector3.Distance(this._bot.Position, this._fallbackTarget);
+            return distance > MinArrivalDistance;
         }
 
         /// <summary>
@@ -128,9 +143,13 @@ namespace AIRefactored.AI.Combat.States
         /// <returns>True if fallback override should occur.</returns>
         public bool ShouldTriggerSuppressedFallback(float now, float lastStateChangeTime, float minStateDuration)
         {
-            return this._cache.Suppression != null &&
-                   this._cache.Suppression.IsSuppressed() &&
-                   now - lastStateChangeTime >= minStateDuration;
+            if (this._cache.Suppression == null)
+            {
+                return false;
+            }
+
+            return this._cache.Suppression.IsSuppressed() &&
+                   (now - lastStateChangeTime) >= minStateDuration;
         }
 
         /// <summary>
@@ -144,10 +163,18 @@ namespace AIRefactored.AI.Combat.States
             BotMovementHelper.SmoothMoveTo(this._bot, this._fallbackTarget);
             BotCoverHelper.TrySetStanceFromNearbyCover(this._cache, this._fallbackTarget);
 
-            if (Vector3.Distance(this._bot.Position, this._fallbackTarget) < MinArrivalDistance)
+            float dist = Vector3.Distance(this._bot.Position, this._fallbackTarget);
+            if (dist < MinArrivalDistance)
             {
-                forceState.Invoke(CombatState.Patrol, time);
-                this._bot.BotTalk?.TrySay(EPhraseTrigger.NeedHelp);
+                forceState(CombatState.Patrol, time);
+
+                if (!FikaHeadlessDetector.IsHeadless)
+                {
+                    if (this._bot.BotTalk != null)
+                    {
+                        this._bot.BotTalk.TrySay(EPhraseTrigger.NeedHelp);
+                    }
+                }
             }
         }
 

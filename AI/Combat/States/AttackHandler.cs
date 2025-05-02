@@ -22,6 +22,8 @@ namespace AIRefactored.AI.Combat.States
     /// </summary>
     public sealed class AttackHandler
     {
+        #region Fields
+
         /// <summary>
         /// The bot owner entity.
         /// </summary>
@@ -36,6 +38,10 @@ namespace AIRefactored.AI.Combat.States
         /// The last target position moved toward.
         /// </summary>
         private Vector3? _lastTargetPosition;
+
+        #endregion
+
+        #region Constructor
 
         /// <summary>
         /// Initializes a new instance of the <see cref="AttackHandler"/> class.
@@ -57,8 +63,12 @@ namespace AIRefactored.AI.Combat.States
             this._bot = cache.Bot;
         }
 
+        #endregion
+
+        #region Public Methods
+
         /// <summary>
-        /// Clears the current attack target.
+        /// Clears the cached attack destination.
         /// </summary>
         public void ClearTarget()
         {
@@ -66,19 +76,21 @@ namespace AIRefactored.AI.Combat.States
         }
 
         /// <summary>
-        /// Returns true if the bot currently has a live enemy targeted.
+        /// Returns true if the bot currently has a valid, alive enemy target.
         /// </summary>
-        /// <returns>True if the target enemy is alive; otherwise, false.</returns>
+        /// <returns>True if the enemy is alive and valid; otherwise, false.</returns>
         public bool ShallUseNow()
         {
-            IPlayer? enemy = this.GetCurrentEnemy();
-            return enemy != null && enemy.HealthController != null && enemy.HealthController.IsAlive;
+            IPlayer? target = this.GetCurrentEnemy();
+            return target != null &&
+                   target.HealthController != null &&
+                   target.HealthController.IsAlive;
         }
 
         /// <summary>
-        /// Drives movement toward the enemy target.
+        /// Executes attack logic each frame: pursue, reposition, and update stance.
         /// </summary>
-        /// <param name="time">The current time.</param>
+        /// <param name="time">Current game time.</param>
         public void Tick(float time)
         {
             IPlayer? enemy = this.GetCurrentEnemy();
@@ -88,8 +100,8 @@ namespace AIRefactored.AI.Combat.States
             }
 
             Vector3 targetPosition = enemy.Transform.position;
-
-            if (!this._lastTargetPosition.HasValue || (this._lastTargetPosition.Value - targetPosition).sqrMagnitude > 1.0f)
+            if (!this._lastTargetPosition.HasValue ||
+                (this._lastTargetPosition.Value - targetPosition).sqrMagnitude > 1.0f)
             {
                 this._lastTargetPosition = targetPosition;
 
@@ -102,23 +114,34 @@ namespace AIRefactored.AI.Combat.States
             }
         }
 
+        #endregion
+
+        #region Private Methods
+
         /// <summary>
-        /// Gets the current active enemy target, if any.
+        /// Gets the current enemy target from threat selector or fallback memory.
         /// </summary>
-        /// <returns>The targeted enemy player, or null if none.</returns>
+        /// <returns>The IPlayer enemy target, or null if none available.</returns>
         private IPlayer? GetCurrentEnemy()
         {
-            if (this._cache.ThreatSelector != null && this._cache.ThreatSelector.CurrentTarget != null)
+            if (this._cache != null &&
+                this._cache.ThreatSelector != null &&
+                this._cache.ThreatSelector.CurrentTarget != null)
             {
                 return this._cache.ThreatSelector.CurrentTarget;
             }
 
-            if (this._bot.Memory != null && this._bot.Memory.GoalEnemy != null)
+            if (this._bot != null &&
+                this._bot.Memory != null &&
+                this._bot.Memory.GoalEnemy != null &&
+                this._bot.Memory.GoalEnemy.Person != null)
             {
                 return this._bot.Memory.GoalEnemy.Person;
             }
 
             return null;
         }
+
+        #endregion
     }
 }

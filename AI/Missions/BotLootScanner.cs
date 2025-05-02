@@ -13,6 +13,7 @@ namespace AIRefactored.AI.Looting
     using System;
     using System.Collections.Generic;
     using AIRefactored.AI.Core;
+    using AIRefactored.Core;
     using AIRefactored.Runtime;
     using EFT;
     using EFT.Interactive;
@@ -24,66 +25,54 @@ namespace AIRefactored.AI.Looting
     /// </summary>
     public sealed class BotLootScanner
     {
+        #region Constants
+
         private const float ScanInterval = 1.6f;
         private const float ScanRadius = 12f;
         private const float HighestValueRadius = 24f;
         private const float CooldownSeconds = 6f;
         private const float MaxAngle = 120f;
 
+        #endregion
+
+        #region Fields
+
         private readonly Dictionary<string, float> _lootCooldowns = new Dictionary<string, float>(64);
 
         private BotOwner? _bot;
         private BotComponentCache? _cache;
         private float _nextScanTime;
+        private float _cachedValue;
+        private float _lastValueUpdate;
+
+        #endregion
+
+        #region Properties
 
         /// <summary>
-        /// Returns the highest-value container within range.
+        /// Gets the estimated total loot value near the bot.
         /// </summary>
-        public Vector3 GetHighestValueLootPoint()
-        {
-            if (this._bot == null || FikaHeadlessDetector.IsHeadless)
-            {
-                return Vector3.zero;
-            }
+        public float TotalLootValue => this._cachedValue;
 
-            float bestValue = 0f;
-            Vector3 bestPoint = this._bot.Position;
+        #endregion
 
-            List<LootableContainer> containers = LootRegistry.GetAllContainers();
-            for (int i = 0; i < containers.Count; i++)
-            {
-                LootableContainer c = containers[i];
-                if (c == null || !c.enabled)
-                {
-                    continue;
-                }
+        #region Public Methods
 
-                float dist = Vector3.Distance(this._bot.Position, c.transform.position);
-                if (dist > HighestValueRadius || !this.CanSee(c.transform.position))
-                {
-                    continue;
-                }
-
-                float value = this.EstimateValue(c);
-                if (value > bestValue)
-                {
-                    bestValue = value;
-                    bestPoint = c.transform.position;
-                }
-            }
-
-            return bestPoint;
-        }
-
+        /// <summary>
+        /// Initializes the scanner with the bot cache.
+        /// </summary>
         public void Initialize(BotComponentCache cache)
         {
             this._cache = cache;
             this._bot = cache.Bot;
         }
 
+        /// <summary>
+        /// Ticks the loot scan logic.
+        /// </summary>
         public void Tick(float time)
         {
-            if (time < this._nextScanTime || !this.CanEvaluate())
+            if (this._bot == null || time < this._nextScanTime || !this.CanEvaluate())
             {
                 return;
             }
@@ -93,34 +82,14 @@ namespace AIRefactored.AI.Looting
             if (this.CanLoot())
             {
                 this.TryLootNearby();
+                this._cachedValue = this.EvaluateNearbyLootValue();
+                this._lastValueUpdate = time;
             }
         }
 
-        private bool CanEvaluate()
-        {
-            return this._bot != null && !this._bot.IsDead && !FikaHeadlessDetector.IsHeadless;
-        }
-
-        private bool CanLoot()
-        {
-            if (this._bot == null || this._bot.IsDead)
-            {
-                return false;
-            }
-
-            if (this._cache?.PanicHandler?.IsPanicking == true)
-            {
-                return false;
-            }
-
-            if (this._bot.Memory?.GoalEnemy != null)
-            {
-                return false;
-            }
-
-            return this._bot.EnemiesController?.EnemyInfos.Count == 0;
-        }
-
+        /// <summary>
+        /// Attempts to loot containers or items within range.
+        /// </summary>
         public void TryLootNearby()
         {
             if (!this.CanLoot() || this._bot == null)
@@ -164,9 +133,76 @@ namespace AIRefactored.AI.Looting
                 }
 
                 this.MarkCooldown(item.name);
-                // Direct pickup unsupported — rely on realism integration
                 return;
             }
+        }
+
+        /// <summary>
+        /// Returns the highest-value container position within range.
+        /// </summary>
+        public Vector3 GetHighestValueLootPoint()
+        {
+            if (this._bot == null || FikaHeadlessDetector.IsHeadless)
+            {
+                return Vector3.zero;
+            }
+
+            float bestValue = 0f;
+            Vector3 bestPoint = this._bot.Position;
+
+            List<LootableContainer> containers = LootRegistry.GetAllContainers();
+            for (int i = 0; i < containers.Count; i++)
+            {
+                LootableContainer c = containers[i];
+                if (c == null || !c.enabled)
+                {
+                    continue;
+                }
+
+                float dist = Vector3.Distance(this._bot.Position, c.transform.position);
+                if (dist > HighestValueRadius || !this.CanSee(c.transform.position))
+                {
+                    continue;
+                }
+
+                float value = this.EstimateValue(c);
+                if (value > bestValue)
+                {
+                    bestValue = value;
+                    bestPoint = c.transform.position;
+                }
+            }
+
+            return bestPoint;
+        }
+
+        #endregion
+
+        #region Private Helpers
+
+        private bool CanEvaluate()
+        {
+            return this._bot != null && !this._bot.IsDead && !FikaHeadlessDetector.IsHeadless;
+        }
+
+        private bool CanLoot()
+        {
+            if (this._bot == null || this._bot.IsDead)
+            {
+                return false;
+            }
+
+            if (this._cache?.PanicHandler?.IsPanicking == true)
+            {
+                return false;
+            }
+
+            if (this._bot.Memory?.GoalEnemy != null)
+            {
+                return false;
+            }
+
+            return this._bot.EnemiesController?.EnemyInfos.Count == 0;
         }
 
         private bool CanSee(Vector3 target)
@@ -185,7 +221,7 @@ namespace AIRefactored.AI.Looting
                 return false;
             }
 
-            if (Physics.Raycast(origin, dir.normalized, out RaycastHit hit, dir.magnitude + 0.3f, LayerMaskClass.HighPolyWithTerrainMaskAI))
+            if (Physics.Raycast(origin, dir.normalized, out RaycastHit hit, dir.magnitude + 0.3f, AIRefactoredLayerMasks.HighPolyWithTerrainMaskAI))
             {
                 return Vector3.Distance(hit.point, target) < 0.4f;
             }
@@ -195,7 +231,7 @@ namespace AIRefactored.AI.Looting
 
         private float EstimateValue(LootableContainer container)
         {
-            if (container.ItemOwner?.RootItem == null)
+            if (container.ItemOwner == null || container.ItemOwner.RootItem == null)
             {
                 return 0f;
             }
@@ -205,13 +241,42 @@ namespace AIRefactored.AI.Looting
             for (int i = 0; i < items.Count; i++)
             {
                 Item item = items[i];
-                if (item?.Template?.CreditsPrice > 0)
+                if (item != null && item.Template?.CreditsPrice > 0)
                 {
                     value += item.Template.CreditsPrice;
                 }
             }
 
             return value;
+        }
+
+        private float EvaluateNearbyLootValue()
+        {
+            if (this._bot == null)
+            {
+                return 0f;
+            }
+
+            float totalValue = 0f;
+            List<LootableContainer> containers = LootRegistry.GetAllContainers();
+            for (int i = 0; i < containers.Count; i++)
+            {
+                LootableContainer c = containers[i];
+                if (c == null || !c.enabled)
+                {
+                    continue;
+                }
+
+                float dist = Vector3.Distance(this._bot.Position, c.transform.position);
+                if (dist > ScanRadius)
+                {
+                    continue;
+                }
+
+                totalValue += this.EstimateValue(c);
+            }
+
+            return totalValue;
         }
 
         private bool IsOnCooldown(string id)
@@ -228,5 +293,7 @@ namespace AIRefactored.AI.Looting
                 this._lootCooldowns[id.Trim()] = Time.time + CooldownSeconds;
             }
         }
+
+        #endregion
     }
 }

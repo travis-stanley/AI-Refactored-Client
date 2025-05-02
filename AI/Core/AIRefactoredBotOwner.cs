@@ -18,12 +18,12 @@ namespace AIRefactored.AI.Core
     using UnityEngine;
 
     /// <summary>
-    /// Holds bot-specific personality, profile, and strategic coordination metadata.
-    /// Used for all AIRefactored behavior customization, including zone logic and combat tuning.
+    /// Holds AIRefactored-specific metadata for a bot, including personality, tactical zone,
+    /// profile tuning, and behavior state. Used to customize strategic decisions at runtime.
     /// </summary>
     public sealed class AIRefactoredBotOwner
     {
-        #region Constants
+        #region Fields
 
         private static readonly ManualLogSource Logger = AIRefactoredController.Logger;
 
@@ -31,132 +31,165 @@ namespace AIRefactored.AI.Core
 
         #region Properties
 
-        /// <summary>Assigned tactical zone or region label (used for routing and fallback).</summary>
-        public string AssignedZone { get; private set; } = "unknown";
-
-        /// <summary>Main EFT BotOwner instance linked to this AI refactor.</summary>
+        /// <summary>
+        /// Gets the primary EFT BotOwner instance linked to this wrapper.
+        /// </summary>
         public BotOwner? Bot { get; private set; }
 
-        /// <summary>Refactored runtime cache of AI systems, memory, perception, etc.</summary>
+        /// <summary>
+        /// Gets the system-level runtime cache for this bot (combat, memory, etc).
+        /// </summary>
         public BotComponentCache? Cache { get; private set; }
 
-        /// <summary>Reference to the active mission controller (set during AI initialization).</summary>
+        /// <summary>
+        /// Gets the linked mission controller responsible for this bot’s current objective state.
+        /// </summary>
         public BotMissionController? MissionController { get; private set; }
 
-        /// <summary>Human-readable name of the current profile (e.g., "Aggressive", "Stealth").</summary>
+        /// <summary>
+        /// Gets the behavior tuning profile (aggression, caution, suppress bias, etc).
+        /// </summary>
+        public BotPersonalityProfile PersonalityProfile { get; private set; } = new BotPersonalityProfile();
+
+        /// <summary>
+        /// Gets the name of the personality profile (e.g., Aggressive, Stealth).
+        /// </summary>
         public string PersonalityName { get; private set; } = "Unknown";
 
-        /// <summary>Active behavior profile for this bot (aggression, reaction, caution, etc).</summary>
-        public BotPersonalityProfile PersonalityProfile { get; private set; } = new BotPersonalityProfile();
+        /// <summary>
+        /// Gets the zone or tactical region assigned to the bot (for routing/fallback logic).
+        /// </summary>
+        public string AssignedZone { get; private set; } = "unknown";
 
         #endregion
 
-        #region Public Methods
+        #region Initialization
 
         /// <summary>
-        /// Primary initialization for the AIRefactoredBotOwner wrapper.
-        /// Called once by BotBrain or system bootstrap.
+        /// Initializes the wrapper with the live bot instance and system cache.
         /// </summary>
-        /// <param name="bot">The linked BotOwner instance.</param>
-        /// <param name="cache">The component cache instance.</param>
+        /// <param name="bot">The underlying EFT BotOwner.</param>
+        /// <param name="cache">The AIRefactored component cache for this bot.</param>
         public void Initialize(BotOwner bot, BotComponentCache cache)
         {
-            this.Bot = bot ?? throw new ArgumentNullException(nameof(bot));
-            this.Cache = cache ?? throw new ArgumentNullException(nameof(cache));
+            if (bot == null)
+            {
+                throw new ArgumentNullException(nameof(bot));
+            }
+
+            if (cache == null)
+            {
+                throw new ArgumentNullException(nameof(cache));
+            }
+
+            this.Bot = bot;
+            this.Cache = cache;
 
             if (!this.HasPersonality())
             {
                 this.InitProfile(this.GetRandomPersonality());
             }
 
-            var nickname = bot.Profile?.Info?.Nickname ?? "Unknown";
-            Logger.LogDebug($"[AIRefactored-Owner] Initialized for {nickname}.");
+            string nickname = bot.Profile?.Info?.Nickname ?? "Unnamed";
+            Logger.LogDebug("[AIRefactoredBotOwner] Initialized for bot: " + nickname);
         }
 
+        #endregion
+
+        #region Personality Control
+
         /// <summary>
-        /// Initializes the AI personality with a given preset type.
+        /// Assigns a personality preset by enum type (e.g., Cautious, Aggressive).
         /// </summary>
-        /// <param name="type">The personality type to assign.</param>
+        /// <param name="type">The personality type to use.</param>
         public void InitProfile(PersonalityType type)
         {
-            if (BotPersonalityPresets.Presets.TryGetValue(type, out var preset))
+            if (BotPersonalityPresets.Presets.TryGetValue(type, out BotPersonalityProfile? preset))
             {
                 this.PersonalityProfile = preset;
                 this.PersonalityName = type.ToString();
-                Logger.LogInfo($"[AIRefactored-Owner] Personality '{this.PersonalityName}' assigned.");
+                Logger.LogInfo("[AIRefactoredBotOwner] Personality '" + this.PersonalityName + "' assigned.");
             }
             else
             {
                 this.PersonalityProfile = BotPersonalityPresets.Presets[PersonalityType.Adaptive];
                 this.PersonalityName = "Adaptive";
-                Logger.LogWarning($"[AIRefactored-Owner] Invalid preset '{type}', defaulted to Adaptive.");
+                Logger.LogWarning("[AIRefactoredBotOwner] Invalid personality '" + type + "' — defaulting to Adaptive.");
             }
         }
 
         /// <summary>
-        /// Initializes the AI personality with a custom profile.
+        /// Manually assigns a custom personality profile with optional display name.
         /// </summary>
-        /// <param name="profile">The profile to assign.</param>
-        /// <param name="name">Optional readable name for the personality.</param>
+        /// <param name="profile">The profile instance to use.</param>
+        /// <param name="name">Optional profile label for logging.</param>
         public void InitProfile(BotPersonalityProfile profile, string name = "Custom")
         {
             this.PersonalityProfile = profile ?? new BotPersonalityProfile();
             this.PersonalityName = string.IsNullOrEmpty(name) ? "Custom" : name;
-            Logger.LogInfo($"[AIRefactored-Owner] Custom personality '{this.PersonalityName}' assigned.");
+            Logger.LogInfo("[AIRefactoredBotOwner] Custom profile assigned: " + this.PersonalityName);
         }
 
         /// <summary>
-        /// Clears the currently assigned personality and resets to default.
+        /// Resets the bot’s personality profile and name to a cleared default.
         /// </summary>
         public void ClearPersonality()
         {
             this.PersonalityProfile = new BotPersonalityProfile();
             this.PersonalityName = "Cleared";
-            Logger.LogInfo("[AIRefactored-Owner] Personality cleared.");
+            Logger.LogInfo("[AIRefactoredBotOwner] Personality cleared.");
         }
 
         /// <summary>
-        /// Checks whether a personality profile has been assigned.
+        /// Returns true if a personality profile is currently assigned.
         /// </summary>
-        /// <returns>True if personality is assigned, otherwise false.</returns>
         public bool HasPersonality()
         {
             return this.PersonalityProfile != null;
         }
 
+        #endregion
+
+        #region Zone and Mission Binding
+
         /// <summary>
-        /// Sets the mission controller reference for this bot.
+        /// Assigns the active mission controller for this bot.
         /// </summary>
-        /// <param name="controller">The active mission controller.</param>
+        /// <param name="controller">The mission controller to assign.</param>
         public void SetMissionController(BotMissionController controller)
         {
-            this.MissionController = controller ?? throw new ArgumentNullException(nameof(controller));
+            if (controller == null)
+            {
+                throw new ArgumentNullException(nameof(controller));
+            }
+
+            this.MissionController = controller;
         }
 
         /// <summary>
-        /// Sets the tactical zone name assigned to this bot.
+        /// Sets the named tactical zone for fallback and patrol routing logic.
         /// </summary>
         /// <param name="zoneName">The zone name string.</param>
         public void SetZone(string zoneName)
         {
-            if (string.IsNullOrEmpty(zoneName))
+            if (string.IsNullOrWhiteSpace(zoneName))
             {
-                Logger.LogWarning("[AIRefactored-Owner] Attempted to assign empty zone name.");
+                Logger.LogWarning("[AIRefactoredBotOwner] Refused to assign empty or null zone name.");
                 return;
             }
 
             this.AssignedZone = zoneName;
-            Logger.LogInfo($"[AIRefactored-Owner] Zone assigned: {zoneName}.");
+            Logger.LogInfo("[AIRefactoredBotOwner] Zone set to: " + zoneName);
         }
 
         #endregion
 
-        #region Private Methods
+        #region Internals
 
         private PersonalityType GetRandomPersonality()
         {
-            var values = (PersonalityType[])Enum.GetValues(typeof(PersonalityType));
-            var roll = UnityEngine.Random.Range(0, values.Length);
+            PersonalityType[] values = (PersonalityType[])Enum.GetValues(typeof(PersonalityType));
+            int roll = UnityEngine.Random.Range(0, values.Length);
             return values[roll];
         }
 

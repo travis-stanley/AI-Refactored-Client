@@ -10,6 +10,7 @@
 
 namespace AIRefactored.AI.Combat.States
 {
+    using System;
     using AIRefactored.AI.Core;
     using AIRefactored.AI.Helpers;
     using AIRefactored.AI.Memory;
@@ -46,14 +47,19 @@ namespace AIRefactored.AI.Combat.States
         /// <param name="cache">Bot component cache reference.</param>
         public InvestigateHandler(BotComponentCache cache)
         {
-            this._cache = cache ?? throw new System.ArgumentNullException(nameof(cache));
-            this._bot = cache.Bot ?? throw new System.ArgumentNullException(nameof(cache.Bot));
-            this._memory = cache.TacticalMemory ?? throw new System.ArgumentNullException(nameof(cache.TacticalMemory));
+            if (cache == null || cache.Bot == null || cache.TacticalMemory == null)
+            {
+                throw new ArgumentNullException(nameof(cache));
+            }
+
+            this._cache = cache;
+            this._bot = cache.Bot;
+            this._memory = cache.TacticalMemory;
         }
 
         #endregion
 
-        #region Public API
+        #region Public Methods
 
         /// <summary>
         /// Determines the best position to investigate: enemy memory, last heard sound, or a random nearby position.
@@ -62,9 +68,18 @@ namespace AIRefactored.AI.Combat.States
         /// <returns>A target position to move toward for investigation.</returns>
         public Vector3 GetInvestigateTarget(Vector3? lastKnownEnemyPos)
         {
-            return lastKnownEnemyPos
-                   ?? this._memory.GetRecentEnemyMemory()
-                   ?? this.RandomNearbyPosition();
+            if (lastKnownEnemyPos.HasValue)
+            {
+                return lastKnownEnemyPos.Value;
+            }
+
+            Vector3? memoryPos = this._memory.GetRecentEnemyMemory();
+            if (memoryPos.HasValue)
+            {
+                return memoryPos.Value;
+            }
+
+            return this.RandomNearbyPosition();
         }
 
         /// <summary>
@@ -74,6 +89,7 @@ namespace AIRefactored.AI.Combat.States
         public void Investigate(Vector3 target)
         {
             Vector3 destination = this._cache.SquadPath?.ApplyOffsetTo(target) ?? target;
+
             BotMovementHelper.SmoothMoveTo(this._bot, destination);
             this._memory.MarkCleared(destination);
             this._cache.Combat?.TrySetStanceFromNearbyCover(destination);
@@ -87,13 +103,13 @@ namespace AIRefactored.AI.Combat.States
         /// <returns>True if investigation behavior should begin.</returns>
         public bool ShallUseNow(float time, float lastTransition)
         {
-            var profile = this._cache.AIRefactoredBotOwner?.PersonalityProfile;
+            BotPersonalityProfile? profile = this._cache.AIRefactoredBotOwner?.PersonalityProfile;
             if (profile == null || profile.Caution < 0.3f)
             {
                 return false;
             }
 
-            return (this._cache.LastHeardTime + SoundReactTime > time) && (time - lastTransition > 1.25f);
+            return this._cache.LastHeardTime + SoundReactTime > time && time - lastTransition > 1.25f;
         }
 
         /// <summary>
@@ -118,9 +134,10 @@ namespace AIRefactored.AI.Combat.States
         /// <returns>A randomized nearby search position.</returns>
         private Vector3 RandomNearbyPosition()
         {
+            Vector3 basePos = this._bot.Position;
             Vector3 jitter = UnityEngine.Random.insideUnitSphere * ScanRadius;
             jitter.y = 0f;
-            return this._bot.Position + jitter;
+            return basePos + jitter;
         }
 
         #endregion

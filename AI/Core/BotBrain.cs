@@ -27,47 +27,56 @@ namespace AIRefactored.AI.Threads
     using UnityEngine;
 
     /// <summary>
-    /// Central AI controller ticking perception, combat, movement, group sync, and personality logic.
+    /// Central AI controller for AIRefactored bots.
+    /// Orchestrates tick-based updates for combat, perception, movement, group logic, and subsystem reactions.
     /// </summary>
     public sealed class BotBrain : MonoBehaviour
     {
-        #region Logger
+        #region Static Logger
 
         private static readonly ManualLogSource Logger = AIRefactoredController.Logger;
 
         #endregion
 
-        #region Fields
+        #region Core References
 
-        private BotOwner? bot;
-        private Player? player;
-        private BotComponentCache? cache;
+        private BotOwner? _bot;
+        private Player? _player;
+        private BotComponentCache? _cache;
 
-        private bool isValid;
+        private bool _isValid;
 
-        private CombatStateMachine? combat;
-        private BotMovementController? movement;
-        private BotPoseController? pose;
-        private BotTilt? tilt;
-        private BotCornerScanner? corner;
-        private BotGroupBehavior? groupBehavior;
-        private BotJumpController? jump;
+        #endregion
 
-        private BotVisionSystem? vision;
-        private BotHearingSystem? hearing;
-        private BotPerceptionSystem? perception;
-        private HearingDamageComponent? hearingDamage;
-        private FlashGrenadeComponent? flashDetector;
-        private BotFlashReactionComponent? flashReaction;
-        private BotTacticalDeviceController? tactical;
-        private BotMissionController? mission;
-        private BotGroupSyncCoordinator? groupSync;
-        private BotTeamLogic? teamLogic;
-        private BotAsyncProcessor? asyncProcessor;
+        #region Subsystems
 
-        private float nextPerceptionTick;
-        private float nextCombatTick;
-        private float nextLogicTick;
+        private CombatStateMachine? _combat;
+        private BotMovementController? _movement;
+        private BotPoseController? _pose;
+        private BotTilt? _tilt;
+        private BotCornerScanner? _corner;
+        private BotGroupBehavior? _groupBehavior;
+        private BotJumpController? _jump;
+
+        private BotVisionSystem? _vision;
+        private BotHearingSystem? _hearing;
+        private BotPerceptionSystem? _perception;
+        private HearingDamageComponent? _hearingDamage;
+        private FlashGrenadeComponent? _flashDetector;
+        private BotFlashReactionComponent? _flashReaction;
+        private BotTacticalDeviceController? _tactical;
+        private BotMissionController? _mission;
+        private BotGroupSyncCoordinator? _groupSync;
+        private BotTeamLogic? _teamLogic;
+        private BotAsyncProcessor? _asyncProcessor;
+
+        #endregion
+
+        #region Tick Timing
+
+        private float _nextPerceptionTick;
+        private float _nextCombatTick;
+        private float _nextLogicTick;
 
         private float PerceptionTickRate => FikaHeadlessDetector.IsHeadless ? 1f / 60f : 1f / 30f;
         private float CombatTickRate => FikaHeadlessDetector.IsHeadless ? 1f / 60f : 1f / 30f;
@@ -79,49 +88,49 @@ namespace AIRefactored.AI.Threads
 
         private void Update()
         {
-            if (!this.isValid || this.bot == null || this.bot.IsDead || this.player == null)
+            if (!this._isValid || this._bot == null || this._bot.IsDead || this._player == null)
             {
                 return;
             }
 
-            var now = Time.time;
+            float now = Time.time;
 
-            if (now >= this.nextPerceptionTick)
+            if (now >= this._nextPerceptionTick)
             {
-                this.vision?.Tick(now);
-                this.hearing?.Tick(now);
-                this.perception?.Tick(Time.deltaTime);
-                this.nextPerceptionTick = now + this.PerceptionTickRate;
+                this._vision?.Tick(now);
+                this._hearing?.Tick(now);
+                this._perception?.Tick(Time.deltaTime);
+                this._nextPerceptionTick = now + this.PerceptionTickRate;
             }
 
-            if (now >= this.nextCombatTick)
+            if (now >= this._nextCombatTick)
             {
-                this.combat?.Tick(now);
-                this.cache?.Escalation?.Tick(now);
-                this.flashReaction?.Tick(now);
-                this.flashDetector?.Tick(now);
-                this.nextCombatTick = now + this.CombatTickRate;
+                this._combat?.Tick(now);
+                this._cache?.Escalation?.Tick(now);
+                this._flashReaction?.Tick(now);
+                this._flashDetector?.Tick(now);
+                this._nextCombatTick = now + this.CombatTickRate;
             }
 
-            if (now >= this.nextLogicTick)
+            if (now >= this._nextLogicTick)
             {
-                this.mission?.Tick(now);
-                this.groupSync?.Tick(now);
-                this.hearingDamage?.Tick(Time.deltaTime);
-                this.tactical?.Tick();
-                this.cache?.LootScanner?.Tick(Time.deltaTime);
-                this.cache?.DeadBodyScanner?.Tick(now);
-                this.asyncProcessor?.Tick(now);
-                this.nextLogicTick = now + this.LogicTickRate;
+                this._mission?.Tick(now);
+                this._groupSync?.Tick(now);
+                this._hearingDamage?.Tick(Time.deltaTime);
+                this._tactical?.Tick();
+                this._cache?.LootScanner?.Tick(Time.deltaTime);
+                this._cache?.DeadBodyScanner?.Tick(now);
+                this._asyncProcessor?.Tick(now);
+                this._nextLogicTick = now + this.LogicTickRate;
             }
 
-            this.movement?.Tick(Time.deltaTime);
-            this.jump?.Tick(Time.deltaTime);
-            this.pose?.Tick(now);
-            this.corner?.Tick(now);
-            this.tilt?.ManualUpdate();
-            this.groupBehavior?.Tick(Time.deltaTime);
-            this.teamLogic?.CoordinateMovement();
+            this._movement?.Tick(Time.deltaTime);
+            this._jump?.Tick(Time.deltaTime);
+            this._pose?.Tick(now);
+            this._corner?.Tick(now);
+            this._tilt?.ManualUpdate();
+            this._groupBehavior?.Tick(Time.deltaTime);
+            this._teamLogic?.CoordinateMovement();
         }
 
         #endregion
@@ -129,79 +138,77 @@ namespace AIRefactored.AI.Threads
         #region Initialization
 
         /// <summary>
-        /// Fully initializes the AI system stack for the specified bot.
+        /// Initializes the AI stack and behavior subsystems for this bot.
         /// </summary>
-        /// <param name="bot">The bot to initialize for.</param>
+        /// <param name="bot">The BotOwner instance to wrap and control.</param>
         public void Initialize(BotOwner bot)
         {
-            if (bot.GetPlayer == null || bot.IsDead || !bot.GetPlayer.IsAI || bot.GetPlayer.IsYourPlayer)
+            if (bot == null || bot.GetPlayer == null || bot.IsDead || !bot.GetPlayer.IsAI || bot.GetPlayer.IsYourPlayer)
             {
-                Logger.LogWarning("[BotBrain] ❌ Invalid bot context — initialization skipped.");
+                Logger.LogWarning("[BotBrain] Initialization aborted: invalid or non-AI bot.");
                 return;
             }
 
-            this.bot = bot;
-            this.player = bot.GetPlayer;
+            this._bot = bot;
+            this._player = bot.GetPlayer;
 
             try
             {
-                this.cache = new BotComponentCache();
-                this.cache.Initialize(bot);
+                this._cache = new BotComponentCache();
+                this._cache.Initialize(bot);
 
-                var refactoredOwner = BotRegistry.TryGetRefactoredOwner(bot.ProfileId);
-                if (refactoredOwner != null)
+                AIRefactoredBotOwner? owner = BotRegistry.TryGetRefactoredOwner(bot.ProfileId);
+                if (owner != null)
                 {
-                    this.cache.SetOwner(refactoredOwner);
+                    this._cache.SetOwner(owner);
                 }
 
-                // Primary behavior logic
-                this.combat = this.cache.Combat;
-                this.movement = this.cache.Movement;
-                this.pose = this.cache.PoseController;
-                this.tilt = this.cache.Tilt;
-                this.tactical = this.cache.Tactical;
-                this.groupBehavior = this.cache.GroupBehavior;
-                this.jump = new BotJumpController(bot, this.cache);
+                this._combat = this._cache.Combat;
+                this._movement = this._cache.Movement;
+                this._pose = this._cache.PoseController;
+                this._tilt = this._cache.Tilt;
+                this._tactical = this._cache.Tactical;
+                this._groupBehavior = this._cache.GroupBehavior;
+                this._jump = new BotJumpController(bot, this._cache);
 
-                // Perception systems
-                this.vision = new BotVisionSystem();
-                this.vision.Initialize(this.cache);
+                this._vision = new BotVisionSystem();
+                this._vision.Initialize(this._cache);
 
-                this.hearing = new BotHearingSystem();
-                this.hearing.Initialize(this.cache);
+                this._hearing = new BotHearingSystem();
+                this._hearing.Initialize(this._cache);
 
-                this.perception = new BotPerceptionSystem();
-                this.perception.Initialize(this.cache);
+                this._perception = new BotPerceptionSystem();
+                this._perception.Initialize(this._cache);
 
-                this.flashReaction = new BotFlashReactionComponent();
-                this.flashReaction.Initialize(this.cache);
+                this._flashReaction = new BotFlashReactionComponent();
+                this._flashReaction.Initialize(this._cache);
 
-                this.flashDetector = new FlashGrenadeComponent();
-                this.flashDetector.Initialize(this.cache);
+                this._flashDetector = new FlashGrenadeComponent();
+                this._flashDetector.Initialize(this._cache);
 
-                this.hearingDamage = new HearingDamageComponent();
-                this.corner = new BotCornerScanner();
+                this._hearingDamage = new HearingDamageComponent();
+                this._corner = new BotCornerScanner();
 
-                // Mission and squad coordination
-                this.mission = new BotMissionController(bot, this.cache);
-                this.groupSync = new BotGroupSyncCoordinator();
-                this.groupSync.Initialize(bot);
-                this.groupSync.InjectLocalCache(this.cache);
+                this._mission = new BotMissionController(bot, this._cache);
 
-                this.asyncProcessor = new BotAsyncProcessor();
-                this.asyncProcessor.Initialize(bot, this.cache);
+                this._groupSync = new BotGroupSyncCoordinator();
+                this._groupSync.Initialize(bot);
+                this._groupSync.InjectLocalCache(this._cache);
 
-                this.teamLogic = new BotTeamLogic(bot);
+                this._asyncProcessor = new BotAsyncProcessor();
+                this._asyncProcessor.Initialize(bot, this._cache);
 
-                BotBrainGuardian.Enforce(this.player.gameObject);
+                this._teamLogic = new BotTeamLogic(bot);
 
-                this.isValid = true;
-                Logger.LogInfo($"[BotBrain] ✅ AI stack initialized for bot: {this.player.Profile?.Info?.Nickname ?? "Unnamed"}.");
+                BotBrainGuardian.Enforce(this._player.gameObject);
+
+                this._isValid = true;
+                Logger.LogInfo("[BotBrain] AI initialized for: " + (this._player.Profile?.Info?.Nickname ?? "Unnamed"));
             }
             catch (Exception ex)
             {
-                Logger.LogError($"[BotBrain] ❌ Initialization failed: {ex.Message}\n{ex.StackTrace}");
-                this.isValid = false;
+                Logger.LogError("[BotBrain] Initialization failed: " + ex.Message + "\n" + ex.StackTrace);
+                this._isValid = false;
             }
         }
 

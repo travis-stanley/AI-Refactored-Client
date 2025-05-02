@@ -21,65 +21,48 @@ namespace AIRefactored.AI
         #region Personality Parameters
 
         public float Accuracy { get; set; } = 0.7f;
-
         public float AccuracyUnderFire { get; set; } = 0.4f;
-
         public float AggressionLevel { get; set; } = 0.6f;
-
         public float Caution { get; set; } = 0.5f;
-
         public float ChaosFactor { get; set; } = 0f;
-
         public float Cohesion { get; set; } = 0.75f;
-
         public float CommunicationLevel { get; set; } = 0.6f;
-
         public float CornerCheckPauseTime { get; set; } = 0.35f;
-
         public float EngagementRange { get; set; } = 80f;
-
         public float FlankBias { get; set; } = 0.5f;
-
         public float FlinchThreshold { get; set; } = 0.4f;
-
         public float LeanPeekFrequency { get; set; } = 0.5f;
-
         public float MovementJitter { get; set; } = 0.2f;
-
         public float ReactionSpeed { get; set; } = 0.65f;
-
         public float ReactionTime { get; set; } = 0.25f;
-
         public float RepositionPriority { get; set; } = 0.8f;
-
         public float RetreatThreshold { get; set; } = 0.3f;
-
         public float RiskTolerance { get; set; } = 0.5f;
-
         public float SideStepBias { get; set; } = 0.5f;
-
         public float SuppressionSensitivity { get; set; } = 0.4f;
-
         public float SuppressiveFireBias { get; set; } = 0.2f;
+
+        /// <summary>
+        /// How greedy the bot is when deciding to extract. 0 = extract early, 1 = hold for more loot.
+        /// </summary>
+        public float Greed { get; set; } = 0.5f;
+
+        /// <summary>
+        /// How tolerant the bot is of being stuck before deciding to extract. 0 = extract quickly, 1 = wait longer.
+        /// </summary>
+        public float StuckTolerance { get; set; } = 0.5f;
 
         #endregion
 
         #region Behavior Flags
 
         public bool IsCamper { get; set; } = false;
-
         public bool IsDumb { get; set; } = false;
-
         public bool IsFearful { get; set; } = false;
-
         public bool IsFrenzied { get; set; } = false;
-
         public bool IsSadistic { get; set; } = false;
-
         public bool IsSilentHunter { get; set; } = false;
-
         public bool IsStubborn { get; set; } = false;
-
         public bool IsTeamPlayer { get; set; } = false;
 
         #endregion
@@ -87,9 +70,7 @@ namespace AIRefactored.AI
         #region Derived Properties
 
         public bool CanFlank => this.FlankBias > 0.05f;
-
         public bool CanRetreat => this.RetreatThreshold > 0.05f;
-
         public bool CanSuppress => this.SuppressiveFireBias > 0.05f;
 
         #endregion
@@ -97,28 +78,18 @@ namespace AIRefactored.AI
         #region Identity
 
         public PersonalityType Personality { get; set; } = PersonalityType.Balanced;
-
         public MissionBias PreferredMission { get; set; } = MissionBias.Random;
-
         public LeanPreference LeaningStyle { get; set; } = LeanPreference.Conservative;
 
         #endregion
 
         #region Methods
 
-        /// <summary>
-        /// Creates a shallow clone of this profile.
-        /// </summary>
-        /// <returns>A new <see cref="BotPersonalityProfile"/> instance.</returns>
         public BotPersonalityProfile Clone()
         {
             return (BotPersonalityProfile)this.MemberwiseClone();
         }
 
-        /// <summary>
-        /// Returns a summary string of the personality configuration.
-        /// </summary>
-        /// <returns>A readable debug string.</returns>
         public override string ToString()
         {
             return $"[{this.Personality}] Aggro={this.AggressionLevel}, Acc={this.Accuracy}, Chaos={this.ChaosFactor}, Cohesion={this.Cohesion}";
@@ -129,60 +100,15 @@ namespace AIRefactored.AI
 
     #region Enums
 
-    /// <summary>
-    /// Personality types define high-level AI behavior identity and bias.
-    /// </summary>
     public enum PersonalityType
     {
-        Adaptive,
-        Aggressive,
-        Balanced,
-        Camper,
-        Cautious,
-        ColdBlooded,
-        Defensive,
-        Dumb,
-        Explorer,
-        Fearful,
-        Frenzied,
-        Greedy,
-        Heroic,
-        Loner,
-        Methodical,
-        Paranoid,
-        Patient,
-        Reckless,
-        RiskTaker,
-        SilentHunter,
-        Sniper,
-        Strategic,
-        Stubborn,
-        Tactical,
-        TeamPlayer,
-        Unpredictable,
-        Vengeful,
-        Vigilant,
-        Calculating,
-        Panicked,
-        Stoic,
-        Bulldozer,
-        Covert,
-        Cowardly,
-        Disruptor,
-        Supportive,
-        Hunter,
-        Stalker,
-        Vigilante,
-        Sentinel,
-        Erratic,
-        Cowboy,
-        Saboteur
+        Adaptive, Aggressive, Balanced, Camper, Cautious, ColdBlooded, Defensive, Dumb, Explorer,
+        Fearful, Frenzied, Greedy, Heroic, Loner, Methodical, Paranoid, Patient, Reckless, RiskTaker,
+        SilentHunter, Sniper, Strategic, Stubborn, Tactical, TeamPlayer, Unpredictable, Vengeful, Vigilant,
+        Calculating, Panicked, Stoic, Bulldozer, Covert, Cowardly, Disruptor, Supportive, Hunter,
+        Stalker, Vigilante, Sentinel, Erratic, Cowboy, Saboteur
     }
 
-
-    /// <summary>
-    /// Mission bias affects what the bot prefers to do on a match (loot, fight, quest).
-    /// </summary>
     public enum MissionBias
     {
         Random,
@@ -191,9 +117,6 @@ namespace AIRefactored.AI
         Quest
     }
 
-    /// <summary>
-    /// Defines how often bots lean from cover during peeking or scanning.
-    /// </summary>
     public enum LeanPreference
     {
         Never,

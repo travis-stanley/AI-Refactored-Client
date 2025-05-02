@@ -15,7 +15,6 @@ namespace AIRefactored.AI.Hotspots
     using AIRefactored.Runtime;
     using BepInEx.Logging;
     using UnityEngine;
-    using Random = UnityEngine.Random;
 
     /// <summary>
     /// Global registry for map-specific hotspots (loot zones, patrol targets, tactical nodes).
@@ -23,31 +22,31 @@ namespace AIRefactored.AI.Hotspots
     /// </summary>
     public static class HotspotRegistry
     {
-        private static readonly List<Hotspot> All = new List<Hotspot>(256);
-        private static readonly Dictionary<string, List<Hotspot>> ByZone = new Dictionary<string, List<Hotspot>>(StringComparer.OrdinalIgnoreCase);
+        private static readonly List<Hotspot> _all = new List<Hotspot>(256);
+        private static readonly Dictionary<string, List<Hotspot>> _byZone = new Dictionary<string, List<Hotspot>>(StringComparer.OrdinalIgnoreCase);
 
-        private static readonly Dictionary<string, SpatialIndexMode> IndexModeMap = new Dictionary<string, SpatialIndexMode>(StringComparer.OrdinalIgnoreCase)
+        private static readonly Dictionary<string, SpatialIndexMode> _indexModeMap = new Dictionary<string, SpatialIndexMode>(StringComparer.OrdinalIgnoreCase)
         {
-            ["woods"] = SpatialIndexMode.Quadtree,
-            ["shoreline"] = SpatialIndexMode.Quadtree,
-            ["lighthouse"] = SpatialIndexMode.Quadtree,
-            ["interchange"] = SpatialIndexMode.Quadtree,
-            ["bigmap"] = SpatialIndexMode.Quadtree,
-            ["sandbox"] = SpatialIndexMode.Grid,
-            ["sandbox_high"] = SpatialIndexMode.Grid,
-            ["factory4_day"] = SpatialIndexMode.Grid,
-            ["factory4_night"] = SpatialIndexMode.Grid,
-            ["laboratory"] = SpatialIndexMode.Grid,
-            ["tarkovstreets"] = SpatialIndexMode.Grid,
-            ["rezervbase"] = SpatialIndexMode.Grid,
+            { "woods", SpatialIndexMode.Quadtree },
+            { "shoreline", SpatialIndexMode.Quadtree },
+            { "lighthouse", SpatialIndexMode.Quadtree },
+            { "interchange", SpatialIndexMode.Quadtree },
+            { "bigmap", SpatialIndexMode.Quadtree },
+            { "sandbox", SpatialIndexMode.Grid },
+            { "sandbox_high", SpatialIndexMode.Grid },
+            { "factory4_day", SpatialIndexMode.Grid },
+            { "factory4_night", SpatialIndexMode.Grid },
+            { "laboratory", SpatialIndexMode.Grid },
+            { "tarkovstreets", SpatialIndexMode.Grid },
+            { "rezervbase", SpatialIndexMode.Grid }
         };
 
-        private static readonly ManualLogSource Log = AIRefactoredController.Logger;
+        private static readonly ManualLogSource _logger = AIRefactoredController.Logger;
 
-        private static SpatialIndexMode ActiveMode = SpatialIndexMode.None;
-        private static string LoadedMap = "none";
-        private static HotspotQuadtree? Quadtree;
-        private static HotspotSpatialGrid? Grid;
+        private static SpatialIndexMode _activeMode = SpatialIndexMode.None;
+        private static string _loadedMap = "none";
+        private static HotspotQuadtree? _quadtree;
+        private static HotspotSpatialGrid? _grid;
 
         private enum SpatialIndexMode
         {
@@ -56,118 +55,91 @@ namespace AIRefactored.AI.Hotspots
             Grid
         }
 
-        /// <summary>
-        /// Clears all internal registry state.
-        /// </summary>
         public static void Clear()
         {
-            All.Clear();
-            ByZone.Clear();
-            Quadtree = null;
-            Grid = null;
-            LoadedMap = "none";
-            ActiveMode = SpatialIndexMode.None;
+            _all.Clear();
+            _byZone.Clear();
+            _quadtree = null;
+            _grid = null;
+            _loadedMap = "none";
+            _activeMode = SpatialIndexMode.None;
         }
 
-        /// <summary>
-        /// Gets a read-only view of all registered hotspots.
-        /// </summary>
         public static IReadOnlyList<Hotspot> GetAll()
         {
-            return All;
+            return _all;
         }
 
-        /// <summary>
-        /// Gets all hotspots registered in the given zone.
-        /// </summary>
-        /// <param name="zone">Zone name (case-insensitive).</param>
-        /// <returns>List of hotspots, or empty list if none exist.</returns>
         public static IReadOnlyList<Hotspot> GetAllInZone(string zone)
         {
-            return ByZone.TryGetValue(zone, out var list) ? list : Array.Empty<Hotspot>();
+            List<Hotspot> result;
+            return _byZone.TryGetValue(zone, out result) ? result : Array.Empty<Hotspot>();
         }
 
-        /// <summary>
-        /// Returns a random hotspot across the map, or (0,0,0) if none are registered.
-        /// </summary>
         public static Hotspot GetRandomHotspot()
         {
-            return All.Count == 0 ? new Hotspot(Vector3.zero, "none") : All[Random.Range(0, All.Count)];
+            return _all.Count == 0
+                ? new Hotspot(Vector3.zero, "none")
+                : _all[UnityEngine.Random.Range(0, _all.Count)];
         }
 
-        /// <summary>
-        /// Initializes the hotspot registry for the given map ID.
-        /// </summary>
-        /// <param name="mapId">Map identifier (e.g., "factory4_day").</param>
         public static void Initialize(string mapId)
         {
-            if (string.IsNullOrEmpty(mapId) || LoadedMap.Equals(mapId, StringComparison.OrdinalIgnoreCase))
+            if (string.IsNullOrEmpty(mapId) || _loadedMap.Equals(mapId, StringComparison.OrdinalIgnoreCase))
             {
                 return;
             }
 
             Clear();
 
-            LoadedMap = mapId.ToLowerInvariant();
-            ActiveMode = IndexModeMap.TryGetValue(LoadedMap, out var mode) ? mode : SpatialIndexMode.None;
+            _loadedMap = mapId.ToLowerInvariant();
+            _activeMode = _indexModeMap.TryGetValue(_loadedMap, out SpatialIndexMode mode) ? mode : SpatialIndexMode.None;
 
-            HotspotSet? set = HardcodedHotspots.GetForMap(LoadedMap);
-            if (set == null || set.Points.Count == 0)
+            HotspotSet? set = HardcodedHotspots.GetForMap(_loadedMap);
+            if (set == null || set.Points == null || set.Points.Count == 0)
             {
-                Log.LogWarning($"[HotspotRegistry] ⚠ No hotspots found for map '{LoadedMap}'");
+                _logger.LogWarning("[HotspotRegistry] ⚠ No hotspots found for map '" + _loadedMap + "'");
                 return;
             }
 
             for (int i = 0; i < set.Points.Count; i++)
             {
                 HotspotData entry = set.Points[i];
-                Hotspot hotspot = new Hotspot(entry.Position, entry.Zone);
-                All.Add(hotspot);
+                Hotspot h = new Hotspot(entry.Position, entry.Zone);
+                _all.Add(h);
 
-                if (!ByZone.TryGetValue(entry.Zone, out var zoneList))
+                List<Hotspot> list;
+                if (!_byZone.TryGetValue(entry.Zone, out list))
                 {
-                    zoneList = new List<Hotspot>(8);
-                    ByZone[entry.Zone] = zoneList;
+                    list = new List<Hotspot>(8);
+                    _byZone[entry.Zone] = list;
                 }
 
-                zoneList.Add(hotspot);
+                list.Add(h);
             }
 
-            switch (ActiveMode)
+            if (_activeMode == SpatialIndexMode.Quadtree)
             {
-                case SpatialIndexMode.Quadtree:
-                    BuildQuadtree();
-                    break;
-                case SpatialIndexMode.Grid:
-                    BuildGrid();
-                    break;
+                BuildQuadtree();
+            }
+            else if (_activeMode == SpatialIndexMode.Grid)
+            {
+                BuildGrid();
             }
 
-            Log.LogInfo($"[HotspotRegistry] ✅ Registered {All.Count} hotspots for map '{LoadedMap}' using {ActiveMode}");
+            _logger.LogInfo("[HotspotRegistry] ✅ Registered " + _all.Count + " hotspots for map '" + _loadedMap + "' using " + _activeMode);
         }
 
-        /// <summary>
-        /// Returns all hotspots within the specified radius of a point.
-        /// </summary>
         public static List<Hotspot> QueryNearby(Vector3 position, float radius, Predicate<Hotspot>? filter = null)
         {
-            switch (ActiveMode)
+            if (_activeMode == SpatialIndexMode.Quadtree && _quadtree != null)
             {
-                case SpatialIndexMode.Quadtree:
-                    if (Quadtree != null)
-                    {
-                        return Quadtree.Query(position, radius, filter);
-                    }
+                return _quadtree.Query(position, radius, filter);
+            }
 
-                    break;
-
-                case SpatialIndexMode.Grid:
-                    if (Grid != null)
-                    {
-                        return Grid.Query(position, radius, filter);
-                    }
-
-                    break;
+            if (_activeMode == SpatialIndexMode.Grid && _grid != null)
+            {
+                return _grid.Query(position, radius, filter);
             }
 
             return FallbackQuery(position, radius, filter);
@@ -175,10 +147,10 @@ namespace AIRefactored.AI.Hotspots
 
         private static void BuildGrid()
         {
-            Grid = new HotspotSpatialGrid(10f);
-            for (int i = 0; i < All.Count; i++)
+            _grid = new HotspotSpatialGrid(10.0f);
+            for (int i = 0; i < _all.Count; i++)
             {
-                Grid.Insert(All[i]);
+                _grid.Insert(_all[i]);
             }
         }
 
@@ -186,28 +158,29 @@ namespace AIRefactored.AI.Hotspots
         {
             Vector2 center = EstimateCenter();
             float size = EstimateBoundsSize(center);
-            Quadtree = new HotspotQuadtree(center, size);
+            _quadtree = new HotspotQuadtree(center, size);
 
-            for (int i = 0; i < All.Count; i++)
+            for (int i = 0; i < _all.Count; i++)
             {
-                Quadtree.Insert(All[i]);
+                _quadtree.Insert(_all[i]);
             }
         }
 
         private static float EstimateBoundsSize(Vector2 center)
         {
-            float maxDist = 0f;
-            for (int i = 0; i < All.Count; i++)
+            float max = 0.0f;
+
+            for (int i = 0; i < _all.Count; i++)
             {
-                Vector3 p = All[i].Position;
+                Vector3 p = _all[i].Position;
                 float dist = Vector2.Distance(new Vector2(p.x, p.z), center);
-                if (dist > maxDist)
+                if (dist > max)
                 {
-                    maxDist = dist;
+                    max = dist;
                 }
             }
 
-            return Mathf.NextPowerOfTwo(Mathf.CeilToInt(maxDist * 2f));
+            return Mathf.NextPowerOfTwo(Mathf.CeilToInt(max * 2.0f));
         }
 
         private static Vector2 EstimateCenter()
@@ -217,9 +190,9 @@ namespace AIRefactored.AI.Hotspots
             float minZ = float.MaxValue;
             float maxZ = float.MinValue;
 
-            for (int i = 0; i < All.Count; i++)
+            for (int i = 0; i < _all.Count; i++)
             {
-                Vector3 p = All[i].Position;
+                Vector3 p = _all[i].Position;
                 if (p.x < minX) minX = p.x;
                 if (p.x > maxX) maxX = p.x;
                 if (p.z < minZ) minZ = p.z;
@@ -229,21 +202,21 @@ namespace AIRefactored.AI.Hotspots
             return new Vector2((minX + maxX) * 0.5f, (minZ + maxZ) * 0.5f);
         }
 
-        private static List<Hotspot> FallbackQuery(Vector3 pos, float radius, Predicate<Hotspot>? filter)
+        private static List<Hotspot> FallbackQuery(Vector3 position, float radius, Predicate<Hotspot>? filter)
         {
-            List<Hotspot> results = new List<Hotspot>(16);
-            float radiusSq = radius * radius;
+            List<Hotspot> result = new List<Hotspot>(16);
+            float radiusSqr = radius * radius;
 
-            for (int i = 0; i < All.Count; i++)
+            for (int i = 0; i < _all.Count; i++)
             {
-                Hotspot h = All[i];
-                if ((h.Position - pos).sqrMagnitude <= radiusSq && (filter == null || filter(h)))
+                Hotspot h = _all[i];
+                if ((h.Position - position).sqrMagnitude <= radiusSqr && (filter == null || filter(h)))
                 {
-                    results.Add(h);
+                    result.Add(h);
                 }
             }
 
-            return results;
+            return result;
         }
 
         /// <summary>
@@ -257,9 +230,9 @@ namespace AIRefactored.AI.Hotspots
                 this.Zone = zone;
             }
 
-            public Vector3 Position { get; }
+            public Vector3 Position { get; private set; }
 
-            public string Zone { get; }
+            public string Zone { get; private set; }
         }
     }
 }

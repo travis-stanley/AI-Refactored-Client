@@ -36,8 +36,8 @@ namespace AIRefactored.AI.Memory
                 Zones.RemoveAt(0);
             }
 
-            string key = TryGetSafeKey(mapId, out string safeKey) ? safeKey : "unknown";
-            Zones.Add(new DangerZone(safeKey, position, type, radius, Time.time));
+            string map = TryGetSafeKey(mapId, out string safeMap) ? safeMap : "unknown";
+            Zones.Add(new DangerZone(map, position, type, radius, Time.time));
         }
 
         public static void AddHeardSound(string? profileId, Vector3 position, float time)
@@ -48,11 +48,6 @@ namespace AIRefactored.AI.Memory
             }
         }
 
-        public static void ClearAllHeardSounds()
-        {
-            HeardSounds.Clear();
-        }
-
         public static void ClearHeardSound(string? profileId)
         {
             if (TryGetSafeKey(profileId, out string key))
@@ -61,20 +56,17 @@ namespace AIRefactored.AI.Memory
             }
         }
 
-        public static void ClearHitSources()
-        {
-            LastHitSources.Clear();
-        }
+        public static void ClearAllHeardSounds() => HeardSounds.Clear();
 
-        public static void ClearZones()
-        {
-            Zones.Clear();
-        }
+        public static void ClearHitSources() => LastHitSources.Clear();
+
+        public static void ClearZones() => Zones.Clear();
 
         public static List<Player> GetNearbyPlayers(Vector3 origin, float radius)
         {
             List<Player> result = new List<Player>(8);
             IReadOnlyList<Player> players = GameWorldHandler.GetAllAlivePlayers();
+            float sqrRange = radius * radius;
 
             for (int i = 0; i < players.Count; i++)
             {
@@ -84,8 +76,8 @@ namespace AIRefactored.AI.Memory
                     continue;
                 }
 
-                float dist = Vector3.Distance(origin, player.Transform.position);
-                if (dist <= radius)
+                float sqrDistance = (player.Transform.position - origin).sqrMagnitude;
+                if (sqrDistance <= sqrRange)
                 {
                     result.Add(player);
                 }
@@ -97,16 +89,18 @@ namespace AIRefactored.AI.Memory
         public static List<DangerZone> GetZonesForMap(string? mapId)
         {
             List<DangerZone> result = ListPool<DangerZone>.Rent();
-            if (!TryGetSafeKey(mapId, out string map))
+
+            if (!TryGetSafeKey(mapId, out string safeMap))
             {
                 return result;
             }
 
             float now = Time.time;
+
             for (int i = 0; i < Zones.Count; i++)
             {
                 DangerZone zone = Zones[i];
-                if (zone.Map == map && now - zone.Timestamp <= DangerZoneTTL)
+                if (zone.Map == safeMap && now - zone.Timestamp <= DangerZoneTTL)
                 {
                     result.Add(zone);
                 }
@@ -117,22 +111,27 @@ namespace AIRefactored.AI.Memory
 
         public static bool IsPositionInDangerZone(string? mapId, Vector3 position)
         {
-            if (!TryGetSafeKey(mapId, out string map))
+            if (!TryGetSafeKey(mapId, out string safeMap))
             {
                 return false;
             }
 
             float now = Time.time;
+
             for (int i = 0; i < Zones.Count; i++)
             {
                 DangerZone zone = Zones[i];
-                if (zone.Map == map && now - zone.Timestamp <= DangerZoneTTL)
+                if (zone.Map != safeMap || now - zone.Timestamp > DangerZoneTTL)
                 {
-                    float sqrDist = (zone.Position - position).sqrMagnitude;
-                    if (sqrDist <= zone.Radius * zone.Radius)
-                    {
-                        return true;
-                    }
+                    continue;
+                }
+
+                float sqrDistance = (zone.Position - position).sqrMagnitude;
+                float radiusSqr = zone.Radius * zone.Radius;
+
+                if (sqrDistance <= radiusSqr)
+                {
+                    return true;
                 }
             }
 
@@ -148,12 +147,6 @@ namespace AIRefactored.AI.Memory
             }
         }
 
-        public static bool TryGetHeardSound(string? profileId, out HeardSound sound)
-        {
-            sound = default;
-            return TryGetSafeKey(profileId, out string key) && HeardSounds.TryGetValue(key, out sound);
-        }
-
         public static bool WasRecentlyHitBy(string? victimProfileId, string? attackerProfileId)
         {
             if (!TryGetSafeKey(victimProfileId, out string victim) ||
@@ -167,33 +160,36 @@ namespace AIRefactored.AI.Memory
                    Time.time - hit.Time <= HitMemoryDuration;
         }
 
+        public static bool TryGetHeardSound(string? profileId, out HeardSound sound)
+        {
+            sound = default;
+            return TryGetSafeKey(profileId, out string key) && HeardSounds.TryGetValue(key, out sound);
+        }
+
+        private static bool TryGetSafeKey(string? profileId, out string key)
+        {
+            key = string.Empty;
+
+            // Return false if profileId is null
+            if (profileId == null)
+            {
+                return false;
+            }
+
+            // Trim the profileId only if it is not null or empty
+            key = profileId.Trim();
+
+            // Return true only if the trimmed profileId is not an empty string
+            return !string.IsNullOrEmpty(key);
+        }
+
         private static bool IsRealPlayer(Player player)
         {
             return player.AIData == null || !player.AIData.IsAI;
         }
 
-        private static bool TryGetSafeKey(string? profileId, out string key)
-        {
-            if (profileId == null)
-            {
-                key = string.Empty;
-                return false;
-            }
+        #region Memory Types
 
-            string trimmed = profileId.Trim();
-            if (trimmed.Length == 0)
-            {
-                key = string.Empty;
-                return false;
-            }
-
-            key = trimmed;
-            return true;
-        }
-
-        /// <summary>
-        /// A remembered danger zone on the map.
-        /// </summary>
         public struct DangerZone
         {
             public string Map;
@@ -212,9 +208,6 @@ namespace AIRefactored.AI.Memory
             }
         }
 
-        /// <summary>
-        /// A remembered heard sound and the time it was recorded.
-        /// </summary>
         public struct HeardSound
         {
             public Vector3 Position;
@@ -227,9 +220,6 @@ namespace AIRefactored.AI.Memory
             }
         }
 
-        /// <summary>
-        /// Tracks who last hit a bot and when.
-        /// </summary>
         public struct LastHitInfo
         {
             public string AttackerId;
@@ -241,6 +231,8 @@ namespace AIRefactored.AI.Memory
                 this.Time = time;
             }
         }
+
+        #endregion
     }
 
     /// <summary>
@@ -261,10 +253,7 @@ namespace AIRefactored.AI.Memory
     {
         private static readonly Stack<List<T>> Pool = new Stack<List<T>>(32);
 
-        public static List<T> Rent()
-        {
-            return Pool.Count > 0 ? Pool.Pop() : new List<T>();
-        }
+        public static List<T> Rent() => Pool.Count != 0 ? Pool.Pop() : new List<T>();
 
         public static void Return(List<T>? list)
         {

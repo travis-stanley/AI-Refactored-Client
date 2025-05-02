@@ -12,6 +12,7 @@ namespace AIRefactored.AI.Combat
 {
     using System;
     using AIRefactored.AI.Optimization;
+    using AIRefactored.Core;
     using AIRefactored.Runtime;
     using BepInEx.Logging;
     using EFT;
@@ -19,7 +20,7 @@ namespace AIRefactored.AI.Combat
 
     /// <summary>
     /// Tracks panic events, visible enemies, and squad losses to trigger escalation behavior.
-    /// Applies tuning changes and personality adaptations based on threat severity.
+    /// Applies tuning and personality adaptations based on threat severity.
     /// </summary>
     public sealed class BotThreatEscalationMonitor
     {
@@ -35,47 +36,52 @@ namespace AIRefactored.AI.Combat
 
         private static readonly ManualLogSource Logger = AIRefactoredController.Logger;
 
-        private BotOwner? bot;
-        private bool hasEscalated;
-        private float lastCheckTime = -1f;
-        private float panicStartTime = -1f;
+        private BotOwner? _bot;
+        private bool _hasEscalated;
+        private float _lastCheckTime = -1f;
+        private float _panicStartTime = -1f;
 
         #endregion
 
         #region Public Methods
 
         /// <summary>
-        /// Initializes the monitor with the specified bot owner.
+        /// Initializes the escalation monitor for the specified bot.
         /// </summary>
-        /// <param name="botOwner">The bot to monitor.</param>
+        /// <param name="botOwner">Bot owner reference.</param>
         public void Initialize(BotOwner botOwner)
         {
-            this.bot = botOwner ?? throw new ArgumentNullException(nameof(botOwner));
+            if (botOwner == null)
+            {
+                throw new ArgumentNullException(nameof(botOwner));
+            }
+
+            this._bot = botOwner;
         }
 
         /// <summary>
-        /// Records the time when panic behavior was triggered.
+        /// Records the panic start time.
         /// </summary>
         public void NotifyPanicTriggered()
         {
-            if (this.panicStartTime < 0f)
+            if (this._panicStartTime < 0f)
             {
-                this.panicStartTime = Time.time;
+                this._panicStartTime = Time.time;
             }
         }
 
         /// <summary>
-        /// Updates escalation evaluation every frame.
+        /// Updates escalation check at defined intervals.
         /// </summary>
-        /// <param name="time">The current game time.</param>
+        /// <param name="time">Current game time.</param>
         public void Tick(float time)
         {
-            if (this.hasEscalated || !this.IsValid() || time < this.lastCheckTime)
+            if (this._hasEscalated || !this.IsValid() || time < this._lastCheckTime)
             {
                 return;
             }
 
-            this.lastCheckTime = time + CheckInterval;
+            this._lastCheckTime = time + CheckInterval;
 
             if (this.ShouldEscalate(time))
             {
@@ -89,39 +95,40 @@ namespace AIRefactored.AI.Combat
 
         private bool IsValid()
         {
-            var botRef = this.bot;
-            return botRef != null && !botRef.IsDead && botRef.GetPlayer?.IsAI == true;
+            return this._bot != null &&
+                   !this._bot.IsDead &&
+                   this._bot.GetPlayer is EFT.Player player &&
+                   player.IsAI;
         }
 
         private bool PanicDurationExceeded(float time)
         {
-            return this.panicStartTime >= 0f && (time - this.panicStartTime) > PanicDurationThreshold;
+            return this._panicStartTime >= 0f &&
+                   (time - this._panicStartTime) > PanicDurationThreshold;
         }
 
         private bool MultipleEnemiesVisible()
         {
-            var infos = this.bot?.EnemiesController?.EnemyInfos;
-            return infos != null && infos.Count >= 2;
+            return this._bot?.EnemiesController?.EnemyInfos?.Count >= 2;
         }
 
         private bool SquadHasLostTeammates()
         {
-            var group = this.bot?.BotsGroup;
-            if (group == null)
+            if (this._bot?.BotsGroup == null)
             {
                 return false;
             }
 
-            var total = group.MembersCount;
+            int total = this._bot.BotsGroup.MembersCount;
             if (total <= 1)
             {
                 return false;
             }
 
-            var dead = 0;
-            for (var i = 0; i < total; i++)
+            int dead = 0;
+            for (int i = 0; i < total; i++)
             {
-                var member = group.Member(i);
+                BotOwner? member = this._bot.BotsGroup.Member(i);
                 if (member == null || member.IsDead)
                 {
                     dead++;
@@ -134,28 +141,27 @@ namespace AIRefactored.AI.Combat
         private bool ShouldEscalate(float time)
         {
             return this.PanicDurationExceeded(time)
-                || this.MultipleEnemiesVisible()
-                || this.SquadHasLostTeammates();
+                   || this.MultipleEnemiesVisible()
+                   || this.SquadHasLostTeammates();
         }
 
         private void EscalateBot()
         {
-            var botRef = this.bot;
-            if (botRef == null)
+            if (this._bot == null)
             {
                 return;
             }
 
-            this.hasEscalated = true;
-            var nickname = botRef.Profile?.Info?.Nickname ?? "Unknown";
+            this._hasEscalated = true;
+            string nickname = this._bot.Profile?.Info?.Nickname ?? "Unknown";
 
             Logger.LogInfo($"[AIRefactored-Escalation] Escalating behavior for bot '{nickname}'.");
 
-            AIOptimizationManager.Reset(botRef);
-            AIOptimizationManager.Apply(botRef);
+            AIOptimizationManager.Reset(this._bot);
+            AIOptimizationManager.Apply(this._bot);
 
-            this.ApplyEscalationTuning(botRef);
-            this.ApplyPersonalityTuning(botRef);
+            this.ApplyEscalationTuning(this._bot);
+            this.ApplyPersonalityTuning(this._bot);
         }
 
         private void ApplyEscalationTuning(BotOwner botRef)
@@ -166,35 +172,32 @@ namespace AIRefactored.AI.Combat
                 return;
             }
 
-            var shoot = settings.Shoot;
-            if (shoot != null)
+            if (settings.Shoot != null)
             {
-                shoot.RECOIL_PER_METER = Mathf.Clamp(shoot.RECOIL_PER_METER * 0.85f, 0.1f, 2f);
+                settings.Shoot.RECOIL_PER_METER = Mathf.Clamp(settings.Shoot.RECOIL_PER_METER * 0.85f, 0.1f, 2.0f);
             }
 
-            var mind = settings.Mind;
-            if (mind != null)
+            if (settings.Mind != null)
             {
-                mind.DIST_TO_FOUND_SQRT = Mathf.Clamp(mind.DIST_TO_FOUND_SQRT * 1.2f, 200f, 800f);
-                mind.ENEMY_LOOK_AT_ME_ANG = Mathf.Clamp(mind.ENEMY_LOOK_AT_ME_ANG * 0.75f, 5f, 45f);
-                mind.CHANCE_TO_RUN_CAUSE_DAMAGE_0_100 = Mathf.Clamp(
-                    mind.CHANCE_TO_RUN_CAUSE_DAMAGE_0_100 + 20f,
-                    0f,
-                    100f);
+                settings.Mind.DIST_TO_FOUND_SQRT = Mathf.Clamp(settings.Mind.DIST_TO_FOUND_SQRT * 1.2f, 200.0f, 800.0f);
+                settings.Mind.ENEMY_LOOK_AT_ME_ANG = Mathf.Clamp(settings.Mind.ENEMY_LOOK_AT_ME_ANG * 0.75f, 5.0f, 45.0f);
+                settings.Mind.CHANCE_TO_RUN_CAUSE_DAMAGE_0_100 = Mathf.Clamp(
+                    settings.Mind.CHANCE_TO_RUN_CAUSE_DAMAGE_0_100 + 20.0f,
+                    0.0f,
+                    100.0f);
             }
 
-            var look = settings.Look;
-            if (look != null)
+            if (settings.Look != null)
             {
-                look.MAX_VISION_GRASS_METERS = Mathf.Clamp(look.MAX_VISION_GRASS_METERS + 5f, 5f, 40f);
+                settings.Look.MAX_VISION_GRASS_METERS = Mathf.Clamp(settings.Look.MAX_VISION_GRASS_METERS + 5.0f, 5.0f, 40.0f);
             }
 
-            Logger.LogInfo($"[AIRefactored-Tuning] Escalation tuning applied to {botRef.Profile?.Info?.Nickname ?? "Unknown"}.");
+            Logger.LogInfo($"[AIRefactored-Tuning] Escalation tuning applied to '{botRef.Profile?.Info?.Nickname ?? "Unknown"}'.");
         }
 
         private void ApplyPersonalityTuning(BotOwner botRef)
         {
-            var profile = BotRegistry.Get(botRef.ProfileId);
+            BotPersonalityProfile? profile = BotRegistry.Get(botRef.ProfileId);
             if (profile == null)
             {
                 return;
@@ -207,9 +210,9 @@ namespace AIRefactored.AI.Combat
             profile.CommunicationLevel = Mathf.Clamp01(profile.CommunicationLevel + 0.2f);
 
             Logger.LogInfo(
-                $"[AIRefactored-Tuning] Personality tuned for {botRef.Profile?.Info?.Nickname ?? "Unknown"}: "
-                + $"Agg={profile.AggressionLevel:F2}, Caution={profile.Caution:F2}, "
-                + $"Supp={profile.SuppressionSensitivity:F2}, UnderFireAcc={profile.AccuracyUnderFire:F2}");
+                $"[AIRefactored-Tuning] Personality tuned for '{botRef.Profile?.Info?.Nickname ?? "Unknown"}': " +
+                $"Agg={profile.AggressionLevel:F2}, Caution={profile.Caution:F2}, " +
+                $"Supp={profile.SuppressionSensitivity:F2}, AccUF={profile.AccuracyUnderFire:F2}");
         }
 
         #endregion

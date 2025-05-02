@@ -12,15 +12,18 @@ namespace AIRefactored.AI.Movement
 {
     using System;
     using AIRefactored.AI.Core;
+    using AIRefactored.Core;
     using EFT;
     using UnityEngine;
 
     /// <summary>
     /// Handles dynamic jumping behavior for bots.
-    /// Detects jumpable obstacles, triggers safe vaults,
+    /// Detects jumpable obstacles and triggers safe vaults when needed.
     /// </summary>
     public sealed class BotJumpController
     {
+        #region Constants
+
         private const float JumpCheckDistance = 1.1f;
         private const float JumpCooldown = 1.25f;
         private const float MaxJumpHeight = 1.2f;
@@ -29,6 +32,10 @@ namespace AIRefactored.AI.Movement
         private const float SafeFallHeight = 2.2f;
         private const float VaultForwardOffset = 0.75f;
 
+        #endregion
+
+        #region Fields
+
         private readonly BotOwner _bot;
         private readonly BotComponentCache _cache;
         private readonly MovementContext _context;
@@ -36,23 +43,45 @@ namespace AIRefactored.AI.Movement
         private bool _hasRecentlyJumped;
         private float _lastJumpTime;
 
+        #endregion
+
+        #region Constructor
+
         /// <summary>
         /// Initializes a new instance of the <see cref="BotJumpController"/> class.
         /// </summary>
-        /// <param name="bot">BotOwner reference.</param>
-        /// <param name="cache">BotComponentCache reference.</param>
+        /// <param name="bot">The bot owner.</param>
+        /// <param name="cache">The component cache.</param>
         public BotJumpController(BotOwner bot, BotComponentCache cache)
         {
-            this._bot = bot ?? throw new ArgumentNullException(nameof(bot));
-            this._cache = cache ?? throw new ArgumentNullException(nameof(cache));
-            this._context = this._bot.GetPlayer?.MovementContext
-                            ?? throw new InvalidOperationException("Missing MovementContext.");
+            if (bot == null)
+            {
+                throw new ArgumentNullException(nameof(bot));
+            }
+
+            if (cache == null)
+            {
+                throw new ArgumentNullException(nameof(cache));
+            }
+
+            if (bot.GetPlayer?.MovementContext == null)
+            {
+                throw new InvalidOperationException("Bot is missing MovementContext.");
+            }
+
+            this._bot = bot;
+            this._cache = cache;
+            this._context = bot.GetPlayer.MovementContext;
         }
 
+        #endregion
+
+        #region Public API
+
         /// <summary>
-        /// Evaluates whether a jump is needed, and triggers it if safe and appropriate.
+        /// Called each frame to evaluate and potentially trigger jump behavior.
         /// </summary>
-        /// <param name="deltaTime">Delta time from the frame update.</param>
+        /// <param name="deltaTime">Frame delta time.</param>
         public void Tick(float deltaTime)
         {
             if (!this.IsJumpAllowed())
@@ -67,6 +96,10 @@ namespace AIRefactored.AI.Movement
             }
         }
 
+        #endregion
+
+        #region Jump Logic
+
         private bool IsJumpAllowed()
         {
             if (this._hasRecentlyJumped && Time.time - this._lastJumpTime < JumpCooldown)
@@ -79,7 +112,7 @@ namespace AIRefactored.AI.Movement
                 return false;
             }
 
-            if (this._cache.PanicHandler?.IsPanicking == true)
+            if (this._cache.PanicHandler != null && this._cache.PanicHandler.IsPanicking)
             {
                 return false;
             }
@@ -104,18 +137,24 @@ namespace AIRefactored.AI.Movement
             Vector3 origin = this._context.PlayerColliderCenter + Vector3.up * 0.25f;
             Vector3 direction = this._context.TransformForwardVector;
 
-            RaycastHit hit;
-            if (!Physics.SphereCast(origin, ObstacleCheckRadius, direction, out hit, JumpCheckDistance))
+            RaycastHit obstacle;
+            if (!Physics.SphereCast(
+                origin,
+                ObstacleCheckRadius,
+                direction,
+                out obstacle,
+                JumpCheckDistance,
+                AIRefactoredLayerMasks.ObstacleRayMask))
             {
                 return false;
             }
 
-            if (hit.collider == null)
+            if (obstacle.collider == null)
             {
                 return false;
             }
 
-            Bounds bounds = hit.collider.bounds;
+            Bounds bounds = obstacle.collider.bounds;
             float heightDelta = bounds.max.y - this._context.TransformPosition.y;
 
             if (heightDelta < MinJumpHeight || heightDelta > MaxJumpHeight)
@@ -123,10 +162,15 @@ namespace AIRefactored.AI.Movement
                 return false;
             }
 
-            Vector3 probePoint = bounds.max + direction * VaultForwardOffset;
+            Vector3 vaultProbe = bounds.max + direction * VaultForwardOffset;
 
             RaycastHit landing;
-            if (!Physics.Raycast(probePoint, Vector3.down, out landing, 2.5f))
+            if (!Physics.Raycast(
+                vaultProbe,
+                Vector3.down,
+                out landing,
+                2.5f,
+                AIRefactoredLayerMasks.JumpRayMask))
             {
                 return false;
             }
@@ -140,5 +184,7 @@ namespace AIRefactored.AI.Movement
             target = landing.point;
             return true;
         }
+
+        #endregion
     }
 }

@@ -13,7 +13,7 @@ namespace AIRefactored.AI.Helpers
     using System.Collections.Generic;
     using AIRefactored.AI.Combat;
     using AIRefactored.AI.Core;
-
+    using EFT;
     using UnityEngine;
 
     /// <summary>
@@ -33,10 +33,14 @@ namespace AIRefactored.AI.Helpers
                 return;
             }
 
-            var bot = cache.Bot;
+            BotOwner bot = cache.Bot;
             if (!bot.IsDead && bot.GetPlayer?.IsAI == true)
             {
-                cache.PanicHandler?.TriggerPanic();
+                BotPanicHandler? panic = cache.PanicHandler;
+                if (panic != null)
+                {
+                    panic.TriggerPanic();
+                }
             }
         }
 
@@ -51,18 +55,22 @@ namespace AIRefactored.AI.Helpers
                 return;
             }
 
-            for (var i = 0; i < group.Count; i++)
+            for (int i = 0; i < group.Count; i++)
             {
-                var cache = group[i];
+                BotComponentCache cache = group[i];
                 if (cache == null || cache.Bot == null)
                 {
                     continue;
                 }
 
-                var bot = cache.Bot;
+                BotOwner bot = cache.Bot;
                 if (!bot.IsDead && bot.GetPlayer?.IsAI == true)
                 {
-                    cache.PanicHandler?.TriggerPanic();
+                    BotPanicHandler? panic = cache.PanicHandler;
+                    if (panic != null)
+                    {
+                        panic.TriggerPanic();
+                    }
                 }
             }
         }
@@ -104,28 +112,31 @@ namespace AIRefactored.AI.Helpers
                 return;
             }
 
-            var radiusSq = radius * radius;
+            float radiusSq = radius * radius;
 
-            foreach (var cache in BotCacheUtility.AllActiveBots())
+            foreach (BotComponentCache cache in BotCacheUtility.AllActiveBots())
             {
-                if (cache?.Bot == null)
+                if (cache == null || cache.Bot == null)
                 {
                     continue;
                 }
 
-                var bot = cache.Bot;
+                BotOwner bot = cache.Bot;
                 if (bot.IsDead || bot.GetPlayer?.IsAI != true)
                 {
                     continue;
                 }
 
-                var distSq = (bot.Position - origin).sqrMagnitude;
+                float distSq = (bot.Position - origin).sqrMagnitude;
                 if (distSq <= radiusSq)
                 {
-                    cache.PanicHandler?.TriggerPanic();
+                    BotPanicHandler? panic = cache.PanicHandler;
+                    if (panic != null)
+                    {
+                        panic.TriggerPanic();
+                    }
                 }
             }
         }
-
     }
 }

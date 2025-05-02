@@ -99,7 +99,7 @@ namespace AIRefactored.Runtime
         #region Deferred Bootstrap
 
         /// <summary>
-        /// Periodically attempts to bootstrap AI systems once the GameWorld is loaded.
+        /// Periodically attempts to bootstrap AI systems once the GameWorld is loaded, for authoritative hosts only.
         /// </summary>
         private IEnumerator RunDeferredBootstrap()
         {
@@ -109,20 +109,28 @@ namespace AIRefactored.Runtime
             {
                 try
                 {
-                    GameWorldHandler.TryInitializeWorld();
-
-                    if (GameWorldHandler.IsInitialized)
+                    if (GameWorldHandler.IsLocalHost())
                     {
-                        this._bootstrapped = true;
-                        _logger?.LogInfo("[AIRefactored] [Bootstrap] GameWorld systems initialized.");
-                        yield break;
+                        GameWorldHandler.TryInitializeWorld();
+
+                        if (GameWorldHandler.IsInitialized)
+                        {
+                            this._bootstrapped = true;
+                            _logger?.LogInfo("[AIRefactored] [Bootstrap] GameWorld systems initialized.");
+                            yield break;
+                        }
+
+                        if (FikaHeadlessDetector.IsHeadless && Time.time >= timeoutAt)
+                        {
+                            _logger?.LogWarning("[AIRefactored] [Headless Timeout] Forcing bot spawn hook after delay.");
+                            GameWorldHandler.HookBotSpawns();
+                            this._bootstrapped = true;
+                            yield break;
+                        }
                     }
-
-                    if (FikaHeadlessDetector.IsHeadless && Time.time >= timeoutAt)
+                    else
                     {
-                        _logger?.LogWarning("[AIRefactored] [Headless Timeout] Forcing bot spawn hook after delay.");
-                        GameWorldHandler.HookBotSpawns();
-                        this._bootstrapped = true;
+                        _logger?.LogInfo("[AIRefactored] [Client] Non-host detected, skipping bootstrap.");
                         yield break;
                     }
                 }

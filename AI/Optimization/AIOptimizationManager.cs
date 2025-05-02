@@ -10,6 +10,7 @@
 
 namespace AIRefactored.AI.Optimization
 {
+    using AIRefactored.Core;
     using AIRefactored.Runtime;
     using BepInEx.Logging;
     using EFT;
@@ -19,13 +20,13 @@ namespace AIRefactored.AI.Optimization
     /// Manages runtime optimization routines for AI bots.
     /// Provides centralized access to performance tuning, reset, and escalation routines.
     /// Designed to improve tactical behavior and reduce simulation overhead.
+    /// Only runs on the authoritative host (headless, local-host, or client-host).
     /// </summary>
     public static class AIOptimizationManager
     {
         #region Fields
 
         private static readonly BotAIOptimization _optimizer = new BotAIOptimization();
-
         private static ManualLogSource? Logger => AIRefactoredController.Logger;
 
         #endregion
@@ -38,10 +39,13 @@ namespace AIRefactored.AI.Optimization
         /// </summary>
         public static void Apply(BotOwner? bot)
         {
-            if (IsValidBot(bot))
+            // Only run on authoritative host and with a valid, non-null bot
+            if (!GameWorldHandler.IsLocalHost() || bot == null || !IsValidBot(bot))
             {
-                _optimizer.Optimize(bot);
+                return;
             }
+
+            _optimizer.Optimize(bot);
         }
 
         /// <summary>
@@ -49,10 +53,13 @@ namespace AIRefactored.AI.Optimization
         /// </summary>
         public static void Reset(BotOwner? bot)
         {
-            if (IsValidBot(bot))
+            // Only run on authoritative host and with a valid, non-null bot
+            if (!GameWorldHandler.IsLocalHost() || bot == null || !IsValidBot(bot))
             {
-                _optimizer.ResetOptimization(bot);
+                return;
             }
+
+            _optimizer.ResetOptimization(bot);
         }
 
         /// <summary>
@@ -61,27 +68,7 @@ namespace AIRefactored.AI.Optimization
         /// </summary>
         public static void TriggerEscalation(BotOwner? bot)
         {
-            if (bot == null)
-            {
-                return;
-            }
-
-            if (bot.GetPlayer == null || !bot.GetPlayer.IsAI || bot.IsDead)
-            {
-                return;
-            }
-
-            if (bot.Settings == null)
-            {
-                return;
-            }
-
-            if (bot.Settings.FileSettings == null)
-            {
-                return;
-            }
-
-            if (bot.Settings.FileSettings.Mind == null)
+            if (!GameWorldHandler.IsLocalHost() || bot == null || bot.GetPlayer == null || !bot.GetPlayer.IsAI || bot.IsDead || bot.Settings?.FileSettings?.Mind == null)
             {
                 return;
             }
@@ -95,22 +82,13 @@ namespace AIRefactored.AI.Optimization
                 0f,
                 100f);
 
-            string botName = bot.Profile != null && bot.Profile.Info != null
-                                 ? bot.Profile.Info.Nickname
-                                 : "Unknown";
-
+            string botName = bot.Profile?.Info?.Nickname ?? "Unknown";
             Logger?.LogInfo("[AIRefactored] Escalation triggered for bot: " + botName);
         }
-
 
         #endregion
 
         #region Private Helpers
-
-        private static string GetBotName(BotOwner? bot)
-        {
-            return bot?.Profile?.Info?.Nickname ?? "Unknown";
-        }
 
         private static bool IsValidBot(BotOwner? bot)
         {

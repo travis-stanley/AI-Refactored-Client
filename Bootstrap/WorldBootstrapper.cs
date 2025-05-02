@@ -54,7 +54,7 @@ namespace AIRefactored.Bootstrap
         /// </summary>
         public static void TryInitialize()
         {
-            if (_hasInitialized)
+            if (_hasInitialized || !GameWorldHandler.IsLocalHost())
             {
                 return;
             }
@@ -78,19 +78,24 @@ namespace AIRefactored.Bootstrap
             this._recoveryWatcher = this.gameObject.AddComponent<BotSystemRecoveryWatcher>();
             BotWorkScheduler.AutoInjectFlushHost();
 
-            if (FikaHeadlessDetector.IsHeadless)
+            if (GameWorldHandler.IsLocalHost())
             {
-                Logger.LogInfo("[WorldBootstrapper] 🧠 Headless mode detected — initializing immediately.");
+                Logger.LogInfo("[WorldBootstrapper] 🧠 Authoritative host detected — initializing immediately.");
                 this.InitializeWorldSystems();
             }
             else
             {
-                this.StartCoroutine(this.WatchForWorld());
+                Logger.LogWarning("[WorldBootstrapper] 🚫 Non-host client detected — initialization skipped.");
             }
         }
 
         private void Update()
         {
+            if (!GameWorldHandler.IsLocalHost())
+            {
+                return;
+            }
+
             float now = Time.time;
 
             if (now - this._lastSweepTime >= SweepInterval)
@@ -114,30 +119,13 @@ namespace AIRefactored.Bootstrap
             HotspotRegistry.Clear();
             LootRegistry.Clear();
             NavPointRegistry.Clear();
+
+            _hasInitialized = false;
         }
 
         #endregion
 
         #region World Init
-
-        private IEnumerator WatchForWorld()
-        {
-            while (!SingletonExists())
-            {
-                yield return null;
-            }
-
-            Logger.LogInfo("[WorldBootstrapper] 🌍 GameWorld detected — initializing AIRefactored systems.");
-            this.InitializeWorldSystems();
-
-            yield return new WaitForSeconds(3.0f);
-            GameWorldHandler.EnforceBotBrains();
-        }
-
-        private static bool SingletonExists()
-        {
-            return Singleton<GameWorld>.Instantiated && Singleton<GameWorld>.Instance != null;
-        }
 
         private void InitializeWorldSystems()
         {

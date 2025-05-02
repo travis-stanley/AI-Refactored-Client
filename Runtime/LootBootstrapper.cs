@@ -14,7 +14,6 @@ namespace AIRefactored.Runtime
     using AIRefactored.AI.Core;
     using AIRefactored.AI.Looting;
     using AIRefactored.Core;
-    using Comfort.Common;
     using EFT;
     using EFT.Interactive;
     using UnityEngine;
@@ -22,6 +21,7 @@ namespace AIRefactored.Runtime
     /// <summary>
     /// Registers all lootable objects in the current scene for bot interaction.
     /// Includes lootable containers and loose items, and links containers to corpses where applicable.
+    /// Execution is restricted to authoritative host instances.
     /// </summary>
     public static class LootBootstrapper
     {
@@ -38,7 +38,7 @@ namespace AIRefactored.Runtime
         /// </summary>
         public static void RegisterAllLoot()
         {
-            if (!GameWorldHandler.IsInitialized)
+            if (!GameWorldHandler.IsInitialized || !GameWorldHandler.IsLocalHost())
             {
                 return;
             }
@@ -121,7 +121,7 @@ namespace AIRefactored.Runtime
                     continue;
                 }
 
-                Transform? playerTransform = player.Transform != null ? player.Transform.Original : null;
+                Transform? playerTransform = player.Transform?.Original;
                 if (playerTransform == null)
                 {
                     continue;

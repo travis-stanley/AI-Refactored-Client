@@ -29,6 +29,7 @@ namespace AIRefactored.AI.Threads
     /// <summary>
     /// Central AI controller for AIRefactored bots.
     /// Orchestrates tick-based updates for combat, perception, movement, group logic, and subsystem reactions.
+    /// Only runs on the authoritative host (headless, local-host, or client-host).
     /// </summary>
     public sealed class BotBrain : MonoBehaviour
     {
@@ -88,7 +89,8 @@ namespace AIRefactored.AI.Threads
 
         private void Update()
         {
-            if (!this._isValid || this._bot == null || this._bot.IsDead || this._player == null)
+            // Only the authoritative host should run AI ticks
+            if (!GameWorldHandler.IsLocalHost() || !this._isValid || this._bot == null || this._bot.IsDead || this._player == null)
             {
                 return;
             }
@@ -143,6 +145,13 @@ namespace AIRefactored.AI.Threads
         /// <param name="bot">The BotOwner instance to wrap and control.</param>
         public void Initialize(BotOwner bot)
         {
+            // Abort if not authoritative host (headless or client-host)
+            if (!GameWorldHandler.IsLocalHost())
+            {
+                Logger.LogWarning("[BotBrain] Initialization aborted: non-authoritative client.");
+                return;
+            }
+
             if (bot == null || bot.GetPlayer == null || bot.IsDead || !bot.GetPlayer.IsAI || bot.GetPlayer.IsYourPlayer)
             {
                 Logger.LogWarning("[BotBrain] Initialization aborted: invalid or non-AI bot.");

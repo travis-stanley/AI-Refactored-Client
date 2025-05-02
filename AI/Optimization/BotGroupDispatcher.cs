@@ -13,14 +13,14 @@ namespace AIRefactored.AI.Optimization
     using System;
     using System.Collections.Generic;
     using System.Threading.Tasks;
-    using AIRefactored.AI.Core;
     using AIRefactored.Core;
     using AIRefactored.Runtime;
     using BepInEx.Logging;
+    using EFT;
     using UnityEngine;
 
     /// <summary>
-    /// Schedules and dispatches thread-safe bot workloads during headless server execution.
+    /// Schedules and dispatches thread-safe bot workloads during headless server or client-host execution.
     /// Used for background AI tasks like group evaluation and noise scoring.
     /// </summary>
     public sealed class BotWorkGroupDispatcher : MonoBehaviour
@@ -45,13 +45,13 @@ namespace AIRefactored.AI.Optimization
 
         private void Update()
         {
-            if (!FikaHeadlessDetector.IsHeadless)
+            // Only run on the authoritative host (headless OR client-host)
+            if (!GameWorldHandler.IsLocalHost())
             {
                 return;
             }
 
             List<IBotWorkload> batch;
-
             lock (_lock)
             {
                 if (_pendingWorkloads.Count == 0)
@@ -93,11 +93,8 @@ namespace AIRefactored.AI.Optimization
                     {
                         try
                         {
-                            IBotWorkload? work = batch[j];
-                            if (work != null)
-                            {
-                                work.RunBackgroundWork();
-                            }
+                            IBotWorkload work = batch[j];
+                            work?.RunBackgroundWork();
                         }
                         catch (Exception ex)
                         {
@@ -116,7 +113,6 @@ namespace AIRefactored.AI.Optimization
         /// <summary>
         /// Queues a workload for background processing. Safe from any thread.
         /// </summary>
-        /// <param name="workload">The workload to queue.</param>
         public static void Schedule(IBotWorkload? workload)
         {
             if (workload == null)

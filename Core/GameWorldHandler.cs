@@ -89,6 +89,12 @@ namespace AIRefactored.Core
 
         public static void TryInitializeWorld()
         {
+            if (!IsLocalHost())
+            {
+                Logger.LogWarning("[GameWorldHandler] ⚠ Skipped initialization: not authoritative host.");
+                return;
+            }
+
             GameWorld? world = Get();
             if (world?.AllAlivePlayersList == null)
             {
@@ -149,6 +155,15 @@ namespace AIRefactored.Core
             _hasWarnedNoWorld = false;
 
             Logger.LogInfo("[GameWorldHandler] 🔻 Shutdown complete.");
+        }
+
+        public static bool IsLocalHost()
+        {
+            if (FikaHeadlessDetector.IsHeadless)
+                return true;
+
+            var gw = Singleton<ClientGameWorld>.Instance;
+            return gw?.MainPlayer != null && gw.MainPlayer.IsYourPlayer;
         }
 
         #endregion

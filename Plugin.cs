@@ -57,15 +57,16 @@ namespace AIRefactored
 
             AIRefactoredController.Initialize(_log);
             BotWorkScheduler.AutoInjectFlushHost();
-            WorldBootstrapper.TryInitialize();
 
             if (FikaHeadlessDetector.IsHeadless)
             {
-                _log.LogInfo("[AIRefactored] [Headless] Detected headless mode — skipping camera or UI-bound bootstrap.");
+                _log.LogInfo("[AIRefactored] [Headless] Detected headless mode — proceeding with full bootstrap.");
+                WorldBootstrapper.TryInitialize();
                 GameWorldHandler.HookBotSpawns();
             }
             else
             {
+                _log.LogInfo("[AIRefactored] [Client] Detected client mode — deferring bootstrap.");
                 this.StartCoroutine(this.WaitForWorldBootstrap());
             }
 
@@ -88,6 +89,7 @@ namespace AIRefactored
 
         /// <summary>
         /// Waits for a valid GameWorld instance before proceeding with initialization (non-headless only).
+        /// Ensures clients never bootstrap authoritative world logic when connected to external hosts.
         /// </summary>
         private IEnumerator WaitForWorldBootstrap()
         {
@@ -102,8 +104,15 @@ namespace AIRefactored
 
             if (Singleton<ClientGameWorld>.Instantiated || Singleton<GameWorld>.Instantiated)
             {
-                _log?.LogInfo("[AIRefactored] [Bootstrap] GameWorld detected — continuing bootstrap.");
-                GameWorldHandler.TryInitializeWorld();
+                if (GameWorldHandler.IsLocalHost())
+                {
+                    _log?.LogInfo("[AIRefactored] [Bootstrap] Client-hosted raid detected — initializing world systems.");
+                    GameWorldHandler.TryInitializeWorld();
+                }
+                else
+                {
+                    _log?.LogInfo("[AIRefactored] [Bootstrap] Client connected to external host — skipping world initialization.");
+                }
             }
             else
             {
@@ -113,6 +122,7 @@ namespace AIRefactored
 
         /// <summary>
         /// Periodically checks for GameWorld reinitialization or late-booted servers and enforces AI system hooks.
+        /// Only initializes if local host conditions are met.
         /// </summary>
         private IEnumerator MonitorGameWorldAvailability()
         {
@@ -121,8 +131,11 @@ namespace AIRefactored
                 if (!GameWorldHandler.IsInitialized &&
                     (Singleton<ClientGameWorld>.Instantiated || Singleton<GameWorld>.Instantiated))
                 {
-                    _log?.LogInfo("[AIRefactored] [Recovery] Late GameWorld detected — enforcing initialization.");
-                    GameWorldHandler.TryInitializeWorld();
+                    if (GameWorldHandler.IsLocalHost())
+                    {
+                        _log?.LogInfo("[AIRefactored] [Recovery] Late GameWorld detected — enforcing initialization.");
+                        GameWorldHandler.TryInitializeWorld();
+                    }
                 }
 
                 yield return new WaitForSeconds(2f);

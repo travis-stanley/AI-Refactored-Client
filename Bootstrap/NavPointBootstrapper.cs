@@ -60,8 +60,9 @@ namespace AIRefactored.AI.Navigation
         /// <param name="mapId">The map ID (currently unused).</param>
         public static void RegisterAll(string mapId)
         {
-            if (_isRunning)
+            if (_isRunning || !GameWorldHandler.IsLocalHost())
             {
+                Logger.LogWarning("[NavPointBootstrapper] Initialization skipped: Non-authoritative client or scan in progress.");
                 return;
             }
 
@@ -92,7 +93,7 @@ namespace AIRefactored.AI.Navigation
         /// </summary>
         public static void Tick()
         {
-            if (!_isRunning)
+            if (!_isRunning || !GameWorldHandler.IsLocalHost())
             {
                 return;
             }
@@ -104,16 +105,14 @@ namespace AIRefactored.AI.Navigation
             {
                 Vector3 probe = ScanQueue.Dequeue();
 
-                RaycastHit hit;
-                if (!Physics.Raycast(probe, Vector3.down, out hit, MaxSampleHeight))
+                if (!Physics.Raycast(probe, Vector3.down, out RaycastHit hit, MaxSampleHeight))
                 {
                     continue;
                 }
 
                 Vector3 pos = hit.point;
 
-                NavMeshHit navHit;
-                if (!NavMesh.SamplePosition(pos, out navHit, 1.0f, NavMesh.AllAreas))
+                if (!NavMesh.SamplePosition(pos, out NavMeshHit navHit, 1.0f, NavMesh.AllAreas))
                 {
                     continue;
                 }
@@ -136,9 +135,9 @@ namespace AIRefactored.AI.Navigation
 
             if (ScanQueue.Count == 0 && BackgroundPending.Count > 0)
             {
-                for (int i = 0; i < BackgroundPending.Count; i++)
+                foreach (Vector3 pending in BackgroundPending)
                 {
-                    ScanQueue.Enqueue(BackgroundPending[i]);
+                    ScanQueue.Enqueue(pending);
                 }
 
                 BackgroundPending.Clear();
@@ -179,8 +178,7 @@ namespace AIRefactored.AI.Navigation
             for (float angle = -45.0f; angle <= 45.0f; angle += 15.0f)
             {
                 Vector3 dir = Quaternion.Euler(0.0f, angle, 0.0f) * Vector3.forward;
-                RaycastHit hit;
-                if (Physics.Raycast(eye, dir, out hit, ForwardCoverCheckDistance, AIRefactoredLayerMasks.HighPolyCollider))
+                if (Physics.Raycast(eye, dir, ForwardCoverCheckDistance, AIRefactoredLayerMasks.HighPolyCollider))
                 {
                     return true;
                 }

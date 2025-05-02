@@ -11,16 +11,16 @@
 namespace AIRefactored.Runtime
 {
     using System.Collections.Generic;
+    using AIRefactored.AI.Core;
     using AIRefactored.AI.Threads;
     using AIRefactored.Core;
     using BepInEx.Logging;
-    using Comfort.Common;
     using EFT;
     using UnityEngine;
 
     /// <summary>
     /// Watches for new bots entering the raid and enforces BotBrainGuardian logic immediately.
-    /// Headless-safe and runs every few seconds without allocations.
+    /// Runs only on the authoritative host (headless, local-host, or client-host).
     /// </summary>
     public sealed class BotSpawnListener : MonoBehaviour
     {
@@ -43,7 +43,8 @@ namespace AIRefactored.Runtime
 
         private void Update()
         {
-            if (!GameWorldHandler.IsInitialized)
+            // Only run on authoritative hosts (headless or client-host)
+            if (!GameWorldHandler.IsInitialized || !GameWorldHandler.IsLocalHost())
             {
                 return;
             }
@@ -60,7 +61,6 @@ namespace AIRefactored.Runtime
             for (int i = 0; i < players.Count; i++)
             {
                 Player player = players[i];
-
                 if (player == null || !player.IsAI || player.gameObject == null || player.Profile == null)
                 {
                     continue;

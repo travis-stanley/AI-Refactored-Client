@@ -25,6 +25,7 @@ namespace AIRefactored.Runtime
     /// <summary>
     /// Ensures AIRefactored systems remain valid and recover gracefully during raid runtime.
     /// Auto-restores BotBrains, re-hooks spawn logic, and rescans world subsystems if necessary.
+    /// Runs exclusively on authoritative hosts.
     /// </summary>
     public sealed class BotSystemRecoveryWatcher : MonoBehaviour
     {
@@ -47,6 +48,11 @@ namespace AIRefactored.Runtime
 
         private void Update()
         {
+            if (!GameWorldHandler.IsLocalHost())
+            {
+                return;
+            }
+
             float now = Time.time;
 
             if (now < this._nextTickTime)

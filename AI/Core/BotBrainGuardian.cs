@@ -13,6 +13,7 @@ namespace AIRefactored.AI.Threads
     using System;
     using System.Reflection;
     using AIRefactored.AI.Core;
+    using AIRefactored.Core;
     using AIRefactored.Runtime;
     using BepInEx.Logging;
     using HarmonyLib;
@@ -21,6 +22,7 @@ namespace AIRefactored.AI.Threads
     /// <summary>
     /// Scans bot GameObjects for unauthorized logic and removes all non-AIRefactored MonoBehaviours.
     /// Prevents logic injection by external mods or Harmony patches.
+    /// Only runs on the authoritative host (headless, local-host, or client-host).
     /// </summary>
     public static class BotBrainGuardian
     {
@@ -38,6 +40,12 @@ namespace AIRefactored.AI.Threads
         /// <param name="botGameObject">The bot GameObject to sanitize.</param>
         public static void Enforce(GameObject botGameObject)
         {
+            // Skip enforcement on non-authoritative clients
+            if (!GameWorldHandler.IsInitialized || !GameWorldHandler.IsLocalHost())
+            {
+                return;
+            }
+
             if (botGameObject == null)
             {
                 return;

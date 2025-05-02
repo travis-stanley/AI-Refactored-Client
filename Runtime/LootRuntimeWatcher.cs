@@ -15,7 +15,7 @@ namespace AIRefactored.Runtime
 
     /// <summary>
     /// Monitors runtime loot additions from dynamic events (e.g. player death, mission drops).
-    /// Triggers a one-time registry refresh shortly after object enable.
+    /// Triggers a one-time registry refresh shortly after object enable—but only on the authoritative host.
     /// </summary>
     public sealed class LootRuntimeWatcher : MonoBehaviour
     {
@@ -28,16 +28,17 @@ namespace AIRefactored.Runtime
         #region Unity Lifecycle
 
         /// <summary>
-        /// Called when this component is enabled. Schedules a loot registry refresh.
+        /// Called when this component is enabled. Schedules a loot registry refresh
+        /// only if this instance is the authoritative host.
         /// </summary>
         private void OnEnable()
         {
-            if (!Application.isPlaying)
+            if (!Application.isPlaying || !GameWorldHandler.IsInitialized || !GameWorldHandler.IsLocalHost())
             {
                 return;
             }
 
-            this.Invoke("TriggerRefresh", RefreshDelaySeconds);
+            this.Invoke(nameof(TriggerRefresh), RefreshDelaySeconds);
         }
 
         #endregion
@@ -46,19 +47,16 @@ namespace AIRefactored.Runtime
 
         /// <summary>
         /// Invoked after delay to rescan loot objects once world is stable.
-        /// Works in both headless and client environments.
+        /// Executes only on the authoritative host.
         /// </summary>
         private void TriggerRefresh()
         {
-            if (!Application.isPlaying)
+            if (!Application.isPlaying || !GameWorldHandler.IsInitialized || !GameWorldHandler.IsLocalHost())
             {
                 return;
             }
 
-            if (GameWorldHandler.IsInitialized)
-            {
-                GameWorldHandler.RefreshLootRegistry();
-            }
+            GameWorldHandler.RefreshLootRegistry();
         }
 
         #endregion

@@ -21,6 +21,7 @@ namespace AIRefactored.Runtime
     /// <summary>
     /// Periodically checks for dead players and associates their corpse with a nearby loot container.
     /// Ensures bots prioritize relevant containers and avoids redundant corpse scans.
+    /// Executes strictly on authoritative host instances.
     /// </summary>
     public sealed class DeadBodyObserver : MonoBehaviour
     {
@@ -44,7 +45,7 @@ namespace AIRefactored.Runtime
         /// </summary>
         private void Update()
         {
-            if (!Application.isPlaying || !GameWorldHandler.IsInitialized)
+            if (!Application.isPlaying || !GameWorldHandler.IsInitialized || !GameWorldHandler.IsLocalHost())
             {
                 return;
             }
@@ -84,7 +85,7 @@ namespace AIRefactored.Runtime
                 }
 
                 Vector3 corpsePosition = EFTPlayerUtil.GetPosition(player);
-                Transform? playerRoot = player.Transform != null ? player.Transform.Original?.root : null;
+                Transform? playerRoot = player.Transform?.Original?.root;
 
                 for (int j = 0; j < containers.Length; j++)
                 {

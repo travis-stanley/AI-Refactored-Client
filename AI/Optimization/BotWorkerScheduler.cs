@@ -14,7 +14,6 @@ namespace AIRefactored.AI.Optimization
     using System.Collections.Concurrent;
     using System.Collections.Generic;
     using System.Threading;
-    using AIRefactored.AI.Core;
     using AIRefactored.Core;
     using AIRefactored.Runtime;
     using BepInEx.Logging;
@@ -23,7 +22,7 @@ namespace AIRefactored.AI.Optimization
     /// <summary>
     /// Central dispatcher for safely queuing Unity API calls from background threads.
     /// Schedules Unity-related tasks and defers smoothed spawns to prevent frame spikes.
-    /// Headless-safe. Flushes must be invoked from main thread once per frame.
+    /// Only active on the authoritative host (headless or client-host). Flushes must be invoked from main thread once per frame.
     /// </summary>
     public static class BotWorkScheduler
     {
@@ -32,9 +31,9 @@ namespace AIRefactored.AI.Optimization
         private const int MaxSpawnsPerSecond = 5;
         private const int MaxSpawnQueueSize = 256;
 
-        private static readonly ConcurrentQueue<Action> _mainThreadQueue = new ConcurrentQueue<Action>();
-        private static readonly Queue<Action> _spawnQueue = new Queue<Action>(MaxSpawnQueueSize);
-        private static readonly object _spawnLock = new object();
+        private static readonly ConcurrentQueue<Action> _mainThreadQueue = new();
+        private static readonly Queue<Action> _spawnQueue = new(MaxSpawnQueueSize);
+        private static readonly object _spawnLock = new();
         private static readonly ManualLogSource Logger = AIRefactoredController.Logger;
 
         private static int _queuedCount;
@@ -48,11 +47,11 @@ namespace AIRefactored.AI.Optimization
 
         /// <summary>
         /// Injects an invisible MonoBehaviour to run Flush() automatically each frame.
-        /// Used in client environments only. Safe for multiplayer or modded servers.
+        /// Only on client-host (not on remote clients) — headless still doesn’t need a runner.
         /// </summary>
         public static void AutoInjectFlushHost()
         {
-            if (_initialized || FikaHeadlessDetector.IsHeadless)
+            if (_initialized || !GameWorldHandler.IsLocalHost())
             {
                 return;
             }
@@ -62,7 +61,7 @@ namespace AIRefactored.AI.Optimization
                 return;
             }
 
-            GameObject go = new GameObject("AIRefactored.FlushHost");
+            var go = new GameObject("AIRefactored.FlushHost");
             go.AddComponent<FlushRunner>();
             GameObject.DontDestroyOnLoad(go);
 
@@ -73,10 +72,9 @@ namespace AIRefactored.AI.Optimization
         /// <summary>
         /// Schedules a Unity-safe action from a background thread to be executed on main thread.
         /// </summary>
-        /// <param name="action">The task to execute on main thread.</param>
         public static void EnqueueToMainThread(Action? action)
         {
-            if (action == null || FikaHeadlessDetector.IsHeadless)
+            if (action == null || !GameWorldHandler.IsLocalHost())
             {
                 return;
             }
@@ -88,10 +86,9 @@ namespace AIRefactored.AI.Optimization
         /// <summary>
         /// Enqueues GameObject.Instantiate or similar load-heavy logic for deferred spawn throttling.
         /// </summary>
-        /// <param name="spawnAction">The action to enqueue.</param>
         public static void EnqueueSpawnSmoothed(Action? spawnAction)
         {
-            if (spawnAction == null || FikaHeadlessDetector.IsHeadless)
+            if (spawnAction == null || !GameWorldHandler.IsLocalHost())
             {
                 return;
             }
@@ -115,17 +112,17 @@ namespace AIRefactored.AI.Optimization
         /// </summary>
         public static void Flush()
         {
-            if (FikaHeadlessDetector.IsHeadless)
+            if (!GameWorldHandler.IsLocalHost())
             {
                 return;
             }
 
             // Main-thread execution
-            while (_mainThreadQueue.TryDequeue(out Action? action))
+            while (_mainThreadQueue.TryDequeue(out var action))
             {
                 try
                 {
-                    action.Invoke();
+                    action();
                     Interlocked.Increment(ref _executedCount);
                 }
                 catch (Exception ex)
@@ -143,10 +140,10 @@ namespace AIRefactored.AI.Optimization
             {
                 while (executed < allowedThisFrame && _spawnQueue.Count > 0)
                 {
-                    Action? next = _spawnQueue.Dequeue();
+                    var next = _spawnQueue.Dequeue();
                     try
                     {
-                        next?.Invoke();
+                        next();
                         executed++;
                     }
                     catch (Exception ex)
@@ -160,7 +157,6 @@ namespace AIRefactored.AI.Optimization
         /// <summary>
         /// Returns current diagnostic snapshot of workload and execution metrics.
         /// </summary>
-        /// <returns>Formatted status string.</returns>
         public static string GetStats()
         {
             return $"[BotWorkScheduler] Queued: {_queuedCount}, Executed: {_executedCount}, Errors: {_errorCount}, SpawnQueue: {_spawnQueue.Count}";

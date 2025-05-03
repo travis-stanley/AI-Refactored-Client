@@ -367,5 +367,4 @@ MigrationBackup/
 FodyWeavers.xsd
 
 # dlls - do not publish
-.Libs/
 /Libs

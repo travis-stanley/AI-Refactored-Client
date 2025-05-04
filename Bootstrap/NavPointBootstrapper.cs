@@ -60,6 +60,7 @@ namespace AIRefactored.AI.Navigation
         /// <param name="mapId">The name of the current map (used for surface context).</param>
         public static void RegisterAll(string mapId)
         {
+            // Guard clauses to avoid redundant execution
             if (_isRunning || !IsHostEnvironment())
             {
                 Logger.LogWarning("[NavPointBootstrapper] Skipped — already running or non-host.");
@@ -71,12 +72,19 @@ namespace AIRefactored.AI.Navigation
             ScanQueue.Clear();
             BackgroundPending.Clear();
 
+            // Validate the NavMeshSurface component exists
             NavMeshSurface? surface = Object.FindObjectOfType<NavMeshSurface>();
-            _center = surface != null ? surface.transform.position : Vector3.zero;
+            if (surface == null)
+            {
+                Logger.LogWarning("[NavPointBootstrapper] No NavMeshSurface found.");
+                _isRunning = false;
+                return;
+            }
 
+            _center = surface.transform.position;
             float half = ScanRadius * 0.5f;
 
-            // Efficient batching: Add vertical scan positions to the BackgroundPending list
+            // Efficiently batch the scan positions
             for (float x = -half; x <= half; x += ScanSpacing)
             {
                 for (float z = -half; z <= half; z += ScanSpacing)
@@ -88,7 +96,7 @@ namespace AIRefactored.AI.Navigation
 
             Logger.LogInfo("[NavPointBootstrapper] Queued " + ScanQueue.Count + " surface points.");
 
-            // Run Prequeue in the background
+            // Run background prequeue only once
             if (!_isTaskRunning)
             {
                 _isTaskRunning = true;
@@ -101,19 +109,21 @@ namespace AIRefactored.AI.Navigation
         /// </summary>
         public static void Tick()
         {
+            // Skip if already running or not in the correct environment
             if (!_isRunning || !IsHostEnvironment())
             {
                 return;
             }
 
-            int maxPerFrame = FikaHeadlessDetector.IsHeadless ? 80 : 40;  // Adjust frame processing based on headless mode
+            int maxPerFrame = FikaHeadlessDetector.IsHeadless ? 80 : 40;
             int processed = 0;
 
-            // Process the scan queue
+            // Process the scan queue efficiently
             while (ScanQueue.Count > 0 && processed++ < maxPerFrame)
             {
                 Vector3 probe = ScanQueue.Dequeue();
 
+                // Perform the raycast to check for valid nav points
                 if (!Physics.Raycast(probe, Vector3.down, out RaycastHit hit, MaxSampleHeight))
                 {
                     continue;
@@ -121,11 +131,13 @@ namespace AIRefactored.AI.Navigation
 
                 Vector3 pos = hit.point;
 
+                // Check if the position is valid on the NavMesh
                 if (!NavMesh.SamplePosition(pos, out NavMeshHit navHit, 1.0f, NavMesh.AllAreas))
                 {
                     continue;
                 }
 
+                // Ensure there is enough clearance above the nav point
                 if (Physics.Raycast(pos + Vector3.up * 0.5f, Vector3.up, MinNavPointClearance))
                 {
                     continue;
@@ -138,11 +150,12 @@ namespace AIRefactored.AI.Navigation
                 bool isIndoor = IsIndoorPoint(final);
                 string tag = ClassifyNavPoint(elevation, isCover, isIndoor);
 
+                // Register valid nav point
                 NavPointRegistry.Register(final, isCover, tag, elevation, isIndoor);
                 _registered++;
             }
 
-            // If there are any vertical fallback points left, move them to the scan queue
+            // Move vertical fallback points to the scan queue once horizontal scanning is done
             if (ScanQueue.Count == 0 && BackgroundPending.Count > 0)
             {
                 for (int i = 0; i < BackgroundPending.Count; i++)
@@ -182,7 +195,7 @@ namespace AIRefactored.AI.Navigation
                 }
             }
 
-            _isTaskRunning = false; // Ensure task is flagged as not running once complete
+            _isTaskRunning = false; // Task has finished
         }
 
         private static bool IsCoverPoint(Vector3 pos)

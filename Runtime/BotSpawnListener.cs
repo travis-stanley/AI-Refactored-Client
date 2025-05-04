@@ -104,6 +104,7 @@ namespace AIRefactored.Runtime
                 {
                     try
                     {
+                        // Only inject the brain if it's not already present
                         BotBrain brain = botObj.AddComponent<BotBrain>();
                         BotOwner? botOwner = player.AIData?.BotOwner;
                         if (botOwner != null)

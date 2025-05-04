@@ -19,9 +19,7 @@ namespace AIRefactored.Runtime
     using AIRefactored.AI.Threads;
     using AIRefactored.Core;
     using BepInEx.Logging;
-
     using Comfort.Common;
-
     using EFT;
     using UnityEngine;
 

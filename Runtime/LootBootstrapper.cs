@@ -41,9 +41,10 @@ namespace AIRefactored.Runtime
         /// </summary>
         public static void RegisterAllLoot()
         {
+            // Ensure this logic runs only on local host and when GameWorld is initialized
             if (!GameWorldHandler.IsInitialized || !GameWorldHandler.IsLocalHost())
             {
-                return; // Ensure this logic runs only on the local host and when GameWorld is initialized
+                return;
             }
 
             // Cache containers and items to avoid redundant queries

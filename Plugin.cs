@@ -12,6 +12,7 @@ namespace AIRefactored
 {
     using System;
     using System.Collections;
+
     using AIRefactored.AI.Core;
     using AIRefactored.AI.Optimization;
     using AIRefactored.Bootstrap;
@@ -35,6 +36,8 @@ namespace AIRefactored
 
         private static ManualLogSource? _log;
 
+        private static bool _isWorldInitialized = false;
+
         #endregion
 
         #region Properties
@@ -48,8 +51,6 @@ namespace AIRefactored
         #endregion
 
         #region Unity Lifecycle
-
-        private static bool _isWorldInitialized = false;  // Flag to prevent re-initialization
 
         private void Awake()
         {
@@ -82,8 +83,7 @@ namespace AIRefactored
         {
             try
             {
-                // Safely unhook bot spawns on shutdown
-                if (FikaHeadlessDetector.IsHeadless) // Ensures headless mode is checked using FIKA
+                if (FikaHeadlessDetector.IsHeadless)
                 {
                     _log?.LogInfo("[AIRefactored] [Shutdown] Headless environment detected, skipping bot spawn unhook.");
                 }
@@ -95,7 +95,6 @@ namespace AIRefactored
             }
             catch (Exception ex)
             {
-                // Log errors during shutdown
                 _log?.LogError($"[AIRefactored] [Shutdown] Error during shutdown: {ex.Message}\n{ex.StackTrace}");
             }
         }
@@ -104,11 +103,13 @@ namespace AIRefactored
 
         #region Initialization Logic
 
+        /// <summary>
+        /// Initializes world and bot systems, ensuring proper handling of headless and non-headless environments.
+        /// </summary>
         private void InitializeWorldAndBots()
         {
             try
             {
-                // Initialize world systems (unified for both headless and client-hosted environments)
                 _log?.LogInfo("[AIRefactored] Initializing world and bot systems...");
 
                 // Ensure headless compatibility by checking FikaHeadlessDetector
@@ -137,9 +138,11 @@ namespace AIRefactored
 
         #region Coroutine Utilities
 
+        /// <summary>
+        /// A safe coroutine implementation with exception handling to ensure that errors don't stop the flow.
+        /// </summary>
         private IEnumerator SafeCoroutine(IEnumerator routine)
         {
-            // Coroutine with safe exception handling
             while (true)
             {
                 object? current;

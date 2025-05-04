@@ -73,6 +73,7 @@ namespace AIRefactored.Runtime
                 // Prevent adding the same component repeatedly
                 if (GetComponent<AIRefactoredController>() == null)
                 {
+                    // Only add component if it's not already present
                     gameObject.AddComponent<AIRefactoredController>();
                 }
             }

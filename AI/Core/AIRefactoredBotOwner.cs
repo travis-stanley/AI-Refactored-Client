@@ -28,6 +28,7 @@ namespace AIRefactored.AI.Core
         private static readonly ManualLogSource Logger = AIRefactoredController.Logger;
         private static readonly PersonalityType[] PersonalityTypes = (PersonalityType[])Enum.GetValues(typeof(PersonalityType));
         private static bool _isPersonalitySet = false; // Flag to prevent repeated personality assignment
+        private static readonly object PersonalityLock = new object(); // Lock for thread safety
 
         #endregion
 
@@ -98,10 +99,13 @@ namespace AIRefactored.AI.Core
             try
             {
                 // Ensure personality is assigned only once and avoid repeated assignments
-                if (!_isPersonalitySet)
+                lock (PersonalityLock) // Use lock for thread safety
                 {
-                    _isPersonalitySet = true; // Set the flag to prevent repeated assignments
-                    this.InitProfile(this.GetRandomPersonality());
+                    if (!_isPersonalitySet)
+                    {
+                        _isPersonalitySet = true; // Set the flag to prevent repeated assignments
+                        this.InitProfile(this.GetRandomPersonality());
+                    }
                 }
 
                 string nickname = bot.Profile?.Info?.Nickname ?? "Unnamed";

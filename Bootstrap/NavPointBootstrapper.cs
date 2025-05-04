@@ -21,9 +21,8 @@ namespace AIRefactored.AI.Navigation
     using UnityEngine.AI;
 
     /// <summary>
-    /// Dynamically scans the world for valid AI navigation points including rooftops, high cover,
-    /// flanking routes, and fallback zones. All data is registered into the NavPointRegistry.
-    /// Headless-safe and frame-split for performance.
+    /// Dynamically scans valid AI navigation points including cover, rooftop, flank, and fallback zones.
+    /// Headless-safe, memory-safe, and deferred for runtime performance.
     /// </summary>
     public static class NavPointBootstrapper
     {
@@ -40,7 +39,7 @@ namespace AIRefactored.AI.Navigation
 
         #endregion
 
-        #region State
+        #region Fields
 
         private static readonly List<Vector3> BackgroundPending = new List<Vector3>(512);
         private static readonly Queue<Vector3> ScanQueue = new Queue<Vector3>(2048);
@@ -55,14 +54,14 @@ namespace AIRefactored.AI.Navigation
         #region Public API
 
         /// <summary>
-        /// Begins scanning nav points across the map centered on the first NavMeshSurface.
+        /// Queues all spatial points for scanning and begins NavPoint registration.
         /// </summary>
-        /// <param name="mapId">The map ID (currently unused).</param>
+        /// <param name="mapId">The name of the current map (used for surface context).</param>
         public static void RegisterAll(string mapId)
         {
-            if (_isRunning || !GameWorldHandler.IsLocalHost())
+            if (_isRunning || !IsHostEnvironment())
             {
-                Logger.LogWarning("[NavPointBootstrapper] Initialization skipped: Non-authoritative client or scan in progress.");
+                Logger.LogWarning("[NavPointBootstrapper] Skipped — already running or non-host.");
                 return;
             }
 
@@ -75,6 +74,8 @@ namespace AIRefactored.AI.Navigation
             _center = surface != null ? surface.transform.position : Vector3.zero;
 
             float half = ScanRadius * 0.5f;
+
+            // Efficient batching: Add vertical scan positions to the BackgroundPending list
             for (float x = -half; x <= half; x += ScanSpacing)
             {
                 for (float z = -half; z <= half; z += ScanSpacing)
@@ -84,24 +85,25 @@ namespace AIRefactored.AI.Navigation
                 }
             }
 
-            Logger.LogInfo("[NavPointBootstrapper] Queued " + ScanQueue.Count + " primary surface points.");
+            Logger.LogInfo("[NavPointBootstrapper] Queued " + ScanQueue.Count + " surface points.");
             Task.Run(PrequeueVerticalPoints);
         }
 
         /// <summary>
-        /// Called every frame to incrementally process nav point scans.
+        /// Processes queued spatial points to detect and register valid AI nav points.
         /// </summary>
         public static void Tick()
         {
-            if (!_isRunning || !GameWorldHandler.IsLocalHost())
+            if (!_isRunning || !IsHostEnvironment())
             {
                 return;
             }
 
-            int perFrameLimit = FikaHeadlessDetector.IsHeadless ? 80 : 40;
+            int maxPerFrame = FikaHeadlessDetector.IsHeadless ? 80 : 40;  // Adjust frame processing based on headless mode
             int processed = 0;
 
-            while (ScanQueue.Count > 0 && processed++ < perFrameLimit)
+            // Process the scan queue
+            while (ScanQueue.Count > 0 && processed++ < maxPerFrame)
             {
                 Vector3 probe = ScanQueue.Dequeue();
 
@@ -122,43 +124,46 @@ namespace AIRefactored.AI.Navigation
                     continue;
                 }
 
-                Vector3 worldPos = navHit.position;
-                float elevation = worldPos.y - _center.y;
+                Vector3 final = navHit.position;
+                float elevation = final.y - _center.y;
 
-                bool isCover = IsCoverPoint(worldPos);
-                bool isIndoor = IsIndoorPoint(worldPos);
+                bool isCover = IsCoverPoint(final);
+                bool isIndoor = IsIndoorPoint(final);
                 string tag = ClassifyNavPoint(elevation, isCover, isIndoor);
 
-                NavPointRegistry.Register(worldPos, isCover, tag, elevation, isIndoor);
+                NavPointRegistry.Register(final, isCover, tag, elevation, isIndoor);
                 _registered++;
             }
 
+            // If there are any vertical fallback points left, move them to the scan queue
             if (ScanQueue.Count == 0 && BackgroundPending.Count > 0)
             {
-                foreach (Vector3 pending in BackgroundPending)
+                for (int i = 0; i < BackgroundPending.Count; i++)
                 {
-                    ScanQueue.Enqueue(pending);
+                    ScanQueue.Enqueue(BackgroundPending[i]);
                 }
 
                 BackgroundPending.Clear();
                 Logger.LogInfo("[NavPointBootstrapper] Queued vertical fallback points.");
             }
 
+            // If the scan queue is empty, mark the process as complete
             if (ScanQueue.Count == 0)
             {
                 _isRunning = false;
-                Logger.LogInfo("[NavPointBootstrapper] ✅ Completed: " + _registered + " nav points registered.");
+                Logger.LogInfo("[NavPointBootstrapper] ✅ Completed — " + _registered + " nav points registered.");
             }
         }
 
         #endregion
 
-        #region Internal Helpers
+        #region Internal Methods
 
         private static void PrequeueVerticalPoints()
         {
             float half = ScanRadius * 0.5f;
 
+            // Prequeue vertical points for fallback scans (batch processing)
             for (float x = -half; x <= half; x += ScanSpacing)
             {
                 for (float z = -half; z <= half; z += ScanSpacing)
@@ -205,6 +210,12 @@ namespace AIRefactored.AI.Navigation
             }
 
             return isCover ? "fallback" : "flank";
+        }
+
+        private static bool IsHostEnvironment()
+        {
+            // Treat headless as a valid "host"
+            return GameWorldHandler.IsLocalHost() || FikaHeadlessDetector.IsHeadless;
         }
 
         #endregion

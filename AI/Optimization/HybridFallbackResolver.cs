@@ -24,10 +24,16 @@ namespace AIRefactored.AI.Optimization
     /// </summary>
     public static class HybridFallbackResolver
     {
+        #region Constants
+
         private const float NavpointSearchRadius = 30f;
         private const float HotspotSearchRadius = 40f;
         private const float MinDotCover = 0.4f;
         private const float MinDotHotspot = 0.5f;
+
+        #endregion
+
+        #region Public API
 
         /// <summary>
         /// Resolves the best possible retreat point using multiple strategies in order of priority.
@@ -37,6 +43,11 @@ namespace AIRefactored.AI.Optimization
         /// <returns>The most suitable fallback point, or null if none is found.</returns>
         public static Vector3? GetBestRetreatPoint(BotOwner bot, Vector3 threatDirection)
         {
+            if (bot == null || !GameWorldHandler.IsLocalHost())
+            {
+                return null;
+            }
+
             Vector3 origin = bot.Position;
             Vector3 retreatDirection = -threatDirection.normalized;
 
@@ -47,7 +58,8 @@ namespace AIRefactored.AI.Optimization
                 delegate (Vector3 pos)
                 {
                     Vector3 toCandidate = (pos - origin).normalized;
-                    return NavPointRegistry.IsCoverPoint(pos) && Vector3.Dot(toCandidate, retreatDirection) > MinDotCover;
+                    return NavPointRegistry.IsCoverPoint(pos) &&
+                           Vector3.Dot(toCandidate, retreatDirection) > MinDotCover;
                 },
                 true);
 
@@ -118,6 +130,10 @@ namespace AIRefactored.AI.Optimization
             return null;
         }
 
+        #endregion
+
+        #region Private Logic
+
         /// <summary>
         /// Attempts to find a line-of-sight blocking position by raycasting behind the bot.
         /// </summary>
@@ -139,11 +155,11 @@ namespace AIRefactored.AI.Optimization
                 Vector3 probe = origin + backwards * dist + Vector3.up * EyeHeight;
 
                 if (Physics.Raycast(
-                    probe,
-                    threatDir,
-                    out RaycastHit hit,
-                    20f,
-                    AIRefactoredLayerMasks.VisionBlockers))
+                        probe,
+                        threatDir,
+                        out RaycastHit hit,
+                        20f,
+                        AIRefactoredLayerMasks.VisionBlockers))
                 {
                     if (CoverScorer.IsSolid(hit.collider))
                     {
@@ -156,5 +172,7 @@ namespace AIRefactored.AI.Optimization
             result = Vector3.zero;
             return false;
         }
+
+        #endregion
     }
 }

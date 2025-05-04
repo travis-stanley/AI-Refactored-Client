@@ -13,33 +13,25 @@ namespace AIRefactored.AI.Perception
     /// <summary>
     /// Defines a bot's visual perception profile.
     /// Simulates response to light, suppression, and temporary blindness for realism.
-    /// Used by <see cref="BotPerceptionSystem" /> to adjust sensory behavior dynamically.
+    /// Used by <see cref="BotPerceptionSystem"/> to adjust sensory behavior dynamically.
     /// </summary>
     public sealed class BotVisionProfile
     {
-        /// <summary>
-        /// Default adaptation speed. Controls recovery rate from flash or flare blindness.
-        /// </summary>
-        private const float DefaultAdaptationSpeed = 1.25f;
+        #region Defaults
 
-        /// <summary>
-        /// Default aggression response. Modulates tunnel vision when suppressed.
-        /// </summary>
-        private const float DefaultAggressionResponse = 0.85f;
+        private static readonly float DefaultAdaptationSpeed = 1.25f;
+        private static readonly float DefaultAggressionResponse = 0.85f;
+        private static readonly float DefaultLightSensitivity = 1.0f;
+        private static readonly float DefaultMaxBlindness = 1.0f;
+        private static readonly float DefaultClarityRecoverySpeed = 0.3f; // New default recovery speed
 
-        /// <summary>
-        /// Default light sensitivity. Governs effect from flashlight or flare exposure.
-        /// </summary>
-        private const float DefaultLightSensitivity = 1.0f;
+        #endregion
 
-        /// <summary>
-        /// Default maximum flash blindness multiplier.
-        /// </summary>
-        private const float DefaultMaxBlindness = 1.0f;
+        #region Properties
 
         /// <summary>
         /// Gets or sets the speed of recovery from flash or flare blindness.
-        /// Higher values = faster visual clarity return. Default: 1.25.
+        /// Higher values = faster visual clarity return.
         /// </summary>
         public float AdaptationSpeed { get; set; } = DefaultAdaptationSpeed;
 
@@ -60,6 +52,15 @@ namespace AIRefactored.AI.Perception
         public float MaxBlindness { get; set; } = DefaultMaxBlindness;
 
         /// <summary>
+        /// Gets or sets the speed at which the bot recovers from visual impairments.
+        /// </summary>
+        public float ClarityRecoverySpeed { get; set; } = DefaultClarityRecoverySpeed;
+
+        #endregion
+
+        #region Creation
+
+        /// <summary>
         /// Creates a new default-configured vision profile.
         /// </summary>
         /// <returns>A new <see cref="BotVisionProfile"/> with default parameters.</returns>
@@ -68,15 +69,27 @@ namespace AIRefactored.AI.Perception
             return new BotVisionProfile();
         }
 
+        #endregion
+
+        #region Reset
+
         /// <summary>
         /// Resets all profile values to their default balanced configuration.
         /// </summary>
-        public void Reset()
+        /// <param name="resetAggression">Optional flag to reset aggression response.</param>
+        public void Reset(bool resetAggression = true)
         {
             this.AdaptationSpeed = DefaultAdaptationSpeed;
-            this.MaxBlindness = DefaultMaxBlindness;
             this.LightSensitivity = DefaultLightSensitivity;
-            this.AggressionResponse = DefaultAggressionResponse;
+            this.MaxBlindness = DefaultMaxBlindness;
+            this.ClarityRecoverySpeed = DefaultClarityRecoverySpeed; // Reset recovery speed
+
+            if (resetAggression)
+            {
+                this.AggressionResponse = DefaultAggressionResponse;
+            }
         }
+
+        #endregion
     }
 }

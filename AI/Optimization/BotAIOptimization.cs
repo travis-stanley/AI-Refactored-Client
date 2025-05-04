@@ -59,16 +59,21 @@ namespace AIRefactored.AI.Optimization
                 return;
             }
 
+            // Skip if optimization has already been applied
             if (_optimizationApplied.TryGetValue(botId, out bool already) && already)
             {
+                Logger?.LogDebug("[BotAIOptimization] Optimization already applied for bot: " + botId);
                 return;
             }
 
+            // Log bot AI settings
             LogCognition(botOwner);
             LogMind(botOwner);
             LogRole(botOwner);
 
+            // Mark as optimized
             _optimizationApplied[botId] = true;
+            Logger?.LogInfo("[BotAIOptimization] Applied optimization for bot: " + botId);
         }
 
         /// <summary>
@@ -96,6 +101,7 @@ namespace AIRefactored.AI.Optimization
             if (!string.IsNullOrEmpty(botId))
             {
                 _optimizationApplied[botId] = false;
+                Logger?.LogInfo("[BotAIOptimization] Reset optimization for bot: " + botId);
             }
         }
 

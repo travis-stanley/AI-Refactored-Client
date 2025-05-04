@@ -11,6 +11,7 @@
 namespace AIRefactored.AI.Core
 {
     using System;
+    using System.Text.RegularExpressions;
     using UnityEngine;
 
     /// <summary>
@@ -19,26 +20,51 @@ namespace AIRefactored.AI.Core
     /// </summary>
     public static class FikaHeadlessDetector
     {
-        #region Static Constructor
+        private static readonly bool _isHeadless;
+        private static readonly string? _raidLocation;
 
         /// <summary>
-        /// Initializes static data for <see cref="FikaHeadlessDetector"/>.
+        /// Gets a value indicating whether the current client is in headless or batch mode.
+        /// </summary>
+        public static bool IsHeadless => _isHeadless;
+
+        /// <summary>
+        /// Gets the map name if parsed from FIKA headless arguments.
+        /// </summary>
+        public static string? RaidLocationName => _raidLocation;
+
+        /// <summary>
+        /// Static constructor for environment detection.
         /// </summary>
         static FikaHeadlessDetector()
         {
-            IsHeadless = Application.isBatchMode
-                         || Environment.CommandLine.IndexOf("-nographics", StringComparison.OrdinalIgnoreCase) >= 0;
+            _isHeadless = Application.isBatchMode
+                          || Environment.CommandLine.IndexOf("-nographics", StringComparison.OrdinalIgnoreCase) >= 0;
+
+            _raidLocation = TryParseRaidLocationFromArgs();
         }
 
-        #endregion
-
-        #region Properties
-
         /// <summary>
-        /// Gets a value indicating whether the client is running under headless (batchmode or nographics) mode.
+        /// Attempts to parse the raid location from the command line arguments.
         /// </summary>
-        public static bool IsHeadless { get; }
+        /// <returns>Returns the raid location if found, otherwise null.</returns>
+        private static string? TryParseRaidLocationFromArgs()
+        {
+            try
+            {
+                string cmd = Environment.CommandLine;
+                Match match = Regex.Match(cmd, "\"location\"\\s*:\\s*\"(.*?)\"", RegexOptions.IgnoreCase);
+                if (match.Success && match.Groups.Count > 1)
+                {
+                    return match.Groups[1].Value;
+                }
+            }
+            catch (Exception)
+            {
+                // Fail silently — invalid args are expected in some modes
+            }
 
-        #endregion
+            return null;
+        }
     }
 }

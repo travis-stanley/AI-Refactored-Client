@@ -21,10 +21,10 @@ namespace AIRefactored.AI.Movement
     using UnityEngine.AI;
 
     /// <summary>
-    /// Controls advanced bot movement logic including inertia, smooth look, combat strafe, lean, jump, and flank
-    /// mechanics. Designed for natural, player-like behavior and fluid real-time responsiveness.
+    /// Controls advanced bot movement logic including inertia, smooth look, combat strafe, lean, jump, and flank mechanics.
+    /// Designed for natural, player-like behavior and fluid real-time responsiveness.
     /// </summary>
-    public class BotMovementController
+    public sealed class BotMovementController
     {
         #region Constants
 
@@ -62,7 +62,7 @@ namespace AIRefactored.AI.Movement
         #region Public API
 
         /// <summary>
-        /// Puts the bot into looting stance (disabling combat/lean logic).
+        /// Enables looting stance, disabling combat movement and leaning.
         /// </summary>
         public void EnterLootingMode()
         {
@@ -70,7 +70,7 @@ namespace AIRefactored.AI.Movement
         }
 
         /// <summary>
-        /// Exits looting stance and resumes combat movement logic.
+        /// Exits looting stance, restoring full combat movement logic.
         /// </summary>
         public void ExitLootingMode()
         {
@@ -78,7 +78,7 @@ namespace AIRefactored.AI.Movement
         }
 
         /// <summary>
-        /// Initializes movement subsystems with bot and shared component references.
+        /// Initializes movement subsystems.
         /// </summary>
         /// <param name="cache">Bot component cache.</param>
         public void Initialize(BotComponentCache cache)
@@ -96,9 +96,9 @@ namespace AIRefactored.AI.Movement
         }
 
         /// <summary>
-        /// Executes real-time bot movement logic every frame.
+        /// Executes per-frame movement behavior logic.
         /// </summary>
-        /// <param name="deltaTime">Time since last frame.</param>
+        /// <param name="deltaTime">Delta time since last update.</param>
         public void Tick(float deltaTime)
         {
             if (this._bot == null || this._cache == null || this._bot.GetPlayer == null || !this._bot.GetPlayer.IsAI)
@@ -123,7 +123,7 @@ namespace AIRefactored.AI.Movement
 
             if (this._cache.DoorOpener != null && !this._cache.DoorOpener.Update())
             {
-                Logger.LogDebug($"[Movement] {this._bot.Profile.Info.Nickname} is blocked by door.");
+                Logger.LogDebug("[Movement] Door blocked — waiting.");
                 return;
             }
 
@@ -149,12 +149,12 @@ namespace AIRefactored.AI.Movement
                 this.TryFlankAroundEnemy();
             }
 
-            this.DetectStuck(deltaTime);
+            this.DetectStuck(deltaTime);  // Enhanced stuck detection
         }
 
         #endregion
 
-        #region Helpers
+        #region Internal Helpers
 
         private void ApplyInertia(float deltaTime)
         {
@@ -174,14 +174,23 @@ namespace AIRefactored.AI.Movement
 
             Vector3 adjusted = this._trajectory.ModifyTrajectory(direction, deltaTime);
             Vector3 velocity = adjusted.normalized * 1.65f;
+
+            // Adjust the velocity scale dynamically based on the bot's state
+            BotPersonalityProfile? profile = this._cache?.AIRefactoredBotOwner?.PersonalityProfile;
+            if (profile != null && profile.AggressionLevel > 0.7f)
+            {
+                velocity *= 1.2f;  // Increase speed for more aggressive bots
+            }
+
             this._lastVelocity = Vector3.Lerp(this._lastVelocity, velocity, InertiaWeight * deltaTime);
 
-            this._bot.GetPlayer.CharacterController?.Move(this._lastVelocity * deltaTime, deltaTime);
+            // Smooth movement using MoveTowards to avoid sudden direction changes
+            this._bot.GetPlayer.CharacterController?.Move(Vector3.MoveTowards(this._bot.Position, target, velocity.magnitude * deltaTime), deltaTime);
         }
 
         private void SmoothLookTo(Vector3 target, float deltaTime)
         {
-            if (this._bot == null || this._bot.Transform == null)
+            if (this._bot == null || this._bot.Transform == null || FikaHeadlessDetector.IsHeadless)  // Check for headless mode
             {
                 return;
             }
@@ -211,7 +220,7 @@ namespace AIRefactored.AI.Movement
                 return;
             }
 
-            Vector3 origin = this._bot.Position + Vector3.up * 1.5f;
+            Vector3 origin = this._bot.Position + (Vector3.up * 1.5f);
             Vector3 direction = this._bot.LookDirection;
 
             if (Physics.SphereCast(origin, ScanRadius, direction, out _, ScanDistance, AIRefactoredLayerMasks.VisionBlockers))
@@ -329,7 +338,7 @@ namespace AIRefactored.AI.Movement
                 FlankPositionPlanner.TryFindFlankPosition(self, enemy, out Vector3 flank))
             {
                 BotMovementHelper.SmoothMoveTo(this._bot, flank, false);
-                Logger.LogDebug($"[Movement] {this._bot.Profile.Info.Nickname} flanking to {flank}");
+                Logger.LogDebug("[Movement] Flank triggered: " + flank);
             }
         }
 
@@ -355,7 +364,7 @@ namespace AIRefactored.AI.Movement
                     Vector3 retry = target + UnityEngine.Random.insideUnitSphere * 1.0f;
                     retry.y = target.y;
                     BotMovementHelper.SmoothMoveTo(this._bot, retry, false);
-                    Logger.LogDebug($"[Movement] {this._bot.Profile.Info.Nickname} triggered fallback.");
+                    Logger.LogDebug("[Movement] Fallback triggered for stuck bot.");
                     this._stuckTimer = 0f;
                 }
             }
@@ -370,10 +379,10 @@ namespace AIRefactored.AI.Movement
             NavMeshHit hit;
             if (NavMesh.SamplePosition(position, out hit, 1.5f, NavMesh.AllAreas))
             {
-                return (hit.position - position).sqrMagnitude < 1f;
+                return (hit.position - position).sqrMagnitude < 1.0f;
             }
 
-            Logger.LogWarning($"[Movement] Invalid NavMesh target: {position}");
+            Logger.LogWarning("[Movement] Invalid NavMesh target: " + position);
             return false;
         }
 

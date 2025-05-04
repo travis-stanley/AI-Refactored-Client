@@ -44,8 +44,18 @@ namespace AIRefactored.AI.Combat
 
         public BotMedicLogic(BotComponentCache cache, BotInjurySystem injurySystem)
         {
-            this._cache = cache ?? throw new ArgumentNullException(nameof(cache));
-            this._injurySystem = injurySystem ?? throw new ArgumentNullException(nameof(injurySystem));
+            if (cache == null)
+            {
+                throw new ArgumentNullException(nameof(cache));
+            }
+
+            if (injurySystem == null)
+            {
+                throw new ArgumentNullException(nameof(injurySystem));
+            }
+
+            this._cache = cache;
+            this._injurySystem = injurySystem;
             this._nextHealCheck = Time.time;
 
             BotOwner? bot = this._cache.Bot;
@@ -164,7 +174,7 @@ namespace AIRefactored.AI.Combat
             for (int i = 0; i < bot.BotsGroup.MembersCount; i++)
             {
                 BotOwner? mate = bot.BotsGroup.Member(i);
-                if (mate == null || mate == bot || mate.IsDead)
+                if (mate == null || mate.IsDead || mate == bot)
                 {
                     continue;
                 }
@@ -190,7 +200,6 @@ namespace AIRefactored.AI.Combat
 
             return false;
         }
-
 
         private void TrySelfHeal(BotOwner bot)
         {
@@ -224,15 +233,16 @@ namespace AIRefactored.AI.Combat
 
         private void TrySay(EPhraseTrigger trigger)
         {
-            if (!FikaHeadlessDetector.IsHeadless)
+            BotOwner? bot = this._cache.Bot;
+            if (!FikaHeadlessDetector.IsHeadless && bot != null && bot.BotTalk != null)
             {
-                this._cache.Bot?.BotTalk?.TrySay(trigger);
+                bot.BotTalk.TrySay(trigger);
             }
         }
 
         private void UnsubscribeFromFirstAid()
         {
-            if (this._med?.FirstAid != null)
+            if (this._med != null && this._med.FirstAid != null)
             {
                 this._med.FirstAid.OnEndApply -= this.OnHealComplete;
             }

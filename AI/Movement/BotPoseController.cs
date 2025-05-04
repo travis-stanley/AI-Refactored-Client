@@ -11,8 +11,6 @@
 namespace AIRefactored.AI.Movement
 {
     using System;
-    using System.Collections.Generic;
-
     using AIRefactored.AI.Core;
     using AIRefactored.AI.Helpers;
     using AIRefactored.AI.Memory;
@@ -24,7 +22,7 @@ namespace AIRefactored.AI.Movement
     /// Controls bot stance transitions (standing, crouching, prone) based on combat, panic, suppression, and cover logic.
     /// Smoothly blends transitions for realistic animation flow.
     /// </summary>
-    public class BotPoseController
+    public sealed class BotPoseController
     {
         #region Constants
 
@@ -56,6 +54,8 @@ namespace AIRefactored.AI.Movement
         /// <summary>
         /// Initializes a new instance of the <see cref="BotPoseController"/> class.
         /// </summary>
+        /// <param name="bot">The bot owner instance.</param>
+        /// <param name="cache">The bot component cache.</param>
         public BotPoseController(BotOwner bot, BotComponentCache cache)
         {
             if (bot == null)
@@ -150,12 +150,12 @@ namespace AIRefactored.AI.Movement
             var nearbyPoints = NavPointRegistry.QueryNearby(
                 position,
                 4f,
-                p =>
-                    {
-                        float distSq = (p.Position - position).sqrMagnitude;
-                        return distSq <= 16f &&
-                               (BotCoverHelper.IsProneCover(p) || BotCoverHelper.IsLowCover(p));
-                    });
+                delegate (NavPointData p)
+                {
+                    float distSq = (p.Position - position).sqrMagnitude;
+                    return distSq <= 16f &&
+                        (BotCoverHelper.IsProneCover(p) || BotCoverHelper.IsLowCover(p));
+                });
 
             for (int i = 0; i < nearbyPoints.Count; i++)
             {
@@ -177,7 +177,7 @@ namespace AIRefactored.AI.Movement
 
         #endregion
 
-        #region Private Helpers
+        #region Private Methods
 
         private void BlendPose(float deltaTime)
         {

@@ -35,7 +35,7 @@ namespace AIRefactored.AI.Optimization
 
         #region Static Fields
 
-        private static readonly Vector3[] FlankAngles = new Vector3[]
+        private static readonly Vector3[] FlankAngles =
         {
             new Vector3(-60f, 0f, 0f),
             new Vector3(-30f, 0f, 0f),
@@ -58,6 +58,11 @@ namespace AIRefactored.AI.Optimization
         /// <returns>Score between 1 and 10 based on tactical safety.</returns>
         public static float ScoreCoverPoint(BotOwner bot, Vector3 candidate, Vector3 threatDirection)
         {
+            if (bot == null)
+            {
+                return MinScore;
+            }
+
             Vector3 eyePos = candidate + (Vector3.up * EyeHeightOffset);
             Vector3 toThreat = threatDirection.normalized;
             Vector3 fromThreat = -toThreat;
@@ -65,7 +70,8 @@ namespace AIRefactored.AI.Optimization
             float score = 1.0f;
 
             // Wall behind bonus
-            if (Physics.Raycast(eyePos, fromThreat, out RaycastHit backHit, BackWallDistance) && IsSolid(backHit.collider))
+            if (Physics.Raycast(eyePos, fromThreat, out RaycastHit backHit, BackWallDistance) &&
+                IsSolid(backHit.collider))
             {
                 score += 3.0f;
             }
@@ -88,7 +94,7 @@ namespace AIRefactored.AI.Optimization
                 }
             }
 
-            // Distance modifier (encourages reasonably close fallback)
+            // Distance modifier
             float dist = Vector3.Distance(bot.Position, candidate);
             if (dist > IdealFallbackDistance)
             {
@@ -97,7 +103,7 @@ namespace AIRefactored.AI.Optimization
             }
 
             Logger.LogDebug(
-                $"[CoverScorer] Score={score:F2} @ {candidate} | From={bot.Position} | Dir={threatDirection.normalized}");
+                $"[CoverScorer] Score={score:F2} @ {candidate} | From={bot.Position} | Dir={toThreat}");
 
             return Mathf.Clamp(score, MinScore, MaxScore);
         }

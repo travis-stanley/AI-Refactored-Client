@@ -33,7 +33,6 @@ namespace AIRefactored.AI.Looting
         private static readonly Dictionary<string, float> _lootTimestamps = new Dictionary<string, float>(32);
         private static readonly HashSet<string> _recentlyLooted = new HashSet<string>();
 
-
         private BotOwner? _bot;
         private BotComponentCache? _cache;
         private float _nextScanTime;

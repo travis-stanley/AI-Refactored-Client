@@ -14,6 +14,7 @@ namespace AIRefactored.AI.Combat.States
     using System.Collections.Generic;
     using AIRefactored.AI.Core;
     using AIRefactored.AI.Helpers;
+    using AIRefactored.Runtime;
     using EFT;
     using UnityEngine;
 
@@ -34,6 +35,7 @@ namespace AIRefactored.AI.Combat.States
         private readonly BotOwner _bot;
         private readonly BotComponentCache _cache;
         private readonly List<Vector3> _currentFallbackPath;
+
         private Vector3 _fallbackTarget;
 
         #endregion
@@ -43,17 +45,12 @@ namespace AIRefactored.AI.Combat.States
         /// <summary>
         /// Initializes a new instance of the <see cref="FallbackHandler"/> class.
         /// </summary>
-        /// <param name="cache">The bot component cache reference.</param>
+        /// <param name="cache">The bot component cache.</param>
         public FallbackHandler(BotComponentCache cache)
         {
-            if (cache == null)
+            if (cache == null || cache.Bot == null)
             {
-                throw new ArgumentNullException(nameof(cache));
-            }
-
-            if (cache.Bot == null)
-            {
-                throw new ArgumentException("Bot is null on cache.", nameof(cache));
+                throw new ArgumentNullException(nameof(cache), "[FallbackHandler] Cache or Bot is null.");
             }
 
             this._cache = cache;
@@ -67,41 +64,51 @@ namespace AIRefactored.AI.Combat.States
         #region Public API
 
         /// <summary>
-        /// Gets the current fallback target position.
+        /// Gets the final fallback destination point.
         /// </summary>
-        /// <returns>The fallback destination.</returns>
         public Vector3 GetFallbackPosition()
         {
             return this._fallbackTarget;
         }
 
         /// <summary>
-        /// Gets a fallback target if valid, or returns the current position.
+        /// Gets fallback destination or returns the default fallback.
         /// </summary>
-        /// <param name="defaultPos">Default fallback if none set.</param>
-        /// <returns>Resolved fallback target.</returns>
         public Vector3 GetFallbackPositionOrDefault(Vector3 defaultPos)
         {
             return this.HasValidFallbackPath() ? this._fallbackTarget : defaultPos;
         }
 
         /// <summary>
-        /// Returns true if a valid fallback path is currently cached.
+        /// Checks if the fallback path is valid.
         /// </summary>
-        /// <returns>True if fallback path is usable; otherwise, false.</returns>
         public bool HasValidFallbackPath()
         {
             return this._currentFallbackPath.Count >= 2;
         }
 
         /// <summary>
-        /// Sets a fallback path for the bot.
+        /// Directly assigns a fallback destination.
         /// </summary>
-        /// <param name="path">The fallback path points.</param>
+        public void SetFallbackTarget(Vector3 target)
+        {
+            if (float.IsNaN(target.x) || float.IsNaN(target.y) || float.IsNaN(target.z))
+            {
+                AIRefactoredController.Logger.LogWarning("[FallbackHandler] Ignored fallback target with NaN values.");
+                return;
+            }
+
+            this._fallbackTarget = target;
+        }
+
+        /// <summary>
+        /// Sets fallback path and updates internal target.
+        /// </summary>
         public void SetFallbackPath(List<Vector3> path)
         {
             if (path == null || path.Count < 2)
             {
+                AIRefactoredController.Logger.LogWarning("[FallbackHandler] Rejected fallback path: insufficient length.");
                 return;
             }
 
@@ -115,67 +122,63 @@ namespace AIRefactored.AI.Combat.States
         }
 
         /// <summary>
-        /// Sets a fallback target directly without a path.
+        /// Determines whether fallback should remain active.
         /// </summary>
-        /// <param name="target">Fallback destination position.</param>
-        public void SetFallbackTarget(Vector3 target)
-        {
-            this._fallbackTarget = target;
-        }
-
-        /// <summary>
-        /// Determines whether the bot should continue fallback movement.
-        /// </summary>
-        /// <param name="time">The current time.</param>
-        /// <returns>True if fallback should be active; otherwise, false.</returns>
         public bool ShallUseNow(float time)
         {
-            float distance = Vector3.Distance(this._bot.Position, this._fallbackTarget);
-            return distance > MinArrivalDistance;
+            float dist = Vector3.Distance(this._bot.Position, this._fallbackTarget);
+            return dist > MinArrivalDistance;
         }
 
         /// <summary>
-        /// Determines if suppression conditions warrant triggering fallback override.
+        /// Determines if fallback should be triggered based on suppression and time.
         /// </summary>
-        /// <param name="now">Current time.</param>
-        /// <param name="lastStateChangeTime">Last state change timestamp.</param>
-        /// <param name="minStateDuration">Minimum time in previous state before fallback allowed.</param>
-        /// <returns>True if fallback override should occur.</returns>
         public bool ShouldTriggerSuppressedFallback(float now, float lastStateChangeTime, float minStateDuration)
         {
-            if (this._cache.Suppression == null)
+            BotSuppressionReactionComponent? suppression = this._cache.Suppression;
+            if (suppression == null)
             {
                 return false;
             }
 
-            return this._cache.Suppression.IsSuppressed() &&
-                   (now - lastStateChangeTime) >= minStateDuration;
+            bool isSuppressed = suppression.IsSuppressed();
+            bool timeElapsed = (now - lastStateChangeTime) >= minStateDuration;
+
+            return isSuppressed && timeElapsed;
         }
 
         /// <summary>
-        /// Executes fallback movement and cover checks.
+        /// Executes fallback movement and updates state if destination is reached.
         /// </summary>
-        /// <param name="time">Current world time.</param>
-        /// <param name="lastKnownEnemyPos">Optional last known enemy position (not used).</param>
-        /// <param name="forceState">Callback to force combat state transitions.</param>
         public void Tick(float time, Vector3? lastKnownEnemyPos, Action<CombatState, float> forceState)
         {
+            if (float.IsNaN(this._fallbackTarget.x) || float.IsNaN(this._fallbackTarget.y) || float.IsNaN(this._fallbackTarget.z))
+            {
+                AIRefactoredController.Logger.LogWarning("[FallbackHandler] Skipped Tick: fallback target was invalid.");
+                return;
+            }
+
             BotMovementHelper.SmoothMoveTo(this._bot, this._fallbackTarget);
             BotCoverHelper.TrySetStanceFromNearbyCover(this._cache, this._fallbackTarget);
 
-            float dist = Vector3.Distance(this._bot.Position, this._fallbackTarget);
-            if (dist < MinArrivalDistance)
+            float distance = Vector3.Distance(this._bot.Position, this._fallbackTarget);
+            if (distance < MinArrivalDistance && forceState != null)
             {
                 forceState(CombatState.Patrol, time);
 
-                if (!FikaHeadlessDetector.IsHeadless)
+                if (!FikaHeadlessDetector.IsHeadless && this._bot.BotTalk != null)
                 {
-                    if (this._bot.BotTalk != null)
-                    {
-                        this._bot.BotTalk.TrySay(EPhraseTrigger.NeedHelp);
-                    }
+                    this._bot.BotTalk.TrySay(EPhraseTrigger.NeedHelp);
                 }
             }
+        }
+
+        /// <summary>
+        /// Returns true if the bot is actively executing a fallback.
+        /// </summary>
+        public bool IsActive()
+        {
+            return Vector3.Distance(this._bot.Position, this._fallbackTarget) > MinArrivalDistance;
         }
 
         #endregion

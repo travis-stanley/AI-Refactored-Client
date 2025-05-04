@@ -19,7 +19,7 @@ namespace AIRefactored.AI.Combat
     using EFT.HealthSystem;
     using EFT.InventoryLogic;
     using UnityEngine;
-
+    using GClass2814 = GClass2814<HealthControllerClass.GClass2819>;
     using Random = UnityEngine.Random;
 
     /// <summary>
@@ -77,7 +77,6 @@ namespace AIRefactored.AI.Combat
 
             IPlayer? target = this._cache.ThreatSelector?.CurrentTarget ?? this._bot.Memory.GoalEnemy?.Person;
             Vector3 aimPosition = this.GetValidatedAimPosition(target, time);
-
             this.UpdateBotAiming(aimPosition);
 
             if (target?.HealthController?.IsAlive != true)
@@ -145,12 +144,12 @@ namespace AIRefactored.AI.Combat
 
         private Vector3 GetValidatedAimPosition(IPlayer? target, float time)
         {
-            if (target != null && target.HealthController?.IsAlive == true && target.Transform != null)
+            if (target != null && target.HealthController?.IsAlive == true)
             {
-                Vector3 targetPos = target.Transform.position;
-                if (targetPos != Vector3.zero)
+                Vector3? pos = target.Position;
+                if (pos.HasValue && pos.Value != Vector3.zero)
                 {
-                    return targetPos;
+                    return pos.Value;
                 }
             }
 
@@ -164,7 +163,8 @@ namespace AIRefactored.AI.Combat
                 float yaw = Random.Range(-75f, 75f);
                 float pitch = Random.Range(-10f, 10f);
                 Quaternion offset = Quaternion.Euler(pitch, yaw, 0f);
-                this._idleLookDirection = offset * this._bot.Transform.forward;
+                Vector3 baseDir = this._bot.Transform != null ? this._bot.Transform.forward : Vector3.forward;
+                this._idleLookDirection = offset * baseDir;
                 this._lastLookAroundTime = time;
             }
 
@@ -200,9 +200,15 @@ namespace AIRefactored.AI.Combat
 
         private bool SupportsFireMode(Weapon weapon, Weapon.EFireMode mode)
         {
-            foreach (var availableMode in weapon.WeapFireType)
+            Weapon.EFireMode[] modes = weapon.WeapFireType;
+            if (modes == null)
             {
-                if (availableMode == mode)
+                return false;
+            }
+
+            for (int i = 0; i < modes.Length; i++)
+            {
+                if (modes[i] == mode)
                 {
                     return true;
                 }
@@ -228,14 +234,14 @@ namespace AIRefactored.AI.Combat
 
         private float EstimateWeaponRange(Weapon weapon)
         {
-            if (weapon?.Template?.Name == null)
+            ItemTemplate? template = weapon.Template;
+            if (template == null || string.IsNullOrEmpty(template.Name))
             {
                 return 90f;
             }
 
-            string name = weapon.Template.Name;
-
-            foreach (var kvp in WeaponTypeRanges)
+            string name = template.Name;
+            foreach (KeyValuePair<string, float> kvp in WeaponTypeRanges)
             {
                 if (name.IndexOf(kvp.Key, StringComparison.OrdinalIgnoreCase) >= 0)
                 {
@@ -266,10 +272,11 @@ namespace AIRefactored.AI.Combat
             float current = 0f;
             float maximum = 0f;
 
+            Dictionary<EBodyPart, GClass2814<HealthControllerClass.GClass2819>.BodyPartState> dict = health.Dictionary_0;
             for (int i = 0; i < AllBodyParts.Length; i++)
             {
                 EBodyPart part = AllBodyParts[i];
-                if (health.Dictionary_0.TryGetValue(part, out var state))
+                if (dict.TryGetValue(part, out var state) && state.Health != null)
                 {
                     current += state.Health.Current;
                     maximum += state.Health.Maximum;
@@ -299,7 +306,12 @@ namespace AIRefactored.AI.Combat
             Vector3 fallback = path[path.Count - 1];
             BotMovementHelper.SmoothMoveTo(this._bot, fallback, false);
             BotCoverHelper.TrySetStanceFromNearbyCover(this._cache, fallback);
-            this._bot.BotTalk?.TrySay(EPhraseTrigger.OnLostVisual);
+
+            // Ensure BotTalk only happens in non-headless mode
+            if (!FikaHeadlessDetector.IsHeadless && this._bot.BotTalk != null)
+            {
+                this._bot.BotTalk.TrySay(EPhraseTrigger.OnLostVisual);
+            }
         }
     }
 }

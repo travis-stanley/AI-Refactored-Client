@@ -42,9 +42,8 @@ namespace AIRefactored.AI.Optimization
                 return;
             }
 
-            for (int i = 0; i < botOwners.Count; i++)
+            foreach (var bot in botOwners)
             {
-                BotOwner? bot = botOwners[i];
                 if (bot == null || bot.IsDead)
                 {
                     continue;

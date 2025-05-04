@@ -20,10 +20,16 @@ namespace AIRefactored.AI.Looting
     /// </summary>
     public static class DeadBodyContainerCache
     {
+        #region Fields
+
         /// <summary>
         /// Internal dictionary mapping profile IDs to lootable corpse containers.
         /// </summary>
         private static readonly Dictionary<string, LootableContainer> Containers = new Dictionary<string, LootableContainer>(64);
+
+        #endregion
+
+        #region API
 
         /// <summary>
         /// Clears the cache of all dead body container references.
@@ -40,7 +46,8 @@ namespace AIRefactored.AI.Looting
         /// <returns>True if a corpse container is cached for the given profile ID.</returns>
         public static bool Contains(string? profileId)
         {
-            if (!TryGetSafeKey(profileId, out string key))
+            string key;
+            if (!TryGetSafeKey(profileId, out key))
             {
                 return false;
             }
@@ -55,12 +62,14 @@ namespace AIRefactored.AI.Looting
         /// <returns>The associated lootable container, or null if not found.</returns>
         public static LootableContainer? Get(string? profileId)
         {
-            if (!TryGetSafeKey(profileId, out string key))
+            string key;
+            if (!TryGetSafeKey(profileId, out key))
             {
                 return null;
             }
 
-            return Containers.TryGetValue(key, out LootableContainer? container) ? container : null;
+            LootableContainer? container;
+            return Containers.TryGetValue(key, out container) ? container : null;
         }
 
         /// <summary>
@@ -70,23 +79,30 @@ namespace AIRefactored.AI.Looting
         /// <param name="container">The corpse's lootable container.</param>
         public static void Register(Player? player, LootableContainer? container)
         {
-            if (player == null || container == null || player.ProfileId == null)
+            if (player == null || container == null)
             {
                 return;
             }
 
-            if (!TryGetSafeKey(player.ProfileId, out string profileId))
+            string? id = player.ProfileId;
+            string key;
+
+            if (id == null || !TryGetSafeKey(id, out key))
             {
                 return;
             }
 
-            if (Containers.ContainsKey(profileId))
+            if (Containers.ContainsKey(key))
             {
                 return;
             }
 
-            Containers[profileId] = container;
+            Containers.Add(key, container);
         }
+
+        #endregion
+
+        #region Helpers
 
         /// <summary>
         /// Trims and validates a string profile ID for safe dictionary usage.
@@ -112,5 +128,7 @@ namespace AIRefactored.AI.Looting
             key = trimmed;
             return true;
         }
+
+        #endregion
     }
 }

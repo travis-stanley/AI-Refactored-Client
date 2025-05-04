@@ -35,6 +35,9 @@ namespace AIRefactored.AI.Helpers
 
         #region Public API
 
+        /// <summary>
+        /// Gets all active bot caches (non-dead bots).
+        /// </summary>
         public static IEnumerable<BotComponentCache> AllActiveBots()
         {
             foreach (KeyValuePair<BotOwner, BotComponentCache> kvp in CacheRegistry)
@@ -46,39 +49,65 @@ namespace AIRefactored.AI.Helpers
             }
         }
 
+        /// <summary>
+        /// Dumps bot cache information for debugging or logging.
+        /// </summary>
         public static void DumpCache()
         {
-            Plugin.LoggerInstance.LogInfo($"[BotCacheUtility] Dumping {CacheRegistry.Count} bot caches:");
+            Plugin.LoggerInstance.LogInfo("[BotCacheUtility] Dumping bot caches:");
 
             foreach (KeyValuePair<BotOwner, BotComponentCache> kvp in CacheRegistry)
             {
                 BotOwner bot = kvp.Key;
                 BotComponentCache cache = kvp.Value;
-
-                Plugin.LoggerInstance.LogInfo($" → {GetBotName(cache)}, Pos={bot.Position}, Alive={!bot.IsDead}");
+                string name = GetBotName(cache);
+                Plugin.LoggerInstance.LogInfo(" → " + name + ", Pos=" + bot.Position + ", Alive=" + (!bot.IsDead));
             }
         }
 
-        public static string GetBotName(BotComponentCache? cache)
+        /// <summary>
+        /// Attempts to retrieve the BotComponentCache associated with a specific bot.
+        /// </summary>
+        public static bool TryGet(BotOwner bot, out BotComponentCache? cache)
         {
-            if (cache?.Bot?.Profile?.Info == null)
+            if (bot == null)
             {
-                return "Unknown";
+                cache = null;
+                return false;
             }
 
-            return $"{cache.Bot.Profile.Info.Nickname} ({cache.Bot.Profile.Side})";
+            return CacheRegistry.TryGetValue(bot, out cache);
         }
 
+        /// <summary>
+        /// Retrieves the BotComponentCache associated with the provided bot.
+        /// </summary>
         public static BotComponentCache? GetCache(BotOwner bot)
         {
-            return CacheRegistry.TryGetValue(bot, out BotComponentCache? cache) ? cache : null;
+            if (bot == null)
+            {
+                return null;
+            }
+
+            return CacheRegistry.TryGetValue(bot, out BotComponentCache? found) ? found : null;
         }
 
+        /// <summary>
+        /// Retrieves the BotComponentCache associated with the provided player.
+        /// </summary>
         public static BotComponentCache? GetCache(Player player)
         {
-            return player?.AIData?.BotOwner is BotOwner bot ? GetCache(bot) : null;
+            if (player == null || player.AIData == null || player.AIData.BotOwner == null)
+            {
+                return null;
+            }
+
+            return GetCache(player.AIData.BotOwner);
         }
 
+        /// <summary>
+        /// Retrieves the BotComponentCache associated with the provided profile ID.
+        /// </summary>
         public static BotComponentCache? GetCache(string profileId)
         {
             if (string.IsNullOrEmpty(profileId))
@@ -89,7 +118,46 @@ namespace AIRefactored.AI.Helpers
             return ProfileIdLookup.TryGetValue(profileId, out BotComponentCache? cache) ? cache : null;
         }
 
-        public static BotComponentCache? GetClosestBot(Vector3 origin, float maxDistance = 40f)
+        /// <summary>
+        /// Gets the bot's name from the cache.
+        /// </summary>
+        public static string GetBotName(BotComponentCache? cache)
+        {
+            if (cache == null || cache.Bot == null || cache.Bot.Profile == null || cache.Bot.Profile.Info == null)
+            {
+                return "Unknown";
+            }
+
+            return cache.Bot.Profile.Info.Nickname + " (" + cache.Bot.Profile.Side + ")";
+        }
+
+        /// <summary>
+        /// Retrieves the BotGroupSyncCoordinator for the given bot cache.
+        /// </summary>
+        public static BotGroupSyncCoordinator? GetGroupSync(BotComponentCache? cache)
+        {
+            if (cache == null)
+            {
+                return null;
+            }
+
+            if (cache.GroupSync != null)
+            {
+                return cache.GroupSync;
+            }
+
+            if (cache.GroupBehavior != null)
+            {
+                return cache.GroupBehavior.GroupSync;
+            }
+
+            return null;
+        }
+
+        /// <summary>
+        /// Gets the closest bot to a given position within a specified radius.
+        /// </summary>
+        public static BotComponentCache? GetClosestBot(Vector3 origin, float maxDistance)
         {
             BotComponentCache? closest = null;
             float minDistSq = maxDistance * maxDistance;
@@ -118,15 +186,17 @@ namespace AIRefactored.AI.Helpers
             return closest;
         }
 
-        public static Transform? GetFootTransform(BotComponentCache cache)
+        /// <summary>
+        /// Retrieves the head transform of the bot from its cache.
+        /// </summary>
+        public static Transform? Head(BotComponentCache? cache)
         {
-            if (cache?.Bot?.MainParts == null)
+            if (cache == null || cache.Bot == null || cache.Bot.MainParts == null)
             {
                 return null;
             }
 
-            EnemyPart part;
-            if (cache.Bot.MainParts.TryGetValue(BodyPartType.leftLeg, out part) && part._transform != null)
+            if (cache.Bot.MainParts.TryGetValue(BodyPartType.head, out EnemyPart part) && part._transform != null)
             {
                 return part._transform.Original;
             }
@@ -134,85 +204,9 @@ namespace AIRefactored.AI.Helpers
             return null;
         }
 
-        public static BotGroupSyncCoordinator? GetGroupSync(BotComponentCache cache)
-        {
-            return cache.GroupSync ?? cache.GroupBehavior?.GroupSync;
-        }
-
-        public static Transform? GetLookTransform(BotComponentCache cache)
-        {
-            return cache?.Bot?.Fireport?.Original;
-        }
-
-        public static BotMissionController? GetMissionController(BotComponentCache cache)
-        {
-            return cache.AIRefactoredBotOwner?.MissionController;
-        }
-
-        public static BotPersonalityProfile? GetPersonality(BotComponentCache cache)
-        {
-            return cache?.Bot?.ProfileId != null ? BotRegistry.TryGet(cache.Bot.ProfileId) : null;
-        }
-
-        public static string GetStance(BotComponentCache cache)
-        {
-            BotPoseController? pose = cache?.PoseController;
-            if (pose == null)
-            {
-                return "Unknown";
-            }
-
-            float level = pose.GetPoseLevel();
-            if (level < 25f)
-            {
-                return "Prone";
-            }
-
-            if (level < 75f)
-            {
-                return "Crouching";
-            }
-
-            return "Standing";
-        }
-
-        public static Transform? GetWeaponTransform(BotComponentCache cache)
-        {
-            return cache?.Bot?.Fireport?.Original;
-        }
-
-        public static Transform? Head(BotComponentCache cache)
-        {
-            if (cache?.Bot?.MainParts == null)
-            {
-                return null;
-            }
-
-            EnemyPart part;
-            if (cache.Bot.MainParts.TryGetValue(BodyPartType.head, out part) && part._transform != null)
-            {
-                return part._transform.Original;
-            }
-
-            return null;
-        }
-
-        public static bool IsFollower(BotComponentCache cache)
-        {
-            return !IsLeader(cache);
-        }
-
-        public static bool IsLeader(BotComponentCache cache)
-        {
-            BotsGroup? group = cache.Bot?.BotsGroup;
-            if (group == null || group.MembersCount == 0)
-            {
-                return false;
-            }
-
-            return group.Member(0)?.ProfileId == cache.Bot?.ProfileId;
-        }
-
+        /// <summary>
+        /// Registers a bot and its cache into the utility.
+        /// </summary>
         public static void Register(BotOwner bot, BotComponentCache cache)
         {
             if (bot == null || cache == null)
@@ -231,12 +225,9 @@ namespace AIRefactored.AI.Helpers
             GroupMissionCoordinator.RegisterFromBot(bot);
         }
 
-        public static bool TryGetPanicComponent(BotComponentCache cache, out BotPanicHandler? panic)
-        {
-            panic = cache?.PanicHandler;
-            return panic != null;
-        }
-
+        /// <summary>
+        /// Unregisters a bot and its cache from the utility.
+        /// </summary>
         public static void Unregister(BotOwner bot)
         {
             if (bot == null)

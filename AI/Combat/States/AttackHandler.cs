@@ -13,6 +13,7 @@ namespace AIRefactored.AI.Combat.States
     using System;
     using AIRefactored.AI.Core;
     using AIRefactored.AI.Helpers;
+    using AIRefactored.Runtime;
     using EFT;
     using UnityEngine;
 
@@ -24,19 +25,8 @@ namespace AIRefactored.AI.Combat.States
     {
         #region Fields
 
-        /// <summary>
-        /// The bot owner entity.
-        /// </summary>
         private readonly BotOwner _bot;
-
-        /// <summary>
-        /// The component cache containing bot systems and helpers.
-        /// </summary>
         private readonly BotComponentCache _cache;
-
-        /// <summary>
-        /// The last target position moved toward.
-        /// </summary>
         private Vector3? _lastTargetPosition;
 
         #endregion
@@ -44,19 +34,21 @@ namespace AIRefactored.AI.Combat.States
         #region Constructor
 
         /// <summary>
-        /// Initializes a new instance of the <see cref="AttackHandler"/> class.
+        /// Initializes the attack handler with bot component cache.
         /// </summary>
         /// <param name="cache">The component cache for the bot.</param>
         public AttackHandler(BotComponentCache cache)
         {
             if (cache == null)
             {
+                AIRefactoredController.Logger.LogError("[AttackHandler] ❌ Constructor failed: cache is null.");
                 throw new ArgumentNullException(nameof(cache));
             }
 
             if (cache.Bot == null)
             {
-                throw new ArgumentNullException(nameof(cache.Bot));
+                AIRefactoredController.Logger.LogError("[AttackHandler] ❌ Constructor failed: BotOwner is null.");
+                throw new InvalidOperationException("AttackHandler requires a valid BotOwner.");
             }
 
             this._cache = cache;
@@ -68,7 +60,7 @@ namespace AIRefactored.AI.Combat.States
         #region Public Methods
 
         /// <summary>
-        /// Clears the cached attack destination.
+        /// Clears last known target position.
         /// </summary>
         public void ClearTarget()
         {
@@ -76,42 +68,55 @@ namespace AIRefactored.AI.Combat.States
         }
 
         /// <summary>
-        /// Returns true if the bot currently has a valid, alive enemy target.
+        /// Determines if the attack state should be used.
         /// </summary>
-        /// <returns>True if the enemy is alive and valid; otherwise, false.</returns>
+        /// <returns>True if the bot should use attack logic.</returns>
         public bool ShallUseNow()
         {
             IPlayer? target = this.GetCurrentEnemy();
-            return target != null &&
-                   target.HealthController != null &&
-                   target.HealthController.IsAlive;
+            return target != null && target.HealthController != null && target.HealthController.IsAlive;
         }
 
         /// <summary>
-        /// Executes attack logic each frame: pursue, reposition, and update stance.
+        /// Updates attack logic based on target position.
         /// </summary>
         /// <param name="time">Current game time.</param>
         public void Tick(float time)
         {
             IPlayer? enemy = this.GetCurrentEnemy();
-            if (enemy == null || enemy.HealthController == null || !enemy.HealthController.IsAlive)
+            if (enemy == null)
             {
                 return;
             }
 
-            Vector3 targetPosition = enemy.Transform.position;
-            if (!this._lastTargetPosition.HasValue ||
-                (this._lastTargetPosition.Value - targetPosition).sqrMagnitude > 1.0f)
+            if (enemy.HealthController == null || !enemy.HealthController.IsAlive)
             {
-                this._lastTargetPosition = targetPosition;
-
-                Vector3 destination = this._cache.SquadPath != null
-                    ? this._cache.SquadPath.ApplyOffsetTo(targetPosition)
-                    : targetPosition;
-
-                BotMovementHelper.SmoothMoveTo(this._bot, destination);
-                BotCoverHelper.TrySetStanceFromNearbyCover(this._cache, destination);
+                return;
             }
+
+            Transform? enemyTransform = enemy.Transform?.Original;
+            if (enemyTransform == null)
+            {
+                return;
+            }
+
+            Vector3 targetPosition = enemyTransform.position;
+            bool needsUpdate = !this._lastTargetPosition.HasValue ||
+                               (this._lastTargetPosition.Value - targetPosition).sqrMagnitude > 1.0f;
+
+            if (!needsUpdate)
+            {
+                return;
+            }
+
+            this._lastTargetPosition = targetPosition;
+
+            Vector3 destination = this._cache.SquadPath != null
+                ? this._cache.SquadPath.ApplyOffsetTo(targetPosition)
+                : targetPosition;
+
+            BotMovementHelper.SmoothMoveTo(this._bot, destination);
+            BotCoverHelper.TrySetStanceFromNearbyCover(this._cache, destination);
         }
 
         #endregion
@@ -119,24 +124,25 @@ namespace AIRefactored.AI.Combat.States
         #region Private Methods
 
         /// <summary>
-        /// Gets the current enemy target from threat selector or fallback memory.
+        /// Gets the current valid enemy, if any.
         /// </summary>
-        /// <returns>The IPlayer enemy target, or null if none available.</returns>
+        /// <returns>The current enemy target or null.</returns>
         private IPlayer? GetCurrentEnemy()
         {
-            if (this._cache != null &&
-                this._cache.ThreatSelector != null &&
-                this._cache.ThreatSelector.CurrentTarget != null)
+            if (this._cache == null || this._bot == null)
             {
-                return this._cache.ThreatSelector.CurrentTarget;
+                return null;
             }
 
-            if (this._bot != null &&
-                this._bot.Memory != null &&
-                this._bot.Memory.GoalEnemy != null &&
-                this._bot.Memory.GoalEnemy.Person != null)
+            BotThreatSelector? selector = this._cache.ThreatSelector;
+            if (selector != null && selector.CurrentTarget is IPlayer current)
             {
-                return this._bot.Memory.GoalEnemy.Person;
+                return current;
+            }
+
+            if (this._bot.Memory?.GoalEnemy?.Person is IPlayer fallback)
+            {
+                return fallback;
             }
 
             return null;

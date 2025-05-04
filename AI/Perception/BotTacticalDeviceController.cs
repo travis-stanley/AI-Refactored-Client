@@ -24,20 +24,27 @@ namespace AIRefactored.AI.Perception
     /// </summary>
     public sealed class BotTacticalDeviceController
     {
-        private readonly List<LightComponent> _devices = new();
+        #region Fields
+
+        private readonly List<LightComponent> _devices = new List<LightComponent>(4);
 
         private BotOwner? _bot;
         private BotComponentCache? _cache;
         private float _nextDecisionTime;
 
+        #endregion
+
+        #region Public Methods
+
         /// <summary>
         /// Initializes the controller with the bot's runtime cache.
         /// </summary>
+        /// <param name="cache">Bot component cache.</param>
         public void Initialize(BotComponentCache cache)
         {
-            if (cache?.Bot == null)
+            if (cache == null || cache.Bot == null)
             {
-                throw new InvalidOperationException("Cannot initialize BotTacticalDeviceController without valid bot cache.");
+                throw new InvalidOperationException("Cannot initialize BotTacticalDeviceController without a valid bot cache.");
             }
 
             this._cache = cache;
@@ -56,7 +63,7 @@ namespace AIRefactored.AI.Perception
 
             this._nextDecisionTime = Time.time + TacticalConfig.CheckInterval;
 
-            var weapon = this._bot?.WeaponManager?.CurrentWeapon;
+            Weapon? weapon = this._bot?.WeaponManager?.CurrentWeapon;
             if (weapon == null)
             {
                 return;
@@ -64,37 +71,33 @@ namespace AIRefactored.AI.Perception
 
             this.ScanMods(weapon);
 
-            var isLowVisibility = IsLowVisibility();
-            var baitTrigger = Random.value < this.ChaosBaitChance();
-            var shouldEnable = isLowVisibility || baitTrigger;
+            bool lowVisibility = IsLowVisibility();
+            bool baitTrigger = Random.value < this.ChaosBaitChance();
+            bool shouldEnable = lowVisibility || baitTrigger;
 
-            foreach (var device in this._devices)
+            for (int i = 0; i < this._devices.Count; i++)
             {
-                var state = device.GetLightState();
-
-                if (state.IsActive == shouldEnable)
+                LightComponent device = this._devices[i];
+                if (device.IsActive != shouldEnable)
                 {
-                    continue;
+                    device.IsActive = shouldEnable;
                 }
-
-                state.IsActive = shouldEnable;
-                device.SetLightState(state);
             }
 
-            if (!baitTrigger)
+            if (baitTrigger)
             {
-                return;
-            }
+                this._nextDecisionTime = Time.time + 1.5f;
 
-            this._nextDecisionTime = Time.time + 1.5f;
-
-            foreach (var device in this._devices)
-            {
-                var state = device.GetLightState();
-                state.IsActive = false;
-                device.SetLightState(state);
+                for (int i = 0; i < this._devices.Count; i++)
+                {
+                    this._devices[i].IsActive = false;
+                }
             }
         }
+
+        #endregion
+
+        #region Private Methods
 
         private bool CanThink()
         {
@@ -103,41 +106,51 @@ namespace AIRefactored.AI.Perception
                 return false;
             }
 
-            var player = this._bot.GetPlayer;
+            Player? player = this._bot.GetPlayer;
             return player != null && !player.IsYourPlayer;
         }
 
         private float ChaosBaitChance()
         {
-            return (this._cache?.AIRefactoredBotOwner?.PersonalityProfile.ChaosFactor ?? 0f) * 0.25f;
+            return this._cache?.AIRefactoredBotOwner?.PersonalityProfile?.ChaosFactor * 0.25f ?? 0f;
         }
 
         private static bool IsLowVisibility()
         {
-            var ambientLight = RenderSettings.ambientLight.grayscale;
-            var fogDensity = RenderSettings.fog ? RenderSettings.fogDensity : 0f;
-
-            return ambientLight < TacticalConfig.LightThreshold || fogDensity > TacticalConfig.FogThreshold;
+            float ambient = RenderSettings.ambientLight.grayscale;
+            float fog = RenderSettings.fog ? RenderSettings.fogDensity : 0f;
+            return ambient < TacticalConfig.LightThreshold || fog > TacticalConfig.FogThreshold;
         }
 
         private void ScanMods(Weapon weapon)
         {
             this._devices.Clear();
 
-            foreach (var slot in weapon.AllSlots)
+            IEnumerable<Slot>? slots = weapon.AllSlots;
+            if (slots == null)
             {
-                var mod = slot?.ContainedItem;
-                if (mod == null)
+                return;
+            }
+
+            foreach (Slot slot in slots)
+            {
+                if (slot == null)
                 {
                     continue;
                 }
 
-                var name = mod.Template?.Name?.ToLowerInvariant() ?? string.Empty;
-                var isTactical = false;
-
-                foreach (var keyword in TacticalConfig.Keywords)
+                Item? mod = slot.ContainedItem;
+                if (mod == null || mod.Template == null || string.IsNullOrEmpty(mod.Template.Name))
                 {
-                    if (name.Contains(keyword))
+                    continue;
+                }
+
+                string name = mod.Template.Name.ToLowerInvariant();
+                bool isTactical = false;
+
+                for (int j = 0; j < TacticalConfig.Keywords.Length; j++)
+                {
+                    if (name.Contains(TacticalConfig.Keywords[j]))
                     {
                         isTactical = true;
                         break;
@@ -151,8 +164,8 @@ namespace AIRefactored.AI.Perception
 
                 switch (mod)
                 {
-                    case FlashlightItemClass fl when fl.Light != null:
-                        this._devices.Add(fl.Light);
+                    case FlashlightItemClass flash when flash.Light != null:
+                        this._devices.Add(flash.Light);
                         break;
 
                     case TacticalComboItemClass combo when combo.Light != null:
@@ -166,13 +179,19 @@ namespace AIRefactored.AI.Perception
             }
         }
 
+        #endregion
+
+        #region Config
+
         private static class TacticalConfig
         {
-            public const float CheckInterval = 2f;
+            public const float CheckInterval = 2.0f;
             public const float FogThreshold = 0.5f;
             public const float LightThreshold = 0.3f;
 
             public static readonly string[] Keywords = { "light", "laser", "nvg", "thermal", "flash" };
         }
+
+        #endregion
     }
 }

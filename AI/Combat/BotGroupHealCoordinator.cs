@@ -47,8 +47,18 @@ namespace AIRefactored.AI.Combat
         /// <param name="cache">BotComponentCache providing references for squad healing logic.</param>
         public BotGroupHealCoordinator(BotComponentCache cache)
         {
-            this._cache = cache ?? throw new ArgumentNullException(nameof(cache));
-            this._bot = cache.Bot ?? throw new ArgumentNullException(nameof(cache.Bot));
+            if (cache == null)
+            {
+                throw new ArgumentNullException(nameof(cache));
+            }
+
+            if (cache.Bot == null)
+            {
+                throw new ArgumentNullException(nameof(cache.Bot));
+            }
+
+            this._cache = cache;
+            this._bot = cache.Bot;
         }
 
         #endregion
@@ -83,24 +93,20 @@ namespace AIRefactored.AI.Combat
                 }
 
                 IHealthController? health = matePlayer.HealthController;
-                if (health == null || !health.IsAlive)
-                {
-                    continue;
-                }
-
-                if (!NeedsHealing(health))
+                if (health == null || !health.IsAlive || !NeedsHealing(health))
                 {
                     continue;
                 }
 
                 if (this._cache.SquadHealer != null && !this._cache.SquadHealer.IsInProcess)
                 {
-                    object raw = matePlayer;
-                    EFT.IPlayer iMatePlayer = (EFT.IPlayer)raw;
-
-                    this._cache.SquadHealer.HealAsk(iMatePlayer);
-                    this.TrySaySupport(EPhraseTrigger.Cooperation);
-                    return;
+                    IPlayer? iTarget = EFTPlayerUtil.AsSafeIPlayer(matePlayer);
+                    if (iTarget != null)
+                    {
+                        this._cache.SquadHealer.HealAsk(iTarget);
+                        this.TrySaySupport(EPhraseTrigger.Cooperation);
+                        return;
+                    }
                 }
 
                 this.TrySaySupport(EPhraseTrigger.NeedHelp);
@@ -113,7 +119,7 @@ namespace AIRefactored.AI.Combat
 
         private bool IsValidMate(BotOwner? mate)
         {
-            if (mate == null || mate == this._bot || mate.IsDead)
+            if (mate == null || mate.IsDead || mate == this._bot)
             {
                 return false;
             }
@@ -134,8 +140,15 @@ namespace AIRefactored.AI.Combat
 
         private static bool NeedsHealing(IHealthController health)
         {
-            foreach (EBodyPart part in Enum.GetValues(typeof(EBodyPart)))
+            Array parts = Enum.GetValues(typeof(EBodyPart));
+            for (int i = 0; i < parts.Length; i++)
             {
+                object? enumVal = parts.GetValue(i);
+                if (!(enumVal is EBodyPart part))
+                {
+                    continue;
+                }
+
                 ValueStruct value = health.GetBodyPartHealth(part);
                 if (value.Maximum > 0f && value.Current < value.Maximum * HealthThreshold)
                 {

@@ -26,6 +26,7 @@ namespace AIRefactored.AI.Core
         #region Fields
 
         private static readonly ManualLogSource Logger = AIRefactoredController.Logger;
+        private static readonly PersonalityType[] PersonalityTypes = (PersonalityType[])Enum.GetValues(typeof(PersonalityType));
 
         #endregion
 
@@ -85,13 +86,19 @@ namespace AIRefactored.AI.Core
             this.Bot = bot;
             this.Cache = cache;
 
+            // Ensure personality is assigned if not already done
             if (!this.HasPersonality())
             {
                 this.InitProfile(this.GetRandomPersonality());
             }
 
             string nickname = bot.Profile?.Info?.Nickname ?? "Unnamed";
-            Logger.LogDebug("[AIRefactoredBotOwner] Initialized for bot: " + nickname);
+
+            // Only log in non-headless environments to avoid excess log writes in headless mode
+            if (!FikaHeadlessDetector.IsHeadless)
+            {
+                Logger.LogDebug("[AIRefactoredBotOwner] Initialized for bot: " + nickname);
+            }
         }
 
         #endregion
@@ -104,7 +111,7 @@ namespace AIRefactored.AI.Core
         /// <param name="type">The personality type to use.</param>
         public void InitProfile(PersonalityType type)
         {
-            if (BotPersonalityPresets.Presets.TryGetValue(type, out BotPersonalityProfile? preset))
+            if (BotPersonalityPresets.Presets.TryGetValue(type, out BotPersonalityProfile? preset) && preset != null)
             {
                 this.PersonalityProfile = preset;
                 this.PersonalityName = type.ToString();
@@ -114,7 +121,7 @@ namespace AIRefactored.AI.Core
             {
                 this.PersonalityProfile = BotPersonalityPresets.Presets[PersonalityType.Adaptive];
                 this.PersonalityName = "Adaptive";
-                Logger.LogWarning("[AIRefactoredBotOwner] Invalid personality '" + type + "' — defaulting to Adaptive.");
+                Logger.LogWarning("[AIRefactoredBotOwner] Invalid or null profile for '" + type + "' — fallback to Adaptive.");
             }
         }
 
@@ -125,9 +132,19 @@ namespace AIRefactored.AI.Core
         /// <param name="name">Optional profile label for logging.</param>
         public void InitProfile(BotPersonalityProfile profile, string name = "Custom")
         {
-            this.PersonalityProfile = profile ?? new BotPersonalityProfile();
+            if (profile == null)
+            {
+                profile = new BotPersonalityProfile();
+            }
+
+            this.PersonalityProfile = profile;
             this.PersonalityName = string.IsNullOrEmpty(name) ? "Custom" : name;
-            Logger.LogInfo("[AIRefactoredBotOwner] Custom profile assigned: " + this.PersonalityName);
+
+            // Ensure speech only happens if not in headless mode
+            if (!FikaHeadlessDetector.IsHeadless)
+            {
+                Logger.LogInfo("[AIRefactoredBotOwner] Custom profile assigned: " + this.PersonalityName);
+            }
         }
 
         /// <summary>
@@ -137,7 +154,12 @@ namespace AIRefactored.AI.Core
         {
             this.PersonalityProfile = new BotPersonalityProfile();
             this.PersonalityName = "Cleared";
-            Logger.LogInfo("[AIRefactoredBotOwner] Personality cleared.");
+
+            // Only log in non-headless mode
+            if (!FikaHeadlessDetector.IsHeadless)
+            {
+                Logger.LogInfo("[AIRefactoredBotOwner] Personality cleared.");
+            }
         }
 
         /// <summary>
@@ -179,7 +201,12 @@ namespace AIRefactored.AI.Core
             }
 
             this.AssignedZone = zoneName;
-            Logger.LogInfo("[AIRefactoredBotOwner] Zone set to: " + zoneName);
+
+            // Only log in non-headless mode
+            if (!FikaHeadlessDetector.IsHeadless)
+            {
+                Logger.LogInfo("[AIRefactoredBotOwner] Zone set to: " + zoneName);
+            }
         }
 
         #endregion
@@ -188,9 +215,8 @@ namespace AIRefactored.AI.Core
 
         private PersonalityType GetRandomPersonality()
         {
-            PersonalityType[] values = (PersonalityType[])Enum.GetValues(typeof(PersonalityType));
-            int roll = UnityEngine.Random.Range(0, values.Length);
-            return values[roll];
+            int roll = UnityEngine.Random.Range(0, PersonalityTypes.Length);
+            return PersonalityTypes[roll];
         }
 
         #endregion

@@ -85,6 +85,7 @@ namespace AIRefactored.AI.Reactions
                 return;
             }
 
+            // Ensure Flashlight exposure is checked only if head is not null
             for (int i = 0; i < FlashlightRegistry.GetLastKnownFlashlightPositions().Count; i++)
             {
                 Light? light;
@@ -135,10 +136,12 @@ namespace AIRefactored.AI.Reactions
                 ? this._cache.PanicHandler.GetComposureLevel()
                 : 1f;
 
+            // Scale suppression duration based on flash strength and composure level
             float scaled = Mathf.Clamp01(strength * composure);
             float duration = Mathf.Lerp(MinSuppressionDuration, MaxSuppressionDuration, scaled);
             this._suppressedUntil = now + duration;
 
+            // Apply fallback and panic behavior after suppression trigger
             TriggerFallback(bot);
             TriggerPanic(this._cache);
         }
@@ -149,6 +152,7 @@ namespace AIRefactored.AI.Reactions
 
         private static void TriggerFallback(BotOwner bot)
         {
+            // Calculate fallback movement direction
             Vector3 threatDirection = bot.LookDirection;
             Vector3? scoredRetreat = HybridFallbackResolver.GetBestRetreatPoint(bot, threatDirection);
 
@@ -158,6 +162,7 @@ namespace AIRefactored.AI.Reactions
                 return;
             }
 
+            // Fallback jitter if no valid retreat point is found
             Vector3 forward = bot.LookDirection;
             Vector3 lateral = new Vector3(-forward.x, 0f, -forward.z).normalized;
             Vector3 fallback = bot.Position + lateral * FallbackDistance + Random.insideUnitSphere * FallbackJitter;

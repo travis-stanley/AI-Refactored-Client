@@ -11,11 +11,13 @@
 namespace AIRefactored.AI.Combat
 {
     using System;
+    using AIRefactored.AI.Core;
     using AIRefactored.AI.Optimization;
     using AIRefactored.Core;
     using AIRefactored.Runtime;
     using BepInEx.Logging;
     using EFT;
+    using EFT.Game.Spawning;
     using UnityEngine;
 
     /// <summary>
@@ -162,11 +164,17 @@ namespace AIRefactored.AI.Combat
 
             this.ApplyEscalationTuning(this._bot);
             this.ApplyPersonalityTuning(this._bot);
+
+            // Ensure BotTalk is not triggered in headless mode
+            if (!FikaHeadlessDetector.IsHeadless && this._bot.BotTalk != null)
+            {
+                this._bot.BotTalk.TrySay(EPhraseTrigger.OnFight);
+            }
         }
 
         private void ApplyEscalationTuning(BotOwner botRef)
         {
-            var settings = botRef.Settings?.FileSettings;
+            BotSettingsComponents? settings = botRef.Settings?.FileSettings;
             if (settings == null)
             {
                 return;

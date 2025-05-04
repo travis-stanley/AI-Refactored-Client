@@ -21,14 +21,14 @@ namespace AIRefactored.AI.Navigation
     /// </summary>
     public static class ZoneAssignmentHelper
     {
-        private const float BaseBossWeight = 2.5f;
         private const float MaxZoneSnapDistance = 28f;
+        private const float BaseBossWeight = 2.5f;
 
         private static readonly HashSet<string> _bossZones = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
         private static readonly Dictionary<string, Vector3> _zoneCenters = new Dictionary<string, Vector3>(StringComparer.OrdinalIgnoreCase);
-        private static readonly List<string> _zoneNames = new List<string>(64);
         private static readonly Dictionary<string, List<ISpawnPoint>> _zoneSpawns = new Dictionary<string, List<ISpawnPoint>>(StringComparer.OrdinalIgnoreCase);
         private static readonly Dictionary<string, float> _zoneWeights = new Dictionary<string, float>(StringComparer.OrdinalIgnoreCase);
+        private static readonly List<string> _zoneNames = new List<string>(64);
 
         private static IZones? _zones;
 
@@ -56,27 +56,31 @@ namespace AIRefactored.AI.Navigation
         /// <summary>
         /// Returns the nearest known zone name based on proximity to a position.
         /// </summary>
+        /// <param name="position">World position to evaluate.</param>
+        /// <returns>Closest known zone name or 'unassigned'.</returns>
         public static string GetNearestZone(Vector3 position)
         {
-            string best = "unassigned";
-            float bestDistSq = MaxZoneSnapDistance * MaxZoneSnapDistance;
+            string bestZone = "unassigned";
+            float bestDistanceSq = MaxZoneSnapDistance * MaxZoneSnapDistance;
 
             foreach (KeyValuePair<string, Vector3> pair in _zoneCenters)
             {
                 float distSq = (pair.Value - position).sqrMagnitude;
-                if (distSq < bestDistSq)
+                if (distSq < bestDistanceSq)
                 {
-                    best = pair.Key;
-                    bestDistSq = distSq;
+                    bestZone = pair.Key;
+                    bestDistanceSq = distSq;
                 }
             }
 
-            return best;
+            return bestZone;
         }
 
         /// <summary>
         /// Gets all spawn points registered under the zone.
         /// </summary>
+        /// <param name="zone">Zone name to query.</param>
+        /// <returns>List of spawn points.</returns>
         public static List<ISpawnPoint> GetSpawnPoints(string zone)
         {
             if (string.IsNullOrWhiteSpace(zone))
@@ -84,29 +88,37 @@ namespace AIRefactored.AI.Navigation
                 return new List<ISpawnPoint>();
             }
 
-            return _zoneSpawns.TryGetValue(zone, out List<ISpawnPoint>? list) && list != null
-                ? list
-                : new List<ISpawnPoint>();
+            return _zoneSpawns.TryGetValue(zone, out var list) && list != null ? list : new List<ISpawnPoint>();
         }
 
         /// <summary>
         /// Returns the average spawn point location for a zone.
         /// </summary>
+        /// <param name="zone">Zone name to query.</param>
+        /// <returns>Center point of the zone.</returns>
         public static Vector3 GetZoneCenter(string zone)
         {
-            return _zoneCenters.TryGetValue(zone, out Vector3 pos)
-                ? pos
-                : Vector3.zero;
+            return _zoneCenters.TryGetValue(zone, out Vector3 center) ? center : Vector3.zero;
         }
 
         /// <summary>
         /// Returns the tactical weight (risk/value) of a zone.
         /// </summary>
+        /// <param name="zone">Zone name to query.</param>
+        /// <returns>Weight of the zone.</returns>
         public static float GetZoneWeight(string zone)
         {
-            return _zoneWeights.TryGetValue(zone, out float value)
-                ? value
-                : 1f;
+            return _zoneWeights.TryGetValue(zone, out float value) ? value : 1f;
+        }
+
+        /// <summary>
+        /// Returns true if the specified zone has a known boss presence.
+        /// </summary>
+        /// <param name="zone">Zone name to check.</param>
+        /// <returns>True if a boss spawns here.</returns>
+        public static bool IsBossZone(string zone)
+        {
+            return _bossZones.Contains(zone);
         }
 
         /// <summary>
@@ -122,6 +134,7 @@ namespace AIRefactored.AI.Navigation
             }
 
             _zones = zones;
+
             _zoneCenters.Clear();
             _zoneSpawns.Clear();
             _zoneWeights.Clear();
@@ -129,9 +142,13 @@ namespace AIRefactored.AI.Navigation
             _zoneNames.Clear();
 
             List<string> zoneList = new List<string>(zones.ZoneNames(includeSnipingZones));
-            for (int z = 0; z < zoneList.Count; z++)
+            foreach (var zoneName in zoneList)
             {
-                string zoneName = zoneList[z];
+                if (string.IsNullOrEmpty(zoneName))
+                {
+                    continue;
+                }
+
                 _zoneNames.Add(zoneName);
 
                 ISpawnPoint[] spawns = zones.ZoneSpawnPoints(zoneName);
@@ -143,23 +160,23 @@ namespace AIRefactored.AI.Navigation
                 Vector3 sum = Vector3.zero;
                 List<ISpawnPoint> spawnList = new List<ISpawnPoint>(spawns.Length);
 
-                for (int i = 0; i < spawns.Length; i++)
+                foreach (var spawn in spawns)
                 {
-                    ISpawnPoint sp = spawns[i];
-                    sum += sp.Position;
-                    spawnList.Add(sp);
+                    if (spawn != null)
+                    {
+                        sum += spawn.Position;
+                        spawnList.Add(spawn);
+                    }
                 }
 
                 _zoneCenters[zoneName] = sum / spawns.Length;
                 _zoneSpawns[zoneName] = spawnList;
 
                 float weight = 1f;
-
                 if (int.TryParse(zoneName, out int zoneId))
                 {
                     BotZone botZone = new BotZone { Id = zoneId };
                     Vector3? bossPos = zones.GetBossPosition(botZone);
-
                     if (bossPos.HasValue)
                     {
                         _bossZones.Add(zoneName);
@@ -169,16 +186,6 @@ namespace AIRefactored.AI.Navigation
 
                 _zoneWeights[zoneName] = weight;
             }
-        }
-
-        /// <summary>
-        /// Returns true if the specified zone has a known boss presence.
-        /// </summary>
-        /// <param name="zone">Zone name to check.</param>
-        /// <returns>True if boss is present in zone.</returns>
-        public static bool IsBossZone(string zone)
-        {
-            return _bossZones.Contains(zone);
         }
     }
 }

@@ -204,18 +204,6 @@ namespace AIRefactored.AI.Groups
         }
 
         /// <summary>
-        /// Logs squad cache summary to Unity console (dev use only).
-        /// </summary>
-        public void PrintSquadState()
-        {
-            Debug.Log(
-                "[GroupSync] Bot: " + (this._bot?.Profile?.Info?.Nickname ?? "Unknown") +
-                ", SquadSize: " + this._teammateCaches.Count +
-                ", Fallback: " + (this._fallbackPoint?.ToString() ?? "null") +
-                ", Loot: " + (this._lootPoint?.ToString() ?? "null"));
-        }
-
-        /// <summary>
         /// Gets the local bot cache for a teammate, if available.
         /// </summary>
         public BotComponentCache? GetCache(BotOwner teammate)

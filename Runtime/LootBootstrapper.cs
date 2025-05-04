@@ -14,129 +14,138 @@ namespace AIRefactored.Runtime
     using AIRefactored.AI.Core;
     using AIRefactored.AI.Looting;
     using AIRefactored.Core;
+    using BepInEx.Logging;
     using EFT;
     using EFT.Interactive;
     using UnityEngine;
 
     /// <summary>
-    /// Registers all lootable objects in the current scene for bot interaction.
-    /// Includes lootable containers and loose items, and links containers to corpses where applicable.
-    /// Execution is restricted to authoritative host instances.
+    /// Registers all lootable containers and loose loot items in the scene.
+    /// Also links dead player corpses to nearby loot containers for bot prioritization.
+    /// Executes only on authoritative hosts.
     /// </summary>
     public static class LootBootstrapper
     {
         #region Constants
 
-        private const float MaxCorpseAssociationDistance = 1.5f;
+        private const float MaxCorpseLinkDistance = 1.5f; // Distance within which loot containers are linked to corpses
 
         #endregion
 
         #region Public API
 
+        private static readonly ManualLogSource Logger = AIRefactoredController.Logger;
+
         /// <summary>
-        /// Registers all loot containers and loose loot objects found in the scene.
+        /// Registers all scene lootable containers and items.
         /// </summary>
         public static void RegisterAllLoot()
         {
             if (!GameWorldHandler.IsInitialized || !GameWorldHandler.IsLocalHost())
             {
-                return;
+                return; // Ensure this logic runs only on the local host and when GameWorld is initialized
             }
 
+            // Cache containers and items to avoid redundant queries
             LootableContainer[] containers = Object.FindObjectsOfType<LootableContainer>();
             LootItem[] items = Object.FindObjectsOfType<LootItem>();
-            List<Player> players = GameWorldHandler.GetAllAlivePlayers();
 
             if (containers != null && containers.Length > 0)
             {
-                RegisterContainers(containers, players);
+                RegisterContainers(containers); // Register containers
             }
 
             if (items != null && items.Length > 0)
             {
-                RegisterLooseItems(items);
+                RegisterLooseItems(items); // Register loose items
             }
         }
 
         #endregion
 
-        #region Private Methods
+        #region Internal Logic
 
-        private static void RegisterContainers(LootableContainer[] containers, List<Player> players)
+        /// <summary>
+        /// Registers all lootable containers.
+        /// </summary>
+        private static void RegisterContainers(LootableContainer[] containers)
         {
-            for (int i = 0; i < containers.Length; i++)
+            foreach (var container in containers)
             {
-                LootableContainer container = containers[i];
                 if (container == null || !container.enabled)
                 {
-                    continue;
+                    continue; // Skip invalid or disabled containers
                 }
 
-                LootRegistry.RegisterContainer(container);
-                TryLinkToCorpse(container, players);
+                LootRegistry.RegisterContainer(container); // Register the container
+                TryLinkToCorpse(container); // Attempt to link the container to nearby corpses
             }
         }
 
+        /// <summary>
+        /// Registers all loose loot items.
+        /// </summary>
         private static void RegisterLooseItems(LootItem[] items)
         {
-            for (int i = 0; i < items.Length; i++)
+            foreach (var item in items)
             {
-                LootItem item = items[i];
                 if (item == null || !item.enabled)
                 {
-                    continue;
+                    continue; // Skip invalid or disabled items
                 }
 
-                LootRegistry.RegisterItem(item);
+                LootRegistry.RegisterItem(item); // Register the loot item
             }
         }
 
-        private static void TryLinkToCorpse(LootableContainer container, List<Player> players)
+        /// <summary>
+        /// Attempts to link a loot container to a nearby dead player corpse.
+        /// </summary>
+        private static void TryLinkToCorpse(LootableContainer container)
         {
-            if (container == null || players == null || players.Count == 0)
+            if (container == null)
             {
-                return;
+                return; // Skip if the container is invalid
             }
 
-            Transform containerTransform = container.transform;
+            List<Player> players = GameWorldHandler.GetAllAlivePlayers();
+            if (players.Count == 0)
+            {
+                return; // Skip if there are no players in the world
+            }
+
+            Transform? containerTransform = container.transform;
             if (containerTransform == null)
             {
-                return;
+                return; // Skip if container has no valid transform
             }
 
-            Transform containerRoot = containerTransform.root;
-            Vector3 containerPosition = containerTransform.position;
+            Vector3 containerPosition = containerTransform.position; // Get the container's position
 
-            for (int i = 0; i < players.Count; i++)
+            // Only check dead players that aren't already linked to a container
+            foreach (var player in players)
             {
-                Player player = players[i];
-                if (player == null || player.HealthController == null || player.HealthController.IsAlive)
+                if (player == null || player.HealthController?.IsAlive == true || string.IsNullOrEmpty(player.ProfileId))
                 {
-                    continue;
+                    continue; // Skip if player is alive, invalid, or has no valid profile ID
                 }
 
-                string profileId = player.ProfileId;
-                if (string.IsNullOrEmpty(profileId) || DeadBodyContainerCache.Contains(profileId))
+                // Check if the body is already linked
+                if (DeadBodyContainerCache.Contains(player.ProfileId))
                 {
-                    continue;
+                    continue; // Skip if body is already associated
                 }
 
-                Transform? playerTransform = player.Transform?.Original;
-                if (playerTransform == null)
+                Vector3 playerPosition = EFTPlayerUtil.GetPosition(player); // Get the player's position (corpse)
+
+                // Check if the container is within distance of the corpse
+                bool withinDistance = Vector3.Distance(containerPosition, playerPosition) <= MaxCorpseLinkDistance;
+
+                if (withinDistance)
                 {
-                    continue;
-                }
-
-                Transform playerRoot = playerTransform.root;
-                Vector3 playerPosition = EFTPlayerUtil.GetPosition(player);
-
-                bool rootMatch = playerRoot == containerRoot;
-                bool closeEnough = Vector3.Distance(playerPosition, containerPosition) <= MaxCorpseAssociationDistance;
-
-                if (rootMatch || closeEnough)
-                {
-                    DeadBodyContainerCache.Register(player, container);
-                    break;
+                    DeadBodyContainerCache.Register(player, container); // Register the container with the player's corpse
+                    Logger.LogDebug("[LootBootstrapper] Linked container to corpse: " + (player.Profile?.Info?.Nickname ?? "Unnamed"));
+                    break; // No need to continue once a match is found
                 }
             }
         }

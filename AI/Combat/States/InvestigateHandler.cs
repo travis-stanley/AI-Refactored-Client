@@ -14,6 +14,7 @@ namespace AIRefactored.AI.Combat.States
     using AIRefactored.AI.Core;
     using AIRefactored.AI.Helpers;
     using AIRefactored.AI.Memory;
+    using AIRefactored.Runtime;
     using EFT;
     using UnityEngine;
 
@@ -28,6 +29,7 @@ namespace AIRefactored.AI.Combat.States
         private const float InvestigateCooldown = 10.0f;
         private const float ScanRadius = 4.0f;
         private const float SoundReactTime = 1.0f;
+        private const float MaxInvestigateTime = 15.0f;
 
         #endregion
 
@@ -44,12 +46,25 @@ namespace AIRefactored.AI.Combat.States
         /// <summary>
         /// Initializes a new instance of the <see cref="InvestigateHandler"/> class.
         /// </summary>
-        /// <param name="cache">Bot component cache reference.</param>
+        /// <param name="cache">Bot component cache containing shared systems.</param>
         public InvestigateHandler(BotComponentCache cache)
         {
-            if (cache == null || cache.Bot == null || cache.TacticalMemory == null)
+            if (cache == null)
             {
+                AIRefactoredController.Logger.LogError("[InvestigateHandler] ❌ Constructor failed: cache is null.");
                 throw new ArgumentNullException(nameof(cache));
+            }
+
+            if (cache.Bot == null)
+            {
+                AIRefactoredController.Logger.LogError("[InvestigateHandler] ❌ Constructor failed: BotOwner is null.");
+                throw new InvalidOperationException("InvestigateHandler requires a valid BotOwner.");
+            }
+
+            if (cache.TacticalMemory == null)
+            {
+                AIRefactoredController.Logger.LogError("[InvestigateHandler] ❌ Constructor failed: TacticalMemory is null.");
+                throw new InvalidOperationException("InvestigateHandler requires TacticalMemory to function.");
             }
 
             this._cache = cache;
@@ -62,10 +77,10 @@ namespace AIRefactored.AI.Combat.States
         #region Public Methods
 
         /// <summary>
-        /// Determines the best position to investigate: enemy memory, last heard sound, or a random nearby position.
+        /// Gets the best target to investigate from last known enemy position or memory.
         /// </summary>
-        /// <param name="lastKnownEnemyPos">Optional last known enemy position.</param>
-        /// <returns>A target position to move toward for investigation.</returns>
+        /// <param name="lastKnownEnemyPos">Last known position of enemy if available.</param>
+        /// <returns>Investigate target position.</returns>
         public Vector3 GetInvestigateTarget(Vector3? lastKnownEnemyPos)
         {
             if (lastKnownEnemyPos.HasValue)
@@ -83,61 +98,84 @@ namespace AIRefactored.AI.Combat.States
         }
 
         /// <summary>
-        /// Moves the bot toward the investigation target and marks the area as cleared on arrival.
+        /// Starts an investigation by moving to the target and clearing tactical memory.
         /// </summary>
-        /// <param name="target">Destination to investigate.</param>
+        /// <param name="target">Investigate position.</param>
         public void Investigate(Vector3 target)
         {
-            Vector3 destination = this._cache.SquadPath?.ApplyOffsetTo(target) ?? target;
+            Vector3 destination = this._cache.SquadPath != null
+                ? this._cache.SquadPath.ApplyOffsetTo(target)
+                : target;
+
+            if (float.IsNaN(destination.x) || float.IsNaN(destination.y) || float.IsNaN(destination.z))
+            {
+                AIRefactoredController.Logger.LogWarning("[InvestigateHandler] Skipped investigation: invalid destination.");
+                return;
+            }
 
             BotMovementHelper.SmoothMoveTo(this._bot, destination);
             this._memory.MarkCleared(destination);
-            this._cache.Combat?.TrySetStanceFromNearbyCover(destination);
+
+            if (this._cache.Combat != null)
+            {
+                this._cache.Combat.TrySetStanceFromNearbyCover(destination);
+            }
         }
 
         /// <summary>
-        /// Determines whether the bot should switch to Investigate behavior based on sound memory and caution.
+        /// Determines if the bot should transition into Investigate state.
         /// </summary>
-        /// <param name="time">Current world time.</param>
-        /// <param name="lastTransition">Last time a state transition occurred.</param>
-        /// <returns>True if investigation behavior should begin.</returns>
+        /// <param name="time">Current time.</param>
+        /// <param name="lastTransition">Last time the bot changed state.</param>
+        /// <returns>True if investigate should activate.</returns>
         public bool ShallUseNow(float time, float lastTransition)
         {
-            BotPersonalityProfile? profile = this._cache.AIRefactoredBotOwner?.PersonalityProfile;
+            if (this._cache == null || this._cache.AIRefactoredBotOwner == null)
+            {
+                return false;
+            }
+
+            BotPersonalityProfile? profile = this._cache.AIRefactoredBotOwner.PersonalityProfile;
             if (profile == null || profile.Caution < 0.3f)
             {
                 return false;
             }
 
-            return this._cache.LastHeardTime + SoundReactTime > time && time - lastTransition > 1.25f;
+            bool recentlyHeard = this._cache.LastHeardTime + SoundReactTime > time;
+            bool transitionDelayMet = time - lastTransition > 1.25f;
+
+            return recentlyHeard && transitionDelayMet;
         }
 
         /// <summary>
-        /// Determines if the bot has finished investigating the area.
+        /// Determines whether the bot should exit investigate state based on a cooldown.
         /// </summary>
         /// <param name="now">Current time.</param>
-        /// <param name="lastHitTime">Time the investigation started.</param>
-        /// <param name="cooldown">How long the investigation should last.</param>
-        /// <returns>True if investigation should end.</returns>
+        /// <param name="lastHitTime">Last investigate trigger time.</param>
+        /// <param name="cooldown">Cooldown duration.</param>
+        /// <returns>True if bot should exit investigate.</returns>
         public bool ShouldExit(float now, float lastHitTime, float cooldown)
         {
-            return now - lastHitTime > cooldown;
+            return (now - lastHitTime) > cooldown || (now - lastHitTime) > MaxInvestigateTime;
         }
 
         #endregion
 
         #region Private Methods
 
-        /// <summary>
-        /// Generates a random flat position near the bot to simulate cautious local searching.
-        /// </summary>
-        /// <returns>A randomized nearby search position.</returns>
         private Vector3 RandomNearbyPosition()
         {
             Vector3 basePos = this._bot.Position;
             Vector3 jitter = UnityEngine.Random.insideUnitSphere * ScanRadius;
             jitter.y = 0f;
             return basePos + jitter;
+        }
+        /// <summary>
+        /// Returns true if the bot is investigating a recent sound or memory.
+        /// </summary>
+        public bool IsInvestigating()
+        {
+            return this._cache.LastHeardTime + 5f > Time.time;
         }
 
         #endregion

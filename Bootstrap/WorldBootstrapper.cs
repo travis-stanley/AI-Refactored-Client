@@ -31,26 +31,25 @@ namespace AIRefactored.Bootstrap
     /// </summary>
     public sealed class WorldBootstrapper : MonoBehaviour
     {
-        #region Constants
-
-        private const float SweepInterval = 20.0f;
-
-        #endregion
-
-        #region Fields
+        private const float SweepInterval = 20f;
+        private const float InitializationRetryInterval = 3f; // Retry interval for headless
+        private const int MaxInitializationRetries = 5; // Maximum retries for initialization
+        private const float ZoneCheckInterval = 1f; // Interval to check zone availability
 
         private static readonly ManualLogSource Logger = AIRefactoredController.Logger;
-
         private static bool _hasInitialized;
-        private float _lastSweepTime = -999.0f;
+        private static int _initializationAttempts = 0;
+        private static bool _wasWorldReadyOnRetry;
+
+        private float _lastSweepTime = -999f;
+        private float _lastInitializationCheck = -999f;
+        private float _lastZoneCheck = -999f;
         private BotSystemRecoveryWatcher? _recoveryWatcher;
 
-        #endregion
-
-        #region Static Bootstrap
+        private static readonly object LockObj = new object(); // For thread safety
 
         /// <summary>
-        /// Triggers world system initialization. Safe for headless and early injection.
+        /// Initializes the world if it's not already initialized, or if the host is valid.
         /// </summary>
         public static void TryInitialize()
         {
@@ -67,10 +66,6 @@ namespace AIRefactored.Bootstrap
             Logger.LogInfo("[WorldBootstrapper] ✅ Manual bootstrap injected.");
         }
 
-        #endregion
-
-        #region Unity Lifecycle
-
         private void Awake()
         {
             Logger.LogInfo("[WorldBootstrapper] 🟢 Awake triggered.");
@@ -80,12 +75,12 @@ namespace AIRefactored.Bootstrap
 
             if (GameWorldHandler.IsLocalHost())
             {
-                Logger.LogInfo("[WorldBootstrapper] 🧠 Authoritative host detected — initializing immediately.");
-                this.InitializeWorldSystems();
+                Logger.LogInfo("[WorldBootstrapper] 🧠 Authoritative host detected — initializing world systems.");
+                this.StartCoroutine(this.DelayedInitialize());
             }
             else
             {
-                Logger.LogWarning("[WorldBootstrapper] 🚫 Non-host client detected — initialization skipped.");
+                Logger.LogWarning("[WorldBootstrapper] 🚫 Non-host client detected — skipping world initialization.");
             }
         }
 
@@ -97,7 +92,6 @@ namespace AIRefactored.Bootstrap
             }
 
             float now = Time.time;
-
             if (now - this._lastSweepTime >= SweepInterval)
             {
                 this._lastSweepTime = now;
@@ -105,6 +99,16 @@ namespace AIRefactored.Bootstrap
             }
 
             GameWorldHandler.CleanupDeadBotsSmoothly();
+
+            // Zone availability check logic
+            if (now - this._lastZoneCheck >= ZoneCheckInterval)
+            {
+                this._lastZoneCheck = now;
+                if (!GameWorldHandler.TryGetIZones(out IZones? zones) || zones == null)
+                {
+                    Logger.LogWarning("[WorldBootstrapper] ⚠ Zones are not ready.");
+                }
+            }
         }
 
         private void OnDestroy()
@@ -115,41 +119,100 @@ namespace AIRefactored.Bootstrap
                 this._recoveryWatcher = null;
             }
 
-            Logger.LogInfo("[WorldBootstrapper] 🔻 Destroyed — clearing systems.");
+            Logger.LogInfo("[WorldBootstrapper] 🔻 Destroyed — clearing world systems.");
+
             HotspotRegistry.Clear();
             LootRegistry.Clear();
             NavPointRegistry.Clear();
+            ZoneAssignmentHelper.Clear();
 
             _hasInitialized = false;
         }
 
-        #endregion
-
-        #region World Init
-
-        private void InitializeWorldSystems()
+        private IEnumerator DelayedInitialize()
         {
+            lock (LockObj)
+            {
+                // Check if retries have been exhausted but the world is available now
+                if (_initializationAttempts >= MaxInitializationRetries)
+                {
+                    // If the world has now become available, reset the retry logic
+                    if (!_wasWorldReadyOnRetry && GameWorldHandler.IsReady())
+                    {
+                        _wasWorldReadyOnRetry = true;
+                        _initializationAttempts = 0;
+                    }
+
+                    if (_wasWorldReadyOnRetry)
+                    {
+                        Logger.LogInfo("[WorldBootstrapper] World is now ready after retries. Re-initializing.");
+                    }
+                    else
+                    {
+                        Logger.LogError("[WorldBootstrapper] Maximum retries reached for initialization. Aborting.");
+                        yield break;
+                    }
+                }
+
+                // Retry logic with exponential backoff (to avoid flooding retries)
+                _initializationAttempts++;
+                float delay = Mathf.Pow(2, _initializationAttempts) * InitializationRetryInterval;
+                yield return new WaitForSeconds(delay);
+            }
+
+            if (Time.time - _lastInitializationCheck < InitializationRetryInterval)
+            {
+                yield break;
+            }
+
+            _lastInitializationCheck = Time.time;
+
+            if (!GameWorldHandler.TryForceResolveMapName())
+            {
+                Logger.LogWarning("[WorldBootstrapper] 🚧 Map name unresolved — skipping initialization.");
+                _hasInitialized = false;
+                yield break;
+            }
+
+            if (!GameWorldHandler.IsReady())
+            {
+                Logger.LogWarning("[WorldBootstrapper] 🚧 GameWorld not fully ready — skipping initialization.");
+                _hasInitialized = false;
+                yield break;
+            }
+
             string mapId = GameWorldHandler.GetCurrentMapName();
-            Logger.LogInfo("[WorldBootstrapper] 🔧 Initializing world systems for: " + mapId);
+            Logger.LogInfo("[WorldBootstrapper] 🔧 Initializing systems for map: " + mapId);
 
             HotspotRegistry.Clear();
             HotspotRegistry.Initialize(mapId);
-            Logger.LogInfo("[WorldBootstrapper] ✅ Hotspot registry ready.");
+            Logger.LogInfo("[WorldBootstrapper] ✅ Hotspots ready.");
 
             ZoneAssignmentHelper.Clear();
-            IZones? zones;
-            if (GameWorldHandler.TryGetIZones(out zones) && zones != null)
+            NavPointRegistry.Clear();
+
+            int frameWait = 0;
+            IZones? zones = null;
+
+            // Retry IZones initialization if necessary
+            while (!GameWorldHandler.TryGetIZones(out zones) || zones == null)
+            {
+                if (++frameWait > 60)
+                {
+                    Logger.LogWarning("[WorldBootstrapper] ⚠ Timed out waiting for IZones — skipping zone setup.");
+                    break;
+                }
+
+                yield return null;
+            }
+
+            if (zones != null)
             {
                 ZoneAssignmentHelper.Initialize(zones);
                 NavPointRegistry.InitializeZoneSystem(zones);
-                Logger.LogInfo("[WorldBootstrapper] ✅ Zone assignment ready.");
-            }
-            else
-            {
-                Logger.LogWarning("[WorldBootstrapper] ⚠ No IZones available — skipping zone tagging.");
+                Logger.LogInfo("[WorldBootstrapper] ✅ Zones initialized.");
             }
 
-            NavPointRegistry.Clear();
             NavPointRegistry.EnableSpatialIndexing(true);
             NavPointRegistry.RegisterAll(mapId);
             Logger.LogInfo("[WorldBootstrapper] ✅ Navigation points registered.");
@@ -160,7 +223,7 @@ namespace AIRefactored.Bootstrap
             Logger.LogInfo("[WorldBootstrapper] ✅ Loot systems initialized.");
 
             this.PrewarmAllNavMeshes();
-            Logger.LogInfo("[WorldBootstrapper] ✅ All world systems ready.");
+            Logger.LogInfo("[WorldBootstrapper] ✅ NavMesh prewarm complete.");
         }
 
         private void PrewarmAllNavMeshes()
@@ -175,20 +238,11 @@ namespace AIRefactored.Bootstrap
                 {
                     surface.BuildNavMesh();
                     BotCoverRetreatPlanner.RegisterSurface(mapId, surface);
-                    Logger.LogInfo("[WorldBootstrapper] 🔄 Prewarmed NavMesh: " + surface.name);
+                    Logger.LogInfo("[WorldBootstrapper] 🔄 Built NavMesh for: " + surface.name);
                 }
             }
         }
 
-        #endregion
-
-        #region Bot Brain Injection
-
-        /// <summary>
-        /// Ensures a clean BotBrain is attached to the bot, removing any other conflicting components.
-        /// </summary>
-        /// <param name="player">The bot's EFT.Player instance.</param>
-        /// <param name="bot">Optional BotOwner instance.</param>
         public static void EnforceBotBrain(Player player, BotOwner? bot = null)
         {
             if (player == null || !player.IsAI || player.gameObject == null)
@@ -210,7 +264,5 @@ namespace AIRefactored.Bootstrap
                 brain.Initialize(bot);
             }
         }
-
-        #endregion
     }
 }

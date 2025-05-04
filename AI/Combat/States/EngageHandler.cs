@@ -24,14 +24,7 @@ namespace AIRefactored.AI.Combat.States
     {
         #region Fields
 
-        /// <summary>
-        /// The bot owner entity.
-        /// </summary>
         private readonly BotOwner _bot;
-
-        /// <summary>
-        /// The component cache containing bot systems and helpers.
-        /// </summary>
         private readonly BotComponentCache _cache;
 
         #endregion
@@ -41,12 +34,12 @@ namespace AIRefactored.AI.Combat.States
         /// <summary>
         /// Initializes a new instance of the <see cref="EngageHandler"/> class.
         /// </summary>
-        /// <param name="cache">The bot component cache reference.</param>
+        /// <param name="cache">The bot's component cache.</param>
         public EngageHandler(BotComponentCache cache)
         {
             if (cache == null || cache.Bot == null)
             {
-                throw new ArgumentNullException(nameof(cache));
+                throw new ArgumentNullException(nameof(cache), "[EngageHandler] Initialization failed: cache or bot is null.");
             }
 
             this._cache = cache;
@@ -55,7 +48,7 @@ namespace AIRefactored.AI.Combat.States
 
         #endregion
 
-        #region Public API
+        #region Public Methods
 
         /// <summary>
         /// Determines whether the Engage state should be active.
@@ -63,12 +56,14 @@ namespace AIRefactored.AI.Combat.States
         /// <returns>True if the bot should continue engaging; otherwise, false.</returns>
         public bool ShallUseNow()
         {
-            if (this._cache.Combat == null)
+            CombatStateMachine? combat = this._cache.Combat;
+            if (combat == null)
             {
                 return false;
             }
 
-            return this._cache.Combat.LastKnownEnemyPos.HasValue && !this.CanAttack();
+            return combat.LastKnownEnemyPos.HasValue &&
+                   !this.CanAttack();
         }
 
         /// <summary>
@@ -77,20 +72,18 @@ namespace AIRefactored.AI.Combat.States
         /// <returns>True if ready to attack; otherwise, false.</returns>
         public bool CanAttack()
         {
-            if (this._cache.Combat == null || !this._cache.Combat.LastKnownEnemyPos.HasValue)
+            CombatStateMachine? combat = this._cache.Combat;
+            if (combat == null || !combat.LastKnownEnemyPos.HasValue)
             {
                 return false;
             }
 
-            Vector3 enemyPos = this._cache.Combat.LastKnownEnemyPos.Value;
-            float distance = Vector3.Distance(this._bot.Position, enemyPos);
-            float range = 25.0f;
+            Vector3 enemyPos = combat.LastKnownEnemyPos.Value;
+            Vector3 myPos = this._bot.Position;
+            float distance = Vector3.Distance(myPos, enemyPos);
 
-            if (this._cache.AIRefactoredBotOwner != null &&
-                this._cache.AIRefactoredBotOwner.PersonalityProfile != null)
-            {
-                range = this._cache.AIRefactoredBotOwner.PersonalityProfile.EngagementRange;
-            }
+            BotPersonalityProfile? profile = this._cache.AIRefactoredBotOwner?.PersonalityProfile;
+            float range = profile != null ? profile.EngagementRange : 25.0f;
 
             return distance < range;
         }
@@ -100,21 +93,36 @@ namespace AIRefactored.AI.Combat.States
         /// </summary>
         public void Tick()
         {
-            if (this._cache.Combat == null || !this._cache.Combat.LastKnownEnemyPos.HasValue)
+            CombatStateMachine? combat = this._cache.Combat;
+            if (combat == null || !combat.LastKnownEnemyPos.HasValue)
             {
                 return;
             }
 
-            Vector3 targetPos = this._cache.Combat.LastKnownEnemyPos.Value;
-            Vector3 destination = targetPos;
+            Vector3 target = combat.LastKnownEnemyPos.Value;
+            Vector3 destination = this._cache.SquadPath != null
+                ? this._cache.SquadPath.ApplyOffsetTo(target)
+                : target;
 
-            if (this._cache.SquadPath != null)
+            // Ensure that destination is valid before proceeding
+            if (float.IsNaN(destination.x) || float.IsNaN(destination.y) || float.IsNaN(destination.z))
             {
-                destination = this._cache.SquadPath.ApplyOffsetTo(targetPos);
+                return;
             }
 
+            // Move the bot towards the target destination
             BotMovementHelper.SmoothMoveTo(this._bot, destination);
-            this._cache.Combat.TrySetStanceFromNearbyCover(destination);
+
+            // Update bot's stance based on nearby cover, if necessary
+            combat.TrySetStanceFromNearbyCover(destination);
+        }
+        /// <summary>
+        /// Returns true if the bot is actively in Engage state.
+        /// </summary>
+        public bool IsEngaging()
+        {
+            CombatStateMachine? combat = this._cache.Combat;
+            return combat != null && combat.LastKnownEnemyPos.HasValue && !this.CanAttack();
         }
 
         #endregion

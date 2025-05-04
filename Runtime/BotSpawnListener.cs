@@ -10,6 +10,7 @@
 
 namespace AIRefactored.Runtime
 {
+    using System;
     using System.Collections.Generic;
     using AIRefactored.AI.Core;
     using AIRefactored.AI.Threads;
@@ -19,23 +20,24 @@ namespace AIRefactored.Runtime
     using UnityEngine;
 
     /// <summary>
-    /// Watches for new bots entering the raid and enforces BotBrainGuardian logic immediately.
-    /// Runs only on the authoritative host (headless, local-host, or client-host).
+    /// Observes new bot spawns and ensures brain injection logic is enforced.
+    /// Resets automatically across raids. Skips invalid players and respects GameWorld readiness.
     /// </summary>
     public sealed class BotSpawnListener : MonoBehaviour
     {
-        #region Configuration
+        #region Constants
 
-        private const float CheckInterval = 1.5f;
+        private const float PollInterval = 1.5f; // Time between bot spawn checks
 
         #endregion
 
         #region Fields
 
-        private float _nextCheckTime;
-        private readonly HashSet<int> _seenBots = new HashSet<int>();
-
+        private static readonly HashSet<int> SeenBotIds = new HashSet<int>();
         private static readonly ManualLogSource Logger = AIRefactoredController.Logger;
+
+        private float _nextPollTime = -1f;
+        private bool _hasWarnedInvalidState; // To prevent repeating warning messages
 
         #endregion
 
@@ -43,41 +45,93 @@ namespace AIRefactored.Runtime
 
         private void Update()
         {
-            // Only run on authoritative hosts (headless or client-host)
+            // Ensure the game world is initialized and the host is authoritative
             if (!GameWorldHandler.IsInitialized || !GameWorldHandler.IsLocalHost())
             {
                 return;
             }
 
+            // Defer scanning until the GameWorld is ready
+            if (!GameWorldHandler.IsReady())
+            {
+                if (!_hasWarnedInvalidState)
+                {
+                    Logger.LogWarning("[BotSpawnListener] GameWorld not ready — deferring bot scan.");
+                    _hasWarnedInvalidState = true;
+                }
+                return;
+            }
+
+            // Resume bot monitoring once GameWorld is ready
+            if (_hasWarnedInvalidState)
+            {
+                Logger.LogInfo("[BotSpawnListener] GameWorld readiness confirmed. Resuming bot monitoring.");
+                _hasWarnedInvalidState = false;
+            }
+
+            // Only poll at the specified interval to reduce frequency of checks
             float now = Time.time;
-            if (now < this._nextCheckTime)
+            if (now < _nextPollTime)
             {
                 return;
             }
 
-            this._nextCheckTime = now + CheckInterval;
+            _nextPollTime = now + PollInterval;
 
+            // Get all alive players (bots) — using GameWorldHandler from EFT
             List<Player> players = GameWorldHandler.GetAllAlivePlayers();
-            for (int i = 0; i < players.Count; i++)
+            foreach (var player in players)
             {
-                Player player = players[i];
-                if (player == null || !player.IsAI || player.gameObject == null || player.Profile == null)
+                // Skip invalid players or non-AI players
+                if (player == null || !player.IsAI || player.gameObject == null || player.Profile == null || player.HealthController == null)
                 {
                     continue;
                 }
 
-                int instanceId = player.GetInstanceID();
-                if (this._seenBots.Contains(instanceId))
+                // Avoid processing the same bot multiple times within the same raid
+                int id = player.gameObject.GetInstanceID();
+                if (!SeenBotIds.Add(id))
                 {
                     continue;
                 }
 
-                this._seenBots.Add(instanceId);
-                BotBrainGuardian.Enforce(player.gameObject);
+                // Ensure bot brain is present or inject if missing
+                GameObject botObj = player.gameObject;
+                BotBrainGuardian.Enforce(botObj);
 
-                string name = player.Profile.Info?.Nickname ?? "Unnamed";
-                Logger.LogDebug("[BotSpawnListener] [Enforce] Bot brain verified for: " + name);
+                try
+                {
+                    // Check if the bot already has a BotBrain, if not, inject one
+                    if (botObj.GetComponent<BotBrain>() == null)
+                    {
+                        BotBrain brain = botObj.AddComponent<BotBrain>();
+                        BotOwner? botOwner = player.AIData?.BotOwner;
+                        if (botOwner != null)
+                        {
+                            brain.Initialize(botOwner);
+                        }
+
+                        string nickname = player.Profile.Info?.Nickname ?? "Unnamed";
+                        Logger.LogDebug("[BotSpawnListener] Brain injected for bot: " + nickname);
+                    }
+                    else
+                    {
+                        string nickname = player.Profile.Info?.Nickname ?? "Unnamed";
+                        Logger.LogDebug("[BotSpawnListener] Brain already present for bot: " + nickname);
+                    }
+                }
+                catch (Exception ex)
+                {
+                    Logger.LogError("[BotSpawnListener] Failed to inject brain for bot: " + player.Profile?.Info?.Nickname + "\n" + ex.Message);
+                }
             }
+        }
+
+        private void OnDestroy()
+        {
+            // Clear the SeenBotIds list and reset states upon destruction (next raid)
+            SeenBotIds.Clear();
+            Logger.LogInfo("[BotSpawnListener] Destroyed — reset for next raid.");
         }
 
         #endregion

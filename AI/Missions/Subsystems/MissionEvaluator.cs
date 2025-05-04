@@ -36,6 +36,8 @@ namespace AIRefactored.AI.Missions.Subsystems
         private const float StuckDuration = 25f;
 
         private static readonly ManualLogSource Logger = AIRefactoredController.Logger;
+        private static readonly List<BotOwner> TeammateBuffer = new List<BotOwner>(16);
+        private static readonly List<Item> ItemBuffer = new List<Item>(64);
 
         private readonly BotOwner _bot;
         private readonly BotComponentCache _cache;
@@ -72,19 +74,20 @@ namespace AIRefactored.AI.Missions.Subsystems
                 return true;
             }
 
-            List<BotOwner> teammates = new List<BotOwner>(this._group.GetTeammates());
-            int near = 0;
+            TeammateBuffer.Clear();
+            TeammateBuffer.AddRange(this._group.GetTeammates());
 
-            for (int i = 0; i < teammates.Count; i++)
+            int near = 0;
+            for (int i = 0; i < TeammateBuffer.Count; i++)
             {
-                BotOwner mate = teammates[i];
+                BotOwner mate = TeammateBuffer[i];
                 if (mate != null && Vector3.Distance(mate.Position, this._bot.Position) < SquadCohesionRange)
                 {
                     near++;
                 }
             }
 
-            int required = Mathf.CeilToInt(teammates.Count * 0.6f);
+            int required = Mathf.CeilToInt(TeammateBuffer.Count * 0.6f);
             return near >= required;
         }
 
@@ -100,11 +103,13 @@ namespace AIRefactored.AI.Missions.Subsystems
                 return false;
             }
 
-            List<Item> items = new List<Item>(backpack.GetAllItems());
+            ItemBuffer.Clear();
+            ItemBuffer.AddRange(backpack.GetAllItems());
+
             int count = 0;
-            for (int i = 0; i < items.Count; i++)
+            for (int i = 0; i < ItemBuffer.Count; i++)
             {
-                if (items[i] != null)
+                if (ItemBuffer[i] != null)
                 {
                     count++;
                 }

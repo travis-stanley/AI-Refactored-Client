@@ -27,11 +27,17 @@ namespace AIRefactored.AI.Missions.Subsystems
     /// </summary>
     public sealed class ObjectiveController
     {
+        #region Fields
+
         private readonly BotOwner _bot;
         private readonly BotComponentCache _cache;
         private readonly BotLootScanner? _lootScanner;
-        private readonly Queue<Vector3> _questRoute = new Queue<Vector3>();
-        private readonly System.Random _rng = new System.Random();
+        private readonly Queue<Vector3> _questRoute;
+        private readonly System.Random _rng;
+
+        #endregion
+
+        #region Constructor
 
         /// <summary>
         /// Initializes a new instance of the <see cref="ObjectiveController"/> class.
@@ -43,12 +49,22 @@ namespace AIRefactored.AI.Missions.Subsystems
             this._bot = bot ?? throw new ArgumentNullException(nameof(bot));
             this._cache = cache ?? throw new ArgumentNullException(nameof(cache));
             this._lootScanner = cache.LootScanner;
+            this._questRoute = new Queue<Vector3>(4);
+            this._rng = new System.Random();
         }
+
+        #endregion
+
+        #region Properties
 
         /// <summary>
         /// Gets the current world-space objective the bot is routing toward.
         /// </summary>
         public Vector3 CurrentObjective { get; private set; }
+
+        #endregion
+
+        #region Public Methods
 
         /// <summary>
         /// Called when an objective is reached. Requeues or updates based on mission type.
@@ -124,6 +140,10 @@ namespace AIRefactored.AI.Missions.Subsystems
             BotMovementHelper.SmoothMoveTo(this._bot, target);
         }
 
+        #endregion
+
+        #region Private Methods
+
         private Vector3 GetFightZone()
         {
             BotZone[] zones = GameObject.FindObjectsOfType<BotZone>();
@@ -137,12 +157,16 @@ namespace AIRefactored.AI.Missions.Subsystems
 
         private Vector3 GetLootObjective()
         {
-            return this._lootScanner?.GetHighestValueLootPoint() ?? this._bot.Position;
+            return this._lootScanner != null
+                ? this._lootScanner.GetHighestValueLootPoint()
+                : this._bot.Position;
         }
 
         private Vector3 GetNextQuestObjective()
         {
-            return this._questRoute.Count > 0 ? this._questRoute.Dequeue() : this._bot.Position;
+            return this._questRoute.Count > 0
+                ? this._questRoute.Dequeue()
+                : this._bot.Position;
         }
 
         private void PopulateQuestRoute()
@@ -150,26 +174,32 @@ namespace AIRefactored.AI.Missions.Subsystems
             this._questRoute.Clear();
             Vector3 origin = this._bot.Position;
 
-            Predicate<HotspotRegistry.Hotspot> directionFilter = (HotspotRegistry.Hotspot h) =>
-                Vector3.Dot((h.Position - origin).normalized, this._bot.LookDirection.normalized) > 0.25f;
+            Predicate<HotspotRegistry.Hotspot> directionFilter = delegate (HotspotRegistry.Hotspot h)
+            {
+                return Vector3.Dot((h.Position - origin).normalized, this._bot.LookDirection.normalized) > 0.25f;
+            };
 
-            List<HotspotRegistry.Hotspot> filtered = HotspotRegistry.QueryNearby(origin, 100f, directionFilter);
+            List<HotspotRegistry.Hotspot> filtered = new List<HotspotRegistry.Hotspot>(
+                HotspotRegistry.QueryNearby(origin, 100f, directionFilter));
+
             if (filtered.Count == 0)
             {
                 return;
             }
 
             int count = UnityEngine.Random.Range(2, 4);
-            HashSet<int> used = new HashSet<int>();
+            HashSet<int> used = new HashSet<int>(EqualityComparer<int>.Default);
 
             while (this._questRoute.Count < count && used.Count < filtered.Count)
             {
-                int i = UnityEngine.Random.Range(0, filtered.Count);
-                if (used.Add(i))
+                int index = UnityEngine.Random.Range(0, filtered.Count);
+                if (used.Add(index))
                 {
-                    this._questRoute.Enqueue(filtered[i].Position);
+                    this._questRoute.Enqueue(filtered[index].Position);
                 }
             }
         }
+
+        #endregion
     }
 }

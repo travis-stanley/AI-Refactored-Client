@@ -17,8 +17,8 @@ namespace AIRefactored.AI.Movement
     using UnityEngine;
 
     /// <summary>
-    /// Handles dynamic jumping behavior for bots.
-    /// Detects jumpable obstacles and triggers safe vaults when needed.
+    /// Handles dynamic jump behavior for bots.
+    /// Detects jumpable obstacles and vaults forward using physics and nav mesh probes.
     /// </summary>
     public sealed class BotJumpController
     {
@@ -31,6 +31,7 @@ namespace AIRefactored.AI.Movement
         private const float ObstacleCheckRadius = 0.4f;
         private const float SafeFallHeight = 2.2f;
         private const float VaultForwardOffset = 0.75f;
+        private const float JumpVelocityMultiplier = 1.5f; // Adjust for more dynamic jumps
 
         #endregion
 
@@ -40,8 +41,8 @@ namespace AIRefactored.AI.Movement
         private readonly BotComponentCache _cache;
         private readonly MovementContext _context;
 
-        private bool _hasRecentlyJumped;
         private float _lastJumpTime;
+        private bool _hasRecentlyJumped;
 
         #endregion
 
@@ -50,8 +51,8 @@ namespace AIRefactored.AI.Movement
         /// <summary>
         /// Initializes a new instance of the <see cref="BotJumpController"/> class.
         /// </summary>
-        /// <param name="bot">The bot owner.</param>
-        /// <param name="cache">The component cache.</param>
+        /// <param name="bot">Bot owner reference.</param>
+        /// <param name="cache">Bot component cache.</param>
         public BotJumpController(BotOwner bot, BotComponentCache cache)
         {
             if (bot == null)
@@ -64,19 +65,20 @@ namespace AIRefactored.AI.Movement
                 throw new ArgumentNullException(nameof(cache));
             }
 
-            if (bot.GetPlayer?.MovementContext == null)
+            Player? player = bot.GetPlayer;
+            if (player == null || player.MovementContext == null)
             {
-                throw new InvalidOperationException("Bot is missing MovementContext.");
+                throw new InvalidOperationException("[BotJumpController] Missing MovementContext.");
             }
 
             this._bot = bot;
             this._cache = cache;
-            this._context = bot.GetPlayer.MovementContext;
+            this._context = player.MovementContext;
         }
 
         #endregion
 
-        #region Public API
+        #region Public Methods
 
         /// <summary>
         /// Called each frame to evaluate and potentially trigger jump behavior.
@@ -92,22 +94,33 @@ namespace AIRefactored.AI.Movement
             Vector3 target;
             if (this.TryFindJumpTarget(out target))
             {
-                this.ExecuteJump(target);
+                this.ExecuteJump(target, deltaTime);
             }
         }
 
         #endregion
 
-        #region Jump Logic
+        #region Internal Logic
 
         private bool IsJumpAllowed()
         {
-            if (this._hasRecentlyJumped && Time.time - this._lastJumpTime < JumpCooldown)
+            if (this._hasRecentlyJumped)
+            {
+                float timeSinceLast = Time.time - this._lastJumpTime;
+                if (timeSinceLast < JumpCooldown)
+                {
+                    return false;
+                }
+
+                this._hasRecentlyJumped = false;
+            }
+
+            if (!this._context.IsGrounded)
             {
                 return false;
             }
 
-            if (!this._context.IsGrounded || this._context.IsInPronePose)
+            if (this._context.IsInPronePose)
             {
                 return false;
             }
@@ -120,36 +133,34 @@ namespace AIRefactored.AI.Movement
             return true;
         }
 
-        private void ExecuteJump(Vector3 landingPosition)
+        private void ExecuteJump(Vector3 landingPoint, float deltaTime)
         {
             this._context.OnJump();
             this._lastJumpTime = Time.time;
             this._hasRecentlyJumped = true;
 
-            Vector3 delta = landingPosition - this._context.TransformPosition;
-            this._context.ApplyMotion(delta, 0.25f);
+            // Apply jump velocity for smoother movement
+            Vector3 jumpVelocity = (landingPoint - this._context.TransformPosition).normalized * JumpVelocityMultiplier;
+            this._context.ApplyMotion(jumpVelocity, deltaTime);
         }
 
         private bool TryFindJumpTarget(out Vector3 target)
         {
             target = Vector3.zero;
 
-            Vector3 origin = this._context.PlayerColliderCenter + Vector3.up * 0.25f;
-            Vector3 direction = this._context.TransformForwardVector;
+            Vector3 origin = this._context.PlayerColliderCenter + (Vector3.up * 0.25f);
+            Vector3 forward = this._context.TransformForwardVector;
 
             RaycastHit obstacle;
-            if (!Physics.SphereCast(
+            bool blocked = Physics.SphereCast(
                 origin,
                 ObstacleCheckRadius,
-                direction,
+                forward,
                 out obstacle,
                 JumpCheckDistance,
-                AIRefactoredLayerMasks.ObstacleRayMask))
-            {
-                return false;
-            }
+                AIRefactoredLayerMasks.ObstacleRayMask);
 
-            if (obstacle.collider == null)
+            if (!blocked || obstacle.collider == null)
             {
                 return false;
             }
@@ -162,21 +173,16 @@ namespace AIRefactored.AI.Movement
                 return false;
             }
 
-            Vector3 vaultProbe = bounds.max + direction * VaultForwardOffset;
+            Vector3 vaultProbe = bounds.max + (forward * VaultForwardOffset);
 
             RaycastHit landing;
-            if (!Physics.Raycast(
-                vaultProbe,
-                Vector3.down,
-                out landing,
-                2.5f,
-                AIRefactoredLayerMasks.JumpRayMask))
+            if (!Physics.Raycast(vaultProbe, Vector3.down, out landing, 2.5f, AIRefactoredLayerMasks.JumpRayMask))
             {
                 return false;
             }
 
-            float fallDelta = this._context.TransformPosition.y - landing.point.y;
-            if (fallDelta > SafeFallHeight)
+            float fallDistance = this._context.TransformPosition.y - landing.point.y;
+            if (fallDistance > SafeFallHeight)
             {
                 return false;
             }

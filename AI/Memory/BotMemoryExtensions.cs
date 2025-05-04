@@ -67,7 +67,7 @@ namespace AIRefactored.AI.Memory
 
         public static void ReevaluateCurrentCover(this BotOwner bot)
         {
-            if (!IsValid(bot) || bot.Memory?.GoalEnemy?.IsVisible != true)
+            if (!IsValid(bot) || bot.Memory == null || bot.Memory.GoalEnemy == null || !bot.Memory.GoalEnemy.IsVisible)
             {
                 return;
             }
@@ -94,7 +94,7 @@ namespace AIRefactored.AI.Memory
                     }
                 }
 
-                destination = AlignY(destination, bot.Position.y);
+                destination = new Vector3(destination.x, bot.Position.y, destination.z);
                 BotMovementHelper.SmoothMoveTo(bot, destination);
 
                 if (!FikaHeadlessDetector.IsHeadless)
@@ -188,12 +188,7 @@ namespace AIRefactored.AI.Memory
             return Vector3.Cross(enemyDir, Vector3.up);
         }
 
-        private static Vector3 AlignY(Vector3 pos, float y)
-        {
-            return new Vector3(pos.x, y, pos.z);
-        }
-
-        private static bool IsValid(BotOwner bot)
+        private static bool IsValid(BotOwner? bot)
         {
             return bot != null &&
                    bot.GetPlayer != null &&

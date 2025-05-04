@@ -21,7 +21,6 @@ namespace AIRefactored.AI.Hotspots
     public class HotspotSpatialGrid
     {
         private readonly float _cellSize;
-
         private readonly Dictionary<Vector2Int, List<HotspotRegistry.Hotspot>> _grid =
             new Dictionary<Vector2Int, List<HotspotRegistry.Hotspot>>(128);
 

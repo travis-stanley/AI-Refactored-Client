@@ -34,22 +34,11 @@ namespace AIRefactored.AI.Helpers
 
         #region Public Methods
 
-        /// <summary>
-        /// Reserved for future movement resets or interruption logic.
-        /// </summary>
-        /// <param name="bot">The bot to reset movement for.</param>
         public static void Reset(BotOwner bot)
         {
             // Reserved for future use
         }
 
-        /// <summary>
-        /// Retreats the bot toward cover using dynamic fallback scoring. Includes sprint flag.
-        /// </summary>
-        /// <param name="bot">The bot retreating.</param>
-        /// <param name="threatDirection">The direction of the threat.</param>
-        /// <param name="distance">Fallback retreat distance.</param>
-        /// <param name="sprint">Whether to sprint during fallback.</param>
         public static void RetreatToCover(BotOwner bot, Vector3 threatDirection, float distance = RetreatDistance, bool sprint = true)
         {
             if (!IsEligible(bot))
@@ -96,15 +85,9 @@ namespace AIRefactored.AI.Helpers
             }
         }
 
-        /// <summary>
-        /// Smoothly rotates the bot’s body to face the specified world-space target.
-        /// </summary>
-        /// <param name="bot">The bot to rotate.</param>
-        /// <param name="lookTarget">The position to look toward.</param>
-        /// <param name="speed">The rotation speed factor.</param>
         public static void SmoothLookTo(BotOwner bot, Vector3 lookTarget, float speed = DefaultLookSpeed)
         {
-            if (!IsEligible(bot) || bot.Transform == null)
+            if (!IsEligible(bot) || bot.Transform == null || FikaHeadlessDetector.IsHeadless)  // Check for headless mode
             {
                 return;
             }
@@ -124,13 +107,6 @@ namespace AIRefactored.AI.Helpers
                 Time.deltaTime * Mathf.Clamp(speed, 1f, 8f));
         }
 
-        /// <summary>
-        /// Smoothly navigates the bot to a world-space position using GoToPoint.
-        /// </summary>
-        /// <param name="bot">The bot to move.</param>
-        /// <param name="target">The destination position.</param>
-        /// <param name="slow">Whether to move slowly.</param>
-        /// <param name="cohesionScale">Scaling factor for group cohesion distance buffer.</param>
         public static void SmoothMoveTo(BotOwner bot, Vector3 target, bool slow = true, float cohesionScale = 1.0f)
         {
             if (!IsEligible(bot))
@@ -149,10 +125,6 @@ namespace AIRefactored.AI.Helpers
             bot.Mover.GoToPoint(target, slow, cohesionScale);
         }
 
-        /// <summary>
-        /// Navigates the bot to a presumed extraction zone, respecting danger checks and safe zone flags.
-        /// </summary>
-        /// <param name="bot">The bot to move to extraction.</param>
         public static void SmoothMoveToSafeExit(BotOwner bot)
         {
             if (!IsEligible(bot))
@@ -173,12 +145,6 @@ namespace AIRefactored.AI.Helpers
             }
         }
 
-        /// <summary>
-        /// Strafes the bot laterally away from a known threat direction using a realistic sidestep.
-        /// </summary>
-        /// <param name="bot">The bot to strafe.</param>
-        /// <param name="threatDirection">The direction of the incoming threat.</param>
-        /// <param name="scale">Scaling factor for strafe distance.</param>
         public static void SmoothStrafeFrom(BotOwner bot, Vector3 threatDirection, float scale = 1.0f)
         {
             if (!IsEligible(bot))

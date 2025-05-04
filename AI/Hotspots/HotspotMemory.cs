@@ -62,8 +62,7 @@ namespace AIRefactored.AI.Hotspots
                 return;
             }
 
-            Dictionary<Vector3, float> mapDict;
-            if (!_visited.TryGetValue(mapId, out mapDict))
+            if (!_visited.TryGetValue(mapId, out var mapDict))
             {
                 mapDict = new Dictionary<Vector3, float>(32);
                 _visited[mapId] = mapDict;
@@ -85,19 +84,12 @@ namespace AIRefactored.AI.Hotspots
         /// <returns>True if visited within cooldown; otherwise false.</returns>
         private static bool WasRecentlyVisited(string mapId, Vector3 position, float cooldown)
         {
-            if (string.IsNullOrEmpty(mapId))
+            if (string.IsNullOrEmpty(mapId) || !_visited.TryGetValue(mapId, out var mapDict))
             {
                 return false;
             }
 
-            Dictionary<Vector3, float> mapDict;
-            if (!_visited.TryGetValue(mapId, out mapDict))
-            {
-                return false;
-            }
-
-            float lastVisitTime;
-            if (!mapDict.TryGetValue(position, out lastVisitTime))
+            if (!mapDict.TryGetValue(position, out var lastVisitTime))
             {
                 return false;
             }

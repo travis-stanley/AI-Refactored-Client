@@ -81,6 +81,7 @@ namespace AIRefactored.AI.Optimization
 
             _mainThreadQueue.Enqueue(action);
             Interlocked.Increment(ref _queuedCount);
+            Logger?.LogDebug("[BotWorkScheduler] Main thread action queued. Total queued: " + _queuedCount);
         }
 
         /// <summary>
@@ -98,6 +99,7 @@ namespace AIRefactored.AI.Optimization
                 if (_spawnQueue.Count < MaxSpawnQueueSize)
                 {
                     _spawnQueue.Enqueue(spawnAction);
+                    Logger?.LogDebug("[BotWorkScheduler] Spawn action queued. Queue size: " + _spawnQueue.Count);
                 }
                 else
                 {

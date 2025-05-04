@@ -10,6 +10,7 @@
 
 namespace AIRefactored.Runtime
 {
+    using System;
     using System.Collections.Generic;
     using AIRefactored.AI.Core;
     using AIRefactored.AI.Hotspots;
@@ -18,27 +19,31 @@ namespace AIRefactored.Runtime
     using AIRefactored.AI.Threads;
     using AIRefactored.Core;
     using BepInEx.Logging;
+
     using Comfort.Common;
+
     using EFT;
     using UnityEngine;
 
     /// <summary>
-    /// Ensures AIRefactored systems remain valid and recover gracefully during raid runtime.
-    /// Auto-restores BotBrains, re-hooks spawn logic, and rescans world subsystems if necessary.
-    /// Runs exclusively on authoritative hosts.
+    /// Monitors GameWorld state and ensures AIRefactored systems remain functional across raid sessions.
+    /// Automatically recovers from late GameWorld, bot missing brain, or lost IZones references.
     /// </summary>
     public sealed class BotSystemRecoveryWatcher : MonoBehaviour
     {
         #region Constants
 
-        private const float TickInterval = 5.0f;
+        private const float TickIntervalSeconds = 5.0f;
+        private const float MaxRetryAttempts = 3;  // Max retries for recovery
 
         #endregion
 
         #region Fields
 
-        private float _nextTickTime;
+        private float _nextCheckTime = -1f;
+        private bool _hasWarnedMissingWorld;
         private bool _hasRescannedWorld;
+        private int _retryAttempts = 0;
 
         private static readonly ManualLogSource Logger = AIRefactoredController.Logger;
 
@@ -48,69 +53,80 @@ namespace AIRefactored.Runtime
 
         private void Update()
         {
+            // Skip processing if we're not the local host
             if (!GameWorldHandler.IsLocalHost())
             {
                 return;
             }
 
             float now = Time.time;
-
-            if (now < this._nextTickTime)
+            if (now < _nextCheckTime)
             {
                 return;
             }
 
-            this._nextTickTime = now + TickInterval;
+            _nextCheckTime = now + TickIntervalSeconds;
 
+            // Get the current game world state
             GameWorld? world = GameWorldHandler.Get();
-            if (world?.AllAlivePlayersList == null)
+            bool worldReady = GameWorldHandler.IsReady();
+
+            // If GameWorld is missing or not ready, attempt reinitialization
+            if (world == null || world.AllAlivePlayersList == null || !worldReady)
             {
-                Logger.LogWarning("[RecoveryWatcher] [GameWorld] Null or reset — attempting reinitialization.");
-                GameWorldHandler.TryInitializeWorld();
-                this._hasRescannedWorld = false;
+                HandleWorldReinitialization(worldReady);
                 return;
             }
 
+            // Notify when GameWorld is restored
+            if (_hasWarnedMissingWorld)
+            {
+                Logger.LogInfo("[RecoveryWatcher] GameWorld restored.");
+                _hasWarnedMissingWorld = false;
+            }
+
+            // If GameWorld is not initialized, trigger the bootstrap process
             if (!GameWorldHandler.IsInitialized)
             {
-                Logger.LogWarning("[RecoveryWatcher] [System] Not initialized — forcing bootstrap.");
+                Logger.LogWarning("[RecoveryWatcher] GameWorld not initialized — triggering bootstrap.");
                 GameWorldHandler.TryInitializeWorld();
                 return;
             }
 
-            this.EnsureSpawnerHook();
-
-            List<Player> players = GameWorldHandler.GetAllAlivePlayers();
-            for (int i = 0; i < players.Count; i++)
-            {
-                Player player = players[i];
-
-                if (player == null || !player.IsAI || player.gameObject == null)
-                {
-                    continue;
-                }
-
-                if (player.GetComponent<BotBrain>() == null)
-                {
-                    Logger.LogWarning("[RecoveryWatcher] [BotFix] Bot missing brain — restoring: " + (player.Profile?.Info?.Nickname ?? "Unnamed"));
-
-                    BotBrainGuardian.Enforce(player.gameObject);
-                    GameWorldHandler.TryAttachBotBrain(player.AIData?.BotOwner);
-
-                    if (!this._hasRescannedWorld)
-                    {
-                        this._hasRescannedWorld = true;
-                        this.RescanWorldSystems();
-                    }
-                }
-            }
+            // Perform regular maintenance tasks
+            ZoneAutoRefresher.Tick(now);
+            EnsureSpawnHook();
+            ValidateBotBrains(world.AllAlivePlayersList);
         }
 
         #endregion
 
         #region Internal Logic
 
-        private void EnsureSpawnerHook()
+        private void HandleWorldReinitialization(bool worldReady)
+        {
+            // Log and manage reinitialization attempts
+            if (!_hasWarnedMissingWorld)
+            {
+                Logger.LogWarning("[RecoveryWatcher] GameWorld is missing or not ready — attempting reinitialization.");
+                _hasWarnedMissingWorld = true;
+            }
+
+            // Retry logic with backoff
+            if (_retryAttempts < MaxRetryAttempts)
+            {
+                _retryAttempts++;
+                GameWorldHandler.TryInitializeWorld();
+                ZoneAutoRefresher.Reset();
+                Logger.LogInfo($"[RecoveryWatcher] Retry attempt #{_retryAttempts} for GameWorld reinitialization.");
+            }
+            else
+            {
+                Logger.LogError("[RecoveryWatcher] Max retry attempts reached — GameWorld reinitialization failed.");
+            }
+        }
+
+        private void EnsureSpawnHook()
         {
             if (!Singleton<BotSpawner>.Instantiated)
             {
@@ -118,16 +134,50 @@ namespace AIRefactored.Runtime
             }
 
             BotSpawner spawner = Singleton<BotSpawner>.Instance;
-
             spawner.OnBotCreated -= GameWorldHandler.TryAttachBotBrain;
             spawner.OnBotCreated += GameWorldHandler.TryAttachBotBrain;
+        }
+
+        private void ValidateBotBrains(List<Player> players)
+        {
+            for (int i = 0; i < players.Count; i++)
+            {
+                Player? player = players[i];
+                if (player == null || !player.IsAI || player.gameObject == null)
+                {
+                    continue;
+                }
+
+                // Skip if bot already has a brain
+                if (player.GetComponent<BotBrain>() != null)
+                {
+                    continue;
+                }
+
+                string name = player.Profile?.Info?.Nickname ?? "Unnamed";
+                Logger.LogWarning($"[RecoveryWatcher] Bot missing brain — restoring: {name}");
+
+                BotBrainGuardian.Enforce(player.gameObject);
+
+                BotOwner? botOwner = player.AIData?.BotOwner;
+                if (botOwner != null)
+                {
+                    GameWorldHandler.TryAttachBotBrain(botOwner);
+                }
+
+                // Rescan world systems once during the process
+                if (!_hasRescannedWorld)
+                {
+                    _hasRescannedWorld = true;
+                    RescanWorldSystems();
+                }
+            }
         }
 
         private void RescanWorldSystems()
         {
             string mapId = GameWorldHandler.GetCurrentMapName();
-
-            Logger.LogInfo("[RecoveryWatcher] [Rescan] Hotspots, loot, nav: " + mapId);
+            Logger.LogInfo($"[RecoveryWatcher] Rescanning world systems for map: {mapId}");
 
             HotspotRegistry.Clear();
             HotspotRegistry.Initialize(mapId);
@@ -139,7 +189,8 @@ namespace AIRefactored.Runtime
             NavPointRegistry.Clear();
             NavPointRegistry.RegisterAll(mapId);
 
-            Logger.LogInfo("[RecoveryWatcher] [Rescan] Complete.");
+            ZoneAutoRefresher.Reset();
+            Logger.LogInfo("[RecoveryWatcher] World system rescan complete.");
         }
 
         #endregion

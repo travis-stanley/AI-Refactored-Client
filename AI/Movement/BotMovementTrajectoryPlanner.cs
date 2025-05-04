@@ -28,6 +28,7 @@ namespace AIRefactored.AI.Movement
         private const float ChaosInterval = 0.4f;
         private const float ChaosRadius = 0.65f;
         private const float SquadOffsetScale = 0.75f;
+        private const float VelocityFactor = 1.5f;  // For velocity-based movement scaling
 
         #endregion
 
@@ -83,48 +84,71 @@ namespace AIRefactored.AI.Movement
                 this.UpdateChaosOffset(now);
             }
 
-            Vector3 baseDir = targetDir.normalized;
+            // Ensure smooth base direction
+            Vector3 baseDir = targetDir.sqrMagnitude > 0.0001f ? targetDir.normalized : Vector3.forward;
+
+            // Apply chaos wobble for natural movement
             Vector3 offset = baseDir + this._chaosOffset;
 
+            // Apply squad offset if squad path is present
             if (this._cache.SquadPath != null)
             {
                 Vector3 squadOffset = this._cache.SquadPath.GetCurrentOffset();
-                if (squadOffset.sqrMagnitude > 0.01f)
+                if (squadOffset.sqrMagnitude > 0.0001f)
                 {
                     offset += squadOffset.normalized * SquadOffsetScale;
                 }
             }
 
+            // Apply teammate avoidance to prevent clustering
             Vector3 avoidance = this.ComputeAvoidance();
-            if (avoidance.sqrMagnitude > 0.01f)
+            if (avoidance.sqrMagnitude > 0.0001f)
             {
                 offset += avoidance.normalized * AvoidanceScale;
             }
 
+            // Incorporate velocity-based movement for natural acceleration/deceleration
+            Vector3 velocity = this._bot.GetPlayer.Velocity;
+            if (velocity.sqrMagnitude > 0.1f)
+            {
+                offset += velocity.normalized * VelocityFactor;
+            }
+
+            // Ensure movement stays on the same horizontal plane
             offset.y = 0f;
-            return offset.sqrMagnitude > 0.01f ? offset.normalized : baseDir;
+
+            // Return normalized offset trajectory, or base direction if offset is minimal
+            return offset.sqrMagnitude > 0.0001f ? offset.normalized : baseDir;
         }
 
         #endregion
 
-        #region Private Helpers
+        #region Internal Logic
 
         /// <summary>
-        /// Computes directional offset to avoid nearby teammates.
+        /// Computes a vector away from nearby squadmates to prevent overlap.
         /// </summary>
-        /// <returns>A normalized vector away from close teammates.</returns>
         private Vector3 ComputeAvoidance()
         {
-            Vector3 result = Vector3.zero;
-            int count = 0;
-
-            BotsGroup? group = this._bot.BotsGroup;
-            if (group == null)
+            if (this._bot == null || this._bot.BotsGroup == null)
             {
                 return Vector3.zero;
             }
 
-            for (int i = 0; i < group.MembersCount; i++)
+            BotsGroup group = this._bot.BotsGroup;
+            int members = group.MembersCount;
+
+            if (members <= 1)
+            {
+                return Vector3.zero;
+            }
+
+            Vector3 selfPos = this._bot.Position;
+            Vector3 sum = Vector3.zero;
+            int contributors = 0;
+
+            // Avoid clustering with nearby squad members
+            for (int i = 0; i < members; i++)
             {
                 BotOwner? mate = group.Member(i);
                 if (mate == null || mate == this._bot || mate.IsDead)
@@ -132,36 +156,38 @@ namespace AIRefactored.AI.Movement
                     continue;
                 }
 
-                float dist = Vector3.Distance(this._bot.Position, mate.Position);
+                float dist = Vector3.Distance(selfPos, mate.Position);
                 if (dist < AvoidanceRadius && dist > 0.01f)
                 {
-                    Vector3 repulsion = (this._bot.Position - mate.Position).normalized / dist;
-                    result += repulsion;
-                    count++;
+                    Vector3 repulse = (selfPos - mate.Position).normalized / dist;
+                    sum += repulse;
+                    contributors++;
                 }
             }
 
-            return count > 0 ? result / count : Vector3.zero;
+            return contributors > 0 ? sum / contributors : Vector3.zero;
         }
 
         /// <summary>
-        /// Updates random chaos wobble offset based on bot caution level.
+        /// Periodically generates random chaos offset based on bot caution.
         /// </summary>
         /// <param name="now">Current unscaled time.</param>
         private void UpdateChaosOffset(float now)
         {
+            // Get the bot's caution level from its personality profile
             float caution = 0.5f;
-            if (this._cache.AIRefactoredBotOwner != null && this._cache.AIRefactoredBotOwner.PersonalityProfile != null)
+            if (this._cache.AIRefactoredBotOwner != null &&
+                this._cache.AIRefactoredBotOwner.PersonalityProfile != null)
             {
-                caution = this._cache.AIRefactoredBotOwner.PersonalityProfile.Caution;
+                caution = Mathf.Clamp01(this._cache.AIRefactoredBotOwner.PersonalityProfile.Caution);
             }
 
+            // Adjust chaos range based on the caution level
             float chaosRange = ChaosRadius * (1f - caution);
-
-            // Forward-biased jitter to simulate natural step variance
             float x = UnityEngine.Random.Range(-chaosRange * 0.5f, chaosRange * 0.5f);
             float z = UnityEngine.Random.Range(0f, chaosRange);
 
+            // Update chaos offset
             this._chaosOffset = new Vector3(x, 0f, z);
             this._nextChaosUpdate = now + ChaosInterval;
         }

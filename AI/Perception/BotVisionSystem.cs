@@ -12,7 +12,6 @@ namespace AIRefactored.AI.Perception
 {
     using System.Collections.Generic;
     using AIRefactored.AI.Core;
-    using AIRefactored.AI.Groups;
     using AIRefactored.AI.Helpers;
     using AIRefactored.AI.Memory;
     using AIRefactored.Core;
@@ -96,6 +95,7 @@ namespace AIRefactored.AI.Perception
             Vector3 eye = this._bot.Position + EyeOffset;
             Vector3 forward = this._bot.LookDirection;
 
+            // Fog and ambient light impact view cone angle and sight distance
             float fogFactor = RenderSettings.fog ? Mathf.Clamp01(RenderSettings.fogDensity * 4f) : 0f;
             float ambient = RenderSettings.ambientLight.grayscale;
             float adjustedViewCone = Mathf.Lerp(BaseViewConeAngle, 60f, 1f - ambient);
@@ -103,7 +103,7 @@ namespace AIRefactored.AI.Perception
             Transform? head = BotCacheUtility.Head(this._cache);
             if (head != null && FlashlightRegistry.IsExposingBot(head, out _))
             {
-                adjustedViewCone *= 0.6f;
+                adjustedViewCone *= 0.6f;  // Reduce the view cone when exposed to light
             }
 
             List<Player> players = GameWorldHandler.GetAllAlivePlayers();

@@ -72,8 +72,7 @@ namespace AIRefactored.AI.Hotspots
 
         public static IReadOnlyList<Hotspot> GetAllInZone(string zone)
         {
-            List<Hotspot> result;
-            return _byZone.TryGetValue(zone, out result) ? result : Array.Empty<Hotspot>();
+            return _byZone.TryGetValue(zone, out var result) ? result : Array.Empty<Hotspot>();
         }
 
         public static Hotspot GetRandomHotspot()
@@ -102,14 +101,12 @@ namespace AIRefactored.AI.Hotspots
                 return;
             }
 
-            for (int i = 0; i < set.Points.Count; i++)
+            foreach (var entry in set.Points)
             {
-                HotspotData entry = set.Points[i];
                 Hotspot h = new Hotspot(entry.Position, entry.Zone);
                 _all.Add(h);
 
-                List<Hotspot> list;
-                if (!_byZone.TryGetValue(entry.Zone, out list))
+                if (!_byZone.TryGetValue(entry.Zone, out var list))
                 {
                     list = new List<Hotspot>(8);
                     _byZone[entry.Zone] = list;
@@ -127,7 +124,7 @@ namespace AIRefactored.AI.Hotspots
                 BuildGrid();
             }
 
-            _logger.LogInfo("[HotspotRegistry] ✅ Registered " + _all.Count + " hotspots for map '" + _loadedMap + "' using " + _activeMode);
+            _logger.LogInfo($"[HotspotRegistry] ✅ Registered {_all.Count} hotspots for map '{_loadedMap}' using {_activeMode}");
         }
 
         public static List<Hotspot> QueryNearby(Vector3 position, float radius, Predicate<Hotspot>? filter = null)
@@ -148,9 +145,9 @@ namespace AIRefactored.AI.Hotspots
         private static void BuildGrid()
         {
             _grid = new HotspotSpatialGrid(10.0f);
-            for (int i = 0; i < _all.Count; i++)
+            foreach (var hotspot in _all)
             {
-                _grid.Insert(_all[i]);
+                _grid.Insert(hotspot);
             }
         }
 
@@ -160,9 +157,9 @@ namespace AIRefactored.AI.Hotspots
             float size = EstimateBoundsSize(center);
             _quadtree = new HotspotQuadtree(center, size);
 
-            for (int i = 0; i < _all.Count; i++)
+            foreach (var hotspot in _all)
             {
-                _quadtree.Insert(_all[i]);
+                _quadtree.Insert(hotspot);
             }
         }
 
@@ -170,9 +167,9 @@ namespace AIRefactored.AI.Hotspots
         {
             float max = 0.0f;
 
-            for (int i = 0; i < _all.Count; i++)
+            foreach (var hotspot in _all)
             {
-                Vector3 p = _all[i].Position;
+                Vector3 p = hotspot.Position;
                 float dist = Vector2.Distance(new Vector2(p.x, p.z), center);
                 if (dist > max)
                 {
@@ -190,13 +187,13 @@ namespace AIRefactored.AI.Hotspots
             float minZ = float.MaxValue;
             float maxZ = float.MinValue;
 
-            for (int i = 0; i < _all.Count; i++)
+            foreach (var hotspot in _all)
             {
-                Vector3 p = _all[i].Position;
-                if (p.x < minX) minX = p.x;
-                if (p.x > maxX) maxX = p.x;
-                if (p.z < minZ) minZ = p.z;
-                if (p.z > maxZ) maxZ = p.z;
+                Vector3 p = hotspot.Position;
+                minX = Mathf.Min(minX, p.x);
+                maxX = Mathf.Max(maxX, p.x);
+                minZ = Mathf.Min(minZ, p.z);
+                maxZ = Mathf.Max(maxZ, p.z);
             }
 
             return new Vector2((minX + maxX) * 0.5f, (minZ + maxZ) * 0.5f);
@@ -207,12 +204,11 @@ namespace AIRefactored.AI.Hotspots
             List<Hotspot> result = new List<Hotspot>(16);
             float radiusSqr = radius * radius;
 
-            for (int i = 0; i < _all.Count; i++)
+            foreach (var hotspot in _all)
             {
-                Hotspot h = _all[i];
-                if ((h.Position - position).sqrMagnitude <= radiusSqr && (filter == null || filter(h)))
+                if ((hotspot.Position - position).sqrMagnitude <= radiusSqr && (filter == null || filter(hotspot)))
                 {
-                    result.Add(h);
+                    result.Add(hotspot);
                 }
             }
 

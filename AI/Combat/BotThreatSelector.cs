@@ -32,11 +32,11 @@ namespace AIRefactored.AI.Combat
 
         #region Fields
 
-        private readonly BotOwner bot;
-        private readonly BotComponentCache cache;
-        private readonly BotPersonalityProfile profile;
-        private float lastTargetSwitchTime = -999f;
-        private float nextEvaluateTime;
+        private readonly BotOwner _bot;
+        private readonly BotComponentCache _cache;
+        private readonly BotPersonalityProfile _profile;
+        private float _lastTargetSwitchTime = -999f;
+        private float _nextEvaluateTime;
 
         #endregion
 
@@ -57,10 +57,10 @@ namespace AIRefactored.AI.Combat
         /// <param name="cache">Bot component cache containing references.</param>
         public BotThreatSelector(BotComponentCache cache)
         {
-            this.cache = cache ?? throw new ArgumentNullException(nameof(cache));
-            this.bot = cache.Bot ?? throw new ArgumentNullException(nameof(cache.Bot));
-            this.profile = cache.AIRefactoredBotOwner?.PersonalityProfile
-                           ?? throw new ArgumentNullException(nameof(cache.AIRefactoredBotOwner));
+            this._cache = cache ?? throw new ArgumentNullException(nameof(cache));
+            this._bot = cache.Bot ?? throw new ArgumentNullException(nameof(cache.Bot));
+            this._profile = cache.AIRefactoredBotOwner?.PersonalityProfile
+                            ?? throw new ArgumentNullException(nameof(cache.AIRefactoredBotOwner));
         }
 
         #endregion
@@ -81,17 +81,17 @@ namespace AIRefactored.AI.Combat
         /// <param name="time">The current game time.</param>
         public void Tick(float time)
         {
-            if (this.bot == null || this.bot.IsDead || !this.bot.IsAI || this.bot.GetPlayer == null)
+            if (this._bot == null || this._bot.IsDead || !this._bot.IsAI || FikaHeadlessDetector.IsHeadless)  // Headless check
             {
                 return;
             }
 
-            if (time < this.nextEvaluateTime)
+            if (time < this._nextEvaluateTime)
             {
                 return;
             }
 
-            this.nextEvaluateTime = time + EvaluationCooldown;
+            this._nextEvaluateTime = time + EvaluationCooldown;
 
             var players = GameWorldHandler.GetAllAlivePlayers();
             if (players == null || players.Count == 0)
@@ -106,20 +106,16 @@ namespace AIRefactored.AI.Combat
             {
                 object raw = players[i];
                 IPlayer? candidate = raw as IPlayer;
-
-                if (candidate == null)
-                {
-                    continue;
-                }
-
-                if (candidate.ProfileId == this.bot.ProfileId ||
+                if (candidate == null ||
+                    string.IsNullOrEmpty(candidate.ProfileId) ||
+                    candidate.ProfileId == this._bot.ProfileId ||
                     candidate.HealthController == null ||
                     !candidate.HealthController.IsAlive)
                 {
                     continue;
                 }
 
-                BotsGroup? group = this.bot.BotsGroup;
+                BotsGroup? group = this._bot.BotsGroup;
                 if (group == null || !group.IsEnemy(candidate))
                 {
                     continue;
@@ -146,10 +142,10 @@ namespace AIRefactored.AI.Combat
 
             float currentScore = this.ScoreTarget(this.CurrentTarget, time);
             float switchThreshold = 10f;
-            float cooldown = SwitchCooldown * (1f - this.profile.AggressionLevel * 0.5f);
+            float cooldown = SwitchCooldown * (1f - this._profile.AggressionLevel * 0.5f);
 
             if (bestScore > currentScore + switchThreshold &&
-                time > this.lastTargetSwitchTime + cooldown)
+                time > this._lastTargetSwitchTime + cooldown)
             {
                 this.SetTarget(bestTarget, time);
             }
@@ -161,12 +157,9 @@ namespace AIRefactored.AI.Combat
 
         private float ScoreTarget(IPlayer candidate, float time)
         {
-            if (candidate == null)
-            {
-                return float.MinValue;
-            }
-
-            float distance = Vector3.Distance(this.bot.Position, candidate.Position);
+            Vector3 botPos = this._bot.Position;
+            Vector3 targetPos = candidate.Position;
+            float distance = Vector3.Distance(botPos, targetPos);
             if (distance > MaxScanDistance)
             {
                 return float.MinValue;
@@ -174,8 +167,9 @@ namespace AIRefactored.AI.Combat
 
             float score = MaxScanDistance - distance;
 
-            var infos = this.bot.EnemiesController?.EnemyInfos;
-            if (infos != null && infos.TryGetValue(candidate, out var info) && info != null)
+            if (this._bot.EnemiesController?.EnemyInfos != null &&
+                this._bot.EnemiesController.EnemyInfos.TryGetValue(candidate, out var info) &&
+                info != null)
             {
                 if (info.IsVisible)
                 {
@@ -186,12 +180,12 @@ namespace AIRefactored.AI.Combat
                         score += 10f;
                     }
 
-                    if (this.profile.Caution > 0.6f)
+                    if (this._profile.Caution > 0.6f)
                     {
                         score += 5f;
                     }
 
-                    if (this.cache.IsBlinded && this.cache.BlindUntilTime > time)
+                    if (this._cache.IsBlinded && this._cache.BlindUntilTime > time)
                     {
                         score -= 20f;
                     }
@@ -199,14 +193,14 @@ namespace AIRefactored.AI.Combat
                 else
                 {
                     score -= 5f;
-                }
 
-                if (!info.IsVisible && this.profile.AggressionLevel > 0.7f)
-                {
-                    float unseenTime = time - info.PersonalLastSeenTime;
-                    if (unseenTime < 6f)
+                    if (this._profile.AggressionLevel > 0.7f)
                     {
-                        score += Mathf.Lerp(0f, 15f, 1f - (unseenTime / 6f));
+                        float unseenTime = time - info.PersonalLastSeenTime;
+                        if (unseenTime < 6f)
+                        {
+                            score += Mathf.Lerp(0f, 15f, 1f - (unseenTime / 6f));
+                        }
                     }
                 }
             }
@@ -221,12 +215,10 @@ namespace AIRefactored.AI.Combat
         private void SetTarget(IPlayer target, float time)
         {
             this.CurrentTarget = target;
-            this.lastTargetSwitchTime = time;
+            this._lastTargetSwitchTime = time;
 
-            this.cache.TacticalMemory?.RecordEnemyPosition(target.Position, "Target", target.ProfileId);
-            this.cache.LastShotTracker?.RegisterHitBy(target);
-
-            // Optional: perception/threat sync hooks can go here if added later
+            this._cache.TacticalMemory?.RecordEnemyPosition(target.Position, "Target", target.ProfileId);
+            this._cache.LastShotTracker?.RegisterHitBy(target);
         }
 
         #endregion

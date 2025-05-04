@@ -58,23 +58,17 @@ namespace AIRefactored.AI.Navigation
         public void Register(NavPointData point)
         {
             Vector2Int cell = this.WorldToCell(point.Position);
-            List<NavPointData>? list;
-
-            if (!this._grid.TryGetValue(cell, out list) || list == null)
+            if (!this._grid.TryGetValue(cell, out List<NavPointData>? list))
             {
                 list = new List<NavPointData>(8);
                 this._grid[cell] = list;
             }
 
-            for (int i = 0; i < list.Count; i++)
+            // Only add the point if it's not already registered
+            if (!list.Exists(p => p.Position == point.Position))
             {
-                if (list[i].Position == point.Position)
-                {
-                    return;
-                }
+                list.Add(point);
             }
-
-            list.Add(point);
         }
 
         /// <summary>
@@ -98,18 +92,14 @@ namespace AIRefactored.AI.Navigation
                 for (int z = minCell.y; z <= maxCell.y; z++)
                 {
                     Vector2Int cell = new Vector2Int(x, z);
-                    List<NavPointData>? bucket;
-
-                    if (!this._grid.TryGetValue(cell, out bucket) || bucket == null)
+                    if (!this._grid.TryGetValue(cell, out List<NavPointData>? bucket))
                     {
                         continue;
                     }
 
-                    for (int i = 0; i < bucket.Count; i++)
+                    foreach (NavPointData point in bucket)
                     {
-                        NavPointData point = bucket[i];
                         float distSq = (point.Position - position).sqrMagnitude;
-
                         if (distSq <= radiusSq && (filter == null || filter(point)))
                         {
                             result.Add(point);

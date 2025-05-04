@@ -30,24 +30,16 @@ namespace AIRefactored.AI.Core
     /// Runtime container for all bot-specific AIRefactored logic systems.
     /// Attached to each bot during initialization.
     /// </summary>
-    public sealed class BotComponentCache
+    public sealed class BotComponentCache : MonoBehaviour
     {
-        #region Logger
-
         private static readonly ManualLogSource Logger = AIRefactoredController.Logger;
-
-        #endregion
 
         #region Core References
 
         public BotOwner? Bot { get; internal set; }
-
         public AIRefactoredBotOwner? AIRefactoredBotOwner { get; private set; }
-
         public BotMemoryClass? Memory => this.Bot?.Memory;
-
         public string Nickname => this.Bot?.Profile?.Info?.Nickname ?? "Unknown";
-
         public Vector3 Position => this.Bot?.Position ?? Vector3.zero;
 
         #endregion
@@ -55,13 +47,9 @@ namespace AIRefactored.AI.Core
         #region Runtime Flags
 
         public bool IsBlinded { get; set; }
-
         public float BlindUntilTime { get; set; }
-
         public float LastFlashTime { get; set; }
-
         public float LastHeardTime { get; private set; } = -999f;
-
         public Vector3? LastHeardDirection { get; private set; }
 
         #endregion
@@ -69,64 +57,37 @@ namespace AIRefactored.AI.Core
         #region AI Subsystems
 
         public CombatStateMachine? Combat { get; private set; }
-
         public BotMovementController? Movement { get; private set; }
-
         public BotPoseController? PoseController { get; set; }
-
         public BotTilt? Tilt { get; private set; }
-
         public BotTacticalDeviceController? Tactical { get; private set; }
-
         public BotGroupBehavior? GroupBehavior { get; private set; }
-
         public BotThreatSelector? ThreatSelector { get; private set; }
-
         public BotTacticalMemory? TacticalMemory { get; private set; }
-
         public BotLastShotTracker? LastShotTracker { get; private set; }
-
         public BotGroupComms? GroupComms { get; private set; }
-
         public BotSuppressionReactionComponent? Suppression { get; private set; }
-
         public BotPanicHandler? PanicHandler { get; private set; }
-
         public BotThreatEscalationMonitor? Escalation { get; private set; }
-
         public BotInjurySystem? InjurySystem { get; private set; }
-
         public BotDeadBodyScanner? DeadBodyScanner { get; private set; }
-
         public BotLootScanner? LootScanner { get; private set; }
-
         public BotOwnerPathfindingCache? Pathing { get; private set; }
-
         public SquadPathCoordinator? SquadPath { get; private set; }
-
         public BotDoorOpener? DoorOpener { get; private set; }
-
         public BotHealingBySomebody? HealReceiver { get; private set; }
-
         public BotHealAnotherTarget? SquadHealer { get; private set; }
-
         public FlashGrenadeComponent? FlashGrenade { get; private set; }
-
         public HearingDamageComponent? HearingDamage { get; private set; }
-
         public TrackedEnemyVisibility? VisibilityTracker { get; set; }
 
         public BotGroupSyncCoordinator? GroupSync => this.GroupBehavior?.GroupSync;
-
         public BotPanicHandler? Panic => this.PanicHandler;
 
         #endregion
 
         #region Properties
 
-        /// <summary>
-        /// Gets a value indicating whether the bot systems are ready.
-        /// </summary>
         public bool IsReady =>
             this.Bot != null &&
             this.Movement != null &&
@@ -139,10 +100,6 @@ namespace AIRefactored.AI.Core
 
         #region Initialization
 
-        /// <summary>
-        /// Fully initializes the bot component cache and wires all AI subsystems.
-        /// </summary>
-        /// <param name="bot">The BotOwner instance.</param>
         public void Initialize(BotOwner bot)
         {
             if (bot == null)
@@ -152,136 +109,148 @@ namespace AIRefactored.AI.Core
 
             this.Bot = bot;
 
-            this.FlashGrenade = new FlashGrenadeComponent();
-            this.FlashGrenade.Initialize(this);
+            try
+            {
+                this.Pathing = new BotOwnerPathfindingCache();
 
-            this.PanicHandler = new BotPanicHandler();
-            this.PanicHandler.Initialize(this);
+                this.TacticalMemory = new BotTacticalMemory();
+                this.TacticalMemory.Initialize(this);
 
-            this.Suppression = new BotSuppressionReactionComponent();
-            this.Suppression.Initialize(this);
+                this.TryInitSubsystem(nameof(CombatStateMachine), () =>
+                {
+                    this.Combat = new CombatStateMachine();
+                    this.Combat.Initialize(this);
+                }, this.TacticalMemory);
 
-            this.Escalation = new BotThreatEscalationMonitor();
-            this.Escalation.Initialize(bot);
+                this.TryInitSubsystem(nameof(FlashGrenadeComponent), () =>
+                {
+                    this.FlashGrenade = new FlashGrenadeComponent();
+                    this.FlashGrenade.Initialize(this);
+                });
 
-            this.GroupBehavior = new BotGroupBehavior();
-            this.GroupBehavior.Initialize(this);
+                this.TryInitSubsystem(nameof(BotPanicHandler), () =>
+                {
+                    this.PanicHandler = new BotPanicHandler();
+                    this.PanicHandler.Initialize(this);
+                });
 
-            this.Movement = new BotMovementController();
-            this.Movement.Initialize(this);
+                this.TryInitSubsystem(nameof(BotSuppressionReactionComponent), () =>
+                {
+                    this.Suppression = new BotSuppressionReactionComponent();
+                    this.Suppression.Initialize(this);
+                });
 
-            this.Tactical = new BotTacticalDeviceController();
-            this.Tactical.Initialize(this);
+                this.TryInitSubsystem(nameof(BotThreatEscalationMonitor), () =>
+                {
+                    this.Escalation = new BotThreatEscalationMonitor();
+                    this.Escalation.Initialize(bot);
+                });
 
-            this.HearingDamage = new HearingDamageComponent();
+                this.TryInitSubsystem(nameof(BotGroupBehavior), () =>
+                {
+                    this.GroupBehavior = new BotGroupBehavior();
+                    this.GroupBehavior.Initialize(this);
+                }, this.PanicHandler);
 
-            this.Combat = new CombatStateMachine();
-            this.Combat.Initialize(this);
+                // Headless Mode Check: Skip Unity-specific subsystems if running in headless mode
+                if (!FikaHeadlessDetector.IsHeadless)
+                {
+                    this.TryInitSubsystem(nameof(BotMovementController), () =>
+                    {
+                        this.Movement = new BotMovementController();
+                        this.Movement.Initialize(this);
+                    });
 
-            this.Tilt = new BotTilt(bot);
+                    this.TryInitSubsystem(nameof(BotTacticalDeviceController), () =>
+                    {
+                        this.Tactical = new BotTacticalDeviceController();
+                        this.Tactical.Initialize(this);
+                    });
 
-            this.Pathing = new BotOwnerPathfindingCache();
+                    // Fix for BotPoseController to pass BotOwner and BotComponentCache
+                    this.PoseController = new BotPoseController(bot, this);  // Corrected constructor call
+                }
 
-            this.SquadPath = new SquadPathCoordinator();
-            this.SquadPath.Initialize(this);
+                // Initialize non-Unity components regardless of headless mode
+                this.HearingDamage = new HearingDamageComponent();
+                this.Tilt = new BotTilt(bot);
 
-            this.TacticalMemory = new BotTacticalMemory();
-            this.TacticalMemory.Initialize(this);
+                this.SquadPath = new SquadPathCoordinator();
+                this.SquadPath.Initialize(this);
 
-            this.LootScanner = new BotLootScanner();
-            this.LootScanner.Initialize(this);
+                this.LootScanner = new BotLootScanner();
+                this.LootScanner.Initialize(this);
 
-            this.DeadBodyScanner = new BotDeadBodyScanner();
-            this.DeadBodyScanner.Initialize(this);
+                this.DeadBodyScanner = new BotDeadBodyScanner();
+                this.DeadBodyScanner.Initialize(this);
 
-            this.DoorOpener = new BotDoorOpener(bot);
+                this.DoorOpener = new BotDoorOpener(bot);
 
-            this.ThreatSelector = new BotThreatSelector(this);
-            this.InjurySystem = new BotInjurySystem(this);
-            this.LastShotTracker = new BotLastShotTracker();
-            this.GroupComms = new BotGroupComms(this);
+                this.InjurySystem = new BotInjurySystem(this);
+                this.LastShotTracker = new BotLastShotTracker();
+                this.GroupComms = new BotGroupComms(this);
 
-            this.SquadHealer = bot.HealAnotherTarget ?? new BotHealAnotherTarget(bot);
-            this.HealReceiver = bot.HealingBySomebody ?? new BotHealingBySomebody(bot);
+                this.SquadHealer = bot.HealAnotherTarget ?? new BotHealAnotherTarget(bot);
+                this.HealReceiver = bot.HealingBySomebody ?? new BotHealingBySomebody(bot);
 
-            Logger.LogDebug("[BotComponentCache] ✅ Initialized for bot: " + this.Nickname);
+                Logger.LogDebug("[BotComponentCache] ✅ Initialized for bot: " + this.Nickname);
+            }
+            catch (Exception ex)
+            {
+                Logger.LogError("[BotComponentCache] ❌ Full initialization failed for bot " + bot.Profile?.Id + ": " + ex.Message + "\n" + ex.StackTrace);
+                throw;
+            }
+        }
+
+        private void TryInitSubsystem(string name, Action init, params object?[] required)
+        {
+            for (int i = 0; i < required.Length; i++)
+            {
+                if (required[i] == null)
+                {
+                    throw new InvalidOperationException("[BotComponentCache] " + name + " initialization failed — missing required dependency.");
+                }
+            }
+
+            init.Invoke();
         }
 
         #endregion
 
-        #region Runtime Helpers
-
-        /// <summary>
-        /// Clears transient runtime state like flash, audio, and tactical memory.
-        /// </summary>
-        public void Reset()
-        {
-            this.IsBlinded = false;
-            this.BlindUntilTime = 0f;
-            this.LastFlashTime = 0f;
-            this.LastHeardTime = -999f;
-            this.LastHeardDirection = null;
-            this.VisibilityTracker = null;
-
-            if (this.Pathing != null)
-            {
-                this.Pathing.Clear();
-            }
-
-            if (this.TacticalMemory != null)
-            {
-                this.TacticalMemory.ClearAll();
-            }
-        }
-
-        /// <summary>
-        /// Registers a directional sound heard by the bot.
-        /// </summary>
-        /// <param name="source">The sound origin.</param>
-        public void RegisterHeardSound(Vector3 source)
-        {
-            if (this.Bot != null && this.Bot.GetPlayer?.IsAI == true)
-            {
-                this.LastHeardTime = Time.time;
-                this.LastHeardDirection = source - this.Position;
-            }
-        }
-
-        /// <summary>
-        /// Sets the AIRefactored wrapper owner for this bot.
-        /// </summary>
-        /// <param name="owner">The associated wrapper.</param>
+        // SetOwner implementation
         public void SetOwner(AIRefactoredBotOwner owner)
         {
-            if (owner != null)
+            if (owner == null)
             {
-                this.AIRefactoredBotOwner = owner;
+                return;
+            }
+
+            this.AIRefactoredBotOwner = owner;
+
+            if (this.ThreatSelector == null)
+            {
+                this.ThreatSelector = new BotThreatSelector(this);
             }
         }
 
-        /// <summary>
-        /// Returns true if the bot’s assigned personality passes a given test.
-        /// </summary>
-        /// <param name="predicate">The trait evaluator.</param>
-        public bool HasPersonalityTrait(Func<BotPersonalityProfile, bool> predicate)
+        // RegisterHeardSound implementation
+        public void RegisterHeardSound(Vector3 source)
         {
-            return this.AIRefactoredBotOwner != null &&
-                   this.AIRefactoredBotOwner.PersonalityProfile != null &&
-                   predicate(this.AIRefactoredBotOwner.PersonalityProfile);
-        }
+            if (this.Bot != null && this.Bot.GetPlayer != null && this.Bot.GetPlayer.IsAI)
+            {
+                // Log the sound registration
+                Logger.LogDebug($"[BotSoundRegistry] Sound registered from source: {source}");
 
-        /// <summary>
-        /// Logs debug info about current runtime flags and subsystems.
-        /// </summary>
-        public void DebugPrint()
-        {
-            Logger.LogInfo(
-                "[BotComponentCache] " + this.Nickname +
-                " | Ready=" + this.IsReady +
-                " | Blinded=" + this.IsBlinded +
-                " | Heard=" + this.LastHeardTime.ToString("F2") + "s ago");
-        }
+                // Store the sound position and direction if needed
+                this.LastHeardTime = Time.time;
+                this.LastHeardDirection = source - this.Position;
 
-        #endregion
+                // Optionally, add more logic such as sound memory or AI responses
+            }
+            else
+            {
+                Logger.LogWarning("[BotSoundRegistry] Sound registration failed - Bot or Player not valid.");
+            }
+        }
     }
 }

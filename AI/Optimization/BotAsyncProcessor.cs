@@ -226,7 +226,6 @@ namespace AIRefactored.AI.Optimization
             }
         }
 
-
         #endregion
     }
 }

@@ -10,8 +10,8 @@
 
 namespace AIRefactored.AI.Combat
 {
-    using EFT;
     using System;
+    using EFT;
     using UnityEngine;
 
     /// <summary>
@@ -30,13 +30,21 @@ namespace AIRefactored.AI.Combat
 
         private string? _lastAttackerId;
         private float _lastHitTime;
-        private float _lastShotTime;
+
         private string? _lastTargetId;
+        private float _lastShotTime;
 
         #endregion
 
         #region Public API
 
+        /// <summary>
+        /// Returns true if the specified profile was shot at recently by this bot.
+        /// </summary>
+        /// <param name="profileId">Profile ID of the target.</param>
+        /// <param name="now">Optional override of current time.</param>
+        /// <param name="memoryWindow">Memory window in seconds.</param>
+        /// <returns>True if shot occurred within memory window.</returns>
         public bool DidRecentlyShoot(string? profileId, float now = -1f, float memoryWindow = DefaultMemoryWindow)
         {
             if (string.IsNullOrWhiteSpace(profileId))
@@ -44,13 +52,12 @@ namespace AIRefactored.AI.Combat
                 return false;
             }
 
-            string? lastTarget = this._lastTargetId;
-            if (string.IsNullOrWhiteSpace(lastTarget))
+            if (string.IsNullOrWhiteSpace(this._lastTargetId))
             {
                 return false;
             }
 
-            if (!string.Equals(lastTarget, profileId, StringComparison.Ordinal))
+            if (!string.Equals(this._lastTargetId, profileId, StringComparison.Ordinal))
             {
                 return false;
             }
@@ -59,6 +66,13 @@ namespace AIRefactored.AI.Combat
             return currentTime - this._lastShotTime <= memoryWindow;
         }
 
+        /// <summary>
+        /// Returns true if this bot was recently hit by the specified profile.
+        /// </summary>
+        /// <param name="profileId">Profile ID of attacker.</param>
+        /// <param name="now">Optional override of current time.</param>
+        /// <param name="memoryWindow">Memory window in seconds.</param>
+        /// <returns>True if hit occurred within memory window.</returns>
         public bool WasRecentlyShotBy(string? profileId, float now = -1f, float memoryWindow = DefaultMemoryWindow)
         {
             if (string.IsNullOrWhiteSpace(profileId))
@@ -66,13 +80,12 @@ namespace AIRefactored.AI.Combat
                 return false;
             }
 
-            string? lastAttacker = this._lastAttackerId;
-            if (string.IsNullOrWhiteSpace(lastAttacker))
+            if (string.IsNullOrWhiteSpace(this._lastAttackerId))
             {
                 return false;
             }
 
-            if (!string.Equals(lastAttacker, profileId, StringComparison.Ordinal))
+            if (!string.Equals(this._lastAttackerId, profileId, StringComparison.Ordinal))
             {
                 return false;
             }
@@ -82,37 +95,49 @@ namespace AIRefactored.AI.Combat
         }
 
         /// <summary>
-        /// Registers that this bot was hit by a player.
+        /// Registers that this bot was hit by the specified player.
         /// </summary>
-        /// <param name="attacker">The attacker player who caused the hit.</param>
+        /// <param name="attacker">Attacking player instance.</param>
         public void RegisterHitBy(IPlayer? attacker)
         {
-            if (attacker == null || string.IsNullOrEmpty(attacker.ProfileId))
+            if (attacker == null)
             {
                 return;
             }
 
-            this._lastAttackerId = attacker.ProfileId;
+            string profileId = attacker.ProfileId;
+            if (string.IsNullOrWhiteSpace(profileId))
+            {
+                return;
+            }
+
+            this._lastAttackerId = profileId;
             this._lastHitTime = Time.time;
         }
 
         /// <summary>
-        /// Registers a shot fired by this bot at a target.
+        /// Registers a shot fired by this bot at the specified target.
         /// </summary>
-        /// <param name="target">The target player shot at.</param>
+        /// <param name="target">Target player instance.</param>
         public void RegisterShot(IPlayer? target)
         {
-            if (target == null || string.IsNullOrEmpty(target.ProfileId))
+            if (target == null)
             {
                 return;
             }
 
-            this._lastTargetId = target.ProfileId;
+            string profileId = target.ProfileId;
+            if (string.IsNullOrWhiteSpace(profileId))
+            {
+                return;
+            }
+
+            this._lastTargetId = profileId;
             this._lastShotTime = Time.time;
         }
 
         /// <summary>
-        /// Clears all recorded shot and hit memory.
+        /// Clears all recent shot and hit memory.
         /// </summary>
         public void Reset()
         {

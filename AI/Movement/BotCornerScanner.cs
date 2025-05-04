@@ -18,8 +18,8 @@ namespace AIRefactored.AI.Movement
     using UnityEngine.AI;
 
     /// <summary>
-    /// Scans for corners and ledges to trigger tactical lean and movement pauses.
-    /// Aggressive bots peek faster and lean sooner. Defensive bots avoid ledges and corners.
+    /// Scans for edges and corners to trigger realistic lean, crouch, or pause behavior.
+    /// Aggressive bots peek corners quickly, cautious bots crouch before engaging.
     /// </summary>
     public sealed class BotCornerScanner
     {
@@ -49,9 +49,13 @@ namespace AIRefactored.AI.Movement
 
         #region Initialization
 
+        /// <summary>
+        /// Initializes the corner scanner from the bot's component cache.
+        /// </summary>
+        /// <param name="cache">Bot component cache to use for context.</param>
         public void Initialize(BotComponentCache cache)
         {
-            if (cache == null || cache.Bot == null || cache.AIRefactoredBotOwner?.PersonalityProfile == null)
+            if (cache == null || cache.Bot == null || cache.AIRefactoredBotOwner == null || cache.AIRefactoredBotOwner.PersonalityProfile == null)
             {
                 throw new ArgumentNullException(nameof(cache));
             }
@@ -63,8 +67,12 @@ namespace AIRefactored.AI.Movement
 
         #endregion
 
-        #region Runtime
+        #region Public Methods
 
+        /// <summary>
+        /// Scans forward edge and corners to pause, lean, or crouch tactically.
+        /// </summary>
+        /// <param name="time">World time for timing pauses and prep.</param>
         public void Tick(float time)
         {
             if (!this.IsEligible(time))
@@ -74,7 +82,11 @@ namespace AIRefactored.AI.Movement
 
             if (this.IsApproachingEdge())
             {
-                this._cache?.Tilt?.Stop();
+                if (this._cache?.Tilt != null)
+                {
+                    this._cache.Tilt.Stop();
+                }
+
                 this.PauseMovement(time);
                 return;
             }
@@ -89,21 +101,23 @@ namespace AIRefactored.AI.Movement
 
         #endregion
 
-        #region Helpers
+        #region Internal Logic
 
         private bool IsEligible(float time)
         {
             return this._bot != null &&
                    !this._bot.IsDead &&
                    this._bot.Mover != null &&
+                   this._bot.Transform != null &&
                    time >= this._pauseUntil &&
                    time >= this._prepCrouchUntil &&
-                   this._bot.Memory?.GoalEnemy == null;
+                   this._bot.Memory != null &&
+                   this._bot.Memory.GoalEnemy == null;
         }
 
         private void PauseMovement(float time)
         {
-            if (this._bot == null || this._profile == null)
+            if (this._bot == null || this._profile == null || this._bot.Mover == null)
             {
                 return;
             }
@@ -115,25 +129,27 @@ namespace AIRefactored.AI.Movement
 
         private bool IsApproachingEdge()
         {
-            if (this._bot == null)
+            if (this._bot == null || this._bot.Transform == null)
             {
                 return false;
             }
 
-            Vector3 start = this._bot.Position + Vector3.up * 0.2f;
+            Vector3 origin = this._bot.Position + (Vector3.up * 0.2f);
             Vector3 forward = this._bot.Transform.forward;
             Vector3 right = this._bot.Transform.right;
-            int rayCount = Mathf.CeilToInt((EdgeCheckDistance * 2f) / EdgeRaySpacing);
+            int rays = Mathf.CeilToInt((EdgeCheckDistance * 2f) / EdgeRaySpacing);
 
-            for (int i = 0; i < rayCount; i++)
+            for (int i = 0; i < rays; i++)
             {
-                float offset = (i - rayCount / 2f) * EdgeRaySpacing;
-                Vector3 origin = start + right * offset + forward * EdgeCheckDistance;
+                float offset = (i - (rays / 2f)) * EdgeRaySpacing;
+                Vector3 rayOrigin = origin + (right * offset) + (forward * EdgeCheckDistance);
 
-                if (!Physics.Raycast(origin, Vector3.down, MinFallHeight, AIRefactoredLayerMasks.NavObstacleMask))
+                if (!Physics.Raycast(rayOrigin, Vector3.down, MinFallHeight, AIRefactoredLayerMasks.NavObstacleMask))
                 {
-                    if (!NavMesh.SamplePosition(origin + Vector3.down * MinFallHeight, out NavMeshHit hit, 1.0f, NavMesh.AllAreas) ||
-                        hit.distance > NavSampleTolerance)
+                    Vector3 probe = rayOrigin + (Vector3.down * MinFallHeight);
+                    NavMeshHit hit;
+
+                    if (!NavMesh.SamplePosition(probe, out hit, 1.0f, NavMesh.AllAreas) || hit.distance > NavSampleTolerance)
                     {
                         return true;
                     }
@@ -143,43 +159,19 @@ namespace AIRefactored.AI.Movement
             return false;
         }
 
-        private bool CheckWall(Vector3 origin, Vector3 direction, float distance)
-        {
-            return Physics.Raycast(origin, direction, out RaycastHit hit, distance, AIRefactoredLayerMasks.CoverRayMask) &&
-                   Vector3.Dot(hit.normal, direction) < WallAngleThreshold;
-        }
-
-        private bool AttemptCrouch(float time)
-        {
-            if (this._cache?.PoseController != null && this._cache.PoseController.GetPoseLevel() > 30f)
-            {
-                this._cache.PoseController.SetCrouch();
-                this._prepCrouchUntil = time + PrepCrouchTime;
-                return true;
-            }
-
-            return false;
-        }
-
-        private void TriggerLean(BotTiltType side, float time)
-        {
-            this._cache?.Tilt?.Set(side);
-            this.PauseMovement(time);
-        }
-
         private bool TryCornerPeekWithCrouch(float time)
         {
-            if (this._bot == null || this._profile == null)
+            if (this._bot == null || this._bot.Transform == null || this._profile == null)
             {
                 return false;
             }
 
-            Vector3 origin = this._bot.Position + Vector3.up * WallCheckHeight;
+            Vector3 origin = this._bot.Position + (Vector3.up * WallCheckHeight);
             Vector3 right = this._bot.Transform.right;
             Vector3 left = -right;
-            float scanDistance = BaseWallCheckDistance + (1f - this._profile.Caution) * 0.5f;
+            float checkDistance = BaseWallCheckDistance + ((1f - this._profile.Caution) * 0.5f);
 
-            if (this.CheckWall(origin, left, scanDistance))
+            if (this.CheckWall(origin, left, checkDistance))
             {
                 if (this.AttemptCrouch(time))
                 {
@@ -190,7 +182,7 @@ namespace AIRefactored.AI.Movement
                 return true;
             }
 
-            if (this.CheckWall(origin, right, scanDistance))
+            if (this.CheckWall(origin, right, checkDistance))
             {
                 if (this.AttemptCrouch(time))
                 {
@@ -204,9 +196,46 @@ namespace AIRefactored.AI.Movement
             return false;
         }
 
+        private bool CheckWall(Vector3 origin, Vector3 dir, float distance)
+        {
+            RaycastHit hit;
+            if (Physics.Raycast(origin, dir, out hit, distance, AIRefactoredLayerMasks.CoverRayMask))
+            {
+                return Vector3.Dot(hit.normal, dir) < WallAngleThreshold;
+            }
+
+            return false;
+        }
+
+        private bool AttemptCrouch(float time)
+        {
+            if (this._cache == null || this._cache.PoseController == null)
+            {
+                return false;
+            }
+
+            if (this._cache.PoseController.GetPoseLevel() > 30f)
+            {
+                this._cache.PoseController.SetCrouch();
+                this._prepCrouchUntil = time + PrepCrouchTime;
+                return true;
+            }
+
+            return false;
+        }
+
+        private void TriggerLean(BotTiltType side, float time)
+        {
+            if (this._cache?.Tilt != null)
+            {
+                this._cache.Tilt.Set(side);
+                this.PauseMovement(time);
+            }
+        }
+
         private void ResetLean(float time)
         {
-            if (this._cache?.Tilt != null && this._cache.Tilt._coreTilt)
+            if (this._cache != null && this._cache.Tilt != null && this._cache.Tilt._coreTilt)
             {
                 this._cache.Tilt.tiltOff = time - 1f;
                 this._cache.Tilt.ManualUpdate();

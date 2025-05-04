@@ -26,27 +26,15 @@ namespace AIRefactored.AI.Threads
     /// </summary>
     public static class BotBrainGuardian
     {
-        #region Logger
-
         private static readonly ManualLogSource Logger = AIRefactoredController.Logger;
 
-        #endregion
-
-        #region Public API
-
         /// <summary>
-        /// Enforces AIRefactored control by destroying any foreign brain logic on the given GameObject.
+        /// Enforces AIRefactored control by destroying any foreign MonoBehaviours on the bot GameObject.
         /// </summary>
         /// <param name="botGameObject">The bot GameObject to sanitize.</param>
         public static void Enforce(GameObject botGameObject)
         {
-            // Skip enforcement on non-authoritative clients
-            if (!GameWorldHandler.IsInitialized || !GameWorldHandler.IsLocalHost())
-            {
-                return;
-            }
-
-            if (botGameObject == null)
+            if (botGameObject == null || !GameWorldHandler.IsLocalHost())
             {
                 return;
             }
@@ -57,53 +45,45 @@ namespace AIRefactored.AI.Threads
                 return;
             }
 
-            for (int i = 0; i < components.Length; i++)
+            foreach (MonoBehaviour component in components)
             {
-                MonoBehaviour comp = components[i];
-                if (comp == null)
+                if (component == null)
                 {
                     continue;
                 }
 
-                Type? type = comp.GetType();
-                if (type == null)
-                {
-                    continue;
-                }
-
-                string name = type.Name.ToLowerInvariant();
-                string ns = type.Namespace != null ? type.Namespace.ToLowerInvariant() : string.Empty;
-
-                // Whitelist known AIRefactored core components
+                Type type = component.GetType();
                 if (type == typeof(BotBrain) || type == typeof(BotComponentCache))
                 {
                     continue;
                 }
 
-                // Allow Unity/EFT native components
-                if (IsSafeComponent(ns))
+                string typeName = type.Name.ToLowerInvariant();
+                string ns = type.Namespace?.ToLowerInvariant() ?? string.Empty;
+
+                if (IsUnityOrEftSafe(typeName, ns))
                 {
                     continue;
                 }
 
-                // Remove foreign or patched components
-                if (IsConflictingBrain(name, ns) || IsHarmonyPatched(type) || HasSuspiciousMethods(type))
+                if (IsConflictingBrain(typeName, ns) || IsHarmonyPatched(type) || HasSuspiciousMethods(type))
                 {
-                    UnityEngine.Object.Destroy(comp);
-                    Logger.LogWarning(
-                        "[BotBrainGuardian] ⚠ Removed unauthorized AI component: "
-                        + type.FullName + " from GameObject: " + botGameObject.name);
+                    UnityEngine.Object.Destroy(component);
+                    Logger.LogWarning("[BotBrainGuardian] ⚠ Removed unauthorized AI logic: " + type.FullName + " from: " + botGameObject.name);
                 }
             }
         }
 
-        #endregion
-
-        #region Internal Checks
-
-        private static bool IsSafeComponent(string ns)
+        private static bool IsUnityOrEftSafe(string name, string ns)
         {
-            return ns.StartsWith("unity", StringComparison.Ordinal)
+            return name == "fullbodybipedik"
+                || name == "charactercontrollerspawner"
+                || name == "coopbot"
+                || name == "simplecharactercontroller"
+                || name == "triggercollidersearcher"
+                || name == "botpacketsender"
+                || name == "botfirearmcontroller"
+                || ns.StartsWith("unity", StringComparison.Ordinal)
                 || ns.StartsWith("eft", StringComparison.Ordinal)
                 || ns.Contains("comfort");
         }
@@ -111,40 +91,44 @@ namespace AIRefactored.AI.Threads
         private static bool IsConflictingBrain(string name, string ns)
         {
             return name.Contains("brain")
-                || name.StartsWith("pmc")
-                || name.StartsWith("spt")
-                || name.StartsWith("lua")
-                || name.StartsWith("boss")
-                || name.StartsWith("follower")
-                || name.StartsWith("assault")
-                || name.StartsWith("exusec")
+                || name.StartsWith("pmc", StringComparison.Ordinal)
+                || name.StartsWith("spt", StringComparison.Ordinal)
+                || name.StartsWith("lua", StringComparison.Ordinal)
+                || name.StartsWith("boss", StringComparison.Ordinal)
+                || name.StartsWith("follower", StringComparison.Ordinal)
+                || name.StartsWith("assault", StringComparison.Ordinal)
+                || name.StartsWith("exusec", StringComparison.Ordinal)
                 || ns.Contains("sain")
                 || ns.Contains("mod")
                 || ns.Contains("spt")
                 || ns.Contains("lua")
-                || !ns.Contains("tarkov"); // suspicious if not in EFT or Comfort or Tarkov space
+                || (!ns.Contains("tarkov") && !ns.Contains("ai-refactored"));
         }
 
         private static bool IsHarmonyPatched(Type type)
         {
-            MethodInfo? updateMethod = type.GetMethod(
-                "Update",
-                BindingFlags.Instance | BindingFlags.Public | BindingFlags.NonPublic);
-
-            return updateMethod != null && Harmony.GetPatchInfo(updateMethod) != null;
+            try
+            {
+                MethodInfo? updateMethod = type.GetMethod("Update", BindingFlags.Instance | BindingFlags.Public | BindingFlags.NonPublic);
+                return updateMethod != null && Harmony.GetPatchInfo(updateMethod) != null;
+            }
+            catch
+            {
+                return false;
+            }
         }
 
         private static bool HasSuspiciousMethods(Type type)
         {
             string[] suspicious = { "Update", "LateUpdate", "FixedUpdate", "Tick" };
 
-            for (int i = 0; i < suspicious.Length; i++)
+            foreach (var methodName in suspicious)
             {
-                MethodInfo? m = type.GetMethod(
-                    suspicious[i],
+                MethodInfo? method = type.GetMethod(
+                    methodName,
                     BindingFlags.Instance | BindingFlags.Public | BindingFlags.NonPublic);
 
-                if (m != null && m.DeclaringType != typeof(MonoBehaviour))
+                if (method != null && method.DeclaringType != typeof(MonoBehaviour))
                 {
                     return true;
                 }
@@ -152,7 +136,5 @@ namespace AIRefactored.AI.Threads
 
             return false;
         }
-
-        #endregion
     }
 }

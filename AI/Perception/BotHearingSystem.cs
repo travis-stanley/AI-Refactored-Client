@@ -10,10 +10,12 @@
 
 namespace AIRefactored.AI.Perception
 {
+    using System.Collections.Generic;
     using AIRefactored.AI.Core;
     using AIRefactored.AI.Groups;
     using AIRefactored.AI.Helpers;
     using AIRefactored.AI.Memory;
+    using AIRefactored.Core;
     using EFT;
     using UnityEngine;
 
@@ -55,12 +57,7 @@ namespace AIRefactored.AI.Perception
         /// <param name="deltaTime">Frame delta time.</param>
         public void Tick(float deltaTime)
         {
-            if (!this.CanEvaluate())
-            {
-                return;
-            }
-
-            if (this._bot == null)
+            if (!this.CanEvaluate() || this._bot == null)
             {
                 return;
             }
@@ -68,10 +65,10 @@ namespace AIRefactored.AI.Perception
             Vector3 origin = this._bot.Position;
             float rangeSqr = BaseHearingRange * BaseHearingRange;
 
-            var players = BotMemoryStore.GetNearbyPlayers(origin, BaseHearingRange);
+            List<Player> players = BotMemoryStore.GetNearbyPlayers(origin, BaseHearingRange);
             for (int i = 0; i < players.Count; i++)
             {
-                EFT.Player player = players[i];
+                Player player = players[i];
                 if (!this.IsAudibleSource(player, origin, rangeSqr))
                 {
                     continue;
@@ -79,7 +76,11 @@ namespace AIRefactored.AI.Perception
 
                 if (this.HeardSomething(player))
                 {
-                    this._cache?.RegisterHeardSound(player.Transform.position);
+                    Vector3 pos = EFTPlayerUtil.GetPosition(player);
+                    if (pos.sqrMagnitude > 0.01f)
+                    {
+                        this._cache?.RegisterHeardSound(pos);
+                    }
                 }
             }
         }
@@ -90,29 +91,31 @@ namespace AIRefactored.AI.Perception
 
         private bool CanEvaluate()
         {
-            if (this._bot == null || this._bot.IsDead)
+            if (this._bot == null || this._bot.IsDead || this._cache?.PanicHandler?.IsPanicking == true)
             {
                 return false;
             }
 
-            EFT.Player? player = this._bot.GetPlayer;
+            Player? player = this._bot.GetPlayer;
             return player != null && player.IsAI;
         }
 
-        private bool HeardSomething(EFT.Player player)
+        private bool HeardSomething(Player player)
         {
             if (this._bot == null)
             {
                 return false;
             }
 
-            return BotSoundUtils.DidFireRecently(this._bot, player, 1f, TimeWindow)
-                   || BotSoundUtils.DidStepRecently(this._bot, player, 1f, TimeWindow);
+            return BotSoundUtils.DidFireRecently(this._bot, player, 1f, TimeWindow) ||
+                   BotSoundUtils.DidStepRecently(this._bot, player, 1f, TimeWindow);
         }
 
-        private bool IsAudibleSource(EFT.Player player, Vector3 origin, float rangeSqr)
+        private bool IsAudibleSource(Player player, Vector3 origin, float rangeSqr)
         {
-            if (player == null || player.HealthController?.IsAlive != true)
+            if (player == null ||
+                player.HealthController == null ||
+                !player.HealthController.IsAlive)
             {
                 return false;
             }
@@ -127,11 +130,11 @@ namespace AIRefactored.AI.Perception
                 return false;
             }
 
-            Vector3 targetPos = player.Transform.position;
+            Vector3 targetPos = EFTPlayerUtil.GetPosition(player);
             return (targetPos - origin).sqrMagnitude <= rangeSqr;
         }
 
-        private static bool AreInSameTeam(BotOwner self, EFT.Player target)
+        private static bool AreInSameTeam(BotOwner self, Player target)
         {
             string? selfGroup = self.GetPlayer?.Profile?.Info?.GroupId;
             string? targetGroup = target.Profile?.Info?.GroupId;

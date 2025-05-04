@@ -71,16 +71,14 @@ namespace AIRefactored.AI.Hotspots
             BotList.Clear();
             BotList.AddRange(controller.Bots.BotOwners);
 
-            for (int i = 0; i < BotList.Count; i++)
+            foreach (BotOwner bot in BotList)
             {
-                BotOwner bot = BotList[i];
                 if (bot == null || bot.IsDead || bot.GetPlayer != null && bot.GetPlayer.IsYourPlayer)
                 {
                     continue;
                 }
 
-                HotspotSession? session = null;
-                if (!this._sessions.TryGetValue(bot, out session))
+                if (!this._sessions.TryGetValue(bot, out HotspotSession? session))
                 {
                     session = this.AssignHotspotRoute(bot);
                     if (session != null)
@@ -89,10 +87,7 @@ namespace AIRefactored.AI.Hotspots
                     }
                 }
 
-                if (session != null)
-                {
-                    session.Tick();
-                }
+                session?.Tick();
             }
         }
 

@@ -28,6 +28,10 @@ namespace AIRefactored.AI.Memory
         private static readonly Dictionary<string, HeardSound> HeardSounds = new Dictionary<string, HeardSound>(64);
         private static readonly Dictionary<string, LastHitInfo> LastHitSources = new Dictionary<string, LastHitInfo>(64);
         private static readonly List<DangerZone> Zones = new List<DangerZone>(64);
+        private static readonly Dictionary<string, List<DangerZone>> ZoneCaches = new Dictionary<string, List<DangerZone>>(64); // for quick cache per map
+
+        // Contextual memory cache: Short-term and long-term memory separation
+        private static readonly Dictionary<string, List<HeardSound>> ShortTermHeardSounds = new Dictionary<string, List<HeardSound>>(64);
 
         public static void AddDangerZone(string? mapId, Vector3 position, DangerTriggerType type, float radius)
         {
@@ -44,7 +48,14 @@ namespace AIRefactored.AI.Memory
         {
             if (TryGetSafeKey(profileId, out string key))
             {
-                HeardSounds[key] = new HeardSound(position, time);
+                // Add to short-term memory (context-aware)
+                if (!ShortTermHeardSounds.ContainsKey(key))
+                {
+                    ShortTermHeardSounds[key] = new List<HeardSound>();
+                }
+
+                ShortTermHeardSounds[key].Add(new HeardSound(position, time));
+                // If needed, we could discard very old sounds here based on time
             }
         }
 
@@ -53,6 +64,12 @@ namespace AIRefactored.AI.Memory
             if (TryGetSafeKey(profileId, out string key))
             {
                 HeardSounds.Remove(key);
+            }
+
+            // Clear from short-term memory as well
+            if (ShortTermHeardSounds.ContainsKey(key))
+            {
+                ShortTermHeardSounds[key].Clear();
             }
         }
 
@@ -95,6 +112,12 @@ namespace AIRefactored.AI.Memory
                 return result;
             }
 
+            if (!ZoneCaches.TryGetValue(safeMap, out var cachedZones))
+            {
+                cachedZones = new List<DangerZone>();
+                ZoneCaches[safeMap] = cachedZones;
+            }
+
             float now = Time.time;
 
             for (int i = 0; i < Zones.Count; i++)
@@ -102,10 +125,11 @@ namespace AIRefactored.AI.Memory
                 DangerZone zone = Zones[i];
                 if (zone.Map == safeMap && now - zone.Timestamp <= DangerZoneTTL)
                 {
-                    result.Add(zone);
+                    cachedZones.Add(zone);
                 }
             }
 
+            result.AddRange(cachedZones);
             return result;
         }
 

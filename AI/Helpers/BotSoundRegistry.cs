@@ -155,6 +155,7 @@ namespace AIRefactored.AI.Helpers
                     continue;
                 }
 
+                // Call the method to register the sound
                 cache.RegisterHeardSound(location);
 
                 if (isGunshot)

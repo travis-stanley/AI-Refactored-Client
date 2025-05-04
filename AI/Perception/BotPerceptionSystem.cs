@@ -22,6 +22,8 @@ namespace AIRefactored.AI.Perception
     /// </summary>
     public sealed class BotPerceptionSystem : IFlashReactiveBot
     {
+        #region Constants
+
         private const float BlindSpeechThreshold = 0.4f;
         private const float FlareRecoverySpeed = 0.2f;
         private const float FlashRecoverySpeed = 0.5f;
@@ -29,6 +31,10 @@ namespace AIRefactored.AI.Perception
         private const float MinSightDistance = 15f;
         private const float PanicTriggerThreshold = 0.6f;
         private const float SuppressionRecoverySpeed = 0.3f;
+
+        #endregion
+
+        #region Fields
 
         private float _blindStartTime = -1f;
         private float _flareIntensity;
@@ -38,6 +44,10 @@ namespace AIRefactored.AI.Perception
         private BotOwner? _bot;
         private BotComponentCache? _cache;
         private BotVisionProfile? _profile;
+
+        #endregion
+
+        #region Public Methods
 
         public void Initialize(BotComponentCache cache)
         {
@@ -63,20 +73,22 @@ namespace AIRefactored.AI.Perception
 
             this.HandleFlashlightExposure();
 
-            float perceptionPenalty = Mathf.Max(this._flashBlindness, this._flareIntensity, this._suppressionFactor);
-            float adjustedRange = Mathf.Lerp(MinSightDistance, MaxSightDistance, 1f - perceptionPenalty);
+            // Adjust sight based on flash blindness, flare intensity, and suppression factors
+            float penalty = Mathf.Max(this._flashBlindness, this._flareIntensity, this._suppressionFactor);
+            float adjustedSight = Mathf.Lerp(MinSightDistance, MaxSightDistance, 1f - penalty);
 
-            if (this._profile != null && this._bot != null)
+            if (this._bot?.LookSensor != null && this._profile != null)
             {
-                this._bot.LookSensor.ClearVisibleDist = adjustedRange * this._profile.AdaptationSpeed;
+                this._bot.LookSensor.ClearVisibleDist = adjustedSight * this._profile.AdaptationSpeed;
             }
 
-            bool isBlinded = this._flashBlindness > BlindSpeechThreshold;
+            bool blinded = this._flashBlindness > BlindSpeechThreshold;
+            float blindDuration = Mathf.Clamp01(this._flashBlindness) * 3f;
 
             if (this._cache != null)
             {
-                this._cache.IsBlinded = isBlinded;
-                this._cache.BlindUntilTime = Time.time + Mathf.Clamp01(this._flashBlindness) * 3f;
+                this._cache.IsBlinded = blinded;
+                this._cache.BlindUntilTime = Time.time + blindDuration;
             }
 
             this.TryTriggerPanic();
@@ -86,6 +98,7 @@ namespace AIRefactored.AI.Perception
 
         public void ApplyFlareExposure(float strength)
         {
+            // Apply the flare intensity based on strength and adjust the exposure.
             this._flareIntensity = Mathf.Clamp(strength * 0.6f, 0f, 0.8f);
         }
 
@@ -96,9 +109,12 @@ namespace AIRefactored.AI.Perception
                 return;
             }
 
-            this._flashBlindness = Mathf.Clamp01(this._flashBlindness + intensity * this._profile.MaxBlindness);
+            // Calculate and apply the flash blindness level
+            float addedBlindness = intensity * this._profile.MaxBlindness;
+            this._flashBlindness = Mathf.Clamp01(this._flashBlindness + addedBlindness);
             this._blindStartTime = Time.time;
 
+            // Trigger bot speech for blindness
             if (this._flashBlindness > BlindSpeechThreshold)
             {
                 this._bot?.BotTalk?.TrySay(EPhraseTrigger.OnBeingHurt);
@@ -112,18 +128,21 @@ namespace AIRefactored.AI.Perception
                 return;
             }
 
+            // Adjust suppression factor based on the severity
             this._suppressionFactor = Mathf.Clamp01(severity * this._profile.AggressionResponse);
         }
 
         public void OnFlashExposure(Vector3 lightOrigin)
         {
-            if (!this.IsValid())
+            if (this.IsValid())
             {
-                return;
+                this.ApplyFlashBlindness(0.4f);
             }
-
-            this.ApplyFlashBlindness(0.4f);
         }
+
+        #endregion
+
+        #region Private Methods
 
         private void HandleFlashlightExposure()
         {
@@ -138,26 +157,25 @@ namespace AIRefactored.AI.Perception
                 return;
             }
 
-            Light? blindingLight;
-            if (FlashlightRegistry.IsExposingBot(head, out blindingLight))
+            Light? source;
+            if (FlashlightRegistry.IsExposingBot(head, out source) && source != null)
             {
-                float intensity = FlashLightUtils.CalculateFlashScore(
-                    blindingLight?.transform,
-                    head,
-                    20f);
-
-                if (intensity > 0.25f)
+                float score = FlashLightUtils.CalculateFlashScore(source.transform, head, 20f);
+                if (score > 0.25f)
                 {
-                    this.ApplyFlashBlindness(intensity);
+                    this.ApplyFlashBlindness(score);
                 }
             }
         }
 
         private void RecoverVisualClarity(float deltaTime)
         {
-            this._flashBlindness = Mathf.MoveTowards(this._flashBlindness, 0f, FlashRecoverySpeed * deltaTime);
-            this._flareIntensity = Mathf.MoveTowards(this._flareIntensity, 0f, FlareRecoverySpeed * deltaTime);
-            this._suppressionFactor = Mathf.MoveTowards(this._suppressionFactor, 0f, SuppressionRecoverySpeed * deltaTime);
+            // Adjust recovery speed based on personality traits and environmental factors
+            float recoveryFactor = this._profile?.ClarityRecoverySpeed ?? 1f;
+
+            this._flashBlindness = Mathf.MoveTowards(this._flashBlindness, 0f, FlashRecoverySpeed * recoveryFactor * deltaTime);
+            this._flareIntensity = Mathf.MoveTowards(this._flareIntensity, 0f, FlareRecoverySpeed * recoveryFactor * deltaTime);
+            this._suppressionFactor = Mathf.MoveTowards(this._suppressionFactor, 0f, SuppressionRecoverySpeed * recoveryFactor * deltaTime);
         }
 
         private void SyncEnemyIfVisible()
@@ -167,10 +185,10 @@ namespace AIRefactored.AI.Perception
                 return;
             }
 
-            IPlayer? enemy = this._bot.Memory?.GoalEnemy?.Person;
-            if (enemy != null)
+            IPlayer? seen = this._bot.Memory?.GoalEnemy?.Person;
+            if (seen != null)
             {
-                BotTeamLogic.AddEnemy(this._bot, enemy);
+                BotTeamLogic.AddEnemy(this._bot, seen);
             }
         }
 
@@ -181,6 +199,7 @@ namespace AIRefactored.AI.Perception
                 return;
             }
 
+            // Trigger panic if the bot is blinded by flashbang and certain conditions are met
             if (this._flashBlindness >= PanicTriggerThreshold &&
                 Time.time - this._blindStartTime < 2.5f)
             {
@@ -198,5 +217,7 @@ namespace AIRefactored.AI.Perception
             Player? player = this._bot.GetPlayer;
             return player != null && player.IsAI;
         }
+
+        #endregion
     }
 }

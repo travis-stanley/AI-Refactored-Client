@@ -10,6 +10,7 @@
 
 namespace AIRefactored
 {
+    using System;
     using System.Collections;
     using AIRefactored.AI.Core;
     using AIRefactored.AI.Optimization;
@@ -20,16 +21,17 @@ namespace AIRefactored
     using BepInEx.Logging;
     using Comfort.Common;
     using EFT;
+    using Fika.Core;
     using UnityEngine;
 
     /// <summary>
     /// Entry point for AI-Refactored mod. Registers world bootstrap, logging, and AI system hooks.
-    /// Supports both headless and client-hosted environments.
+    /// Supports both headless and client-hosted environments with full parity.
     /// </summary>
     [BepInPlugin("com.spock.airefactored", "AI-Refactored", "1.0.0")]
     public sealed class Plugin : BaseUnityPlugin
     {
-        #region Fields
+        #region Static Fields
 
         private static ManualLogSource? _log;
 
@@ -38,107 +40,120 @@ namespace AIRefactored
         #region Properties
 
         /// <summary>
-        /// Global logger reference, safe after Awake().
+        /// Gets the global logger instance.
         /// </summary>
         public static ManualLogSource LoggerInstance =>
-            _log ?? throw new System.NullReferenceException("[AIRefactored] Logger accessed before plugin initialization.");
+            _log ?? throw new InvalidOperationException("[AIRefactored] Logger could not be initialized.");
 
         #endregion
 
         #region Unity Lifecycle
 
-        /// <summary>
-        /// Unity lifecycle entry point. Initializes all AIRefactored systems.
-        /// </summary>
         private void Awake()
         {
-            _log = this.Logger;
-            _log.LogInfo("[AIRefactored] [Init] Plugin starting...");
-
-            AIRefactoredController.Initialize(_log);
-            BotWorkScheduler.AutoInjectFlushHost();
-
-            if (FikaHeadlessDetector.IsHeadless)
+            try
             {
-                _log.LogInfo("[AIRefactored] [Headless] Detected headless mode — proceeding with full bootstrap.");
-                WorldBootstrapper.TryInitialize();
-                GameWorldHandler.HookBotSpawns();
-            }
-            else
-            {
-                _log.LogInfo("[AIRefactored] [Client] Detected client mode — deferring bootstrap.");
-                this.StartCoroutine(this.WaitForWorldBootstrap());
-            }
+                _log = this.Logger ?? throw new InvalidOperationException("[AIRefactored] Logger could not be initialized.");
+                _log.LogInfo("[AIRefactored] [Init] Plugin starting...");
 
-            this.StartCoroutine(this.MonitorGameWorldAvailability());
-            _log.LogInfo("[AIRefactored] [Init] Plugin startup complete.");
+                // Initialize AI-Refactored Controller and perform other setup
+                AIRefactoredController.Initialize(_log);
+                BotWorkScheduler.AutoInjectFlushHost();
+
+                // Initialize world systems and bot spawns (for both headless and client-hosted environments)
+                InitializeWorldAndBots();
+
+                _log.LogInfo("[AIRefactored] [Init] Plugin startup complete.");
+            }
+            catch (Exception ex)
+            {
+                _log?.LogError($"[AIRefactored] [Init] Error during initialization: {ex.Message}\n{ex.StackTrace}");
+                throw; // Rethrow to ensure the crash is captured
+            }
         }
 
-        /// <summary>
-        /// Called when plugin is unloaded. Cleans up all global AI systems.
-        /// </summary>
         private void OnDestroy()
         {
-            GameWorldHandler.UnhookBotSpawns();
-            _log?.LogInfo("[AIRefactored] [Shutdown] Plugin shutdown complete.");
+            try
+            {
+                // Safely unhook bot spawns on shutdown
+                if (FikaHeadlessDetector.IsHeadless) // Ensures headless mode is checked using FIKA
+                {
+                    _log?.LogInfo("[AIRefactored] [Shutdown] Headless environment detected, skipping bot spawn unhook.");
+                }
+                else
+                {
+                    GameWorldHandler.UnhookBotSpawns(); // Referencing GameWorldHandler from EFT
+                }
+                _log?.LogInfo("[AIRefactored] [Shutdown] Plugin shutdown complete.");
+            }
+            catch (Exception ex)
+            {
+                // Log errors during shutdown
+                _log?.LogError($"[AIRefactored] [Shutdown] Error during shutdown: {ex.Message}\n{ex.StackTrace}");
+            }
         }
 
         #endregion
 
-        #region Coroutine Logic
+        #region Initialization Logic
 
-        /// <summary>
-        /// Waits for a valid GameWorld instance before proceeding with initialization (non-headless only).
-        /// Ensures clients never bootstrap authoritative world logic when connected to external hosts.
-        /// </summary>
-        private IEnumerator WaitForWorldBootstrap()
+        private void InitializeWorldAndBots()
         {
-            float timeout = Time.time + 60f;
-
-            while (!Singleton<ClientGameWorld>.Instantiated &&
-                   !Singleton<GameWorld>.Instantiated &&
-                   Time.time < timeout)
+            try
             {
-                yield return null;
-            }
+                // Initialize world systems (unified for both headless and client-hosted environments)
+                _log?.LogInfo("[AIRefactored] Initializing world and bot systems...");
 
-            if (Singleton<ClientGameWorld>.Instantiated || Singleton<GameWorld>.Instantiated)
-            {
-                if (GameWorldHandler.IsLocalHost())
+                // Ensure headless compatibility by checking FikaHeadlessDetector
+                if (FikaHeadlessDetector.IsHeadless)
                 {
-                    _log?.LogInfo("[AIRefactored] [Bootstrap] Client-hosted raid detected — initializing world systems.");
-                    GameWorldHandler.TryInitializeWorld();
+                    _log?.LogInfo("[AIRefactored] [Bootstrap] Headless environment detected. Bot spawn logic will be handled in headless mode.");
+                    GameWorldHandler.TryInitializeWorld(); // Just initialize the world systems, no bot spawns
+                    GameWorldHandler.HookBotSpawns(); // Hook bot spawns even in headless mode to support AI logic
                 }
                 else
                 {
-                    _log?.LogInfo("[AIRefactored] [Bootstrap] Client connected to external host — skipping world initialization.");
+                    GameWorldHandler.TryInitializeWorld(); // Initialize world systems normally
+                    WorldBootstrapper.TryInitialize(); // Initialize world bootstrapper for non-headless environment
+
+                    GameWorldHandler.HookBotSpawns(); // Hook bot spawns for non-headless environments
+                    _log?.LogInfo("[AIRefactored] [Bootstrap] World systems and bot spawns initialized.");
                 }
             }
-            else
+            catch (Exception ex)
             {
-                _log?.LogWarning("[AIRefactored] [Bootstrap] Timed out waiting for GameWorld. Skipping bootstrap.");
+                _log?.LogError($"[AIRefactored] [Bootstrap] Error during world/bot initialization: {ex.Message}\n{ex.StackTrace}");
             }
         }
 
-        /// <summary>
-        /// Periodically checks for GameWorld reinitialization or late-booted servers and enforces AI system hooks.
-        /// Only initializes if local host conditions are met.
-        /// </summary>
-        private IEnumerator MonitorGameWorldAvailability()
+        #endregion
+
+        #region Coroutine Utilities
+
+        private IEnumerator SafeCoroutine(IEnumerator routine)
         {
+            // Coroutine with safe exception handling
             while (true)
             {
-                if (!GameWorldHandler.IsInitialized &&
-                    (Singleton<ClientGameWorld>.Instantiated || Singleton<GameWorld>.Instantiated))
+                object? current;
+
+                try
                 {
-                    if (GameWorldHandler.IsLocalHost())
+                    if (!routine.MoveNext())
                     {
-                        _log?.LogInfo("[AIRefactored] [Recovery] Late GameWorld detected — enforcing initialization.");
-                        GameWorldHandler.TryInitializeWorld();
+                        yield break;
                     }
+
+                    current = routine.Current;
+                }
+                catch (Exception ex)
+                {
+                    _log?.LogError($"[AIRefactored] [SafeCoroutine] Exception: {ex.Message}\n{ex.StackTrace}");
+                    yield break;
                 }
 
-                yield return new WaitForSeconds(2f);
+                yield return current;
             }
         }
 

@@ -21,13 +21,21 @@ namespace AIRefactored.AI.Missions.Subsystems
     using BepInEx.Logging;
     using EFT;
 
+    using UnityEngine;
+
     /// <summary>
     /// Dynamically switches bot mission type based on context:
     /// panic, aggression, squad cohesion, loot opportunity, etc.
     /// </summary>
     public sealed class MissionSwitcher
     {
+        #region Constants
+
         private const float SwitchCooldown = 10f;
+
+        #endregion
+
+        #region Fields
 
         private readonly BotOwner _bot;
         private readonly BotComponentCache _cache;
@@ -37,6 +45,10 @@ namespace AIRefactored.AI.Missions.Subsystems
         private readonly ManualLogSource _log;
 
         private float _lastSwitchTime;
+
+        #endregion
+
+        #region Constructor
 
         /// <summary>
         /// Initializes a new instance of the <see cref="MissionSwitcher"/> class.
@@ -53,6 +65,10 @@ namespace AIRefactored.AI.Missions.Subsystems
             this._log = AIRefactoredController.Logger;
         }
 
+        #endregion
+
+        #region Public Methods
+
         /// <summary>
         /// Evaluates and switches the mission type based on current combat and squad context.
         /// </summary>
@@ -68,15 +84,14 @@ namespace AIRefactored.AI.Missions.Subsystems
             Action resumeQuesting,
             Func<bool> isGroupAligned)
         {
-            float timeSinceLastSwitch = time - this._lastSwitchTime;
-            if (timeSinceLastSwitch < SwitchCooldown)
+            if (time - this._lastSwitchTime < SwitchCooldown)
             {
                 return;
             }
 
             string nickname = this._bot.Profile?.Info?.Nickname ?? "Unknown";
 
-            // Switch to Fight if under fire and personality is aggressive
+            // Escalate to fight if under fire and aggressive
             if (this._bot.Memory?.IsUnderFire == true &&
                 this._profile.AggressionLevel > 0.6f &&
                 currentMission != MissionType.Fight)
@@ -88,10 +103,11 @@ namespace AIRefactored.AI.Missions.Subsystems
                 return;
             }
 
-            // Opportunistically switch to Loot if personality prefers it and a high-value loot point exists
+            // Opportunistically loot if personality allows and loot exists
             if (currentMission == MissionType.Quest &&
                 this._profile.PreferredMission == MissionBias.Loot &&
-                this._lootScanner?.GetHighestValueLootPoint() != null)
+                this._lootScanner != null &&
+                this._lootScanner.GetHighestValueLootPoint() != Vector3.zero)
             {
                 this._log.LogInfo($"[MissionSwitcher] {nickname} switching to Loot (loot point nearby)");
                 this._lastSwitchTime = time;
@@ -99,7 +115,7 @@ namespace AIRefactored.AI.Missions.Subsystems
                 return;
             }
 
-            // Squad is scattered — fallback to Quest if currently fighting
+            // De-escalate to Quest if squad separated
             if (currentMission == MissionType.Fight && !isGroupAligned())
             {
                 this._log.LogInfo($"[MissionSwitcher] {nickname} falling back to Quest (squad separation)");
@@ -108,5 +124,7 @@ namespace AIRefactored.AI.Missions.Subsystems
                 resumeQuesting?.Invoke();
             }
         }
+
+        #endregion
     }
 }

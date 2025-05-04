@@ -48,6 +48,7 @@ namespace AIRefactored.AI.Navigation
         private static Vector3 _center = Vector3.zero;
         private static bool _isRunning;
         private static int _registered;
+        private static bool _isTaskRunning;
 
         #endregion
 
@@ -86,7 +87,13 @@ namespace AIRefactored.AI.Navigation
             }
 
             Logger.LogInfo("[NavPointBootstrapper] Queued " + ScanQueue.Count + " surface points.");
-            Task.Run(PrequeueVerticalPoints);
+
+            // Run Prequeue in the background
+            if (!_isTaskRunning)
+            {
+                _isTaskRunning = true;
+                Task.Run(PrequeueVerticalPoints);
+            }
         }
 
         /// <summary>
@@ -174,6 +181,8 @@ namespace AIRefactored.AI.Navigation
                     }
                 }
             }
+
+            _isTaskRunning = false; // Ensure task is flagged as not running once complete
         }
 
         private static bool IsCoverPoint(Vector3 pos)

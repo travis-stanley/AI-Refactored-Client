@@ -87,6 +87,7 @@ namespace AIRefactored.AI.Hotspots
                     }
                 }
 
+                // Guard against multiple recursive ticks
                 session?.Tick();
             }
         }

@@ -64,8 +64,10 @@ namespace AIRefactored.Runtime
         /// </summary>
         private void TriggerRefresh()
         {
+            // Guard check for preventing recursion or invalid states
             if (!Application.isPlaying || !GameWorldHandler.IsReady() || !GameWorldHandler.IsLocalHost())
             {
+                _isRefreshing = false; // Reset flag if the conditions are not met
                 return; // Skip if game world isn't ready or we're not the local host
             }
 
@@ -80,6 +82,7 @@ namespace AIRefactored.Runtime
         /// </summary>
         public static void TriggerManualRefresh()
         {
+            // Guard against re-entrant refresh logic
             if (_isRefreshing || !GameWorldHandler.IsReady() || !GameWorldHandler.IsLocalHost())
             {
                 return; // Skip if refreshing already or we're not the local host

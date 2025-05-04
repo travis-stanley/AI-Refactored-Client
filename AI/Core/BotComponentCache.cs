@@ -99,7 +99,6 @@ namespace AIRefactored.AI.Core
         #endregion
 
         #region Initialization
-
         public void Initialize(BotOwner bot)
         {
             if (bot == null)
@@ -107,74 +106,114 @@ namespace AIRefactored.AI.Core
                 throw new ArgumentNullException(nameof(bot));
             }
 
+            // Prevent redundant initialization
+            if (this.Bot != null)
+            {
+                Logger.LogWarning("[BotComponentCache] Already initialized for bot " + bot.Profile?.Id);
+                return;
+            }
+
             this.Bot = bot;
 
             try
             {
+                // Initialize Pathing Cache and Tactical Memory
                 this.Pathing = new BotOwnerPathfindingCache();
-
                 this.TacticalMemory = new BotTacticalMemory();
                 this.TacticalMemory.Initialize(this);
 
+                // Safely initialize subsystems, ensuring no recursion or redundant calls.
                 this.TryInitSubsystem(nameof(CombatStateMachine), () =>
                 {
-                    this.Combat = new CombatStateMachine();
-                    this.Combat.Initialize(this);
+                    if (this.Combat == null)  // Check if CombatStateMachine is already initialized
+                    {
+                        this.Combat = new CombatStateMachine();
+                        this.Combat.Initialize(this);
+                    }
                 }, this.TacticalMemory);
 
                 this.TryInitSubsystem(nameof(FlashGrenadeComponent), () =>
                 {
-                    this.FlashGrenade = new FlashGrenadeComponent();
-                    this.FlashGrenade.Initialize(this);
+                    if (this.FlashGrenade == null)  // Check if FlashGrenadeComponent is already initialized
+                    {
+                        this.FlashGrenade = new FlashGrenadeComponent();
+                        this.FlashGrenade.Initialize(this);
+                    }
                 });
 
                 this.TryInitSubsystem(nameof(BotPanicHandler), () =>
                 {
-                    this.PanicHandler = new BotPanicHandler();
-                    this.PanicHandler.Initialize(this);
+                    if (this.PanicHandler == null)  // Check if PanicHandler is already initialized
+                    {
+                        this.PanicHandler = new BotPanicHandler();
+                        this.PanicHandler.Initialize(this);
+                    }
                 });
 
                 this.TryInitSubsystem(nameof(BotSuppressionReactionComponent), () =>
                 {
-                    this.Suppression = new BotSuppressionReactionComponent();
-                    this.Suppression.Initialize(this);
+                    if (this.Suppression == null)  // Check if SuppressionComponent is already initialized
+                    {
+                        this.Suppression = new BotSuppressionReactionComponent();
+                        this.Suppression.Initialize(this);
+                    }
                 });
 
                 this.TryInitSubsystem(nameof(BotThreatEscalationMonitor), () =>
                 {
-                    this.Escalation = new BotThreatEscalationMonitor();
-                    this.Escalation.Initialize(bot);
+                    if (this.Escalation == null)  // Check if Escalation is already initialized
+                    {
+                        this.Escalation = new BotThreatEscalationMonitor();
+                        this.Escalation.Initialize(bot);
+                    }
                 });
 
                 this.TryInitSubsystem(nameof(BotGroupBehavior), () =>
                 {
-                    this.GroupBehavior = new BotGroupBehavior();
-                    this.GroupBehavior.Initialize(this);
+                    if (this.GroupBehavior == null)  // Check if GroupBehavior is already initialized
+                    {
+                        this.GroupBehavior = new BotGroupBehavior();
+                        this.GroupBehavior.Initialize(this);
+                    }
                 }, this.PanicHandler);
 
-                // Headless Mode Check: Skip Unity-specific subsystems if running in headless mode
-                if (!FikaHeadlessDetector.IsHeadless)
+                // Ensure systems are always initialized, regardless of headless mode
+                this.TryInitSubsystem(nameof(BotMovementController), () =>
                 {
-                    this.TryInitSubsystem(nameof(BotMovementController), () =>
+                    if (this.Movement == null)  // Check if MovementController is already initialized
                     {
                         this.Movement = new BotMovementController();
                         this.Movement.Initialize(this);
-                    });
+                    }
+                });
 
-                    this.TryInitSubsystem(nameof(BotTacticalDeviceController), () =>
+                this.TryInitSubsystem(nameof(BotTacticalDeviceController), () =>
+                {
+                    if (this.Tactical == null)  // Check if Tactical is already initialized
                     {
                         this.Tactical = new BotTacticalDeviceController();
                         this.Tactical.Initialize(this);
-                    });
+                    }
+                });
 
-                    // Fix for BotPoseController to pass BotOwner and BotComponentCache
+                // Fix for BotPoseController to pass BotOwner and BotComponentCache
+                if (this.PoseController == null)  // Check if PoseController is already initialized
+                {
                     this.PoseController = new BotPoseController(bot, this);  // Corrected constructor call
                 }
 
                 // Initialize non-Unity components regardless of headless mode
-                this.HearingDamage = new HearingDamageComponent();
-                this.Tilt = new BotTilt(bot);
+                if (this.HearingDamage == null)
+                {
+                    this.HearingDamage = new HearingDamageComponent();
+                }
 
+                if (this.Tilt == null)
+                {
+                    this.Tilt = new BotTilt(bot);
+                }
+
+                // Initialize SquadPath, LootScanner, DeadBodyScanner, DoorOpener, and other components
                 this.SquadPath = new SquadPathCoordinator();
                 this.SquadPath.Initialize(this);
 

@@ -31,6 +31,9 @@ namespace AIRefactored.AI.Optimization
         private static ManualLogSource? Logger => AIRefactoredController.Logger;
 
         private static readonly Dictionary<int, bool> BotOptimizationState = new Dictionary<int, bool>(); // Track optimization state
+        private static readonly Dictionary<int, float> LastEscalationTimes = new Dictionary<int, float>(); // Track escalation cooldown times
+
+        private const float EscalationCooldownTime = 10f; // Time between escalation triggers in seconds
 
         #endregion
 
@@ -93,6 +96,13 @@ namespace AIRefactored.AI.Optimization
                 return;
             }
 
+            int botId = bot.GetInstanceID();
+            if (LastEscalationTimes.ContainsKey(botId) && Time.time - LastEscalationTimes[botId] < EscalationCooldownTime)
+            {
+                Logger?.LogWarning("[AIRefactored] Escalation skipped due to cooldown for bot: " + bot?.Profile?.Info?.Nickname ?? "Unknown");
+                return;
+            }
+
             BotGlobalsMindSettings mind = bot.Settings.FileSettings.Mind;
 
             // Perform the escalation
@@ -102,6 +112,8 @@ namespace AIRefactored.AI.Optimization
 
             string botName = bot.Profile?.Info?.Nickname ?? "Unknown";
             Logger?.LogInfo("[AIRefactored] Escalation triggered for bot: " + botName);
+
+            LastEscalationTimes[botId] = Time.time; // Record the time of escalation
         }
 
         #endregion

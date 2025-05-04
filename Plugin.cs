@@ -49,6 +49,8 @@ namespace AIRefactored
 
         #region Unity Lifecycle
 
+        private static bool _isWorldInitialized = false;  // Flag to prevent re-initialization
+
         private void Awake()
         {
             try
@@ -60,8 +62,12 @@ namespace AIRefactored
                 AIRefactoredController.Initialize(_log);
                 BotWorkScheduler.AutoInjectFlushHost();
 
-                // Initialize world systems and bot spawns (for both headless and client-hosted environments)
-                InitializeWorldAndBots();
+                // Prevent unnecessary repeated initialization or component addition
+                if (!_isWorldInitialized)
+                {
+                    InitializeWorldAndBots();
+                    _isWorldInitialized = true;  // Flag to prevent re-initialization
+                }
 
                 _log.LogInfo("[AIRefactored] [Init] Plugin startup complete.");
             }

@@ -15,6 +15,7 @@ namespace AIRefactored.AI.Optimization
     using AIRefactored.Runtime;
     using BepInEx.Logging;
     using EFT;
+    using UnityEngine;
 
     /// <summary>
     /// Logs and verifies runtime bot AI settings like reaction thresholds, run chance, and role assignment.
@@ -27,6 +28,8 @@ namespace AIRefactored.AI.Optimization
 
         private readonly Dictionary<string, bool> _optimizationApplied = new Dictionary<string, bool>(64);
         private static ManualLogSource? Logger => AIRefactoredController.Logger;
+        private static readonly Dictionary<int, float> LastOptimizationLogs = new Dictionary<int, float>(); // Added cooldown for logging
+        private const float OptimizationLogCooldown = 5f; // 5 seconds cooldown between optimization logs
 
         #endregion
 
@@ -62,6 +65,7 @@ namespace AIRefactored.AI.Optimization
             // Skip if optimization has already been applied
             if (_optimizationApplied.TryGetValue(botId, out bool already) && already)
             {
+                if (!ShouldLogOptimization(botOwner)) return; // Check if we should log optimization
                 Logger?.LogDebug("[BotAIOptimization] Optimization already applied for bot: " + botId);
                 return;
             }
@@ -108,6 +112,21 @@ namespace AIRefactored.AI.Optimization
         #endregion
 
         #region Private Helpers
+
+        private bool ShouldLogOptimization(BotOwner botOwner)
+        {
+            int botId = botOwner.GetInstanceID();
+            if (LastOptimizationLogs.ContainsKey(botId))
+            {
+                if (Time.time - LastOptimizationLogs[botId] < OptimizationLogCooldown)
+                {
+                    return false; // Prevent log if within cooldown
+                }
+            }
+
+            LastOptimizationLogs[botId] = Time.time;
+            return true; // Allow logging if cooldown has passed
+        }
 
         private void LogCognition(BotOwner bot)
         {

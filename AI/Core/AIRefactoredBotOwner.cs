@@ -27,6 +27,7 @@ namespace AIRefactored.AI.Core
 
         private static readonly ManualLogSource Logger = AIRefactoredController.Logger;
         private static readonly PersonalityType[] PersonalityTypes = (PersonalityType[])Enum.GetValues(typeof(PersonalityType));
+        private static bool _isPersonalitySet = false; // Flag to prevent repeated personality assignment
 
         #endregion
 
@@ -83,21 +84,38 @@ namespace AIRefactored.AI.Core
                 throw new ArgumentNullException(nameof(cache));
             }
 
-            this.Bot = bot;
-            this.Cache = cache;
-
-            // Ensure personality is assigned if not already done
-            if (!this.HasPersonality())
+            // Only assign the Bot and Cache if they are not already assigned
+            if (this.Bot == null)
             {
-                this.InitProfile(this.GetRandomPersonality());
+                this.Bot = bot;
             }
 
-            string nickname = bot.Profile?.Info?.Nickname ?? "Unnamed";
-
-            // Only log in non-headless environments to avoid excess log writes in headless mode
-            if (!FikaHeadlessDetector.IsHeadless)
+            if (this.Cache == null)
             {
-                Logger.LogDebug("[AIRefactoredBotOwner] Initialized for bot: " + nickname);
+                this.Cache = cache;
+            }
+
+            try
+            {
+                // Ensure personality is assigned only once and avoid repeated assignments
+                if (!_isPersonalitySet)
+                {
+                    _isPersonalitySet = true; // Set the flag to prevent repeated assignments
+                    this.InitProfile(this.GetRandomPersonality());
+                }
+
+                string nickname = bot.Profile?.Info?.Nickname ?? "Unnamed";
+
+                // Only log in non-headless environments to avoid excess log writes in headless mode
+                if (!FikaHeadlessDetector.IsHeadless)
+                {
+                    Logger.LogDebug("[AIRefactoredBotOwner] Initialized for bot: " + nickname);
+                }
+            }
+            catch (Exception ex)
+            {
+                Logger.LogError("[AIRefactoredBotOwner] Initialization failed: " + ex.Message + "\n" + ex.StackTrace);
+                throw;
             }
         }
 

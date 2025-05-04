@@ -52,16 +52,29 @@ namespace AIRefactored.Core
 
         #region Compound LayerMasks
 
-        public static readonly LayerMask PlayerMask = 1 << Player;
-        public static readonly LayerMask DefaultMask = 1 << Default;
-        public static readonly LayerMask HitColliderMask = 1 << HitCollider;
-        public static readonly LayerMask LootLayerMask = 1 << Loot;
-        public static readonly LayerMask InteractiveMask = 1 << Interactive;
-        public static readonly LayerMask TriggersMask = 1 << Trigger;
-        public static readonly LayerMask TransparentMask = 1 << TransparentFX;
-        public static readonly LayerMask TerrainMask = 1 << Terrain;
-        public static readonly LayerMask DisablerCullingObjectMask = 1 << DisablerCullingObject;
+        // Pre-calculate layer masks to avoid repeated LayerMask.GetMask calls in runtime
+        private static readonly LayerMask _playerMask = 1 << Player;
+        private static readonly LayerMask _defaultMask = 1 << Default;
+        private static readonly LayerMask _hitColliderMask = 1 << HitCollider;
+        private static readonly LayerMask _lootLayerMask = 1 << Loot;
+        private static readonly LayerMask _interactiveMask = 1 << Interactive;
+        private static readonly LayerMask _triggersMask = 1 << Trigger;
+        private static readonly LayerMask _transparentMask = 1 << TransparentFX;
+        private static readonly LayerMask _terrainMask = 1 << Terrain;
+        private static readonly LayerMask _disablerCullingObjectMask = 1 << DisablerCullingObject;
 
+        // Use precomputed masks for compound operations
+        public static LayerMask PlayerMask => _playerMask;
+        public static LayerMask DefaultMask => _defaultMask;
+        public static LayerMask HitColliderMask => _hitColliderMask;
+        public static LayerMask LootLayerMask => _lootLayerMask;
+        public static LayerMask InteractiveMask => _interactiveMask;
+        public static LayerMask TriggersMask => _triggersMask;
+        public static LayerMask TransparentMask => _transparentMask;
+        public static LayerMask TerrainMask => _terrainMask;
+        public static LayerMask DisablerCullingObjectMask => _disablerCullingObjectMask;
+
+        // Other pre-calculated compound masks
         public static readonly LayerMask HighPolyWithTerrainMask =
             (1 << Terrain) | (1 << HighPolyCollider);
 

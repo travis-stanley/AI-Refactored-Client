@@ -45,6 +45,9 @@ namespace AIRefactored.AI.Movement
         private float _pauseUntil;
         private float _prepCrouchUntil;
 
+        private bool _isLeaning = false; // To prevent redundant lean actions
+        private bool _isCrouching = false; // To prevent redundant crouch actions
+
         #endregion
 
         #region Initialization
@@ -173,23 +176,33 @@ namespace AIRefactored.AI.Movement
 
             if (this.CheckWall(origin, left, checkDistance))
             {
-                if (this.AttemptCrouch(time))
+                if (!this._isCrouching && this.AttemptCrouch(time))
                 {
+                    this._isCrouching = true;
                     return true;
                 }
 
-                this.TriggerLean(BotTiltType.left, time);
+                if (!this._isLeaning)
+                {
+                    this.TriggerLean(BotTiltType.left, time);
+                    this._isLeaning = true;
+                }
                 return true;
             }
 
             if (this.CheckWall(origin, right, checkDistance))
             {
-                if (this.AttemptCrouch(time))
+                if (!this._isCrouching && this.AttemptCrouch(time))
                 {
+                    this._isCrouching = true;
                     return true;
                 }
 
-                this.TriggerLean(BotTiltType.right, time);
+                if (!this._isLeaning)
+                {
+                    this.TriggerLean(BotTiltType.right, time);
+                    this._isLeaning = true;
+                }
                 return true;
             }
 
@@ -239,6 +252,7 @@ namespace AIRefactored.AI.Movement
             {
                 this._cache.Tilt.tiltOff = time - 1f;
                 this._cache.Tilt.ManualUpdate();
+                this._isLeaning = false; // Reset the lean state after it's executed
             }
         }
 

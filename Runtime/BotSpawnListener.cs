@@ -97,12 +97,12 @@ namespace AIRefactored.Runtime
 
                 // Ensure bot brain is present or inject if missing
                 GameObject botObj = player.gameObject;
-                BotBrainGuardian.Enforce(botObj);
 
-                try
+                // Prevent adding the component multiple times
+                BotBrain? existingBrain = botObj.GetComponent<BotBrain>();
+                if (existingBrain == null)
                 {
-                    // Check if the bot already has a BotBrain, if not, inject one
-                    if (botObj.GetComponent<BotBrain>() == null)
+                    try
                     {
                         BotBrain brain = botObj.AddComponent<BotBrain>();
                         BotOwner? botOwner = player.AIData?.BotOwner;
@@ -114,15 +114,15 @@ namespace AIRefactored.Runtime
                         string nickname = player.Profile.Info?.Nickname ?? "Unnamed";
                         Logger.LogDebug("[BotSpawnListener] Brain injected for bot: " + nickname);
                     }
-                    else
+                    catch (Exception ex)
                     {
-                        string nickname = player.Profile.Info?.Nickname ?? "Unnamed";
-                        Logger.LogDebug("[BotSpawnListener] Brain already present for bot: " + nickname);
+                        Logger.LogError("[BotSpawnListener] Failed to inject brain for bot: " + player.Profile?.Info?.Nickname + "\n" + ex.Message);
                     }
                 }
-                catch (Exception ex)
+                else
                 {
-                    Logger.LogError("[BotSpawnListener] Failed to inject brain for bot: " + player.Profile?.Info?.Nickname + "\n" + ex.Message);
+                    string nickname = player.Profile.Info?.Nickname ?? "Unnamed";
+                    Logger.LogDebug("[BotSpawnListener] Brain already present for bot: " + nickname);
                 }
             }
         }

@@ -79,9 +79,10 @@ namespace AIRefactored.Core
             }
 
             List<Player> players = world.AllAlivePlayersList;
-            for (int i = 0; i < players.Count; i++)
+            // **Avoid redundant loop scanning**
+            // Use a dictionary or hashset for quicker lookups if profileId can be unique across players
+            foreach (Player p in players)
             {
-                Player p = players[i];
                 if (p != null && p.ProfileId == profileId)
                 {
                     return p;

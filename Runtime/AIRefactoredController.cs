@@ -69,6 +69,12 @@ namespace AIRefactored.Runtime
 
                 _instance = this;
                 DontDestroyOnLoad(this.gameObject);
+
+                // Prevent adding the same component repeatedly
+                if (GetComponent<AIRefactoredController>() == null)
+                {
+                    gameObject.AddComponent<AIRefactoredController>();
+                }
             }
 
             Logger?.LogInfo("[AIRefactored] [Awake] Initialization started.");

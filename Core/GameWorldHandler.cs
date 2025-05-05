@@ -325,7 +325,6 @@ namespace AIRefactored.Core
                 if (_bootstrapHost == null) _bootstrapHost = new GameObject("AIRefactored.BootstrapHost");
                 UnityEngine.Object.DontDestroyOnLoad(_bootstrapHost);
 
-                _bootstrapHost.AddComponent<WorldBootstrapper>();
                 _bootstrapHost.AddComponent<BotSystemRecoveryWatcher>();
                 _bootstrapHost.AddComponent<BotSpawnListener>();
 

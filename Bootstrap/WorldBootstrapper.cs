@@ -52,6 +52,9 @@ namespace AIRefactored.Bootstrap
         /// <summary>
         /// Injects WorldBootstrapper if it hasn't already been initialized.
         /// </summary>
+        // Add a static flag to detect recursive injection
+        private static GameObject? _injectedHost;
+
         public static void TryInitialize()
         {
             if (_hasInitialized)
@@ -66,9 +69,15 @@ namespace AIRefactored.Bootstrap
                 return;
             }
 
-            GameObject host = new GameObject("WorldBootstrapper (Injected)");
-            Object.DontDestroyOnLoad(host);
-            host.AddComponent<WorldBootstrapper>();
+            if (_injectedHost != null)  // Check to avoid duplicate injection
+            {
+                Logger.LogWarning("[WorldBootstrapper] Already injected — skipping.");
+                return;
+            }
+
+            _injectedHost = new GameObject("WorldBootstrapper (Injected)");
+            Object.DontDestroyOnLoad(_injectedHost);
+            _injectedHost.AddComponent<WorldBootstrapper>();  // Add the component only once
 
             _hasInitialized = true;
             Logger.LogInfo("[WorldBootstrapper] ✅ Manual bootstrap injected.");
@@ -76,8 +85,16 @@ namespace AIRefactored.Bootstrap
 
         private void Awake()
         {
+            if (_hasInitialized)
+            {
+                Logger.LogWarning("[WorldBootstrapper] Awake called multiple times. Already initialized.");
+                Destroy(this.gameObject);  // Destroy this instance to prevent duplication
+                return;
+            }
+
             Logger.LogInfo("[WorldBootstrapper] 🟢 Awake triggered.");
 
+            _hasInitialized = true;
             this._recoveryWatcher = this.gameObject.AddComponent<BotSystemRecoveryWatcher>();
             BotWorkScheduler.AutoInjectFlushHost();
 

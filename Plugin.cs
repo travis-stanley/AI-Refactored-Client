@@ -11,165 +11,63 @@
 namespace AIRefactored
 {
     using System;
-    using System.Collections;
-    using AIRefactored.AI.Core;
-    using AIRefactored.AI.Optimization;
-    using AIRefactored.Bootstrap;
-    using AIRefactored.Core;
-    using AIRefactored.Runtime;
     using BepInEx;
     using BepInEx.Logging;
-    using Comfort.Common;
-    using EFT;
-    using Fika.Core;
-    using UnityEngine;
+    using AIRefactored.Runtime;
+    using AIRefactored.Core;
 
     /// <summary>
-    /// Entry point for AI-Refactored mod. Registers world bootstrap, logging, and AI system hooks.
-    /// Supports both headless and client-hosted environments with full parity.
+    /// Entry point for AI-Refactored mod. Kicks off the global controller which
+    /// handles *all* further injection and bootstrapping exactly once.
     /// </summary>
     [BepInPlugin("com.spock.airefactored", "AI-Refactored", "1.0.0")]
     public sealed class Plugin : BaseUnityPlugin
     {
-        #region Static Fields
-
         private static ManualLogSource? _log;
-        private static bool _hasInitialized;
-        private static readonly object LockObj = new object();
-
-        #endregion
-
-        #region Properties
+        private static bool _initialized;
+        private static readonly object _lock = new object();
 
         /// <summary>
-        /// Gets the global logger instance.
+        /// Global logger for other classes to use.
         /// </summary>
         public static ManualLogSource LoggerInstance =>
-            _log ?? throw new InvalidOperationException("[AIRefactored] Logger could not be initialized.");
-
-        #endregion
-
-        #region Unity Lifecycle
+            _log ?? throw new InvalidOperationException("Logger was not initialized.");
 
         private void Awake()
         {
-            lock (LockObj)
+            lock (_lock)
             {
-                if (_hasInitialized)
+                if (_initialized)
                 {
-                    _log?.LogWarning("[AIRefactored] [Awake] Plugin already initialized — skipping duplicate init.");
+                    Logger.LogWarning("[AIRefactored] Plugin already initialized; skipping duplicate Awake.");
                     return;
                 }
 
-                _log = Logger;
-                if (_log == null)
-                {
-                    throw new InvalidOperationException("[AIRefactored] Logger is null.");
-                }
+                _log = Logger; // BaseUnityPlugin.Logger
+                _log.LogInfo("[AIRefactored] Plugin Awake — initializing AIRefactoredController.");
 
-                _log.LogInfo("[AIRefactored] [Init] Plugin starting...");
-
-                // Initialize global controller
+                // Hand off *everything* to our single controller instance.
                 AIRefactoredController.Initialize(_log);
 
-                // Only inject the flush-runner in client-host mode
-                if (!FikaHeadlessDetector.IsHeadless)
-                {
-                    BotWorkScheduler.AutoInjectFlushHost();
-                }
-
-                // Hook up world, bots, and bootstrapper
-                InitializeWorldAndBots();
-
-                _hasInitialized = true;
-                _log.LogInfo("[AIRefactored] [Init] Plugin startup complete.");
+                _initialized = true;
+                _log.LogInfo("[AIRefactored] Plugin initialization complete.");
             }
         }
 
         private void OnDestroy()
         {
-            try
+            lock (_lock)
             {
-                lock (LockObj)
-                {
-                    _hasInitialized = false;
-                }
-
-                if (FikaHeadlessDetector.IsHeadless)
-                {
-                    _log?.LogInfo("[AIRefactored] [Shutdown] Headless mode — bot unhook skipped.");
-                }
-                else
-                {
-                    GameWorldHandler.UnhookBotSpawns();
-                }
-
-                _log?.LogInfo("[AIRefactored] [Shutdown] Plugin shutdown complete.");
+                _initialized = false;
             }
-            catch (Exception ex)
+
+            if (_log != null)
             {
-                _log?.LogError($"[AIRefactored] [Shutdown] Exception: {ex.Message}\n{ex.StackTrace}");
+                _log.LogInfo("[AIRefactored] Plugin OnDestroy — cleaning up.");
             }
+
+            // Tear down any host injections if still up.
+            GameWorldHandler.UnhookBotSpawns();
         }
-
-        #endregion
-
-        #region Initialization Logic
-
-        private void InitializeWorldAndBots()
-        {
-            try
-            {
-                _log?.LogInfo("[AIRefactored] Initializing world and bot systems...");
-
-                GameWorldHandler.TryInitializeWorld();
-                GameWorldHandler.HookBotSpawns();
-
-                // Only on a real client-host do we add the full WorldBootstrapper
-                if (!FikaHeadlessDetector.IsHeadless)
-                {
-                    WorldBootstrapper.TryInitialize();
-                    _log?.LogInfo("[AIRefactored] [Bootstrap] Client-host bootstrap initialized.");
-                }
-                else
-                {
-                    _log?.LogInfo("[AIRefactored] [Bootstrap] Headless bootstrap active.");
-                }
-            }
-            catch (Exception ex)
-            {
-                _log?.LogError($"[AIRefactored] [Bootstrap] Exception: {ex.Message}\n{ex.StackTrace}");
-            }
-        }
-
-        #endregion
-
-        #region Coroutine Utilities
-
-        private IEnumerator SafeCoroutine(IEnumerator routine)
-        {
-            while (true)
-            {
-                object? current;
-
-                try
-                {
-                    if (!routine.MoveNext())
-                    {
-                        yield break;
-                    }
-                    current = routine.Current;
-                }
-                catch (Exception ex)
-                {
-                    _log?.LogError($"[AIRefactored] [SafeCoroutine] Exception: {ex.Message}\n{ex.StackTrace}");
-                    yield break;
-                }
-
-                yield return current;
-            }
-        }
-
-        #endregion
     }
 }

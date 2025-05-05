@@ -13,13 +13,15 @@ namespace AIRefactored.Runtime
     using System;
     using System.Collections;
     using BepInEx.Logging;
-    using EFT;
     using UnityEngine;
     using AIRefactored.Core;
+    using AIRefactored.Bootstrap;
+    using AIRefactored.AI.Optimization;
 
     /// <summary>
-    /// Global runtime controller for AI-Refactored.
-    /// Handles deferred world bootstrap, system recovery, and coroutine utility dispatch.
+    /// Global entry point for AI-Refactored.
+    /// Ensures exactly one controller lives, injects the FlushRunner,
+    /// and bootstraps world & bot systems identically in headless and client-host modes.
     /// </summary>
     public sealed class AIRefactoredController : MonoBehaviour
     {
@@ -27,25 +29,49 @@ namespace AIRefactored.Runtime
 
         private static AIRefactoredController? _instance;
         private static ManualLogSource? _logger;
-        private static readonly object LockObj = new object();
-        private static volatile bool _bootstrapStarted;
+        private static bool _initialized;
         private static GameObject? _host;
-
-        #endregion
-
-        #region Instance Fields
-
-        private bool _bootstrapComplete;
-        private bool _worldInitialized;
+        private static readonly object InitLock = new object();
 
         #endregion
 
         #region Properties
 
+        /// <summary>
+        /// BepInEx logger, passed from Plugin.cs.
+        /// </summary>
         public static ManualLogSource Logger =>
-            _logger ?? throw new InvalidOperationException("[AIRefactored] Logger accessed before controller initialization.");
+            _logger ?? throw new InvalidOperationException("[AIRefactoredController] Logger accessed before Initialize.");
 
-        public static bool IsInitialized => _instance != null;
+        #endregion
+
+        #region Initialization
+
+        /// <summary>
+        /// Call once from Plugin.Awake().
+        /// </summary>
+        /// <param name="logger">The BepInEx logger to use.</param>
+        public static void Initialize(ManualLogSource logger)
+        {
+            lock (InitLock)
+            {
+                if (_initialized)
+                {
+                    logger.LogWarning("[AIRefactoredController] Already initialized, skipping.");
+                    return;
+                }
+
+                _logger = logger ?? throw new ArgumentNullException(nameof(logger));
+
+                // Create a dedicated host GameObject
+                _host = new GameObject("AIRefactoredController");
+                DontDestroyOnLoad(_host);
+                _instance = _host.AddComponent<AIRefactoredController>();
+
+                _initialized = true;
+                logger.LogInfo("[AIRefactoredController] Initialized host, scheduling bootstrap.");
+            }
+        }
 
         #endregion
 
@@ -53,147 +79,70 @@ namespace AIRefactored.Runtime
 
         private void Awake()
         {
-            lock (LockObj)
+            // Only the designated host instance should remain
+            if (_instance != this)
             {
-                // If we already have a different instance, destroy this one.
-                if (_instance != null && _instance != this)
-                {
-                    Destroy(this.gameObject);
-                    return;
-                }
-
-                _instance = this;
-                DontDestroyOnLoad(this.gameObject);
+                Destroy(gameObject);
+                return;
             }
 
-            Logger.LogInfo("[AIRefactored] [Awake] Controller instance active.");
+            Logger.LogInfo("[AIRefactoredController] Awake — injecting FlushRunner.");
+
+            // Always inject our flush runner (works both headless & client-host)
+            BotWorkScheduler.AutoInjectFlushHost();
+
+            // Kick off the bootstrap on next frame
+            try
+            {
+                StartCoroutine(RunBootstrapSafe());
+            }
+            catch (Exception ex)
+            {
+                Logger.LogError($"[AIRefactoredController] Error starting bootstrap coroutine: {ex}");
+            }
         }
 
         private void OnDestroy()
         {
-            lock (LockObj)
+            // If the host is destroyed, clear static refs
+            if (_instance == this)
             {
-                if (_instance == this)
+                Logger.LogInfo("[AIRefactoredController] OnDestroy — cleaning up static references.");
+                _instance = null;
+                _logger = null;
+                _initialized = false;
+
+                if (_host == this.gameObject)
                 {
-                    _instance = null;
-                    _bootstrapStarted = false;
-
-                    // If this GameObject was our host, clear the reference
-                    if (_host == this.gameObject)
-                    {
-                        _host = null;
-                    }
-                }
-            }
-
-            _bootstrapComplete = false;
-            _worldInitialized = false;
-
-            Logger.LogInfo("[AIRefactored] [OnDestroy] Controller destroyed.");
-        }
-
-        #endregion
-
-        #region Initialization
-
-        /// <summary>
-        /// Initializes the runtime AI-Refactored controller.
-        /// Safe for both client-hosted and headless environments.
-        /// </summary>
-        public static void Initialize(ManualLogSource logger)
-        {
-            lock (LockObj)
-            {
-                if (_instance != null)
-                {
-                    logger.LogWarning("[AIRefactored] [Init] Controller already initialized — skipping.");
-                    return;
-                }
-
-                if (_host != null)
-                {
-                    logger.LogWarning("[AIRefactored] [Init] Host GameObject already exists — skipping.");
-                    return;
-                }
-
-                _logger = logger ?? throw new ArgumentNullException(nameof(logger));
-
-                // Create exactly one host GameObject and attach the controller
-                _host = new GameObject("AIRefactoredController");
-                DontDestroyOnLoad(_host);
-                _instance = _host.AddComponent<AIRefactoredController>();
-
-                _logger.LogInfo("[AIRefactored] [Init] Controller created — starting deferred bootstrap.");
-
-                if (!_bootstrapStarted)
-                {
-                    _bootstrapStarted = true;
-                    _instance.StartCoroutine(_instance.RunDeferredBootstrap());
+                    _host = null;
                 }
             }
         }
 
         #endregion
 
-        #region Deferred Bootstrap
+        #region Bootstrapping
 
-        private IEnumerator RunDeferredBootstrap()
+        private IEnumerator RunBootstrapSafe()
         {
-            Logger.LogInfo("[AIRefactored] [RunDeferredBootstrap] Starting...");
+            // Wait one frame so everything else has awakened
+            yield return null;
 
-            while (!_worldInitialized && !_bootstrapComplete)
+            Logger.LogInfo("[AIRefactoredController] ▶ Beginning world & bot bootstrap...");
+
+            try
             {
-                yield return null;
+                // Core world init & bot wiring (works both headless & client-host)
+                GameWorldHandler.TryInitializeWorld();
+                GameWorldHandler.HookBotSpawns();
 
-                if (GameWorldHandler.IsInitialized)
-                {
-                    Logger.LogInfo("[AIRefactored] [Bootstrap] GameWorld initialized successfully.");
-                    _worldInitialized = true;
-                    _bootstrapComplete = true;
-                    yield break;
-                }
+                // Full world bootstrap (zones, navmesh, loot, hotspots, etc.)
+                WorldBootstrapper.TryInitialize();
+                Logger.LogInfo("[AIRefactoredController] ✅ WorldBootstrapper injected.");
             }
-
-            if (!_bootstrapComplete)
+            catch (Exception ex)
             {
-                Logger.LogError("[AIRefactored] [Bootstrap] World initialization never completed.");
-            }
-        }
-
-        #endregion
-
-        #region Utility
-
-        /// <summary>
-        /// Executes a coroutine from any static context using the controller instance.
-        /// </summary>
-        /// <param name="routine">Coroutine routine to run.</param>
-        public static void RunCoroutine(IEnumerator routine)
-        {
-            lock (LockObj)
-            {
-                if (_instance != null)
-                {
-                    _instance.StartCoroutine(routine);
-                }
-                else if (_logger != null)
-                {
-                    _logger.LogError("[AIRefactored] [RunCoroutine] Cannot execute coroutine — controller not initialized.");
-                }
-            }
-        }
-
-        /// <summary>
-        /// Attempts to get the controller instance.
-        /// </summary>
-        /// <param name="controller">Outputs the current instance if initialized.</param>
-        /// <returns>True if initialized; false otherwise.</returns>
-        public static bool TryGetInstance(out AIRefactoredController? controller)
-        {
-            lock (LockObj)
-            {
-                controller = _instance;
-                return controller != null;
+                Logger.LogError($"[AIRefactoredController] Exception during bootstrap: {ex}");
             }
         }
 

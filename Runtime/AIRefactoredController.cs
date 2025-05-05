@@ -12,10 +12,10 @@ namespace AIRefactored.Runtime
 {
     using System;
     using System.Collections;
-    using AIRefactored.Core;
     using BepInEx.Logging;
     using EFT;
     using UnityEngine;
+    using AIRefactored.Core;
 
     /// <summary>
     /// Global runtime controller for AI-Refactored.
@@ -29,6 +29,7 @@ namespace AIRefactored.Runtime
         private static ManualLogSource? _logger;
         private static readonly object LockObj = new object();
         private static volatile bool _bootstrapStarted;
+        private static GameObject? _host;
 
         #endregion
 
@@ -54,6 +55,7 @@ namespace AIRefactored.Runtime
         {
             lock (LockObj)
             {
+                // If we already have a different instance, destroy this one.
                 if (_instance != null && _instance != this)
                 {
                     Destroy(this.gameObject);
@@ -62,14 +64,9 @@ namespace AIRefactored.Runtime
 
                 _instance = this;
                 DontDestroyOnLoad(this.gameObject);
-
-                if (GetComponent<AIRefactoredController>() == null)
-                {
-                    this.gameObject.AddComponent<AIRefactoredController>();
-                }
             }
 
-            Logger?.LogInfo("[AIRefactored] [Awake] Controller instance active.");
+            Logger.LogInfo("[AIRefactored] [Awake] Controller instance active.");
         }
 
         private void OnDestroy()
@@ -80,13 +77,19 @@ namespace AIRefactored.Runtime
                 {
                     _instance = null;
                     _bootstrapStarted = false;
+
+                    // If this GameObject was our host, clear the reference
+                    if (_host == this.gameObject)
+                    {
+                        _host = null;
+                    }
                 }
             }
 
             _bootstrapComplete = false;
             _worldInitialized = false;
 
-            Logger?.LogInfo("[AIRefactored] [OnDestroy] Controller destroyed.");
+            Logger.LogInfo("[AIRefactored] [OnDestroy] Controller destroyed.");
         }
 
         #endregion
@@ -97,7 +100,6 @@ namespace AIRefactored.Runtime
         /// Initializes the runtime AI-Refactored controller.
         /// Safe for both client-hosted and headless environments.
         /// </summary>
-        /// <param name="logger">The BepInEx logger to use for diagnostics.</param>
         public static void Initialize(ManualLogSource logger)
         {
             lock (LockObj)
@@ -108,11 +110,18 @@ namespace AIRefactored.Runtime
                     return;
                 }
 
+                if (_host != null)
+                {
+                    logger.LogWarning("[AIRefactored] [Init] Host GameObject already exists — skipping.");
+                    return;
+                }
+
                 _logger = logger ?? throw new ArgumentNullException(nameof(logger));
 
-                GameObject host = new GameObject("AIRefactoredController");
-                _instance = host.AddComponent<AIRefactoredController>();
-                DontDestroyOnLoad(host);
+                // Create exactly one host GameObject and attach the controller
+                _host = new GameObject("AIRefactoredController");
+                DontDestroyOnLoad(_host);
+                _instance = _host.AddComponent<AIRefactoredController>();
 
                 _logger.LogInfo("[AIRefactored] [Init] Controller created — starting deferred bootstrap.");
 
@@ -130,7 +139,7 @@ namespace AIRefactored.Runtime
 
         private IEnumerator RunDeferredBootstrap()
         {
-            Logger?.LogInfo("[AIRefactored] [RunDeferredBootstrap] Starting...");
+            Logger.LogInfo("[AIRefactored] [RunDeferredBootstrap] Starting...");
 
             while (!_worldInitialized && !_bootstrapComplete)
             {
@@ -138,7 +147,7 @@ namespace AIRefactored.Runtime
 
                 if (GameWorldHandler.IsInitialized)
                 {
-                    Logger?.LogInfo("[AIRefactored] [Bootstrap] GameWorld initialized successfully.");
+                    Logger.LogInfo("[AIRefactored] [Bootstrap] GameWorld initialized successfully.");
                     _worldInitialized = true;
                     _bootstrapComplete = true;
                     yield break;
@@ -147,7 +156,7 @@ namespace AIRefactored.Runtime
 
             if (!_bootstrapComplete)
             {
-                Logger?.LogError("[AIRefactored] [Bootstrap] World initialization never completed.");
+                Logger.LogError("[AIRefactored] [Bootstrap] World initialization never completed.");
             }
         }
 
@@ -177,8 +186,8 @@ namespace AIRefactored.Runtime
         /// <summary>
         /// Attempts to get the controller instance.
         /// </summary>
-        /// <param name="controller">The current instance, or null if not initialized.</param>
-        /// <returns>True if initialized, false otherwise.</returns>
+        /// <param name="controller">Outputs the current instance if initialized.</param>
+        /// <returns>True if initialized; false otherwise.</returns>
         public static bool TryGetInstance(out AIRefactoredController? controller)
         {
             lock (LockObj)

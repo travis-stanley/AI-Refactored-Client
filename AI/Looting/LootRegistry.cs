@@ -13,6 +13,7 @@ namespace AIRefactored.AI.Looting
     using System;
     using System.Collections.Generic;
     using AIRefactored.Runtime;
+    using BepInEx.Logging;
     using EFT.Interactive;
     using UnityEngine;
 
@@ -36,20 +37,17 @@ namespace AIRefactored.AI.Looting
         private static readonly HashSet<LootItem> _items = new HashSet<LootItem>();
         private static readonly HashSet<GameObject> _watchedObjects = new HashSet<GameObject>();
 
+        private static readonly ManualLogSource Logger = AIRefactoredController.Logger;
 
         #endregion
 
         #region Public API
 
-        public static List<LootableContainer> GetAllContainers()
-        {
-            return new List<LootableContainer>(_containers);
-        }
+        public static List<LootableContainer> GetAllContainers() =>
+            new List<LootableContainer>(_containers);
 
-        public static List<LootItem> GetAllItems()
-        {
-            return new List<LootItem>(_items);
-        }
+        public static List<LootItem> GetAllItems() =>
+            new List<LootItem>(_items);
 
         public static void Clear()
         {
@@ -106,30 +104,27 @@ namespace AIRefactored.AI.Looting
 
         public static void RegisterContainer(LootableContainer? container)
         {
-            if (container == null || _containers.Contains(container))
+            if (container == null || !_containers.Add(container))
             {
                 return;
             }
 
-            _containers.Add(container);
             InjectWatcherIfNeeded(container.gameObject);
         }
 
         public static void RegisterItem(LootItem? item)
         {
-            if (item == null || _items.Contains(item))
+            if (item == null || !_items.Add(item))
             {
                 return;
             }
 
-            _items.Add(item);
             InjectWatcherIfNeeded(item.gameObject);
         }
 
         public static bool TryGetContainerByName(string? name, out LootableContainer? found)
         {
             found = null;
-
             if (string.IsNullOrEmpty(name))
             {
                 return false;
@@ -137,8 +132,7 @@ namespace AIRefactored.AI.Looting
 
             foreach (LootableContainer container in _containers)
             {
-                if (container != null && container.name != null &&
-                    container.name.Equals(name, StringComparison.OrdinalIgnoreCase))
+                if (string.Equals(container?.name, name, StringComparison.OrdinalIgnoreCase))
                 {
                     found = container;
                     return true;
@@ -151,7 +145,6 @@ namespace AIRefactored.AI.Looting
         public static bool TryGetItemByName(string? name, out LootItem? found)
         {
             found = null;
-
             if (string.IsNullOrEmpty(name))
             {
                 return false;
@@ -159,8 +152,7 @@ namespace AIRefactored.AI.Looting
 
             foreach (LootItem item in _items)
             {
-                if (item != null && item.name != null &&
-                    item.name.Equals(name, StringComparison.OrdinalIgnoreCase))
+                if (string.Equals(item?.name, name, StringComparison.OrdinalIgnoreCase))
                 {
                     found = item;
                     return true;
@@ -181,8 +173,26 @@ namespace AIRefactored.AI.Looting
                 return;
             }
 
-            go.AddComponent<LootRuntimeWatcher>();
-            _watchedObjects.Add(go);
+            // If the component is already there, just mark it watched
+            if (go.TryGetComponent<LootRuntimeWatcher>(out _))
+            {
+                _watchedObjects.Add(go);
+                Logger.LogDebug("[LootRegistry] Found existing LootRuntimeWatcher on " + go.name);
+                return;
+            }
+
+            try
+            {
+                // Add the watcher safely
+                var watcher = go.AddComponent<LootRuntimeWatcher>();
+                _watchedObjects.Add(go);
+                Logger.LogDebug("[LootRegistry] Injected LootRuntimeWatcher on " + go.name);
+            }
+            catch (Exception ex)
+            {
+                Logger.LogError("[LootRegistry] Failed to inject LootRuntimeWatcher on "
+                                 + go.name + ": " + ex.Message);
+            }
         }
 
         #endregion

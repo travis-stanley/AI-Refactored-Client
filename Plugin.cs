@@ -61,29 +61,28 @@ namespace AIRefactored
                     return;
                 }
 
-                try
+                _log = Logger;
+                if (_log == null)
                 {
-                    _log = Logger;
-                    if (_log == null)
-                    {
-                        throw new InvalidOperationException("[AIRefactored] Logger is null.");
-                    }
+                    throw new InvalidOperationException("[AIRefactored] Logger is null.");
+                }
 
-                    _log.LogInfo("[AIRefactored] [Init] Plugin starting...");
+                _log.LogInfo("[AIRefactored] [Init] Plugin starting...");
 
-                    AIRefactoredController.Initialize(_log);
+                // Initialize global controller
+                AIRefactoredController.Initialize(_log);
+
+                // Only inject the flush-runner in client-host mode
+                if (!FikaHeadlessDetector.IsHeadless)
+                {
                     BotWorkScheduler.AutoInjectFlushHost();
-
-                    InitializeWorldAndBots();
-                    _hasInitialized = true;
-
-                    _log.LogInfo("[AIRefactored] [Init] Plugin startup complete.");
                 }
-                catch (Exception ex)
-                {
-                    _log?.LogError($"[AIRefactored] [Init] Exception: {ex.Message}\n{ex.StackTrace}");
-                    throw;
-                }
+
+                // Hook up world, bots, and bootstrapper
+                InitializeWorldAndBots();
+
+                _hasInitialized = true;
+                _log.LogInfo("[AIRefactored] [Init] Plugin startup complete.");
             }
         }
 
@@ -126,6 +125,7 @@ namespace AIRefactored
                 GameWorldHandler.TryInitializeWorld();
                 GameWorldHandler.HookBotSpawns();
 
+                // Only on a real client-host do we add the full WorldBootstrapper
                 if (!FikaHeadlessDetector.IsHeadless)
                 {
                     WorldBootstrapper.TryInitialize();
@@ -158,7 +158,6 @@ namespace AIRefactored
                     {
                         yield break;
                     }
-
                     current = routine.Current;
                 }
                 catch (Exception ex)

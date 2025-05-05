@@ -25,27 +25,46 @@ namespace AIRefactored.Runtime
     /// </summary>
     public sealed class BotSpawnListener : MonoBehaviour
     {
-        #region Constants
-
         private const float PollInterval = 1.5f;
-
-        #endregion
-
-        #region Fields
-
         private static readonly HashSet<int> SeenBotIds = new HashSet<int>();
         private static readonly ManualLogSource Logger = AIRefactoredController.Logger;
+
+        // Ensure only one host instance ever exists
+        private static GameObject? _injectedHost;
 
         private float _nextPollTime = -1f;
         private bool _hasWarnedInvalidState;
 
-        #endregion
+        public static void Inject()
+        {
+            if (_injectedHost != null || !GameWorldHandler.IsLocalHost())
+            {
+                return;
+            }
 
-        #region Unity Lifecycle
+            _injectedHost = new GameObject("AIRefactored.BotSpawnListener");
+            DontDestroyOnLoad(_injectedHost);
+            _injectedHost.AddComponent<BotSpawnListener>();
+            Logger.LogInfo("[BotSpawnListener] Injected into scene.");
+        }
+
+        private void Awake()
+        {
+            // Only the injected host may survive
+            if (this.gameObject != _injectedHost)
+            {
+                Logger.LogWarning("[BotSpawnListener] Duplicate instance detected — destroying.");
+                Destroy(this.gameObject);
+                return;
+            }
+        }
 
         private void Update()
         {
-            if (!GameWorldHandler.IsInitialized || !GameWorldHandler.IsLocalHost())
+            // Must be the single injected instance
+            if (this.gameObject != _injectedHost
+                || !GameWorldHandler.IsInitialized
+                || !GameWorldHandler.IsLocalHost())
             {
                 return;
             }
@@ -57,7 +76,6 @@ namespace AIRefactored.Runtime
                     Logger.LogWarning("[BotSpawnListener] GameWorld not ready — deferring bot scan.");
                     _hasWarnedInvalidState = true;
                 }
-
                 return;
             }
 
@@ -68,67 +86,56 @@ namespace AIRefactored.Runtime
             }
 
             float now = Time.time;
-            if (now < _nextPollTime)
-            {
-                return;
-            }
-
+            if (now < _nextPollTime) return;
             _nextPollTime = now + PollInterval;
 
-            List<Player> players = GameWorldHandler.GetAllAlivePlayers();
-            if (players == null || players.Count == 0)
-            {
-                return;
-            }
+            var players = GameWorldHandler.GetAllAlivePlayers();
+            if (players.Count == 0) return;
 
-            for (int i = 0; i < players.Count; i++)
+            foreach (var player in players)
             {
-                Player player = players[i];
-                if (player == null || !player.IsAI)
-                {
-                    continue;
-                }
-
-                GameObject go = player.gameObject;
-                if (go == null || player.Profile == null || player.HealthController == null || player.AIData?.BotOwner == null)
+                if (player == null || !player.IsAI) continue;
+                var go = player.gameObject;
+                if (go == null
+                    || player.Profile == null
+                    || player.HealthController == null
+                    || player.AIData?.BotOwner == null)
                 {
                     continue;
                 }
 
                 int id = go.GetInstanceID();
-                if (SeenBotIds.Contains(id))
-                {
-                    continue;
-                }
-
+                if (SeenBotIds.Contains(id)) continue;
                 SeenBotIds.Add(id);
 
+                // Only add if no brain present
                 if (go.GetComponent<BotBrain>() != null)
                 {
-                    Logger.LogDebug("[BotSpawnListener] Brain already present for bot: " + (player.Profile.Info?.Nickname ?? "Unnamed"));
+                    Logger.LogDebug($"[BotSpawnListener] Brain already present for bot: {player.Profile.Info?.Nickname ?? "Unnamed"}");
                     continue;
                 }
 
                 try
                 {
-                    BotBrain brain = go.AddComponent<BotBrain>();
+                    var brain = go.AddComponent<BotBrain>();
                     brain.Initialize(player.AIData.BotOwner);
-
-                    Logger.LogDebug("[BotSpawnListener] Brain injected for bot: " + (player.Profile.Info?.Nickname ?? "Unnamed"));
+                    Logger.LogDebug($"[BotSpawnListener] Brain injected for bot: {player.Profile.Info?.Nickname ?? "Unnamed"}");
                 }
                 catch (Exception ex)
                 {
-                    Logger.LogError("[BotSpawnListener] Failed to inject brain: " + ex);
+                    Logger.LogError($"[BotSpawnListener] Failed to inject brain: {ex}");
                 }
             }
         }
 
         private void OnDestroy()
         {
-            SeenBotIds.Clear();
-            Logger.LogInfo("[BotSpawnListener] Destroyed — reset for next raid.");
+            if (this.gameObject == _injectedHost)
+            {
+                SeenBotIds.Clear();
+                Logger.LogInfo("[BotSpawnListener] Destroyed — reset for next raid.");
+                _injectedHost = null;
+            }
         }
-
-        #endregion
     }
 }

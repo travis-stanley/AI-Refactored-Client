@@ -75,8 +75,10 @@ namespace AIRefactored.AI.Threads
                 return;
             }
 
-            Player? currentPlayer = _bot.GetPlayer;
-            if (currentPlayer == null || currentPlayer.HealthController == null || !currentPlayer.HealthController.IsAlive)
+            var currentPlayer = _bot.GetPlayer;
+            if (currentPlayer == null
+                || currentPlayer.HealthController == null
+                || !currentPlayer.HealthController.IsAlive)
             {
                 _isValid = false;
                 Logger.LogWarning("[BotBrain] Bot invalidated at runtime.");
@@ -125,6 +127,9 @@ namespace AIRefactored.AI.Threads
             _groupBehavior?.Tick(delta);
         }
 
+        /// <summary>
+        /// Initializes this Brain for the given BotOwner.
+        /// </summary>
         public void Initialize(BotOwner bot)
         {
             if (!GameWorldHandler.IsLocalHost())
@@ -133,7 +138,8 @@ namespace AIRefactored.AI.Threads
                 return;
             }
 
-            if (bot == null || bot.GetPlayer == null || bot.IsDead || !bot.GetPlayer.IsAI || bot.GetPlayer.IsYourPlayer)
+            // validate input before we store it
+            if (bot.GetPlayer == null || bot.IsDead || !bot.GetPlayer.IsAI || bot.GetPlayer.IsYourPlayer)
             {
                 Logger.LogWarning("[BotBrain] Initialization rejected: invalid or real player.");
                 return;
@@ -146,15 +152,22 @@ namespace AIRefactored.AI.Threads
             {
                 GameObject obj = _player.gameObject;
 
-                _cache = obj.GetComponent<BotComponentCache>() ?? obj.AddComponent<BotComponentCache>();
-                _cache.Initialize(bot);
-
-                if (_cache == null)
+                // --- BotComponentCache injection with TryGet + safe AddComponent ---
+                if (!obj.TryGetComponent<BotComponentCache>(out _cache))
                 {
-                    Logger.LogError("[BotBrain] BotComponentCache is unexpectedly null after initialization.");
-                    _isValid = false;
-                    return;
+                    try
+                    {
+                        _cache = obj.AddComponent<BotComponentCache>();
+                    }
+                    catch (Exception ex)
+                    {
+                        Logger.LogError("[BotBrain] Failed to AddComponent<BotComponentCache>: " + ex);
+                        _isValid = false;
+                        return;
+                    }
                 }
+
+                _cache.Initialize(bot);
 
                 if (_cache.Combat == null)
                 {
@@ -163,12 +176,13 @@ namespace AIRefactored.AI.Threads
                     return;
                 }
 
-                AIRefactoredBotOwner? owner = BotRegistry.TryGetRefactoredOwner(bot.ProfileId);
-                if (owner != null)
+                // optional owner hooking
+                if (BotRegistry.TryGetRefactoredOwner(bot.ProfileId) is AIRefactoredBotOwner owner)
                 {
                     _cache.SetOwner(owner);
                 }
 
+                // cache all subsystems
                 _combat = _cache.Combat;
                 _movement = _cache.Movement;
                 _pose = _cache.PoseController;
@@ -176,24 +190,16 @@ namespace AIRefactored.AI.Threads
                 _tilt = _cache.Tilt;
                 _groupBehavior = _cache.GroupBehavior;
 
+                // create or fetch others
                 _corner = new BotCornerScanner(bot, _cache);
                 _jump = new BotJumpController(bot, _cache);
 
-                _vision = new BotVisionSystem();
-                _vision.Initialize(_cache);
+                _vision = new BotVisionSystem(); _vision.Initialize(_cache);
+                _hearing = new BotHearingSystem(); _hearing.Initialize(_cache);
+                _perception = new BotPerceptionSystem(); _perception.Initialize(_cache);
 
-                _hearing = new BotHearingSystem();
-                _hearing.Initialize(_cache);
-
-                _perception = new BotPerceptionSystem();
-                _perception.Initialize(_cache);
-
-                _flashReaction = new BotFlashReactionComponent();
-                _flashReaction.Initialize(_cache);
-
-                _flashDetector = new FlashGrenadeComponent();
-                _flashDetector.Initialize(_cache);
-
+                _flashReaction = new BotFlashReactionComponent(); _flashReaction.Initialize(_cache);
+                _flashDetector = new FlashGrenadeComponent(); _flashDetector.Initialize(_cache);
                 _hearingDamage = new HearingDamageComponent();
                 _tactical = _cache.Tactical;
                 _mission = new BotMissionController(bot, _cache);
@@ -202,12 +208,11 @@ namespace AIRefactored.AI.Threads
                 _groupSync.Initialize(bot);
                 _groupSync.InjectLocalCache(_cache);
 
-                _asyncProcessor = new BotAsyncProcessor();
-                _asyncProcessor.Initialize(bot, _cache);
-
+                _asyncProcessor = new BotAsyncProcessor(); _asyncProcessor.Initialize(bot, _cache);
                 _teamLogic = new BotTeamLogic(bot);
 
-                if (!obj.GetComponent<BotBrain>())
+                // --- ensure we don't accidentally re-add BotBrain on top of ourselves ---
+                if (!obj.TryGetComponent<BotBrain>(out _))
                 {
                     BotBrainGuardian.Enforce(obj);
                 }
@@ -217,7 +222,7 @@ namespace AIRefactored.AI.Threads
             }
             catch (Exception ex)
             {
-                Logger.LogError("[BotBrain] Initialization failed: " + ex.Message + "\n" + ex.StackTrace);
+                Logger.LogError("[BotBrain] Initialization failed: " + ex);
                 _isValid = false;
             }
         }

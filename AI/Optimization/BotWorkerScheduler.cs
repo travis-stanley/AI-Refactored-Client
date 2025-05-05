@@ -39,7 +39,9 @@ namespace AIRefactored.AI.Optimization
         private static int _queuedCount;
         private static int _executedCount;
         private static int _errorCount;
-        private static bool _initialized;
+
+        // Prevents multiple injections of the FlushRunner
+        private static bool _flushHostInjected;
 
         #endregion
 
@@ -47,26 +49,42 @@ namespace AIRefactored.AI.Optimization
 
         /// <summary>
         /// Injects an invisible MonoBehaviour to run Flush() automatically each frame.
-        /// Only on client-host (not on remote clients) — headless still doesn’t need a runner.
+        /// Only on client-host (not on remote clients)—headless still doesn’t need a runner.
         /// </summary>
         public static void AutoInjectFlushHost()
         {
-            if (_initialized || !GameWorldHandler.IsLocalHost())
+            // Only inject once, and only on the authoritative host
+            if (_flushHostInjected || !GameWorldHandler.IsLocalHost())
             {
                 return;
             }
 
+            _flushHostInjected = true;
+
+            // If someone else already put a GameObject by this name, respect it
             if (GameObject.Find("AIRefactored.FlushHost") != null)
             {
+                Logger.LogDebug("[BotWorkScheduler] Found existing FlushHost—skipping injection.");
                 return;
             }
 
-            var go = new GameObject("AIRefactored.FlushHost");
-            go.AddComponent<FlushRunner>();
-            GameObject.DontDestroyOnLoad(go);
-
-            Logger.LogInfo("[BotWorkScheduler] Flush host injected into scene.");
-            _initialized = true;
+            GameObject? go = null;
+            try
+            {
+                go = new GameObject("AIRefactored.FlushHost");
+                go.AddComponent<FlushRunner>();
+                GameObject.DontDestroyOnLoad(go);
+                Logger.LogInfo("[BotWorkScheduler] Flush host injected into scene.");
+            }
+            catch (Exception ex)
+            {
+                Logger.LogError($"[BotWorkScheduler] Failed to inject FlushRunner: {ex}");
+                // Clean up partial GameObject if creation failed
+                if (go != null)
+                {
+                    UnityEngine.Object.Destroy(go);
+                }
+            }
         }
 
         /// <summary>
@@ -119,7 +137,7 @@ namespace AIRefactored.AI.Optimization
                 return;
             }
 
-            // Main-thread execution
+            // -- Main-thread queue --
             while (_mainThreadQueue.TryDequeue(out var action))
             {
                 try
@@ -134,10 +152,9 @@ namespace AIRefactored.AI.Optimization
                 }
             }
 
-            // Smooth spawns per frame
+            // -- Smooth spawns --
             int allowedThisFrame = Mathf.Max(1, Mathf.FloorToInt(MaxSpawnsPerSecond * Time.unscaledDeltaTime));
             int executed = 0;
-
             lock (_spawnLock)
             {
                 while (executed < allowedThisFrame && _spawnQueue.Count > 0)
@@ -160,23 +177,18 @@ namespace AIRefactored.AI.Optimization
         /// Returns current diagnostic snapshot of workload and execution metrics.
         /// </summary>
         public static string GetStats()
-        {
-            return $"[BotWorkScheduler] Queued: {_queuedCount}, Executed: {_executedCount}, Errors: {_errorCount}, SpawnQueue: {_spawnQueue.Count}";
-        }
+            => $"[BotWorkScheduler] Queued: {_queuedCount}, Executed: {_executedCount}, Errors: {_errorCount}, SpawnQueue: {_spawnQueue.Count}";
 
         #endregion
 
         #region Internal Types
 
         /// <summary>
-        /// Injected runtime MonoBehaviour for auto-calling Flush from Unity Update().
+        /// Invisible runner that invokes Flush() each Unity Update.
         /// </summary>
         private sealed class FlushRunner : MonoBehaviour
         {
-            private void Update()
-            {
-                Flush();
-            }
+            private void Update() => Flush();
         }
 
         #endregion

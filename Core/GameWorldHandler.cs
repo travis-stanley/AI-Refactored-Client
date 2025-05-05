@@ -10,14 +10,13 @@
 
 namespace AIRefactored.Core
 {
-    using UnityEngine;
-
-    using EFT;
-    using EFT.Game.Spawning;
-
     using System;
     using System.Collections.Generic;
-
+    using UnityEngine;
+    using EFT;
+    using EFT.Game.Spawning;
+    using BepInEx.Logging;
+    using Comfort.Common;
     using AIRefactored.AI.Core;
     using AIRefactored.AI.Hotspots;
     using AIRefactored.AI.Looting;
@@ -27,76 +26,53 @@ namespace AIRefactored.Core
     using AIRefactored.Bootstrap;
     using AIRefactored.Runtime;
 
-    using BepInEx.Logging;
-
-    using Comfort.Common;
-
     public static partial class GameWorldHandler
     {
-        #region Constants and Fields
-
+        // --------------------------------------------------------------------
+        // Fields & Properties
+        // --------------------------------------------------------------------
         private const float DeadCleanupInterval = 10f;
-
         private const float LootRefreshCooldown = 4f;
-
         private const float InitializationRetryInterval = 3f;
 
-        private const float LogCooldown = 5f;
-
         private static readonly ManualLogSource Logger = AIRefactoredController.Logger;
-
         private static readonly HashSet<int> KnownDeadBotIds = new HashSet<int>();
-
-        private static readonly List<Player> TempPlayers = new List<Player>(64);
-
-        private static GameObject? _bootstrapHost;
-
-        private static bool _hasWarnedNoWorld;
-
-        private static bool _hasLoggedHeadlessFallback;
-
-        private static float _lastCleanupTime = -999f;
-
-        private static float _lastLootRefresh = -999f;
-
-        private static float _lastInitializationCheck = -999f;
-
         private static readonly object GameWorldLock = new object();
 
-        private static bool _isWorldRecovering = false;
+        private static GameObject? _bootstrapHost;
+        private static bool _hasWarnedNoWorld;
+        private static bool _hasLoggedHeadlessFallback;
+        private static float _lastCleanupTime = -999f;
+        private static float _lastLootRefresh = -999f;
+        private static float _lastInitCheck = -999f;
+        private static bool _isRecovering;
 
         public static bool IsInitialized { get; private set; }
 
-        #endregion
-
-        #region World Resolution
-
+        // --------------------------------------------------------------------
+        // World Resolution
+        // --------------------------------------------------------------------
         private static GameWorld? CachedWorld
         {
             get
             {
                 lock (GameWorldLock)
                 {
-                    if (_isWorldRecovering)
+                    if (_isRecovering)
                     {
-                        Logger.LogWarning(
-                            "[GameWorldHandler] World is currently recovering. Skipping further requests.");
+                        Logger.LogWarning("[GameWorldHandler] World recovering—skipping requests.");
                         return null;
                     }
 
                     if (!FikaHeadlessDetector.IsHeadless && Singleton<ClientGameWorld>.Instantiated)
-                    {
                         return Singleton<ClientGameWorld>.Instance;
-                    }
 
                     if (FikaHeadlessDetector.IsHeadless && Singleton<GameWorld>.Instantiated)
-                    {
                         return Singleton<GameWorld>.Instance;
-                    }
 
                     if (FikaHeadlessDetector.IsHeadless)
                     {
-                        GameWorld? fallback = TryRecoverGameWorldFromScene();
+                        var fallback = TryRecoverFromScene();
                         if (fallback != null)
                         {
                             ForceAssign(fallback);
@@ -109,36 +85,29 @@ namespace AIRefactored.Core
             }
         }
 
-        public static GameWorld? Get()
-        {
-            return CachedWorld;
-        }
+        public static GameWorld? Get() => CachedWorld;
 
         public static void ForceAssign(GameWorld world)
         {
             if (world != null && !Singleton<GameWorld>.Instantiated)
             {
-                Logger.LogWarning("[GameWorldHandler] Forcibly assigned fallback GameWorld instance.");
+                Logger.LogWarning("[GameWorldHandler] Forcibly assigning fallback GameWorld.");
                 Singleton<GameWorld>.Instance = world;
             }
         }
 
-        private static GameWorld? TryRecoverGameWorldFromScene()
+        private static GameWorld? TryRecoverFromScene()
         {
-            if (IsWorldFullyReady())
-            {
-                Logger.LogInfo("[GameWorldHandler] GameWorld is already fully initialized.");
-                return null;
-            }
+            if (IsWorldFullyReady()) return null;
 
-            GameWorld[] found = UnityEngine.Object.FindObjectsOfType<GameWorld>();
+            var found = UnityEngine.Object.FindObjectsOfType<GameWorld>();
             if (found.Length > 0)
             {
-                Logger.LogWarning("[GameWorldHandler] Found fallback GameWorld in scene: " + found[0].name);
+                Logger.LogWarning("[GameWorldHandler] Found fallback GameWorld: " + found[0].name);
                 return found[0];
             }
 
-            Logger.LogWarning("[GameWorldHandler] No GameWorld found in scene. Recovery failed.");
+            Logger.LogWarning("[GameWorldHandler] No GameWorld found in scene.");
             return null;
         }
 
@@ -146,45 +115,27 @@ namespace AIRefactored.Core
         {
             try
             {
-                if (Singleton<ClientGameWorld>.Instantiated)
-                {
-                    string? clientLocationId = Singleton<ClientGameWorld>.Instance.LocationId;
-                    if (!string.IsNullOrEmpty(clientLocationId))
-                    {
-                        return clientLocationId.ToLowerInvariant();
-                    }
-                }
+                if (Singleton<ClientGameWorld>.Instantiated && !string.IsNullOrEmpty(Singleton<ClientGameWorld>.Instance.LocationId))
+                    return Singleton<ClientGameWorld>.Instance.LocationId.ToLowerInvariant();
 
-                if (Singleton<GameWorld>.Instantiated)
-                {
-                    string? headlessLocationId = Singleton<GameWorld>.Instance.LocationId;
-                    if (!string.IsNullOrEmpty(headlessLocationId))
-                    {
-                        return headlessLocationId.ToLowerInvariant();
-                    }
-                }
+                if (Singleton<GameWorld>.Instantiated && !string.IsNullOrEmpty(Singleton<GameWorld>.Instance.LocationId))
+                    return Singleton<GameWorld>.Instance.LocationId.ToLowerInvariant();
 
-                if (FikaHeadlessDetector.IsHeadless)
-                {
-                    string? raidLocation = FikaHeadlessDetector.RaidLocationName;
-                    if (raidLocation != null)
-                    {
-                        return raidLocation.ToLowerInvariant();
-                    }
-                }
+                if (FikaHeadlessDetector.IsHeadless && FikaHeadlessDetector.RaidLocationName != null)
+                    return FikaHeadlessDetector.RaidLocationName.ToLowerInvariant();
 
                 return "unknown";
             }
             catch (Exception ex)
             {
-                Logger.LogError($"[GameWorldHandler] Error getting current map name: {ex.Message}");
+                Logger.LogError($"[GameWorldHandler] GetCurrentMapName error: {ex.Message}");
                 return "unknown";
             }
         }
 
         public static bool TryForceResolveMapName()
         {
-            string name = GetCurrentMapName();
+            var name = GetCurrentMapName();
             return !string.IsNullOrEmpty(name) && name != "unknown";
         }
 
@@ -192,91 +143,80 @@ namespace AIRefactored.Core
         {
             lock (GameWorldLock)
             {
-                GameWorld? world = Get();
+                var world = Get();
                 if (world == null)
                 {
-                    Logger.LogWarning("[GameWorldHandler] World is not ready. Missing world instance.");
+                    Logger.LogWarning("[GameWorldHandler] World not ready—null instance.");
                     return false;
                 }
-
-                string mapId = world.LocationId;
-                if (string.IsNullOrEmpty(mapId) || mapId.Equals("unknown", StringComparison.OrdinalIgnoreCase))
+                if (string.IsNullOrEmpty(world.LocationId) || world.LocationId.Equals("unknown", StringComparison.OrdinalIgnoreCase))
                 {
-                    Logger.LogWarning("[GameWorldHandler] Map ID is invalid or unknown.");
+                    Logger.LogWarning("[GameWorldHandler] Invalid map ID.");
                     return false;
                 }
-
                 if (world.RegisteredPlayers == null || world.RegisteredPlayers.Count == 0)
                 {
-                    Logger.LogWarning("[GameWorldHandler] No players registered in the world.");
+                    Logger.LogWarning("[GameWorldHandler] No registered players.");
                     return false;
                 }
-
-                if (!AreZonesInitialized())
+                if (!TryGetIZones(out _))
                 {
                     Logger.LogWarning("[GameWorldHandler] Zones not initialized.");
                     return false;
                 }
-
                 return true;
             }
         }
 
-        private static bool AreZonesInitialized()
+        private static bool IsWorldFullyReady()
         {
-            IZones? zones;
-            return TryGetIZones(out zones) && zones != null;
+            var world = Get();
+            return world != null && !string.IsNullOrEmpty(world.LocationId) && world.AllAlivePlayersList?.Count > 0;
         }
 
-        #endregion
-
-        #region Initialization
-
+        // --------------------------------------------------------------------
+        // Initialization
+        // --------------------------------------------------------------------
         public static void TryInitializeWorld()
         {
             if (IsInitialized) return;
             IsInitialized = true;
+
             if (!IsLocalHost())
             {
-                Logger.LogWarning("[GameWorldHandler] Initialization skipped — not authoritative host.");
+                Logger.LogWarning("[GameWorldHandler] Skip init—not authoritative host.");
                 return;
             }
 
             lock (GameWorldLock)
             {
-                if (_isWorldRecovering)
+                if (_isRecovering)
                 {
-                    Logger.LogWarning("[GameWorldHandler] World is in recovery mode, skipping initialization attempt.");
+                    Logger.LogWarning("[GameWorldHandler] Recovery in progress—skipping init.");
                     return;
                 }
 
-                GameWorld? world = Get();
-
+                var world = Get();
                 if (world == null && FikaHeadlessDetector.IsHeadless)
                 {
                     if (!_hasLoggedHeadlessFallback)
                     {
-                        Logger.LogWarning("[GameWorldHandler] GameWorld null — applying fallback for FIKA headless.");
+                        Logger.LogWarning("[GameWorldHandler] Headless fallback applied.");
                         _hasLoggedHeadlessFallback = true;
                     }
 
-                    if (Time.time - _lastInitializationCheck < InitializationRetryInterval)
-                    {
-                        return;
-                    }
-
-                    _lastInitializationCheck = Time.time;
+                    if (Time.time - _lastInitCheck < InitializationRetryInterval) return;
+                    _lastInitCheck = Time.time;
 
                     if (!IsWorldFullyReady())
                     {
-                        Logger.LogWarning("[GameWorldHandler] World not ready. Waiting for proper initialization...");
+                        Logger.LogWarning("[GameWorldHandler] Waiting for world readiness...");
                         return;
                     }
 
-                    _isWorldRecovering = true;
+                    _isRecovering = true;
                     HookBotSpawns();
-                    IsInitialized = true;
-                    _isWorldRecovering = false;
+                    _isRecovering = false;
                     return;
                 }
 
@@ -284,68 +224,46 @@ namespace AIRefactored.Core
                 {
                     if (!_hasWarnedNoWorld)
                     {
-                        Logger.LogWarning("[GameWorldHandler] GameWorld not yet available — deferring...");
+                        Logger.LogWarning("[GameWorldHandler] Deferring—no world yet.");
                         _hasWarnedNoWorld = true;
                     }
-
                     return;
                 }
 
                 if (_hasWarnedNoWorld || _hasLoggedHeadlessFallback)
                 {
-                    Logger.LogInfo("[GameWorldHandler] GameWorld successfully recovered.");
-                    _hasWarnedNoWorld = false;
-                    _hasLoggedHeadlessFallback = false;
+                    Logger.LogInfo("[GameWorldHandler] World recovered successfully.");
+                    _hasWarnedNoWorld = _hasLoggedHeadlessFallback = false;
                 }
 
-                if (!IsInitialized)
-                {
-                    Logger.LogInfo("[GameWorldHandler] Initializing AIRefactored world systems...");
-                    HookBotSpawns();
-                    IsInitialized = true;
-                }
+                Logger.LogInfo("[GameWorldHandler] Initializing world systems...");
+                HookBotSpawns();
             }
-        }
-
-        private static bool IsWorldFullyReady()
-        {
-            GameWorld? world = Get();
-            return world != null && !string.IsNullOrEmpty(world.LocationId) && world.AllAlivePlayersList?.Count > 0;
         }
 
         public static void HookBotSpawns()
         {
             lock (GameWorldLock)
             {
-                if (_bootstrapHost != null || IsInitialized)
-                {
-                    return;
-                }
+                if (_bootstrapHost != null) return;
 
-                if (_bootstrapHost == null)
-                    _bootstrapHost = new GameObject("AIRefactored.BootstrapHost");
+                _bootstrapHost = new GameObject("AIRefactored.BootstrapHost");
                 UnityEngine.Object.DontDestroyOnLoad(_bootstrapHost);
-
-                // No more: _bootstrapHost.AddComponent<WorldBootstrapper>();
 
                 _bootstrapHost.AddComponent<BotSystemRecoveryWatcher>();
                 _bootstrapHost.AddComponent<BotSpawnListener>();
-
                 if (FikaHeadlessDetector.IsHeadless)
-                {
                     _bootstrapHost.AddComponent<BotWorkGroupDispatcher>();
-                }
 
                 Logger.LogInfo("[GameWorldHandler] Bootstrap host injected.");
             }
         }
 
-
         public static void UnhookBotSpawns()
         {
             lock (GameWorldLock)
             {
-                if (_bootstrapHost != null || IsInitialized)
+                if (_bootstrapHost != null)
                 {
                     UnityEngine.Object.Destroy(_bootstrapHost);
                     _bootstrapHost = null;
@@ -355,172 +273,105 @@ namespace AIRefactored.Core
                 LootRegistry.Clear();
                 NavPointRegistry.Clear();
 
-                IsInitialized = false;
-                _hasWarnedNoWorld = false;
-                _hasLoggedHeadlessFallback = false;
-
+                _hasWarnedNoWorld = _hasLoggedHeadlessFallback = false;
                 Logger.LogInfo("[GameWorldHandler] Shutdown complete.");
             }
         }
 
         public static bool IsLocalHost()
         {
-            if (FikaHeadlessDetector.IsHeadless)
-            {
-                return true;
-            }
-
-            ClientGameWorld? gw = Singleton<ClientGameWorld>.Instance;
+            if (FikaHeadlessDetector.IsHeadless) return true;
+            var gw = Singleton<ClientGameWorld>.Instance;
             return gw != null && gw.MainPlayer != null && gw.MainPlayer.IsYourPlayer;
         }
 
-        #endregion
-
-        #region Bot Utilities
-
+        // --------------------------------------------------------------------
+        // Bot Utilities
+        // --------------------------------------------------------------------
         public static void TryAttachBotBrain(BotOwner? bot)
         {
-            if (bot == null || bot.IsDead)
-            {
-                return;
-            }
-
-            Player? player = EFTPlayerUtil.ResolvePlayer(bot);
-            if (player == null || !player.IsAI || player.gameObject == null)
-            {
-                return;
-            }
-
-            WorldBootstrapper.EnforceBotBrain(player, bot);
+            if (bot == null || bot.IsDead) return;
+            var p = EFTPlayerUtil.ResolvePlayer(bot);
+            if (p == null || !p.IsAI || p.gameObject == null) return;
+            WorldBootstrapper.EnforceBotBrain(p, bot);
         }
 
         public static void EnforceBotBrains()
         {
-            GameWorld? world = Get();
-            if (world?.AllAlivePlayersList == null)
-            {
-                return;
-            }
+            var world = Get();
+            if (world?.AllAlivePlayersList == null) return;
 
             lock (GameWorldLock)
             {
-                foreach (Player? player in world.AllAlivePlayersList)
+                foreach (var p in world.AllAlivePlayersList)
                 {
-                    if (player != null && player.IsAI && player.gameObject != null)
-                    {
-                        WorldBootstrapper.EnforceBotBrain(player);
-                    }
+                    if (p != null && p.IsAI && p.gameObject != null)
+                        WorldBootstrapper.EnforceBotBrain(p);
                 }
             }
         }
 
         public static void CleanupDeadBotsSmoothly()
         {
-            float now = Time.time;
-            if (now - _lastCleanupTime < DeadCleanupInterval)
-            {
-                return;
-            }
-
+            var now = Time.time;
+            if (now - _lastCleanupTime < DeadCleanupInterval) return;
             _lastCleanupTime = now;
 
-            GameWorld? world = Get();
-            if (world?.AllAlivePlayersList == null)
+            var world = Get();
+            if (world?.AllAlivePlayersList == null) return;
+
+            foreach (var p in world.AllAlivePlayersList)
             {
-                return;
-            }
-
-            foreach (Player? player in world.AllAlivePlayersList)
-            {
-                if (player == null || !player.IsAI || player.HealthController?.IsAlive == true)
+                if (p != null && p.IsAI && p.HealthController?.IsAlive == false)
                 {
-                    continue;
+                    var id = p.GetInstanceID();
+                    if (KnownDeadBotIds.Add(id) && p.gameObject != null)
+                    {
+                        p.gameObject.SetActive(false);
+                        UnityEngine.Object.Destroy(p.gameObject, 3f);
+                        Logger.LogDebug($"[GameWorldHandler] Cleaned dead bot: {p.Profile?.Info?.Nickname ?? "Unnamed"}");
+                    }
                 }
-
-                int id = player.GetInstanceID();
-                if (!KnownDeadBotIds.Add(id))
-                {
-                    continue;
-                }
-
-                if (player.gameObject != null)
-                {
-                    player.gameObject.SetActive(false);
-                    UnityEngine.Object.Destroy(player.gameObject, 3f);
-                }
-
-                Logger.LogDebug(
-                    "[GameWorldHandler] Destroyed dead bot: " + (player.Profile?.Info?.Nickname ?? "Unnamed"));
             }
         }
 
         public static List<Player> GetAllAlivePlayers()
         {
-            List<Player> alivePlayers = new List<Player>();
-
-            GameWorld? world = Get();
+            var list = new List<Player>();
+            var world = Get();
             if (world?.AllAlivePlayersList != null)
             {
-                foreach (Player player in world.AllAlivePlayersList)
-                {
-                    if (player != null && player.HealthController?.IsAlive == true)
-                    {
-                        alivePlayers.Add(player);
-                    }
-                }
+                foreach (var p in world.AllAlivePlayersList)
+                    if (p?.HealthController?.IsAlive == true)
+                        list.Add(p);
             }
-
-            return alivePlayers;
+            return list;
         }
 
         public static bool TryGetIZones(out IZones? zones)
         {
             zones = null;
-            GameWorld? world = Get();
-            if (world == null)
-            {
-                return false;
-            }
-
-            MonoBehaviour[] objects = UnityEngine.Object.FindObjectsOfType<MonoBehaviour>();
-            foreach (MonoBehaviour obj in objects)
-            {
-                if (obj is IZones zone)
+            var world = Get();
+            if (world == null) return false;
+            foreach (var mb in UnityEngine.Object.FindObjectsOfType<MonoBehaviour>())
+                if (mb is IZones z)
                 {
-                    zones = zone;
+                    zones = z;
                     return true;
                 }
-            }
-
             return false;
-        }
-
-        public static bool IsHeadless()
-        {
-            return FikaHeadlessDetector.IsHeadless;
         }
 
         public static void RefreshLootRegistry()
         {
-            // Check the time cooldown before refreshing
-            float now = Time.time;
-            if (now - _lastLootRefresh < LootRefreshCooldown)
-            {
-                return; // Skip refresh if within cooldown period
-            }
-
+            var now = Time.time;
+            if (now - _lastLootRefresh < LootRefreshCooldown) return;
             _lastLootRefresh = now;
 
             Logger.LogDebug("[GameWorldHandler] Refreshing loot registry...");
-
-            // Clear the old loot registry and refresh with new loot data
             LootRegistry.Clear();
             LootBootstrapper.RegisterAllLoot();
-
-            // Scan for new loot bodies and items
             BotDeadBodyScanner.ScanAll();
         }
-
-        #endregion
     }
 }

@@ -49,12 +49,12 @@ namespace AIRefactored.Bootstrap
         private float _lastZoneCheck = -999f;
         private BotSystemRecoveryWatcher? _recoveryWatcher;
 
+        // Prevent recursive injection
+        private static GameObject? _injectedHost;
+
         /// <summary>
         /// Injects WorldBootstrapper if it hasn't already been initialized.
         /// </summary>
-        // Add a static flag to detect recursive injection
-        private static GameObject? _injectedHost;
-
         public static void TryInitialize()
         {
             if (_hasInitialized)
@@ -69,7 +69,7 @@ namespace AIRefactored.Bootstrap
                 return;
             }
 
-            if (_injectedHost != null)  // Check to avoid duplicate injection
+            if (_injectedHost != null)
             {
                 Logger.LogWarning("[WorldBootstrapper] Already injected — skipping.");
                 return;
@@ -77,7 +77,7 @@ namespace AIRefactored.Bootstrap
 
             _injectedHost = new GameObject("WorldBootstrapper (Injected)");
             Object.DontDestroyOnLoad(_injectedHost);
-            _injectedHost.AddComponent<WorldBootstrapper>();  // Add the component only once
+            _injectedHost.AddComponent<WorldBootstrapper>();
 
             _hasInitialized = true;
             Logger.LogInfo("[WorldBootstrapper] ✅ Manual bootstrap injected.");
@@ -87,14 +87,14 @@ namespace AIRefactored.Bootstrap
         {
             if (_hasInitialized)
             {
-                Logger.LogWarning("[WorldBootstrapper] Awake called multiple times. Already initialized.");
-                Destroy(this.gameObject);  // Destroy this instance to prevent duplication
+                Logger.LogWarning("[WorldBootstrapper] Awake called multiple times. Destroying duplicate.");
+                Destroy(this.gameObject);
                 return;
             }
 
             Logger.LogInfo("[WorldBootstrapper] 🟢 Awake triggered.");
-
             _hasInitialized = true;
+
             this._recoveryWatcher = this.gameObject.AddComponent<BotSystemRecoveryWatcher>();
             BotWorkScheduler.AutoInjectFlushHost();
 
@@ -128,7 +128,6 @@ namespace AIRefactored.Bootstrap
             if (now - this._lastZoneCheck >= ZoneCheckInterval)
             {
                 this._lastZoneCheck = now;
-
                 if (!GameWorldHandler.TryGetIZones(out IZones? zones) || zones == null)
                 {
                     Logger.LogWarning("[WorldBootstrapper] ⚠ Zones are not ready.");
@@ -224,7 +223,6 @@ namespace AIRefactored.Bootstrap
 
             int frameWait = 0;
             IZones? zones = null;
-
             while (!GameWorldHandler.TryGetIZones(out zones) || zones == null)
             {
                 if (++frameWait > 60)
@@ -232,7 +230,6 @@ namespace AIRefactored.Bootstrap
                     Logger.LogWarning("[WorldBootstrapper] ⚠ Timed out waiting for IZones — skipping zone setup.");
                     break;
                 }
-
                 yield return null;
             }
 
@@ -260,10 +257,9 @@ namespace AIRefactored.Bootstrap
         {
             string mapId = GameWorldHandler.GetCurrentMapName();
             NavMeshSurface[] surfaces = Object.FindObjectsOfType<NavMeshSurface>();
-
             for (int i = 0; i < surfaces.Length; i++)
             {
-                NavMeshSurface surface = surfaces[i];
+                var surface = surfaces[i];
                 if (surface != null && surface.enabled && surface.gameObject.activeInHierarchy)
                 {
                     surface.BuildNavMesh();
@@ -280,15 +276,14 @@ namespace AIRefactored.Bootstrap
                 return;
             }
 
-            GameObject obj = player.gameObject;
+            var obj = player.gameObject;
             BotBrainGuardian.Enforce(obj);
-
             if (obj.GetComponent<BotBrain>() != null)
             {
                 return;
             }
 
-            BotBrain brain = obj.AddComponent<BotBrain>();
+            var brain = obj.AddComponent<BotBrain>();
             if (bot != null)
             {
                 brain.Initialize(bot);

@@ -322,8 +322,11 @@ namespace AIRefactored.Core
                     return;
                 }
 
-                if (_bootstrapHost == null) _bootstrapHost = new GameObject("AIRefactored.BootstrapHost");
+                if (_bootstrapHost == null)
+                    _bootstrapHost = new GameObject("AIRefactored.BootstrapHost");
                 UnityEngine.Object.DontDestroyOnLoad(_bootstrapHost);
+
+                // No more: _bootstrapHost.AddComponent<WorldBootstrapper>();
 
                 _bootstrapHost.AddComponent<BotSystemRecoveryWatcher>();
                 _bootstrapHost.AddComponent<BotSpawnListener>();
@@ -336,6 +339,7 @@ namespace AIRefactored.Core
                 Logger.LogInfo("[GameWorldHandler] Bootstrap host injected.");
             }
         }
+
 
         public static void UnhookBotSpawns()
         {

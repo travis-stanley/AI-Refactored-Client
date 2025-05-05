@@ -35,13 +35,21 @@ namespace AIRefactored.AI.Combat
         private static readonly Dictionary<string, float> WeaponTypeRanges = new Dictionary<string, float>(StringComparer.OrdinalIgnoreCase)
         {
             { "sniper", 180f },
-            { "marksman", 150f },
-            { "rifle", 120f },
-            { "assault", 100f },
-            { "smg", 75f },
+            { "marksman", 120f },
+            { "rifle", 100f },
+            { "assault", 80f },
+            { "smg", 65f },
             { "shotgun", 50f },
             { "pistol", 35f }
         };
+
+        //{ "sniper", 180f },
+        //{ "marksman", 150f },
+        //{ "rifle", 120f },
+        //{ "assault", 100f },
+        //{ "smg", 75f },
+        //{ "shotgun", 50f },
+        //{ "pistol", 35f }
 
         private readonly BotOwner _bot;
         private readonly BotComponentCache _cache;
@@ -173,12 +181,12 @@ namespace AIRefactored.AI.Combat
 
         private void ApplyFireMode(BotWeaponInfo info, Weapon weapon, float distance, BotPersonalityProfile profile, GClass592 settings)
         {
-            if (distance <= 40f)
+            if (distance <= 20f) // if (distance <= 40f)
             {
                 this.SetFireMode(info, Weapon.EFireMode.fullauto);
-                this.RecoverAccuracy(settings);
+                //this.RecoverAccuracy(settings);   // change
             }
-            else if (distance <= 100f && this.SupportsFireMode(weapon, Weapon.EFireMode.burst))
+            else if (distance <= 80f && this.SupportsFireMode(weapon, Weapon.EFireMode.burst)) // else if (distance <= 100f && this.SupportsFireMode(weapon, Weapon.EFireMode.burst))
             {
                 this.SetFireMode(info, Weapon.EFireMode.burst);
                 this.ApplyScatter(settings, true, profile);
@@ -223,7 +231,8 @@ namespace AIRefactored.AI.Combat
             float scatterPenalty = underFire ? (1f - profile.AccuracyUnderFire) * (1f - composure) : 0f;
             float scatterFactor = 1.1f + scatterPenalty;
 
-            settings.ScatteringPerMeter = Mathf.Clamp(settings.ScatteringPerMeter * scatterFactor, 0.6f, 3.5f);
+            //settings.ScatteringPerMeter = Mathf.Clamp(settings.ScatteringPerMeter * scatterFactor, 0.6f, 3.5f);
+            settings.ScatteringPerMeter = Mathf.Clamp(settings.ScatteringPerMeter * scatterFactor, 1f, 5f);
         }
 
         private float EstimateWeaponRange(Weapon weapon)

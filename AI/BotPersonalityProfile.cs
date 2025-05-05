@@ -20,8 +20,8 @@ namespace AIRefactored.AI
     {
         #region Personality Parameters
 
-        public float Accuracy { get; set; } = 0.7f;
-        public float AccuracyUnderFire { get; set; } = 0.4f;
+        public float Accuracy { get; set; } = 0.5f; //0.7f
+        public float AccuracyUnderFire { get; set; } = 0.3f; //0.4f
         public float AggressionLevel { get; set; } = 0.6f;
         public float Caution { get; set; } = 0.5f;
         public float ChaosFactor { get; set; } = 0f;
@@ -33,8 +33,8 @@ namespace AIRefactored.AI
         public float FlinchThreshold { get; set; } = 0.4f;
         public float LeanPeekFrequency { get; set; } = 0.5f;
         public float MovementJitter { get; set; } = 0.2f;
-        public float ReactionSpeed { get; set; } = 0.65f;
-        public float ReactionTime { get; set; } = 0.25f;
+        public float ReactionSpeed { get; set; } = 0.4f;  //0.65f
+        public float ReactionTime { get; set; } = 0.5f;  //0.25f
         public float RepositionPriority { get; set; } = 0.8f;
         public float RetreatThreshold { get; set; } = 0.3f;
         public float RiskTolerance { get; set; } = 0.5f;
@@ -50,7 +50,7 @@ namespace AIRefactored.AI
         /// <summary>
         /// How tolerant the bot is of being stuck before deciding to extract. 0 = extract quickly, 1 = wait longer.
         /// </summary>
-        public float StuckTolerance { get; set; } = 0.5f;
+        public float StuckTolerance { get; set; } = 1f; //0.5
 
         #endregion
 

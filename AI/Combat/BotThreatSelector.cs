@@ -22,39 +22,22 @@ namespace AIRefactored.AI.Combat
     /// </summary>
     public sealed class BotThreatSelector
     {
-        #region Constants
-
         private const float EvaluationCooldown = 0.35f;
         private const float MaxScanDistance = 120f;
         private const float SwitchCooldown = 2.0f;
 
-        #endregion
-
-        #region Fields
-
         private readonly BotOwner _bot;
         private readonly BotComponentCache _cache;
         private readonly BotPersonalityProfile _profile;
+
         private float _lastTargetSwitchTime = -999f;
         private float _nextEvaluateTime;
-
-        #endregion
-
-        #region Properties
 
         /// <summary>
         /// Gets the currently selected threat target, if any.
         /// </summary>
-        public IPlayer? CurrentTarget { get; private set; }
+        public Player? CurrentTarget { get; private set; }
 
-        #endregion
-
-        #region Constructor
-
-        /// <summary>
-        /// Initializes a new instance of the <see cref="BotThreatSelector"/> class.
-        /// </summary>
-        /// <param name="cache">Bot component cache containing references.</param>
         public BotThreatSelector(BotComponentCache cache)
         {
             this._cache = cache ?? throw new ArgumentNullException(nameof(cache));
@@ -63,25 +46,9 @@ namespace AIRefactored.AI.Combat
                             ?? throw new ArgumentNullException(nameof(cache.AIRefactoredBotOwner));
         }
 
-        #endregion
-
-        #region Public Methods
-
-        /// <summary>
-        /// Resets the current target selection.
-        /// </summary>
-        public void ResetTarget()
-        {
-            this.CurrentTarget = null;
-        }
-
-        /// <summary>
-        /// Updates threat evaluation based on distance, visibility, and time.
-        /// </summary>
-        /// <param name="time">The current game time.</param>
         public void Tick(float time)
         {
-            if (this._bot == null || this._bot.IsDead || !this._bot.IsAI || FikaHeadlessDetector.IsHeadless)  // Headless check
+            if (this._bot == null || this._bot.IsDead || !this._bot.IsAI || FikaHeadlessDetector.IsHeadless)
             {
                 return;
             }
@@ -99,24 +66,24 @@ namespace AIRefactored.AI.Combat
                 return;
             }
 
-            IPlayer? bestTarget = null;
+            Player? bestTarget = null;
             float bestScore = float.MinValue;
 
             for (int i = 0; i < players.Count; i++)
             {
-                object raw = players[i];
-                IPlayer? candidate = raw as IPlayer;
-                if (candidate == null ||
-                    string.IsNullOrEmpty(candidate.ProfileId) ||
-                    candidate.ProfileId == this._bot.ProfileId ||
-                    candidate.HealthController == null ||
-                    !candidate.HealthController.IsAlive)
+                Player? candidate = players[i];
+                if (!EFTPlayerUtil.IsValid(candidate))
                 {
                     continue;
                 }
 
-                BotsGroup? group = this._bot.BotsGroup;
-                if (group == null || !group.IsEnemy(candidate))
+                string? profileId = candidate.ProfileId;
+                if (string.IsNullOrEmpty(profileId) || profileId == this._bot.ProfileId)
+                {
+                    continue;
+                }
+
+                if (!EFTPlayerUtil.IsEnemyOf(this._bot, candidate))
                 {
                     continue;
                 }
@@ -151,14 +118,51 @@ namespace AIRefactored.AI.Combat
             }
         }
 
-        #endregion
+        public void ResetTarget()
+        {
+            this.CurrentTarget = null;
+        }
 
-        #region Private Methods
+        /// <summary>
+        /// Gets the most viable current or recent target as a valid IPlayer reference.
+        /// </summary>
+        public IPlayer? GetPriorityTarget()
+        {
+            if (this.CurrentTarget != null)
+            {
+                IPlayer? iTarget = EFTPlayerUtil.AsSafeIPlayer(this.CurrentTarget);
+                if (iTarget != null)
+                {
+                    return iTarget;
+                }
+            }
 
-        private float ScoreTarget(IPlayer candidate, float time)
+            if (this._cache != null &&
+                this._cache.TacticalMemory != null)
+            {
+                string? id = this._cache.TacticalMemory.GetMostRecentEnemyId();
+
+                if (id != null)
+                {
+                    string trimmedId = id.Trim();
+                    if (trimmedId.Length > 0)
+                    {
+                        Player? fallback = EFTPlayerUtil.ResolvePlayerById(trimmedId);
+                        if (EFTPlayerUtil.IsValid(fallback))
+                        {
+                            return EFTPlayerUtil.AsSafeIPlayer(fallback);
+                        }
+                    }
+                }
+            }
+
+            return null;
+        }
+
+        private float ScoreTarget(Player candidate, float time)
         {
             Vector3 botPos = this._bot.Position;
-            Vector3 targetPos = candidate.Position;
+            Vector3 targetPos = EFTPlayerUtil.GetPosition(candidate);
             float distance = Vector3.Distance(botPos, targetPos);
             if (distance > MaxScanDistance)
             {
@@ -167,60 +171,71 @@ namespace AIRefactored.AI.Combat
 
             float score = MaxScanDistance - distance;
 
-            if (this._bot.EnemiesController?.EnemyInfos != null &&
-                this._bot.EnemiesController.EnemyInfos.TryGetValue(candidate, out var info) &&
-                info != null)
+            if (this._bot.EnemiesController?.EnemyInfos != null)
             {
-                if (info.IsVisible)
+                IPlayer? iTarget = EFTPlayerUtil.AsSafeIPlayer(candidate);
+                if (iTarget != null && this._bot.EnemiesController.EnemyInfos.TryGetValue(iTarget, out var info) && info != null)
                 {
-                    score += 25f;
-
-                    if (info.PersonalLastSeenTime + 2f > time)
+                    if (info.IsVisible)
                     {
-                        score += 10f;
+                        score += 25f;
+
+                        if (info.PersonalLastSeenTime + 2f > time)
+                        {
+                            score += 10f;
+                        }
+
+                        if (this._profile.Caution > 0.6f)
+                        {
+                            score += 5f;
+                        }
+
+                        if (this._cache.IsBlinded && this._cache.BlindUntilTime > time)
+                        {
+                            score -= 20f;
+                        }
                     }
-
-                    if (this._profile.Caution > 0.6f)
+                    else
                     {
-                        score += 5f;
-                    }
+                        score -= 5f;
 
-                    if (this._cache.IsBlinded && this._cache.BlindUntilTime > time)
-                    {
-                        score -= 20f;
+                        if (this._profile.AggressionLevel > 0.7f)
+                        {
+                            float unseenTime = time - info.PersonalLastSeenTime;
+                            if (unseenTime < 6f)
+                            {
+                                score += Mathf.Lerp(0f, 15f, 1f - (unseenTime / 6f));
+                            }
+                        }
                     }
                 }
                 else
                 {
-                    score -= 5f;
-
-                    if (this._profile.AggressionLevel > 0.7f)
-                    {
-                        float unseenTime = time - info.PersonalLastSeenTime;
-                        if (unseenTime < 6f)
-                        {
-                            score += Mathf.Lerp(0f, 15f, 1f - (unseenTime / 6f));
-                        }
-                    }
+                    score -= 10f;
                 }
-            }
-            else
-            {
-                score -= 10f;
             }
 
             return score;
         }
 
-        private void SetTarget(IPlayer target, float time)
+        private void SetTarget(Player target, float time)
         {
             this.CurrentTarget = target;
             this._lastTargetSwitchTime = time;
 
-            this._cache.TacticalMemory?.RecordEnemyPosition(target.Position, "Target", target.ProfileId);
-            this._cache.LastShotTracker?.RegisterHitBy(target);
-        }
+            if (!string.IsNullOrEmpty(target.ProfileId))
+            {
+                this._cache.TacticalMemory?.RecordEnemyPosition(
+                    EFTPlayerUtil.GetPosition(target),
+                    "Target",
+                    target.ProfileId);
+            }
 
-        #endregion
+            IPlayer? safeIPlayer = EFTPlayerUtil.AsSafeIPlayer(target);
+            if (safeIPlayer != null)
+            {
+                this._cache.LastShotTracker?.RegisterHitBy(safeIPlayer);
+            }
+        }
     }
 }

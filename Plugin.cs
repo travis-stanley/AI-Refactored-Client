@@ -12,7 +12,6 @@ namespace AIRefactored
 {
     using System;
     using System.Collections;
-
     using AIRefactored.AI.Core;
     using AIRefactored.AI.Optimization;
     using AIRefactored.Bootstrap;
@@ -35,8 +34,8 @@ namespace AIRefactored
         #region Static Fields
 
         private static ManualLogSource? _log;
-
-        private static bool _isWorldInitialized = false;
+        private static bool _hasInitialized;
+        private static readonly object LockObj = new object();
 
         #endregion
 
@@ -54,28 +53,37 @@ namespace AIRefactored
 
         private void Awake()
         {
-            try
+            lock (LockObj)
             {
-                _log = this.Logger ?? throw new InvalidOperationException("[AIRefactored] Logger could not be initialized.");
-                _log.LogInfo("[AIRefactored] [Init] Plugin starting...");
-
-                // Initialize AI-Refactored Controller and perform other setup
-                AIRefactoredController.Initialize(_log);
-                BotWorkScheduler.AutoInjectFlushHost();
-
-                // Prevent unnecessary repeated initialization or component addition
-                if (!_isWorldInitialized)
+                if (_hasInitialized)
                 {
-                    InitializeWorldAndBots();
-                    _isWorldInitialized = true;  // Flag to prevent re-initialization
+                    _log?.LogWarning("[AIRefactored] [Awake] Plugin already initialized — skipping duplicate init.");
+                    return;
                 }
 
-                _log.LogInfo("[AIRefactored] [Init] Plugin startup complete.");
-            }
-            catch (Exception ex)
-            {
-                _log?.LogError($"[AIRefactored] [Init] Error during initialization: {ex.Message}\n{ex.StackTrace}");
-                throw; // Rethrow to ensure the crash is captured
+                try
+                {
+                    _log = Logger;
+                    if (_log == null)
+                    {
+                        throw new InvalidOperationException("[AIRefactored] Logger is null.");
+                    }
+
+                    _log.LogInfo("[AIRefactored] [Init] Plugin starting...");
+
+                    AIRefactoredController.Initialize(_log);
+                    BotWorkScheduler.AutoInjectFlushHost();
+
+                    InitializeWorldAndBots();
+                    _hasInitialized = true;
+
+                    _log.LogInfo("[AIRefactored] [Init] Plugin startup complete.");
+                }
+                catch (Exception ex)
+                {
+                    _log?.LogError($"[AIRefactored] [Init] Exception: {ex.Message}\n{ex.StackTrace}");
+                    throw;
+                }
             }
         }
 
@@ -83,19 +91,25 @@ namespace AIRefactored
         {
             try
             {
+                lock (LockObj)
+                {
+                    _hasInitialized = false;
+                }
+
                 if (FikaHeadlessDetector.IsHeadless)
                 {
-                    _log?.LogInfo("[AIRefactored] [Shutdown] Headless environment detected, skipping bot spawn unhook.");
+                    _log?.LogInfo("[AIRefactored] [Shutdown] Headless mode — bot unhook skipped.");
                 }
                 else
                 {
-                    GameWorldHandler.UnhookBotSpawns(); // Referencing GameWorldHandler from EFT
+                    GameWorldHandler.UnhookBotSpawns();
                 }
+
                 _log?.LogInfo("[AIRefactored] [Shutdown] Plugin shutdown complete.");
             }
             catch (Exception ex)
             {
-                _log?.LogError($"[AIRefactored] [Shutdown] Error during shutdown: {ex.Message}\n{ex.StackTrace}");
+                _log?.LogError($"[AIRefactored] [Shutdown] Exception: {ex.Message}\n{ex.StackTrace}");
             }
         }
 
@@ -103,34 +117,28 @@ namespace AIRefactored
 
         #region Initialization Logic
 
-        /// <summary>
-        /// Initializes world and bot systems, ensuring proper handling of headless and non-headless environments.
-        /// </summary>
         private void InitializeWorldAndBots()
         {
             try
             {
                 _log?.LogInfo("[AIRefactored] Initializing world and bot systems...");
 
-                // Ensure headless compatibility by checking FikaHeadlessDetector
-                if (FikaHeadlessDetector.IsHeadless)
+                GameWorldHandler.TryInitializeWorld();
+                GameWorldHandler.HookBotSpawns();
+
+                if (!FikaHeadlessDetector.IsHeadless)
                 {
-                    _log?.LogInfo("[AIRefactored] [Bootstrap] Headless environment detected. Bot spawn logic will be handled in headless mode.");
-                    GameWorldHandler.TryInitializeWorld(); // Just initialize the world systems, no bot spawns
-                    GameWorldHandler.HookBotSpawns(); // Hook bot spawns even in headless mode to support AI logic
+                    WorldBootstrapper.TryInitialize();
+                    _log?.LogInfo("[AIRefactored] [Bootstrap] Client-host bootstrap initialized.");
                 }
                 else
                 {
-                    GameWorldHandler.TryInitializeWorld(); // Initialize world systems normally
-                    WorldBootstrapper.TryInitialize(); // Initialize world bootstrapper for non-headless environment
-
-                    GameWorldHandler.HookBotSpawns(); // Hook bot spawns for non-headless environments
-                    _log?.LogInfo("[AIRefactored] [Bootstrap] World systems and bot spawns initialized.");
+                    _log?.LogInfo("[AIRefactored] [Bootstrap] Headless bootstrap active.");
                 }
             }
             catch (Exception ex)
             {
-                _log?.LogError($"[AIRefactored] [Bootstrap] Error during world/bot initialization: {ex.Message}\n{ex.StackTrace}");
+                _log?.LogError($"[AIRefactored] [Bootstrap] Exception: {ex.Message}\n{ex.StackTrace}");
             }
         }
 
@@ -138,9 +146,6 @@ namespace AIRefactored
 
         #region Coroutine Utilities
 
-        /// <summary>
-        /// A safe coroutine implementation with exception handling to ensure that errors don't stop the flow.
-        /// </summary>
         private IEnumerator SafeCoroutine(IEnumerator routine)
         {
             while (true)

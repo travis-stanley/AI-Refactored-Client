@@ -32,7 +32,7 @@ namespace AIRefactored.Runtime
         #region Constants
 
         private const float TickIntervalSeconds = 5.0f;
-        private const float MaxRetryAttempts = 3;  // Max retries for recovery
+        private const int MaxRetryAttempts = 3;
 
         #endregion
 
@@ -41,7 +41,7 @@ namespace AIRefactored.Runtime
         private float _nextCheckTime = -1f;
         private bool _hasWarnedMissingWorld;
         private bool _hasRescannedWorld;
-        private int _retryAttempts = 0;
+        private int _retryAttempts;
 
         private static readonly ManualLogSource Logger = AIRefactoredController.Logger;
 
@@ -51,7 +51,6 @@ namespace AIRefactored.Runtime
 
         private void Update()
         {
-            // Skip processing if we're not the local host
             if (!GameWorldHandler.IsLocalHost())
             {
                 return;
@@ -65,25 +64,21 @@ namespace AIRefactored.Runtime
 
             _nextCheckTime = now + TickIntervalSeconds;
 
-            // Get the current game world state
             GameWorld? world = GameWorldHandler.Get();
             bool worldReady = GameWorldHandler.IsReady();
 
-            // If GameWorld is missing or not ready, attempt reinitialization
             if (world == null || world.AllAlivePlayersList == null || !worldReady)
             {
                 HandleWorldReinitialization(worldReady);
                 return;
             }
 
-            // Notify when GameWorld is restored
             if (_hasWarnedMissingWorld)
             {
                 Logger.LogInfo("[RecoveryWatcher] GameWorld restored.");
                 _hasWarnedMissingWorld = false;
             }
 
-            // If GameWorld is not initialized, trigger the bootstrap process
             if (!GameWorldHandler.IsInitialized)
             {
                 Logger.LogWarning("[RecoveryWatcher] GameWorld not initialized — triggering bootstrap.");
@@ -91,7 +86,6 @@ namespace AIRefactored.Runtime
                 return;
             }
 
-            // Perform regular maintenance tasks
             ZoneAutoRefresher.Tick(now);
             EnsureSpawnHook();
             ValidateBotBrains(world.AllAlivePlayersList);
@@ -103,14 +97,12 @@ namespace AIRefactored.Runtime
 
         private void HandleWorldReinitialization(bool worldReady)
         {
-            // Log and manage reinitialization attempts
             if (!_hasWarnedMissingWorld)
             {
                 Logger.LogWarning("[RecoveryWatcher] GameWorld is missing or not ready — attempting reinitialization.");
                 _hasWarnedMissingWorld = true;
             }
 
-            // Retry logic with backoff
             if (_retryAttempts < MaxRetryAttempts)
             {
                 _retryAttempts++;
@@ -138,32 +130,38 @@ namespace AIRefactored.Runtime
 
         private void ValidateBotBrains(List<Player> players)
         {
+            if (players == null || players.Count == 0)
+            {
+                return;
+            }
+
             for (int i = 0; i < players.Count; i++)
             {
-                Player? player = players[i];
+                Player player = players[i];
                 if (player == null || !player.IsAI || player.gameObject == null)
                 {
                     continue;
                 }
 
-                // Skip if bot already has a brain
                 if (player.GetComponent<BotBrain>() != null)
                 {
                     continue;
                 }
 
-                string name = player.Profile?.Info?.Nickname ?? "Unnamed";
-                Logger.LogWarning($"[RecoveryWatcher] Bot missing brain — restoring: {name}");
+                Logger.LogWarning($"[RecoveryWatcher] Bot missing brain — restoring: {player.Profile?.Info?.Nickname ?? "Unnamed"}");
 
                 BotBrainGuardian.Enforce(player.gameObject);
 
-                BotOwner? botOwner = player.AIData?.BotOwner;
+                BotOwner? botOwner = null;
+                if (player.AIData != null)
+                {
+                    botOwner = player.AIData.BotOwner;
+                }
                 if (botOwner != null)
                 {
                     GameWorldHandler.TryAttachBotBrain(botOwner);
                 }
 
-                // Rescan world systems once during the process
                 if (!_hasRescannedWorld)
                 {
                     _hasRescannedWorld = true;

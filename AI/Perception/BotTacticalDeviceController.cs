@@ -19,8 +19,8 @@ namespace AIRefactored.AI.Perception
     using Random = UnityEngine.Random;
 
     /// <summary>
-    ///     Manages flashlight, laser, NVG, and thermal toggling.
-    ///     Reacts to ambient light, fog density, and chaos-driven bait behavior.
+    /// Manages flashlight, laser, NVG, and thermal toggling.
+    /// Reacts to ambient light, fog density, and chaos-driven bait behavior.
     /// </summary>
     public sealed class BotTacticalDeviceController
     {
@@ -34,7 +34,7 @@ namespace AIRefactored.AI.Perception
 
         #endregion
 
-        #region Public Methods
+        #region Initialization
 
         /// <summary>
         /// Initializes the controller with the bot's runtime cache.
@@ -44,12 +44,16 @@ namespace AIRefactored.AI.Perception
         {
             if (cache == null || cache.Bot == null)
             {
-                throw new InvalidOperationException("Cannot initialize BotTacticalDeviceController without a valid bot cache.");
+                throw new ArgumentNullException(nameof(cache));
             }
 
             this._cache = cache;
             this._bot = cache.Bot;
         }
+
+        #endregion
+
+        #region Public Methods
 
         /// <summary>
         /// Ticks the logic once per frame for toggling tactical devices.
@@ -72,7 +76,7 @@ namespace AIRefactored.AI.Perception
             this.ScanMods(weapon);
 
             bool lowVisibility = IsLowVisibility();
-            bool baitTrigger = Random.value < this.ChaosBaitChance();
+            bool baitTrigger = Random.value < this.GetChaosBaitChance();
             bool shouldEnable = lowVisibility || baitTrigger;
 
             for (int i = 0; i < this._devices.Count; i++)
@@ -107,19 +111,20 @@ namespace AIRefactored.AI.Perception
             }
 
             Player? player = this._bot.GetPlayer;
-            return player != null && !player.IsYourPlayer;
+            return player != null && player.IsAI && !player.IsYourPlayer;
         }
 
-        private float ChaosBaitChance()
+        private float GetChaosBaitChance()
         {
-            return this._cache?.AIRefactoredBotOwner?.PersonalityProfile?.ChaosFactor * 0.25f ?? 0f;
+            return (this._cache?.AIRefactoredBotOwner?.PersonalityProfile?.ChaosFactor ?? 0f) * 0.25f;
         }
 
         private static bool IsLowVisibility()
         {
             float ambient = RenderSettings.ambientLight.grayscale;
-            float fog = RenderSettings.fog ? RenderSettings.fogDensity : 0f;
-            return ambient < TacticalConfig.LightThreshold || fog > TacticalConfig.FogThreshold;
+            float fogDensity = RenderSettings.fog ? RenderSettings.fogDensity : 0f;
+
+            return ambient < TacticalConfig.LightThreshold || fogDensity > TacticalConfig.FogThreshold;
         }
 
         private void ScanMods(Weapon weapon)
@@ -140,24 +145,13 @@ namespace AIRefactored.AI.Perception
                 }
 
                 Item? mod = slot.ContainedItem;
-                if (mod == null || mod.Template == null || string.IsNullOrEmpty(mod.Template.Name))
+                if (mod?.Template?.Name == null)
                 {
                     continue;
                 }
 
                 string name = mod.Template.Name.ToLowerInvariant();
-                bool isTactical = false;
-
-                for (int j = 0; j < TacticalConfig.Keywords.Length; j++)
-                {
-                    if (name.Contains(TacticalConfig.Keywords[j]))
-                    {
-                        isTactical = true;
-                        break;
-                    }
-                }
-
-                if (!isTactical)
+                if (!IsTacticalName(name))
                 {
                     continue;
                 }
@@ -179,9 +173,22 @@ namespace AIRefactored.AI.Perception
             }
         }
 
+        private static bool IsTacticalName(string name)
+        {
+            for (int i = 0; i < TacticalConfig.Keywords.Length; i++)
+            {
+                if (name.Contains(TacticalConfig.Keywords[i]))
+                {
+                    return true;
+                }
+            }
+
+            return false;
+        }
+
         #endregion
 
-        #region Config
+        #region Configuration
 
         private static class TacticalConfig
         {

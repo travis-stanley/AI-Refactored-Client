@@ -87,7 +87,7 @@ namespace AIRefactored.AI.Optimization
             {
                 Vector3 flankDir = Quaternion.Euler(0f, FlankAngles[i].x, 0f) * toThreat;
 
-                if (Physics.Raycast(eyePos, flankDir, out RaycastHit flankHit, FlankRayDistance) &&
+                if (Physics.Raycast(eyePos, flankDir.normalized, out RaycastHit flankHit, FlankRayDistance) &&
                     IsSolid(flankHit.collider))
                 {
                     score += 0.5f;
@@ -102,8 +102,7 @@ namespace AIRefactored.AI.Optimization
                 score -= Mathf.Min(excess * 0.25f, 3.0f);
             }
 
-            Logger.LogDebug(
-                $"[CoverScorer] Score={score:F2} @ {candidate} | From={bot.Position} | Dir={toThreat}");
+            Logger.LogDebug($"[CoverScorer] Score={score:F2} @ {candidate} | From={bot.Position} | Dir={toThreat}");
 
             return Mathf.Clamp(score, MinScore, MaxScore);
         }
@@ -130,7 +129,7 @@ namespace AIRefactored.AI.Optimization
                 return false;
             }
 
-            string tag = collider.tag.ToLowerInvariant();
+            string tag = collider.tag?.ToLowerInvariant() ?? string.Empty;
             string mat = collider.sharedMaterial?.name?.ToLowerInvariant() ?? string.Empty;
 
             if (tag.Contains("glass") || tag.Contains("foliage") || tag.Contains("banner") || tag.Contains("transparent"))
@@ -139,7 +138,7 @@ namespace AIRefactored.AI.Optimization
             }
 
             if (mat.Contains("leaf") || mat.Contains("bush") || mat.Contains("net") ||
-                mat.Contains("fabric") || mat.Contains("cloth"))
+                mat.Contains("fabric") || mat.Contains("cloth") || mat.Contains("tarp"))
             {
                 return false;
             }

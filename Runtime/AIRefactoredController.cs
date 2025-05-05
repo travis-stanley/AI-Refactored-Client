@@ -12,8 +12,6 @@ namespace AIRefactored.Runtime
 {
     using System;
     using System.Collections;
-    using System.Collections.Generic;
-    using AIRefactored.AI.Core;
     using AIRefactored.Core;
     using BepInEx.Logging;
     using EFT;
@@ -30,6 +28,7 @@ namespace AIRefactored.Runtime
         private static AIRefactoredController? _instance;
         private static ManualLogSource? _logger;
         private static readonly object LockObj = new object();
+        private static volatile bool _bootstrapStarted;
 
         #endregion
 
@@ -42,15 +41,9 @@ namespace AIRefactored.Runtime
 
         #region Properties
 
-        /// <summary>
-        /// Gets the shared AI-Refactored logger instance.
-        /// </summary>
         public static ManualLogSource Logger =>
             _logger ?? throw new InvalidOperationException("[AIRefactored] Logger accessed before controller initialization.");
 
-        /// <summary>
-        /// Gets a value indicating whether the controller has been initialized.
-        /// </summary>
         public static bool IsInitialized => _instance != null;
 
         #endregion
@@ -70,15 +63,13 @@ namespace AIRefactored.Runtime
                 _instance = this;
                 DontDestroyOnLoad(this.gameObject);
 
-                // Prevent adding the same component repeatedly
                 if (GetComponent<AIRefactoredController>() == null)
                 {
-                    // Only add component if it's not already present
-                    gameObject.AddComponent<AIRefactoredController>();
+                    this.gameObject.AddComponent<AIRefactoredController>();
                 }
             }
 
-            Logger?.LogInfo("[AIRefactored] [Awake] Initialization started.");
+            Logger?.LogInfo("[AIRefactored] [Awake] Controller instance active.");
         }
 
         private void OnDestroy()
@@ -88,10 +79,12 @@ namespace AIRefactored.Runtime
                 if (_instance == this)
                 {
                     _instance = null;
-                    _bootstrapComplete = false;
-                    _worldInitialized = false;
+                    _bootstrapStarted = false;
                 }
             }
+
+            _bootstrapComplete = false;
+            _worldInitialized = false;
 
             Logger?.LogInfo("[AIRefactored] [OnDestroy] Controller destroyed.");
         }
@@ -111,7 +104,7 @@ namespace AIRefactored.Runtime
             {
                 if (_instance != null)
                 {
-                    logger.LogWarning("[AIRefactored] [Init] Runtime controller already active — skipping duplicate initialization.");
+                    logger.LogWarning("[AIRefactored] [Init] Controller already initialized — skipping.");
                     return;
                 }
 
@@ -121,9 +114,13 @@ namespace AIRefactored.Runtime
                 _instance = host.AddComponent<AIRefactoredController>();
                 DontDestroyOnLoad(host);
 
-                _logger.LogInfo("[AIRefactored] [Init] Runtime controller initialized. Awaiting GameWorld...");
+                _logger.LogInfo("[AIRefactored] [Init] Controller created — starting deferred bootstrap.");
 
-                _instance.StartCoroutine(_instance.RunDeferredBootstrap());
+                if (!_bootstrapStarted)
+                {
+                    _bootstrapStarted = true;
+                    _instance.StartCoroutine(_instance.RunDeferredBootstrap());
+                }
             }
         }
 
@@ -133,27 +130,24 @@ namespace AIRefactored.Runtime
 
         private IEnumerator RunDeferredBootstrap()
         {
-            // Log to see when the bootstrap starts and if it's running in headless mode
-            Logger?.LogInfo("[AIRefactored] [RunDeferredBootstrap] Starting bootstrap process.");
+            Logger?.LogInfo("[AIRefactored] [RunDeferredBootstrap] Starting...");
 
-            // Instead of retrying, we wait for the game world to be ready before proceeding
             while (!_worldInitialized && !_bootstrapComplete)
             {
                 yield return null;
 
-                // Trigger world initialization check only when relevant game states are ready.
                 if (GameWorldHandler.IsInitialized)
                 {
-                    Logger?.LogInfo("[AIRefactored] [Bootstrap] GameWorld successfully initialized.");
+                    Logger?.LogInfo("[AIRefactored] [Bootstrap] GameWorld initialized successfully.");
                     _worldInitialized = true;
-                    _bootstrapComplete = true; // Set bootstrap as complete when the world is initialized
-                    break;
+                    _bootstrapComplete = true;
+                    yield break;
                 }
             }
 
             if (!_bootstrapComplete)
             {
-                Logger?.LogError("[AIRefactored] [Bootstrap] Failed to initialize GameWorld.");
+                Logger?.LogError("[AIRefactored] [Bootstrap] World initialization never completed.");
             }
         }
 

@@ -10,6 +10,7 @@
 
 namespace AIRefactored.AI.Optimization
 {
+    using System;
     using System.Collections.Generic;
     using AIRefactored.Core;
     using AIRefactored.Runtime;
@@ -22,14 +23,14 @@ namespace AIRefactored.AI.Optimization
     /// Used during development to confirm bot configuration consistency and behavioral tuning.
     /// Only runs on the authoritative instance (headless, local-host, or client-host).
     /// </summary>
-    public class BotAIOptimization
+    public sealed class BotAIOptimization
     {
         #region Fields
 
         private readonly Dictionary<string, bool> _optimizationApplied = new Dictionary<string, bool>(64);
+        private static readonly Dictionary<int, float> LastOptimizationLogs = new Dictionary<int, float>(64);
+        private const float OptimizationLogCooldown = 5f;
         private static ManualLogSource? Logger => AIRefactoredController.Logger;
-        private static readonly Dictionary<int, float> LastOptimizationLogs = new Dictionary<int, float>(); // Added cooldown for logging
-        private const float OptimizationLogCooldown = 5f; // 5 seconds cooldown between optimization logs
 
         #endregion
 
@@ -40,44 +41,43 @@ namespace AIRefactored.AI.Optimization
         /// </summary>
         public void Optimize(BotOwner? botOwner)
         {
-            // Only run on authoritative host
-            if (!GameWorldHandler.IsLocalHost() || botOwner == null)
+            if (!GameWorldHandler.IsLocalHost())
             {
                 return;
             }
 
-            if (botOwner.GetPlayer == null || !botOwner.GetPlayer.IsAI || botOwner.IsDead)
+            if (botOwner == null ||
+                botOwner.GetPlayer == null ||
+                !botOwner.GetPlayer.IsAI ||
+                botOwner.IsDead ||
+                botOwner.Profile == null)
             {
                 return;
             }
 
-            if (botOwner.Profile == null)
+            string profileId = botOwner.Profile.Id;
+            if (string.IsNullOrEmpty(profileId))
             {
                 return;
             }
 
-            string botId = botOwner.Profile.Id;
-            if (string.IsNullOrEmpty(botId))
+            if (_optimizationApplied.TryGetValue(profileId, out bool alreadyApplied) && alreadyApplied)
             {
+                if (!ShouldLogOptimization(botOwner))
+                {
+                    return;
+                }
+
+                Logger?.LogDebug("[BotAIOptimization] Optimization already applied for bot: " + profileId);
                 return;
             }
 
-            // Skip if optimization has already been applied
-            if (_optimizationApplied.TryGetValue(botId, out bool already) && already)
-            {
-                if (!ShouldLogOptimization(botOwner)) return; // Check if we should log optimization
-                Logger?.LogDebug("[BotAIOptimization] Optimization already applied for bot: " + botId);
-                return;
-            }
-
-            // Log bot AI settings
             LogCognition(botOwner);
             LogMind(botOwner);
             LogRole(botOwner);
 
-            // Mark as optimized
-            _optimizationApplied[botId] = true;
-            Logger?.LogInfo("[BotAIOptimization] Applied optimization for bot: " + botId);
+            _optimizationApplied[profileId] = true;
+            Logger?.LogInfo("[BotAIOptimization] Applied optimization for bot: " + profileId);
         }
 
         /// <summary>
@@ -85,87 +85,104 @@ namespace AIRefactored.AI.Optimization
         /// </summary>
         public void ResetOptimization(BotOwner? botOwner)
         {
-            // Only run on authoritative host
-            if (!GameWorldHandler.IsLocalHost() || botOwner == null)
+            if (!GameWorldHandler.IsLocalHost())
             {
                 return;
             }
 
-            if (botOwner.GetPlayer == null || !botOwner.GetPlayer.IsAI || botOwner.IsDead)
+            if (botOwner == null ||
+                botOwner.GetPlayer == null ||
+                !botOwner.GetPlayer.IsAI ||
+                botOwner.IsDead ||
+                botOwner.Profile == null)
             {
                 return;
             }
 
-            if (botOwner.Profile == null)
+            string profileId = botOwner.Profile.Id;
+            if (string.IsNullOrEmpty(profileId))
             {
                 return;
             }
 
-            string botId = botOwner.Profile.Id;
-            if (!string.IsNullOrEmpty(botId))
-            {
-                _optimizationApplied[botId] = false;
-                Logger?.LogInfo("[BotAIOptimization] Reset optimization for bot: " + botId);
-            }
+            _optimizationApplied[profileId] = false;
+            Logger?.LogInfo("[BotAIOptimization] Reset optimization for bot: " + profileId);
         }
 
         #endregion
 
         #region Private Helpers
 
-        private bool ShouldLogOptimization(BotOwner botOwner)
+        private static bool TryResolveBot(BotOwner? input, out BotOwner? result)
         {
-            int botId = botOwner.GetInstanceID();
-            if (LastOptimizationLogs.ContainsKey(botId))
+            if (input != null &&
+                input.GetPlayer != null &&
+                input.GetPlayer.IsAI &&
+                !input.IsDead &&
+                input.Profile != null)
             {
-                if (Time.time - LastOptimizationLogs[botId] < OptimizationLogCooldown)
-                {
-                    return false; // Prevent log if within cooldown
-                }
+                result = input;
+                return true;
             }
 
-            LastOptimizationLogs[botId] = Time.time;
-            return true; // Allow logging if cooldown has passed
+            result = null;
+            return false;
         }
 
-        private void LogCognition(BotOwner bot)
+        private static bool ShouldLogOptimization(BotOwner botOwner)
+        {
+            int instanceId = botOwner.GetInstanceID();
+            float currentTime = Time.time;
+
+            if (LastOptimizationLogs.TryGetValue(instanceId, out float lastTime) &&
+                currentTime - lastTime < OptimizationLogCooldown)
+            {
+                return false;
+            }
+
+            LastOptimizationLogs[instanceId] = currentTime;
+            return true;
+        }
+
+        private static void LogCognition(BotOwner bot)
         {
             string name = bot.Profile?.Info?.Nickname ?? "UnknownBot";
+            var look = bot.Settings?.FileSettings?.Look;
 
-            if (bot.Settings?.FileSettings?.Look == null)
+            if (look == null)
             {
                 Logger?.LogWarning("[BotDiagnostics][Cognition] " + name + " → No Look config found.");
                 return;
             }
 
-            var look = bot.Settings.FileSettings.Look;
             Logger?.LogInfo(
                 "[BotDiagnostics][Cognition] " + name +
                 " → GrassVision=" + look.MAX_VISION_GRASS_METERS.ToString("F1") +
-                "m (read-only), LightBonus=" + look.ENEMY_LIGHT_ADD.ToString("F1") + "m");
+                "m, LightBonus=" + look.ENEMY_LIGHT_ADD.ToString("F1") + "m");
         }
 
-        private void LogMind(BotOwner bot)
+        private static void LogMind(BotOwner bot)
         {
             string name = bot.Profile?.Info?.Nickname ?? "UnknownBot";
+            var mind = bot.Settings?.FileSettings?.Mind;
 
-            if (bot.Settings?.FileSettings?.Mind == null)
+            if (mind == null)
             {
                 Logger?.LogWarning("[BotDiagnostics][Mind] " + name + " → No Mind config found.");
                 return;
             }
 
-            var mind = bot.Settings.FileSettings.Mind;
             Logger?.LogInfo(
                 "[BotDiagnostics][Mind] " + name +
                 " → ScareThreshold=" + mind.MIN_DAMAGE_SCARE.ToString("F1") +
                 ", RunChance=" + mind.CHANCE_TO_RUN_CAUSE_DAMAGE_0_100.ToString("F0") + "%");
         }
 
-        private void LogRole(BotOwner bot)
+        private static void LogRole(BotOwner bot)
         {
             string name = bot.Profile?.Info?.Nickname ?? "UnknownBot";
-            var role = bot.Profile?.Info?.Settings?.Role ?? WildSpawnType.assault;
+            WildSpawnType role = bot.Profile?.Info?.Settings?.Role ?? WildSpawnType.assault;
+
             Logger?.LogInfo("[BotDiagnostics][Role] " + name + " → ProfileRole=" + role);
         }
 

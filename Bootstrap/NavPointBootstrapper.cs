@@ -47,8 +47,8 @@ namespace AIRefactored.AI.Navigation
 
         private static Vector3 _center = Vector3.zero;
         private static bool _isRunning;
-        private static int _registered;
         private static bool _isTaskRunning;
+        private static int _registered;
 
         #endregion
 
@@ -60,7 +60,6 @@ namespace AIRefactored.AI.Navigation
         /// <param name="mapId">The name of the current map (used for surface context).</param>
         public static void RegisterAll(string mapId)
         {
-            // Guard clauses to avoid redundant execution
             if (_isRunning || !IsHostEnvironment())
             {
                 Logger.LogWarning("[NavPointBootstrapper] Skipped — already running or non-host.");
@@ -72,7 +71,6 @@ namespace AIRefactored.AI.Navigation
             ScanQueue.Clear();
             BackgroundPending.Clear();
 
-            // Validate the NavMeshSurface component exists
             NavMeshSurface? surface = Object.FindObjectOfType<NavMeshSurface>();
             if (surface == null)
             {
@@ -84,7 +82,6 @@ namespace AIRefactored.AI.Navigation
             _center = surface.transform.position;
             float half = ScanRadius * 0.5f;
 
-            // Efficiently batch the scan positions
             for (float x = -half; x <= half; x += ScanSpacing)
             {
                 for (float z = -half; z <= half; z += ScanSpacing)
@@ -96,7 +93,6 @@ namespace AIRefactored.AI.Navigation
 
             Logger.LogInfo("[NavPointBootstrapper] Queued " + ScanQueue.Count + " surface points.");
 
-            // Run background prequeue only once
             if (!_isTaskRunning)
             {
                 _isTaskRunning = true;
@@ -109,7 +105,6 @@ namespace AIRefactored.AI.Navigation
         /// </summary>
         public static void Tick()
         {
-            // Skip if already running or not in the correct environment
             if (!_isRunning || !IsHostEnvironment())
             {
                 return;
@@ -118,12 +113,10 @@ namespace AIRefactored.AI.Navigation
             int maxPerFrame = FikaHeadlessDetector.IsHeadless ? 80 : 40;
             int processed = 0;
 
-            // Process the scan queue efficiently
             while (ScanQueue.Count > 0 && processed++ < maxPerFrame)
             {
                 Vector3 probe = ScanQueue.Dequeue();
 
-                // Perform the raycast to check for valid nav points
                 if (!Physics.Raycast(probe, Vector3.down, out RaycastHit hit, MaxSampleHeight))
                 {
                     continue;
@@ -131,13 +124,11 @@ namespace AIRefactored.AI.Navigation
 
                 Vector3 pos = hit.point;
 
-                // Check if the position is valid on the NavMesh
                 if (!NavMesh.SamplePosition(pos, out NavMeshHit navHit, 1.0f, NavMesh.AllAreas))
                 {
                     continue;
                 }
 
-                // Ensure there is enough clearance above the nav point
                 if (Physics.Raycast(pos + Vector3.up * 0.5f, Vector3.up, MinNavPointClearance))
                 {
                     continue;
@@ -150,12 +141,10 @@ namespace AIRefactored.AI.Navigation
                 bool isIndoor = IsIndoorPoint(final);
                 string tag = ClassifyNavPoint(elevation, isCover, isIndoor);
 
-                // Register valid nav point
                 NavPointRegistry.Register(final, isCover, tag, elevation, isIndoor);
                 _registered++;
             }
 
-            // Move vertical fallback points to the scan queue once horizontal scanning is done
             if (ScanQueue.Count == 0 && BackgroundPending.Count > 0)
             {
                 for (int i = 0; i < BackgroundPending.Count; i++)
@@ -167,7 +156,6 @@ namespace AIRefactored.AI.Navigation
                 Logger.LogInfo("[NavPointBootstrapper] Queued vertical fallback points.");
             }
 
-            // If the scan queue is empty, mark the process as complete
             if (ScanQueue.Count == 0)
             {
                 _isRunning = false;
@@ -183,7 +171,6 @@ namespace AIRefactored.AI.Navigation
         {
             float half = ScanRadius * 0.5f;
 
-            // Prequeue vertical points for fallback scans (batch processing)
             for (float x = -half; x <= half; x += ScanSpacing)
             {
                 for (float z = -half; z <= half; z += ScanSpacing)
@@ -195,7 +182,7 @@ namespace AIRefactored.AI.Navigation
                 }
             }
 
-            _isTaskRunning = false; // Task has finished
+            _isTaskRunning = false;
         }
 
         private static bool IsCoverPoint(Vector3 pos)
@@ -236,7 +223,6 @@ namespace AIRefactored.AI.Navigation
 
         private static bool IsHostEnvironment()
         {
-            // Treat headless as a valid "host"
             return GameWorldHandler.IsLocalHost() || FikaHeadlessDetector.IsHeadless;
         }
 

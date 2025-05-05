@@ -120,20 +120,20 @@ namespace AIRefactored.AI.Memory
             string finalTag = "Generic";
             if (tag != null)
             {
-                string trimmedTag = tag.Trim();
-                if (trimmedTag.Length > 0)
+                string temp = tag.Trim();
+                if (!string.IsNullOrEmpty(temp))
                 {
-                    finalTag = trimmedTag;
+                    finalTag = temp;
                 }
             }
 
             if (enemyId != null)
             {
-                string trimmedId = enemyId.Trim();
-                if (trimmedId.Length > 0)
+                string temp = enemyId.Trim();
+                if (!string.IsNullOrEmpty(temp))
                 {
                     SeenEnemyRecord record = new SeenEnemyRecord(gridPos, now, finalTag);
-                    this._enemyMemoryById[trimmedId] = record;
+                    this._enemyMemoryById[temp] = record;
                 }
             }
 
@@ -169,6 +169,24 @@ namespace AIRefactored.AI.Memory
             return freshest?.Position;
         }
 
+        public string? GetMostRecentEnemyId()
+        {
+            float now = Time.time;
+            string? latestId = null;
+            float latestTime = -1f;
+
+            foreach (KeyValuePair<string, SeenEnemyRecord> kvp in this._enemyMemoryById)
+            {
+                if (now - kvp.Value.TimeSeen <= MaxMemoryTime && kvp.Value.TimeSeen > latestTime)
+                {
+                    latestId = kvp.Key;
+                    latestTime = kvp.Value.TimeSeen;
+                }
+            }
+
+            return latestId;
+        }
+
         public List<SeenEnemyRecord> GetAllMemory()
         {
             return this._enemyMemoryList;
@@ -199,10 +217,7 @@ namespace AIRefactored.AI.Memory
                         continue;
                     }
 
-                    if (mate.TacticalMemory != null)
-                    {
-                        mate.TacticalMemory.SyncMemory(record.Position, "Echo:" + selfId);
-                    }
+                    mate.TacticalMemory?.SyncMemory(record.Position, "Echo:" + selfId);
                 }
             }
         }
@@ -219,8 +234,7 @@ namespace AIRefactored.AI.Memory
         public bool WasRecentlyCleared(Vector3 position)
         {
             Vector3 gridPos = SnapToGrid(position);
-            float lastTime;
-            return this._clearedSpots.TryGetValue(gridPos, out lastTime)
+            return this._clearedSpots.TryGetValue(gridPos, out float lastTime)
                 && Time.time - lastTime < ClearedMemoryDuration;
         }
 

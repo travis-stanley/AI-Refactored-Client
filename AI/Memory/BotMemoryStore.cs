@@ -28,9 +28,7 @@ namespace AIRefactored.AI.Memory
         private static readonly Dictionary<string, HeardSound> HeardSounds = new Dictionary<string, HeardSound>(64);
         private static readonly Dictionary<string, LastHitInfo> LastHitSources = new Dictionary<string, LastHitInfo>(64);
         private static readonly List<DangerZone> Zones = new List<DangerZone>(64);
-        private static readonly Dictionary<string, List<DangerZone>> ZoneCaches = new Dictionary<string, List<DangerZone>>(64); // for quick cache per map
-
-        // Contextual memory cache: Short-term and long-term memory separation
+        private static readonly Dictionary<string, List<DangerZone>> ZoneCaches = new Dictionary<string, List<DangerZone>>(64);
         private static readonly Dictionary<string, List<HeardSound>> ShortTermHeardSounds = new Dictionary<string, List<HeardSound>>(64);
 
         public static void AddDangerZone(string? mapId, Vector3 position, DangerTriggerType type, float radius)
@@ -46,30 +44,32 @@ namespace AIRefactored.AI.Memory
 
         public static void AddHeardSound(string? profileId, Vector3 position, float time)
         {
-            if (TryGetSafeKey(profileId, out string key))
+            if (!TryGetSafeKey(profileId, out string key))
             {
-                // Add to short-term memory (context-aware)
-                if (!ShortTermHeardSounds.ContainsKey(key))
-                {
-                    ShortTermHeardSounds[key] = new List<HeardSound>();
-                }
-
-                ShortTermHeardSounds[key].Add(new HeardSound(position, time));
-                // If needed, we could discard very old sounds here based on time
+                return;
             }
+
+            if (!ShortTermHeardSounds.TryGetValue(key, out var list))
+            {
+                list = new List<HeardSound>();
+                ShortTermHeardSounds[key] = list;
+            }
+
+            list.Add(new HeardSound(position, time));
         }
 
         public static void ClearHeardSound(string? profileId)
         {
-            if (TryGetSafeKey(profileId, out string key))
+            if (!TryGetSafeKey(profileId, out string key))
             {
-                HeardSounds.Remove(key);
+                return;
             }
 
-            // Clear from short-term memory as well
-            if (ShortTermHeardSounds.ContainsKey(key))
+            HeardSounds.Remove(key);
+
+            if (ShortTermHeardSounds.TryGetValue(key, out var list))
             {
-                ShortTermHeardSounds[key].Clear();
+                list.Clear();
             }
         }
 
@@ -116,6 +116,10 @@ namespace AIRefactored.AI.Memory
             {
                 cachedZones = new List<DangerZone>();
                 ZoneCaches[safeMap] = cachedZones;
+            }
+            else
+            {
+                cachedZones.Clear();
             }
 
             float now = Time.time;
@@ -164,17 +168,17 @@ namespace AIRefactored.AI.Memory
 
         public static void RegisterLastHitSource(string? victimProfileId, string? attackerProfileId)
         {
-            if (TryGetSafeKey(victimProfileId, out string victim) &&
-                TryGetSafeKey(attackerProfileId, out string attacker))
+            if (!TryGetSafeKey(victimProfileId, out string victim) || !TryGetSafeKey(attackerProfileId, out string attacker))
             {
-                LastHitSources[victim] = new LastHitInfo(attacker, Time.time);
+                return;
             }
+
+            LastHitSources[victim] = new LastHitInfo(attacker, Time.time);
         }
 
         public static bool WasRecentlyHitBy(string? victimProfileId, string? attackerProfileId)
         {
-            if (!TryGetSafeKey(victimProfileId, out string victim) ||
-                !TryGetSafeKey(attackerProfileId, out string attacker))
+            if (!TryGetSafeKey(victimProfileId, out string victim) || !TryGetSafeKey(attackerProfileId, out string attacker))
             {
                 return false;
             }
@@ -189,22 +193,23 @@ namespace AIRefactored.AI.Memory
             sound = default;
             return TryGetSafeKey(profileId, out string key) && HeardSounds.TryGetValue(key, out sound);
         }
-
         private static bool TryGetSafeKey(string? profileId, out string key)
         {
             key = string.Empty;
 
-            // Return false if profileId is null
             if (profileId == null)
             {
                 return false;
             }
 
-            // Trim the profileId only if it is not null or empty
-            key = profileId.Trim();
+            string trimmed = profileId.Trim();
+            if (trimmed.Length == 0)
+            {
+                return false;
+            }
 
-            // Return true only if the trimmed profileId is not an empty string
-            return !string.IsNullOrEmpty(key);
+            key = trimmed;
+            return true;
         }
 
         private static bool IsRealPlayer(Player player)
@@ -277,7 +282,7 @@ namespace AIRefactored.AI.Memory
     {
         private static readonly Stack<List<T>> Pool = new Stack<List<T>>(32);
 
-        public static List<T> Rent() => Pool.Count != 0 ? Pool.Pop() : new List<T>();
+        public static List<T> Rent() => Pool.Count > 0 ? Pool.Pop() : new List<T>();
 
         public static void Return(List<T>? list)
         {

@@ -40,10 +40,10 @@ namespace AIRefactored.AI.Groups
 
         #region Fields
 
-        private BotOwner? bot;
-        private BotComponentCache? cache;
-        private BotsGroup? group;
-        private Vector3? lastMoveTarget;
+        private BotOwner? _bot;
+        private BotComponentCache? _cache;
+        private BotsGroup? _group;
+        private Vector3? _lastMoveTarget;
 
         #endregion
 
@@ -64,14 +64,14 @@ namespace AIRefactored.AI.Groups
         /// <param name="componentCache">The bot's component cache.</param>
         public void Initialize(BotComponentCache componentCache)
         {
-            this.cache = componentCache ?? throw new ArgumentNullException(nameof(componentCache));
-            this.bot = componentCache.Bot ?? throw new ArgumentNullException(nameof(componentCache.Bot));
-            this.group = this.bot.BotsGroup;
+            this._cache = componentCache ?? throw new ArgumentNullException(nameof(componentCache));
+            this._bot = componentCache.Bot ?? throw new ArgumentNullException(nameof(componentCache.Bot));
+            this._group = this._bot.BotsGroup;
 
-            if (this.bot != null)
+            if (this._bot != null)
             {
                 this.GroupSync = new BotGroupSyncCoordinator();
-                this.GroupSync.Initialize(this.bot);
+                this.GroupSync.Initialize(this._bot);
                 this.GroupSync.InjectLocalCache(componentCache);
             }
         }
@@ -88,21 +88,21 @@ namespace AIRefactored.AI.Groups
                 return;
             }
 
-            if (this.bot == null || this.group == null || this.bot.Memory?.GoalEnemy != null)
+            if (this._bot == null || this._group == null || this._bot.Memory?.GoalEnemy != null)
             {
                 return;
             }
 
-            Vector3 myPos = this.bot.Position;
+            Vector3 myPos = this._bot.Position;
             Vector3 repulsion = Vector3.zero;
             Vector3? furthestTarget = null;
             float maxDistSqr = MinSpacingSqr;
 
-            int count = this.group.MembersCount;
+            int count = this._group.MembersCount;
             for (int i = 0; i < count; i++)
             {
-                BotOwner? mate = this.group.Member(i);
-                if (mate == null || mate == this.bot || mate.IsDead)
+                BotOwner? mate = this._group.Member(i);
+                if (mate == null || mate == this._bot || mate.IsDead)
                 {
                     continue;
                 }
@@ -143,16 +143,16 @@ namespace AIRefactored.AI.Groups
 
         private bool IsEligible()
         {
-            return this.bot != null &&
-                   this.group != null &&
-                   !this.bot.IsDead &&
-                   this.bot.GetPlayer != null &&
-                   this.bot.GetPlayer.IsAI;
+            return this._bot != null &&
+                   this._group != null &&
+                   !this._bot.IsDead &&
+                   this._bot.GetPlayer != null &&
+                   this._bot.GetPlayer.IsAI;
         }
 
         private void IssueMove(Vector3 rawTarget)
         {
-            if (this.bot == null)
+            if (this._bot == null)
             {
                 return;
             }
@@ -160,10 +160,10 @@ namespace AIRefactored.AI.Groups
             Vector3 jittered = rawTarget + UnityEngine.Random.insideUnitSphere * JitterAmount;
             jittered.y = rawTarget.y;
 
-            if (!this.lastMoveTarget.HasValue || Vector3.Distance(this.lastMoveTarget.Value, jittered) > SpacingTolerance)
+            if (!this._lastMoveTarget.HasValue || Vector3.Distance(this._lastMoveTarget.Value, jittered) > SpacingTolerance)
             {
-                BotMovementHelper.SmoothMoveTo(this.bot, jittered, false);
-                this.lastMoveTarget = jittered;
+                BotMovementHelper.SmoothMoveTo(this._bot, jittered, false);
+                this._lastMoveTarget = jittered;
             }
         }
 

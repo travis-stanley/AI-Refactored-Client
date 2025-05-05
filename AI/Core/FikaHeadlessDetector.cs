@@ -38,10 +38,20 @@ namespace AIRefactored.AI.Core
         /// </summary>
         static FikaHeadlessDetector()
         {
-            _isHeadless = Application.isBatchMode
-                          || Environment.CommandLine.IndexOf("-nographics", StringComparison.OrdinalIgnoreCase) >= 0;
+            try
+            {
+                _isHeadless =
+                    Application.isBatchMode ||
+                    Environment.CommandLine.IndexOf("-nographics", StringComparison.OrdinalIgnoreCase) >= 0;
 
-            _raidLocation = TryParseRaidLocationFromArgs();
+                _raidLocation = TryParseRaidLocationFromArgs();
+            }
+            catch (Exception ex)
+            {
+                _isHeadless = false;
+                _raidLocation = null;
+                Debug.LogWarning("[FikaHeadlessDetector] Failed during static init: " + ex.Message);
+            }
         }
 
         /// <summary>
@@ -54,14 +64,16 @@ namespace AIRefactored.AI.Core
             {
                 string cmd = Environment.CommandLine;
                 Match match = Regex.Match(cmd, "\"location\"\\s*:\\s*\"(.*?)\"", RegexOptions.IgnoreCase);
+
                 if (match.Success && match.Groups.Count > 1)
                 {
-                    return match.Groups[1].Value;
+                    string location = match.Groups[1].Value;
+                    return string.IsNullOrWhiteSpace(location) ? null : location;
                 }
             }
-            catch (Exception)
+            catch
             {
-                // Fail silently — invalid args are expected in some modes
+                // Silent fail is acceptable in malformed command-line environments
             }
 
             return null;

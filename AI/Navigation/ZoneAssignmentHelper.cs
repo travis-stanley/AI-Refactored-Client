@@ -12,6 +12,8 @@ namespace AIRefactored.AI.Navigation
 {
     using System;
     using System.Collections.Generic;
+    using AIRefactored.Runtime;
+    using BepInEx.Logging;
     using EFT.Game.Spawning;
     using UnityEngine;
 
@@ -21,8 +23,16 @@ namespace AIRefactored.AI.Navigation
     /// </summary>
     public static class ZoneAssignmentHelper
     {
+        #region Constants
+
         private const float MaxZoneSnapDistance = 28f;
         private const float BaseBossWeight = 2.5f;
+
+        #endregion
+
+        #region Fields
+
+        private static readonly ManualLogSource Logger = AIRefactoredController.Logger;
 
         private static readonly HashSet<string> _bossZones = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
         private static readonly Dictionary<string, Vector3> _zoneCenters = new Dictionary<string, Vector3>(StringComparer.OrdinalIgnoreCase);
@@ -31,6 +41,16 @@ namespace AIRefactored.AI.Navigation
         private static readonly List<string> _zoneNames = new List<string>(64);
 
         private static IZones? _zones;
+        private static volatile bool _initialized;
+
+        #endregion
+
+        #region Public API
+
+        /// <summary>
+        /// True if Initialize has completed and zones are valid.
+        /// </summary>
+        public static bool IsInitialized => _initialized;
 
         /// <summary>
         /// Clears all cached zone data (called on world unload or reset).
@@ -43,6 +63,7 @@ namespace AIRefactored.AI.Navigation
             _zoneWeights.Clear();
             _bossZones.Clear();
             _zoneNames.Clear();
+            _initialized = false;
         }
 
         /// <summary>
@@ -56,8 +77,6 @@ namespace AIRefactored.AI.Navigation
         /// <summary>
         /// Returns the nearest known zone name based on proximity to a position.
         /// </summary>
-        /// <param name="position">World position to evaluate.</param>
-        /// <returns>Closest known zone name or 'unassigned'.</returns>
         public static string GetNearestZone(Vector3 position)
         {
             string bestZone = "unassigned";
@@ -79,8 +98,6 @@ namespace AIRefactored.AI.Navigation
         /// <summary>
         /// Gets all spawn points registered under the zone.
         /// </summary>
-        /// <param name="zone">Zone name to query.</param>
-        /// <returns>List of spawn points.</returns>
         public static List<ISpawnPoint> GetSpawnPoints(string zone)
         {
             if (string.IsNullOrWhiteSpace(zone))
@@ -88,14 +105,14 @@ namespace AIRefactored.AI.Navigation
                 return new List<ISpawnPoint>();
             }
 
-            return _zoneSpawns.TryGetValue(zone, out var list) && list != null ? list : new List<ISpawnPoint>();
+            return _zoneSpawns.TryGetValue(zone, out List<ISpawnPoint>? list) && list != null
+                ? list
+                : new List<ISpawnPoint>();
         }
 
         /// <summary>
         /// Returns the average spawn point location for a zone.
         /// </summary>
-        /// <param name="zone">Zone name to query.</param>
-        /// <returns>Center point of the zone.</returns>
         public static Vector3 GetZoneCenter(string zone)
         {
             return _zoneCenters.TryGetValue(zone, out Vector3 center) ? center : Vector3.zero;
@@ -104,8 +121,6 @@ namespace AIRefactored.AI.Navigation
         /// <summary>
         /// Returns the tactical weight (risk/value) of a zone.
         /// </summary>
-        /// <param name="zone">Zone name to query.</param>
-        /// <returns>Weight of the zone.</returns>
         public static float GetZoneWeight(string zone)
         {
             return _zoneWeights.TryGetValue(zone, out float value) ? value : 1f;
@@ -114,8 +129,6 @@ namespace AIRefactored.AI.Navigation
         /// <summary>
         /// Returns true if the specified zone has a known boss presence.
         /// </summary>
-        /// <param name="zone">Zone name to check.</param>
-        /// <returns>True if a boss spawns here.</returns>
         public static bool IsBossZone(string zone)
         {
             return _bossZones.Contains(zone);
@@ -124,16 +137,21 @@ namespace AIRefactored.AI.Navigation
         /// <summary>
         /// Initializes zone metadata using IZones reference and populates all caches.
         /// </summary>
-        /// <param name="zones">IZones instance to scan from.</param>
-        /// <param name="includeSnipingZones">Whether to include sniper zones.</param>
         public static void Initialize(IZones zones, bool includeSnipingZones = true)
         {
+            if (_initialized)
+            {
+                Logger.LogWarning("[ZoneAssignmentHelper] Initialize called more than once.");
+                return;
+            }
+
             if (zones == null)
             {
                 throw new ArgumentNullException(nameof(zones));
             }
 
             _zones = zones;
+            _initialized = true;
 
             _zoneCenters.Clear();
             _zoneSpawns.Clear();
@@ -142,7 +160,7 @@ namespace AIRefactored.AI.Navigation
             _zoneNames.Clear();
 
             List<string> zoneList = new List<string>(zones.ZoneNames(includeSnipingZones));
-            foreach (var zoneName in zoneList)
+            foreach (string zoneName in zoneList)
             {
                 if (string.IsNullOrEmpty(zoneName))
                 {
@@ -160,7 +178,7 @@ namespace AIRefactored.AI.Navigation
                 Vector3 sum = Vector3.zero;
                 List<ISpawnPoint> spawnList = new List<ISpawnPoint>(spawns.Length);
 
-                foreach (var spawn in spawns)
+                foreach (ISpawnPoint? spawn in spawns)
                 {
                     if (spawn != null)
                     {
@@ -169,7 +187,7 @@ namespace AIRefactored.AI.Navigation
                     }
                 }
 
-                _zoneCenters[zoneName] = sum / spawns.Length;
+                _zoneCenters[zoneName] = sum / spawnList.Count;
                 _zoneSpawns[zoneName] = spawnList;
 
                 float weight = 1f;
@@ -186,6 +204,10 @@ namespace AIRefactored.AI.Navigation
 
                 _zoneWeights[zoneName] = weight;
             }
+
+            Logger.LogInfo($"[ZoneAssignmentHelper] Initialized with {_zoneNames.Count} zones.");
         }
+
+        #endregion
     }
 }

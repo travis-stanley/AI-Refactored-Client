@@ -13,6 +13,7 @@ namespace AIRefactored.AI.Combat.States
     using System;
     using AIRefactored.AI.Core;
     using AIRefactored.AI.Helpers;
+    using AIRefactored.Core;
     using AIRefactored.Runtime;
     using EFT;
     using UnityEngine;
@@ -41,13 +42,13 @@ namespace AIRefactored.AI.Combat.States
         {
             if (cache == null)
             {
-                AIRefactoredController.Logger.LogError("[AttackHandler] ❌ Constructor failed: cache is null.");
+                AIRefactoredController.Logger.LogError("[AttackHandler] Constructor failed: cache is null.");
                 throw new ArgumentNullException(nameof(cache));
             }
 
             if (cache.Bot == null)
             {
-                AIRefactoredController.Logger.LogError("[AttackHandler] ❌ Constructor failed: BotOwner is null.");
+                AIRefactoredController.Logger.LogError("[AttackHandler] Constructor failed: BotOwner is null.");
                 throw new InvalidOperationException("AttackHandler requires a valid BotOwner.");
             }
 
@@ -73,8 +74,8 @@ namespace AIRefactored.AI.Combat.States
         /// <returns>True if the bot should use attack logic.</returns>
         public bool ShallUseNow()
         {
-            IPlayer? target = this.GetCurrentEnemy();
-            return target != null && target.HealthController != null && target.HealthController.IsAlive;
+            Player? target = this.GetCurrentEnemy();
+            return EFTPlayerUtil.IsValid(target);
         }
 
         /// <summary>
@@ -83,18 +84,13 @@ namespace AIRefactored.AI.Combat.States
         /// <param name="time">Current game time.</param>
         public void Tick(float time)
         {
-            IPlayer? enemy = this.GetCurrentEnemy();
-            if (enemy == null)
+            Player? enemy = this.GetCurrentEnemy();
+            if (!EFTPlayerUtil.IsValid(enemy))
             {
                 return;
             }
 
-            if (enemy.HealthController == null || !enemy.HealthController.IsAlive)
-            {
-                return;
-            }
-
-            Transform? enemyTransform = enemy.Transform?.Original;
+            Transform? enemyTransform = EFTPlayerUtil.GetTransform(enemy);
             if (enemyTransform == null)
             {
                 return;
@@ -127,20 +123,19 @@ namespace AIRefactored.AI.Combat.States
         /// Gets the current valid enemy, if any.
         /// </summary>
         /// <returns>The current enemy target or null.</returns>
-        private IPlayer? GetCurrentEnemy()
+        private Player? GetCurrentEnemy()
         {
             if (this._cache == null || this._bot == null)
             {
                 return null;
             }
 
-            BotThreatSelector? selector = this._cache.ThreatSelector;
-            if (selector != null && selector.CurrentTarget is IPlayer current)
+            if (this._cache.ThreatSelector?.CurrentTarget is Player target && EFTPlayerUtil.IsValid(target))
             {
-                return current;
+                return target;
             }
 
-            if (this._bot.Memory?.GoalEnemy?.Person is IPlayer fallback)
+            if (this._bot.Memory?.GoalEnemy?.Person is Player fallback && EFTPlayerUtil.IsValid(fallback))
             {
                 return fallback;
             }

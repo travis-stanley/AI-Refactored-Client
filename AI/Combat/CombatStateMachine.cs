@@ -16,6 +16,7 @@ namespace AIRefactored.AI.Combat
     using AIRefactored.AI.Core;
     using AIRefactored.AI.Memory;
     using AIRefactored.AI.Optimization;
+    using AIRefactored.Core;
     using AIRefactored.Runtime;
     using EFT;
     using EFT.HealthSystem;
@@ -64,7 +65,7 @@ namespace AIRefactored.AI.Combat
         {
             if (componentCache == null || componentCache.Bot == null)
             {
-                AIRefactoredController.Logger.LogError("[CombatStateMachine] Initialization failed: Missing BotComponentCache or BotOwner.");
+                AIRefactoredController.Logger?.LogError("[CombatStateMachine] Initialization failed: Missing BotComponentCache or BotOwner.");
                 return;
             }
 
@@ -85,10 +86,10 @@ namespace AIRefactored.AI.Combat
 
         public bool IsInCombatState()
         {
-            return (this._fallback != null && this._fallback.IsActive()) ||
-                   (this._engage != null && this._engage.IsEngaging()) ||
-                   (this._investigate != null && this._investigate.IsInvestigating()) ||
-                   (this._cache != null && this._cache.ThreatSelector != null && this._cache.ThreatSelector.CurrentTarget != null);
+            return (this._fallback?.IsActive() ?? false) ||
+                   (this._engage?.IsEngaging() ?? false) ||
+                   (this._investigate?.IsInvestigating() ?? false) ||
+                   this._cache?.ThreatSelector?.CurrentTarget != null;
         }
 
         #endregion
@@ -107,7 +108,7 @@ namespace AIRefactored.AI.Combat
             {
                 this.AssignFallbackIfNeeded();
 
-                if (!FikaHeadlessDetector.IsHeadless && this._bot.BotTalk != null)  // Check if not in headless mode before bot speech
+                if (!FikaHeadlessDetector.IsHeadless && this._bot.BotTalk != null)
                 {
                     this._bot.BotTalk.TrySay(EPhraseTrigger.OnBeingHurt);
                 }
@@ -128,7 +129,7 @@ namespace AIRefactored.AI.Combat
             {
                 this.LastStateChangeTime = now;
 
-                if (!FikaHeadlessDetector.IsHeadless && this._bot.BotTalk != null)  // Check for headless mode before bot speech
+                if (!FikaHeadlessDetector.IsHeadless && this._bot.BotTalk != null)
                 {
                     this._bot.BotTalk.TrySay(EPhraseTrigger.Cooperation);
                 }
@@ -146,8 +147,7 @@ namespace AIRefactored.AI.Combat
                 return;
             }
 
-            Player player = this._bot.GetPlayer;
-            if (player == null || !player.IsAI)
+            if (!EFTPlayerUtil.IsValid(this._bot.GetPlayer))
             {
                 return;
             }
@@ -157,12 +157,11 @@ namespace AIRefactored.AI.Combat
                 return;
             }
 
-            // Suppression fallback
             if (this._fallback != null && this.ShouldTriggerSuppressedFallback(time))
             {
                 this.AssignFallbackIfNeeded();
 
-                if (!FikaHeadlessDetector.IsHeadless && this._bot.BotTalk != null)  // Check for headless mode before bot speech
+                if (!FikaHeadlessDetector.IsHeadless && this._bot.BotTalk != null)
                 {
                     this._bot.BotTalk.TrySay(EPhraseTrigger.OnBeingHurt);
                 }
@@ -176,7 +175,6 @@ namespace AIRefactored.AI.Combat
                 return;
             }
 
-            // Active fallback
             if (this._fallback != null && this._fallback.ShallUseNow(time))
             {
                 this.AssignFallbackIfNeeded();
@@ -184,29 +182,24 @@ namespace AIRefactored.AI.Combat
                 return;
             }
 
-            // Vision + enemy memory
             BotThreatSelector? selector = this._cache.ThreatSelector;
-            if (selector != null && selector.CurrentTarget is IPlayer enemy && enemy.Transform?.Original != null)
+            if (selector?.CurrentTarget is Player enemy && EFTPlayerUtil.IsValid(enemy))
             {
-                Vector3 enemyPos = enemy.Transform.Original.position;
+                Vector3 enemyPos = EFTPlayerUtil.GetPosition(enemy);
                 this._lastKnownEnemyPos = enemyPos;
 
-                if (enemy.HealthController != null && enemy.HealthController.IsAlive)
+                string enemyId = enemy.ProfileId;
+
+                this._cache.TacticalMemory?.RecordEnemyPosition(enemyPos, "Combat", enemyId);
+
+                if (this._bot.Mover != null && !this._bot.Mover.Sprinting)
                 {
-                    string enemyId = enemy.ProfileId;
-
-                    this._cache.TacticalMemory?.RecordEnemyPosition(enemyPos, "Combat", enemyId);
-
-                    if (this._bot.Mover != null && !this._bot.Mover.Sprinting)
-                    {
-                        this._bot.Sprint(true);
-                    }
-
-                    this._echo?.EchoSpottedEnemyToSquad(enemyPos);
+                    this._bot.Sprint(true);
                 }
+
+                this._echo?.EchoSpottedEnemyToSquad(enemyPos);
             }
 
-            // Engage or attack
             if (this._engage != null && this._engage.ShallUseNow())
             {
                 if (this._engage.CanAttack())
@@ -222,7 +215,6 @@ namespace AIRefactored.AI.Combat
                 return;
             }
 
-            // Investigate
             if (this._investigate != null && this._investigate.ShallUseNow(time, this.LastStateChangeTime))
             {
                 Vector3 investigate = this._investigate.GetInvestigateTarget(this._lastKnownEnemyPos);
@@ -235,7 +227,6 @@ namespace AIRefactored.AI.Combat
                 return;
             }
 
-            // Patrol
             this._patrol?.Tick(time);
         }
 
@@ -245,12 +236,9 @@ namespace AIRefactored.AI.Combat
 
         public void TriggerFallback(Vector3 fallbackPos)
         {
-            if (this._fallback != null)
-            {
-                this._fallback.SetFallbackTarget(fallbackPos);
-            }
+            this._fallback?.SetFallbackTarget(fallbackPos);
 
-            if (!FikaHeadlessDetector.IsHeadless && this._bot != null && this._bot.BotTalk != null)  // Check for headless mode before bot speech
+            if (!FikaHeadlessDetector.IsHeadless && this._bot?.BotTalk != null)
             {
                 this._bot.BotTalk.TrySay(EPhraseTrigger.OnLostVisual);
             }
@@ -289,7 +277,7 @@ namespace AIRefactored.AI.Combat
             }
             else
             {
-                AIRefactoredController.Logger.LogWarning($"[CombatStateMachine] Bot {this._bot.Profile?.Nickname ?? "Unknown"} failed to find fallback path.");
+                AIRefactoredController.Logger?.LogWarning($"[CombatStateMachine] Bot {this._bot.Profile?.Nickname ?? "Unknown"} failed to find fallback path.");
             }
         }
 

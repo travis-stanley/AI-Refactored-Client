@@ -10,10 +10,10 @@
 
 namespace AIRefactored.Runtime
 {
-    using AIRefactored.Core;
-    using UnityEngine;
-    using BepInEx.Logging;
     using System;
+    using AIRefactored.Core;
+    using BepInEx.Logging;
+    using UnityEngine;
 
     /// <summary>
     /// Detects dynamic runtime loot additions (e.g. player death drops, mission rewards).
@@ -27,7 +27,7 @@ namespace AIRefactored.Runtime
 
         #endregion
 
-        #region Fields
+        #region Static Fields
 
         private static ManualLogSource? _logger;
         private static bool _isRefreshing;
@@ -36,74 +36,77 @@ namespace AIRefactored.Runtime
 
         #region Unity Lifecycle
 
-        /// <summary>
-        /// Unity OnEnable hook. Schedules refresh if world is initialized and host is authoritative.
-        /// </summary>
         private void OnEnable()
         {
-            if (!Application.isPlaying || !GameWorldHandler.IsReady() || !GameWorldHandler.IsLocalHost())
+            if (!Application.isPlaying ||
+                !GameWorldHandler.IsReady() ||
+                !GameWorldHandler.IsLocalHost())
             {
-                return; // Skip if game world isn't ready or we're not the local host
+                return;
             }
 
             if (_isRefreshing)
             {
-                return; // Prevent multiple refresh triggers at once
+                return;
             }
 
             _isRefreshing = true;
-            this.Invoke(nameof(this.TriggerRefresh), RefreshDelaySeconds); // Delay refresh
+            Invoke(nameof(TriggerRefresh), RefreshDelaySeconds);
         }
 
         #endregion
 
-        #region Internal Logic
+        #region Refresh Logic
 
-        /// <summary>
-        /// Performs loot registry refresh. Executes only if world and host are valid.
-        /// </summary>
         private void TriggerRefresh()
         {
-            // Guard check for preventing recursion or invalid states
-            if (!Application.isPlaying || !GameWorldHandler.IsReady() || !GameWorldHandler.IsLocalHost())
+            if (!Application.isPlaying ||
+                !GameWorldHandler.IsReady() ||
+                !GameWorldHandler.IsLocalHost())
             {
-                _isRefreshing = false; // Reset flag if the conditions are not met
-                return; // Skip if game world isn't ready or we're not the local host
+                _isRefreshing = false;
+                return;
             }
 
-            GameWorldHandler.RefreshLootRegistry(); // Refresh loot registry
+            GameWorldHandler.RefreshLootRegistry();
             Logger.LogInfo("[LootRuntimeWatcher] Loot registry refreshed.");
 
-            _isRefreshing = false; // Reset refresh flag after operation
+            _isRefreshing = false;
         }
 
         /// <summary>
-        /// Allows manual trigger of loot registry refresh, useful for external events.
+        /// Allows external systems to trigger a refresh manually.
         /// </summary>
         public static void TriggerManualRefresh()
         {
-            // Guard against re-entrant refresh logic
-            if (_isRefreshing || !GameWorldHandler.IsReady() || !GameWorldHandler.IsLocalHost())
+            if (_isRefreshing ||
+                !GameWorldHandler.IsReady() ||
+                !GameWorldHandler.IsLocalHost())
             {
-                return; // Skip if refreshing already or we're not the local host
+                return;
             }
 
             _isRefreshing = true;
-            GameWorldHandler.RefreshLootRegistry(); // Perform manual refresh
+            GameWorldHandler.RefreshLootRegistry();
             Logger.LogInfo("[LootRuntimeWatcher] Manual loot registry refresh triggered.");
-            _isRefreshing = false; // Reset refresh flag
+            _isRefreshing = false;
         }
 
         #endregion
 
-        #region Logger Setup
+        #region Logger
 
         /// <summary>
-        /// Initialize logger for LootRuntimeWatcher.
+        /// Initializes the static logger for this system.
         /// </summary>
         public static void InitializeLogger(ManualLogSource logger)
         {
-            _logger = logger ?? throw new ArgumentNullException(nameof(logger)); // Guard against null logger
+            if (logger == null)
+            {
+                throw new ArgumentNullException(nameof(logger));
+            }
+
+            _logger = logger;
         }
 
         private static ManualLogSource Logger
@@ -112,8 +115,9 @@ namespace AIRefactored.Runtime
             {
                 if (_logger == null)
                 {
-                    throw new InvalidOperationException("[LootRuntimeWatcher] Logger is not initialized."); // Ensure logger is initialized
+                    throw new InvalidOperationException("[LootRuntimeWatcher] Logger is not initialized.");
                 }
+
                 return _logger;
             }
         }

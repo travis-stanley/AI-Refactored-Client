@@ -11,7 +11,6 @@
 namespace AIRefactored.AI.Threads
 {
     using System;
-
     using AIRefactored.AI.Combat;
     using AIRefactored.AI.Components;
     using AIRefactored.AI.Core;
@@ -23,11 +22,8 @@ namespace AIRefactored.AI.Threads
     using AIRefactored.AI.Reactions;
     using AIRefactored.Core;
     using AIRefactored.Runtime;
-
     using BepInEx.Logging;
-
     using EFT;
-
     using UnityEngine;
 
     /// <summary>
@@ -39,59 +35,37 @@ namespace AIRefactored.AI.Threads
         private static readonly ManualLogSource Logger = AIRefactoredController.Logger;
 
         private BotOwner? _bot;
-
         private Player? _player;
-
         private BotComponentCache? _cache;
 
         private bool _isValid;
 
         private CombatStateMachine? _combat;
-
         private BotMovementController? _movement;
-
         private BotPoseController? _pose;
-
+        private BotLookController? _look;
         private BotTilt? _tilt;
-
         private BotCornerScanner? _corner;
-
         private BotGroupBehavior? _groupBehavior;
-
         private BotJumpController? _jump;
-
         private BotVisionSystem? _vision;
-
         private BotHearingSystem? _hearing;
-
         private BotPerceptionSystem? _perception;
-
         private HearingDamageComponent? _hearingDamage;
-
         private FlashGrenadeComponent? _flashDetector;
-
         private BotFlashReactionComponent? _flashReaction;
-
         private BotTacticalDeviceController? _tactical;
-
         private BotMissionController? _mission;
-
         private BotGroupSyncCoordinator? _groupSync;
-
         private BotTeamLogic? _teamLogic;
-
         private BotAsyncProcessor? _asyncProcessor;
 
         private float _nextPerceptionTick;
-
         private float _nextCombatTick;
-
         private float _nextLogicTick;
 
         private float PerceptionTickRate => FikaHeadlessDetector.IsHeadless ? 1f / 60f : 1f / 30f;
-
         private float CombatTickRate => FikaHeadlessDetector.IsHeadless ? 1f / 60f : 1f / 30f;
-
         private float LogicTickRate => FikaHeadlessDetector.IsHeadless ? 1f / 30f : 1f / 15f;
 
         private void Update()
@@ -101,10 +75,8 @@ namespace AIRefactored.AI.Threads
                 return;
             }
 
-            // Validate player health status
             Player? currentPlayer = _bot.GetPlayer;
-            if (currentPlayer == null || currentPlayer.HealthController == null
-                                      || !currentPlayer.HealthController.IsAlive)
+            if (currentPlayer == null || currentPlayer.HealthController == null || !currentPlayer.HealthController.IsAlive)
             {
                 _isValid = false;
                 Logger.LogWarning("[BotBrain] Bot invalidated at runtime.");
@@ -114,7 +86,6 @@ namespace AIRefactored.AI.Threads
             float now = Time.time;
             float delta = Time.deltaTime;
 
-            // Perception update
             if (now >= _nextPerceptionTick)
             {
                 _vision?.Tick(now);
@@ -123,7 +94,6 @@ namespace AIRefactored.AI.Threads
                 _nextPerceptionTick = now + PerceptionTickRate;
             }
 
-            // Combat update
             if (now >= _nextCombatTick)
             {
                 _combat?.Tick(now);
@@ -135,7 +105,6 @@ namespace AIRefactored.AI.Threads
                 _nextCombatTick = now + CombatTickRate;
             }
 
-            // General logic update
             if (now >= _nextLogicTick)
             {
                 _mission?.Tick(now);
@@ -147,19 +116,15 @@ namespace AIRefactored.AI.Threads
                 _nextLogicTick = now + LogicTickRate;
             }
 
-            // Other logic updates
             _movement?.Tick(delta);
             _jump?.Tick(delta);
             _pose?.Tick(now);
+            _look?.Tick(delta);
             _corner?.Tick(now);
             _tilt?.ManualUpdate();
             _groupBehavior?.Tick(delta);
         }
 
-        /// <summary>
-        /// Initializes all AIRefactored systems for a spawned bot.
-        /// </summary>
-        /// <param name="bot">Target BotOwner to attach logic to.</param>
         public void Initialize(BotOwner bot)
         {
             if (!GameWorldHandler.IsLocalHost())
@@ -181,11 +146,14 @@ namespace AIRefactored.AI.Threads
             {
                 GameObject obj = _player.gameObject;
 
-                // Ensure BotComponentCache is initialized only once
+                _cache = obj.GetComponent<BotComponentCache>() ?? obj.AddComponent<BotComponentCache>();
+                _cache.Initialize(bot);
+
                 if (_cache == null)
                 {
-                    _cache = obj.GetComponent<BotComponentCache>() ?? obj.AddComponent<BotComponentCache>();
-                    _cache.Initialize(bot);
+                    Logger.LogError("[BotBrain] BotComponentCache is unexpectedly null after initialization.");
+                    _isValid = false;
+                    return;
                 }
 
                 if (_cache.Combat == null)
@@ -201,106 +169,44 @@ namespace AIRefactored.AI.Threads
                     _cache.SetOwner(owner);
                 }
 
-                // Initialize various subsystems for the bot (only initialize once)
-                if (_combat == null)
-                {
-                    _combat = _cache.Combat;
-                }
+                _combat = _cache.Combat;
+                _movement = _cache.Movement;
+                _pose = _cache.PoseController;
+                _look = _cache.LookController;
+                _tilt = _cache.Tilt;
+                _groupBehavior = _cache.GroupBehavior;
 
-                if (_movement == null)
-                {
-                    _movement = _cache.Movement;
-                }
+                _corner = new BotCornerScanner(bot, _cache);
+                _jump = new BotJumpController(bot, _cache);
 
-                if (_pose == null)
-                {
-                    _pose = _cache.PoseController;
-                }
+                _vision = new BotVisionSystem();
+                _vision.Initialize(_cache);
 
-                if (_tilt == null)
-                {
-                    _tilt = _cache.Tilt;
-                }
+                _hearing = new BotHearingSystem();
+                _hearing.Initialize(_cache);
 
-                if (_corner == null)
-                {
-                    _corner = new BotCornerScanner();
-                }
+                _perception = new BotPerceptionSystem();
+                _perception.Initialize(_cache);
 
-                if (_jump == null)
-                {
-                    _jump = new BotJumpController(bot, _cache);
-                }
+                _flashReaction = new BotFlashReactionComponent();
+                _flashReaction.Initialize(_cache);
 
-                if (_groupBehavior == null)
-                {
-                    _groupBehavior = _cache.GroupBehavior;
-                }
+                _flashDetector = new FlashGrenadeComponent();
+                _flashDetector.Initialize(_cache);
 
-                if (_vision == null)
-                {
-                    _vision = new BotVisionSystem();
-                    _vision.Initialize(_cache);
-                }
+                _hearingDamage = new HearingDamageComponent();
+                _tactical = _cache.Tactical;
+                _mission = new BotMissionController(bot, _cache);
 
-                if (_hearing == null)
-                {
-                    _hearing = new BotHearingSystem();
-                    _hearing.Initialize(_cache);
-                }
+                _groupSync = new BotGroupSyncCoordinator();
+                _groupSync.Initialize(bot);
+                _groupSync.InjectLocalCache(_cache);
 
-                if (_perception == null)
-                {
-                    _perception = new BotPerceptionSystem();
-                    _perception.Initialize(_cache);
-                }
+                _asyncProcessor = new BotAsyncProcessor();
+                _asyncProcessor.Initialize(bot, _cache);
 
-                if (_flashReaction == null)
-                {
-                    _flashReaction = new BotFlashReactionComponent();
-                    _flashReaction.Initialize(_cache);
-                }
+                _teamLogic = new BotTeamLogic(bot);
 
-                if (_flashDetector == null)
-                {
-                    _flashDetector = new FlashGrenadeComponent();
-                    _flashDetector.Initialize(_cache);
-                }
-
-                if (_hearingDamage == null)
-                {
-                    _hearingDamage = new HearingDamageComponent();
-                }
-
-                if (_tactical == null)
-                {
-                    _tactical = _cache.Tactical;
-                }
-
-                if (_mission == null)
-                {
-                    _mission = new BotMissionController(bot, _cache);
-                }
-
-                if (_groupSync == null)
-                {
-                    _groupSync = new BotGroupSyncCoordinator();
-                    _groupSync.Initialize(bot);
-                    _groupSync.InjectLocalCache(_cache);
-                }
-
-                if (_asyncProcessor == null)
-                {
-                    _asyncProcessor = new BotAsyncProcessor();
-                    _asyncProcessor.Initialize(bot, _cache);
-                }
-
-                if (_teamLogic == null)
-                {
-                    _teamLogic = new BotTeamLogic(bot);
-                }
-
-                // Ensure BotBrain is enforced only once
                 if (!obj.GetComponent<BotBrain>())
                 {
                     BotBrainGuardian.Enforce(obj);
@@ -316,5 +222,4 @@ namespace AIRefactored.AI.Threads
             }
         }
     }
-
 }

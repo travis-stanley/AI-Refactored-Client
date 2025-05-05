@@ -27,43 +27,26 @@ namespace AIRefactored.AI.Hotspots
     /// </summary>
     public sealed class HotspotSystem
     {
-        #region Fields
-
         private static readonly List<BotOwner> BotList = new List<BotOwner>(64);
         private static readonly ManualLogSource Logger = AIRefactoredController.Logger;
 
         private readonly Dictionary<BotOwner, HotspotSession> _sessions = new Dictionary<BotOwner, HotspotSession>(64);
 
-        #endregion
-
-        #region Public API
-
-        /// <summary>
-        /// Gets a random hotspot for fallback routing.
-        /// </summary>
-        /// <param name="bot">The bot requesting a position.</param>
-        /// <returns>A valid world position on the map.</returns>
         public static Vector3 GetRandomHotspotPosition(BotOwner bot)
         {
             return HotspotRegistry.GetRandomHotspot().Position;
         }
 
-        /// <summary>
-        /// Initializes the hotspot system and clears old sessions.
-        /// </summary>
         public void Initialize()
         {
             this._sessions.Clear();
             HotspotRegistry.Initialize(GameWorldHandler.GetCurrentMapName());
         }
 
-        /// <summary>
-        /// Updates all active hotspot navigation sessions per bot.
-        /// </summary>
         public void Tick()
         {
-            BotsController controller = Singleton<BotsController>.Instance;
-            if (controller == null || controller.Bots == null || controller.Bots.BotOwners == null)
+            BotsController? controller = Singleton<BotsController>.Instance;
+            if (controller?.Bots?.BotOwners == null)
             {
                 return;
             }
@@ -71,14 +54,15 @@ namespace AIRefactored.AI.Hotspots
             BotList.Clear();
             BotList.AddRange(controller.Bots.BotOwners);
 
-            foreach (BotOwner bot in BotList)
+            for (int i = 0; i < BotList.Count; i++)
             {
-                if (bot == null || bot.IsDead || bot.GetPlayer != null && bot.GetPlayer.IsYourPlayer)
+                BotOwner bot = BotList[i];
+                if (bot == null || bot.IsDead || bot.GetPlayer?.IsYourPlayer == true)
                 {
                     continue;
                 }
 
-                if (!this._sessions.TryGetValue(bot, out HotspotSession? session))
+                if (!this._sessions.TryGetValue(bot, out HotspotSession? session) || session == null)
                 {
                     session = this.AssignHotspotRoute(bot);
                     if (session != null)
@@ -87,14 +71,9 @@ namespace AIRefactored.AI.Hotspots
                     }
                 }
 
-                // Guard against multiple recursive ticks
                 session?.Tick();
             }
         }
-
-        #endregion
-
-        #region Internal Helpers
 
         private HotspotSession? AssignHotspotRoute(BotOwner bot)
         {
@@ -139,10 +118,6 @@ namespace AIRefactored.AI.Hotspots
             return new HotspotSession(bot, route, false);
         }
 
-        #endregion
-
-        #region Nested Class
-
         private sealed class HotspotSession
         {
             private const float BaseDefendRadius = 7f;
@@ -159,8 +134,8 @@ namespace AIRefactored.AI.Hotspots
 
             public HotspotSession(BotOwner bot, List<HotspotRegistry.Hotspot> route, bool isDefender)
             {
-                this._bot = bot;
-                this._route = route;
+                this._bot = bot ?? throw new ArgumentNullException(nameof(bot));
+                this._route = route ?? throw new ArgumentNullException(nameof(route));
                 this._isDefender = isDefender;
                 this._cache = BotCacheUtility.GetCache(bot);
                 this._lastHitTime = -999f;
@@ -176,12 +151,12 @@ namespace AIRefactored.AI.Hotspots
 
             public void Tick()
             {
-                if (this._bot.IsDead || this._route.Count == 0 || this._bot.GetPlayer != null && this._bot.GetPlayer.IsYourPlayer)
+                if (this._bot.IsDead || this._route.Count == 0 || this._bot.GetPlayer?.IsYourPlayer == true)
                 {
                     return;
                 }
 
-                if (this._bot.Memory != null && this._bot.Memory.GoalEnemy != null)
+                if (this._bot.Memory?.GoalEnemy != null)
                 {
                     this._bot.Sprint(true);
                     return;
@@ -197,10 +172,7 @@ namespace AIRefactored.AI.Hotspots
                 if (this._isDefender)
                 {
                     float dist = Vector3.Distance(this._bot.Position, target);
-                    float composure = this._cache != null && this._cache.PanicHandler != null
-                        ? this._cache.PanicHandler.GetComposureLevel()
-                        : 1f;
-
+                    float composure = this._cache?.PanicHandler?.GetComposureLevel() ?? 1f;
                     float defendRadius = BaseDefendRadius * Mathf.Clamp(1f + (1f - composure), 1f, 2f);
 
                     if (dist > defendRadius)
@@ -223,12 +195,7 @@ namespace AIRefactored.AI.Hotspots
 
             private Vector3 AddJitterTo(Vector3 target)
             {
-                if (this._cache == null || this._cache.AIRefactoredBotOwner == null)
-                {
-                    return target;
-                }
-
-                BotPersonalityProfile? profile = this._cache.AIRefactoredBotOwner.PersonalityProfile;
+                BotPersonalityProfile? profile = this._cache?.AIRefactoredBotOwner?.PersonalityProfile;
                 if (profile == null)
                 {
                     return target;
@@ -284,13 +251,8 @@ namespace AIRefactored.AI.Hotspots
             private void OnDamaged(EBodyPart part, float damage, DamageInfoStruct info)
             {
                 this._lastHitTime = Time.time;
-                if (this._cache != null && this._cache.PanicHandler != null)
-                {
-                    this._cache.PanicHandler.TriggerPanic();
-                }
+                this._cache?.PanicHandler?.TriggerPanic();
             }
         }
-
-        #endregion
     }
 }

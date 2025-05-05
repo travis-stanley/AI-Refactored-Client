@@ -11,10 +11,13 @@
 namespace AIRefactored.Core
 {
     using UnityEngine;
+
     using EFT;
     using EFT.Game.Spawning;
+
     using System;
     using System.Collections.Generic;
+
     using AIRefactored.AI.Core;
     using AIRefactored.AI.Hotspots;
     using AIRefactored.AI.Looting;
@@ -23,7 +26,9 @@ namespace AIRefactored.Core
     using AIRefactored.AI.Threads;
     using AIRefactored.Bootstrap;
     using AIRefactored.Runtime;
+
     using BepInEx.Logging;
+
     using Comfort.Common;
 
     public static partial class GameWorldHandler
@@ -31,22 +36,33 @@ namespace AIRefactored.Core
         #region Constants and Fields
 
         private const float DeadCleanupInterval = 10f;
+
         private const float LootRefreshCooldown = 4f;
+
         private const float InitializationRetryInterval = 3f;
+
         private const float LogCooldown = 5f;
 
         private static readonly ManualLogSource Logger = AIRefactoredController.Logger;
+
         private static readonly HashSet<int> KnownDeadBotIds = new HashSet<int>();
+
         private static readonly List<Player> TempPlayers = new List<Player>(64);
+
         private static GameObject? _bootstrapHost;
+
         private static bool _hasWarnedNoWorld;
+
         private static bool _hasLoggedHeadlessFallback;
 
         private static float _lastCleanupTime = -999f;
+
         private static float _lastLootRefresh = -999f;
+
         private static float _lastInitializationCheck = -999f;
 
         private static readonly object GameWorldLock = new object();
+
         private static bool _isWorldRecovering = false;
 
         public static bool IsInitialized { get; private set; }
@@ -63,7 +79,8 @@ namespace AIRefactored.Core
                 {
                     if (_isWorldRecovering)
                     {
-                        Logger.LogWarning("[GameWorldHandler] World is currently recovering. Skipping further requests.");
+                        Logger.LogWarning(
+                            "[GameWorldHandler] World is currently recovering. Skipping further requests.");
                         return null;
                     }
 
@@ -217,6 +234,8 @@ namespace AIRefactored.Core
 
         public static void TryInitializeWorld()
         {
+            if (IsInitialized) return;
+            IsInitialized = true;
             if (!IsLocalHost())
             {
                 Logger.LogWarning("[GameWorldHandler] Initialization skipped — not authoritative host.");
@@ -298,12 +317,12 @@ namespace AIRefactored.Core
         {
             lock (GameWorldLock)
             {
-                if (_bootstrapHost != null)
+                if (_bootstrapHost != null || IsInitialized)
                 {
                     return;
                 }
 
-                _bootstrapHost = new GameObject("AIRefactored.BootstrapHost");
+                if (_bootstrapHost == null) _bootstrapHost = new GameObject("AIRefactored.BootstrapHost");
                 UnityEngine.Object.DontDestroyOnLoad(_bootstrapHost);
 
                 _bootstrapHost.AddComponent<WorldBootstrapper>();
@@ -323,7 +342,7 @@ namespace AIRefactored.Core
         {
             lock (GameWorldLock)
             {
-                if (_bootstrapHost != null)
+                if (_bootstrapHost != null || IsInitialized)
                 {
                     UnityEngine.Object.Destroy(_bootstrapHost);
                     _bootstrapHost = null;

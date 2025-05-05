@@ -46,16 +46,12 @@ namespace AIRefactored.AI.Movement
         private bool _isPoseLocked;
         private float _nextPoseCheck;
         private float _suppressedUntil;
+        private float _lastTickTime;
 
         #endregion
 
         #region Constructor
 
-        /// <summary>
-        /// Initializes a new instance of the <see cref="BotPoseController"/> class.
-        /// </summary>
-        /// <param name="bot">The bot owner instance.</param>
-        /// <param name="cache">The bot component cache.</param>
         public BotPoseController(BotOwner bot, BotComponentCache cache)
         {
             if (bot == null)
@@ -86,6 +82,7 @@ namespace AIRefactored.AI.Movement
             this._currentPoseLevel = this._movement.PoseLevel;
             this._targetPoseLevel = this._currentPoseLevel;
             this._nextPoseCheck = Time.time;
+            this._lastTickTime = Time.time;
         }
 
         #endregion
@@ -130,9 +127,12 @@ namespace AIRefactored.AI.Movement
                 return;
             }
 
+            float deltaTime = currentTime - this._lastTickTime;
+            this._lastTickTime = currentTime;
+
             if (this._isPoseLocked)
             {
-                this.BlendPose(Time.deltaTime);
+                this.BlendPose(deltaTime);
                 return;
             }
 
@@ -142,7 +142,7 @@ namespace AIRefactored.AI.Movement
                 this.EvaluatePoseIntent(currentTime);
             }
 
-            this.BlendPose(Time.deltaTime);
+            this.BlendPose(deltaTime);
         }
 
         public void TrySetStanceFromNearbyCover(Vector3 position)

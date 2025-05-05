@@ -44,28 +44,35 @@ namespace AIRefactored.AI.Movement
         private BotPersonalityProfile? _profile;
         private float _pauseUntil;
         private float _prepCrouchUntil;
-
-        private bool _isLeaning = false; // To prevent redundant lean actions
-        private bool _isCrouching = false; // To prevent redundant crouch actions
+        private bool _isLeaning;
+        private bool _isCrouching;
 
         #endregion
 
-        #region Initialization
+        #region Constructors
 
         /// <summary>
-        /// Initializes the corner scanner from the bot's component cache.
+        /// Constructs and initializes the corner scanner using provided bot and cache.
         /// </summary>
-        /// <param name="cache">Bot component cache to use for context.</param>
-        public void Initialize(BotComponentCache cache)
+        /// <param name="bot">The EFT BotOwner instance.</param>
+        /// <param name="cache">BotComponentCache instance.</param>
+        public BotCornerScanner(BotOwner bot, BotComponentCache cache)
         {
-            if (cache == null || cache.Bot == null || cache.AIRefactoredBotOwner == null || cache.AIRefactoredBotOwner.PersonalityProfile == null)
-            {
-                throw new ArgumentNullException(nameof(cache));
-            }
+            if (bot == null) throw new ArgumentNullException(nameof(bot));
+            if (cache == null) throw new ArgumentNullException(nameof(cache));
+            if (cache.AIRefactoredBotOwner?.PersonalityProfile == null)
+                throw new ArgumentException("Cache is missing AIRefactoredBotOwner or profile.");
 
-            this._cache = cache;
-            this._bot = cache.Bot;
-            this._profile = cache.AIRefactoredBotOwner.PersonalityProfile;
+            _bot = bot;
+            _cache = cache;
+            _profile = cache.AIRefactoredBotOwner.PersonalityProfile;
+        }
+
+        /// <summary>
+        /// Default constructor for manual Init fallback.
+        /// </summary>
+        public BotCornerScanner()
+        {
         }
 
         #endregion
@@ -73,33 +80,45 @@ namespace AIRefactored.AI.Movement
         #region Public Methods
 
         /// <summary>
-        /// Scans forward edge and corners to pause, lean, or crouch tactically.
+        /// Initializes the corner scanner using bot context.
         /// </summary>
-        /// <param name="time">World time for timing pauses and prep.</param>
+        /// <param name="cache">Bot component cache.</param>
+        public void Initialize(BotComponentCache cache)
+        {
+            if (cache == null || cache.Bot == null || cache.AIRefactoredBotOwner?.PersonalityProfile == null)
+            {
+                throw new ArgumentNullException(nameof(cache));
+            }
+
+            _cache = cache;
+            _bot = cache.Bot;
+            _profile = cache.AIRefactoredBotOwner.PersonalityProfile;
+        }
+
+        /// <summary>
+        /// Scans edges and walls to trigger pause, crouch, or lean based on tactical need.
+        /// </summary>
+        /// <param name="time">World time for timing checks.</param>
         public void Tick(float time)
         {
-            if (!this.IsEligible(time))
+            if (!IsEligible(time))
             {
                 return;
             }
 
-            if (this.IsApproachingEdge())
+            if (IsApproachingEdge())
             {
-                if (this._cache?.Tilt != null)
-                {
-                    this._cache.Tilt.Stop();
-                }
-
-                this.PauseMovement(time);
+                _cache?.Tilt?.Stop();
+                PauseMovement(time);
                 return;
             }
 
-            if (this.TryCornerPeekWithCrouch(time))
+            if (TryCornerPeekWithCrouch(time))
             {
                 return;
             }
 
-            this.ResetLean(time);
+            ResetLean(time);
         }
 
         #endregion
@@ -108,38 +127,37 @@ namespace AIRefactored.AI.Movement
 
         private bool IsEligible(float time)
         {
-            return this._bot != null &&
-                   !this._bot.IsDead &&
-                   this._bot.Mover != null &&
-                   this._bot.Transform != null &&
-                   time >= this._pauseUntil &&
-                   time >= this._prepCrouchUntil &&
-                   this._bot.Memory != null &&
-                   this._bot.Memory.GoalEnemy == null;
+            return _bot != null &&
+                   !_bot.IsDead &&
+                   _bot.Mover != null &&
+                   _bot.Transform != null &&
+                   _bot.Memory?.GoalEnemy == null &&
+                   time >= _pauseUntil &&
+                   time >= _prepCrouchUntil;
         }
 
         private void PauseMovement(float time)
         {
-            if (this._bot == null || this._profile == null || this._bot.Mover == null)
+            if (_bot?.Mover == null || _profile == null)
             {
                 return;
             }
 
-            float duration = BasePauseDuration * Mathf.Clamp(0.5f + this._profile.Caution, 0.35f, 2.0f);
-            this._bot.Mover.MovementPause(duration);
-            this._pauseUntil = time + duration;
+            float duration = BasePauseDuration * Mathf.Clamp(0.5f + _profile.Caution, 0.35f, 2.0f);
+            _bot.Mover.MovementPause(duration);
+            _pauseUntil = time + duration;
         }
 
         private bool IsApproachingEdge()
         {
-            if (this._bot == null || this._bot.Transform == null)
+            if (_bot?.Transform == null)
             {
                 return false;
             }
 
-            Vector3 origin = this._bot.Position + (Vector3.up * 0.2f);
-            Vector3 forward = this._bot.Transform.forward;
-            Vector3 right = this._bot.Transform.right;
+            Vector3 origin = _bot.Position + Vector3.up * 0.2f;
+            Vector3 forward = _bot.Transform.forward;
+            Vector3 right = _bot.Transform.right;
             int rays = Mathf.CeilToInt((EdgeCheckDistance * 2f) / EdgeRaySpacing);
 
             for (int i = 0; i < rays; i++)
@@ -149,10 +167,8 @@ namespace AIRefactored.AI.Movement
 
                 if (!Physics.Raycast(rayOrigin, Vector3.down, MinFallHeight, AIRefactoredLayerMasks.NavObstacleMask))
                 {
-                    Vector3 probe = rayOrigin + (Vector3.down * MinFallHeight);
-                    NavMeshHit hit;
-
-                    if (!NavMesh.SamplePosition(probe, out hit, 1.0f, NavMesh.AllAreas) || hit.distance > NavSampleTolerance)
+                    if (!NavMesh.SamplePosition(rayOrigin + Vector3.down * MinFallHeight, out NavMeshHit hit, 1.0f, NavMesh.AllAreas) ||
+                        hit.distance > NavSampleTolerance)
                     {
                         return true;
                     }
@@ -164,95 +180,81 @@ namespace AIRefactored.AI.Movement
 
         private bool TryCornerPeekWithCrouch(float time)
         {
-            if (this._bot == null || this._bot.Transform == null || this._profile == null)
+            if (_bot?.Transform == null || _profile == null)
             {
                 return false;
             }
 
-            Vector3 origin = this._bot.Position + (Vector3.up * WallCheckHeight);
-            Vector3 right = this._bot.Transform.right;
+            Vector3 origin = _bot.Position + Vector3.up * WallCheckHeight;
+            Vector3 right = _bot.Transform.right;
             Vector3 left = -right;
-            float checkDistance = BaseWallCheckDistance + ((1f - this._profile.Caution) * 0.5f);
+            float checkDist = BaseWallCheckDistance + ((1f - _profile.Caution) * 0.5f);
 
-            if (this.CheckWall(origin, left, checkDistance))
+            if (CheckWall(origin, left, checkDist))
             {
-                if (!this._isCrouching && this.AttemptCrouch(time))
-                {
-                    this._isCrouching = true;
-                    return true;
-                }
-
-                if (!this._isLeaning)
-                {
-                    this.TriggerLean(BotTiltType.left, time);
-                    this._isLeaning = true;
-                }
-                return true;
+                return TriggerLeanOrCrouch(BotTiltType.left, time);
             }
 
-            if (this.CheckWall(origin, right, checkDistance))
+            if (CheckWall(origin, right, checkDist))
             {
-                if (!this._isCrouching && this.AttemptCrouch(time))
-                {
-                    this._isCrouching = true;
-                    return true;
-                }
-
-                if (!this._isLeaning)
-                {
-                    this.TriggerLean(BotTiltType.right, time);
-                    this._isLeaning = true;
-                }
-                return true;
+                return TriggerLeanOrCrouch(BotTiltType.right, time);
             }
 
             return false;
         }
 
-        private bool CheckWall(Vector3 origin, Vector3 dir, float distance)
+        private bool CheckWall(Vector3 origin, Vector3 direction, float distance)
         {
-            RaycastHit hit;
-            if (Physics.Raycast(origin, dir, out hit, distance, AIRefactoredLayerMasks.CoverRayMask))
+            if (Physics.Raycast(origin, direction, out RaycastHit hit, distance, AIRefactoredLayerMasks.CoverRayMask))
             {
-                return Vector3.Dot(hit.normal, dir) < WallAngleThreshold;
+                return Vector3.Dot(hit.normal, direction) < WallAngleThreshold;
             }
 
             return false;
+        }
+
+        private bool TriggerLeanOrCrouch(BotTiltType side, float time)
+        {
+            if (!_isCrouching && AttemptCrouch(time))
+            {
+                _isCrouching = true;
+                return true;
+            }
+
+            if (!_isLeaning)
+            {
+                _cache?.Tilt?.Set(side);
+                PauseMovement(time);
+                _isLeaning = true;
+            }
+
+            return true;
         }
 
         private bool AttemptCrouch(float time)
         {
-            if (this._cache == null || this._cache.PoseController == null)
+            if (_cache?.PoseController == null)
             {
                 return false;
             }
 
-            if (this._cache.PoseController.GetPoseLevel() > 30f)
+            if (_cache.PoseController.GetPoseLevel() > 30f)
             {
-                this._cache.PoseController.SetCrouch();
-                this._prepCrouchUntil = time + PrepCrouchTime;
+                _cache.PoseController.SetCrouch();
+                _prepCrouchUntil = time + PrepCrouchTime;
                 return true;
             }
 
             return false;
         }
 
-        private void TriggerLean(BotTiltType side, float time)
-        {
-            if (this._cache?.Tilt != null)
-            {
-                this._cache.Tilt.Set(side);
-                this.PauseMovement(time);
-            }
-        }
-
         private void ResetLean(float time)
         {
-            if (this._cache != null && this._cache.Tilt != null && this._cache.Tilt._coreTilt)
+            if (_cache?.Tilt?._coreTilt == true)
             {
-                this._cache.Tilt.tiltOff = time - 1f;
-                this._cache.Tilt.ManualUpdate();
-                this._isLeaning = false; // Reset the lean state after it's executed
+                _cache.Tilt.tiltOff = time - 1f;
+                _cache.Tilt.ManualUpdate();
+                _isLeaning = false;
             }
         }
 

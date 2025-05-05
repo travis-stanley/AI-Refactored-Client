@@ -11,7 +11,6 @@
 namespace AIRefactored.AI.Combat
 {
     using System;
-    using System.Collections.Generic;
     using AIRefactored.AI.Core;
     using AIRefactored.AI.Helpers;
     using AIRefactored.AI.Memory;
@@ -27,8 +26,6 @@ namespace AIRefactored.AI.Combat
     /// </summary>
     public sealed class BotPanicHandler
     {
-        #region Fields
-
         private const float PanicCooldown = 5.0f;
         private const float PanicDuration = 3.5f;
         private const float RecoverySpeed = 0.2f;
@@ -41,20 +38,12 @@ namespace AIRefactored.AI.Combat
         private float _panicStartTime = -1f;
         private float _lastPanicExitTime = -99f;
 
-        #endregion
-
-        #region Properties
-
         public bool IsPanicking => this._isPanicking;
 
         public float GetComposureLevel()
         {
             return this._composureLevel;
         }
-
-        #endregion
-
-        #region Public Methods
 
         public void Initialize(BotComponentCache componentCache)
         {
@@ -63,22 +52,14 @@ namespace AIRefactored.AI.Combat
                 return;
             }
 
-            BotOwner? bot = componentCache.Bot;
-            if (bot == null)
-            {
-                return;
-            }
-
             this._cache = componentCache;
-            this._bot = bot;
+            this._bot = componentCache.Bot;
 
-            EFT.Player? player = bot.GetPlayer as EFT.Player;
-            if (player != null)
+            if (this._bot != null && this._bot.GetPlayer is EFT.Player player)
             {
-                IHealthController? health = player.HealthController;
-                if (health != null)
+                if (player.HealthController != null)
                 {
-                    health.ApplyDamageEvent += this.OnDamaged;
+                    player.HealthController.ApplyDamageEvent += this.OnDamaged;
                 }
             }
         }
@@ -107,17 +88,19 @@ namespace AIRefactored.AI.Combat
                 return;
             }
 
-            if (this._bot != null)
+            if (this._bot == null)
             {
-                if (this.ShouldPanicFromThreat())
-                {
-                    Vector3 retreatDirection = -this._bot.LookDirection.normalized;
-                    this.TryStartPanic(time, retreatDirection);
-                }
-                else if (this.CheckNearbySquadDanger(out Vector3 retreatDir))
-                {
-                    this.TryStartPanic(time, retreatDir);
-                }
+                return;
+            }
+
+            if (this.ShouldPanicFromThreat())
+            {
+                Vector3 retreatDirection = -this._bot.LookDirection.normalized;
+                this.TryStartPanic(time, retreatDirection);
+            }
+            else if (this.CheckNearbySquadDanger(out Vector3 retreatDir))
+            {
+                this.TryStartPanic(time, retreatDir);
             }
         }
 
@@ -141,10 +124,6 @@ namespace AIRefactored.AI.Combat
 
             this.TryStartPanic(Time.time, -this._bot.LookDirection.normalized);
         }
-
-        #endregion
-
-        #region Private Methods
 
         private bool IsValid()
         {
@@ -247,7 +226,6 @@ namespace AIRefactored.AI.Combat
 
             this._bot.Sprint(true);
 
-            // Ensure BotTalk only happens in non-headless mode
             if (!FikaHeadlessDetector.IsHeadless)
             {
                 this._bot.BotTalk?.TrySay(EPhraseTrigger.OnBeingHurt);
@@ -290,7 +268,5 @@ namespace AIRefactored.AI.Combat
 
             return false;
         }
-
-        #endregion
     }
 }

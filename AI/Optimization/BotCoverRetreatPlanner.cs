@@ -76,7 +76,7 @@ namespace AIRefactored.AI.Optimization
                 _squadRetreatCache[map] = squadCache;
             }
 
-            if (squadCache.TryGetValue(squadId, out List<Vector3> cached) &&
+            if (squadCache.TryGetValue(squadId, out List<Vector3>? cached) &&
                 cached != null &&
                 cached.Count >= 2 &&
                 !IsPathBlockedByDoor(cached) &&
@@ -159,16 +159,6 @@ namespace AIRefactored.AI.Optimization
             return new List<Vector3> { origin, best };
         }
 
-        public static void RegisterSurface(string mapId, NavMeshSurface surface)
-        {
-            if (!GameWorldHandler.IsLocalHost() || string.IsNullOrEmpty(mapId) || surface == null)
-            {
-                return;
-            }
-
-            _mapNavSurfaces[mapId] = surface;
-        }
-
         public static Vector3? GetSafeExtractionPoint(BotOwner bot, BotOwnerPathfindingCache pathCache)
         {
             if (!GameWorldHandler.IsLocalHost() || bot == null)
@@ -202,6 +192,16 @@ namespace AIRefactored.AI.Optimization
             }
 
             return best;
+        }
+
+        public static void RegisterSurface(string mapId, NavMeshSurface surface)
+        {
+            if (string.IsNullOrEmpty(mapId) || surface == null)
+            {
+                return;
+            }
+
+            _mapNavSurfaces[mapId] = surface;
         }
 
         #endregion

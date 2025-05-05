@@ -36,6 +36,7 @@ namespace AIRefactored.AI.Looting
         private static readonly HashSet<LootItem> _items = new HashSet<LootItem>();
         private static readonly HashSet<GameObject> _watchedObjects = new HashSet<GameObject>();
 
+
         #endregion
 
         #region Public API
@@ -66,7 +67,7 @@ namespace AIRefactored.AI.Looting
 
             foreach (LootableContainer container in _containers)
             {
-                if (container == null)
+                if (container == null || container.transform == null)
                 {
                     continue;
                 }
@@ -88,7 +89,7 @@ namespace AIRefactored.AI.Looting
 
             foreach (LootItem item in _items)
             {
-                if (item == null)
+                if (item == null || item.transform == null)
                 {
                     continue;
                 }
@@ -105,12 +106,7 @@ namespace AIRefactored.AI.Looting
 
         public static void RegisterContainer(LootableContainer? container)
         {
-            if (container == null)
-            {
-                return;
-            }
-
-            if (_containers.Contains(container))
+            if (container == null || _containers.Contains(container))
             {
                 return;
             }
@@ -121,12 +117,7 @@ namespace AIRefactored.AI.Looting
 
         public static void RegisterItem(LootItem? item)
         {
-            if (item == null)
-            {
-                return;
-            }
-
-            if (_items.Contains(item))
+            if (item == null || _items.Contains(item))
             {
                 return;
             }
@@ -146,7 +137,8 @@ namespace AIRefactored.AI.Looting
 
             foreach (LootableContainer container in _containers)
             {
-                if (container != null && container.name.Equals(name, StringComparison.OrdinalIgnoreCase))
+                if (container != null && container.name != null &&
+                    container.name.Equals(name, StringComparison.OrdinalIgnoreCase))
                 {
                     found = container;
                     return true;
@@ -167,7 +159,8 @@ namespace AIRefactored.AI.Looting
 
             foreach (LootItem item in _items)
             {
-                if (item != null && item.name.Equals(name, StringComparison.OrdinalIgnoreCase))
+                if (item != null && item.name != null &&
+                    item.name.Equals(name, StringComparison.OrdinalIgnoreCase))
                 {
                     found = item;
                     return true;

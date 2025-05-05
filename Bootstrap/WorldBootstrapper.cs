@@ -32,13 +32,16 @@ namespace AIRefactored.Bootstrap
     public sealed class WorldBootstrapper : MonoBehaviour
     {
         private const float SweepInterval = 20f;
-        private const float InitializationRetryInterval = 3f; // Retry interval for headless
-        private const int MaxInitializationRetries = 5; // Maximum retries for initialization
-        private const float ZoneCheckInterval = 1f; // Interval to check zone availability
+        private const float InitializationRetryInterval = 3f;
+        private const int MaxInitializationRetries = 5;
+        private const float ZoneCheckInterval = 1f;
 
         private static readonly ManualLogSource Logger = AIRefactoredController.Logger;
-        private static bool _hasInitialized;
-        private static int _initializationAttempts = 0;
+        private static readonly object LockObj = new object();
+
+        private static volatile bool _hasInitialized;
+        private static volatile bool _initRunning;
+        private static int _initializationAttempts;
         private static bool _wasWorldReadyOnRetry;
 
         private float _lastSweepTime = -999f;
@@ -46,15 +49,20 @@ namespace AIRefactored.Bootstrap
         private float _lastZoneCheck = -999f;
         private BotSystemRecoveryWatcher? _recoveryWatcher;
 
-        private static readonly object LockObj = new object(); // For thread safety
-
         /// <summary>
-        /// Initializes the world if it's not already initialized, or if the host is valid.
+        /// Injects WorldBootstrapper if it hasn't already been initialized.
         /// </summary>
         public static void TryInitialize()
         {
-            if (_hasInitialized || !GameWorldHandler.IsLocalHost())
+            if (_hasInitialized)
             {
+                Logger.LogWarning("[WorldBootstrapper] TryInitialize called multiple times.");
+                return;
+            }
+
+            if (!GameWorldHandler.IsLocalHost())
+            {
+                Logger.LogWarning("[WorldBootstrapper] Skipped bootstrap — not authoritative.");
                 return;
             }
 
@@ -76,7 +84,7 @@ namespace AIRefactored.Bootstrap
             if (GameWorldHandler.IsLocalHost())
             {
                 Logger.LogInfo("[WorldBootstrapper] 🧠 Authoritative host detected — initializing world systems.");
-                this.StartCoroutine(this.DelayedInitialize());
+                this.StartCoroutine(this.SafeInitializeRoutine());
             }
             else
             {
@@ -100,10 +108,10 @@ namespace AIRefactored.Bootstrap
 
             GameWorldHandler.CleanupDeadBotsSmoothly();
 
-            // Zone availability check logic
             if (now - this._lastZoneCheck >= ZoneCheckInterval)
             {
                 this._lastZoneCheck = now;
+
                 if (!GameWorldHandler.TryGetIZones(out IZones? zones) || zones == null)
                 {
                     Logger.LogWarning("[WorldBootstrapper] ⚠ Zones are not ready.");
@@ -120,45 +128,53 @@ namespace AIRefactored.Bootstrap
             }
 
             Logger.LogInfo("[WorldBootstrapper] 🔻 Destroyed — clearing world systems.");
-
             HotspotRegistry.Clear();
             LootRegistry.Clear();
             NavPointRegistry.Clear();
             ZoneAssignmentHelper.Clear();
 
             _hasInitialized = false;
+            _initRunning = false;
+        }
+
+        private IEnumerator SafeInitializeRoutine()
+        {
+            if (_initRunning)
+            {
+                Logger.LogWarning("[WorldBootstrapper] Initialization already in progress — skipping re-entry.");
+                yield break;
+            }
+
+            _initRunning = true;
+            yield return this.StartCoroutine(this.DelayedInitialize());
+            _initRunning = false;
         }
 
         private IEnumerator DelayedInitialize()
         {
             lock (LockObj)
             {
-                // Check if retries have been exhausted but the world is available now
                 if (_initializationAttempts >= MaxInitializationRetries)
                 {
-                    // If the world has now become available, reset the retry logic
                     if (!_wasWorldReadyOnRetry && GameWorldHandler.IsReady())
                     {
                         _wasWorldReadyOnRetry = true;
                         _initializationAttempts = 0;
                     }
 
-                    if (_wasWorldReadyOnRetry)
+                    if (!_wasWorldReadyOnRetry)
                     {
-                        Logger.LogInfo("[WorldBootstrapper] World is now ready after retries. Re-initializing.");
-                    }
-                    else
-                    {
-                        Logger.LogError("[WorldBootstrapper] Maximum retries reached for initialization. Aborting.");
+                        Logger.LogError("[WorldBootstrapper] ❌ Maximum retries reached — initialization aborted.");
                         yield break;
                     }
+
+                    Logger.LogInfo("[WorldBootstrapper] Retrying after world readiness restored.");
                 }
 
-                // Retry logic with exponential backoff (to avoid flooding retries)
                 _initializationAttempts++;
-                float delay = Mathf.Pow(2, _initializationAttempts) * InitializationRetryInterval;
-                yield return new WaitForSeconds(delay);
             }
+
+            yield return new WaitForSeconds(Mathf.Pow(2, _initializationAttempts) * InitializationRetryInterval);
 
             if (Time.time - _lastInitializationCheck < InitializationRetryInterval)
             {
@@ -170,14 +186,12 @@ namespace AIRefactored.Bootstrap
             if (!GameWorldHandler.TryForceResolveMapName())
             {
                 Logger.LogWarning("[WorldBootstrapper] 🚧 Map name unresolved — skipping initialization.");
-                _hasInitialized = false;
                 yield break;
             }
 
             if (!GameWorldHandler.IsReady())
             {
-                Logger.LogWarning("[WorldBootstrapper] 🚧 GameWorld not fully ready — skipping initialization.");
-                _hasInitialized = false;
+                Logger.LogWarning("[WorldBootstrapper] 🚧 GameWorld not ready — deferring initialization.");
                 yield break;
             }
 
@@ -194,7 +208,6 @@ namespace AIRefactored.Bootstrap
             int frameWait = 0;
             IZones? zones = null;
 
-            // Retry IZones initialization if necessary
             while (!GameWorldHandler.TryGetIZones(out zones) || zones == null)
             {
                 if (++frameWait > 60)

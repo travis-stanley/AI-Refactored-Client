@@ -10,12 +10,13 @@
 
 namespace AIRefactored.AI.Optimization
 {
+    using System;
+    using System.Collections.Generic;
     using AIRefactored.Core;
     using AIRefactored.Runtime;
     using BepInEx.Logging;
     using EFT;
     using UnityEngine;
-    using System.Collections.Generic;
 
     /// <summary>
     /// Manages runtime optimization routines for AI bots.
@@ -27,13 +28,13 @@ namespace AIRefactored.AI.Optimization
     {
         #region Fields
 
-        private static readonly BotAIOptimization _optimizer = new BotAIOptimization();
+        private static readonly BotAIOptimization Optimizer = new BotAIOptimization();
+        private static readonly Dictionary<int, bool> BotOptimizationState = new Dictionary<int, bool>(128);
+        private static readonly Dictionary<int, float> LastEscalationTimes = new Dictionary<int, float>(128);
+
+        private const float EscalationCooldownTime = 10f;
+
         private static ManualLogSource? Logger => AIRefactoredController.Logger;
-
-        private static readonly Dictionary<int, bool> BotOptimizationState = new Dictionary<int, bool>(); // Track optimization state
-        private static readonly Dictionary<int, float> LastEscalationTimes = new Dictionary<int, float>(); // Track escalation cooldown times
-
-        private const float EscalationCooldownTime = 10f; // Time between escalation triggers in seconds
 
         #endregion
 
@@ -45,21 +46,28 @@ namespace AIRefactored.AI.Optimization
         /// </summary>
         public static void Apply(BotOwner? bot)
         {
-            // Only run on authoritative host and with a valid, non-null bot
-            if (!GameWorldHandler.IsLocalHost() || bot == null || !IsValidBot(bot))
+            if (!GameWorldHandler.IsLocalHost())
             {
                 return;
             }
 
-            if (IsOptimized(bot))
+            BotOwner? resolved;
+            if (!TryResolveBot(bot, out resolved) || resolved == null)
             {
-                Logger?.LogDebug("[AIRefactored] Optimization already applied to bot: " + bot.Profile?.Info?.Nickname);
                 return;
             }
 
-            _optimizer.Optimize(bot);
-            SetOptimized(bot, true);
-            Logger?.LogInfo("[AIRefactored] Optimization applied to bot: " + bot.Profile?.Info?.Nickname);
+            int botId = resolved.GetInstanceID();
+
+            if (BotOptimizationState.TryGetValue(botId, out bool applied) && applied)
+            {
+                Logger?.LogDebug("[AIRefactored] Optimization already applied to bot: " + (resolved.Profile?.Info?.Nickname ?? "Unknown"));
+                return;
+            }
+
+            Optimizer.Optimize(resolved);
+            BotOptimizationState[botId] = true;
+            Logger?.LogInfo("[AIRefactored] Optimization applied to bot: " + (resolved.Profile?.Info?.Nickname ?? "Unknown"));
         }
 
         /// <summary>
@@ -67,21 +75,28 @@ namespace AIRefactored.AI.Optimization
         /// </summary>
         public static void Reset(BotOwner? bot)
         {
-            // Only run on authoritative host and with a valid, non-null bot
-            if (!GameWorldHandler.IsLocalHost() || bot == null || !IsValidBot(bot))
+            if (!GameWorldHandler.IsLocalHost())
             {
                 return;
             }
 
-            if (!IsOptimized(bot))
+            BotOwner? resolved;
+            if (!TryResolveBot(bot, out resolved) || resolved == null)
             {
-                Logger?.LogDebug("[AIRefactored] Bot not optimized, skipping reset: " + bot.Profile?.Info?.Nickname);
                 return;
             }
 
-            _optimizer.ResetOptimization(bot);
-            SetOptimized(bot, false);
-            Logger?.LogInfo("[AIRefactored] Optimization reset for bot: " + bot.Profile?.Info?.Nickname);
+            int botId = resolved.GetInstanceID();
+
+            if (!BotOptimizationState.TryGetValue(botId, out bool wasOptimized) || !wasOptimized)
+            {
+                Logger?.LogDebug("[AIRefactored] Bot not optimized, skipping reset: " + (resolved.Profile?.Info?.Nickname ?? "Unknown"));
+                return;
+            }
+
+            Optimizer.ResetOptimization(resolved);
+            BotOptimizationState[botId] = false;
+            Logger?.LogInfo("[AIRefactored] Optimization reset for bot: " + (resolved.Profile?.Info?.Nickname ?? "Unknown"));
         }
 
         /// <summary>
@@ -90,30 +105,40 @@ namespace AIRefactored.AI.Optimization
         /// </summary>
         public static void TriggerEscalation(BotOwner? bot)
         {
-            if (!GameWorldHandler.IsLocalHost() || bot == null || bot.GetPlayer == null || !bot.GetPlayer.IsAI || bot.IsDead || bot.Settings?.FileSettings?.Mind == null)
+            if (!GameWorldHandler.IsLocalHost())
             {
-                Logger?.LogWarning("[AIRefactored] Escalation trigger skipped for bot: " + bot?.Profile?.Info?.Nickname ?? "Unknown - invalid bot state.");
                 return;
             }
 
-            int botId = bot.GetInstanceID();
-            if (LastEscalationTimes.ContainsKey(botId) && Time.time - LastEscalationTimes[botId] < EscalationCooldownTime)
+            BotOwner? resolved;
+            if (!TryResolveBot(bot, out resolved) || resolved == null)
             {
-                Logger?.LogWarning("[AIRefactored] Escalation skipped due to cooldown for bot: " + bot?.Profile?.Info?.Nickname ?? "Unknown");
+                Logger?.LogWarning("[AIRefactored] Escalation skipped: invalid bot state.");
                 return;
             }
 
-            BotGlobalsMindSettings mind = bot.Settings.FileSettings.Mind;
+            int botId = resolved.GetInstanceID();
 
-            // Perform the escalation
+            if (LastEscalationTimes.TryGetValue(botId, out float lastEscalated) &&
+                Time.time - lastEscalated < EscalationCooldownTime)
+            {
+                Logger?.LogDebug("[AIRefactored] Escalation skipped (cooldown) for bot: " + (resolved.Profile?.Info?.Nickname ?? "Unknown"));
+                return;
+            }
+
+            BotGlobalsMindSettings? mind = resolved.Settings?.FileSettings?.Mind;
+            if (mind == null)
+            {
+                Logger?.LogWarning("[AIRefactored] Escalation aborted: missing mind settings for bot: " + (resolved.Profile?.Info?.Nickname ?? "Unknown"));
+                return;
+            }
+
             mind.DIST_TO_FOUND_SQRT = Mathf.Clamp(mind.DIST_TO_FOUND_SQRT * 1.25f, 200f, 800f);
             mind.ENEMY_LOOK_AT_ME_ANG = Mathf.Clamp(mind.ENEMY_LOOK_AT_ME_ANG * 0.7f, 5f, 60f);
             mind.CHANCE_TO_RUN_CAUSE_DAMAGE_0_100 = Mathf.Clamp(mind.CHANCE_TO_RUN_CAUSE_DAMAGE_0_100 + 25f, 0f, 100f);
 
-            string botName = bot.Profile?.Info?.Nickname ?? "Unknown";
-            Logger?.LogInfo("[AIRefactored] Escalation triggered for bot: " + botName);
-
-            LastEscalationTimes[botId] = Time.time; // Record the time of escalation
+            LastEscalationTimes[botId] = Time.time;
+            Logger?.LogInfo("[AIRefactored] Escalation triggered for bot: " + (resolved.Profile?.Info?.Nickname ?? "Unknown"));
         }
 
         #endregion
@@ -128,33 +153,19 @@ namespace AIRefactored.AI.Optimization
                    !bot.IsDead;
         }
 
-        private static bool IsOptimized(BotOwner? bot)
+        private static bool TryResolveBot(BotOwner? input, out BotOwner? result)
         {
-            if (bot == null)
+            if (input != null &&
+                input.GetPlayer != null &&
+                input.GetPlayer.IsAI &&
+                !input.IsDead)
             {
-                return false;
+                result = input;
+                return true;
             }
 
-            int botId = bot.GetInstanceID();
-            return BotOptimizationState.ContainsKey(botId) && BotOptimizationState[botId];
-        }
-
-        private static void SetOptimized(BotOwner? bot, bool optimized)
-        {
-            if (bot == null)
-            {
-                return;
-            }
-
-            int botId = bot.GetInstanceID();
-            if (BotOptimizationState.ContainsKey(botId))
-            {
-                BotOptimizationState[botId] = optimized;
-            }
-            else
-            {
-                BotOptimizationState.Add(botId, optimized);
-            }
+            result = null;
+            return false;
         }
 
         #endregion

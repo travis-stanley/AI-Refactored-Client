@@ -45,8 +45,9 @@ namespace AIRefactored.AI.Threads
                 return;
             }
 
-            foreach (MonoBehaviour component in components)
+            for (int i = 0; i < components.Length; i++)
             {
+                MonoBehaviour? component = components[i];
                 if (component == null)
                 {
                     continue;
@@ -59,17 +60,24 @@ namespace AIRefactored.AI.Threads
                 }
 
                 string typeName = type.Name.ToLowerInvariant();
-                string ns = type.Namespace?.ToLowerInvariant() ?? string.Empty;
+                string ns = type.Namespace != null ? type.Namespace.ToLowerInvariant() : string.Empty;
 
-                if (IsUnityOrEftSafe(typeName, ns))
+                try
                 {
-                    continue;
+                    if (IsUnityOrEftSafe(typeName, ns))
+                    {
+                        continue;
+                    }
+
+                    if (IsConflictingBrain(typeName, ns) || IsHarmonyPatched(type) || HasSuspiciousMethods(type))
+                    {
+                        UnityEngine.Object.Destroy(component);
+                        Logger.LogWarning("[BotBrainGuardian] ⚠ Removed unauthorized AI logic: " + type.FullName + " from: " + botGameObject.name);
+                    }
                 }
-
-                if (IsConflictingBrain(typeName, ns) || IsHarmonyPatched(type) || HasSuspiciousMethods(type))
+                catch (Exception ex)
                 {
-                    UnityEngine.Object.Destroy(component);
-                    Logger.LogWarning("[BotBrainGuardian] ⚠ Removed unauthorized AI logic: " + type.FullName + " from: " + botGameObject.name);
+                    Logger.LogError("[BotBrainGuardian] Component check failed for " + type.FullName + ": " + ex.Message);
                 }
             }
         }
@@ -83,26 +91,26 @@ namespace AIRefactored.AI.Threads
                 || name == "triggercollidersearcher"
                 || name == "botpacketsender"
                 || name == "botfirearmcontroller"
-                || ns.StartsWith("unity", StringComparison.Ordinal)
-                || ns.StartsWith("eft", StringComparison.Ordinal)
-                || ns.Contains("comfort");
+                || ns.StartsWith("unity")
+                || ns.StartsWith("eft")
+                || ns.IndexOf("comfort", StringComparison.Ordinal) >= 0;
         }
 
         private static bool IsConflictingBrain(string name, string ns)
         {
-            return name.Contains("brain")
-                || name.StartsWith("pmc", StringComparison.Ordinal)
-                || name.StartsWith("spt", StringComparison.Ordinal)
-                || name.StartsWith("lua", StringComparison.Ordinal)
-                || name.StartsWith("boss", StringComparison.Ordinal)
-                || name.StartsWith("follower", StringComparison.Ordinal)
-                || name.StartsWith("assault", StringComparison.Ordinal)
-                || name.StartsWith("exusec", StringComparison.Ordinal)
-                || ns.Contains("sain")
-                || ns.Contains("mod")
-                || ns.Contains("spt")
-                || ns.Contains("lua")
-                || (!ns.Contains("tarkov") && !ns.Contains("ai-refactored"));
+            return name.IndexOf("brain", StringComparison.Ordinal) >= 0
+                || name.StartsWith("pmc")
+                || name.StartsWith("spt")
+                || name.StartsWith("lua")
+                || name.StartsWith("boss")
+                || name.StartsWith("follower")
+                || name.StartsWith("assault")
+                || name.StartsWith("exusec")
+                || ns.IndexOf("sain", StringComparison.Ordinal) >= 0
+                || ns.IndexOf("mod", StringComparison.Ordinal) >= 0
+                || ns.IndexOf("spt", StringComparison.Ordinal) >= 0
+                || ns.IndexOf("lua", StringComparison.Ordinal) >= 0
+                || (ns.IndexOf("tarkov", StringComparison.Ordinal) < 0 && ns.IndexOf("ai-refactored", StringComparison.Ordinal) < 0);
         }
 
         private static bool IsHarmonyPatched(Type type)
@@ -110,10 +118,17 @@ namespace AIRefactored.AI.Threads
             try
             {
                 MethodInfo? updateMethod = type.GetMethod("Update", BindingFlags.Instance | BindingFlags.Public | BindingFlags.NonPublic);
-                return updateMethod != null && Harmony.GetPatchInfo(updateMethod) != null;
+                if (updateMethod == null)
+                {
+                    return false;
+                }
+
+                Patches? patch = Harmony.GetPatchInfo(updateMethod);
+                return patch != null && patch.Owners.Count > 0;
             }
-            catch
+            catch (Exception ex)
             {
+                Logger.LogError("[BotBrainGuardian] Harmony patch check failed: " + ex.Message);
                 return false;
             }
         }
@@ -122,15 +137,20 @@ namespace AIRefactored.AI.Threads
         {
             string[] suspicious = { "Update", "LateUpdate", "FixedUpdate", "Tick" };
 
-            foreach (var methodName in suspicious)
+            for (int i = 0; i < suspicious.Length; i++)
             {
-                MethodInfo? method = type.GetMethod(
-                    methodName,
-                    BindingFlags.Instance | BindingFlags.Public | BindingFlags.NonPublic);
-
-                if (method != null && method.DeclaringType != typeof(MonoBehaviour))
+                string methodName = suspicious[i];
+                try
                 {
-                    return true;
+                    MethodInfo? method = type.GetMethod(methodName, BindingFlags.Instance | BindingFlags.Public | BindingFlags.NonPublic);
+                    if (method != null && method.DeclaringType != typeof(MonoBehaviour))
+                    {
+                        return true;
+                    }
+                }
+                catch (Exception ex)
+                {
+                    Logger.LogError("[BotBrainGuardian] Reflection error on method '" + methodName + "': " + ex.Message);
                 }
             }
 

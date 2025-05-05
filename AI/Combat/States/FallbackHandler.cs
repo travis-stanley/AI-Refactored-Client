@@ -94,7 +94,7 @@ namespace AIRefactored.AI.Combat.States
         {
             if (float.IsNaN(target.x) || float.IsNaN(target.y) || float.IsNaN(target.z))
             {
-                AIRefactoredController.Logger.LogWarning("[FallbackHandler] Ignored fallback target with NaN values.");
+                AIRefactoredController.Logger?.LogWarning("[FallbackHandler] Ignored fallback target with NaN values.");
                 return;
             }
 
@@ -108,7 +108,7 @@ namespace AIRefactored.AI.Combat.States
         {
             if (path == null || path.Count < 2)
             {
-                AIRefactoredController.Logger.LogWarning("[FallbackHandler] Rejected fallback path: insufficient length.");
+                AIRefactoredController.Logger?.LogWarning("[FallbackHandler] Rejected fallback path: insufficient length.");
                 return;
             }
 
@@ -154,7 +154,7 @@ namespace AIRefactored.AI.Combat.States
         {
             if (float.IsNaN(this._fallbackTarget.x) || float.IsNaN(this._fallbackTarget.y) || float.IsNaN(this._fallbackTarget.z))
             {
-                AIRefactoredController.Logger.LogWarning("[FallbackHandler] Skipped Tick: fallback target was invalid.");
+                AIRefactoredController.Logger?.LogWarning("[FallbackHandler] Skipped Tick: fallback target was invalid.");
                 return;
             }
 

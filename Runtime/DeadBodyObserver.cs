@@ -10,6 +10,7 @@
 
 namespace AIRefactored.Runtime
 {
+    using System;
     using System.Collections.Generic;
     using AIRefactored.AI.Core;
     using AIRefactored.AI.Looting;
@@ -27,19 +28,19 @@ namespace AIRefactored.Runtime
     {
         #region Constants
 
-        private const float ScanIntervalSeconds = 1.0f; // Interval between scans
-        private const float AssociationRadius = 1.5f;  // Radius within which containers are associated with bodies
+        private const float ScanIntervalSeconds = 1.0f;
+        private const float AssociationRadius = 1.5f;
 
         #endregion
 
         #region Fields
 
-        private float _nextScanTime = -1.0f; // Time until the next scan is due
-        private static readonly List<Player> ObservedPlayers = new List<Player>(64); // List to track players being observed
-        private LootableContainer[] _containers = new LootableContainer[0]; // Cached lootable containers
-        private bool _containersUpdated = false; // Flag to track container state
-
+        private float _nextScanTime = -1f;
+        private static readonly List<Player> ObservedPlayers = new List<Player>(64);
         private static readonly ManualLogSource Logger = AIRefactoredController.Logger;
+
+        private LootableContainer[] _containers = Array.Empty<LootableContainer>();
+        private bool _containersUpdated;
 
         #endregion
 
@@ -47,85 +48,86 @@ namespace AIRefactored.Runtime
 
         private void Update()
         {
-            // Ensure this script runs only under appropriate conditions
             if (!Application.isPlaying ||
                 !GameWorldHandler.IsInitialized ||
-                !GameWorldHandler.IsLocalHost() || // Ensure it runs only on local host
+                !GameWorldHandler.IsLocalHost() ||
                 !GameWorldHandler.IsReady())
             {
-                return; // Skip processing if game world isn't ready or we're not the local host
+                return;
             }
 
             float now = Time.time;
             if (now < _nextScanTime)
             {
-                return; // Skip if it's not time for the next scan
+                return;
             }
 
-            _nextScanTime = now + ScanIntervalSeconds; // Set next scan time
+            _nextScanTime = now + ScanIntervalSeconds;
 
-            // Only update containers periodically to improve performance
             if (!_containersUpdated)
             {
-                _containers = Object.FindObjectsOfType<LootableContainer>(); // Get all lootable containers in the scene
-                _containersUpdated = true; // Set flag to prevent frequent updates
+                _containers = UnityEngine.Object.FindObjectsOfType<LootableContainer>();
+                _containersUpdated = true;
             }
 
             if (_containers == null || _containers.Length == 0)
             {
-                return; // If no containers, skip the processing
+                return;
             }
 
-            // Clear previously observed players and get all currently alive players
             ObservedPlayers.Clear();
-            List<Player> activePlayers = GameWorldHandler.GetAllAlivePlayers();
 
-            // Populate the observed players list
-            foreach (var player in activePlayers)
+            List<Player>? players = GameWorldHandler.GetAllAlivePlayers();
+            if (players == null || players.Count == 0)
             {
+                return;
+            }
+
+            for (int i = 0; i < players.Count; i++)
+            {
+                Player? player = players[i];
                 if (player != null)
                 {
                     ObservedPlayers.Add(player);
                 }
             }
 
-            // Loop through each observed player
-            foreach (var player in ObservedPlayers)
+            for (int i = 0; i < ObservedPlayers.Count; i++)
             {
-                // Skip if the player is alive, invalid, or has no profile
-                if (player == null || player.HealthController?.IsAlive == true || string.IsNullOrEmpty(player.ProfileId))
+                Player? player = ObservedPlayers[i];
+                if (player == null ||
+                    player.HealthController == null ||
+                    player.HealthController.IsAlive ||
+                    string.IsNullOrEmpty(player.ProfileId))
                 {
                     continue;
                 }
 
-                // Skip if body is already associated
                 if (DeadBodyContainerCache.Contains(player.ProfileId))
                 {
                     continue;
                 }
 
-                Vector3 corpsePosition = EFTPlayerUtil.GetPosition(player); // Get position of the dead body
-                Transform? playerRoot = player.Transform?.Original?.root;
+                Vector3 corpsePosition = EFTPlayerUtil.GetPosition(player);
+                Transform? root = player.Transform != null ? player.Transform.Original?.root : null;
 
-                // Loop through all containers and check if they are close or match the player's root
-                foreach (var container in _containers)
+                for (int j = 0; j < _containers.Length; j++)
                 {
+                    LootableContainer? container = _containers[j];
                     if (container == null || !container.enabled || container.transform == null)
                     {
-                        continue; // Skip invalid containers
+                        continue;
                     }
 
                     Transform containerTransform = container.transform;
-
-                    bool isRootMatch = playerRoot != null && containerTransform.root == playerRoot;
+                    bool isRootMatch = root != null && containerTransform.root == root;
                     bool isNearby = Vector3.Distance(containerTransform.position, corpsePosition) <= AssociationRadius;
 
-                    // If the container is either near the corpse or matches the root, associate it
                     if (isRootMatch || isNearby)
                     {
-                        DeadBodyContainerCache.Register(player, container); // Register association
+                        DeadBodyContainerCache.Register(player, container);
                         Logger.LogDebug("[DeadBodyObserver] Associated container with dead bot: " + (player.Profile?.Info?.Nickname ?? "Unnamed"));
-                        break; // No need to check further once we find a match
+                        break;
                     }
                 }
             }

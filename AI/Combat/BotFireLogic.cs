@@ -75,7 +75,7 @@ namespace AIRefactored.AI.Combat
                 return;
             }
 
-            IPlayer? target = this._cache.ThreatSelector?.CurrentTarget ?? this._bot.Memory.GoalEnemy?.Person;
+            IPlayer? target = this._cache.ThreatSelector?.GetPriorityTarget() ?? this._bot.Memory.GoalEnemy?.Person;
             Vector3 aimPosition = this.GetValidatedAimPosition(target, time);
             this.UpdateBotAiming(aimPosition);
 
@@ -146,11 +146,7 @@ namespace AIRefactored.AI.Combat
         {
             if (target != null && target.HealthController?.IsAlive == true)
             {
-                Vector3? pos = target.Position;
-                if (pos.HasValue && pos.Value != Vector3.zero)
-                {
-                    return pos.Value;
-                }
+                return target.Position;
             }
 
             if (this._bot.Memory?.LastEnemy != null && this._bot.Memory.LastEnemy.CurrPosition != Vector3.zero)
@@ -201,11 +197,6 @@ namespace AIRefactored.AI.Combat
         private bool SupportsFireMode(Weapon weapon, Weapon.EFireMode mode)
         {
             Weapon.EFireMode[] modes = weapon.WeapFireType;
-            if (modes == null)
-            {
-                return false;
-            }
-
             for (int i = 0; i < modes.Length; i++)
             {
                 if (modes[i] == mode)
@@ -240,10 +231,9 @@ namespace AIRefactored.AI.Combat
                 return 90f;
             }
 
-            string name = template.Name;
-            foreach (KeyValuePair<string, float> kvp in WeaponTypeRanges)
+            foreach (var kvp in WeaponTypeRanges)
             {
-                if (name.IndexOf(kvp.Key, StringComparison.OrdinalIgnoreCase) >= 0)
+                if (template.Name.IndexOf(kvp.Key, StringComparison.OrdinalIgnoreCase) >= 0)
                 {
                     return kvp.Value;
                 }
@@ -307,7 +297,6 @@ namespace AIRefactored.AI.Combat
             BotMovementHelper.SmoothMoveTo(this._bot, fallback, false);
             BotCoverHelper.TrySetStanceFromNearbyCover(this._cache, fallback);
 
-            // Ensure BotTalk only happens in non-headless mode
             if (!FikaHeadlessDetector.IsHeadless && this._bot.BotTalk != null)
             {
                 this._bot.BotTalk.TrySay(EPhraseTrigger.OnLostVisual);

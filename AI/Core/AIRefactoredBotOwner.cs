@@ -23,45 +23,27 @@ namespace AIRefactored.AI.Core
     /// </summary>
     public sealed class AIRefactoredBotOwner
     {
-        #region Fields
+        #region Static
 
         private static readonly ManualLogSource Logger = AIRefactoredController.Logger;
         private static readonly PersonalityType[] PersonalityTypes = (PersonalityType[])Enum.GetValues(typeof(PersonalityType));
-        private static bool _isPersonalitySet = false; // Flag to prevent repeated personality assignment
-        private static readonly object PersonalityLock = new object(); // Lock for thread safety
+        private static readonly object PersonalityLock = new object();
+        private static bool _hasGlobalAssigned = false;
 
         #endregion
 
         #region Properties
 
-        /// <summary>
-        /// Gets the primary EFT BotOwner instance linked to this wrapper.
-        /// </summary>
         public BotOwner? Bot { get; private set; }
 
-        /// <summary>
-        /// Gets the system-level runtime cache for this bot (combat, memory, etc).
-        /// </summary>
         public BotComponentCache? Cache { get; private set; }
 
-        /// <summary>
-        /// Gets the linked mission controller responsible for this bot’s current objective state.
-        /// </summary>
         public BotMissionController? MissionController { get; private set; }
 
-        /// <summary>
-        /// Gets the behavior tuning profile (aggression, caution, suppress bias, etc).
-        /// </summary>
         public BotPersonalityProfile PersonalityProfile { get; private set; } = new BotPersonalityProfile();
 
-        /// <summary>
-        /// Gets the name of the personality profile (e.g., Aggressive, Stealth).
-        /// </summary>
         public string PersonalityName { get; private set; } = "Unknown";
 
-        /// <summary>
-        /// Gets the zone or tactical region assigned to the bot (for routing/fallback logic).
-        /// </summary>
         public string AssignedZone { get; private set; } = "unknown";
 
         #endregion
@@ -75,42 +57,30 @@ namespace AIRefactored.AI.Core
         /// <param name="cache">The AIRefactored component cache for this bot.</param>
         public void Initialize(BotOwner bot, BotComponentCache cache)
         {
-            if (bot == null)
+            if (bot == null) throw new ArgumentNullException(nameof(bot));
+            if (cache == null) throw new ArgumentNullException(nameof(cache));
+
+            if (this.Bot != null || this.Cache != null)
             {
-                throw new ArgumentNullException(nameof(bot));
+                Logger.LogWarning("[AIRefactoredBotOwner] Initialize called more than once.");
+                return;
             }
 
-            if (cache == null)
-            {
-                throw new ArgumentNullException(nameof(cache));
-            }
-
-            // Only assign the Bot and Cache if they are not already assigned
-            if (this.Bot == null)
-            {
-                this.Bot = bot;
-            }
-
-            if (this.Cache == null)
-            {
-                this.Cache = cache;
-            }
+            this.Bot = bot;
+            this.Cache = cache;
 
             try
             {
-                // Ensure personality is assigned only once and avoid repeated assignments
-                lock (PersonalityLock) // Use lock for thread safety
+                lock (PersonalityLock)
                 {
-                    if (!_isPersonalitySet)
+                    if (!_hasGlobalAssigned)
                     {
-                        _isPersonalitySet = true; // Set the flag to prevent repeated assignments
-                        this.InitProfile(this.GetRandomPersonality());
+                        _hasGlobalAssigned = true;
+                        InitProfile(GetRandomPersonality());
                     }
                 }
 
                 string nickname = bot.Profile?.Info?.Nickname ?? "Unnamed";
-
-                // Only log in non-headless environments to avoid excess log writes in headless mode
                 if (!FikaHeadlessDetector.IsHeadless)
                 {
                     Logger.LogDebug("[AIRefactoredBotOwner] Initialized for bot: " + nickname);
@@ -125,33 +95,29 @@ namespace AIRefactored.AI.Core
 
         #endregion
 
-        #region Personality Control
+        #region Personality
 
-        /// <summary>
-        /// Assigns a personality preset by enum type (e.g., Cautious, Aggressive).
-        /// </summary>
-        /// <param name="type">The personality type to use.</param>
         public void InitProfile(PersonalityType type)
         {
             if (BotPersonalityPresets.Presets.TryGetValue(type, out BotPersonalityProfile? preset) && preset != null)
             {
-                this.PersonalityProfile = preset;
-                this.PersonalityName = type.ToString();
-                Logger.LogInfo("[AIRefactoredBotOwner] Personality '" + this.PersonalityName + "' assigned.");
+                PersonalityProfile = preset;
+                PersonalityName = type.ToString();
+
+                if (!FikaHeadlessDetector.IsHeadless)
+                {
+                    Logger.LogInfo("[AIRefactoredBotOwner] Personality '" + PersonalityName + "' assigned.");
+                }
             }
             else
             {
-                this.PersonalityProfile = BotPersonalityPresets.Presets[PersonalityType.Adaptive];
-                this.PersonalityName = "Adaptive";
+                PersonalityProfile = BotPersonalityPresets.Presets[PersonalityType.Adaptive];
+                PersonalityName = "Adaptive";
+
                 Logger.LogWarning("[AIRefactoredBotOwner] Invalid or null profile for '" + type + "' — fallback to Adaptive.");
             }
         }
 
-        /// <summary>
-        /// Manually assigns a custom personality profile with optional display name.
-        /// </summary>
-        /// <param name="profile">The profile instance to use.</param>
-        /// <param name="name">Optional profile label for logging.</param>
         public void InitProfile(BotPersonalityProfile profile, string name = "Custom")
         {
             if (profile == null)
@@ -159,47 +125,35 @@ namespace AIRefactored.AI.Core
                 profile = new BotPersonalityProfile();
             }
 
-            this.PersonalityProfile = profile;
-            this.PersonalityName = string.IsNullOrEmpty(name) ? "Custom" : name;
+            PersonalityProfile = profile;
+            PersonalityName = string.IsNullOrEmpty(name) ? "Custom" : name;
 
-            // Ensure speech only happens if not in headless mode
             if (!FikaHeadlessDetector.IsHeadless)
             {
-                Logger.LogInfo("[AIRefactoredBotOwner] Custom profile assigned: " + this.PersonalityName);
+                Logger.LogInfo("[AIRefactoredBotOwner] Custom profile assigned: " + PersonalityName);
             }
         }
 
-        /// <summary>
-        /// Resets the bot’s personality profile and name to a cleared default.
-        /// </summary>
         public void ClearPersonality()
         {
-            this.PersonalityProfile = new BotPersonalityProfile();
-            this.PersonalityName = "Cleared";
+            PersonalityProfile = new BotPersonalityProfile();
+            PersonalityName = "Cleared";
 
-            // Only log in non-headless mode
             if (!FikaHeadlessDetector.IsHeadless)
             {
                 Logger.LogInfo("[AIRefactoredBotOwner] Personality cleared.");
             }
         }
 
-        /// <summary>
-        /// Returns true if a personality profile is currently assigned.
-        /// </summary>
         public bool HasPersonality()
         {
-            return this.PersonalityProfile != null;
+            return PersonalityProfile != null;
         }
 
         #endregion
 
-        #region Zone and Mission Binding
+        #region Zones & Missions
 
-        /// <summary>
-        /// Assigns the active mission controller for this bot.
-        /// </summary>
-        /// <param name="controller">The mission controller to assign.</param>
         public void SetMissionController(BotMissionController controller)
         {
             if (controller == null)
@@ -207,13 +161,9 @@ namespace AIRefactored.AI.Core
                 throw new ArgumentNullException(nameof(controller));
             }
 
-            this.MissionController = controller;
+            MissionController = controller;
         }
 
-        /// <summary>
-        /// Sets the named tactical zone for fallback and patrol routing logic.
-        /// </summary>
-        /// <param name="zoneName">The zone name string.</param>
         public void SetZone(string zoneName)
         {
             if (string.IsNullOrWhiteSpace(zoneName))
@@ -222,9 +172,8 @@ namespace AIRefactored.AI.Core
                 return;
             }
 
-            this.AssignedZone = zoneName;
+            AssignedZone = zoneName;
 
-            // Only log in non-headless mode
             if (!FikaHeadlessDetector.IsHeadless)
             {
                 Logger.LogInfo("[AIRefactoredBotOwner] Zone set to: " + zoneName);
@@ -237,8 +186,7 @@ namespace AIRefactored.AI.Core
 
         private PersonalityType GetRandomPersonality()
         {
-            int roll = UnityEngine.Random.Range(0, PersonalityTypes.Length);
-            return PersonalityTypes[roll];
+            return PersonalityTypes[UnityEngine.Random.Range(0, PersonalityTypes.Length)];
         }
 
         #endregion

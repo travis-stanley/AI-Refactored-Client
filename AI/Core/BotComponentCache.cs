@@ -28,18 +28,22 @@ namespace AIRefactored.AI.Core
 
     /// <summary>
     /// Runtime container for all bot-specific AIRefactored logic systems.
-    /// Attached to each bot during initialization.
+    /// Managed via BotComponentCacheRegistry.
     /// </summary>
-    public sealed class BotComponentCache : MonoBehaviour
+    public sealed class BotComponentCache
     {
         private static readonly ManualLogSource Logger = AIRefactoredController.Logger;
 
         #region Core References
 
         public BotOwner? Bot { get; internal set; }
+
         public AIRefactoredBotOwner? AIRefactoredBotOwner { get; private set; }
+
         public BotMemoryClass? Memory => this.Bot?.Memory;
+
         public string Nickname => this.Bot?.Profile?.Info?.Nickname ?? "Unknown";
+
         public Vector3 Position => this.Bot?.Position ?? Vector3.zero;
 
         #endregion
@@ -47,9 +51,13 @@ namespace AIRefactored.AI.Core
         #region Runtime Flags
 
         public bool IsBlinded { get; set; }
+
         public float BlindUntilTime { get; set; }
+
         public float LastFlashTime { get; set; }
+
         public float LastHeardTime { get; private set; } = -999f;
+
         public Vector3? LastHeardDirection { get; private set; }
 
         #endregion
@@ -57,32 +65,59 @@ namespace AIRefactored.AI.Core
         #region AI Subsystems
 
         public CombatStateMachine? Combat { get; private set; }
+
         public BotMovementController? Movement { get; private set; }
-        public BotPoseController? PoseController { get; set; }
+
+        public BotPoseController? PoseController { get; private set; }
+
         public BotLookController? LookController { get; private set; }
+
         public BotTilt? Tilt { get; private set; }
+
         public BotTacticalDeviceController? Tactical { get; private set; }
+
         public BotGroupBehavior? GroupBehavior { get; private set; }
+
         public BotThreatSelector? ThreatSelector { get; private set; }
+
         public BotTacticalMemory? TacticalMemory { get; private set; }
+
         public BotLastShotTracker? LastShotTracker { get; private set; }
+
         public BotGroupComms? GroupComms { get; private set; }
+
         public BotSuppressionReactionComponent? Suppression { get; private set; }
+
         public BotPanicHandler? PanicHandler { get; private set; }
+
         public BotThreatEscalationMonitor? Escalation { get; private set; }
+
         public BotInjurySystem? InjurySystem { get; private set; }
+
         public BotDeadBodyScanner? DeadBodyScanner { get; private set; }
+
         public BotLootScanner? LootScanner { get; private set; }
+
+        public BotLootDecisionSystem? LootDecisionSystem { get; private set; }
+
         public BotOwnerPathfindingCache? Pathing { get; private set; }
+
         public SquadPathCoordinator? SquadPath { get; private set; }
+
         public BotDoorOpener? DoorOpener { get; private set; }
+
         public BotHealingBySomebody? HealReceiver { get; private set; }
+
         public BotHealAnotherTarget? SquadHealer { get; private set; }
+
         public FlashGrenadeComponent? FlashGrenade { get; private set; }
+
         public HearingDamageComponent? HearingDamage { get; private set; }
+
         public TrackedEnemyVisibility? VisibilityTracker { get; set; }
 
         public BotGroupSyncCoordinator? GroupSync => this.GroupBehavior?.GroupSync;
+
         public BotPanicHandler? Panic => this.PanicHandler;
 
         #endregion
@@ -189,6 +224,9 @@ namespace AIRefactored.AI.Core
 
                 this.LootScanner = new BotLootScanner();
                 this.LootScanner.Initialize(this);
+
+                this.LootDecisionSystem = new BotLootDecisionSystem();
+                this.LootDecisionSystem.Initialize(this);
 
                 this.DeadBodyScanner = new BotDeadBodyScanner();
                 this.DeadBodyScanner.Initialize(this);

@@ -18,9 +18,10 @@ namespace AIRefactored.AI.Hotspots
     /// Uniform grid-based spatial index for fast hotspot lookups in small or flat maps.
     /// Used as a fallback when quadtree is unnecessary or too sparse.
     /// </summary>
-    public class HotspotSpatialGrid
+    public sealed class HotspotSpatialGrid
     {
         private readonly float _cellSize;
+
         private readonly Dictionary<Vector2Int, List<HotspotRegistry.Hotspot>> _grid =
             new Dictionary<Vector2Int, List<HotspotRegistry.Hotspot>>(128);
 
@@ -30,7 +31,7 @@ namespace AIRefactored.AI.Hotspots
         /// <param name="cellSize">Minimum 1f recommended. Determines lookup resolution.</param>
         public HotspotSpatialGrid(float cellSize = 10f)
         {
-            this._cellSize = Mathf.Max(1f, cellSize);
+            _cellSize = Mathf.Max(1f, cellSize);
         }
 
         /// <summary>
@@ -39,12 +40,12 @@ namespace AIRefactored.AI.Hotspots
         /// <param name="hotspot">Hotspot to insert.</param>
         public void Insert(HotspotRegistry.Hotspot hotspot)
         {
-            Vector2Int cell = this.WorldToCell(hotspot.Position);
+            Vector2Int cell = WorldToCell(hotspot.Position);
 
-            if (!this._grid.TryGetValue(cell, out List<HotspotRegistry.Hotspot>? list))
+            if (!_grid.TryGetValue(cell, out List<HotspotRegistry.Hotspot>? list))
             {
                 list = new List<HotspotRegistry.Hotspot>(4);
-                this._grid[cell] = list;
+                _grid[cell] = list;
             }
 
             list.Add(hotspot);
@@ -65,8 +66,8 @@ namespace AIRefactored.AI.Hotspots
             List<HotspotRegistry.Hotspot> results = new List<HotspotRegistry.Hotspot>(16);
             float radiusSq = radius * radius;
 
-            Vector2Int center = this.WorldToCell(worldPos);
-            int cellRadius = Mathf.CeilToInt(radius / this._cellSize);
+            Vector2Int center = WorldToCell(worldPos);
+            int cellRadius = Mathf.CeilToInt(radius / _cellSize);
 
             for (int dx = -cellRadius; dx <= cellRadius; dx++)
             {
@@ -74,7 +75,7 @@ namespace AIRefactored.AI.Hotspots
                 {
                     Vector2Int check = new Vector2Int(center.x + dx, center.y + dz);
 
-                    if (this._grid.TryGetValue(check, out List<HotspotRegistry.Hotspot>? list))
+                    if (_grid.TryGetValue(check, out List<HotspotRegistry.Hotspot>? list))
                     {
                         for (int i = 0; i < list.Count; i++)
                         {
@@ -94,8 +95,8 @@ namespace AIRefactored.AI.Hotspots
 
         private Vector2Int WorldToCell(Vector3 worldPos)
         {
-            int x = Mathf.FloorToInt(worldPos.x / this._cellSize);
-            int z = Mathf.FloorToInt(worldPos.z / this._cellSize);
+            int x = Mathf.FloorToInt(worldPos.x / _cellSize);
+            int z = Mathf.FloorToInt(worldPos.z / _cellSize);
             return new Vector2Int(x, z);
         }
     }

@@ -83,7 +83,7 @@ namespace AIRefactored.AI.Hotspots
                 {
                     this.Subdivide(node);
 
-                    if (node.Children != null)
+                    if (node.Children.Length > 0)
                     {
                         foreach (HotspotRegistry.Hotspot point in node.Points)
                         {
@@ -99,12 +99,9 @@ namespace AIRefactored.AI.Hotspots
             }
             else
             {
-                if (node.Children != null)
+                for (int i = 0; i < node.Children.Length; i++)
                 {
-                    for (int i = 0; i < 4; i++)
-                    {
-                        this.Insert(node.Children[i], hotspot);
-                    }
+                    this.Insert(node.Children[i], hotspot);
                 }
             }
         }
@@ -124,15 +121,16 @@ namespace AIRefactored.AI.Hotspots
             {
                 foreach (HotspotRegistry.Hotspot h in node.Points)
                 {
-                    if ((h.Position - worldPosition).sqrMagnitude <= radiusSq && (filter == null || filter(h)))
+                    if ((h.Position - worldPosition).sqrMagnitude <= radiusSq &&
+                        (filter == null || filter(h)))
                     {
                         result.Add(h);
                     }
                 }
             }
-            else if (node.Children != null)
+            else
             {
-                for (int i = 0; i < 4; i++)
+                for (int i = 0; i < node.Children.Length; i++)
                 {
                     this.Query(node.Children[i], worldPosition, radiusSq, result, filter);
                 }
@@ -160,7 +158,7 @@ namespace AIRefactored.AI.Hotspots
         /// <summary>
         /// Internal quadtree node used for spatial partitioning.
         /// </summary>
-        private class Node
+        private sealed class Node
         {
             public Node(Rect bounds, int depth)
             {
@@ -176,9 +174,6 @@ namespace AIRefactored.AI.Hotspots
 
             public List<HotspotRegistry.Hotspot> Points { get; }
 
-            /// <summary>
-            /// Gets or sets the four quadrant child nodes, if subdivided.
-            /// </summary>
             public Node[] Children { get; private set; }
 
             public bool IsLeaf => this.Children.Length == 0;

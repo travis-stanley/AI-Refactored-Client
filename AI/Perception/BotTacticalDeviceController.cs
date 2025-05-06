@@ -47,8 +47,8 @@ namespace AIRefactored.AI.Perception
                 throw new ArgumentNullException(nameof(cache));
             }
 
-            this._cache = cache;
-            this._bot = cache.Bot;
+            _cache = cache;
+            _bot = cache.Bot;
         }
 
         #endregion
@@ -60,28 +60,28 @@ namespace AIRefactored.AI.Perception
         /// </summary>
         public void Tick()
         {
-            if (!this.CanThink())
+            if (!CanThink())
             {
                 return;
             }
 
-            this._nextDecisionTime = Time.time + TacticalConfig.CheckInterval;
+            _nextDecisionTime = Time.time + TacticalConfig.CheckInterval;
 
-            Weapon? weapon = this._bot?.WeaponManager?.CurrentWeapon;
+            Weapon? weapon = _bot?.WeaponManager?.CurrentWeapon;
             if (weapon == null)
             {
                 return;
             }
 
-            this.ScanMods(weapon);
+            ScanMods(weapon);
 
             bool lowVisibility = IsLowVisibility();
-            bool baitTrigger = Random.value < this.GetChaosBaitChance();
+            bool baitTrigger = Random.value < GetChaosBaitChance();
             bool shouldEnable = lowVisibility || baitTrigger;
 
-            for (int i = 0; i < this._devices.Count; i++)
+            for (int i = 0; i < _devices.Count; i++)
             {
-                LightComponent device = this._devices[i];
+                LightComponent device = _devices[i];
                 if (device.IsActive != shouldEnable)
                 {
                     device.IsActive = shouldEnable;
@@ -90,11 +90,11 @@ namespace AIRefactored.AI.Perception
 
             if (baitTrigger)
             {
-                this._nextDecisionTime = Time.time + 1.5f;
+                _nextDecisionTime = Time.time + 1.5f;
 
-                for (int i = 0; i < this._devices.Count; i++)
+                for (int i = 0; i < _devices.Count; i++)
                 {
-                    this._devices[i].IsActive = false;
+                    _devices[i].IsActive = false;
                 }
             }
         }
@@ -105,18 +105,18 @@ namespace AIRefactored.AI.Perception
 
         private bool CanThink()
         {
-            if (this._bot == null || this._cache == null || this._bot.IsDead || Time.time < this._nextDecisionTime)
+            if (_bot == null || _cache == null || _bot.IsDead || Time.time < _nextDecisionTime)
             {
                 return false;
             }
 
-            Player? player = this._bot.GetPlayer;
+            Player? player = _bot.GetPlayer;
             return player != null && player.IsAI && !player.IsYourPlayer;
         }
 
         private float GetChaosBaitChance()
         {
-            return (this._cache?.AIRefactoredBotOwner?.PersonalityProfile?.ChaosFactor ?? 0f) * 0.25f;
+            return (_cache?.AIRefactoredBotOwner?.PersonalityProfile?.ChaosFactor ?? 0f) * 0.25f;
         }
 
         private static bool IsLowVisibility()
@@ -129,7 +129,7 @@ namespace AIRefactored.AI.Perception
 
         private void ScanMods(Weapon weapon)
         {
-            this._devices.Clear();
+            _devices.Clear();
 
             IEnumerable<Slot>? slots = weapon.AllSlots;
             if (slots == null)
@@ -159,15 +159,15 @@ namespace AIRefactored.AI.Perception
                 switch (mod)
                 {
                     case FlashlightItemClass flash when flash.Light != null:
-                        this._devices.Add(flash.Light);
+                        _devices.Add(flash.Light);
                         break;
 
                     case TacticalComboItemClass combo when combo.Light != null:
-                        this._devices.Add(combo.Light);
+                        _devices.Add(combo.Light);
                         break;
 
                     case LightLaserItemClass laser when laser.Light != null:
-                        this._devices.Add(laser.Light);
+                        _devices.Add(laser.Light);
                         break;
                 }
             }

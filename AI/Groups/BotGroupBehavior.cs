@@ -102,7 +102,7 @@ namespace AIRefactored.AI.Groups
             for (int i = 0; i < count; i++)
             {
                 BotOwner? mate = this._group.Member(i);
-                if (mate == null || mate == this._bot || mate.IsDead)
+                if (mate == null || mate == this._bot || mate.IsDead || mate.Memory == null)
                 {
                     continue;
                 }
@@ -115,7 +115,7 @@ namespace AIRefactored.AI.Groups
                     float push = MinSpacing - Mathf.Sqrt(distSqr);
                     repulsion += (-offset.normalized) * push;
                 }
-                else if (distSqr > MaxSpacingSqr && distSqr > maxDistSqr && mate.Memory?.GoalEnemy == null)
+                else if (distSqr > MaxSpacingSqr && distSqr > maxDistSqr && mate.Memory.GoalEnemy == null)
                 {
                     maxDistSqr = distSqr;
                     furthestTarget = mate.Position;

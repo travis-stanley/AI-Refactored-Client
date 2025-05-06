@@ -23,20 +23,27 @@ namespace AIRefactored.AI.Movement
     /// </summary>
     public sealed class BotLookController
     {
+        #region Constants
+
         private const float MaxTurnSpeed = 7.5f;
         private const float MinLookDistanceSqr = 0.25f;
+        private const float BlindLookRadius = 4f;
+        private const float HeardDirectionWeight = 6f;
+        private const float SoundMemoryDuration = 4f;
+
+        #endregion
+
+        #region Fields
 
         private readonly BotOwner _bot;
         private readonly BotComponentCache _cache;
-
         private Vector3 _fallbackLookTarget;
         private bool _frozen;
 
-        /// <summary>
-        /// Initializes a new instance of the <see cref="BotLookController"/> class.
-        /// </summary>
-        /// <param name="bot">BotOwner reference.</param>
-        /// <param name="cache">Component cache reference.</param>
+        #endregion
+
+        #region Constructor
+
         public BotLookController(BotOwner bot, BotComponentCache cache)
         {
             this._bot = bot ?? throw new ArgumentNullException(nameof(bot));
@@ -44,13 +51,19 @@ namespace AIRefactored.AI.Movement
             this._fallbackLookTarget = bot.Position + bot.LookDirection;
         }
 
-        /// <summary>
-        /// Called every frame to update bot's look direction.
-        /// </summary>
-        /// <param name="deltaTime">Time since last frame.</param>
+        #endregion
+
+        #region Public Methods
+
         public void Tick(float deltaTime)
         {
-            if (this._frozen || this._bot.IsDead || FikaHeadlessDetector.IsHeadless)
+            if (this._frozen || this._bot.IsDead || !GameWorldHandler.IsSafeToInitialize)
+            {
+                return;
+            }
+
+            Player? player = this._bot.GetPlayer;
+            if (player?.PlayerBones?.Head == null || FikaHeadlessDetector.IsHeadless)
             {
                 return;
             }
@@ -65,50 +78,34 @@ namespace AIRefactored.AI.Movement
                 return;
             }
 
-            PlayerBones? bones = this._bot.GetPlayer?.PlayerBones;
-            if (bones == null || bones.Head == null)
-            {
-                return;
-            }
-
-            Quaternion current = bones.Head.rotation;
-            Quaternion desired = Quaternion.LookRotation(direction);
-
-            bones.Head.rotation = Quaternion.Slerp(current, desired, Mathf.Clamp01(MaxTurnSpeed * deltaTime));
+            Quaternion current = player.PlayerBones.Head.rotation;
+            Quaternion target = Quaternion.LookRotation(direction);
+            player.PlayerBones.Head.rotation = Quaternion.Slerp(current, target, Mathf.Clamp01(MaxTurnSpeed * deltaTime));
         }
 
-        /// <summary>
-        /// Overrides the bot's default look direction.
-        /// </summary>
-        /// <param name="worldPos">World-space target.</param>
         public void SetLookTarget(Vector3 worldPos)
         {
             this._fallbackLookTarget = worldPos;
         }
 
-        /// <summary>
-        /// Freezes bot rotation (e.g. stunned).
-        /// </summary>
         public void FreezeLook()
         {
             this._frozen = true;
         }
 
-        /// <summary>
-        /// Resumes rotation behavior.
-        /// </summary>
         public void ResumeLook()
         {
             this._frozen = false;
         }
 
-        /// <summary>
-        /// Gets current world look direction.
-        /// </summary>
         public Vector3 GetLookDirection()
         {
             return this._bot.LookDirection;
         }
+
+        #endregion
+
+        #region Internal Logic
 
         private Vector3 ResolveLookTarget(Vector3 origin)
         {
@@ -116,14 +113,14 @@ namespace AIRefactored.AI.Movement
 
             if (this._cache.IsBlinded && now < this._cache.BlindUntilTime)
             {
-                return origin + UnityEngine.Random.insideUnitSphere.normalized * 4f;
+                return origin + UnityEngine.Random.insideUnitSphere.normalized * BlindLookRadius;
             }
 
             if (this._cache.Panic?.IsPanicking == true)
             {
                 if (this._cache.LastHeardDirection.HasValue)
                 {
-                    return origin + this._cache.LastHeardDirection.Value.normalized * 6f;
+                    return origin + this._cache.LastHeardDirection.Value.normalized * HeardDirectionWeight;
                 }
 
                 return origin + this._bot.LookDirection;
@@ -134,12 +131,14 @@ namespace AIRefactored.AI.Movement
                 return EFTPlayerUtil.GetPosition(this._cache.ThreatSelector.CurrentTarget);
             }
 
-            if (this._cache.LastHeardDirection.HasValue && now - this._cache.LastHeardTime < 4f)
+            if (this._cache.LastHeardDirection.HasValue && now - this._cache.LastHeardTime < SoundMemoryDuration)
             {
-                return origin + this._cache.LastHeardDirection.Value.normalized * 6f;
+                return origin + this._cache.LastHeardDirection.Value.normalized * HeardDirectionWeight;
             }
 
             return this._fallbackLookTarget;
         }
+
+        #endregion
     }
 }

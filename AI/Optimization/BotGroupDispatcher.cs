@@ -23,7 +23,7 @@ namespace AIRefactored.AI.Optimization
     /// Schedules and dispatches thread-safe bot workloads during headless server or client-host execution.
     /// Used for background AI tasks like group evaluation and noise scoring.
     /// </summary>
-    public sealed class BotWorkGroupDispatcher : MonoBehaviour
+    public static class BotWorkGroupDispatcher
     {
         #region Configuration
 
@@ -35,24 +35,49 @@ namespace AIRefactored.AI.Optimization
         #region Static Fields
 
         private static readonly List<IBotWorkload> _pendingWorkloads = new List<IBotWorkload>(MaxWorkPerFrame);
-        private static readonly object _lock = new object();
+        private static readonly object Lock = new object();
         private static readonly ManualLogSource Logger = AIRefactoredController.Logger;
         private static readonly int LogicalThreadCount = Mathf.Clamp(Environment.ProcessorCount, 1, MaxThreadsCap);
 
         #endregion
 
-        #region Unity Lifecycle
+        #region Public API
 
-        private void Update()
+        /// <summary>
+        /// Queues a workload for background processing. Safe from any thread.
+        /// </summary>
+        /// <param name="workload">The workload to queue.</param>
+        public static void Schedule(IBotWorkload? workload)
         {
-            // Only run on the authoritative host (headless OR client-host)
+            if (workload == null)
+            {
+                return;
+            }
+
+            lock (Lock)
+            {
+                if (_pendingWorkloads.Count >= MaxWorkPerFrame)
+                {
+                    Logger.LogWarning("[BotWorkGroupDispatcher] Queue full. Task dropped.");
+                    return;
+                }
+
+                _pendingWorkloads.Add(workload);
+            }
+        }
+
+        /// <summary>
+        /// Executes all queued workloads using thread batching. Should be called from WorldBootstrapper.Update().
+        /// </summary>
+        public static void Tick()
+        {
             if (!GameWorldHandler.IsLocalHost())
             {
                 return;
             }
 
             List<IBotWorkload> batch;
-            lock (_lock)
+            lock (Lock)
             {
                 if (_pendingWorkloads.Count == 0)
                 {
@@ -99,36 +124,10 @@ namespace AIRefactored.AI.Optimization
                         catch (Exception ex)
                         {
                             Logger.LogWarning(
-                                $"[AIRefactored] Exception in background bot workload: {ex.Message}\n{ex.StackTrace}");
+                                $"[BotWorkGroupDispatcher] Exception in background workload: {ex.Message}\n{ex.StackTrace}");
                         }
                     }
                 });
-            }
-        }
-
-        #endregion
-
-        #region Public API
-
-        /// <summary>
-        /// Queues a workload for background processing. Safe from any thread.
-        /// </summary>
-        public static void Schedule(IBotWorkload? workload)
-        {
-            if (workload == null)
-            {
-                return;
-            }
-
-            lock (_lock)
-            {
-                if (_pendingWorkloads.Count >= MaxWorkPerFrame)
-                {
-                    Logger.LogWarning("[AIRefactored] BotWorkGroupDispatcher queue is full. Task dropped.");
-                    return;
-                }
-
-                _pendingWorkloads.Add(workload);
             }
         }
 

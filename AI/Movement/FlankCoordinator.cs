@@ -30,9 +30,8 @@ namespace AIRefactored.AI.Movement
 
         #endregion
 
-        #region Static State
+        #region State
 
-        // Prevents all bots from using same flank side too frequently
         private static float _lastLeftUseTime = -10f;
         private static float _lastRightUseTime = -10f;
 
@@ -48,7 +47,7 @@ namespace AIRefactored.AI.Movement
         /// <returns>Recommended flank side.</returns>
         public static FlankPositionPlanner.Side GetOptimalFlankSide(BotOwner bot, BotComponentCache cache)
         {
-            if (bot == null || bot.Memory == null || bot.Memory.GoalEnemy == null)
+            if (bot == null || bot.Memory?.GoalEnemy == null)
             {
                 return FlankPositionPlanner.Side.Left;
             }
@@ -68,7 +67,7 @@ namespace AIRefactored.AI.Movement
             float leftScore = 0f;
             float rightScore = 0f;
 
-            // Enemy visibility angle scoring
+            // Prefer opposite side of enemy view cone
             if (angle > FlankAngleThreshold)
             {
                 leftScore += 1f;
@@ -78,12 +77,15 @@ namespace AIRefactored.AI.Movement
                 rightScore += 1f;
             }
 
+            // Squad spacing bias
             leftScore += squadBias;
-            rightScore += -squadBias;
+            rightScore -= squadBias;
 
+            // Suppressed bots prefer aggressive flanks
             leftScore += suppressionBias;
             rightScore += suppressionBias;
 
+            // Recent use penalty
             if (timeSinceLeft < RecentlyUsedFlankCooldown)
             {
                 leftScore -= 0.5f;
@@ -106,16 +108,11 @@ namespace AIRefactored.AI.Movement
 
         #endregion
 
-        #region Private Helpers
+        #region Internal Helpers
 
         private static float GetSuppressionBias(BotComponentCache cache)
         {
-            if (cache.Suppression != null && cache.Suppression.IsSuppressed())
-            {
-                return SuppressionBiasWeight;
-            }
-
-            return 0f;
+            return cache.Suppression?.IsSuppressed() == true ? SuppressionBiasWeight : 0f;
         }
 
         private static float GetSquadBias(BotOwner bot, Vector3 enemyPos)
@@ -126,8 +123,9 @@ namespace AIRefactored.AI.Movement
                 return 0f;
             }
 
-            int total = 0;
-            float bias = 0f;
+            Vector3 botVec = bot.Position - enemyPos;
+            int count = 0;
+            float sum = 0f;
 
             for (int i = 0; i < group.MembersCount; i++)
             {
@@ -137,20 +135,13 @@ namespace AIRefactored.AI.Movement
                     continue;
                 }
 
-                Vector3 toMate = mate.Position - enemyPos;
-                Vector3 toBot = bot.Position - enemyPos;
-
-                float dot = Vector3.Dot(toBot.normalized, toMate.normalized);
-                bias += dot;
-                total++;
+                Vector3 mateVec = mate.Position - enemyPos;
+                float dot = Vector3.Dot(botVec.normalized, mateVec.normalized);
+                sum += dot;
+                count++;
             }
 
-            if (total == 0)
-            {
-                return 0f;
-            }
-
-            return bias / total * SquadSpreadBias;
+            return count > 0 ? (sum / count) * SquadSpreadBias : 0f;
         }
 
         #endregion

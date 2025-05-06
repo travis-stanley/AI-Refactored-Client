@@ -55,6 +55,7 @@ namespace AIRefactored.AI.Combat
         #region Properties
 
         public Vector3? LastKnownEnemyPos => this._lastKnownEnemyPos;
+
         public float LastStateChangeTime { get; private set; }
 
         #endregion
@@ -188,9 +189,11 @@ namespace AIRefactored.AI.Combat
                 Vector3 enemyPos = EFTPlayerUtil.GetPosition(enemy);
                 this._lastKnownEnemyPos = enemyPos;
 
-                string enemyId = enemy.ProfileId;
-
-                this._cache.TacticalMemory?.RecordEnemyPosition(enemyPos, "Combat", enemyId);
+                string enemyId = enemy.ProfileId ?? string.Empty;
+                if (!string.IsNullOrWhiteSpace(enemyId))
+                {
+                    this._cache.TacticalMemory?.RecordEnemyPosition(enemyPos, "Combat", enemyId);
+                }
 
                 if (this._bot.Mover != null && !this._bot.Mover.Sprinting)
                 {
@@ -277,7 +280,7 @@ namespace AIRefactored.AI.Combat
             }
             else
             {
-                AIRefactoredController.Logger?.LogWarning($"[CombatStateMachine] Bot {this._bot.Profile?.Nickname ?? "Unknown"} failed to find fallback path.");
+                AIRefactoredController.Logger?.LogWarning("[CombatStateMachine] Bot failed to find fallback path.");
             }
         }
 

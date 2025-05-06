@@ -59,6 +59,11 @@ namespace AIRefactored.AI.Navigation
 
         public static void InitializeZoneSystem(IZones zones)
         {
+            if (zones == null)
+            {
+                throw new ArgumentNullException(nameof(zones));
+            }
+
             _zones = zones;
         }
 
@@ -79,7 +84,7 @@ namespace AIRefactored.AI.Navigation
             string zoneName = GetNearestZone(pos);
             string elevationBand = GetElevationBand(elevation);
 
-            NavPoint point = new NavPoint(
+            var point = new NavPoint(
                 pos,
                 isCover,
                 tag,
@@ -164,7 +169,7 @@ namespace AIRefactored.AI.Navigation
 
                 string newZone = GetNearestZone(point.WorldPos);
                 string band = GetElevationBand(point.Elevation);
-                bool isIndoor = Physics.Raycast(point.WorldPos + Vector3.up * 1.4f, Vector3.up, 12.0f);
+                bool isIndoor = Physics.Raycast(point.WorldPos + (Vector3.up * 1.4f), Vector3.up, 12.0f);
 
                 Points[i] = new NavPoint(
                     point.WorldPos,
@@ -182,18 +187,26 @@ namespace AIRefactored.AI.Navigation
         }
 
         public static bool IsRegistered(Vector3 pos) => Unique.Contains(pos);
-        public static bool IsCoverPoint(Vector3 pos) => TryGetPoint(pos, out NavPoint? p) && p?.IsCover == true;
-        public static bool IsIndoor(Vector3 pos) => TryGetPoint(pos, out NavPoint? p) && p?.IsIndoor == true;
-        public static bool IsJumpable(Vector3 pos) => TryGetPoint(pos, out NavPoint? p) && p?.IsJumpable == true;
-        public static float GetCoverAngle(Vector3 pos) => TryGetPoint(pos, out NavPoint? p) ? p?.CoverAngle ?? 0f : 0f;
-        public static float GetElevation(Vector3 pos) => TryGetPoint(pos, out NavPoint? p) ? p?.Elevation ?? 0f : 0f;
-        public static string GetTag(Vector3 pos) => TryGetPoint(pos, out NavPoint? p) ? p?.Tag ?? "untagged" : "untagged";
-        public static string GetZone(Vector3 pos) => TryGetPoint(pos, out NavPoint? p) ? p?.Zone ?? "unassigned" : "unassigned";
-        public static string GetElevationBand(Vector3 pos) => TryGetPoint(pos, out NavPoint? p) ? p?.ElevationBand ?? "unknown" : "unknown";
+
+        public static bool IsCoverPoint(Vector3 pos) => TryGetPoint(pos, out NavPoint? p) && p != null && p.IsCover;
+
+        public static bool IsIndoor(Vector3 pos) => TryGetPoint(pos, out NavPoint? p) && p != null && p.IsIndoor;
+
+        public static bool IsJumpable(Vector3 pos) => TryGetPoint(pos, out NavPoint? p) && p != null && p.IsJumpable;
+
+        public static float GetCoverAngle(Vector3 pos) => TryGetPoint(pos, out NavPoint? p) && p != null ? p.CoverAngle : 0f;
+
+        public static float GetElevation(Vector3 pos) => TryGetPoint(pos, out NavPoint? p) && p != null ? p.Elevation : 0f;
+
+        public static string GetTag(Vector3 pos) => TryGetPoint(pos, out NavPoint? p) && p != null ? p.Tag : "untagged";
+
+        public static string GetZone(Vector3 pos) => TryGetPoint(pos, out NavPoint? p) && p != null ? p.Zone : "unassigned";
+
+        public static string GetElevationBand(Vector3 pos) => TryGetPoint(pos, out NavPoint? p) && p != null ? p.ElevationBand : "unknown";
 
         public static List<Vector3> GetAllPositions()
         {
-            List<Vector3> result = new List<Vector3>(Points.Count);
+            var result = new List<Vector3>(Points.Count);
             for (int i = 0; i < Points.Count; i++)
             {
                 result.Add(Points[i].WorldPos);
@@ -204,7 +217,7 @@ namespace AIRefactored.AI.Navigation
 
         public static List<Vector3> QueryNearby(Vector3 origin, float radius, Predicate<Vector3>? filter = null, bool coverOnly = false)
         {
-            List<Vector3> result = new List<Vector3>(16);
+            var result = new List<Vector3>(16);
             float radiusSq = radius * radius;
 
             if (_useQuadtree && _quadtree != null)
@@ -212,7 +225,7 @@ namespace AIRefactored.AI.Navigation
                 List<Vector3> raw = _quadtree.QueryRaw(origin, radius, filter);
                 for (int i = 0; i < raw.Count; i++)
                 {
-                    if (TryGetPoint(raw[i], out NavPoint? nav) && (!coverOnly || (nav?.IsCover ?? false)))
+                    if (TryGetPoint(raw[i], out NavPoint? nav) && nav != null && (!coverOnly || nav.IsCover))
                     {
                         result.Add(raw[i]);
                     }
@@ -240,7 +253,7 @@ namespace AIRefactored.AI.Navigation
 
         public static List<NavPointData> QueryNearby(Vector3 origin, float radius, Predicate<NavPointData>? filter = null)
         {
-            List<NavPointData> result = new List<NavPointData>(16);
+            var result = new List<NavPointData>(16);
             float radiusSq = radius * radius;
 
             for (int i = 0; i < Points.Count; i++)
@@ -251,7 +264,7 @@ namespace AIRefactored.AI.Navigation
                     continue;
                 }
 
-                NavPointData data = new NavPointData(
+                var data = new NavPointData(
                     p.WorldPos,
                     p.IsCover,
                     p.Tag,
@@ -289,7 +302,6 @@ namespace AIRefactored.AI.Navigation
             point = null;
             return false;
         }
-
         private static string GetNearestZone(Vector3 pos)
         {
             if (_zones == null)
@@ -303,9 +315,9 @@ namespace AIRefactored.AI.Navigation
             foreach (string zone in _zones.ZoneNames())
             {
                 ISpawnPoint[] spawns = _zones.ZoneSpawnPoints(zone);
-                for (int i = 0; i < spawns.Length; i++)
+                for (int j = 0; j < spawns.Length; j++)
                 {
-                    float dist = Vector3.Distance(pos, spawns[i].Position);
+                    float dist = Vector3.Distance(pos, spawns[j].Position);
                     if (dist < bestDist)
                     {
                         bestDist = dist;
@@ -354,8 +366,7 @@ namespace AIRefactored.AI.Navigation
             Vector2 center = new Vector2((minX + maxX) * 0.5f, (minZ + maxZ) * 0.5f);
             float size = Mathf.Max(maxX - minX, maxZ - minZ) + 20f;
 
-            QuadtreeNavGrid tree = new QuadtreeNavGrid(center, size);
-
+            var tree = new QuadtreeNavGrid(center, size);
             for (int i = 0; i < Points.Count; i++)
             {
                 tree.Insert(Points[i].WorldPos);

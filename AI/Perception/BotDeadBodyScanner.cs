@@ -39,8 +39,6 @@ namespace AIRefactored.AI.Looting
 
         public static void ScanAll()
         {
-            int registered = 0;
-
             List<LootableContainer> containers = LootRegistry.GetAllContainers();
             List<Player> players = GameWorldHandler.GetAllAlivePlayers();
 
@@ -52,17 +50,14 @@ namespace AIRefactored.AI.Looting
                 {
                     Player player = players[j];
 
-                    if (player == null || player.HealthController?.IsAlive != false || string.IsNullOrEmpty(player.ProfileId))
+                    if (player != null && !player.HealthController.IsAlive && !string.IsNullOrEmpty(player.ProfileId))
                     {
-                        continue;
-                    }
-
-                    float dist = Vector3.Distance(player.Transform.position, container.transform.position);
-                    if (dist < 0.75f)
-                    {
-                        DeadBodyContainerCache.Register(player, container);
-                        registered++;
-                        break;
+                        float dist = Vector3.Distance(player.Transform.position, container.transform.position);
+                        if (dist < 0.75f)
+                        {
+                            DeadBodyContainerCache.Register(player, container);
+                            break;
+                        }
                     }
                 }
             }
@@ -70,50 +65,51 @@ namespace AIRefactored.AI.Looting
 
         public void Initialize(BotComponentCache cache)
         {
-            this._cache = cache;
-            this._bot = cache.Bot;
+            _cache = cache;
+            _bot = cache.Bot;
         }
 
         public void Tick(float time)
         {
-            if (!this.CanEvaluate(time))
+            if (!CanEvaluate(time))
             {
                 return;
             }
 
-            this._nextScanTime = time + LootCooldown;
-            this.TryLootOnce();
+            _nextScanTime = time + LootCooldown;
+            TryLootOnce();
         }
 
         public void TryLootNearby()
         {
-            this.TryLootOnce();
+            TryLootOnce();
         }
 
         private bool CanEvaluate(float time)
         {
-            return this._bot != null
-                && !this._bot.IsDead
-                && this._bot.GetPlayer?.IsYourPlayer != true
-                && this._cache?.PanicHandler?.IsPanicking != true
-                && time >= this._nextScanTime;
+            return _bot != null &&
+                   !_bot.IsDead &&
+                   _bot.GetPlayer != null &&
+                   !_bot.GetPlayer.IsYourPlayer &&
+                   _cache?.PanicHandler?.IsPanicking != true &&
+                   time >= _nextScanTime;
         }
 
         private Player? FindLootableCorpse()
         {
-            if (this._bot == null)
+            if (_bot == null)
             {
                 return null;
             }
 
-            Vector3 origin = this._bot.Transform.position;
-            Vector3 forward = this._bot.WeaponRoot.forward;
+            Vector3 origin = _bot.Transform.position;
+            Vector3 forward = _bot.WeaponRoot.forward;
             List<Player> players = GameWorldHandler.GetAllAlivePlayers();
 
             for (int i = 0; i < players.Count; i++)
             {
                 Player player = players[i];
-                if (!this.IsValidCorpse(player))
+                if (!IsValidCorpse(player))
                 {
                     continue;
                 }
@@ -121,17 +117,12 @@ namespace AIRefactored.AI.Looting
                 Vector3 toCorpse = player.Transform.position - origin;
                 float distance = toCorpse.magnitude;
 
-                if (distance > ScanRadius)
+                if (distance > ScanRadius || Vector3.Angle(forward, toCorpse.normalized) > MaxLootAngle)
                 {
                     continue;
                 }
 
-                if (Vector3.Angle(forward, toCorpse.normalized) > MaxLootAngle)
-                {
-                    continue;
-                }
-
-                if (!this.HasLineOfSight(origin, toCorpse, distance, player))
+                if (!HasLineOfSight(origin, toCorpse, distance, player))
                 {
                     continue;
                 }
@@ -157,29 +148,29 @@ namespace AIRefactored.AI.Looting
 
         private bool IsValidCorpse(Player player)
         {
-            return player != null
-                && player.HealthController?.IsAlive == false
-                && player != this._bot?.GetPlayer
-                && !string.IsNullOrEmpty(player.ProfileId)
-                && !this.WasLootedRecently(player.ProfileId);
+            return player != null &&
+                   !player.HealthController.IsAlive &&
+                   player != _bot?.GetPlayer &&
+                   !string.IsNullOrEmpty(player.ProfileId) &&
+                   !WasLootedRecently(player.ProfileId);
         }
 
         private void TryLootOnce()
         {
-            Player? corpse = this.FindLootableCorpse();
+            Player? corpse = FindLootableCorpse();
             if (corpse == null)
             {
                 return;
             }
 
-            this.LootCorpse(corpse);
-            this.RememberLooted(corpse.ProfileId);
+            LootCorpse(corpse);
+            RememberLooted(corpse.ProfileId);
         }
 
         private void LootCorpse(Player corpse)
         {
             InventoryController? source = corpse.InventoryController;
-            InventoryController? target = this._bot?.GetPlayer?.InventoryController;
+            InventoryController? target = _bot?.GetPlayer?.InventoryController;
 
             if (source == null || target == null)
             {
@@ -193,7 +184,7 @@ namespace AIRefactored.AI.Looting
                 return;
             }
 
-            this.TryStealBestItem(source, target);
+            TryStealBestItem(source, target);
         }
 
         private void TryStealBestItem(InventoryController source, InventoryController target)
@@ -241,8 +232,8 @@ namespace AIRefactored.AI.Looting
 
         private bool WasLootedRecently(string profileId)
         {
-            float lastTime;
-            return _lootTimestamps.TryGetValue(profileId, out lastTime) && Time.time - lastTime < LootMemoryDuration;
+            return _lootTimestamps.TryGetValue(profileId, out float lastTime) &&
+                   Time.time - lastTime < LootMemoryDuration;
         }
     }
 }

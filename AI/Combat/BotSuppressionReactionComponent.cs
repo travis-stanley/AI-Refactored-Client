@@ -60,7 +60,6 @@ namespace AIRefactored.AI.Combat
         /// <summary>
         /// Returns whether the bot is currently suppressed.
         /// </summary>
-        /// <returns>True if suppressed, otherwise false.</returns>
         public bool IsSuppressed()
         {
             return this._isSuppressed;
@@ -95,12 +94,12 @@ namespace AIRefactored.AI.Combat
         /// <param name="source">Optional suppression origin point.</param>
         public void TriggerSuppression(Vector3? source = null)
         {
-            if (this._bot == null || this._cache == null || this._isSuppressed)
+            if (this._isSuppressed || this._bot == null || this._cache == null)
             {
                 return;
             }
 
-            if (this._cache.PanicHandler != null && this._cache.PanicHandler.IsPanicking)
+            if (this._cache.PanicHandler?.IsPanicking == true)
             {
                 return;
             }
@@ -108,21 +107,21 @@ namespace AIRefactored.AI.Combat
             this._isSuppressed = true;
             this._suppressionStartTime = Time.time;
 
-            Vector3 fallbackDirection = source.HasValue
+            Vector3 retreatDir = source.HasValue
                 ? (this._bot.Position - source.Value).normalized
-                : this._bot.LookDirection.sqrMagnitude > 0.1f
+                : (this._bot.LookDirection.sqrMagnitude > 0.1f
                     ? -this._bot.LookDirection.normalized
-                    : Vector3.back;
+                    : Vector3.back);
 
-            Vector3 fallbackPosition = this.GetFallbackPosition(fallbackDirection);
+            Vector3 fallback = this.GetFallbackPosition(retreatDir);
             float cohesion = this._cache.AIRefactoredBotOwner?.PersonalityProfile?.Cohesion ?? 1.0f;
 
-            BotMovementHelper.SmoothMoveTo(this._bot, fallbackPosition, false, cohesion);
+            BotMovementHelper.SmoothMoveTo(this._bot, fallback, false, cohesion);
             this._bot.Sprint(true);
 
             this._cache.PanicHandler?.TriggerPanic();
+            this._cache.Escalation?.NotifyPanicTriggered(); // PATCHED HERE
 
-            // Ensure BotTalk only happens in non-headless mode
             if (!FikaHeadlessDetector.IsHeadless && this._bot.BotTalk != null)
             {
                 this._bot.BotTalk.TrySay(EPhraseTrigger.OnLostVisual);
@@ -140,9 +139,9 @@ namespace AIRefactored.AI.Combat
                 return Vector3.zero;
             }
 
-            Vector3 proposed = this._bot.Position + (retreatDirection * MinSuppressionRetreatDistance);
+            Vector3 basePos = this._bot.Position + (retreatDirection * MinSuppressionRetreatDistance);
 
-            if (this._cache != null && this._cache.Pathing != null)
+            if (this._cache?.Pathing != null)
             {
                 var path = BotCoverRetreatPlanner.GetCoverRetreatPath(this._bot, retreatDirection, this._cache.Pathing);
                 if (path.Count > 0)
@@ -151,18 +150,16 @@ namespace AIRefactored.AI.Combat
                 }
             }
 
-            return proposed;
+            return basePos;
         }
 
         private bool IsValid()
         {
-            if (this._bot == null || this._cache == null || this._bot.IsDead)
-            {
-                return false;
-            }
-
-            EFT.Player? player = this._bot.GetPlayer;
-            return player != null && player.IsAI;
+            return this._bot != null &&
+                   this._cache != null &&
+                   !this._bot.IsDead &&
+                   this._bot.GetPlayer is EFT.Player player &&
+                   player.IsAI;
         }
 
         #endregion

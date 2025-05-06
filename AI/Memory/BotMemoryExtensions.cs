@@ -47,7 +47,7 @@ namespace AIRefactored.AI.Memory
             }
 
             BotComponentCache? cache = BotCacheUtility.GetCache(bot);
-            if (cache?.PanicHandler?.IsPanicking == true)
+            if (cache != null && cache.PanicHandler != null && cache.PanicHandler.IsPanicking)
             {
                 return;
             }
@@ -67,7 +67,12 @@ namespace AIRefactored.AI.Memory
 
         public static void ReevaluateCurrentCover(this BotOwner bot)
         {
-            if (!IsValid(bot) || bot.Memory == null || bot.Memory.GoalEnemy == null || !bot.Memory.GoalEnemy.IsVisible)
+            if (!IsValid(bot))
+            {
+                return;
+            }
+
+            if (bot.Memory == null || bot.Memory.GoalEnemy == null || !bot.Memory.GoalEnemy.IsVisible)
             {
                 return;
             }
@@ -79,62 +84,70 @@ namespace AIRefactored.AI.Memory
             }
 
             float angle = Vector3.Angle(bot.LookDirection, toEnemy.normalized);
-            if (angle < 20f && toEnemy.sqrMagnitude < InvestigateRangeSqr)
+            if (angle >= 20f || toEnemy.sqrMagnitude >= InvestigateRangeSqr)
             {
-                Vector3 fallback = bot.Position - toEnemy.normalized * 5f;
-                Vector3 destination = fallback;
+                return;
+            }
 
-                BotComponentCache? cache = BotCacheUtility.GetCache(bot);
-                if (cache?.Pathing != null)
+            Vector3 fallback = bot.Position - toEnemy.normalized * 5f;
+            Vector3 destination = fallback;
+
+            BotComponentCache? cache = BotCacheUtility.GetCache(bot);
+            if (cache != null && cache.Pathing != null)
+            {
+                List<Vector3> path = BotCoverRetreatPlanner.GetCoverRetreatPath(bot, toEnemy, cache.Pathing);
+                if (path != null && path.Count > 0)
                 {
-                    List<Vector3> path = BotCoverRetreatPlanner.GetCoverRetreatPath(bot, toEnemy, cache.Pathing);
-                    if (path != null && path.Count != 0)
-                    {
-                        destination = path[path.Count - 1];
-                    }
+                    destination = path[path.Count - 1];
                 }
+            }
 
-                destination = new Vector3(destination.x, bot.Position.y, destination.z);
-                BotMovementHelper.SmoothMoveTo(bot, destination);
+            destination = new Vector3(destination.x, bot.Position.y, destination.z);
+            BotMovementHelper.SmoothMoveTo(bot, destination);
 
-                if (!FikaHeadlessDetector.IsHeadless)
-                {
-                    bot.BotTalk?.TrySay(EPhraseTrigger.OnLostVisual);
-                }
+            if (!FikaHeadlessDetector.IsHeadless)
+            {
+                bot.BotTalk?.TrySay(EPhraseTrigger.OnLostVisual);
             }
         }
 
         public static void SetCautiousSearchMode(this BotOwner bot)
         {
-            if (IsValid(bot) && bot.Memory != null)
+            if (!IsValid(bot) || bot.Memory == null)
             {
-                bot.Memory.AttackImmediately = false;
-                bot.Memory.IsPeace = false;
+                return;
             }
+
+            bot.Memory.AttackImmediately = false;
+            bot.Memory.IsPeace = false;
         }
 
         public static void SetCombatAggressionMode(this BotOwner bot)
         {
-            if (IsValid(bot) && bot.Memory != null)
+            if (!IsValid(bot) || bot.Memory == null)
             {
-                bot.Memory.AttackImmediately = true;
-                bot.Memory.IsPeace = false;
+                return;
             }
+
+            bot.Memory.AttackImmediately = true;
+            bot.Memory.IsPeace = false;
         }
 
         public static void SetPeaceMode(this BotOwner bot)
         {
-            if (IsValid(bot) && bot.Memory != null)
+            if (!IsValid(bot) || bot.Memory == null)
             {
-                bot.Memory.AttackImmediately = false;
-                bot.Memory.IsPeace = true;
-                bot.Memory.CheckIsPeace();
+                return;
             }
+
+            bot.Memory.AttackImmediately = false;
+            bot.Memory.IsPeace = true;
+            bot.Memory.CheckIsPeace();
         }
 
         public static void SetLastHeardSound(this BotOwner bot, Player source)
         {
-            if (!EFTPlayerUtil.IsValid(source) || source.ProfileId == bot.ProfileId)
+            if (!EFTPlayerUtil.IsValid(source) || bot == null || source.ProfileId == bot.ProfileId)
             {
                 return;
             }
@@ -151,7 +164,11 @@ namespace AIRefactored.AI.Memory
                 return;
             }
 
-            bot.BotsGroup?.LastSoundsController?.AddNeutralSound(resolved, sourcePos);
+            if (bot.BotsGroup?.LastSoundsController != null)
+            {
+                bot.BotsGroup.LastSoundsController.AddNeutralSound(resolved, sourcePos);
+            }
+
             BotMemoryStore.AddHeardSound(bot.ProfileId, sourcePos, Time.time);
 
             Vector3 cautiousAdvance = sourcePos + (bot.Position - sourcePos).normalized * 3f;
@@ -165,7 +182,7 @@ namespace AIRefactored.AI.Memory
 
         public static Vector3? TryGetFlankDirection(this BotOwner bot)
         {
-            if (!IsValid(bot) || bot.Memory?.GoalEnemy == null)
+            if (!IsValid(bot) || bot.Memory == null || bot.Memory.GoalEnemy == null)
             {
                 return null;
             }
@@ -190,10 +207,15 @@ namespace AIRefactored.AI.Memory
 
         private static bool IsValid(BotOwner? bot)
         {
-            return bot != null &&
-                   bot.GetPlayer != null &&
-                   bot.GetPlayer.IsAI &&
-                   !bot.GetPlayer.IsYourPlayer &&
+            if (bot == null)
+            {
+                return false;
+            }
+
+            Player? player = bot.GetPlayer;
+            return player != null &&
+                   player.IsAI &&
+                   !player.IsYourPlayer &&
                    !bot.IsDead;
         }
     }

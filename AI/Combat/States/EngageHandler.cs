@@ -57,13 +57,7 @@ namespace AIRefactored.AI.Combat.States
         public bool ShallUseNow()
         {
             CombatStateMachine? combat = this._cache.Combat;
-            if (combat == null)
-            {
-                return false;
-            }
-
-            return combat.LastKnownEnemyPos.HasValue &&
-                   !this.CanAttack();
+            return combat != null && combat.LastKnownEnemyPos.HasValue && !this.CanAttack();
         }
 
         /// <summary>
@@ -78,14 +72,14 @@ namespace AIRefactored.AI.Combat.States
                 return false;
             }
 
-            Vector3 enemyPos = combat.LastKnownEnemyPos.Value;
             Vector3 myPos = this._bot.Position;
+            Vector3 enemyPos = combat.LastKnownEnemyPos.Value;
             float distance = Vector3.Distance(myPos, enemyPos);
 
             BotPersonalityProfile? profile = this._cache.AIRefactoredBotOwner?.PersonalityProfile;
-            float range = profile != null ? profile.EngagementRange : 25.0f;
+            float engagementRange = profile != null ? profile.EngagementRange : 25.0f;
 
-            return distance < range;
+            return distance < engagementRange;
         }
 
         /// <summary>
@@ -100,25 +94,24 @@ namespace AIRefactored.AI.Combat.States
             }
 
             Vector3 target = combat.LastKnownEnemyPos.Value;
+
             Vector3 destination = this._cache.SquadPath != null
                 ? this._cache.SquadPath.ApplyOffsetTo(target)
                 : target;
 
-            // Ensure that destination is valid before proceeding
             if (float.IsNaN(destination.x) || float.IsNaN(destination.y) || float.IsNaN(destination.z))
             {
                 return;
             }
 
-            // Move the bot towards the target destination
             BotMovementHelper.SmoothMoveTo(this._bot, destination);
-
-            // Update bot's stance based on nearby cover, if necessary
             combat.TrySetStanceFromNearbyCover(destination);
         }
+
         /// <summary>
-        /// Returns true if the bot is actively in Engage state.
+        /// Returns true if the bot is actively engaging an unseen enemy.
         /// </summary>
+        /// <returns>True if engaging based on memory or tracking.</returns>
         public bool IsEngaging()
         {
             CombatStateMachine? combat = this._cache.Combat;

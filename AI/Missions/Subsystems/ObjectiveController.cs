@@ -158,8 +158,8 @@ namespace AIRefactored.AI.Missions.Subsystems
         private Vector3 GetLootObjective()
         {
             return this._lootScanner != null
-                ? this._lootScanner.GetHighestValueLootPoint()
-                : this._bot.Position;
+                       ? this._lootScanner.GetBestLootPosition()
+                       : this._bot.Position;
         }
 
         private Vector3 GetNextQuestObjective()

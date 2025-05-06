@@ -62,12 +62,15 @@ namespace AIRefactored.AI.Movement
         #region Public API
 
         public void EnterLootingMode() => _inLootingMode = true;
+
         public void ExitLootingMode() => _inLootingMode = false;
 
         public void Initialize(BotComponentCache cache)
         {
             if (cache?.Bot == null)
+            {
                 throw new ArgumentNullException(nameof(cache));
+            }
 
             _cache = cache;
             _bot = cache.Bot;
@@ -79,13 +82,19 @@ namespace AIRefactored.AI.Movement
         public void Tick(float deltaTime)
         {
             if (_bot == null || _cache == null || _bot.GetPlayer == null || !_bot.GetPlayer.IsAI)
+            {
                 return;
+            }
 
             if (_bot.IsDead || _bot.GetPlayer.HealthController == null || !_bot.GetPlayer.HealthController.IsAlive)
+            {
                 return;
+            }
 
             if (_cache.PanicHandler?.IsPanicking == true)
+            {
                 return;
+            }
 
             _jump?.Tick(deltaTime);
 
@@ -109,8 +118,10 @@ namespace AIRefactored.AI.Movement
 
             ApplyInertia(deltaTime);
 
-            if (!_inLootingMode && _bot.Memory?.GoalEnemy != null &&
-                _bot.WeaponManager != null && _bot.WeaponManager.IsReady)
+            if (!_inLootingMode &&
+                _bot.Memory?.GoalEnemy != null &&
+                _bot.WeaponManager != null &&
+                _bot.WeaponManager.IsReady)
             {
                 CombatStrafe(deltaTime);
                 TryCombatLean();
@@ -126,42 +137,54 @@ namespace AIRefactored.AI.Movement
 
         private void ApplyInertia(float deltaTime)
         {
-            if (_bot?.Mover == null || _trajectory == null || _bot.GetPlayer == null)
+            if (FikaHeadlessDetector.IsHeadless || _bot?.Mover == null || _trajectory == null || _bot.GetPlayer == null)
+            {
                 return;
+            }
 
             Vector3 target = _bot.Mover.LastTargetPoint(1.0f);
             Vector3 direction = target - _bot.Position;
             direction.y = 0f;
 
             if (direction.magnitude < MinMoveThreshold)
+            {
                 return;
+            }
 
             Vector3 adjusted = _trajectory.ModifyTrajectory(direction, deltaTime);
             Vector3 velocity = adjusted.normalized * 1.65f;
 
             BotPersonalityProfile? profile = _cache?.AIRefactoredBotOwner?.PersonalityProfile;
             if (profile?.AggressionLevel > 0.7f)
+            {
                 velocity *= 1.2f;
+            }
 
             _lastVelocity = Vector3.Lerp(_lastVelocity, velocity, InertiaWeight * deltaTime);
 
-            _bot.GetPlayer.CharacterController?.Move(Vector3.MoveTowards(_bot.Position, target, velocity.magnitude * deltaTime), deltaTime);
+            _bot.GetPlayer.CharacterController?.Move(Vector3.MoveTowards(_bot.Position, target, _lastVelocity.magnitude * deltaTime), deltaTime);
         }
 
         private void SmoothLookTo(Vector3 target, float deltaTime)
         {
-            if (_bot?.Transform == null || FikaHeadlessDetector.IsHeadless)
+            if (FikaHeadlessDetector.IsHeadless || _bot?.Transform == null)
+            {
                 return;
+            }
 
             Vector3 direction = target - _bot.Transform.position;
             direction.y = 0f;
 
             if (direction.sqrMagnitude < 0.01f)
+            {
                 return;
+            }
 
             if (_cache?.Tilt?._coreTilt == true &&
                 Vector3.Angle(_bot.Transform.forward, direction) > 80f)
+            {
                 return;
+            }
 
             Quaternion desired = Quaternion.LookRotation(direction);
             _bot.Transform.rotation = Quaternion.Lerp(_bot.Transform.rotation, desired, LookSmoothSpeed * deltaTime);
@@ -170,7 +193,9 @@ namespace AIRefactored.AI.Movement
         private void ScanAhead()
         {
             if (_bot == null)
+            {
                 return;
+            }
 
             Vector3 origin = _bot.Position + (Vector3.up * 1.5f);
             Vector3 direction = _bot.LookDirection;
@@ -178,14 +203,18 @@ namespace AIRefactored.AI.Movement
             if (Physics.SphereCast(origin, ScanRadius, direction, out _, ScanDistance, AIRefactoredLayerMasks.VisionBlockers))
             {
                 if (UnityEngine.Random.value < 0.2f && _bot.BotTalk != null)
+                {
                     _bot.BotTalk.TrySay(EPhraseTrigger.Look);
+                }
             }
         }
 
         private void CombatStrafe(float deltaTime)
         {
-            if (_bot?.GetPlayer == null)
+            if (_bot?.GetPlayer == null || FikaHeadlessDetector.IsHeadless || _bot.Transform == null)
+            {
                 return;
+            }
 
             _strafeTimer -= deltaTime;
             if (_strafeTimer <= 0f)
@@ -221,13 +250,16 @@ namespace AIRefactored.AI.Movement
 
         private void TryCombatLean()
         {
-            if (_bot == null || _cache?.Tilt == null || Time.time < _nextLeanAllowed)
+            if (_bot == null || _cache?.Tilt == null || Time.time < _nextLeanAllowed || FikaHeadlessDetector.IsHeadless)
+            {
                 return;
+            }
 
             BotPersonalityProfile? profile = _cache.AIRefactoredBotOwner?.PersonalityProfile;
-            if (profile == null || profile.LeaningStyle == LeanPreference.Never ||
-                _bot.Memory?.GoalEnemy == null)
+            if (profile == null || profile.LeaningStyle == LeanPreference.Never || _bot.Memory?.GoalEnemy == null)
+            {
                 return;
+            }
 
             Vector3 origin = _bot.Position + Vector3.up * 1.5f;
             bool wallLeft = Physics.Raycast(origin, -_bot.Transform.right, 1.5f, AIRefactoredLayerMasks.VisionBlockers);
@@ -236,7 +268,9 @@ namespace AIRefactored.AI.Movement
             Vector3? cover = _bot.Memory.BotCurrentCoverInfo?.LastCover?.Position;
 
             if (profile.LeaningStyle == LeanPreference.Conservative && !cover.HasValue && !wallLeft && !wallRight)
+            {
                 return;
+            }
 
             if (cover.HasValue && !BotCoverHelper.WasRecentlyUsed(cover.Value))
             {
@@ -264,8 +298,10 @@ namespace AIRefactored.AI.Movement
 
         private void TryFlankAroundEnemy()
         {
-            if (_bot?.Memory?.GoalEnemy == null)
+            if (_bot?.Memory?.GoalEnemy == null || FikaHeadlessDetector.IsHeadless)
+            {
                 return;
+            }
 
             Vector3 self = _bot.Position;
             Vector3 enemy = _bot.Memory.GoalEnemy.CurrPosition;
@@ -284,11 +320,15 @@ namespace AIRefactored.AI.Movement
         private void DetectStuck(float deltaTime)
         {
             if (_bot?.Mover == null || _bot.GetPlayer == null || _inLootingMode)
+            {
                 return;
+            }
 
             Vector3 target = _bot.Mover.LastTargetPoint(1.0f);
             if (!ValidateNavMeshTarget(target))
+            {
                 return;
+            }
 
             Vector3 velocity = _bot.GetPlayer.Velocity;
             if (velocity.sqrMagnitude < StuckThreshold * StuckThreshold)
@@ -313,7 +353,9 @@ namespace AIRefactored.AI.Movement
         {
             NavMeshHit hit;
             if (NavMesh.SamplePosition(position, out hit, 1.5f, NavMesh.AllAreas))
+            {
                 return (hit.position - position).sqrMagnitude < 1.0f;
+            }
 
             Logger.LogWarning("[Movement] Invalid NavMesh target: " + position);
             return false;

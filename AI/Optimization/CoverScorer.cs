@@ -40,7 +40,7 @@ namespace AIRefactored.AI.Optimization
             new Vector3(-60f, 0f, 0f),
             new Vector3(-30f, 0f, 0f),
             new Vector3(30f, 0f, 0f),
-            new Vector3(60f, 0f, 0f)
+            new Vector3(60f, 0f, 0f),
         };
 
         private static readonly ManualLogSource Logger = AIRefactoredController.Logger;

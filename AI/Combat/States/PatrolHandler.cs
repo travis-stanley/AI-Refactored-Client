@@ -41,6 +41,7 @@ namespace AIRefactored.AI.Combat.States
         private readonly BotComponentCache _cache;
         private readonly float _minStateDuration;
         private readonly float _switchCooldownBase;
+
         private float _nextSwitchTime;
 
         #endregion
@@ -57,7 +58,7 @@ namespace AIRefactored.AI.Combat.States
         {
             if (cache == null || cache.Bot == null)
             {
-                throw new ArgumentNullException(nameof(cache), "[PatrolHandler] Initialization failed: cache or bot is null.");
+                throw new ArgumentNullException(nameof(cache), "PatrolHandler initialization failed: cache or bot is null.");
             }
 
             this._cache = cache;
@@ -70,11 +71,17 @@ namespace AIRefactored.AI.Combat.States
 
         #region Public Methods
 
+        /// <summary>
+        /// Determines whether patrol is currently usable (always true).
+        /// </summary>
         public bool ShallUseNow()
         {
             return true;
         }
 
+        /// <summary>
+        /// Determines if the bot should escalate from patrol to investigate based on sound and caution.
+        /// </summary>
         public bool ShouldTransitionToInvestigate(float time)
         {
             if (this._cache.Combat == null || this._cache.AIRefactoredBotOwner == null)
@@ -94,6 +101,9 @@ namespace AIRefactored.AI.Combat.States
             return heardRecently && cooldownPassed;
         }
 
+        /// <summary>
+        /// Updates patrol logic, evaluates fallback conditions, and moves between patrol hotspots.
+        /// </summary>
         public void Tick(float time)
         {
             if (this.ShouldTriggerFallback())
@@ -104,9 +114,11 @@ namespace AIRefactored.AI.Combat.States
                     return;
                 }
 
+                Vector3 lookDir = this._bot.LookDirection.normalized;
+
                 List<Vector3> path = BotCoverRetreatPlanner.GetCoverRetreatPath(
                     this._bot,
-                    this._bot.LookDirection.normalized,
+                    lookDir,
                     this._cache.Pathing);
 
                 Vector3 fallback = path.Count >= 2 ? path[path.Count - 1] : this._bot.Position;
@@ -170,16 +182,19 @@ namespace AIRefactored.AI.Combat.States
                 return false;
             }
 
-            for (int i = 0; i < group.MembersCount; i++)
+            int count = group.MembersCount;
+            Vector3 myPos = this._bot.Position;
+
+            for (int i = 0; i < count; i++)
             {
                 BotOwner? member = group.Member(i);
-                if (member == null || member == this._bot)
+                if (member == null || member == this._bot || !member.IsDead)
                 {
                     continue;
                 }
 
-                float dist = Vector3.Distance(this._bot.Position, member.Position);
-                if (member.IsDead && dist < DeadAllyRadius)
+                float dist = Vector3.Distance(myPos, member.Position);
+                if (dist < DeadAllyRadius)
                 {
                     return true;
                 }

@@ -55,7 +55,7 @@ namespace AIRefactored.AI.Optimization
             List<Vector3> navCoverPoints = NavPointRegistry.QueryNearby(
                 origin,
                 NavpointSearchRadius,
-                delegate (Vector3 pos)
+                pos =>
                 {
                     Vector3 toCandidate = (pos - origin).normalized;
                     return NavPointRegistry.IsCoverPoint(pos) &&
@@ -85,7 +85,7 @@ namespace AIRefactored.AI.Optimization
             List<HotspotRegistry.Hotspot> fallbackHotspots = HotspotRegistry.QueryNearby(
                 origin,
                 HotspotSearchRadius,
-                delegate (HotspotRegistry.Hotspot h)
+                h =>
                 {
                     Vector3 toHotspot = (h.Position - origin).normalized;
                     return Vector3.Dot(toHotspot, retreatDirection) > MinDotHotspot;
@@ -121,8 +121,7 @@ namespace AIRefactored.AI.Optimization
             }
 
             // === Priority 4: LOS-blocking fallback ===
-            Vector3 losBreak;
-            if (TryLOSBlocker(origin, threatDirection, out losBreak))
+            if (TryLOSBlocker(origin, threatDirection, out Vector3 losBreak))
             {
                 return losBreak;
             }
@@ -154,12 +153,7 @@ namespace AIRefactored.AI.Optimization
             {
                 Vector3 probe = origin + backwards * dist + Vector3.up * EyeHeight;
 
-                if (Physics.Raycast(
-                        probe,
-                        threatDir,
-                        out RaycastHit hit,
-                        20f,
-                        AIRefactoredLayerMasks.VisionBlockers))
+                if (Physics.Raycast(probe, threatDir, out RaycastHit hit, 20f, AIRefactoredLayerMasks.VisionBlockers))
                 {
                     if (CoverScorer.IsSolid(hit.collider))
                     {

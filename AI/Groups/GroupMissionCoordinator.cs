@@ -31,11 +31,6 @@ namespace AIRefactored.AI.Groups
 
         #region Public Methods
 
-        /// <summary>
-        /// Forces a specific mission assignment to a group.
-        /// </summary>
-        /// <param name="groupId">The target group ID.</param>
-        /// <param name="mission">The mission type to assign.</param>
         public static void ForceMissionForGroup(string groupId, BotMissionController.MissionType mission)
         {
             if (!string.IsNullOrWhiteSpace(groupId))
@@ -44,25 +39,14 @@ namespace AIRefactored.AI.Groups
             }
         }
 
-        /// <summary>
-        /// Retrieves the assigned mission for the bot's group, or picks one dynamically if unassigned.
-        /// </summary>
-        /// <param name="bot">The bot querying for its group mission.</param>
-        /// <returns>The assigned or dynamically chosen mission type.</returns>
         public static BotMissionController.MissionType GetMissionForGroup(BotOwner? bot)
         {
-            if (bot == null || bot.GetPlayer == null || !bot.GetPlayer.IsAI)
+            if (bot == null || bot.GetPlayer == null || !bot.GetPlayer.IsAI || bot.Profile?.Info == null)
             {
                 return BotMissionController.MissionType.Loot;
             }
 
-            Profile profile = bot.Profile;
-            if (profile == null || profile.Info == null)
-            {
-                return BotMissionController.MissionType.Loot;
-            }
-
-            string groupId = profile.Info.GroupId;
+            string groupId = bot.Profile.Info.GroupId;
             if (string.IsNullOrEmpty(groupId))
             {
                 return PickMission(bot);
@@ -77,34 +61,20 @@ namespace AIRefactored.AI.Groups
             return mission;
         }
 
-        /// <summary>
-        /// Registers the bot's group for mission assignment if it does not already exist.
-        /// </summary>
-        /// <param name="bot">The bot whose group to register.</param>
         public static void RegisterFromBot(BotOwner? bot)
         {
-            if (bot == null || bot.GetPlayer == null || !bot.GetPlayer.IsAI)
+            if (bot == null || bot.GetPlayer == null || !bot.GetPlayer.IsAI || bot.Profile?.Info == null)
             {
                 return;
             }
 
-            Profile profile = bot.Profile;
-            if (profile == null || profile.Info == null)
-            {
-                return;
-            }
-
-            string groupId = profile.Info.GroupId;
+            string groupId = bot.Profile.Info.GroupId;
             if (!string.IsNullOrEmpty(groupId) && !AssignedMissions.ContainsKey(groupId))
             {
                 AssignedMissions[groupId] = PickMission(bot);
             }
         }
 
-        /// <summary>
-        /// Clears all mission assignments across all groups.
-        /// Call on raid end or server reset.
-        /// </summary>
         public static void Reset()
         {
             AssignedMissions.Clear();

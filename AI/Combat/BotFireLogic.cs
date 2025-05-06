@@ -28,6 +28,8 @@ namespace AIRefactored.AI.Combat
     /// </summary>
     public sealed class BotFireLogic
     {
+        #region Constants
+
         private const float MaxAimPitch = 70f;
 
         private static readonly EBodyPart[] AllBodyParts = (EBodyPart[])Enum.GetValues(typeof(EBodyPart));
@@ -43,6 +45,10 @@ namespace AIRefactored.AI.Combat
             { "pistol", 35f }
         };
 
+        #endregion
+
+        #region Fields
+
         private readonly BotOwner _bot;
         private readonly BotComponentCache _cache;
 
@@ -50,11 +56,19 @@ namespace AIRefactored.AI.Combat
         private float _lastLookAroundTime;
         private float _nextDecisionTime;
 
+        #endregion
+
+        #region Constructor
+
         public BotFireLogic(BotOwner bot, BotComponentCache cache)
         {
             this._bot = bot ?? throw new ArgumentNullException(nameof(bot));
             this._cache = cache ?? throw new ArgumentNullException(nameof(cache));
         }
+
+        #endregion
+
+        #region Public Methods
 
         public void Tick(float time)
         {
@@ -68,7 +82,7 @@ namespace AIRefactored.AI.Combat
             BotWeaponInfo? weaponInfo = weaponManager?._currentWeaponInfo;
             Weapon? weapon = weaponInfo?.weapon;
             GClass592? settings = this._bot.Settings?.FileSettings?.Core;
-            BotPersonalityProfile? profile = BotRegistry.Get(this._bot.ProfileId);
+            BotPersonalityProfile? profile = this._cache.AIRefactoredBotOwner?.PersonalityProfile;
 
             if (weaponManager == null || shootData == null || weaponInfo == null || weapon == null || settings == null || profile == null)
             {
@@ -126,6 +140,10 @@ namespace AIRefactored.AI.Combat
                 this._cache.LastShotTracker?.RegisterShot(target);
             }
         }
+
+        #endregion
+
+        #region Private Methods
 
         private void UpdateBotAiming(Vector3 aimPosition)
         {
@@ -302,5 +320,7 @@ namespace AIRefactored.AI.Combat
                 this._bot.BotTalk.TrySay(EPhraseTrigger.OnLostVisual);
             }
         }
+
+        #endregion
     }
 }

@@ -11,31 +11,41 @@
 namespace AIRefactored
 {
     using System;
+    using AIRefactored.Core;
+    using AIRefactored.Runtime;
     using BepInEx;
     using BepInEx.Logging;
-    using AIRefactored.Runtime;
-    using AIRefactored.Core;
 
     /// <summary>
     /// Entry point for AI-Refactored mod. Kicks off the global controller which
-    /// handles *all* further injection and bootstrapping exactly once.
+    /// handles all further injection and bootstrapping exactly once.
     /// </summary>
     [BepInPlugin("com.spock.airefactored", "AI-Refactored", "1.0.0")]
     public sealed class Plugin : BaseUnityPlugin
     {
         private static ManualLogSource? _log;
         private static bool _initialized;
-        private static readonly object _lock = new object();
+        private static readonly object LockObj = new object();
 
         /// <summary>
         /// Global logger for other classes to use.
         /// </summary>
-        public static ManualLogSource LoggerInstance =>
-            _log ?? throw new InvalidOperationException("Logger was not initialized.");
+        public static ManualLogSource LoggerInstance
+        {
+            get
+            {
+                if (_log == null)
+                {
+                    throw new InvalidOperationException("Logger was not initialized.");
+                }
+
+                return _log;
+            }
+        }
 
         private void Awake()
         {
-            lock (_lock)
+            lock (LockObj)
             {
                 if (_initialized)
                 {
@@ -43,30 +53,24 @@ namespace AIRefactored
                     return;
                 }
 
-                _log = Logger; // BaseUnityPlugin.Logger
+                _log = Logger;
                 _log.LogInfo("[AIRefactored] Plugin Awake — initializing AIRefactoredController.");
 
-                // Hand off *everything* to our single controller instance.
                 AIRefactoredController.Initialize(_log);
-
                 _initialized = true;
+
                 _log.LogInfo("[AIRefactored] Plugin initialization complete.");
             }
         }
 
         private void OnDestroy()
         {
-            lock (_lock)
+            lock (LockObj)
             {
                 _initialized = false;
             }
 
-            if (_log != null)
-            {
-                _log.LogInfo("[AIRefactored] Plugin OnDestroy — cleaning up.");
-            }
-
-            // Tear down any host injections if still up.
+            _log?.LogInfo("[AIRefactored] Plugin OnDestroy — cleaning up.");
             GameWorldHandler.UnhookBotSpawns();
         }
     }

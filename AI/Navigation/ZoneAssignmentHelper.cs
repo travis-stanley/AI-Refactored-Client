@@ -47,14 +47,8 @@ namespace AIRefactored.AI.Navigation
 
         #region Public API
 
-        /// <summary>
-        /// True if Initialize has completed and zones are valid.
-        /// </summary>
         public static bool IsInitialized => _initialized;
 
-        /// <summary>
-        /// Clears all cached zone data (called on world unload or reset).
-        /// </summary>
         public static void Clear()
         {
             _zones = null;
@@ -66,77 +60,63 @@ namespace AIRefactored.AI.Navigation
             _initialized = false;
         }
 
-        /// <summary>
-        /// Returns all known zone names.
-        /// </summary>
         public static IReadOnlyList<string> GetAllZoneNames()
         {
             return _zoneNames;
         }
 
-        /// <summary>
-        /// Returns the nearest known zone name based on proximity to a position.
-        /// </summary>
         public static string GetNearestZone(Vector3 position)
         {
             string bestZone = "unassigned";
             float bestDistanceSq = MaxZoneSnapDistance * MaxZoneSnapDistance;
 
-            foreach (KeyValuePair<string, Vector3> pair in _zoneCenters)
+            for (int i = 0; i < _zoneCenters.Count; i++)
             {
-                float distSq = (pair.Value - position).sqrMagnitude;
-                if (distSq < bestDistanceSq)
+                foreach (KeyValuePair<string, Vector3> pair in _zoneCenters)
                 {
-                    bestZone = pair.Key;
-                    bestDistanceSq = distSq;
+                    float distSq = (pair.Value - position).sqrMagnitude;
+                    if (distSq < bestDistanceSq)
+                    {
+                        bestZone = pair.Key;
+                        bestDistanceSq = distSq;
+                    }
                 }
             }
 
             return bestZone;
         }
 
-        /// <summary>
-        /// Gets all spawn points registered under the zone.
-        /// </summary>
         public static List<ISpawnPoint> GetSpawnPoints(string zone)
         {
             if (string.IsNullOrWhiteSpace(zone))
             {
-                return new List<ISpawnPoint>();
+                return new List<ISpawnPoint>(0);
             }
 
             return _zoneSpawns.TryGetValue(zone, out List<ISpawnPoint>? list) && list != null
                 ? list
-                : new List<ISpawnPoint>();
+                : new List<ISpawnPoint>(0);
         }
 
-        /// <summary>
-        /// Returns the average spawn point location for a zone.
-        /// </summary>
         public static Vector3 GetZoneCenter(string zone)
         {
-            return _zoneCenters.TryGetValue(zone, out Vector3 center) ? center : Vector3.zero;
+            return _zoneCenters.TryGetValue(zone, out Vector3 center)
+                ? center
+                : Vector3.zero;
         }
 
-        /// <summary>
-        /// Returns the tactical weight (risk/value) of a zone.
-        /// </summary>
         public static float GetZoneWeight(string zone)
         {
-            return _zoneWeights.TryGetValue(zone, out float value) ? value : 1f;
+            return _zoneWeights.TryGetValue(zone, out float value)
+                ? value
+                : 1f;
         }
 
-        /// <summary>
-        /// Returns true if the specified zone has a known boss presence.
-        /// </summary>
         public static bool IsBossZone(string zone)
         {
             return _bossZones.Contains(zone);
         }
 
-        /// <summary>
-        /// Initializes zone metadata using IZones reference and populates all caches.
-        /// </summary>
         public static void Initialize(IZones zones, bool includeSnipingZones = true)
         {
             if (_initialized)
@@ -160,8 +140,9 @@ namespace AIRefactored.AI.Navigation
             _zoneNames.Clear();
 
             List<string> zoneList = new List<string>(zones.ZoneNames(includeSnipingZones));
-            foreach (string zoneName in zoneList)
+            for (int i = 0; i < zoneList.Count; i++)
             {
+                string zoneName = zoneList[i];
                 if (string.IsNullOrEmpty(zoneName))
                 {
                     continue;
@@ -178,8 +159,9 @@ namespace AIRefactored.AI.Navigation
                 Vector3 sum = Vector3.zero;
                 List<ISpawnPoint> spawnList = new List<ISpawnPoint>(spawns.Length);
 
-                foreach (ISpawnPoint? spawn in spawns)
+                for (int j = 0; j < spawns.Length; j++)
                 {
+                    ISpawnPoint? spawn = spawns[j];
                     if (spawn != null)
                     {
                         sum += spawn.Position;
@@ -187,10 +169,16 @@ namespace AIRefactored.AI.Navigation
                     }
                 }
 
+                if (spawnList.Count == 0)
+                {
+                    continue;
+                }
+
                 _zoneCenters[zoneName] = sum / spawnList.Count;
                 _zoneSpawns[zoneName] = spawnList;
 
                 float weight = 1f;
+
                 if (int.TryParse(zoneName, out int zoneId))
                 {
                     BotZone botZone = new BotZone { Id = zoneId };

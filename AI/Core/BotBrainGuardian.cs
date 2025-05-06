@@ -54,7 +54,7 @@ namespace AIRefactored.AI.Threads
                 }
 
                 Type type = component.GetType();
-                if (type == typeof(BotBrain) || type == typeof(BotComponentCache))
+                if (type == typeof(BotBrain))
                 {
                     continue;
                 }

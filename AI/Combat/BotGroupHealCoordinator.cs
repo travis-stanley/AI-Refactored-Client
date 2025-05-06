@@ -11,11 +11,11 @@
 namespace AIRefactored.AI.Combat
 {
     using System;
+    using AIRefactored.AI.Core;
+    using AIRefactored.Core;
     using EFT;
     using EFT.HealthSystem;
     using UnityEngine;
-    using AIRefactored.AI.Core;
-    using AIRefactored.Core;
 
     /// <summary>
     /// Coordinates healing support across squadmates.
@@ -47,14 +47,9 @@ namespace AIRefactored.AI.Combat
         /// <param name="cache">BotComponentCache providing references for squad healing logic.</param>
         public BotGroupHealCoordinator(BotComponentCache cache)
         {
-            if (cache == null)
+            if (cache == null || cache.Bot == null)
             {
-                throw new ArgumentNullException(nameof(cache));
-            }
-
-            if (cache.Bot == null)
-            {
-                throw new ArgumentNullException(nameof(cache.Bot));
+                throw new ArgumentNullException(nameof(cache), "[BotGroupHealCoordinator] Cache or Bot is null.");
             }
 
             this._cache = cache;
@@ -143,16 +138,14 @@ namespace AIRefactored.AI.Combat
             Array parts = Enum.GetValues(typeof(EBodyPart));
             for (int i = 0; i < parts.Length; i++)
             {
-                object? enumVal = parts.GetValue(i);
-                if (!(enumVal is EBodyPart part))
+                object? val = parts.GetValue(i);
+                if (val is EBodyPart part)
                 {
-                    continue;
-                }
-
-                ValueStruct value = health.GetBodyPartHealth(part);
-                if (value.Maximum > 0f && value.Current < value.Maximum * HealthThreshold)
-                {
-                    return true;
+                    ValueStruct hp = health.GetBodyPartHealth(part);
+                    if (hp.Maximum > 0f && hp.Current < hp.Maximum * HealthThreshold)
+                    {
+                        return true;
+                    }
                 }
             }
 

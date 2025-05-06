@@ -58,7 +58,7 @@ namespace AIRefactored.AI.Optimization
         /// </summary>
         public void Initialize(BotOwner botOwner, BotComponentCache cache)
         {
-            if (!GameWorldHandler.IsLocalHost())
+            if (!GameWorldHandler.IsLocalHost() || botOwner == null)
             {
                 return;
             }
@@ -125,69 +125,37 @@ namespace AIRefactored.AI.Optimization
 
         private async Task ApplyInitialPersonalityAsync(BotOwner botOwner)
         {
-            if (_hasInitialized || botOwner.Settings?.FileSettings?.Mind == null)
+            if (_hasInitialized || botOwner.Profile == null || botOwner.Settings?.FileSettings?.Mind == null)
             {
                 return;
             }
 
             await Task.Yield();
-            ApplyPersonalityModifiers(botOwner);
-            _hasInitialized = true;
-        }
 
-        private void ApplyPersonalityModifiers(BotOwner botOwner)
-        {
-            // Guard against missing settings or mind configuration
-            var settings = botOwner.Settings;
-            if (settings == null)
-            {
-                return;
-            }
-
-            var fileSettings = settings.FileSettings;
-            if (fileSettings == null)
-            {
-                return;
-            }
-
-            var mindSettings = fileSettings.Mind;
-            if (mindSettings == null)
-            {
-                return;
-            }
-
-            // Resolve profile ID
-            var profile = botOwner.Profile;
-            if (profile == null)
-            {
-                return;
-            }
-
-            string profileId = profile.Id;
+            string profileId = botOwner.Profile.Id;
             if (string.IsNullOrEmpty(profileId))
             {
                 return;
             }
 
-            var personality = BotRegistry.Get(profileId);
+            BotPersonalityProfile personality = BotRegistry.Get(profileId);
 
-            // Apply personality modifiers
-            mindSettings.PANIC_RUN_WEIGHT = Mathf.Lerp(0.5f, 2.0f, personality.RiskTolerance);
-            mindSettings.PANIC_SIT_WEIGHT = Mathf.Lerp(10.0f, 80.0f, 1f - personality.RiskTolerance);
-            mindSettings.DIST_TO_FOUND_SQRT = Mathf.Lerp(200f, 600f, 1f - personality.Cohesion);
-            mindSettings.FRIEND_AGR_KILL = Mathf.Lerp(0.0f, 0.4f, personality.AggressionLevel);
+            var mind = botOwner.Settings.FileSettings.Mind;
+            mind.PANIC_RUN_WEIGHT = Mathf.Lerp(0.5f, 2.0f, personality.RiskTolerance);
+            mind.PANIC_SIT_WEIGHT = Mathf.Lerp(10.0f, 80.0f, 1f - personality.RiskTolerance);
+            mind.DIST_TO_FOUND_SQRT = Mathf.Lerp(200f, 600f, 1f - personality.Cohesion);
+            mind.FRIEND_AGR_KILL = Mathf.Lerp(0f, 0.4f, personality.AggressionLevel);
 
-            Logger?.LogInfo("[AIRefactored] Applied personality to bot: " + BotName());
-        }
-
-        private string BotName()
-        {
-            return _bot?.Profile?.Info?.Nickname ?? "UnknownBot";
+            Logger?.LogInfo("[AIRefactored] Applied personality to bot: " + GetBotName());
+            _hasInitialized = true;
         }
 
         private void Think()
         {
-            if (_bot == null || _bot.IsDead) return;
+            if (_bot == null || _bot.IsDead)
+            {
+                return;
+            }
 
             if (UnityEngine.Random.value < 0.008f)
             {
@@ -207,23 +175,19 @@ namespace AIRefactored.AI.Optimization
 
         private void TryOptimizeGroup()
         {
-            if (_bot == null)
+            if (_bot?.Profile?.Info?.GroupId is string groupId && groupId.Length > 0)
             {
-                return;
+                List<BotOwner> squad = BotTeamTracker.GetGroup(groupId);
+                if (squad.Count > 0)
+                {
+                    _groupOptimizer.OptimizeGroupAI(squad);
+                }
             }
+        }
 
-            var profileInfo = _bot.Profile?.Info;
-            if (profileInfo == null || string.IsNullOrEmpty(profileInfo.GroupId))
-            {
-                return;
-            }
-
-            string groupId = profileInfo.GroupId;
-            List<BotOwner> teammates = BotTeamTracker.GetGroup(groupId);
-            if (teammates.Count > 0)
-            {
-                _groupOptimizer.OptimizeGroupAI(teammates);
-            }
+        private string GetBotName()
+        {
+            return _bot?.Profile?.Info?.Nickname ?? "UnknownBot";
         }
 
         #endregion

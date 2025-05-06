@@ -28,7 +28,7 @@ namespace AIRefactored.AI.Helpers
         /// <param name="cache">The bot component cache.</param>
         public static void Trigger(BotComponentCache? cache)
         {
-            if (cache == null || cache.Bot == null)
+            if (cache?.Bot == null)
             {
                 return;
             }
@@ -36,11 +36,7 @@ namespace AIRefactored.AI.Helpers
             BotOwner bot = cache.Bot;
             if (!bot.IsDead && bot.GetPlayer?.IsAI == true)
             {
-                BotPanicHandler? panic = cache.PanicHandler;
-                if (panic != null)
-                {
-                    panic.TriggerPanic();
-                }
+                cache.PanicHandler?.TriggerPanic();
             }
         }
 
@@ -50,7 +46,7 @@ namespace AIRefactored.AI.Helpers
         /// <param name="group">The list of bot component caches representing the squad.</param>
         public static void TriggerGroup(List<BotComponentCache>? group)
         {
-            if (group == null)
+            if (group == null || group.Count == 0)
             {
                 return;
             }
@@ -58,7 +54,7 @@ namespace AIRefactored.AI.Helpers
             for (int i = 0; i < group.Count; i++)
             {
                 BotComponentCache cache = group[i];
-                if (cache == null || cache.Bot == null)
+                if (cache?.Bot == null)
                 {
                     continue;
                 }
@@ -66,11 +62,7 @@ namespace AIRefactored.AI.Helpers
                 BotOwner bot = cache.Bot;
                 if (!bot.IsDead && bot.GetPlayer?.IsAI == true)
                 {
-                    BotPanicHandler? panic = cache.PanicHandler;
-                    if (panic != null)
-                    {
-                        panic.TriggerPanic();
-                    }
+                    cache.PanicHandler?.TriggerPanic();
                 }
             }
         }
@@ -116,24 +108,18 @@ namespace AIRefactored.AI.Helpers
 
             foreach (BotComponentCache cache in BotCacheUtility.AllActiveBots())
             {
-                if (cache == null || cache.Bot == null)
+                if (cache?.Bot == null)
                 {
                     continue;
                 }
 
                 BotOwner bot = cache.Bot;
-                if (bot.IsDead || bot.GetPlayer?.IsAI != true)
+                if (!bot.IsDead && bot.GetPlayer?.IsAI == true)
                 {
-                    continue;
-                }
-
-                float distSq = (bot.Position - origin).sqrMagnitude;
-                if (distSq <= radiusSq)
-                {
-                    BotPanicHandler? panic = cache.PanicHandler;
-                    if (panic != null)
+                    float distSq = (bot.Position - origin).sqrMagnitude;
+                    if (distSq <= radiusSq)
                     {
-                        panic.TriggerPanic();
+                        cache.PanicHandler?.TriggerPanic();
                     }
                 }
             }

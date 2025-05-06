@@ -39,7 +39,7 @@ namespace AIRefactored.AI.Hotspots
 
         public void Initialize()
         {
-            this._sessions.Clear();
+            _sessions.Clear();
             HotspotRegistry.Initialize(GameWorldHandler.GetCurrentMapName());
         }
 
@@ -62,12 +62,12 @@ namespace AIRefactored.AI.Hotspots
                     continue;
                 }
 
-                if (!this._sessions.TryGetValue(bot, out HotspotSession? session) || session == null)
+                if (!_sessions.TryGetValue(bot, out HotspotSession? session) || session == null)
                 {
-                    session = this.AssignHotspotRoute(bot);
+                    session = AssignHotspotRoute(bot);
                     if (session != null)
                     {
-                        this._sessions[bot] = session;
+                        _sessions[bot] = session;
                     }
                 }
 
@@ -134,68 +134,68 @@ namespace AIRefactored.AI.Hotspots
 
             public HotspotSession(BotOwner bot, List<HotspotRegistry.Hotspot> route, bool isDefender)
             {
-                this._bot = bot ?? throw new ArgumentNullException(nameof(bot));
-                this._route = route ?? throw new ArgumentNullException(nameof(route));
-                this._isDefender = isDefender;
-                this._cache = BotCacheUtility.GetCache(bot);
-                this._lastHitTime = -999f;
-                this._index = 0;
-                this._nextSwitchTime = Time.time + this.GetSwitchInterval();
+                _bot = bot ?? throw new ArgumentNullException(nameof(bot));
+                _route = route ?? throw new ArgumentNullException(nameof(route));
+                _isDefender = isDefender;
+                _cache = BotCacheUtility.GetCache(bot);
+                _lastHitTime = -999f;
+                _index = 0;
+                _nextSwitchTime = Time.time + GetSwitchInterval();
 
                 HealthControllerClass? health = bot.GetPlayer?.HealthController as HealthControllerClass;
                 if (health != null)
                 {
-                    health.ApplyDamageEvent += this.OnDamaged;
+                    health.ApplyDamageEvent += OnDamaged;
                 }
             }
 
             public void Tick()
             {
-                if (this._bot.IsDead || this._route.Count == 0 || this._bot.GetPlayer?.IsYourPlayer == true)
+                if (_bot.IsDead || _route.Count == 0 || _bot.GetPlayer?.IsYourPlayer == true)
                 {
                     return;
                 }
 
-                if (this._bot.Memory?.GoalEnemy != null)
+                if (_bot.Memory?.GoalEnemy != null)
                 {
-                    this._bot.Sprint(true);
+                    _bot.Sprint(true);
                     return;
                 }
 
-                if (Time.time - this._lastHitTime < DamageCooldown)
+                if (Time.time - _lastHitTime < DamageCooldown)
                 {
                     return;
                 }
 
-                Vector3 target = this._route[this._index].Position;
+                Vector3 target = _route[_index].Position;
 
-                if (this._isDefender)
+                if (_isDefender)
                 {
-                    float dist = Vector3.Distance(this._bot.Position, target);
-                    float composure = this._cache?.PanicHandler?.GetComposureLevel() ?? 1f;
+                    float dist = Vector3.Distance(_bot.Position, target);
+                    float composure = _cache?.PanicHandler?.GetComposureLevel() ?? 1f;
                     float defendRadius = BaseDefendRadius * Mathf.Clamp(1f + (1f - composure), 1f, 2f);
 
                     if (dist > defendRadius)
                     {
-                        BotMovementHelper.SmoothMoveTo(this._bot, target);
+                        BotMovementHelper.SmoothMoveTo(_bot, target);
                     }
                 }
                 else
                 {
-                    float distToTarget = Vector3.Distance(this._bot.Position, target);
-                    if (Time.time >= this._nextSwitchTime || distToTarget < 2f)
+                    float distToTarget = Vector3.Distance(_bot.Position, target);
+                    if (Time.time >= _nextSwitchTime || distToTarget < 2f)
                     {
-                        this._index = (this._index + 1) % this._route.Count;
-                        this._nextSwitchTime = Time.time + this.GetSwitchInterval();
+                        _index = (_index + 1) % _route.Count;
+                        _nextSwitchTime = Time.time + GetSwitchInterval();
                     }
 
-                    BotMovementHelper.SmoothMoveTo(this._bot, this.AddJitterTo(target));
+                    BotMovementHelper.SmoothMoveTo(_bot, AddJitterTo(target));
                 }
             }
 
             private Vector3 AddJitterTo(Vector3 target)
             {
-                BotPersonalityProfile? profile = this._cache?.AIRefactoredBotOwner?.PersonalityProfile;
+                BotPersonalityProfile? profile = _cache?.AIRefactoredBotOwner?.PersonalityProfile;
                 if (profile == null)
                 {
                     return target;
@@ -226,16 +226,18 @@ namespace AIRefactored.AI.Hotspots
                 BotPersonalityProfile profile = BotRegistry.Get(this._bot.ProfileId);
                 float baseTime = 120f;
 
+                // **Personality handling** with more granular intervals
+
                 switch (profile.Personality)
                 {
                     case PersonalityType.Cautious:
                         baseTime = 160f;
                         break;
-                    case PersonalityType.TeamPlayer:
-                        baseTime = 100f;
-                        break;
                     case PersonalityType.Strategic:
                         baseTime = 90f;
+                        break;
+                    case PersonalityType.TeamPlayer:
+                        baseTime = 100f;
                         break;
                     case PersonalityType.Explorer:
                         baseTime = 75f;
@@ -243,15 +245,130 @@ namespace AIRefactored.AI.Hotspots
                     case PersonalityType.Dumb:
                         baseTime = 45f;
                         break;
+                    case PersonalityType.Aggressive:
+                        baseTime = 50f;
+                        break;
+                    case PersonalityType.Adaptive:
+                        baseTime = 110f;
+                        break;
+                    case PersonalityType.Balanced:
+                        baseTime = 100f;
+                        break;
+                    case PersonalityType.Camper:
+                        baseTime = 200f; // Slowest for stealthy behavior
+                        break;
+                    case PersonalityType.ColdBlooded:
+                        baseTime = 150f; // Higher due to planned, calm behavior
+                        break;
+                    case PersonalityType.Defensive:
+                        baseTime = 130f;
+                        break;
+                    case PersonalityType.Frenzied:
+                        baseTime = 45f; // Very fast as they’re panicked
+                        break;
+                    case PersonalityType.Greedy:
+                        baseTime = 80f;
+                        break;
+                    case PersonalityType.Heroic:
+                        baseTime = 90f;
+                        break;
+                    case PersonalityType.Loner:
+                        baseTime = 120f;
+                        break;
+                    case PersonalityType.Methodical:
+                        baseTime = 180f; // Slow, deliberate moves
+                        break;
+                    case PersonalityType.Paranoid:
+                        baseTime = 110f;
+                        break;
+                    case PersonalityType.Patient:
+                        baseTime = 200f;
+                        break;
+                    case PersonalityType.Reckless:
+                        baseTime = 60f;
+                        break;
+                    case PersonalityType.RiskTaker:
+                        baseTime = 60f;
+                        break;
+                    case PersonalityType.SilentHunter:
+                        baseTime = 150f;
+                        break;
+                    case PersonalityType.Sniper:
+                        baseTime = 180f; // Cautious, steady
+                        break;
+                    case PersonalityType.Stubborn:
+                        baseTime = 140f;
+                        break;
+                    case PersonalityType.Tactical:
+                        baseTime = 100f;
+                        break;
+                    case PersonalityType.Unpredictable:
+                        baseTime = UnityEngine.Random.Range(60f, 120f); // Randomized for chaos
+                        break;
+                    case PersonalityType.Vengeful:
+                        baseTime = 70f;
+                        break;
+                    case PersonalityType.Vigilant:
+                        baseTime = 110f;
+                        break;
+                    case PersonalityType.Calculating:
+                        baseTime = 160f;
+                        break;
+                    case PersonalityType.Panicked:
+                        baseTime = 40f; // Fastest when in panic mode
+                        break;
+                    case PersonalityType.Stoic:
+                        baseTime = 190f; // Very slow and calm
+                        break;
+                    case PersonalityType.Bulldozer:
+                        baseTime = 50f; // Very fast, aggressive
+                        break;
+                    case PersonalityType.Covert:
+                        baseTime = 140f; // Slow and stealthy
+                        break;
+                    case PersonalityType.Cowardly:
+                        baseTime = 80f;
+                        break;
+                    case PersonalityType.Disruptor:
+                        baseTime = UnityEngine.Random.Range(60f, 120f); // Unpredictable intervals
+                        break;
+                    case PersonalityType.Supportive:
+                        baseTime = 110f;
+                        break;
+                    case PersonalityType.Hunter:
+                        baseTime = 50f; // Fast, predatory
+                        break;
+                    case PersonalityType.Stalker:
+                        baseTime = 130f;
+                        break;
+                    case PersonalityType.Vigilante:
+                        baseTime = 70f;
+                        break;
+                    case PersonalityType.Sentinel:
+                        baseTime = 180f;
+                        break;
+                    case PersonalityType.Erratic:
+                        baseTime = UnityEngine.Random.Range(60f, 120f); // Random
+                        break;
+                    case PersonalityType.Cowboy:
+                        baseTime = 50f; // Very fast, confident
+                        break;
+                    case PersonalityType.Saboteur:
+                        baseTime = 60f;
+                        break;
                 }
 
-                return baseTime * Mathf.Clamp01(1f + profile.ChaosFactor * 0.6f);
+                // Add personality chaos factor (if any) to modify behavior
+                baseTime *= Mathf.Clamp01(1f + profile.ChaosFactor * 0.6f);
+
+                return baseTime;
             }
+
 
             private void OnDamaged(EBodyPart part, float damage, DamageInfoStruct info)
             {
-                this._lastHitTime = Time.time;
-                this._cache?.PanicHandler?.TriggerPanic();
+                _lastHitTime = Time.time;
+                _cache?.PanicHandler?.TriggerPanic();
             }
         }
     }

@@ -48,24 +48,16 @@ namespace AIRefactored.AI.Groups
 
         #region Properties
 
-        /// <summary>
-        /// Gets the last broadcast danger timestamp.
-        /// </summary>
+        /// <summary>Gets the last broadcast danger timestamp.</summary>
         public float LastDangerBroadcastTime { get; private set; } = -999f;
 
-        /// <summary>
-        /// Gets the last danger broadcasted position.
-        /// </summary>
+        /// <summary>Gets the last danger broadcasted position.</summary>
         public Vector3 LastDangerPosition { get; private set; }
 
         #endregion
 
         #region Initialization
 
-        /// <summary>
-        /// Initializes the group sync for the specified bot.
-        /// </summary>
-        /// <param name="botOwner">The bot owner instance.</param>
         public void Initialize(BotOwner botOwner)
         {
             this._bot = botOwner ?? throw new ArgumentNullException(nameof(botOwner));
@@ -80,10 +72,6 @@ namespace AIRefactored.AI.Groups
             this._group.OnMemberRemove += this.OnMemberRemoved;
         }
 
-        /// <summary>
-        /// Injects the local bot cache.
-        /// </summary>
-        /// <param name="localCache">The bot's cache instance.</param>
         public void InjectLocalCache(BotComponentCache localCache)
         {
             this._cache = localCache ?? throw new ArgumentNullException(nameof(localCache));
@@ -93,9 +81,6 @@ namespace AIRefactored.AI.Groups
 
         #region Public API
 
-        /// <summary>
-        /// Broadcasts a squad fallback point.
-        /// </summary>
         public void BroadcastFallbackPoint(Vector3 point)
         {
             this._fallbackPoint = point;
@@ -111,25 +96,16 @@ namespace AIRefactored.AI.Groups
             }
         }
 
-        /// <summary>
-        /// Broadcasts a squad extraction point.
-        /// </summary>
         public void BroadcastExtractPoint(Vector3 point)
         {
             this._extractPoint = point;
         }
 
-        /// <summary>
-        /// Broadcasts a loot target to the squad.
-        /// </summary>
         public void BroadcastLootPoint(Vector3 point)
         {
             this._lootPoint = point;
         }
 
-        /// <summary>
-        /// Broadcasts a squad-wide danger event.
-        /// </summary>
         public void BroadcastDanger(Vector3 position)
         {
             this.LastDangerBroadcastTime = Time.time;
@@ -145,9 +121,6 @@ namespace AIRefactored.AI.Groups
             }
         }
 
-        /// <summary>
-        /// Called each frame to sync fallback or danger data.
-        /// </summary>
         public void Tick(float time)
         {
             if (this._cache?.Bot?.GetPlayer?.IsAI != true || this._teammateCaches.Count == 0)
@@ -180,45 +153,27 @@ namespace AIRefactored.AI.Groups
             }
         }
 
-        /// <summary>
-        /// Returns the shared squad fallback target if any.
-        /// </summary>
         public Vector3? GetSharedFallbackTarget() => this._fallbackPoint;
 
-        /// <summary>
-        /// Returns the shared squad loot target if any.
-        /// </summary>
         public Vector3? GetSharedLootTarget() => this._lootPoint;
 
-        /// <summary>
-        /// Returns the shared squad extract target if any.
-        /// </summary>
         public Vector3? GetSharedExtractTarget() => this._extractPoint;
 
-        /// <summary>
-        /// Returns whether the squad is fully synchronized.
-        /// </summary>
         public bool IsSquadReady()
         {
             return this._bot != null && this._group != null && this._teammateCaches.Count > 0;
         }
 
-        /// <summary>
-        /// Gets the local bot cache for a teammate, if available.
-        /// </summary>
         public BotComponentCache? GetCache(BotOwner teammate)
         {
-            return this._teammateCaches.TryGetValue(teammate, out BotComponentCache cache) ? cache : null;
+            return this._teammateCaches.TryGetValue(teammate, out var cache) ? cache : null;
         }
 
-        /// <summary>
-        /// Returns live squadmates (not dead, valid AI).
-        /// </summary>
         public IReadOnlyList<BotOwner> GetTeammates()
         {
             TempTeammates.Clear();
 
-            foreach (KeyValuePair<BotOwner, BotComponentCache> pair in this._teammateCaches)
+            foreach (var pair in this._teammateCaches)
             {
                 BotOwner mate = pair.Key;
                 if (mate != null && !mate.IsDead && mate.GetPlayer?.IsAI == true)
@@ -252,7 +207,7 @@ namespace AIRefactored.AI.Groups
                 return;
             }
 
-            BotComponentCache newCache = new BotComponentCache();
+            var newCache = new BotComponentCache();
             newCache.Initialize(teammate);
             newCache.SetOwner(owner);
 
@@ -269,9 +224,9 @@ namespace AIRefactored.AI.Groups
             Task.Run(async () =>
             {
                 await Task.Delay((int)(delay * 1000f));
-                if (cache.Bot?.IsDead == false)
+                if (cache.Bot?.IsDead == false && cache.PanicHandler != null && !cache.PanicHandler.IsPanicking)
                 {
-                    cache.PanicHandler?.TriggerPanic();
+                    cache.PanicHandler.TriggerPanic();
                 }
             });
         }

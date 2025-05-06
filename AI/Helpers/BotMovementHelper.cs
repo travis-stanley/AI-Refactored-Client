@@ -34,11 +34,18 @@ namespace AIRefactored.AI.Helpers
 
         #region Public Methods
 
+        /// <summary>
+        /// Resets movement state (reserved for future use).
+        /// </summary>
         public static void Reset(BotOwner bot)
         {
             // Reserved for future use
         }
 
+        /// <summary>
+        /// Makes the bot retreat away from a threat direction.
+        /// Attempts to find a retreat path via BotCoverRetreatPlanner.
+        /// </summary>
         public static void RetreatToCover(BotOwner bot, Vector3 threatDirection, float distance = RetreatDistance, bool sprint = true)
         {
             if (!IsEligible(bot))
@@ -85,9 +92,12 @@ namespace AIRefactored.AI.Helpers
             }
         }
 
+        /// <summary>
+        /// Smoothly turns the bot to face the look target.
+        /// </summary>
         public static void SmoothLookTo(BotOwner bot, Vector3 lookTarget, float speed = DefaultLookSpeed)
         {
-            if (!IsEligible(bot) || bot.Transform == null || FikaHeadlessDetector.IsHeadless)  // Check for headless mode
+            if (!IsEligible(bot) || bot.Transform == null || FikaHeadlessDetector.IsHeadless)
             {
                 return;
             }
@@ -107,6 +117,9 @@ namespace AIRefactored.AI.Helpers
                 Time.deltaTime * Mathf.Clamp(speed, 1f, 8f));
         }
 
+        /// <summary>
+        /// Smoothly moves the bot toward a target position.
+        /// </summary>
         public static void SmoothMoveTo(BotOwner bot, Vector3 target, bool slow = true, float cohesionScale = 1.0f)
         {
             if (!IsEligible(bot))
@@ -125,6 +138,9 @@ namespace AIRefactored.AI.Helpers
             bot.Mover.GoToPoint(target, slow, cohesionScale);
         }
 
+        /// <summary>
+        /// Moves the bot toward a known safe extraction position if available.
+        /// </summary>
         public static void SmoothMoveToSafeExit(BotOwner bot)
         {
             if (!IsEligible(bot))
@@ -145,6 +161,9 @@ namespace AIRefactored.AI.Helpers
             }
         }
 
+        /// <summary>
+        /// Strafes the bot to the side relative to a threat direction.
+        /// </summary>
         public static void SmoothStrafeFrom(BotOwner bot, Vector3 threatDirection, float scale = 1.0f)
         {
             if (!IsEligible(bot))

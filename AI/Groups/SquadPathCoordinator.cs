@@ -46,7 +46,7 @@ namespace AIRefactored.AI.Groups
         /// <param name="cache">The bot component cache.</param>
         public void Initialize(BotComponentCache cache)
         {
-            this.bot = cache.Bot;
+            this.bot = cache?.Bot;
             this.group = this.bot?.BotsGroup;
             this.offsetInitialized = false;
         }
@@ -100,8 +100,14 @@ namespace AIRefactored.AI.Groups
             }
 
             int squadSize = this.group.MembersCount;
+            string profileId = this.bot.ProfileId;
 
-            int seed = this.bot.ProfileId.GetHashCode() ^ squadSize;
+            if (string.IsNullOrEmpty(profileId))
+            {
+                return Vector3.zero;
+            }
+
+            int seed = unchecked(profileId.GetHashCode() ^ squadSize);
             Random.InitState(seed);
 
             float spacing = Mathf.Clamp(BaseSpacing + Random.Range(-0.4f, 0.4f), MinSpacing, MaxSpacing);
@@ -114,10 +120,17 @@ namespace AIRefactored.AI.Groups
 
         private static int GetBotIndexInGroup(BotOwner bot, BotsGroup group)
         {
-            for (int i = 0; i < group.MembersCount; i++)
+            string profileId = bot.ProfileId;
+            if (string.IsNullOrEmpty(profileId))
+            {
+                return -1;
+            }
+
+            int count = group.MembersCount;
+            for (int i = 0; i < count; i++)
             {
                 BotOwner? member = group.Member(i);
-                if (member != null && member.ProfileId == bot.ProfileId)
+                if (member != null && member.ProfileId == profileId)
                 {
                     return i;
                 }

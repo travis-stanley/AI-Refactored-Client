@@ -55,13 +55,15 @@ namespace AIRefactored.AI.Helpers
         public static void DumpCache()
         {
             Plugin.LoggerInstance.LogInfo("[BotCacheUtility] Dumping bot caches:");
-
             foreach (KeyValuePair<BotOwner, BotComponentCache> kvp in CacheRegistry)
             {
                 BotOwner bot = kvp.Key;
                 BotComponentCache cache = kvp.Value;
-                string name = GetBotName(cache);
-                Plugin.LoggerInstance.LogInfo(" → " + name + ", Pos=" + bot.Position + ", Alive=" + (!bot.IsDead));
+                if (bot != null)
+                {
+                    string name = GetBotName(cache);
+                    Plugin.LoggerInstance.LogInfo(" → " + name + ", Pos=" + bot.Position + ", Alive=" + (!bot.IsDead));
+                }
             }
         }
 
@@ -97,7 +99,7 @@ namespace AIRefactored.AI.Helpers
         /// </summary>
         public static BotComponentCache? GetCache(Player player)
         {
-            if (player == null || player.AIData == null || player.AIData.BotOwner == null)
+            if (player?.AIData?.BotOwner == null)
             {
                 return null;
             }
@@ -123,7 +125,7 @@ namespace AIRefactored.AI.Helpers
         /// </summary>
         public static string GetBotName(BotComponentCache? cache)
         {
-            if (cache == null || cache.Bot == null || cache.Bot.Profile == null || cache.Bot.Profile.Info == null)
+            if (cache?.Bot?.Profile?.Info == null)
             {
                 return "Unknown";
             }
@@ -136,22 +138,7 @@ namespace AIRefactored.AI.Helpers
         /// </summary>
         public static BotGroupSyncCoordinator? GetGroupSync(BotComponentCache? cache)
         {
-            if (cache == null)
-            {
-                return null;
-            }
-
-            if (cache.GroupSync != null)
-            {
-                return cache.GroupSync;
-            }
-
-            if (cache.GroupBehavior != null)
-            {
-                return cache.GroupBehavior.GroupSync;
-            }
-
-            return null;
+            return cache?.GroupSync ?? cache?.GroupBehavior?.GroupSync;
         }
 
         /// <summary>
@@ -170,10 +157,10 @@ namespace AIRefactored.AI.Helpers
                     continue;
                 }
 
-                Vector3 botPos = bot.Position;
-                float dx = botPos.x - origin.x;
-                float dy = botPos.y - origin.y;
-                float dz = botPos.z - origin.z;
+                Vector3 pos = bot.Position;
+                float dx = pos.x - origin.x;
+                float dy = pos.y - origin.y;
+                float dz = pos.z - origin.z;
                 float distSq = (dx * dx) + (dy * dy) + (dz * dz);
 
                 if (distSq < minDistSq)
@@ -191,17 +178,14 @@ namespace AIRefactored.AI.Helpers
         /// </summary>
         public static Transform? Head(BotComponentCache? cache)
         {
-            if (cache == null || cache.Bot == null || cache.Bot.MainParts == null)
+            if (cache?.Bot?.MainParts == null)
             {
                 return null;
             }
 
-            if (cache.Bot.MainParts.TryGetValue(BodyPartType.head, out EnemyPart part) && part._transform != null)
-            {
-                return part._transform.Original;
-            }
-
-            return null;
+            return cache.Bot.MainParts.TryGetValue(BodyPartType.head, out EnemyPart part)
+                ? part._transform?.Original
+                : null;
         }
 
         /// <summary>
@@ -209,7 +193,7 @@ namespace AIRefactored.AI.Helpers
         /// </summary>
         public static void Register(BotOwner bot, BotComponentCache cache)
         {
-            if (bot == null || cache == null)
+            if (bot == null || cache == null || bot.IsDead)
             {
                 return;
             }

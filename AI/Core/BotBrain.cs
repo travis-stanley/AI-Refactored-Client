@@ -59,6 +59,7 @@ namespace AIRefactored.AI.Threads
         private BotGroupSyncCoordinator? _groupSync;
         private BotTeamLogic? _teamLogic;
         private BotAsyncProcessor? _asyncProcessor;
+        private BotThreatEscalationMonitor? _threatEscalationMonitor;
 
         private float _nextPerceptionTick;
         private float _nextCombatTick;
@@ -71,14 +72,10 @@ namespace AIRefactored.AI.Threads
         private void Update()
         {
             if (!GameWorldHandler.IsLocalHost() || !_isValid || _bot == null || _bot.IsDead || _player == null)
-            {
                 return;
-            }
 
             var currentPlayer = _bot.GetPlayer;
-            if (currentPlayer == null
-                || currentPlayer.HealthController == null
-                || !currentPlayer.HealthController.IsAlive)
+            if (currentPlayer == null || currentPlayer.HealthController == null || !currentPlayer.HealthController.IsAlive)
             {
                 _isValid = false;
                 Logger.LogWarning("[BotBrain] Bot invalidated at runtime.");
@@ -104,6 +101,7 @@ namespace AIRefactored.AI.Threads
                 _flashDetector?.Tick(now);
                 _groupSync?.Tick(now);
                 _teamLogic?.CoordinateMovement();
+                _threatEscalationMonitor?.Tick(now);
                 _nextCombatTick = now + CombatTickRate;
             }
 
@@ -138,7 +136,6 @@ namespace AIRefactored.AI.Threads
                 return;
             }
 
-            // validate input before we store it
             if (bot.GetPlayer == null || bot.IsDead || !bot.GetPlayer.IsAI || bot.GetPlayer.IsYourPlayer)
             {
                 Logger.LogWarning("[BotBrain] Initialization rejected: invalid or real player.");
@@ -150,24 +147,7 @@ namespace AIRefactored.AI.Threads
 
             try
             {
-                GameObject obj = _player.gameObject;
-
-                // --- BotComponentCache injection with TryGet + safe AddComponent ---
-                if (!obj.TryGetComponent<BotComponentCache>(out _cache))
-                {
-                    try
-                    {
-                        _cache = obj.AddComponent<BotComponentCache>();
-                    }
-                    catch (Exception ex)
-                    {
-                        Logger.LogError("[BotBrain] Failed to AddComponent<BotComponentCache>: " + ex);
-                        _isValid = false;
-                        return;
-                    }
-                }
-
-                _cache.Initialize(bot);
+                _cache = BotComponentCacheRegistry.GetOrCreate(bot);
 
                 if (_cache.Combat == null)
                 {
@@ -176,13 +156,11 @@ namespace AIRefactored.AI.Threads
                     return;
                 }
 
-                // optional owner hooking
                 if (BotRegistry.TryGetRefactoredOwner(bot.ProfileId) is AIRefactoredBotOwner owner)
                 {
                     _cache.SetOwner(owner);
                 }
 
-                // cache all subsystems
                 _combat = _cache.Combat;
                 _movement = _cache.Movement;
                 _pose = _cache.PoseController;
@@ -190,7 +168,6 @@ namespace AIRefactored.AI.Threads
                 _tilt = _cache.Tilt;
                 _groupBehavior = _cache.GroupBehavior;
 
-                // create or fetch others
                 _corner = new BotCornerScanner(bot, _cache);
                 _jump = new BotJumpController(bot, _cache);
 
@@ -211,11 +188,10 @@ namespace AIRefactored.AI.Threads
                 _asyncProcessor = new BotAsyncProcessor(); _asyncProcessor.Initialize(bot, _cache);
                 _teamLogic = new BotTeamLogic(bot);
 
-                // --- ensure we don't accidentally re-add BotBrain on top of ourselves ---
-                if (!obj.TryGetComponent<BotBrain>(out _))
-                {
-                    BotBrainGuardian.Enforce(obj);
-                }
+                _threatEscalationMonitor = new BotThreatEscalationMonitor();
+                _threatEscalationMonitor.Initialize(bot);
+
+                BotBrainGuardian.Enforce(_player.gameObject);
 
                 _isValid = true;
                 Logger.LogInfo("[BotBrain] ✅ AI initialized for: " + (_player.Profile?.Info?.Nickname ?? "Unnamed"));

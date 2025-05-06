@@ -29,34 +29,21 @@ namespace AIRefactored.AI.Groups
 
         #region Public API
 
-        /// <summary>
-        /// Clears all registered group states. Call this on session reset.
-        /// </summary>
         public static void Clear()
         {
             Groups.Clear();
         }
 
-        /// <summary>
-        /// Returns a shallow copy of all registered groups.
-        /// Useful for debug overlays or external tools.
-        /// </summary>
         public static Dictionary<string, List<BotOwner>> GetAllGroups()
         {
             return new Dictionary<string, List<BotOwner>>(Groups);
         }
 
-        /// <summary>
-        /// Retrieves all living AI bots in the specified group.
-        /// Returns a defensive new list.
-        /// </summary>
-        /// <param name="groupId">Group identifier.</param>
-        /// <returns>List of BotOwner entries in group.</returns>
         public static List<BotOwner> GetGroup(string groupId)
         {
             TempResult.Clear();
 
-            if (Groups.TryGetValue(groupId, out List<BotOwner>? group))
+            if (!string.IsNullOrWhiteSpace(groupId) && Groups.TryGetValue(groupId, out List<BotOwner>? group))
             {
                 for (int i = 0; i < group.Count; i++)
                 {
@@ -71,9 +58,6 @@ namespace AIRefactored.AI.Groups
             return new List<BotOwner>(TempResult);
         }
 
-        /// <summary>
-        /// Prints all registered groups and their sizes to Unity console.
-        /// </summary>
         public static void PrintGroups()
         {
             foreach (KeyValuePair<string, List<BotOwner>> entry in Groups)
@@ -82,11 +66,6 @@ namespace AIRefactored.AI.Groups
             }
         }
 
-        /// <summary>
-        /// Registers a bot into a specified group ID.
-        /// </summary>
-        /// <param name="groupId">The group ID.</param>
-        /// <param name="bot">The bot to register.</param>
         public static void Register(string groupId, BotOwner bot)
         {
             if (string.IsNullOrWhiteSpace(groupId) || bot == null || bot.IsDead)
@@ -112,10 +91,6 @@ namespace AIRefactored.AI.Groups
             }
         }
 
-        /// <summary>
-        /// Registers a bot automatically based on its profile's GroupId.
-        /// </summary>
-        /// <param name="bot">The bot to register.</param>
         public static void RegisterFromBot(BotOwner? bot)
         {
             if (bot == null || bot.IsDead)
@@ -124,23 +99,12 @@ namespace AIRefactored.AI.Groups
             }
 
             Player? player = bot.GetPlayer;
-            if (player == null || player.Profile == null || player.Profile.Info == null)
-            {
-                return;
-            }
-
-            string groupId = player.Profile.Info.GroupId;
-            if (!string.IsNullOrWhiteSpace(groupId))
+            if (player?.Profile?.Info?.GroupId is string groupId && !string.IsNullOrWhiteSpace(groupId))
             {
                 Register(groupId, bot);
             }
         }
 
-        /// <summary>
-        /// Unregisters a bot from any tracked group.
-        /// Automatically removes empty groups.
-        /// </summary>
-        /// <param name="bot">The bot to unregister.</param>
         public static void Unregister(BotOwner? bot)
         {
             if (bot == null)

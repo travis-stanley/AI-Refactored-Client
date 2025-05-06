@@ -35,7 +35,7 @@ namespace AIRefactored.Runtime
         #region Static Fields
 
         private static readonly ManualLogSource Logger = AIRefactoredController.Logger;
-        private static readonly List<Player> _playerBuffer = new List<Player>(64);
+        private static readonly List<Player> PlayerBuffer = new List<Player>(64);
 
         #endregion
 
@@ -104,7 +104,8 @@ namespace AIRefactored.Runtime
                 return;
             }
 
-            _playerBuffer.Clear();
+            PlayerBuffer.Clear();
+
             List<Player> players = GameWorldHandler.GetAllAlivePlayers();
             if (players == null || players.Count == 0)
             {
@@ -116,15 +117,15 @@ namespace AIRefactored.Runtime
                 Player player = players[i];
                 if (player != null)
                 {
-                    _playerBuffer.Add(player);
+                    PlayerBuffer.Add(player);
                 }
             }
 
             Vector3 containerPosition = container.transform.position;
 
-            for (int i = 0; i < _playerBuffer.Count; i++)
+            for (int i = 0; i < PlayerBuffer.Count; i++)
             {
-                Player player = _playerBuffer[i];
+                Player player = PlayerBuffer[i];
                 if (player == null || player.HealthController?.IsAlive == true || string.IsNullOrEmpty(player.ProfileId))
                 {
                     continue;

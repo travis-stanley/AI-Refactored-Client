@@ -46,11 +46,7 @@ namespace AIRefactored.AI.Optimization
                 return;
             }
 
-            if (botOwner == null ||
-                botOwner.GetPlayer == null ||
-                !botOwner.GetPlayer.IsAI ||
-                botOwner.IsDead ||
-                botOwner.Profile == null)
+            if (botOwner == null || botOwner.GetPlayer == null || !botOwner.GetPlayer.IsAI || botOwner.IsDead || botOwner.Profile == null)
             {
                 return;
             }
@@ -61,7 +57,7 @@ namespace AIRefactored.AI.Optimization
                 return;
             }
 
-            if (_optimizationApplied.TryGetValue(profileId, out bool alreadyApplied) && alreadyApplied)
+            if (this._optimizationApplied.TryGetValue(profileId, out bool alreadyApplied) && alreadyApplied)
             {
                 if (!ShouldLogOptimization(botOwner))
                 {
@@ -76,7 +72,7 @@ namespace AIRefactored.AI.Optimization
             LogMind(botOwner);
             LogRole(botOwner);
 
-            _optimizationApplied[profileId] = true;
+            this._optimizationApplied[profileId] = true;
             Logger?.LogInfo("[BotAIOptimization] Applied optimization for bot: " + profileId);
         }
 
@@ -90,11 +86,7 @@ namespace AIRefactored.AI.Optimization
                 return;
             }
 
-            if (botOwner == null ||
-                botOwner.GetPlayer == null ||
-                !botOwner.GetPlayer.IsAI ||
-                botOwner.IsDead ||
-                botOwner.Profile == null)
+            if (botOwner == null || botOwner.GetPlayer == null || !botOwner.GetPlayer.IsAI || botOwner.IsDead || botOwner.Profile == null)
             {
                 return;
             }
@@ -105,29 +97,13 @@ namespace AIRefactored.AI.Optimization
                 return;
             }
 
-            _optimizationApplied[profileId] = false;
+            this._optimizationApplied[profileId] = false;
             Logger?.LogInfo("[BotAIOptimization] Reset optimization for bot: " + profileId);
         }
 
         #endregion
 
         #region Private Helpers
-
-        private static bool TryResolveBot(BotOwner? input, out BotOwner? result)
-        {
-            if (input != null &&
-                input.GetPlayer != null &&
-                input.GetPlayer.IsAI &&
-                !input.IsDead &&
-                input.Profile != null)
-            {
-                result = input;
-                return true;
-            }
-
-            result = null;
-            return false;
-        }
 
         private static bool ShouldLogOptimization(BotOwner botOwner)
         {
@@ -147,7 +123,7 @@ namespace AIRefactored.AI.Optimization
         private static void LogCognition(BotOwner bot)
         {
             string name = bot.Profile?.Info?.Nickname ?? "UnknownBot";
-            var look = bot.Settings?.FileSettings?.Look;
+            BotGlobalLookData? look = bot.Settings?.FileSettings?.Look;
 
             if (look == null)
             {
@@ -157,8 +133,8 @@ namespace AIRefactored.AI.Optimization
 
             Logger?.LogInfo(
                 "[BotDiagnostics][Cognition] " + name +
-                " → GrassVision=" + look.MAX_VISION_GRASS_METERS.ToString("F1") +
-                "m, LightBonus=" + look.ENEMY_LIGHT_ADD.ToString("F1") + "m");
+                " → MAX_VISION_GRASS_METERS=" + look.MAX_VISION_GRASS_METERS.ToString("F1") +
+                ", ENEMY_LIGHT_ADD=" + look.ENEMY_LIGHT_ADD.ToString("F1"));
         }
 
         private static void LogMind(BotOwner bot)
@@ -174,8 +150,8 @@ namespace AIRefactored.AI.Optimization
 
             Logger?.LogInfo(
                 "[BotDiagnostics][Mind] " + name +
-                " → ScareThreshold=" + mind.MIN_DAMAGE_SCARE.ToString("F1") +
-                ", RunChance=" + mind.CHANCE_TO_RUN_CAUSE_DAMAGE_0_100.ToString("F0") + "%");
+                " → MIN_DAMAGE_SCARE=" + mind.MIN_DAMAGE_SCARE.ToString("F1") +
+                ", CHANCE_TO_RUN_CAUSE_DAMAGE_0_100=" + mind.CHANCE_TO_RUN_CAUSE_DAMAGE_0_100.ToString("F0") + "%");
         }
 
         private static void LogRole(BotOwner bot)

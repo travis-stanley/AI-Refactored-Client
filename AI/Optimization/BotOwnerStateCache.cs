@@ -144,32 +144,30 @@ namespace AIRefactored.AI.Optimization
 
         private struct BotStateSnapshot
         {
-            public readonly float Aggression;
-            public readonly float Caution;
-            public readonly float Composure;
-            public readonly bool IsSneaky;
+            public float Aggression { get; }
+            public float Caution { get; }
+            public float Composure { get; }
+            public bool IsSneaky { get; }
 
             public BotStateSnapshot(float aggression, float caution, float composure, bool isSneaky)
             {
-                this.Aggression = aggression;
-                this.Caution = caution;
-                this.Composure = composure;
-                this.IsSneaky = isSneaky;
+                Aggression = aggression;
+                Caution = caution;
+                Composure = composure;
+                IsSneaky = isSneaky;
             }
 
             public override bool Equals(object? obj)
             {
-                if (obj == null || !(obj is BotStateSnapshot))
+                if (obj is BotStateSnapshot other)
                 {
-                    return false;
+                    return Mathf.Abs(Aggression - other.Aggression) < 0.05f &&
+                           Mathf.Abs(Caution - other.Caution) < 0.05f &&
+                           Mathf.Abs(Composure - other.Composure) < 0.05f &&
+                           IsSneaky == other.IsSneaky;
                 }
 
-                BotStateSnapshot other = (BotStateSnapshot)obj;
-
-                return Mathf.Abs(this.Aggression - other.Aggression) < 0.05f &&
-                       Mathf.Abs(this.Caution - other.Caution) < 0.05f &&
-                       Mathf.Abs(this.Composure - other.Composure) < 0.05f &&
-                       this.IsSneaky == other.IsSneaky;
+                return false;
             }
 
             public override int GetHashCode()
@@ -177,10 +175,10 @@ namespace AIRefactored.AI.Optimization
                 unchecked
                 {
                     int hash = 17;
-                    hash = (hash * 23) + this.Aggression.GetHashCode();
-                    hash = (hash * 23) + this.Caution.GetHashCode();
-                    hash = (hash * 23) + this.Composure.GetHashCode();
-                    hash = (hash * 23) + this.IsSneaky.GetHashCode();
+                    hash = (hash * 23) + Aggression.GetHashCode();
+                    hash = (hash * 23) + Caution.GetHashCode();
+                    hash = (hash * 23) + Composure.GetHashCode();
+                    hash = (hash * 23) + IsSneaky.GetHashCode();
                     return hash;
                 }
             }

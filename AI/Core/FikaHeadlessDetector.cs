@@ -34,6 +34,12 @@ namespace AIRefactored.AI.Core
         public static string? RaidLocationName => _raidLocation;
 
         /// <summary>
+        /// Gets a value indicating whether the headless environment has fully parsed its arguments.
+        /// Used to delay logic until startup args are loaded.
+        /// </summary>
+        public static bool IsReady => _isHeadless && !string.IsNullOrEmpty(_raidLocation);
+
+        /// <summary>
         /// Static constructor for environment detection.
         /// </summary>
         static FikaHeadlessDetector()

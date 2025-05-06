@@ -59,7 +59,7 @@ namespace AIRefactored.AI.Helpers
                 return false;
             }
 
-            if (source == self.GetPlayer)
+            if (ReferenceEquals(source, self.GetPlayer))
             {
                 return false;
             }

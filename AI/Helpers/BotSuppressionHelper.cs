@@ -79,7 +79,7 @@ namespace AIRefactored.AI.Helpers
             }
             catch
             {
-                // Fallback value
+                // fallback to default
             }
 
             return visibleDist < visibleDistThreshold || ambientLight < ambientThreshold;
@@ -94,7 +94,7 @@ namespace AIRefactored.AI.Helpers
         /// <param name="source">The enemy player causing the suppression, if known.</param>
         public static void TrySuppressBot(Player? player, Vector3 threatPosition, IPlayer? source = null)
         {
-            if (player == null || player.IsAI != true)
+            if (player == null || !player.IsAI)
             {
                 return;
             }
@@ -116,9 +116,9 @@ namespace AIRefactored.AI.Helpers
             {
                 cache.PanicHandler.TriggerPanic();
             }
-            else
+            else if (cache.FlashGrenade != null)
             {
-                cache.FlashGrenade?.ForceBlind();
+                cache.FlashGrenade.ForceBlind();
             }
         }
     }

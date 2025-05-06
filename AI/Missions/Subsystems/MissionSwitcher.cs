@@ -20,7 +20,6 @@ namespace AIRefactored.AI.Missions.Subsystems
     using AIRefactored.Runtime;
     using BepInEx.Logging;
     using EFT;
-
     using UnityEngine;
 
     /// <summary>
@@ -40,7 +39,7 @@ namespace AIRefactored.AI.Missions.Subsystems
         private readonly BotOwner _bot;
         private readonly BotComponentCache _cache;
         private readonly BotGroupSyncCoordinator? _group;
-        private readonly BotLootScanner? _lootScanner;
+        private readonly BotLootDecisionSystem? _lootDecision;
         private readonly BotPersonalityProfile _profile;
         private readonly ManualLogSource _log;
 
@@ -60,8 +59,8 @@ namespace AIRefactored.AI.Missions.Subsystems
             this._bot = bot ?? throw new ArgumentNullException(nameof(bot));
             this._cache = cache ?? throw new ArgumentNullException(nameof(cache));
             this._profile = BotRegistry.Get(bot.Profile.Id);
-            this._lootScanner = cache.LootScanner;
             this._group = BotCacheUtility.GetGroupSync(cache);
+            this._lootDecision = cache.LootDecisionSystem;
             this._log = AIRefactoredController.Logger;
         }
 
@@ -106,10 +105,11 @@ namespace AIRefactored.AI.Missions.Subsystems
             // Opportunistically loot if personality allows and loot exists
             if (currentMission == MissionType.Quest &&
                 this._profile.PreferredMission == MissionBias.Loot &&
-                this._lootScanner != null &&
-                this._lootScanner.GetHighestValueLootPoint() != Vector3.zero)
+                this._lootDecision != null &&
+                this._lootDecision.ShouldLootNow() &&
+                this._lootDecision.GetLootDestination() != Vector3.zero)
             {
-                this._log.LogInfo($"[MissionSwitcher] {nickname} switching to Loot (loot point nearby)");
+                this._log.LogInfo($"[MissionSwitcher] {nickname} switching to Loot (loot opportunity nearby)");
                 this._lastSwitchTime = time;
                 currentMission = MissionType.Loot;
                 return;

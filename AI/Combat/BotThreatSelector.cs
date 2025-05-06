@@ -137,11 +137,9 @@ namespace AIRefactored.AI.Combat
                 }
             }
 
-            if (this._cache != null &&
-                this._cache.TacticalMemory != null)
+            if (this._cache != null && this._cache.TacticalMemory != null)
             {
                 string? id = this._cache.TacticalMemory.GetMostRecentEnemyId();
-
                 if (id != null)
                 {
                     string trimmedId = id.Trim();

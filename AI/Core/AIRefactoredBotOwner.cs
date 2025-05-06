@@ -54,11 +54,9 @@ namespace AIRefactored.AI.Core
         /// Initializes the wrapper with the live bot instance and system cache.
         /// </summary>
         /// <param name="bot">The underlying EFT BotOwner.</param>
-        /// <param name="cache">The AIRefactored component cache for this bot.</param>
-        public void Initialize(BotOwner bot, BotComponentCache cache)
+        public void Initialize(BotOwner bot)
         {
             if (bot == null) throw new ArgumentNullException(nameof(bot));
-            if (cache == null) throw new ArgumentNullException(nameof(cache));
 
             if (this.Bot != null || this.Cache != null)
             {
@@ -67,7 +65,7 @@ namespace AIRefactored.AI.Core
             }
 
             this.Bot = bot;
-            this.Cache = cache;
+            this.Cache = BotComponentCacheRegistry.GetOrCreate(bot);
 
             try
             {

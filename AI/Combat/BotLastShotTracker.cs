@@ -36,7 +36,7 @@ namespace AIRefactored.AI.Combat
 
         #endregion
 
-        #region Public API
+        #region Public Methods
 
         /// <summary>
         /// Returns true if the specified profile was shot at recently by this bot.
@@ -47,12 +47,7 @@ namespace AIRefactored.AI.Combat
         /// <returns>True if shot occurred within memory window.</returns>
         public bool DidRecentlyShoot(string? profileId, float now = -1f, float memoryWindow = DefaultMemoryWindow)
         {
-            if (string.IsNullOrWhiteSpace(profileId))
-            {
-                return false;
-            }
-
-            if (string.IsNullOrWhiteSpace(this._lastTargetId))
+            if (string.IsNullOrWhiteSpace(profileId) || string.IsNullOrWhiteSpace(this._lastTargetId))
             {
                 return false;
             }
@@ -75,12 +70,7 @@ namespace AIRefactored.AI.Combat
         /// <returns>True if hit occurred within memory window.</returns>
         public bool WasRecentlyShotBy(string? profileId, float now = -1f, float memoryWindow = DefaultMemoryWindow)
         {
-            if (string.IsNullOrWhiteSpace(profileId))
-            {
-                return false;
-            }
-
-            if (string.IsNullOrWhiteSpace(this._lastAttackerId))
+            if (string.IsNullOrWhiteSpace(profileId) || string.IsNullOrWhiteSpace(this._lastAttackerId))
             {
                 return false;
             }

@@ -30,6 +30,7 @@ namespace AIRefactored.AI.Missions
         #region Constants
 
         private const float GroupRejoinTimeout = 20f;
+        private const float LootSyncDistance = 7f;
 
         #endregion
 
@@ -153,7 +154,6 @@ namespace AIRefactored.AI.Missions
                 this._objectives.ResumeQuesting();
             }
 
-            // Evaluate extraction logic
             this._extraction.Tick(time);
 
             if (!this._evaluator.IsGroupAligned() && this._missionType != MissionType.Fight)
@@ -182,7 +182,7 @@ namespace AIRefactored.AI.Missions
             }
 
             if (!this._inCombatPause &&
-                Vector3.Distance(this._bot.Position, this._objectives.CurrentObjective) < 6f)
+                Vector3.Distance(this._bot.Position, this._objectives.CurrentObjective) < LootSyncDistance)
             {
                 this.OnObjectiveReached();
             }
@@ -194,12 +194,29 @@ namespace AIRefactored.AI.Missions
 
         private void OnObjectiveReached()
         {
-            if (this._missionType == MissionType.Loot)
+            if (this._missionType == MissionType.Loot &&
+                this._cache.LootScanner != null &&
+                this._cache.GroupBehavior?.GroupSync != null)
             {
+                Vector3 myPos = this._bot.Position;
+
+                // Broadcast loot to squad
+                this._cache.GroupBehavior.GroupSync.BroadcastLootPoint(myPos);
+
+                // Cancel if fallback/danger active
+                Vector3? fallback = this._cache.GroupBehavior.GroupSync.GetSharedFallbackTarget();
+                if (fallback.HasValue && Vector3.Distance(myPos, fallback.Value) > 4f)
+                {
+                    Logger.LogDebug("[BotMissionController] Loot canceled — squad fallback active.");
+                    return;
+                }
+
                 this._cache.Movement?.EnterLootingMode();
                 this._cache.PoseController?.LockCrouchPose();
-                this._cache.LootScanner?.TryLootNearby();
+
+                this._cache.LootScanner.TryLootNearby();
                 this._cache.DeadBodyScanner?.TryLootNearby();
+
                 this._cache.Movement?.ExitLootingMode();
                 this._voice.OnLoot();
             }
@@ -213,10 +230,7 @@ namespace AIRefactored.AI.Missions
             this._objectives.SetInitialObjective(this._missionType);
             this._voice.OnMissionSwitch();
 
-            if (this._bot != null &&
-                this._bot.Profile != null &&
-                this._bot.Profile.Info != null &&
-                !string.IsNullOrWhiteSpace(this._bot.Profile.Info.GroupId))
+            if (this._bot.Profile?.Info?.GroupId != null)
             {
                 GroupMissionCoordinator.ForceMissionForGroup(this._bot.Profile.Info.GroupId, MissionType.Fight);
             }

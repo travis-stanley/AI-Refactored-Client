@@ -10,6 +10,7 @@
 
 namespace AIRefactored.AI.Helpers
 {
+    using System;
     using System.Collections.Generic;
     using AIRefactored.AI.Core;
     using AIRefactored.AI.Movement;
@@ -38,23 +39,35 @@ namespace AIRefactored.AI.Helpers
 
         #region Cover Type Checks
 
-        public static bool IsLowCover(CustomNavigationPoint? point) =>
-            point != null && point.CoverLevel == CoverLevel.Sit;
+        public static bool IsLowCover(CustomNavigationPoint? point)
+        {
+            return point != null && point.CoverLevel == CoverLevel.Sit;
+        }
 
-        public static bool IsProneCover(CustomNavigationPoint? point) =>
-            point != null && point.CoverLevel == CoverLevel.Lay;
+        public static bool IsProneCover(CustomNavigationPoint? point)
+        {
+            return point != null && point.CoverLevel == CoverLevel.Lay;
+        }
 
-        public static bool IsStandingCover(CustomNavigationPoint? point) =>
-            point != null && point.CoverLevel == CoverLevel.Stay;
+        public static bool IsStandingCover(CustomNavigationPoint? point)
+        {
+            return point != null && point.CoverLevel == CoverLevel.Stay;
+        }
 
-        public static bool IsLowCover(NavPointData point) =>
-            point.IsCover && point.ElevationBand == "Mid";
+        public static bool IsLowCover(NavPointData point)
+        {
+            return point.IsCover && point.ElevationBand == "Mid";
+        }
 
-        public static bool IsProneCover(NavPointData point) =>
-            point.IsCover && point.ElevationBand == "Low";
+        public static bool IsProneCover(NavPointData point)
+        {
+            return point.IsCover && point.ElevationBand == "Low";
+        }
 
-        public static bool IsStandingCover(NavPointData point) =>
-            point.IsCover && point.ElevationBand == "High";
+        public static bool IsStandingCover(NavPointData point)
+        {
+            return point.IsCover && point.ElevationBand == "High";
+        }
 
         #endregion
 
@@ -108,10 +121,9 @@ namespace AIRefactored.AI.Helpers
                 return;
             }
 
-            var nearbyPoints = NavPointRegistry.QueryNearby(
-                position,
-                4f,
-                p => p.IsCover && p.DistanceSqr(position) <= MaxValidDistanceSqr);
+            Predicate<NavPointData> filter = p => p.IsCover && p.ElevationBand != null && p.DistanceSqr(position) <= MaxValidDistanceSqr;
+
+            var nearbyPoints = NavPointRegistry.QueryNearby(position, 4f, filter);
 
             for (int i = 0; i < nearbyPoints.Count; i++)
             {
@@ -130,6 +142,7 @@ namespace AIRefactored.AI.Helpers
                 }
             }
         }
+
 
         #endregion
 

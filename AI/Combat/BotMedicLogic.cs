@@ -58,7 +58,7 @@ namespace AIRefactored.AI.Combat
             this._injurySystem = injurySystem;
             this._nextHealCheck = Time.time;
 
-            BotOwner? bot = this._cache.Bot;
+            BotOwner? bot = cache.Bot;
             if (bot != null)
             {
                 if (bot.HealAnotherTarget == null)
@@ -189,7 +189,7 @@ namespace AIRefactored.AI.Combat
 
                 if (Vector3.Distance(botPos, matePos) <= HealSquadRange)
                 {
-                    EFT.IPlayer? iTarget = EFTPlayerUtil.AsSafeIPlayer(matePlayer);
+                    IPlayer? iTarget = EFTPlayerUtil.AsSafeIPlayer(matePlayer);
                     if (iTarget != null)
                     {
                         bot.HealAnotherTarget.HealAsk(iTarget);

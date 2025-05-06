@@ -47,7 +47,7 @@ namespace AIRefactored.AI.Combat
 
         public void Initialize(BotComponentCache componentCache)
         {
-            if (componentCache == null)
+            if (componentCache == null || componentCache.Bot == null)
             {
                 return;
             }
@@ -55,12 +55,9 @@ namespace AIRefactored.AI.Combat
             this._cache = componentCache;
             this._bot = componentCache.Bot;
 
-            if (this._bot != null && this._bot.GetPlayer is EFT.Player player)
+            if (this._bot.GetPlayer is EFT.Player player && player.HealthController != null)
             {
-                if (player.HealthController != null)
-                {
-                    player.HealthController.ApplyDamageEvent += this.OnDamaged;
-                }
+                player.HealthController.ApplyDamageEvent += this.OnDamaged;
             }
         }
 
@@ -83,24 +80,19 @@ namespace AIRefactored.AI.Combat
 
             this.RecoverComposure(Time.deltaTime);
 
-            if (time <= this._lastPanicExitTime + PanicCooldown)
-            {
-                return;
-            }
-
-            if (this._bot == null)
+            if (time <= this._lastPanicExitTime + PanicCooldown || this._bot == null)
             {
                 return;
             }
 
             if (this.ShouldPanicFromThreat())
             {
-                Vector3 retreatDirection = -this._bot.LookDirection.normalized;
-                this.TryStartPanic(time, retreatDirection);
-            }
-            else if (this.CheckNearbySquadDanger(out Vector3 retreatDir))
-            {
+                Vector3 retreatDir = -this._bot.LookDirection.normalized;
                 this.TryStartPanic(time, retreatDir);
+            }
+            else if (this.CheckNearbySquadDanger(out Vector3 squadDir))
+            {
+                this.TryStartPanic(time, squadDir);
             }
         }
 
@@ -202,6 +194,8 @@ namespace AIRefactored.AI.Combat
             this._isPanicking = true;
             this._panicStartTime = now;
             this._composureLevel = 0f;
+
+            this._cache.Escalation?.NotifyPanicTriggered();
 
             float cohesion = this._cache.AIRefactoredBotOwner?.PersonalityProfile?.Cohesion ?? 1f;
             Vector3 fallback = this._bot.Position + retreatDir.normalized * 8f;

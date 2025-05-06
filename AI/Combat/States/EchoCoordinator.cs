@@ -28,6 +28,7 @@ namespace AIRefactored.AI.Combat.States
         private const float EchoCooldown = 4.0f;
         private const float MaxEchoRange = 40.0f;
         private const float BaseFallbackDistance = 6.0f;
+        private const float FallbackChaosOffset = 1.75f;
 
         #endregion
 
@@ -81,7 +82,10 @@ namespace AIRefactored.AI.Combat.States
                 return;
             }
 
-            for (int i = 0; i < group.MembersCount; i++)
+            Vector3 selfPos = this._bot.Position;
+            int count = group.MembersCount;
+
+            for (int i = 0; i < count; i++)
             {
                 BotOwner? mate = group.Member(i);
                 if (!this.IsValidSquadmate(mate))
@@ -89,18 +93,23 @@ namespace AIRefactored.AI.Combat.States
                     continue;
                 }
 
+                Vector3 matePos = mate.Position;
                 BotComponentCache? mateCache = BotCacheUtility.GetCache(mate);
+
                 if (mateCache == null || mateCache.Combat == null || !this.CanAcceptEcho(mateCache))
                 {
                     continue;
                 }
 
-                Vector3 threatDir = this._bot.Position - mate.Position;
+                Vector3 threatDir = selfPos - matePos;
                 Vector3 fallbackDir = threatDir.sqrMagnitude > 0.01f
                     ? threatDir.normalized
                     : (mate.LookDirection.sqrMagnitude > 0.1f ? -mate.LookDirection.normalized : Vector3.back);
 
-                Vector3 fallback = mate.Position - fallbackDir * BaseFallbackDistance;
+                Vector3 chaos = UnityEngine.Random.insideUnitSphere * FallbackChaosOffset;
+                chaos.y = 0;
+
+                Vector3 fallback = matePos - fallbackDir * BaseFallbackDistance + chaos;
                 mateCache.Combat.TriggerFallback(fallback);
 
                 if (!FikaHeadlessDetector.IsHeadless && mate.BotTalk != null)
@@ -129,7 +138,9 @@ namespace AIRefactored.AI.Combat.States
                 return;
             }
 
-            for (int i = 0; i < group.MembersCount; i++)
+            int count = group.MembersCount;
+
+            for (int i = 0; i < count; i++)
             {
                 BotOwner? mate = group.Member(i);
                 if (!this.IsValidSquadmate(mate))
@@ -138,6 +149,7 @@ namespace AIRefactored.AI.Combat.States
                 }
 
                 BotComponentCache? mateCache = BotCacheUtility.GetCache(mate);
+
                 if (mateCache == null || mateCache.Combat == null || !this.CanAcceptEcho(mateCache))
                 {
                     continue;
@@ -167,6 +179,7 @@ namespace AIRefactored.AI.Combat.States
             }
 
             string enemyId = string.Empty;
+
             if (this._cache.ThreatSelector != null &&
                 this._cache.ThreatSelector.CurrentTarget != null &&
                 this._cache.ThreatSelector.CurrentTarget.ProfileId != null)
@@ -174,7 +187,9 @@ namespace AIRefactored.AI.Combat.States
                 enemyId = this._cache.ThreatSelector.CurrentTarget.ProfileId;
             }
 
-            for (int i = 0; i < group.MembersCount; i++)
+            int count = group.MembersCount;
+
+            for (int i = 0; i < count; i++)
             {
                 BotOwner? mate = group.Member(i);
                 if (!this.IsValidSquadmate(mate))
@@ -183,6 +198,7 @@ namespace AIRefactored.AI.Combat.States
                 }
 
                 BotComponentCache? mateCache = BotCacheUtility.GetCache(mate);
+
                 if (mateCache != null && mateCache.TacticalMemory != null)
                 {
                     mateCache.TacticalMemory.RecordEnemyPosition(enemyPosition, "SquadEcho", enemyId);
@@ -206,12 +222,7 @@ namespace AIRefactored.AI.Combat.States
                 return false;
             }
 
-            if (cache.AIRefactoredBotOwner == null)
-            {
-                return false;
-            }
-
-            BotPersonalityProfile? profile = cache.AIRefactoredBotOwner.PersonalityProfile;
+            BotPersonalityProfile? profile = cache.AIRefactoredBotOwner?.PersonalityProfile;
             return profile != null && profile.Caution >= 0.15f;
         }
 
@@ -222,7 +233,8 @@ namespace AIRefactored.AI.Combat.States
                 return false;
             }
 
-            float distSq = (mate.Position - this._bot.Position).sqrMagnitude;
+            Vector3 matePos = mate.Position;
+            float distSq = (matePos - this._bot.Position).sqrMagnitude;
             return distSq <= (MaxEchoRange * MaxEchoRange);
         }
 

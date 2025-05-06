@@ -31,7 +31,6 @@ namespace AIRefactored.AI.Helpers
         /// <summary>
         /// Scans the scene for active tactical flashlights.
         /// </summary>
-        /// <returns>List of detected active tactical lights.</returns>
         public static IEnumerable<Light> GetActiveFlashlights()
         {
             ActiveLights.Clear();
@@ -54,7 +53,6 @@ namespace AIRefactored.AI.Helpers
         /// <summary>
         /// Returns the last-known positions of visible flashlights.
         /// </summary>
-        /// <returns>List of last-known flashlight positions.</returns>
         public static IReadOnlyList<Vector3> GetLastKnownFlashlightPositions()
         {
             return LastKnownFlashPositions;
@@ -63,10 +61,6 @@ namespace AIRefactored.AI.Helpers
         /// <summary>
         /// Determines if any flashlight is currently hitting this bot in the eyes.
         /// </summary>
-        /// <param name="botHead">The bot's head transform.</param>
-        /// <param name="blindingLight">The flashlight causing blindness if found.</param>
-        /// <param name="customMaxDist">Optional maximum detection distance override.</param>
-        /// <returns>True if the bot is being exposed to flashlight glare; otherwise, false.</returns>
         public static bool IsExposingBot(
             Transform botHead,
             out Light? blindingLight,
@@ -134,7 +128,6 @@ namespace AIRefactored.AI.Helpers
         /// <summary>
         /// Indicates whether any flashlight is flickering (reserved for future upgrades).
         /// </summary>
-        /// <returns>False; flicker detection is not yet implemented.</returns>
         public static bool IsFlickeringFlashlightActive()
         {
             return false;
@@ -143,8 +136,6 @@ namespace AIRefactored.AI.Helpers
         /// <summary>
         /// Determines if a light is a valid tactical flashlight.
         /// </summary>
-        /// <param name="light">The light to check.</param>
-        /// <returns>True if the light matches tactical specs.</returns>
         private static bool IsValidTacticalLight(Light light)
         {
             return light != null &&

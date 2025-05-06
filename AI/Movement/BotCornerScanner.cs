@@ -51,54 +51,35 @@ namespace AIRefactored.AI.Movement
 
         #region Constructors
 
-        /// <summary>
-        /// Constructs and initializes the corner scanner using provided bot and cache.
-        /// </summary>
-        /// <param name="bot">The EFT BotOwner instance.</param>
-        /// <param name="cache">BotComponentCache instance.</param>
+        public BotCornerScanner()
+        {
+        }
+
         public BotCornerScanner(BotOwner bot, BotComponentCache cache)
         {
-            if (bot == null) throw new ArgumentNullException(nameof(bot));
-            if (cache == null) throw new ArgumentNullException(nameof(cache));
-            if (cache.AIRefactoredBotOwner?.PersonalityProfile == null)
-                throw new ArgumentException("Cache is missing AIRefactoredBotOwner or profile.");
+            Initialize(bot, cache);
+        }
+
+        #endregion
+
+        #region Initialization
+
+        public void Initialize(BotOwner bot, BotComponentCache cache)
+        {
+            if (bot == null || cache == null || cache.AIRefactoredBotOwner?.PersonalityProfile == null)
+            {
+                throw new ArgumentException("[BotCornerScanner] Invalid init parameters.");
+            }
 
             _bot = bot;
             _cache = cache;
             _profile = cache.AIRefactoredBotOwner.PersonalityProfile;
         }
 
-        /// <summary>
-        /// Default constructor for manual Init fallback.
-        /// </summary>
-        public BotCornerScanner()
-        {
-        }
-
         #endregion
 
         #region Public Methods
 
-        /// <summary>
-        /// Initializes the corner scanner using bot context.
-        /// </summary>
-        /// <param name="cache">Bot component cache.</param>
-        public void Initialize(BotComponentCache cache)
-        {
-            if (cache == null || cache.Bot == null || cache.AIRefactoredBotOwner?.PersonalityProfile == null)
-            {
-                throw new ArgumentNullException(nameof(cache));
-            }
-
-            _cache = cache;
-            _bot = cache.Bot;
-            _profile = cache.AIRefactoredBotOwner.PersonalityProfile;
-        }
-
-        /// <summary>
-        /// Scans edges and walls to trigger pause, crouch, or lean based on tactical need.
-        /// </summary>
-        /// <param name="time">World time for timing checks.</param>
         public void Tick(float time)
         {
             if (!IsEligible(time))
@@ -128,9 +109,9 @@ namespace AIRefactored.AI.Movement
         private bool IsEligible(float time)
         {
             return _bot != null &&
-                   !_bot.IsDead &&
                    _bot.Mover != null &&
                    _bot.Transform != null &&
+                   !_bot.IsDead &&
                    _bot.Memory?.GoalEnemy == null &&
                    time >= _pauseUntil &&
                    time >= _prepCrouchUntil;
@@ -138,7 +119,7 @@ namespace AIRefactored.AI.Movement
 
         private void PauseMovement(float time)
         {
-            if (_bot?.Mover == null || _profile == null)
+            if (_bot == null || _bot.Mover == null || _profile == null)
             {
                 return;
             }
@@ -150,7 +131,7 @@ namespace AIRefactored.AI.Movement
 
         private bool IsApproachingEdge()
         {
-            if (_bot?.Transform == null)
+            if (_bot == null || _bot.Transform == null)
             {
                 return false;
             }
@@ -180,7 +161,7 @@ namespace AIRefactored.AI.Movement
 
         private bool TryCornerPeekWithCrouch(float time)
         {
-            if (_bot?.Transform == null || _profile == null)
+            if (_bot == null || _bot.Transform == null || _profile == null)
             {
                 return false;
             }
@@ -205,12 +186,8 @@ namespace AIRefactored.AI.Movement
 
         private bool CheckWall(Vector3 origin, Vector3 direction, float distance)
         {
-            if (Physics.Raycast(origin, direction, out RaycastHit hit, distance, AIRefactoredLayerMasks.CoverRayMask))
-            {
-                return Vector3.Dot(hit.normal, direction) < WallAngleThreshold;
-            }
-
-            return false;
+            return Physics.Raycast(origin, direction, out RaycastHit hit, distance, AIRefactoredLayerMasks.CoverRayMask) &&
+                   Vector3.Dot(hit.normal, direction) < WallAngleThreshold;
         }
 
         private bool TriggerLeanOrCrouch(BotTiltType side, float time)

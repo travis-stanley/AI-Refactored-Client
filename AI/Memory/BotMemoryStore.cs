@@ -193,16 +193,17 @@ namespace AIRefactored.AI.Memory
             sound = default;
             return TryGetSafeKey(profileId, out string key) && HeardSounds.TryGetValue(key, out sound);
         }
-        private static bool TryGetSafeKey(string? profileId, out string key)
+
+        private static bool TryGetSafeKey(string? id, out string key)
         {
             key = string.Empty;
 
-            if (profileId == null)
+            if (id == null)
             {
                 return false;
             }
 
-            string trimmed = profileId.Trim();
+            string trimmed = id.Trim();
             if (trimmed.Length == 0)
             {
                 return false;

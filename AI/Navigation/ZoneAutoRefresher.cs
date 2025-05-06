@@ -22,15 +22,27 @@ namespace AIRefactored.AI.Navigation
     /// </summary>
     public static class ZoneAutoRefresher
     {
+        #region Constants
+
         private const float CheckInterval = 5.0f;
+
+        #endregion
+
+        #region Fields
+
+        private static readonly ManualLogSource Logger = AIRefactoredController.Logger;
 
         private static bool _hasRefreshed;
         private static float _nextCheckTime;
-        private static readonly ManualLogSource Logger = AIRefactoredController.Logger;
+
+        #endregion
+
+        #region Public API
 
         /// <summary>
         /// Call every few seconds from a host-only tick to detect and apply late zone refresh.
         /// </summary>
+        /// <param name="time">Current time in seconds.</param>
         public static void Tick(float time)
         {
             if (_hasRefreshed || !GameWorldHandler.IsInitialized || !GameWorldHandler.IsLocalHost())
@@ -45,20 +57,16 @@ namespace AIRefactored.AI.Navigation
 
             _nextCheckTime = time + CheckInterval;
 
-            IZones? zones;
-            if (!GameWorldHandler.TryGetIZones(out zones) || zones == null)
+            if (!GameWorldHandler.TryGetIZones(out IZones? zones) || zones == null)
             {
                 return;
             }
 
-            // Log only when zones are refreshed, to minimize logging in normal operations
-            if (!_hasRefreshed)
-            {
-                Logger.LogInfo("[ZoneAutoRefresher] Zones detected late — refreshing tags.");
-            }
+            Logger.LogInfo("[ZoneAutoRefresher] Zones detected late — refreshing tags.");
 
             NavPointRegistry.InitializeZoneSystem(zones);
             NavPointRegistry.RefreshZones();
+
             _hasRefreshed = true;
         }
 
@@ -70,5 +78,7 @@ namespace AIRefactored.AI.Navigation
             _hasRefreshed = false;
             _nextCheckTime = 0.0f;
         }
+
+        #endregion
     }
 }

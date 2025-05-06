@@ -19,49 +19,31 @@ namespace AIRefactored.AI.Navigation
     {
         #region Fields
 
-        /// <summary>
-        /// World position of the navigation point.
-        /// </summary>
+        /// <summary>World position of the navigation point.</summary>
         public readonly Vector3 Position;
 
-        /// <summary>
-        /// Indicates if the point provides cover.
-        /// </summary>
+        /// <summary>Indicates if the point provides cover.</summary>
         public readonly bool IsCover;
 
-        /// <summary>
-        /// Navigation zone tag assigned to the point (e.g., Room, Street, etc.).
-        /// </summary>
+        /// <summary>Navigation zone tag assigned to the point (e.g., Room, Street, etc.).</summary>
         public readonly string Tag;
 
-        /// <summary>
-        /// Vertical world elevation of the point.
-        /// </summary>
+        /// <summary>Vertical world elevation of the point.</summary>
         public readonly float Elevation;
 
-        /// <summary>
-        /// Indicates if the point is located indoors.
-        /// </summary>
+        /// <summary>Indicates if the point is located indoors.</summary>
         public readonly bool IsIndoor;
 
-        /// <summary>
-        /// Indicates if the point is safe and jumpable for traversal.
-        /// </summary>
+        /// <summary>Indicates if the point is safe and jumpable for traversal.</summary>
         public readonly bool IsJumpable;
 
-        /// <summary>
-        /// Optimal cover angle relative to incoming threat direction.
-        /// </summary>
+        /// <summary>Optimal cover angle relative to incoming threat direction.</summary>
         public readonly float CoverAngle;
 
-        /// <summary>
-        /// Name of the zone this point belongs to.
-        /// </summary>
+        /// <summary>Name of the zone this point belongs to.</summary>
         public readonly string Zone;
 
-        /// <summary>
-        /// Elevation classification band (e.g., Low, Mid, High).
-        /// </summary>
+        /// <summary>Elevation classification band (e.g., Low, Mid, High).</summary>
         public readonly string ElevationBand;
 
         #endregion

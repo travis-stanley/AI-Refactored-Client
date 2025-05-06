@@ -32,8 +32,8 @@ namespace AIRefactored.AI.Helpers
         /// </summary>
         public static void Clear()
         {
-            ShotTimestamps.Clear();
             FootstepTimestamps.Clear();
+            ShotTimestamps.Clear();
             SoundZones.Clear();
         }
 
@@ -43,7 +43,16 @@ namespace AIRefactored.AI.Helpers
         public static bool FiredRecently(Player? player, float withinSeconds = 1.5f, float now = -1f)
         {
             return TryGetLastShot(player, out float time) &&
-                ((now >= 0f ? now : Time.time) - time <= withinSeconds);
+                   ((now >= 0f ? now : Time.time) - time <= withinSeconds);
+        }
+
+        /// <summary>
+        /// Returns true if the player stepped recently within the given timeframe.
+        /// </summary>
+        public static bool SteppedRecently(Player? player, float withinSeconds = 1.2f, float now = -1f)
+        {
+            return TryGetLastStep(player, out float time) &&
+                   ((now >= 0f ? now : Time.time) - time <= withinSeconds);
         }
 
         /// <summary>
@@ -59,7 +68,7 @@ namespace AIRefactored.AI.Helpers
             string id = player.ProfileId;
             ShotTimestamps[id] = Time.time;
 
-            if (player is EFT.Player concrete)
+            if (player is EFT.Player concrete && concrete.Transform != null)
             {
                 Vector3 position = concrete.Transform.position;
                 SoundZones[id] = position;
@@ -80,21 +89,12 @@ namespace AIRefactored.AI.Helpers
             string id = player.ProfileId;
             FootstepTimestamps[id] = Time.time;
 
-            if (player is EFT.Player concrete)
+            if (player is EFT.Player concrete && concrete.Transform != null)
             {
                 Vector3 position = concrete.Transform.position;
                 SoundZones[id] = position;
                 TriggerSquadPing(id, position, false);
             }
-        }
-
-        /// <summary>
-        /// Returns true if the player stepped recently within the given timeframe.
-        /// </summary>
-        public static bool SteppedRecently(Player? player, float withinSeconds = 1.2f, float now = -1f)
-        {
-            return TryGetLastStep(player, out float time) &&
-                ((now >= 0f ? now : Time.time) - time <= withinSeconds);
         }
 
         /// <summary>
@@ -105,8 +105,8 @@ namespace AIRefactored.AI.Helpers
             time = -1f;
 
             return player != null &&
-                !string.IsNullOrEmpty(player.ProfileId) &&
-                ShotTimestamps.TryGetValue(player.ProfileId, out time);
+                   !string.IsNullOrEmpty(player.ProfileId) &&
+                   ShotTimestamps.TryGetValue(player.ProfileId, out time);
         }
 
         /// <summary>
@@ -117,8 +117,8 @@ namespace AIRefactored.AI.Helpers
             time = -1f;
 
             return player != null &&
-                !string.IsNullOrEmpty(player.ProfileId) &&
-                FootstepTimestamps.TryGetValue(player.ProfileId, out time);
+                   !string.IsNullOrEmpty(player.ProfileId) &&
+                   FootstepTimestamps.TryGetValue(player.ProfileId, out time);
         }
 
         /// <summary>
@@ -129,8 +129,8 @@ namespace AIRefactored.AI.Helpers
             pos = Vector3.zero;
 
             return player != null &&
-                !string.IsNullOrEmpty(player.ProfileId) &&
-                SoundZones.TryGetValue(player.ProfileId, out pos);
+                   !string.IsNullOrEmpty(player.ProfileId) &&
+                   SoundZones.TryGetValue(player.ProfileId, out pos);
         }
 
         /// <summary>
@@ -141,6 +141,8 @@ namespace AIRefactored.AI.Helpers
         /// <param name="isGunshot">Whether this is a gunshot event.</param>
         private static void TriggerSquadPing(string sourceId, Vector3 location, bool isGunshot)
         {
+            float radiusSqr = DefaultHearingRadius * DefaultHearingRadius;
+
             foreach (BotComponentCache cache in BotCacheUtility.AllActiveBots())
             {
                 BotOwner? bot = cache.Bot;
@@ -149,13 +151,12 @@ namespace AIRefactored.AI.Helpers
                     continue;
                 }
 
-                float distance = (bot.Position - location).sqrMagnitude;
-                if (distance > DefaultHearingRadius * DefaultHearingRadius)
+                float distSqr = (bot.Position - location).sqrMagnitude;
+                if (distSqr > radiusSqr)
                 {
                     continue;
                 }
 
-                // Call the method to register the sound
                 cache.RegisterHeardSound(location);
 
                 if (isGunshot)

@@ -11,6 +11,7 @@
 namespace AIRefactored.Runtime
 {
     using System;
+    using System.Collections.Generic;
     using AIRefactored.Core;
     using BepInEx.Logging;
     using UnityEngine;
@@ -19,7 +20,7 @@ namespace AIRefactored.Runtime
     /// Detects dynamic runtime loot additions (e.g. player death drops, mission rewards).
     /// Triggers a delayed loot registry refresh on authoritative hosts.
     /// </summary>
-    public sealed class LootRuntimeWatcher : MonoBehaviour
+    public static class LootRuntimeWatcher
     {
         #region Constants
 
@@ -29,76 +30,125 @@ namespace AIRefactored.Runtime
 
         #region Static Fields
 
+        private static float _nextAllowedRefreshTime = -1f;
+        private static bool _isQueued;
         private static ManualLogSource? _logger;
-        private static bool _isRefreshing;
+
+        private static readonly HashSet<int> _registeredInstanceIds = new HashSet<int>();
 
         #endregion
 
-        #region Unity Lifecycle
+        #region Public API
 
-        private void OnEnable()
+        /// <summary>
+        /// Ticks the watcher service for refresh opportunities.
+        /// </summary>
+        /// <param name="now">Current time from Time.time.</param>
+        public static void Tick(float now)
         {
-            if (!Application.isPlaying ||
-                !GameWorldHandler.IsReady() ||
-                !GameWorldHandler.IsLocalHost())
+            if (!_isQueued)
             {
                 return;
             }
 
-            if (_isRefreshing)
+            if (now < _nextAllowedRefreshTime)
             {
                 return;
             }
 
-            _isRefreshing = true;
-            Invoke(nameof(TriggerRefresh), RefreshDelaySeconds);
-        }
-
-        #endregion
-
-        #region Refresh Logic
-
-        private void TriggerRefresh()
-        {
-            if (!Application.isPlaying ||
-                !GameWorldHandler.IsReady() ||
-                !GameWorldHandler.IsLocalHost())
+            if (!GameWorldHandler.IsReady() || !GameWorldHandler.IsLocalHost())
             {
-                _isRefreshing = false;
                 return;
             }
 
+            _isQueued = false;
             GameWorldHandler.RefreshLootRegistry();
             Logger.LogInfo("[LootRuntimeWatcher] Loot registry refreshed.");
-
-            _isRefreshing = false;
         }
 
         /// <summary>
-        /// Allows external systems to trigger a refresh manually.
+        /// Triggers a delayed refresh from external systems (e.g. loot spawned).
         /// </summary>
-        public static void TriggerManualRefresh()
+        public static void TriggerQueuedRefresh()
         {
-            if (_isRefreshing ||
-                !GameWorldHandler.IsReady() ||
-                !GameWorldHandler.IsLocalHost())
+            if (_isQueued || !GameWorldHandler.IsReady() || !GameWorldHandler.IsLocalHost())
             {
                 return;
             }
 
-            _isRefreshing = true;
-            GameWorldHandler.RefreshLootRegistry();
-            Logger.LogInfo("[LootRuntimeWatcher] Manual loot registry refresh triggered.");
-            _isRefreshing = false;
+            _nextAllowedRefreshTime = Time.time + RefreshDelaySeconds;
+            _isQueued = true;
         }
 
-        #endregion
+        /// <summary>
+        /// Immediately forces a loot refresh if allowed.
+        /// </summary>
+        public static void TriggerManualRefresh()
+        {
+            if (!GameWorldHandler.IsReady() || !GameWorldHandler.IsLocalHost())
+            {
+                return;
+            }
 
-        #region Logger
+            _isQueued = false;
+            GameWorldHandler.RefreshLootRegistry();
+            Logger.LogInfo("[LootRuntimeWatcher] Manual loot registry refresh triggered.");
+        }
+
+        /// <summary>
+        /// Registers a GameObject by instance ID for future-safe tracking.
+        /// </summary>
+        public static void Register(GameObject? go)
+        {
+            if (go == null)
+            {
+                return;
+            }
+
+            int id = go.GetInstanceID();
+            if (_registeredInstanceIds.Contains(id))
+            {
+                return;
+            }
+
+            _registeredInstanceIds.Add(id);
+            TriggerQueuedRefresh();
+        }
+
+        /// <summary>
+        /// Unregisters and clears stale GameObject tracking (e.g. when loot is destroyed).
+        /// </summary>
+        public static void Unregister(GameObject? go)
+        {
+            if (go == null)
+            {
+                return;
+            }
+
+            int id = go.GetInstanceID();
+            if (_registeredInstanceIds.Remove(id))
+            {
+                Logger.LogDebug("[LootRuntimeWatcher] Unregistered loot object: " + go.name);
+            }
+        }
+
+        /// <summary>
+        /// Clears all registered dynamic loot watchers.
+        /// Safe to call on raid unload or map reset.
+        /// </summary>
+        public static void Reset()
+        {
+            _registeredInstanceIds.Clear();
+            _isQueued = false;
+            _nextAllowedRefreshTime = -1f;
+
+            Logger.LogInfo("[LootRuntimeWatcher] State reset.");
+        }
 
         /// <summary>
         /// Initializes the static logger for this system.
         /// </summary>
+        /// <param name="logger">Logger to use.</param>
         public static void InitializeLogger(ManualLogSource logger)
         {
             if (logger == null)
@@ -108,6 +158,10 @@ namespace AIRefactored.Runtime
 
             _logger = logger;
         }
+
+        #endregion
+
+        #region Internal
 
         private static ManualLogSource Logger
         {

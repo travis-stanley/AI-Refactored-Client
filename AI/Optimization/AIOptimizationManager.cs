@@ -31,7 +31,6 @@ namespace AIRefactored.AI.Optimization
         private static readonly BotAIOptimization Optimizer = new BotAIOptimization();
         private static readonly Dictionary<int, bool> BotOptimizationState = new Dictionary<int, bool>(128);
         private static readonly Dictionary<int, float> LastEscalationTimes = new Dictionary<int, float>(128);
-
         private const float EscalationCooldownTime = 10f;
 
         private static ManualLogSource? Logger => AIRefactoredController.Logger;
@@ -44,6 +43,7 @@ namespace AIRefactored.AI.Optimization
         /// Applies baseline optimization settings to the specified bot.
         /// Should be called once after initialization to reduce overhead and optimize behavior cadence.
         /// </summary>
+        /// <param name="bot">The bot to optimize.</param>
         public static void Apply(BotOwner? bot)
         {
             if (!GameWorldHandler.IsLocalHost())
@@ -51,14 +51,12 @@ namespace AIRefactored.AI.Optimization
                 return;
             }
 
-            BotOwner? resolved;
-            if (!TryResolveBot(bot, out resolved) || resolved == null)
+            if (!TryResolveBot(bot, out BotOwner? resolved) || resolved == null)
             {
                 return;
             }
 
             int botId = resolved.GetInstanceID();
-
             if (BotOptimizationState.TryGetValue(botId, out bool applied) && applied)
             {
                 Logger?.LogDebug("[AIRefactored] Optimization already applied to bot: " + (resolved.Profile?.Info?.Nickname ?? "Unknown"));
@@ -73,6 +71,7 @@ namespace AIRefactored.AI.Optimization
         /// <summary>
         /// Clears prior optimizations, allowing the bot to return to default pacing or be reoptimized.
         /// </summary>
+        /// <param name="bot">The bot to reset optimization on.</param>
         public static void Reset(BotOwner? bot)
         {
             if (!GameWorldHandler.IsLocalHost())
@@ -80,14 +79,12 @@ namespace AIRefactored.AI.Optimization
                 return;
             }
 
-            BotOwner? resolved;
-            if (!TryResolveBot(bot, out resolved) || resolved == null)
+            if (!TryResolveBot(bot, out BotOwner? resolved) || resolved == null)
             {
                 return;
             }
 
             int botId = resolved.GetInstanceID();
-
             if (!BotOptimizationState.TryGetValue(botId, out bool wasOptimized) || !wasOptimized)
             {
                 Logger?.LogDebug("[AIRefactored] Bot not optimized, skipping reset: " + (resolved.Profile?.Info?.Nickname ?? "Unknown"));
@@ -103,6 +100,7 @@ namespace AIRefactored.AI.Optimization
         /// Escalates bot perception urgency and danger response timing in high-stimulus scenarios.
         /// Does not enhance vision, accuracy, or combat precision — only cognitive speed and urgency.
         /// </summary>
+        /// <param name="bot">The bot to escalate.</param>
         public static void TriggerEscalation(BotOwner? bot)
         {
             if (!GameWorldHandler.IsLocalHost())
@@ -110,15 +108,13 @@ namespace AIRefactored.AI.Optimization
                 return;
             }
 
-            BotOwner? resolved;
-            if (!TryResolveBot(bot, out resolved) || resolved == null)
+            if (!TryResolveBot(bot, out BotOwner? resolved) || resolved == null)
             {
                 Logger?.LogWarning("[AIRefactored] Escalation skipped: invalid bot state.");
                 return;
             }
 
             int botId = resolved.GetInstanceID();
-
             if (LastEscalationTimes.TryGetValue(botId, out float lastEscalated) &&
                 Time.time - lastEscalated < EscalationCooldownTime)
             {
@@ -144,14 +140,6 @@ namespace AIRefactored.AI.Optimization
         #endregion
 
         #region Private Helpers
-
-        private static bool IsValidBot(BotOwner? bot)
-        {
-            return bot != null &&
-                   bot.GetPlayer != null &&
-                   bot.GetPlayer.IsAI &&
-                   !bot.IsDead;
-        }
 
         private static bool TryResolveBot(BotOwner? input, out BotOwner? result)
         {

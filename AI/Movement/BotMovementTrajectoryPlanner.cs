@@ -28,7 +28,7 @@ namespace AIRefactored.AI.Movement
         private const float ChaosInterval = 0.4f;
         private const float ChaosRadius = 0.65f;
         private const float SquadOffsetScale = 0.75f;
-        private const float VelocityFactor = 1.5f;  // For velocity-based movement scaling
+        private const float VelocityFactor = 1.5f;
 
         #endregion
 
@@ -61,13 +61,13 @@ namespace AIRefactored.AI.Movement
                 throw new ArgumentNullException(nameof(cache));
             }
 
-            this._bot = bot;
-            this._cache = cache;
+            _bot = bot;
+            _cache = cache;
         }
 
         #endregion
 
-        #region Public API
+        #region Public Methods
 
         /// <summary>
         /// Adjusts the input movement direction using chaos wobble, squad offset, and teammate avoidance.
@@ -79,88 +79,75 @@ namespace AIRefactored.AI.Movement
         {
             float now = Time.unscaledTime;
 
-            if (now >= this._nextChaosUpdate)
+            if (now >= _nextChaosUpdate)
             {
-                this.UpdateChaosOffset(now);
+                UpdateChaosOffset(now);
             }
 
-            // Ensure smooth base direction
             Vector3 baseDir = targetDir.sqrMagnitude > 0.0001f ? targetDir.normalized : Vector3.forward;
 
-            // Apply chaos wobble for natural movement
-            Vector3 offset = baseDir + this._chaosOffset;
+            Vector3 offset = baseDir + _chaosOffset;
 
-            // Apply squad offset if squad path is present
-            if (this._cache.SquadPath != null)
+            if (_cache.SquadPath != null)
             {
-                Vector3 squadOffset = this._cache.SquadPath.GetCurrentOffset();
+                Vector3 squadOffset = _cache.SquadPath.GetCurrentOffset();
                 if (squadOffset.sqrMagnitude > 0.0001f)
                 {
                     offset += squadOffset.normalized * SquadOffsetScale;
                 }
             }
 
-            // Apply teammate avoidance to prevent clustering
-            Vector3 avoidance = this.ComputeAvoidance();
+            Vector3 avoidance = ComputeAvoidance();
             if (avoidance.sqrMagnitude > 0.0001f)
             {
                 offset += avoidance.normalized * AvoidanceScale;
             }
 
-            // Incorporate velocity-based movement for natural acceleration/deceleration
-            Vector3 velocity = this._bot.GetPlayer.Velocity;
+            Vector3 velocity = _bot.GetPlayer.Velocity;
             if (velocity.sqrMagnitude > 0.1f)
             {
                 offset += velocity.normalized * VelocityFactor;
             }
 
-            // Ensure movement stays on the same horizontal plane
             offset.y = 0f;
 
-            // Return normalized offset trajectory, or base direction if offset is minimal
             return offset.sqrMagnitude > 0.0001f ? offset.normalized : baseDir;
         }
 
         #endregion
 
-        #region Internal Logic
+        #region Private Methods
 
-        /// <summary>
-        /// Computes a vector away from nearby squadmates to prevent overlap.
-        /// </summary>
         private Vector3 ComputeAvoidance()
         {
-            if (this._bot == null || this._bot.BotsGroup == null)
+            if (_bot.BotsGroup == null)
             {
                 return Vector3.zero;
             }
 
-            BotsGroup group = this._bot.BotsGroup;
-            int members = group.MembersCount;
-
-            if (members <= 1)
+            BotsGroup group = _bot.BotsGroup;
+            int count = group.MembersCount;
+            if (count <= 1)
             {
                 return Vector3.zero;
             }
 
-            Vector3 selfPos = this._bot.Position;
+            Vector3 selfPos = _bot.Position;
             Vector3 sum = Vector3.zero;
             int contributors = 0;
 
-            // Avoid clustering with nearby squad members
-            for (int i = 0; i < members; i++)
+            for (int i = 0; i < count; i++)
             {
-                BotOwner? mate = group.Member(i);
-                if (mate == null || mate == this._bot || mate.IsDead)
+                BotOwner? other = group.Member(i);
+                if (other == null || other == _bot || other.IsDead)
                 {
                     continue;
                 }
 
-                float dist = Vector3.Distance(selfPos, mate.Position);
+                float dist = Vector3.Distance(selfPos, other.Position);
                 if (dist < AvoidanceRadius && dist > 0.01f)
                 {
-                    Vector3 repulse = (selfPos - mate.Position).normalized / dist;
-                    sum += repulse;
+                    sum += (selfPos - other.Position).normalized / dist;
                     contributors++;
                 }
             }
@@ -168,28 +155,20 @@ namespace AIRefactored.AI.Movement
             return contributors > 0 ? sum / contributors : Vector3.zero;
         }
 
-        /// <summary>
-        /// Periodically generates random chaos offset based on bot caution.
-        /// </summary>
-        /// <param name="now">Current unscaled time.</param>
         private void UpdateChaosOffset(float now)
         {
-            // Get the bot's caution level from its personality profile
             float caution = 0.5f;
-            if (this._cache.AIRefactoredBotOwner != null &&
-                this._cache.AIRefactoredBotOwner.PersonalityProfile != null)
+            if (_cache.AIRefactoredBotOwner?.PersonalityProfile != null)
             {
-                caution = Mathf.Clamp01(this._cache.AIRefactoredBotOwner.PersonalityProfile.Caution);
+                caution = Mathf.Clamp01(_cache.AIRefactoredBotOwner.PersonalityProfile.Caution);
             }
 
-            // Adjust chaos range based on the caution level
             float chaosRange = ChaosRadius * (1f - caution);
             float x = UnityEngine.Random.Range(-chaosRange * 0.5f, chaosRange * 0.5f);
             float z = UnityEngine.Random.Range(0f, chaosRange);
 
-            // Update chaos offset
-            this._chaosOffset = new Vector3(x, 0f, z);
-            this._nextChaosUpdate = now + ChaosInterval;
+            _chaosOffset = new Vector3(x, 0f, z);
+            _nextChaosUpdate = now + ChaosInterval;
         }
 
         #endregion

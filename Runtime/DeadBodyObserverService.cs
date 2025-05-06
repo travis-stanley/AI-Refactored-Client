@@ -21,46 +21,37 @@ namespace AIRefactored.Runtime
     using UnityEngine;
 
     /// <summary>
-    /// Observes dead player bodies and links them to nearby loot containers for bot prioritization.
-    /// Executes only on authoritative hosts during raid runtime.
+    /// Scans for dead players and associates them with nearby loot containers.
+    /// Executed as a runtime service from WorldBootstrapper or BotWorkScheduler.
     /// </summary>
-    public sealed class DeadBodyObserver : MonoBehaviour
+    public static class DeadBodyObserverService
     {
-        #region Constants
-
         private const float ScanIntervalSeconds = 1.0f;
         private const float AssociationRadius = 1.5f;
 
-        #endregion
-
-        #region Fields
-
-        private float _nextScanTime = -1f;
-        private static readonly List<Player> ObservedPlayers = new List<Player>(64);
         private static readonly ManualLogSource Logger = AIRefactoredController.Logger;
+        private static readonly List<Player> ObservedPlayers = new List<Player>(64);
 
-        private LootableContainer[] _containers = Array.Empty<LootableContainer>();
-        private bool _containersUpdated;
+        private static float _nextScanTime = -1f;
+        private static LootableContainer[] _containers = Array.Empty<LootableContainer>();
+        private static bool _containersUpdated;
 
-        #endregion
-
-        #region Unity Lifecycle
-
-        private void Update()
+        /// <summary>
+        /// Executes the scan cycle if enough time has elapsed and world is ready.
+        /// </summary>
+        public static void Tick()
         {
-            if (!Application.isPlaying ||
-                !GameWorldHandler.IsInitialized ||
-                !GameWorldHandler.IsLocalHost() ||
-                !GameWorldHandler.IsReady())
+            if (!Application.isPlaying
+                || !GameWorldHandler.IsInitialized
+                || !GameWorldHandler.IsLocalHost()
+                || !GameWorldHandler.IsReady())
             {
                 return;
             }
 
             float now = Time.time;
             if (now < _nextScanTime)
-            {
                 return;
-            }
 
             _nextScanTime = now + ScanIntervalSeconds;
 
@@ -71,42 +62,30 @@ namespace AIRefactored.Runtime
             }
 
             if (_containers == null || _containers.Length == 0)
-            {
                 return;
-            }
 
             ObservedPlayers.Clear();
-
-            List<Player>? players = GameWorldHandler.GetAllAlivePlayers();
-            if (players == null || players.Count == 0)
-            {
-                return;
-            }
-
+            List<Player> players = GameWorldHandler.GetAllAlivePlayers();
             for (int i = 0; i < players.Count; i++)
             {
                 Player? player = players[i];
                 if (player != null)
-                {
                     ObservedPlayers.Add(player);
-                }
             }
 
             for (int i = 0; i < ObservedPlayers.Count; i++)
             {
                 Player? player = ObservedPlayers[i];
-                if (player == null ||
-                    player.HealthController == null ||
-                    player.HealthController.IsAlive ||
-                    string.IsNullOrEmpty(player.ProfileId))
+                if (player == null
+                    || player.HealthController == null
+                    || player.HealthController.IsAlive
+                    || string.IsNullOrEmpty(player.ProfileId))
                 {
                     continue;
                 }
 
                 if (DeadBodyContainerCache.Contains(player.ProfileId))
-                {
                     continue;
-                }
 
                 Vector3 corpsePosition = EFTPlayerUtil.GetPosition(player);
                 Transform? root = player.Transform != null ? player.Transform.Original?.root : null;
@@ -115,24 +94,31 @@ namespace AIRefactored.Runtime
                 {
                     LootableContainer? container = _containers[j];
                     if (container == null || !container.enabled || container.transform == null)
-                    {
                         continue;
-                    }
 
-                    Transform containerTransform = container.transform;
-                    bool isRootMatch = root != null && containerTransform.root == root;
-                    bool isNearby = Vector3.Distance(containerTransform.position, corpsePosition) <= AssociationRadius;
+                    bool isRootMatch = root != null && container.transform.root == root;
+                    bool isNearby = Vector3.Distance(container.transform.position, corpsePosition) <= AssociationRadius;
 
                     if (isRootMatch || isNearby)
                     {
                         DeadBodyContainerCache.Register(player, container);
-                        Logger.LogDebug("[DeadBodyObserver] Associated container with dead bot: " + (player.Profile?.Info?.Nickname ?? "Unnamed"));
+                        Logger.LogDebug($"[DeadBodyObserver] Associated container with dead bot: {player.Profile?.Info?.Nickname ?? "Unnamed"}");
                         break;
                     }
                 }
             }
         }
 
-        #endregion
+        /// <summary>
+        /// Clears cached state and forces a container rescan next tick.
+        /// </summary>
+        public static void Reset()
+        {
+            _nextScanTime = -1f;
+            _containers = Array.Empty<LootableContainer>();
+            _containersUpdated = false;
+            ObservedPlayers.Clear();
+            Logger.LogInfo("[DeadBodyObserver] Reset.");
+        }
     }
 }

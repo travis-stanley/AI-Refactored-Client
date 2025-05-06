@@ -126,8 +126,7 @@ namespace AIRefactored.AI.Combat.States
         /// </summary>
         public bool ShallUseNow(float time)
         {
-            float dist = Vector3.Distance(this._bot.Position, this._fallbackTarget);
-            return dist > MinArrivalDistance;
+            return Vector3.Distance(this._bot.Position, this._fallbackTarget) > MinArrivalDistance;
         }
 
         /// <summary>
@@ -158,13 +157,15 @@ namespace AIRefactored.AI.Combat.States
                 return;
             }
 
+            Vector3 currentPosition = this._bot.Position;
+            float distance = Vector3.Distance(currentPosition, this._fallbackTarget);
+
             BotMovementHelper.SmoothMoveTo(this._bot, this._fallbackTarget);
             BotCoverHelper.TrySetStanceFromNearbyCover(this._cache, this._fallbackTarget);
 
-            float distance = Vector3.Distance(this._bot.Position, this._fallbackTarget);
             if (distance < MinArrivalDistance && forceState != null)
             {
-                forceState(CombatState.Patrol, time);
+                forceState.Invoke(CombatState.Patrol, time);
 
                 if (!FikaHeadlessDetector.IsHeadless && this._bot.BotTalk != null)
                 {

@@ -23,26 +23,17 @@ namespace AIRefactored.Core
     {
         #region Resolution
 
-        /// <summary>
-        /// Attempts to cast IPlayer to EFT.Player safely.
-        /// </summary>
         public static Player? AsEFTPlayer(IPlayer? raw)
         {
             return raw as Player;
         }
 
-        /// <summary>
-        /// Checks if the given IPlayer can be safely resolved to a valid EFT.Player.
-        /// </summary>
         public static bool TryGetValidPlayer(IPlayer? raw, out Player? player)
         {
             player = raw as Player;
             return player != null && IsValid(player);
         }
 
-        /// <summary>
-        /// Safely casts EFT.Player to IPlayer if possible, guarding against invalid interface bindings.
-        /// </summary>
         public static IPlayer? AsSafeIPlayer(Player? player)
         {
             if (player == null)
@@ -54,17 +45,11 @@ namespace AIRefactored.Core
             return obj is IPlayer cast ? cast : null;
         }
 
-        /// <summary>
-        /// Resolves the EFT.Player instance from a BotOwner, if present.
-        /// </summary>
         public static Player? ResolvePlayer(BotOwner? bot)
         {
             return bot != null ? bot.GetPlayer as Player : null;
         }
 
-        /// <summary>
-        /// Finds a player in the current GameWorld using their profile ID.
-        /// </summary>
         public static Player? ResolvePlayerById(string profileId)
         {
             if (string.IsNullOrEmpty(profileId))
@@ -79,8 +64,6 @@ namespace AIRefactored.Core
             }
 
             List<Player> players = world.AllAlivePlayersList;
-            // **Avoid redundant loop scanning**
-            // Use a dictionary or hashset for quicker lookups if profileId can be unique across players
             foreach (Player p in players)
             {
                 if (p != null && p.ProfileId == profileId)
@@ -96,9 +79,6 @@ namespace AIRefactored.Core
 
         #region Validity + Info
 
-        /// <summary>
-        /// Checks if a player is alive, non-null, and transform is valid.
-        /// </summary>
         public static bool IsValid(Player? player)
         {
             return player != null &&
@@ -113,50 +93,53 @@ namespace AIRefactored.Core
             return IsValid(player);
         }
 
-        /// <summary>
-        /// Checks if the player is AI-controlled.
-        /// </summary>
         public static bool IsBot(Player? player)
         {
             return player != null && player.IsAI;
         }
 
-        /// <summary>
-        /// Returns the player’s side, or defaults to Savage if null.
-        /// </summary>
         public static EPlayerSide GetSide(Player? player)
         {
             return player != null ? player.Side : EPlayerSide.Savage;
         }
 
-        /// <summary>
-        /// Returns the ProfileId from a BotOwner, if available.
-        /// </summary>
         public static string? GetProfileId(BotOwner? bot)
         {
             return bot != null && bot.GetPlayer != null ? bot.GetPlayer.ProfileId : null;
+        }
+
+        public static bool IsValidBotOwner(BotOwner? bot)
+        {
+            return bot != null &&
+                   bot.GetPlayer != null &&
+                   bot.Memory != null &&
+                   bot.WeaponManager != null &&
+                   bot.BotsGroup != null;
+        }
+
+        public static bool HasValidMovementContext(BotOwner? bot)
+        {
+            return bot?.GetPlayer?.MovementContext != null;
+        }
+
+        public static bool IsFikaHeadlessSafe(BotOwner? bot)
+        {
+            var player = bot?.GetPlayer;
+            return player != null &&
+                   player.IsAI &&
+                   player.HealthController != null &&
+                   player.HealthController.IsAlive;
         }
 
         #endregion
 
         #region Spatial
 
-        /// <summary>
-        /// Gets the root Transform of the player if available.
-        /// </summary>
         public static Transform? GetTransform(Player? player)
         {
-            if (player == null || player.Transform == null)
-            {
-                return null;
-            }
-
-            return player.Transform.Original;
+            return player?.Transform?.Original;
         }
 
-        /// <summary>
-        /// Returns the position of the player’s Transform, or Vector3.zero if invalid.
-        /// </summary>
         public static Vector3 GetPosition(Player? player)
         {
             Transform? t = GetTransform(player);
@@ -167,9 +150,6 @@ namespace AIRefactored.Core
 
         #region Combat Logic
 
-        /// <summary>
-        /// Checks if a BotOwner considers the given player an enemy.
-        /// </summary>
         public static bool IsEnemyOf(BotOwner? self, Player? target)
         {
             if (self == null || target == null)
@@ -187,9 +167,6 @@ namespace AIRefactored.Core
             return cast != null && group.IsEnemy(cast);
         }
 
-        /// <summary>
-        /// Checks if two players are enemies based on side and profile ID.
-        /// </summary>
         public static bool AreEnemies(Player? a, Player? b)
         {
             if (a == null || b == null)

@@ -97,22 +97,19 @@ namespace AIRefactored.AI.Combat.States
             }
 
             Vector3 targetPosition = enemyTransform.position;
-            bool needsUpdate = !this._lastTargetPosition.HasValue ||
-                               (this._lastTargetPosition.Value - targetPosition).sqrMagnitude > 1.0f;
 
-            if (!needsUpdate)
+            if (!this._lastTargetPosition.HasValue ||
+                (this._lastTargetPosition.Value - targetPosition).sqrMagnitude > 1.0f)
             {
-                return;
+                this._lastTargetPosition = targetPosition;
+
+                Vector3 destination = this._cache.SquadPath != null
+                    ? this._cache.SquadPath.ApplyOffsetTo(targetPosition)
+                    : targetPosition;
+
+                BotMovementHelper.SmoothMoveTo(this._bot, destination);
+                BotCoverHelper.TrySetStanceFromNearbyCover(this._cache, destination);
             }
-
-            this._lastTargetPosition = targetPosition;
-
-            Vector3 destination = this._cache.SquadPath != null
-                ? this._cache.SquadPath.ApplyOffsetTo(targetPosition)
-                : targetPosition;
-
-            BotMovementHelper.SmoothMoveTo(this._bot, destination);
-            BotCoverHelper.TrySetStanceFromNearbyCover(this._cache, destination);
         }
 
         #endregion

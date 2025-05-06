@@ -130,21 +130,24 @@ namespace AIRefactored.AI.Combat.States
         /// <returns>True if investigate should activate.</returns>
         public bool ShallUseNow(float time, float lastTransition)
         {
-            if (this._cache == null || this._cache.AIRefactoredBotOwner == null)
+            BotPersonalityProfile? profile = this._cache.AIRefactoredBotOwner != null
+                                                 ? this._cache.AIRefactoredBotOwner.PersonalityProfile
+                                                 : null;
+
+            if (profile == null)
             {
                 return false;
             }
 
-            BotPersonalityProfile? profile = this._cache.AIRefactoredBotOwner.PersonalityProfile;
-            if (profile == null || profile.Caution < 0.3f)
+            if (profile.Caution < 0.3f)
             {
                 return false;
             }
 
-            bool recentlyHeard = this._cache.LastHeardTime + SoundReactTime > time;
-            bool transitionDelayMet = time - lastTransition > 1.25f;
+            bool heardSomething = (this._cache.LastHeardTime + SoundReactTime) > time;
+            bool delayPassed = (time - lastTransition) > 1.25f;
 
-            return recentlyHeard && transitionDelayMet;
+            return heardSomething && delayPassed;
         }
 
         /// <summary>
@@ -159,6 +162,14 @@ namespace AIRefactored.AI.Combat.States
             return (now - lastHitTime) > cooldown || (now - lastHitTime) > MaxInvestigateTime;
         }
 
+        /// <summary>
+        /// Returns true if the bot is actively investigating a recent sound or memory event.
+        /// </summary>
+        public bool IsInvestigating()
+        {
+            return (Time.time - this._cache.LastHeardTime) <= 5.0f;
+        }
+
         #endregion
 
         #region Private Methods
@@ -166,16 +177,9 @@ namespace AIRefactored.AI.Combat.States
         private Vector3 RandomNearbyPosition()
         {
             Vector3 basePos = this._bot.Position;
-            Vector3 jitter = UnityEngine.Random.insideUnitSphere * ScanRadius;
-            jitter.y = 0f;
-            return basePos + jitter;
-        }
-        /// <summary>
-        /// Returns true if the bot is investigating a recent sound or memory.
-        /// </summary>
-        public bool IsInvestigating()
-        {
-            return this._cache.LastHeardTime + 5f > Time.time;
+            Vector3 offset = UnityEngine.Random.insideUnitSphere * ScanRadius;
+            offset.y = 0f;
+            return basePos + offset;
         }
 
         #endregion

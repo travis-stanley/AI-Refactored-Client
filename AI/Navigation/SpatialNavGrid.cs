@@ -35,8 +35,8 @@ namespace AIRefactored.AI.Navigation
         /// <param name="cellSize">Grid cell size in world units (defaults to 10).</param>
         public SpatialNavGrid(float cellSize)
         {
-            this._cellSize = Mathf.Max(1f, cellSize);
-            this._grid = new Dictionary<Vector2Int, List<NavPointData>>(256);
+            _cellSize = Mathf.Max(1f, cellSize);
+            _grid = new Dictionary<Vector2Int, List<NavPointData>>(256);
         }
 
         #endregion
@@ -48,7 +48,7 @@ namespace AIRefactored.AI.Navigation
         /// </summary>
         public void Clear()
         {
-            this._grid.Clear();
+            _grid.Clear();
         }
 
         /// <summary>
@@ -57,18 +57,22 @@ namespace AIRefactored.AI.Navigation
         /// <param name="point">The navigation point to register.</param>
         public void Register(NavPointData point)
         {
-            Vector2Int cell = this.WorldToCell(point.Position);
-            if (!this._grid.TryGetValue(cell, out List<NavPointData>? list))
+            Vector2Int cell = WorldToCell(point.Position);
+            if (!_grid.TryGetValue(cell, out List<NavPointData>? list))
             {
                 list = new List<NavPointData>(8);
-                this._grid[cell] = list;
+                _grid[cell] = list;
             }
 
-            // Only add the point if it's not already registered
-            if (!list.Exists(p => p.Position == point.Position))
+            for (int i = 0; i < list.Count; i++)
             {
-                list.Add(point);
+                if (list[i].Position == point.Position)
+                {
+                    return;
+                }
             }
+
+            list.Add(point);
         }
 
         /// <summary>
@@ -82,8 +86,8 @@ namespace AIRefactored.AI.Navigation
         public List<NavPointData> Query(Vector3 position, float radius, Predicate<NavPointData>? filter)
         {
             float radiusSq = radius * radius;
-            Vector2Int minCell = this.WorldToCell(position - new Vector3(radius, 0f, radius));
-            Vector2Int maxCell = this.WorldToCell(position + new Vector3(radius, 0f, radius));
+            Vector2Int minCell = WorldToCell(position - new Vector3(radius, 0f, radius));
+            Vector2Int maxCell = WorldToCell(position + new Vector3(radius, 0f, radius));
 
             List<NavPointData> result = new List<NavPointData>(16);
 
@@ -92,13 +96,14 @@ namespace AIRefactored.AI.Navigation
                 for (int z = minCell.y; z <= maxCell.y; z++)
                 {
                     Vector2Int cell = new Vector2Int(x, z);
-                    if (!this._grid.TryGetValue(cell, out List<NavPointData>? bucket))
+                    if (!_grid.TryGetValue(cell, out List<NavPointData>? bucket))
                     {
                         continue;
                     }
 
-                    foreach (NavPointData point in bucket)
+                    for (int i = 0; i < bucket.Count; i++)
                     {
+                        NavPointData point = bucket[i];
                         float distSq = (point.Position - position).sqrMagnitude;
                         if (distSq <= radiusSq && (filter == null || filter(point)))
                         {
@@ -122,8 +127,8 @@ namespace AIRefactored.AI.Navigation
         /// <returns>Grid cell coordinates.</returns>
         private Vector2Int WorldToCell(Vector3 pos)
         {
-            int x = Mathf.FloorToInt(pos.x / this._cellSize);
-            int z = Mathf.FloorToInt(pos.z / this._cellSize);
+            int x = Mathf.FloorToInt(pos.x / _cellSize);
+            int z = Mathf.FloorToInt(pos.z / _cellSize);
             return new Vector2Int(x, z);
         }
 

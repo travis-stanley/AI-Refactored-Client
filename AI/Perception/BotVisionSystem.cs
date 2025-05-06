@@ -77,33 +77,22 @@ namespace AIRefactored.AI.Perception
 
         public void Tick(float time)
         {
-            if (!this.IsValidContext())
+            if (!GameWorldHandler.IsSafeToInitialize || !this.IsValidContext())
             {
                 return;
             }
 
-            if (this._cache == null || this._bot == null || this._memory == null)
-            {
-                return;
-            }
+            Vector3 eye = this._bot != null ? this._bot.Position + EyeOffset : Vector3.zero;
+            Vector3 forward = this._bot != null ? this._bot.LookDirection : Vector3.forward;
 
-            if (this._cache.IsBlinded || time < this._cache.BlindUntilTime)
-            {
-                return;
-            }
-
-            Vector3 eye = this._bot.Position + EyeOffset;
-            Vector3 forward = this._bot.LookDirection;
-
-            // Fog and ambient light impact view cone angle and sight distance
             float fogFactor = RenderSettings.fog ? Mathf.Clamp01(RenderSettings.fogDensity * 4f) : 0f;
             float ambient = RenderSettings.ambientLight.grayscale;
             float adjustedViewCone = Mathf.Lerp(BaseViewConeAngle, 60f, 1f - ambient);
 
-            Transform? head = BotCacheUtility.Head(this._cache);
+            Transform? head = this._cache != null ? BotCacheUtility.Head(this._cache) : null;
             if (head != null && FlashlightRegistry.IsExposingBot(head, out _))
             {
-                adjustedViewCone *= 0.6f;  // Reduce the view cone when exposed to light
+                adjustedViewCone *= 0.6f;
             }
 
             List<Player> players = GameWorldHandler.GetAllAlivePlayers();
@@ -120,7 +109,9 @@ namespace AIRefactored.AI.Perception
 
                 Vector3 targetPos = EFTPlayerUtil.GetPosition(target);
                 float distance = Vector3.Distance(eye, targetPos);
-                if (distance > MaxDetectionDistance * (1f - fogFactor))
+                float maxDistance = MaxDetectionDistance * (1f - fogFactor);
+
+                if (distance > maxDistance)
                 {
                     continue;
                 }
@@ -137,9 +128,9 @@ namespace AIRefactored.AI.Perception
                         bestTarget = target;
                     }
                 }
-                else if ((inCone || close) && !canSee && !FikaHeadlessDetector.IsHeadless)
+                else if ((inCone || close) && !canSee && !FikaHeadlessDetector.IsHeadless && this._bot?.BotTalk != null)
                 {
-                    this._bot.BotTalk?.TrySay(EPhraseTrigger.OnBeingHurt);
+                    this._bot.BotTalk.TrySay(EPhraseTrigger.OnBeingHurt);
                 }
             }
 
@@ -148,9 +139,12 @@ namespace AIRefactored.AI.Perception
                 string id = bestTarget.ProfileId ?? "unknown";
                 Vector3 position = EFTPlayerUtil.GetPosition(bestTarget);
 
-                this._memory.RecordEnemyPosition(position, "Visual", id);
+                if (this._memory != null)
+                {
+                    this._memory.RecordEnemyPosition(position, "Visual", id);
+                }
 
-                if (this._cache.GroupSync != null)
+                if (this._cache != null && this._cache.GroupSync != null && this._memory != null)
                 {
                     List<BotComponentCache> teammates = new List<BotComponentCache>(8);
                     foreach (BotOwner teammate in this._cache.GroupSync.GetTeammates())
@@ -245,7 +239,7 @@ namespace AIRefactored.AI.Perception
 
             float confidence = tracker.GetOverallConfidence();
 
-            if (this._bot.Memory.IsUnderFire && Random.value < SuppressionMissChance)
+            if (this._bot.Memory != null && this._bot.Memory.IsUnderFire && Random.value < SuppressionMissChance)
             {
                 return;
             }
@@ -308,7 +302,8 @@ namespace AIRefactored.AI.Perception
 
         private bool IsValidContext()
         {
-            return this._bot != null &&
+            return GameWorldHandler.IsSafeToInitialize &&
+                   this._bot != null &&
                    this._cache != null &&
                    this._profile != null &&
                    this._memory != null &&

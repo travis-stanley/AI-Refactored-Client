@@ -47,8 +47,8 @@ namespace AIRefactored.AI.Perception
         /// <param name="cache">Bot component cache.</param>
         public void Initialize(BotComponentCache cache)
         {
-            this._cache = cache;
-            this._bot = cache.Bot;
+            _cache = cache;
+            _bot = cache.Bot;
         }
 
         /// <summary>
@@ -57,29 +57,34 @@ namespace AIRefactored.AI.Perception
         /// <param name="deltaTime">Frame delta time.</param>
         public void Tick(float deltaTime)
         {
-            if (!this.CanEvaluate() || this._bot == null)
+            if (!GameWorldHandler.IsSafeToInitialize || _bot == null || _cache == null)
             {
                 return;
             }
 
-            Vector3 origin = this._bot.Position;
+            if (!CanEvaluate())
+            {
+                return;
+            }
+
+            Vector3 origin = _bot.Position;
             float rangeSqr = BaseHearingRange * BaseHearingRange;
 
             List<Player> players = BotMemoryStore.GetNearbyPlayers(origin, BaseHearingRange);
             for (int i = 0; i < players.Count; i++)
             {
                 Player player = players[i];
-                if (!this.IsAudibleSource(player, origin, rangeSqr))
+                if (!IsAudibleSource(player, origin, rangeSqr))
                 {
                     continue;
                 }
 
-                if (this.HeardSomething(player))
+                if (HeardSomething(player))
                 {
                     Vector3 pos = EFTPlayerUtil.GetPosition(player);
                     if (pos.sqrMagnitude > 0.01f)
                     {
-                        this._cache?.RegisterHeardSound(pos);
+                        _cache.RegisterHeardSound(pos);
                     }
                 }
             }
@@ -91,24 +96,22 @@ namespace AIRefactored.AI.Perception
 
         private bool CanEvaluate()
         {
-            if (this._bot == null || this._bot.IsDead || this._cache?.PanicHandler?.IsPanicking == true)
-            {
-                return false;
-            }
-
-            Player? player = this._bot.GetPlayer;
-            return player != null && player.IsAI;
+            return _bot != null &&
+                   !_bot.IsDead &&
+                   _bot.GetPlayer != null &&
+                   _bot.GetPlayer.IsAI &&
+                   _cache?.PanicHandler?.IsPanicking != true;
         }
 
         private bool HeardSomething(Player player)
         {
-            if (this._bot == null)
+            if (_bot == null)
             {
                 return false;
             }
 
-            return BotSoundUtils.DidFireRecently(this._bot, player, 1f, TimeWindow) ||
-                   BotSoundUtils.DidStepRecently(this._bot, player, 1f, TimeWindow);
+            return BotSoundUtils.DidFireRecently(_bot, player, 1f, TimeWindow) ||
+                   BotSoundUtils.DidStepRecently(_bot, player, 1f, TimeWindow);
         }
 
         private bool IsAudibleSource(Player player, Vector3 origin, float rangeSqr)
@@ -120,12 +123,12 @@ namespace AIRefactored.AI.Perception
                 return false;
             }
 
-            if (this._bot == null || player.ProfileId == this._bot.ProfileId)
+            if (_bot == null || player.ProfileId == _bot.ProfileId)
             {
                 return false;
             }
 
-            if (AreInSameTeam(this._bot, player))
+            if (AreInSameTeam(_bot, player))
             {
                 return false;
             }
@@ -139,12 +142,9 @@ namespace AIRefactored.AI.Perception
             string? selfGroup = self.GetPlayer?.Profile?.Info?.GroupId;
             string? targetGroup = target.Profile?.Info?.GroupId;
 
-            if (string.IsNullOrEmpty(selfGroup) || string.IsNullOrEmpty(targetGroup))
-            {
-                return false;
-            }
-
-            return selfGroup == targetGroup;
+            return !string.IsNullOrEmpty(selfGroup) &&
+                   !string.IsNullOrEmpty(targetGroup) &&
+                   selfGroup == targetGroup;
         }
 
         #endregion

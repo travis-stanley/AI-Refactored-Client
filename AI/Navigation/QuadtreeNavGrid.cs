@@ -20,10 +20,20 @@ namespace AIRefactored.AI.Navigation
     /// </summary>
     public sealed class QuadtreeNavGrid
     {
+        #region Constants
+
         private const int MaxDepth = 6;
         private const int MaxPointsPerNode = 8;
 
+        #endregion
+
+        #region Fields
+
         private Node _root;
+
+        #endregion
+
+        #region Constructor
 
         /// <summary>
         /// Initializes a new instance of the <see cref="QuadtreeNavGrid"/> class.
@@ -34,15 +44,19 @@ namespace AIRefactored.AI.Navigation
         {
             float half = size * 0.5f;
             Rect bounds = new Rect(center.x - half, center.y - half, size, size);
-            this._root = new Node(bounds, 0);
+            _root = new Node(bounds, 0);
         }
+
+        #endregion
+
+        #region Public API
 
         /// <summary>
         /// Clears all stored points and resets the root node.
         /// </summary>
         public void Clear()
         {
-            this._root = new Node(this._root.Bounds, 0);
+            _root = new Node(_root.Bounds, 0);
         }
 
         /// <summary>
@@ -56,7 +70,7 @@ namespace AIRefactored.AI.Navigation
                 return;
             }
 
-            this.Insert(this._root, point);
+            Insert(_root, point);
         }
 
         /// <summary>
@@ -65,7 +79,7 @@ namespace AIRefactored.AI.Navigation
         /// <param name="point">The point to insert.</param>
         public void Insert(Vector3 point)
         {
-            this.Insert(this._root, point);
+            Insert(_root, point);
         }
 
         /// <summary>
@@ -75,7 +89,7 @@ namespace AIRefactored.AI.Navigation
         {
             List<NavPointData> result = new List<NavPointData>(16);
             float radiusSq = radius * radius;
-            this.Query(this._root, position, radiusSq, result, filter);
+            Query(_root, position, radiusSq, result, filter);
             return result;
         }
 
@@ -104,7 +118,7 @@ namespace AIRefactored.AI.Navigation
                 return true;
             };
 
-            return this.Query(position, radius, filter);
+            return Query(position, radius, filter);
         }
 
         /// <summary>
@@ -114,9 +128,13 @@ namespace AIRefactored.AI.Navigation
         {
             List<Vector3> result = new List<Vector3>(16);
             float radiusSq = radius * radius;
-            this.QueryRaw(this._root, position, radiusSq, result, filter);
+            QueryRaw(_root, position, radiusSq, result, filter);
             return result;
         }
+
+        #endregion
+
+        #region Internal Logic
 
         private void Insert(Node node, NavPointData point)
         {
@@ -131,15 +149,15 @@ namespace AIRefactored.AI.Navigation
                 node.NavPoints.Add(point);
                 if (node.NavPoints.Count > MaxPointsPerNode && node.Depth < MaxDepth)
                 {
-                    this.Subdivide(node);
-                    this.ReinsertPoints(node);
+                    Subdivide(node);
+                    ReinsertPoints(node);
                 }
             }
             else
             {
                 for (int i = 0; i < node.Children.Length; i++)
                 {
-                    this.Insert(node.Children[i], point);
+                    Insert(node.Children[i], point);
                 }
             }
         }
@@ -157,15 +175,15 @@ namespace AIRefactored.AI.Navigation
                 node.RawPoints.Add(point);
                 if (node.RawPoints.Count > MaxPointsPerNode && node.Depth < MaxDepth)
                 {
-                    this.Subdivide(node);
-                    this.ReinsertPoints(node);
+                    Subdivide(node);
+                    ReinsertPoints(node);
                 }
             }
             else
             {
                 for (int i = 0; i < node.Children.Length; i++)
                 {
-                    this.Insert(node.Children[i], point);
+                    Insert(node.Children[i], point);
                 }
             }
         }
@@ -197,7 +215,7 @@ namespace AIRefactored.AI.Navigation
             {
                 for (int i = 0; i < node.Children.Length; i++)
                 {
-                    this.Query(node.Children[i], worldPos, radiusSq, result, filter);
+                    Query(node.Children[i], worldPos, radiusSq, result, filter);
                 }
             }
         }
@@ -229,7 +247,7 @@ namespace AIRefactored.AI.Navigation
             {
                 for (int i = 0; i < node.Children.Length; i++)
                 {
-                    this.QueryRaw(node.Children[i], worldPos, radiusSq, result, filter);
+                    QueryRaw(node.Children[i], worldPos, radiusSq, result, filter);
                 }
             }
         }
@@ -243,10 +261,10 @@ namespace AIRefactored.AI.Navigation
             int d = node.Depth + 1;
 
             Node[] children = new Node[4];
-            children[0] = new Node(new Rect(x, y, halfW, halfH), d); // BL
-            children[1] = new Node(new Rect(x + halfW, y, halfW, halfH), d); // BR
-            children[2] = new Node(new Rect(x, y + halfH, halfW, halfH), d); // TL
-            children[3] = new Node(new Rect(x + halfW, y + halfH, halfW, halfH), d); // TR
+            children[0] = new Node(new Rect(x, y, halfW, halfH), d); // Bottom Left
+            children[1] = new Node(new Rect(x + halfW, y, halfW, halfH), d); // Bottom Right
+            children[2] = new Node(new Rect(x, y + halfH, halfW, halfH), d); // Top Left
+            children[3] = new Node(new Rect(x + halfW, y + halfH, halfW, halfH), d); // Top Right
 
             node.SetChildren(children);
         }
@@ -260,7 +278,7 @@ namespace AIRefactored.AI.Navigation
             {
                 for (int j = 0; j < node.Children.Length; j++)
                 {
-                    this.Insert(node.Children[j], navPoints[i]);
+                    Insert(node.Children[j], navPoints[i]);
                 }
             }
 
@@ -271,10 +289,14 @@ namespace AIRefactored.AI.Navigation
             {
                 for (int j = 0; j < node.Children.Length; j++)
                 {
-                    this.Insert(node.Children[j], rawPoints[i]);
+                    Insert(node.Children[j], rawPoints[i]);
                 }
             }
         }
+
+        #endregion
+
+        #region Node Type
 
         /// <summary>
         /// Internal node class for quadtree hierarchy.
@@ -283,11 +305,11 @@ namespace AIRefactored.AI.Navigation
         {
             public Node(Rect bounds, int depth)
             {
-                this.Bounds = bounds;
-                this.Depth = depth;
-                this.NavPoints = new List<NavPointData>(MaxPointsPerNode);
-                this.RawPoints = new List<Vector3>(MaxPointsPerNode);
-                this.Children = new Node[0];
+                Bounds = bounds;
+                Depth = depth;
+                NavPoints = new List<NavPointData>(MaxPointsPerNode);
+                RawPoints = new List<Vector3>(MaxPointsPerNode);
+                Children = Array.Empty<Node>();
             }
 
             public Rect Bounds { get; }
@@ -300,19 +322,14 @@ namespace AIRefactored.AI.Navigation
 
             public Node[] Children { get; private set; }
 
-            public bool IsLeaf => this.Children.Length == 0;
+            public bool IsLeaf => Children.Length == 0;
 
             public void SetChildren(Node[] children)
             {
-                if (children == null)
-                {
-                    this.Children = new Node[0];
-                }
-                else
-                {
-                    this.Children = children;
-                }
+                Children = children ?? Array.Empty<Node>();
             }
         }
+
+        #endregion
     }
 }

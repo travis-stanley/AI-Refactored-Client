@@ -17,6 +17,7 @@ namespace AIRefactored.AI.Groups
     using AIRefactored.AI.Core;
     using AIRefactored.AI.Helpers;
     using AIRefactored.Core;
+    using AIRefactored.Runtime;
     using EFT;
     using UnityEngine;
     using static AIRefactored.AI.Missions.BotMissionController;
@@ -44,10 +45,6 @@ namespace AIRefactored.AI.Groups
 
         #region Constructor
 
-        /// <summary>
-        /// Initializes a new instance of the <see cref="BotTeamLogic"/> class.
-        /// </summary>
-        /// <param name="bot">The controlling bot owner.</param>
         public BotTeamLogic(BotOwner bot)
         {
             this._bot = bot ?? throw new ArgumentNullException(nameof(bot));
@@ -248,7 +245,7 @@ namespace AIRefactored.AI.Groups
             if (!receiver.EnemiesController.EnemyInfos.ContainsKey(enemy))
             {
                 BotSettingsClass settings = new BotSettingsClass(enemy as Player, receiver.BotsGroup, EBotEnemyCause.zryachiyLogic);
-                receiver.Memory.AddEnemy(enemy, settings, false);
+                receiver.Memory?.AddEnemy(enemy, settings, false);
             }
         }
 
@@ -256,8 +253,15 @@ namespace AIRefactored.AI.Groups
         {
             Task.Run(async () =>
             {
-                await Task.Delay(Random.Range(150, 400));
-                fsm.TriggerFallback(point);
+                try
+                {
+                    await Task.Delay(Random.Range(150, 400));
+                    fsm?.TriggerFallback(point);
+                }
+                catch (Exception ex)
+                {
+                    AIRefactoredController.Logger?.LogError($"[BotTeamLogic] Error in delayed fallback: {ex.Message}");
+                }
             });
         }
 

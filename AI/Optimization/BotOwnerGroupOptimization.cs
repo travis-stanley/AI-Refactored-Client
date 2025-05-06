@@ -87,16 +87,13 @@ namespace AIRefactored.AI.Optimization
         /// </summary>
         private static void ApplyModifiers(BotOwner bot, BotPersonalityProfile profile, BotGlobalsMindSettings mind)
         {
-            // Increase engagement range for solo bots with low cohesion
             mind.DIST_TO_FOUND_SQRT = Mathf.Lerp(300f, 600f, 1f - profile.Cohesion);
 
-            // Adjust kill reactivity based on aggression
             mind.FRIEND_AGR_KILL = Mathf.Clamp(
                 mind.FRIEND_AGR_KILL + profile.AggressionLevel * 0.15f,
                 0f,
                 1f);
 
-            // Narrow enemy angle required to trigger alert based on cohesion
             mind.ENEMY_LOOK_AT_ME_ANG = Mathf.Clamp(
                 mind.ENEMY_LOOK_AT_ME_ANG - profile.Cohesion * 5f,
                 5f,

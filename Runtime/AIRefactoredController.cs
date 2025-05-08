@@ -6,8 +6,6 @@
 //   Please follow strict StyleCop, ReSharper, and AI-Refactored code standards for all modifications.
 // </auto-generated>
 
-#nullable enable
-
 namespace AIRefactored.Runtime
 {
     using System;
@@ -16,36 +14,20 @@ namespace AIRefactored.Runtime
     using AIRefactored.Bootstrap;
     using AIRefactored.Core;
     using BepInEx.Logging;
+    using Comfort.Common;
+    using EFT;
     using UnityEngine;
 
     /// <summary>
     /// Global entry point for AI-Refactored.
-    /// Monitors GameWorld state and bootstraps systems once a raid is actually loaded.
+    /// Spawns a persistent host object and launches phase-based initialization.
     /// </summary>
     public sealed class AIRefactoredController : MonoBehaviour
     {
-        #region Constants
-
-        private const float BootstrapIntervalSeconds = 2.0f;
-
-        #endregion
-
-        #region Static Fields
-
-        private static ManualLogSource? _logger;
-        private static GameObject? _host;
-        private static AIRefactoredController? _instance;
+        private static GameObject _host;
+        private static AIRefactoredController _instance;
         private static bool _initialized;
-
-        #endregion
-
-        #region Instance Fields
-
-        private bool _hasBootstrapped;
-
-        #endregion
-
-        #region Public API
+        private static bool _raidActive;
 
         /// <summary>
         /// Shared logger for runtime use.
@@ -54,164 +36,152 @@ namespace AIRefactored.Runtime
         {
             get
             {
-                if (_logger == null)
+                ManualLogSource log = Plugin.LoggerInstance;
+                if (log == null)
                 {
-                    throw new InvalidOperationException("[AIRefactoredController] Logger accessed before Initialize.");
+                    throw new InvalidOperationException("[AIRefactoredController] Logger accessed before Plugin initialized.");
                 }
 
-                return _logger;
+                return log;
             }
         }
 
         /// <summary>
-        /// Initializes the controller and attaches to a persistent GameObject.
-        /// This method is safe to call repeatedly, and only affects headless hosts.
+        /// Initializes the AIRefactoredController host and launches boot sequence.
+        /// Safe to call repeatedly.
         /// </summary>
-        /// <param name="logger">Logger to use for diagnostic output.</param>
-        public static void Initialize(ManualLogSource logger)
+        public static void Initialize()
         {
-            if (!Application.isBatchMode && !FikaHeadlessDetector.IsHeadless)
+            try
             {
-                logger.LogInfo("[AIRefactoredController] Skipped Initialize — not a headless environment.");
-                return;
-            }
+                if (!Application.isBatchMode && !FikaHeadlessDetector.IsHeadless)
+                {
+                    Logger.LogInfo("[AIRefactoredController] Skipped Initialize — not a headless environment.");
+                    return;
+                }
 
-            if (_initialized && _host != null)
+                if (_initialized && _host != null)
+                {
+                    Logger.LogInfo("[AIRefactoredController] Already initialized — skipping.");
+                    return;
+                }
+
+                if (_host == null)
+                {
+                    _host = new GameObject("AIRefactoredController");
+                    UnityEngine.Object.DontDestroyOnLoad(_host);
+
+                    _instance = _host.AddComponent<AIRefactoredController>();
+                    _host.AddComponent<RaidLifecycleWatcher>();
+
+                    Logger.LogInfo("[AIRefactoredController] Host object created and lifecycle watcher attached.");
+                }
+
+                WorldTickDispatcher.Initialize();
+                _initialized = true;
+
+                Logger.LogInfo("[AIRefactoredController] Initialization complete. Awaiting GameWorld...");
+            }
+            catch (Exception ex)
             {
-                logger.LogInfo("[AIRefactoredController] Already initialized — skipping.");
-                return;
+                Logger.LogError("[AIRefactoredController] Initialization failed: " + ex);
             }
-
-            _logger = logger;
-
-            if (_host == null)
-            {
-                _host = new GameObject("AIRefactoredController");
-                UnityEngine.Object.DontDestroyOnLoad(_host);
-                _instance = _host.AddComponent<AIRefactoredController>();
-            }
-
-            _initialized = true;
-            logger.LogInfo("[AIRefactoredController] Host object created — monitoring GameWorld readiness.");
         }
 
-        #endregion
-
-        #region Unity Events
-
-        private void Awake()
+        /// <summary>
+        /// Called when a raid begins and GameWorld is valid.
+        /// </summary>
+        /// <param name="world">The GameWorld instance.</param>
+        public static void OnRaidStarted(GameWorld world)
         {
-            Application.logMessageReceived += OnLogMessage;
+            if (!_initialized || _raidActive || world == null)
+            {
+                return;
+            }
 
-            Logger.LogInfo("[AIRefactoredController] Awake — starting GameWorld readiness loop.");
-            StartCoroutine(WatchGameWorldLoop());
+            try
+            {
+                Logger.LogInfo("[AIRefactoredController] 🚀 Raid started. Bootstrapping world systems...");
+                GameWorldHandler.Initialize(world);
+                WorldBootstrapper.Begin(Logger);
+                _raidActive = true;
+            }
+            catch (Exception ex)
+            {
+                Logger.LogError("[AIRefactoredController] OnRaidStarted error: " + ex);
+            }
+        }
+
+        /// <summary>
+        /// Called when a raid ends and GameWorld is disposed.
+        /// </summary>
+        public static void OnRaidEnded()
+        {
+            if (!_raidActive)
+            {
+                return;
+            }
+
+            try
+            {
+                Logger.LogInfo("[AIRefactoredController] 🧹 Raid ended. Tearing down world systems...");
+                WorldBootstrapper.Stop();
+                GameWorldHandler.Cleanup();
+                BotRecoveryService.Reset();
+                _raidActive = false;
+            }
+            catch (Exception ex)
+            {
+                Logger.LogError("[AIRefactoredController] OnRaidEnded error: " + ex);
+            }
+        }
+
+        private void Start()
+        {
+            Logger.LogInfo("[AIRefactoredController] Starting GameWorld wait coroutine...");
+            StartCoroutine(WaitForGameWorld());
+        }
+
+        private IEnumerator WaitForGameWorld()
+        {
+            while (Singleton<GameWorld>.Instance == null)
+            {
+                yield return null;
+            }
+
+            while (!FikaHeadlessDetector.IsReady || !GameWorldHandler.IsReady())
+            {
+                yield return null;
+            }
+
+            Logger.LogInfo("[AIRefactoredController] ✅ GameWorld ready. Launching InitPhaseRunner...");
+            InitPhaseRunner.Begin(Logger);
+        }
+
+        private void Update()
+        {
+            if (WorldInitState.IsInitialized)
+            {
+                WorldTickDispatcher.Tick(Time.deltaTime);
+            }
         }
 
         private void OnDestroy()
         {
-            if (_instance == this)
+            try
             {
-                Application.logMessageReceived -= OnLogMessage;
-                _instance = null;
-                _initialized = false;
-            }
-        }
-
-        #endregion
-
-        #region Coroutine
-
-        private IEnumerator WatchGameWorldLoop()
-        {
-            while (!_hasBootstrapped)
-            {
-                yield return new WaitForSecondsRealtime(BootstrapIntervalSeconds);
-
-                if (!GameWorldHandler.IsHost)
+                if (_instance == this)
                 {
-                    Logger.LogDebug("[AIRefactoredController] Skipping — not authoritative host.");
-                    continue;
+                    Logger.LogInfo("[AIRefactoredController] OnDestroy — stopping InitPhaseRunner.");
+                    InitPhaseRunner.Stop();
+                    _instance = null;
+                    _initialized = false;
                 }
-
-                if (!GameWorldHandler.IsSafeToInitialize)
-                {
-                    Logger.LogDebug("[AIRefactoredController] Skipping — GameWorld not ready yet.");
-                    continue;
-                }
-
-                Logger.LogInfo("[AIRefactoredController] GameWorld ready — executing bootstrap.");
-                SafeBootstrap();
-            }
-        }
-
-        #endregion
-
-        #region Bootstrap Logic
-
-        private void SafeBootstrap()
-        {
-            if (_hasBootstrapped)
-                return;
-
-            try
-            {
-                GameWorldHandler.TryInitializeWorld();
             }
             catch (Exception ex)
             {
-                Logger.LogError("[AIRefactoredController] TryInitializeWorld() threw: " + ex);
-                return;
-            }
-
-            if (!GameWorldHandler.IsInitialized)
-            {
-                Logger.LogInfo("[AIRefactoredController] GameWorld not initialized yet — deferring.");
-                return;
-            }
-
-            try
-            {
-                Logger.LogInfo("[AIRefactoredController] ▶ Hooking spawn systems...");
-                GameWorldHandler.HookBotSpawns();
-            }
-            catch (Exception ex)
-            {
-                Logger.LogError("[AIRefactoredController] HookBotSpawns() threw: " + ex);
-            }
-
-            try
-            {
-                Logger.LogInfo("[AIRefactoredController] ▶ Injecting WorldBootstrapper...");
-                WorldBootstrapper.TryInitialize();
-                _hasBootstrapped = true;
-                Logger.LogInfo("[AIRefactoredController] ✅ Bootstrap complete — AI-Refactored systems active.");
-            }
-            catch (Exception ex)
-            {
-                Logger.LogError("[AIRefactoredController] WorldBootstrapper.TryInitialize() threw: " + ex);
+                Logger.LogError("[AIRefactoredController] OnDestroy error: " + ex);
             }
         }
-
-        private void OnLogMessage(string condition, string stackTrace, LogType type)
-        {
-            if (type != LogType.Exception)
-                return;
-
-            bool isFromAIRefactored =
-                condition.IndexOf("AIRefactored", StringComparison.OrdinalIgnoreCase) >= 0 ||
-                stackTrace.IndexOf("AIRefactored", StringComparison.OrdinalIgnoreCase) >= 0;
-
-            if (isFromAIRefactored)
-            {
-                Logger.LogError("[AIRefactoredController] Unhandled internal exception: " + condition + "\n" + stackTrace);
-                _hasBootstrapped = true;
-            }
-            else
-            {
-                Logger.LogDebug("[AIRefactoredController] Ignored external exception: " + condition);
-            }
-        }
-
-        #endregion
     }
 }

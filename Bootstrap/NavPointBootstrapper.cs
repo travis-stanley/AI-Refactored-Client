@@ -6,14 +6,13 @@
 //   Please follow strict StyleCop, ReSharper, and AI-Refactored code standards for all modifications.
 // </auto-generated>
 
-#nullable enable
-
 namespace AIRefactored.AI.Navigation
 {
     using System.Collections.Generic;
     using System.Threading.Tasks;
     using AIRefactored.AI.Core;
     using AIRefactored.Core;
+    using AIRefactored.Pools;
     using AIRefactored.Runtime;
     using BepInEx.Logging;
     using Unity.AI.Navigation;
@@ -26,8 +25,6 @@ namespace AIRefactored.AI.Navigation
     /// </summary>
     public static class NavPointBootstrapper
     {
-        #region Constants
-
         private const float ForwardCoverCheckDistance = 4.0f;
         private const float MaxSampleHeight = 30.0f;
         private const float MinNavPointClearance = 1.6f;
@@ -37,27 +34,15 @@ namespace AIRefactored.AI.Navigation
         private const float VerticalProbeMax = 24.0f;
         private const float VerticalStep = 2.0f;
 
-        #endregion
-
-        #region Fields
-
-        private static readonly List<Vector3> BackgroundPending = new List<Vector3>(512);
+        private static readonly List<Vector3> BackgroundPending = new List<Vector3>(1024);
         private static readonly Queue<Vector3> ScanQueue = new Queue<Vector3>(2048);
-        private static readonly ManualLogSource Logger = AIRefactoredController.Logger;
+        private static readonly ManualLogSource Logger = Plugin.LoggerInstance;
 
         private static Vector3 _center = Vector3.zero;
         private static bool _isRunning;
         private static bool _isTaskRunning;
         private static int _registered;
 
-        #endregion
-
-        #region Public API
-
-        /// <summary>
-        /// Queues all spatial points for scanning and begins NavPoint registration.
-        /// </summary>
-        /// <param name="mapId">The name of the current map (used for surface context).</param>
         public static void RegisterAll(string mapId)
         {
             if (_isRunning || !IsHostEnvironment())
@@ -71,7 +56,7 @@ namespace AIRefactored.AI.Navigation
             ScanQueue.Clear();
             BackgroundPending.Clear();
 
-            NavMeshSurface? surface = Object.FindObjectOfType<NavMeshSurface>();
+            NavMeshSurface surface = Object.FindObjectOfType<NavMeshSurface>();
             if (surface == null)
             {
                 Logger.LogWarning("[NavPointBootstrapper] No NavMeshSurface found.");
@@ -82,13 +67,27 @@ namespace AIRefactored.AI.Navigation
             _center = surface.transform.position;
             float half = ScanRadius * 0.5f;
 
-            for (float x = -half; x <= half; x += ScanSpacing)
+            List<Vector3> pooled = TempListPool.Rent<Vector3>();
+
+            try
             {
-                for (float z = -half; z <= half; z += ScanSpacing)
+                for (float x = -half; x <= half; x += ScanSpacing)
                 {
-                    Vector3 basePos = _center + new Vector3(x, MaxSampleHeight, z);
-                    ScanQueue.Enqueue(basePos);
+                    for (float z = -half; z <= half; z += ScanSpacing)
+                    {
+                        Vector3 basePos = new Vector3(x, MaxSampleHeight, z) + _center;
+                        pooled.Add(basePos);
+                    }
                 }
+
+                for (int i = 0; i < pooled.Count; i++)
+                {
+                    ScanQueue.Enqueue(pooled[i]);
+                }
+            }
+            finally
+            {
+                TempListPool.Return(pooled);
             }
 
             Logger.LogInfo("[NavPointBootstrapper] Queued " + ScanQueue.Count + " surface points.");
@@ -100,9 +99,6 @@ namespace AIRefactored.AI.Navigation
             }
         }
 
-        /// <summary>
-        /// Processes queued spatial points to detect and register valid AI nav points.
-        /// </summary>
         public static void Tick()
         {
             if (!_isRunning || !IsHostEnvironment())
@@ -117,14 +113,16 @@ namespace AIRefactored.AI.Navigation
             {
                 Vector3 probe = ScanQueue.Dequeue();
 
-                if (!Physics.Raycast(probe, Vector3.down, out RaycastHit hit, MaxSampleHeight))
+                RaycastHit hit;
+                if (!Physics.Raycast(probe, Vector3.down, out hit, MaxSampleHeight))
                 {
                     continue;
                 }
 
                 Vector3 pos = hit.point;
+                NavMeshHit navHit;
 
-                if (!NavMesh.SamplePosition(pos, out NavMeshHit navHit, 1.0f, NavMesh.AllAreas))
+                if (!NavMesh.SamplePosition(pos, out navHit, 1.0f, NavMesh.AllAreas))
                 {
                     continue;
                 }
@@ -136,7 +134,6 @@ namespace AIRefactored.AI.Navigation
 
                 Vector3 final = navHit.position;
                 float elevation = final.y - _center.y;
-
                 bool isCover = IsCoverPoint(final);
                 bool isIndoor = IsIndoorPoint(final);
                 string tag = ClassifyNavPoint(elevation, isCover, isIndoor);
@@ -163,35 +160,50 @@ namespace AIRefactored.AI.Navigation
             }
         }
 
-        #endregion
-
-        #region Internal Methods
+        public static void Reset()
+        {
+            ScanQueue.Clear();
+            BackgroundPending.Clear();
+            _registered = 0;
+            _isRunning = false;
+            _isTaskRunning = false;
+        }
 
         private static void PrequeueVerticalPoints()
         {
             float half = ScanRadius * 0.5f;
 
-            for (float x = -half; x <= half; x += ScanSpacing)
+            List<Vector3> tempList = TempListPool.Rent<Vector3>();
+
+            try
             {
-                for (float z = -half; z <= half; z += ScanSpacing)
+                for (float x = -half; x <= half; x += ScanSpacing)
                 {
-                    for (float y = 5.0f; y <= VerticalProbeMax; y += VerticalStep)
+                    for (float z = -half; z <= half; z += ScanSpacing)
                     {
-                        BackgroundPending.Add(_center + new Vector3(x, y, z));
+                        for (float y = 5.0f; y <= VerticalProbeMax; y += VerticalStep)
+                        {
+                            tempList.Add(_center + new Vector3(x, y, z));
+                        }
                     }
                 }
-            }
 
-            _isTaskRunning = false;
+                BackgroundPending.AddRange(tempList);
+            }
+            finally
+            {
+                TempListPool.Return(tempList);
+                _isTaskRunning = false;
+            }
         }
 
         private static bool IsCoverPoint(Vector3 pos)
         {
             Vector3 eye = pos + Vector3.up * 1.4f;
 
-            for (float angle = -45.0f; angle <= 45.0f; angle += 15.0f)
+            for (float angle = -45f; angle <= 45f; angle += 15f)
             {
-                Vector3 dir = Quaternion.Euler(0.0f, angle, 0.0f) * Vector3.forward;
+                Vector3 dir = Quaternion.Euler(0f, angle, 0f) * Vector3.forward;
                 if (Physics.Raycast(eye, dir, ForwardCoverCheckDistance, AIRefactoredLayerMasks.HighPolyCollider))
                 {
                     return true;
@@ -225,7 +237,5 @@ namespace AIRefactored.AI.Navigation
         {
             return GameWorldHandler.IsLocalHost() || FikaHeadlessDetector.IsHeadless;
         }
-
-        #endregion
     }
 }

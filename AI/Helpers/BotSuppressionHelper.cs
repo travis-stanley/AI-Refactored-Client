@@ -6,8 +6,6 @@
 //   Please follow strict StyleCop, ReSharper, and AI-Refactored code standards for all modifications.
 // </auto-generated>
 
-#nullable enable
-
 namespace AIRefactored.AI.Helpers
 {
     using AIRefactored.AI.Core;
@@ -27,9 +25,9 @@ namespace AIRefactored.AI.Helpers
         /// </summary>
         /// <param name="player">The player to check.</param>
         /// <returns>The BotOwner instance, or null if not AI.</returns>
-        public static BotOwner? GetBotOwner(Player? player)
+        public static BotOwner GetBotOwner(Player player)
         {
-            if (player?.IsAI == true && player.AIData is BotOwner owner)
+            if (player != null && player.IsAI && player.AIData is BotOwner owner)
             {
                 return owner;
             }
@@ -42,9 +40,9 @@ namespace AIRefactored.AI.Helpers
         /// </summary>
         /// <param name="player">The player to check.</param>
         /// <returns>The bot's BotComponentCache, or null if not AI.</returns>
-        public static BotComponentCache? GetCache(Player? player)
+        public static BotComponentCache GetCache(Player player)
         {
-            if (player?.IsAI == true)
+            if (player != null && player.IsAI)
             {
                 return BotCacheUtility.GetCache(player);
             }
@@ -60,11 +58,11 @@ namespace AIRefactored.AI.Helpers
         /// <param name="ambientThreshold">The ambient light threshold.</param>
         /// <returns>True if suppression should be triggered; otherwise, false.</returns>
         public static bool ShouldTriggerSuppression(
-            Player? player,
+            Player player,
             float visibleDistThreshold = 12f,
             float ambientThreshold = 0.25f)
         {
-            BotOwner? owner = GetBotOwner(player);
+            BotOwner owner = GetBotOwner(player);
             if (owner?.LookSensor == null)
             {
                 return false;
@@ -92,15 +90,15 @@ namespace AIRefactored.AI.Helpers
         /// <param name="player">The player to suppress.</param>
         /// <param name="threatPosition">The world-space threat position.</param>
         /// <param name="source">The enemy player causing the suppression, if known.</param>
-        public static void TrySuppressBot(Player? player, Vector3 threatPosition, IPlayer? source = null)
+        public static void TrySuppressBot(Player player, Vector3 threatPosition, IPlayer source = null)
         {
             if (player == null || !player.IsAI)
             {
                 return;
             }
 
-            BotOwner? owner = GetBotOwner(player);
-            BotComponentCache? cache = GetCache(player);
+            BotOwner owner = GetBotOwner(player);
+            BotComponentCache cache = GetCache(player);
 
             if (owner == null || cache == null || owner.IsDead)
             {

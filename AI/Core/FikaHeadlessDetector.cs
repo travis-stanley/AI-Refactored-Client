@@ -6,8 +6,6 @@
 //   Please follow strict StyleCop, ReSharper, and AI-Refactored code standards for all modifications.
 // </auto-generated>
 
-#nullable enable
-
 namespace AIRefactored.AI.Core
 {
     using System;
@@ -21,7 +19,7 @@ namespace AIRefactored.AI.Core
     public static class FikaHeadlessDetector
     {
         private static readonly bool _isHeadless;
-        private static readonly string? _raidLocation;
+        private static readonly string _raidLocation;
 
         /// <summary>
         /// Gets a value indicating whether the current client is in headless or batch mode.
@@ -30,41 +28,47 @@ namespace AIRefactored.AI.Core
 
         /// <summary>
         /// Gets the map name if parsed from FIKA headless arguments.
+        /// Returns string.Empty if not in headless or if parsing failed.
         /// </summary>
-        public static string? RaidLocationName => _raidLocation;
+        public static string RaidLocationName => _raidLocation;
 
         /// <summary>
         /// Gets a value indicating whether the headless environment has fully parsed its arguments.
         /// Used to delay logic until startup args are loaded.
         /// </summary>
-        public static bool IsReady => _isHeadless && !string.IsNullOrEmpty(_raidLocation);
+        public static bool IsReady => _isHeadless && _raidLocation.Length > 0;
 
         /// <summary>
         /// Static constructor for environment detection.
         /// </summary>
         static FikaHeadlessDetector()
         {
+            _isHeadless = false;
+            _raidLocation = string.Empty;
+
             try
             {
-                _isHeadless =
-                    Application.isBatchMode ||
-                    Environment.CommandLine.IndexOf("-nographics", StringComparison.OrdinalIgnoreCase) >= 0;
+                string cmd = Environment.CommandLine;
+                _isHeadless = Application.isBatchMode || cmd.IndexOf("-nographics", StringComparison.OrdinalIgnoreCase) >= 0;
 
-                _raidLocation = TryParseRaidLocationFromArgs();
+                if (_isHeadless)
+                {
+                    _raidLocation = TryParseRaidLocationFromArgs();
+                }
             }
             catch (Exception ex)
             {
                 _isHeadless = false;
-                _raidLocation = null;
-                Debug.LogWarning("[FikaHeadlessDetector] Failed during static init: " + ex.Message);
+                _raidLocation = string.Empty;
+                Debug.LogWarning("[FikaHeadlessDetector] Static init failed: " + ex.Message);
             }
         }
 
         /// <summary>
         /// Attempts to parse the raid location from the command line arguments.
         /// </summary>
-        /// <returns>Returns the raid location if found, otherwise null.</returns>
-        private static string? TryParseRaidLocationFromArgs()
+        /// <returns>Returns the raid location if found; otherwise, returns string.Empty.</returns>
+        private static string TryParseRaidLocationFromArgs()
         {
             try
             {
@@ -74,15 +78,15 @@ namespace AIRefactored.AI.Core
                 if (match.Success && match.Groups.Count > 1)
                 {
                     string location = match.Groups[1].Value;
-                    return string.IsNullOrWhiteSpace(location) ? null : location;
+                    return string.IsNullOrWhiteSpace(location) ? string.Empty : location;
                 }
             }
             catch
             {
-                // Silent fail is acceptable in malformed command-line environments
+                // Silent fail
             }
 
-            return null;
+            return string.Empty;
         }
     }
 }

@@ -6,8 +6,6 @@
 //   Please follow strict StyleCop, ReSharper, and AI-Refactored code standards for all modifications.
 // </auto-generated>
 
-#nullable enable
-
 namespace AIRefactored.AI.Looting
 {
     using System.Collections.Generic;
@@ -41,9 +39,10 @@ namespace AIRefactored.AI.Looting
         /// </summary>
         /// <param name="profileId">The profile ID of the dead player.</param>
         /// <returns>True if cached.</returns>
-        public static bool Contains(string? profileId)
+        public static bool Contains(string profileId)
         {
-            return TryGetValidKey(profileId, out string key) && Containers.ContainsKey(key);
+            string key;
+            return TryGetValidKey(profileId, out key) && Containers.ContainsKey(key);
         }
 
         /// <summary>
@@ -51,15 +50,11 @@ namespace AIRefactored.AI.Looting
         /// </summary>
         /// <param name="profileId">The profile ID of the dead player.</param>
         /// <returns>The loot container if found; otherwise null.</returns>
-        public static LootableContainer? Get(string? profileId)
+        public static LootableContainer Get(string profileId)
         {
-            if (!TryGetValidKey(profileId, out string key))
-            {
-                return null;
-            }
-
-            Containers.TryGetValue(key, out LootableContainer? result);
-            return result;
+            string key;
+            LootableContainer result;
+            return TryGetValidKey(profileId, out key) && Containers.TryGetValue(key, out result) ? result : null;
         }
 
         /// <summary>
@@ -67,9 +62,15 @@ namespace AIRefactored.AI.Looting
         /// </summary>
         /// <param name="player">The dead player.</param>
         /// <param name="container">Their associated lootable container.</param>
-        public static void Register(Player? player, LootableContainer? container)
+        public static void Register(Player player, LootableContainer container)
         {
-            if (player == null || container == null || !TryGetValidKey(player.ProfileId, out string key))
+            if (player == null || container == null)
+            {
+                return;
+            }
+
+            string key;
+            if (!TryGetValidKey(player.ProfileId, out key))
             {
                 return;
             }
@@ -84,11 +85,11 @@ namespace AIRefactored.AI.Looting
 
         #region Helpers
 
-        private static bool TryGetValidKey(string? profileId, out string key)
+        private static bool TryGetValidKey(string profileId, out string key)
         {
-            if (profileId == null)
+            key = string.Empty;
+            if (string.IsNullOrEmpty(profileId))
             {
-                key = string.Empty;
                 return false;
             }
 

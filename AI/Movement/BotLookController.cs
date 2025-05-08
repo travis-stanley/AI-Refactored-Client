@@ -6,12 +6,9 @@
 //   Please follow strict StyleCop, ReSharper, and AI-Refactored code standards for all modifications.
 // </auto-generated>
 
-#nullable enable
-
 namespace AIRefactored.AI.Movement
 {
     using System;
-    using AIRefactored.AI.Components;
     using AIRefactored.AI.Core;
     using AIRefactored.Core;
     using EFT;
@@ -37,6 +34,7 @@ namespace AIRefactored.AI.Movement
 
         private readonly BotOwner _bot;
         private readonly BotComponentCache _cache;
+
         private Vector3 _fallbackLookTarget;
         private bool _frozen;
 
@@ -46,9 +44,14 @@ namespace AIRefactored.AI.Movement
 
         public BotLookController(BotOwner bot, BotComponentCache cache)
         {
-            this._bot = bot ?? throw new ArgumentNullException(nameof(bot));
-            this._cache = cache ?? throw new ArgumentNullException(nameof(cache));
-            this._fallbackLookTarget = bot.Position + bot.LookDirection;
+            if (bot == null || cache == null)
+            {
+                throw new ArgumentException("BotLookController: bot or cache is null.");
+            }
+
+            _bot = bot;
+            _cache = cache;
+            _fallbackLookTarget = bot.Position + bot.LookDirection;
         }
 
         #endregion
@@ -57,19 +60,19 @@ namespace AIRefactored.AI.Movement
 
         public void Tick(float deltaTime)
         {
-            if (this._frozen || this._bot.IsDead || !GameWorldHandler.IsSafeToInitialize)
+            if (_frozen || _bot.IsDead || !GameWorldHandler.IsSafeToInitialize)
             {
                 return;
             }
 
-            Player? player = this._bot.GetPlayer;
-            if (player?.PlayerBones?.Head == null || FikaHeadlessDetector.IsHeadless)
+            Player player = _bot.GetPlayer;
+            if (player == null || player.PlayerBones == null || player.PlayerBones.Head == null || FikaHeadlessDetector.IsHeadless)
             {
                 return;
             }
 
-            Vector3 origin = this._bot.Position;
-            Vector3 lookTarget = this.ResolveLookTarget(origin);
+            Vector3 origin = _bot.Position;
+            Vector3 lookTarget = ResolveLookTarget(origin);
             Vector3 direction = lookTarget - origin;
             direction.y = 0f;
 
@@ -85,22 +88,22 @@ namespace AIRefactored.AI.Movement
 
         public void SetLookTarget(Vector3 worldPos)
         {
-            this._fallbackLookTarget = worldPos;
+            _fallbackLookTarget = worldPos;
         }
 
         public void FreezeLook()
         {
-            this._frozen = true;
+            _frozen = true;
         }
 
         public void ResumeLook()
         {
-            this._frozen = false;
+            _frozen = false;
         }
 
         public Vector3 GetLookDirection()
         {
-            return this._bot.LookDirection;
+            return _bot.LookDirection;
         }
 
         #endregion
@@ -111,32 +114,32 @@ namespace AIRefactored.AI.Movement
         {
             float now = Time.time;
 
-            if (this._cache.IsBlinded && now < this._cache.BlindUntilTime)
+            if (_cache.IsBlinded && now < _cache.BlindUntilTime)
             {
                 return origin + UnityEngine.Random.insideUnitSphere.normalized * BlindLookRadius;
             }
 
-            if (this._cache.Panic?.IsPanicking == true)
+            if (_cache.Panic != null && _cache.Panic.IsPanicking)
             {
-                if (this._cache.LastHeardDirection.HasValue)
+                if (_cache.HasHeardDirection)
                 {
-                    return origin + this._cache.LastHeardDirection.Value.normalized * HeardDirectionWeight;
+                    return origin + _cache.LastHeardDirection.normalized * HeardDirectionWeight;
                 }
 
-                return origin + this._bot.LookDirection;
+                return origin + _bot.LookDirection;
             }
 
-            if (this._cache.ThreatSelector?.CurrentTarget != null)
+            if (_cache.ThreatSelector != null && _cache.ThreatSelector.CurrentTarget != null)
             {
-                return EFTPlayerUtil.GetPosition(this._cache.ThreatSelector.CurrentTarget);
+                return EFTPlayerUtil.GetPosition(_cache.ThreatSelector.CurrentTarget);
             }
 
-            if (this._cache.LastHeardDirection.HasValue && now - this._cache.LastHeardTime < SoundMemoryDuration)
+            if (_cache.HasHeardDirection && now - _cache.LastHeardTime < SoundMemoryDuration)
             {
-                return origin + this._cache.LastHeardDirection.Value.normalized * HeardDirectionWeight;
+                return origin + _cache.LastHeardDirection.normalized * HeardDirectionWeight;
             }
 
-            return this._fallbackLookTarget;
+            return _fallbackLookTarget;
         }
 
         #endregion

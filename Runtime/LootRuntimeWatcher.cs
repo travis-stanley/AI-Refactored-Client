@@ -6,12 +6,12 @@
 //   Please follow strict StyleCop, ReSharper, and AI-Refactored code standards for all modifications.
 // </auto-generated>
 
-#nullable enable
-
 namespace AIRefactored.Runtime
 {
     using System;
     using System.Collections.Generic;
+    using AIRefactored.AI.Core;
+    using AIRefactored.Bootstrap;
     using AIRefactored.Core;
     using BepInEx.Logging;
     using UnityEngine;
@@ -20,7 +20,7 @@ namespace AIRefactored.Runtime
     /// Detects dynamic runtime loot additions (e.g. player death drops, mission rewards).
     /// Triggers a delayed loot registry refresh on authoritative hosts.
     /// </summary>
-    public static class LootRuntimeWatcher
+    public sealed class LootRuntimeWatcher : IAIWorldSystemBootstrapper
     {
         #region Constants
 
@@ -31,27 +31,34 @@ namespace AIRefactored.Runtime
         #region Static Fields
 
         private static float _nextAllowedRefreshTime = -1f;
-        private static bool _isQueued;
-        private static ManualLogSource? _logger;
-
-        private static readonly HashSet<int> _registeredInstanceIds = new HashSet<int>();
+        private static bool _isQueued = false;
+        private static ManualLogSource _logger = Plugin.LoggerInstance;
+        private static readonly HashSet<int> RegisteredInstanceIds = new HashSet<int>();
 
         #endregion
 
-        #region Public API
+        #region Singleton Instance
 
         /// <summary>
-        /// Ticks the watcher service for refresh opportunities.
+        /// Singleton instance for bootstrapper registration.
         /// </summary>
-        /// <param name="now">Current time from Time.time.</param>
-        public static void Tick(float now)
-        {
-            if (!_isQueued)
-            {
-                return;
-            }
+        public static LootRuntimeWatcher Instance { get; } = new LootRuntimeWatcher();
 
-            if (now < _nextAllowedRefreshTime)
+        #endregion
+
+        #region Bootstrap Interface
+
+        /// <inheritdoc />
+        public void Initialize()
+        {
+            Reset();
+            _logger.LogInfo("[LootRuntimeWatcher] Initialized.");
+        }
+
+        /// <inheritdoc />
+        public void Tick(float deltaTime)
+        {
+            if (!_isQueued || Time.time < _nextAllowedRefreshTime)
             {
                 return;
             }
@@ -63,15 +70,42 @@ namespace AIRefactored.Runtime
 
             _isQueued = false;
             GameWorldHandler.RefreshLootRegistry();
-            Logger.LogInfo("[LootRuntimeWatcher] Loot registry refreshed.");
+            _logger.LogInfo("[LootRuntimeWatcher] ✅ Loot registry refreshed.");
         }
+
+        /// <inheritdoc />
+        public void OnRaidEnd()
+        {
+            Reset();
+        }
+
+        /// <inheritdoc />
+        public bool IsReady()
+        {
+            return true;
+        }
+
+        /// <inheritdoc />
+        public WorldPhase RequiredPhase()
+        {
+            return WorldPhase.WorldReady;
+        }
+
+        #endregion
+
+        #region Public API
 
         /// <summary>
         /// Triggers a delayed refresh from external systems (e.g. loot spawned).
         /// </summary>
         public static void TriggerQueuedRefresh()
         {
-            if (_isQueued || !GameWorldHandler.IsReady() || !GameWorldHandler.IsLocalHost())
+            if (_isQueued)
+            {
+                return;
+            }
+
+            if (!GameWorldHandler.IsReady() || !GameWorldHandler.IsLocalHost())
             {
                 return;
             }
@@ -92,13 +126,14 @@ namespace AIRefactored.Runtime
 
             _isQueued = false;
             GameWorldHandler.RefreshLootRegistry();
-            Logger.LogInfo("[LootRuntimeWatcher] Manual loot registry refresh triggered.");
+            _logger.LogInfo("[LootRuntimeWatcher] 🔁 Manual loot registry refresh triggered.");
         }
 
         /// <summary>
         /// Registers a GameObject by instance ID for future-safe tracking.
         /// </summary>
-        public static void Register(GameObject? go)
+        /// <param name="go">The GameObject to register.</param>
+        public static void Register(GameObject go)
         {
             if (go == null)
             {
@@ -106,19 +141,17 @@ namespace AIRefactored.Runtime
             }
 
             int id = go.GetInstanceID();
-            if (_registeredInstanceIds.Contains(id))
+            if (RegisteredInstanceIds.Add(id))
             {
-                return;
+                TriggerQueuedRefresh();
             }
-
-            _registeredInstanceIds.Add(id);
-            TriggerQueuedRefresh();
         }
 
         /// <summary>
         /// Unregisters and clears stale GameObject tracking (e.g. when loot is destroyed).
         /// </summary>
-        public static void Unregister(GameObject? go)
+        /// <param name="go">The GameObject to unregister.</param>
+        public static void Unregister(GameObject go)
         {
             if (go == null)
             {
@@ -126,9 +159,9 @@ namespace AIRefactored.Runtime
             }
 
             int id = go.GetInstanceID();
-            if (_registeredInstanceIds.Remove(id))
+            if (RegisteredInstanceIds.Remove(id))
             {
-                Logger.LogDebug("[LootRuntimeWatcher] Unregistered loot object: " + go.name);
+                _logger.LogDebug("[LootRuntimeWatcher] Unregistered loot object: " + go.name);
             }
         }
 
@@ -138,42 +171,11 @@ namespace AIRefactored.Runtime
         /// </summary>
         public static void Reset()
         {
-            _registeredInstanceIds.Clear();
+            RegisteredInstanceIds.Clear();
             _isQueued = false;
             _nextAllowedRefreshTime = -1f;
 
-            Logger.LogInfo("[LootRuntimeWatcher] State reset.");
-        }
-
-        /// <summary>
-        /// Initializes the static logger for this system.
-        /// </summary>
-        /// <param name="logger">Logger to use.</param>
-        public static void InitializeLogger(ManualLogSource logger)
-        {
-            if (logger == null)
-            {
-                throw new ArgumentNullException(nameof(logger));
-            }
-
-            _logger = logger;
-        }
-
-        #endregion
-
-        #region Internal
-
-        private static ManualLogSource Logger
-        {
-            get
-            {
-                if (_logger == null)
-                {
-                    throw new InvalidOperationException("[LootRuntimeWatcher] Logger is not initialized.");
-                }
-
-                return _logger;
-            }
+            _logger.LogInfo("[LootRuntimeWatcher] Reset.");
         }
 
         #endregion

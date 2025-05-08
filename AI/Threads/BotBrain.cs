@@ -6,13 +6,10 @@
 //   Please follow strict StyleCop, ReSharper, and AI-Refactored code standards for all modifications.
 // </auto-generated>
 
-#nullable enable
-
 namespace AIRefactored.AI.Threads
 {
     using System;
     using AIRefactored.AI.Combat;
-    using AIRefactored.AI.Components;
     using AIRefactored.AI.Core;
     using AIRefactored.AI.Groups;
     using AIRefactored.AI.Missions;
@@ -32,34 +29,34 @@ namespace AIRefactored.AI.Threads
     /// </summary>
     public sealed class BotBrain : MonoBehaviour
     {
-        private static readonly ManualLogSource Logger = AIRefactoredController.Logger;
+        private static readonly ManualLogSource Logger = Plugin.LoggerInstance;
 
-        private BotOwner? _bot;
-        private Player? _player;
-        private BotComponentCache? _cache;
+        private BotOwner _bot;
+        private Player _player;
+        private BotComponentCache _cache;
 
         private bool _isValid;
 
-        private CombatStateMachine? _combat;
-        private BotMovementController? _movement;
-        private BotPoseController? _pose;
-        private BotLookController? _look;
-        private BotTilt? _tilt;
-        private BotCornerScanner? _corner;
-        private BotGroupBehavior? _groupBehavior;
-        private BotJumpController? _jump;
-        private BotVisionSystem? _vision;
-        private BotHearingSystem? _hearing;
-        private BotPerceptionSystem? _perception;
-        private HearingDamageComponent? _hearingDamage;
-        private FlashGrenadeComponent? _flashDetector;
-        private BotFlashReactionComponent? _flashReaction;
-        private BotTacticalDeviceController? _tactical;
-        private BotMissionController? _mission;
-        private BotGroupSyncCoordinator? _groupSync;
-        private BotTeamLogic? _teamLogic;
-        private BotAsyncProcessor? _asyncProcessor;
-        private BotThreatEscalationMonitor? _threatEscalationMonitor;
+        private CombatStateMachine _combat;
+        private BotMovementController _movement;
+        private BotPoseController _pose;
+        private BotLookController _look;
+        private BotTilt _tilt;
+        private BotCornerScanner _corner;
+        private BotGroupBehavior _groupBehavior;
+        private BotJumpController _jump;
+        private BotVisionSystem _vision;
+        private BotHearingSystem _hearing;
+        private BotPerceptionSystem _perception;
+        private HearingDamageComponent _hearingDamage;
+        private FlashGrenadeComponent _flashDetector;
+        private BotFlashReactionComponent _flashReaction;
+        private BotTacticalDeviceController _tactical;
+        private BotMissionController _mission;
+        private BotGroupSyncCoordinator _groupSync;
+        private BotTeamLogic _teamLogic;
+        private BotAsyncProcessor _asyncProcessor;
+        private BotThreatEscalationMonitor _threatEscalationMonitor;
 
         private float _nextPerceptionTick;
         private float _nextCombatTick;
@@ -71,11 +68,13 @@ namespace AIRefactored.AI.Threads
 
         private void Update()
         {
-            if (!GameWorldHandler.IsLocalHost() || !_isValid || _bot == null || _bot.IsDead || _player == null)
+            if (!_isValid || _bot == null || _bot.IsDead || _player == null)
+            {
                 return;
+            }
 
-            var currentPlayer = _bot.GetPlayer;
-            if (currentPlayer == null || currentPlayer.HealthController == null || !currentPlayer.HealthController.IsAlive)
+            Player current = _bot.GetPlayer;
+            if (current == null || current.HealthController == null || !current.HealthController.IsAlive)
             {
                 _isValid = false;
                 Logger.LogWarning("[BotBrain] Bot invalidated at runtime.");
@@ -87,47 +86,48 @@ namespace AIRefactored.AI.Threads
 
             if (now >= _nextPerceptionTick)
             {
-                _vision?.Tick(now);
-                _hearing?.Tick(now);
-                _perception?.Tick(delta);
+                _vision.Tick(now);
+                _hearing.Tick(now);
+                _perception.Tick(delta);
                 _nextPerceptionTick = now + PerceptionTickRate;
             }
 
             if (now >= _nextCombatTick)
             {
-                _combat?.Tick(now);
-                _cache?.Escalation?.Tick(now);
-                _flashReaction?.Tick(now);
-                _flashDetector?.Tick(now);
-                _groupSync?.Tick(now);
-                _teamLogic?.CoordinateMovement();
-                _threatEscalationMonitor?.Tick(now);
+                _combat.Tick(now);
+                _cache.Escalation.Tick(now);
+                _flashReaction.Tick(now);
+                _flashDetector.Tick(now);
+                _groupSync.Tick(now);
+                _teamLogic.CoordinateMovement();
+                _threatEscalationMonitor.Tick(now);
                 _nextCombatTick = now + CombatTickRate;
             }
 
             if (now >= _nextLogicTick)
             {
-                _mission?.Tick(now);
-                _hearingDamage?.Tick(delta);
-                _tactical?.Tick();
-                _cache?.LootScanner?.Tick(delta);
-                _cache?.DeadBodyScanner?.Tick(now);
-                _asyncProcessor?.Tick(now);
+                _mission.Tick(now);
+                _hearingDamage.Tick(delta);
+                _tactical.Tick();
+                _cache.LootScanner.Tick(delta);
+                _cache.DeadBodyScanner.Tick(now);
+                _asyncProcessor.Tick(now);
                 _nextLogicTick = now + LogicTickRate;
             }
 
-            _movement?.Tick(delta);
-            _jump?.Tick(delta);
-            _pose?.Tick(now);
-            _look?.Tick(delta);
-            _corner?.Tick(now);
-            _tilt?.ManualUpdate();
-            _groupBehavior?.Tick(delta);
+            _movement.Tick(delta);
+            _jump.Tick(delta);
+            _pose.Tick(now);
+            _look.Tick(delta);
+            _corner.Tick(now);
+            _tilt.ManualUpdate();
+            _groupBehavior.Tick(delta);
         }
 
         /// <summary>
-        /// Initializes this Brain for the given BotOwner.
+        /// Initializes this brain instance with its owning bot.
         /// </summary>
+        /// <param name="bot">The BotOwner reference to attach to.</param>
         public void Initialize(BotOwner bot)
         {
             if (!GameWorldHandler.IsLocalHost())
@@ -136,27 +136,27 @@ namespace AIRefactored.AI.Threads
                 return;
             }
 
-            if (bot.GetPlayer == null || bot.IsDead || !bot.GetPlayer.IsAI || bot.GetPlayer.IsYourPlayer)
+            Player player = bot.GetPlayer;
+            if (player == null || !player.IsAI || player.IsYourPlayer || bot.IsDead)
             {
-                Logger.LogWarning("[BotBrain] Initialization rejected: invalid or real player.");
+                Logger.LogWarning("[BotBrain] Initialization rejected: invalid player or bot.");
                 return;
             }
 
             _bot = bot;
-            _player = bot.GetPlayer;
+            _player = player;
 
             try
             {
                 _cache = BotComponentCacheRegistry.GetOrCreate(bot);
-
                 if (_cache.Combat == null)
                 {
-                    Logger.LogError("[BotBrain] Combat logic missing for bot: " + (bot.Profile?.Id ?? "unknown"));
-                    _isValid = false;
+                    Logger.LogError("[BotBrain] Missing combat logic for: " + bot.ProfileId);
                     return;
                 }
 
-                if (BotRegistry.TryGetRefactoredOwner(bot.ProfileId) is AIRefactoredBotOwner owner)
+                string profileId = bot.ProfileId;
+                if (BotRegistry.TryGetRefactoredOwner(profileId, out AIRefactoredBotOwner owner))
                 {
                     _cache.SetOwner(owner);
                 }
@@ -170,30 +170,23 @@ namespace AIRefactored.AI.Threads
 
                 _corner = new BotCornerScanner(bot, _cache);
                 _jump = new BotJumpController(bot, _cache);
-
                 _vision = new BotVisionSystem(); _vision.Initialize(_cache);
                 _hearing = new BotHearingSystem(); _hearing.Initialize(_cache);
                 _perception = new BotPerceptionSystem(); _perception.Initialize(_cache);
-
                 _flashReaction = new BotFlashReactionComponent(); _flashReaction.Initialize(_cache);
                 _flashDetector = new FlashGrenadeComponent(); _flashDetector.Initialize(_cache);
                 _hearingDamage = new HearingDamageComponent();
+
                 _tactical = _cache.Tactical;
                 _mission = new BotMissionController(bot, _cache);
-
-                _groupSync = new BotGroupSyncCoordinator();
-                _groupSync.Initialize(bot);
-                _groupSync.InjectLocalCache(_cache);
-
+                _groupSync = new BotGroupSyncCoordinator(); _groupSync.Initialize(bot); _groupSync.InjectLocalCache(_cache);
                 _asyncProcessor = new BotAsyncProcessor(); _asyncProcessor.Initialize(bot, _cache);
                 _teamLogic = new BotTeamLogic(bot);
-
-                _threatEscalationMonitor = new BotThreatEscalationMonitor();
-                _threatEscalationMonitor.Initialize(bot);
+                _threatEscalationMonitor = new BotThreatEscalationMonitor(); _threatEscalationMonitor.Initialize(bot);
 
                 BotBrainGuardian.Enforce(_player.gameObject);
-
                 _isValid = true;
+
                 Logger.LogInfo("[BotBrain] ✅ AI initialized for: " + (_player.Profile?.Info?.Nickname ?? "Unnamed"));
             }
             catch (Exception ex)

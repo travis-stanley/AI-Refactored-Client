@@ -6,8 +6,6 @@
 //   Please follow strict StyleCop, ReSharper, and AI-Refactored code standards for all modifications.
 // </auto-generated>
 
-#nullable enable
-
 namespace AIRefactored.AI.Missions
 {
     using System;
@@ -36,7 +34,7 @@ namespace AIRefactored.AI.Missions
 
         #region Fields
 
-        private static readonly ManualLogSource Logger = AIRefactoredController.Logger;
+        private static readonly ManualLogSource Logger = Plugin.LoggerInstance;
 
         private readonly BotOwner _bot;
         private readonly BotComponentCache _cache;
@@ -51,7 +49,6 @@ namespace AIRefactored.AI.Missions
         private float _groupWaitStart = -1f;
         private float _lastCombatTime;
         private float _lastUpdate;
-
         private MissionType _missionType;
 
         #endregion
@@ -72,119 +69,111 @@ namespace AIRefactored.AI.Missions
 
         #region Constructor
 
-        /// <summary>
-        /// Constructs and initializes the bot mission controller.
-        /// </summary>
         public BotMissionController(BotOwner bot, BotComponentCache cache)
         {
-            this._bot = bot ?? throw new ArgumentNullException(nameof(bot));
-            this._cache = cache ?? throw new ArgumentNullException(nameof(cache));
+            if (bot == null || cache == null)
+            {
+                throw new ArgumentException("BotMissionController: bot or cache is null.");
+            }
 
-            this._switcher = new MissionSwitcher(bot, cache);
-            this._objectives = new ObjectiveController(bot, cache);
-            this._evaluator = new MissionEvaluator(bot, cache);
-            this._voice = new MissionVoiceCoordinator(bot);
-            this._extraction = new BotExtractionDecisionSystem(bot, cache, cache.AIRefactoredBotOwner?.PersonalityProfile ?? new BotPersonalityProfile());
+            _bot = bot;
+            _cache = cache;
+
+            _switcher = new MissionSwitcher(bot, cache);
+            _objectives = new ObjectiveController(bot, cache);
+            _evaluator = new MissionEvaluator(bot, cache);
+            _voice = new MissionVoiceCoordinator(bot);
+
+            BotPersonalityProfile profile = cache.AIRefactoredBotOwner != null
+                ? cache.AIRefactoredBotOwner.PersonalityProfile
+                : new BotPersonalityProfile();
+
+            _extraction = new BotExtractionDecisionSystem(bot, cache, profile);
 
             GroupMissionCoordinator.RegisterFromBot(bot);
-            this._missionType = GroupMissionCoordinator.GetMissionForGroup(bot);
+            _missionType = GroupMissionCoordinator.GetMissionForGroup(bot);
+            _objectives.SetInitialObjective(_missionType);
 
-            this._objectives.SetInitialObjective(this._missionType);
-            this._cache.AIRefactoredBotOwner?.SetMissionController(this);
-
-            Logger.LogDebug($"[BotMissionController] Assigned mission: {this._missionType} for bot {bot.Profile?.Info?.Nickname ?? "Unknown"}");
+            cache.AIRefactoredBotOwner?.SetMissionController(this);
+            Logger.LogDebug("[BotMissionController] Assigned mission: " + _missionType + " for bot " + (bot.Profile?.Info?.Nickname ?? "Unknown"));
         }
 
         #endregion
 
         #region Public Methods
 
-        /// <summary>
-        /// Assigns a forced mission mode, disabling automatic switching.
-        /// </summary>
         public void SetForcedMission(MissionType mission)
         {
-            this._missionType = mission;
-            this._forcedMission = true;
+            _missionType = mission;
+            _forcedMission = true;
         }
 
-        /// <summary>
-        /// Updates the mission logic each frame.
-        /// </summary>
         public void Tick(float time)
         {
-            if (this._bot.IsDead ||
-                this._bot.GetPlayer == null ||
-                this._bot.GetPlayer.HealthController == null ||
-                !this._bot.GetPlayer.HealthController.IsAlive)
+            if (_bot.IsDead || _bot.GetPlayer == null || _bot.GetPlayer.HealthController == null || !_bot.GetPlayer.HealthController.IsAlive)
             {
                 return;
             }
 
-            if (this._cache.IsBlinded || (this._cache.PanicHandler?.IsPanicking ?? false))
+            if (_cache.IsBlinded || (_cache.PanicHandler != null && _cache.PanicHandler.IsPanicking))
             {
                 return;
             }
 
-            this._evaluator.UpdateStuckCheck(time);
+            _evaluator.UpdateStuckCheck(time);
 
-            if (!this._forcedMission)
+            if (!_forcedMission)
             {
-                this._switcher.Evaluate(
-                    ref this._missionType,
-                    time,
-                    this.SwitchToFight,
-                    this._objectives.ResumeQuesting,
-                    this._evaluator.IsGroupAligned);
+                _switcher.Evaluate(ref _missionType, time, SwitchToFight, _objectives.ResumeQuesting, _evaluator.IsGroupAligned);
             }
 
-            if (this._cache.Combat?.IsInCombatState() == true)
+            if (_cache.Combat != null && _cache.Combat.IsInCombatState())
             {
-                this._lastCombatTime = time;
+                _lastCombatTime = time;
 
-                if (this._missionType == MissionType.Quest)
+                if (_missionType == MissionType.Quest)
                 {
-                    this._inCombatPause = true;
+                    _inCombatPause = true;
                 }
             }
 
-            if (this._inCombatPause && time - this._lastCombatTime > 4f)
+            if (_inCombatPause && time - _lastCombatTime > 4f)
             {
-                this._inCombatPause = false;
-                this._objectives.ResumeQuesting();
+                _inCombatPause = false;
+                _objectives.ResumeQuesting();
             }
 
-            this._extraction.Tick(time);
+            _extraction.Tick(time);
 
-            if (!this._evaluator.IsGroupAligned() && this._missionType != MissionType.Fight)
+            if (!_evaluator.IsGroupAligned() && _missionType != MissionType.Fight)
             {
-                if (this._groupWaitStart < 0f)
+                if (_groupWaitStart < 0f)
                 {
-                    this._groupWaitStart = time;
+                    _groupWaitStart = time;
                 }
 
-                if (time - this._groupWaitStart < GroupRejoinTimeout)
+                if (time - _groupWaitStart < GroupRejoinTimeout)
                 {
                     return;
                 }
 
-                this._groupWaitStart = -1f;
+                _groupWaitStart = -1f;
             }
             else
             {
-                this._groupWaitStart = -1f;
+                _groupWaitStart = -1f;
             }
 
-            if (time - this._lastUpdate > this.GetCooldown())
+            if (time - _lastUpdate > GetCooldown())
             {
-                this._objectives.OnObjectiveReached(this._missionType);
-                this._lastUpdate = time;
+                _objectives.OnObjectiveReached(_missionType);
+                _lastUpdate = time;
             }
 
-            if (!this._inCombatPause &&
-                Vector3.Distance(this._bot.Position, this._objectives.CurrentObjective) < LootSyncDistance)
+            if (!_inCombatPause &&
+                Vector3.Distance(_bot.Position, _objectives.CurrentObjective) < LootSyncDistance)
             {
-                this.OnObjectiveReached();
+                OnObjectiveReached();
             }
         }
 
@@ -194,45 +183,44 @@ namespace AIRefactored.AI.Missions
 
         private void OnObjectiveReached()
         {
-            if (this._missionType == MissionType.Loot &&
-                this._cache.LootScanner != null &&
-                this._cache.GroupBehavior?.GroupSync != null)
+            if (_missionType == MissionType.Loot &&
+                _cache.LootScanner != null &&
+                _cache.GroupBehavior != null &&
+                _cache.GroupBehavior.GroupSync != null)
             {
-                Vector3 myPos = this._bot.Position;
+                Vector3 myPos = _bot.Position;
 
-                // Broadcast loot to squad
-                this._cache.GroupBehavior.GroupSync.BroadcastLootPoint(myPos);
+                _cache.GroupBehavior.GroupSync.BroadcastLootPoint(myPos);
 
-                // Cancel if fallback/danger active
-                Vector3? fallback = this._cache.GroupBehavior.GroupSync.GetSharedFallbackTarget();
+                Vector3? fallback = _cache.GroupBehavior.GroupSync.GetSharedFallbackTarget();
                 if (fallback.HasValue && Vector3.Distance(myPos, fallback.Value) > 4f)
                 {
                     Logger.LogDebug("[BotMissionController] Loot canceled — squad fallback active.");
                     return;
                 }
 
-                this._cache.Movement?.EnterLootingMode();
-                this._cache.PoseController?.LockCrouchPose();
+                _cache.Movement.EnterLootingMode();
+                _cache.PoseController.LockCrouchPose();
 
-                this._cache.LootScanner.TryLootNearby();
-                this._cache.DeadBodyScanner?.TryLootNearby();
+                _cache.LootScanner.TryLootNearby();
+                _cache.DeadBodyScanner?.TryLootNearby();
 
-                this._cache.Movement?.ExitLootingMode();
-                this._voice.OnLoot();
+                _cache.Movement.ExitLootingMode();
+                _voice.OnLoot();
             }
 
-            this._objectives.OnObjectiveReached(this._missionType);
+            _objectives.OnObjectiveReached(_missionType);
         }
 
         private void SwitchToFight()
         {
-            this._missionType = MissionType.Fight;
-            this._objectives.SetInitialObjective(this._missionType);
-            this._voice.OnMissionSwitch();
+            _missionType = MissionType.Fight;
+            _objectives.SetInitialObjective(_missionType);
+            _voice.OnMissionSwitch();
 
-            if (this._bot.Profile?.Info?.GroupId != null)
+            if (_bot.Profile != null && _bot.Profile.Info != null && _bot.Profile.Info.GroupId != null)
             {
-                GroupMissionCoordinator.ForceMissionForGroup(this._bot.Profile.Info.GroupId, MissionType.Fight);
+                GroupMissionCoordinator.ForceMissionForGroup(_bot.Profile.Info.GroupId, MissionType.Fight);
             }
         }
 

@@ -6,8 +6,6 @@
 //   Please follow strict StyleCop, ReSharper, and AI-Refactored code standards for all modifications.
 // </auto-generated>
 
-#nullable enable
-
 namespace AIRefactored.AI.Combat.States
 {
     using System;
@@ -19,8 +17,8 @@ namespace AIRefactored.AI.Combat.States
     using UnityEngine;
 
     /// <summary>
-    /// Handles investigation behavior when a bot hears or senses enemy presence without visual contact.
-    /// Bots move toward the source and dynamically search nearby points to simulate real player behavior.
+    /// Manages bot investigation behavior when sound or memory suggest enemy presence.
+    /// Guides cautious, reactive movement toward enemy vicinity with adaptive stance.
     /// </summary>
     public sealed class InvestigateHandler
     {
@@ -30,6 +28,9 @@ namespace AIRefactored.AI.Combat.States
         private const float ScanRadius = 4.0f;
         private const float SoundReactTime = 1.0f;
         private const float MaxInvestigateTime = 15.0f;
+        private const float MinCaution = 0.3f;
+        private const float ExitDelayBuffer = 1.25f;
+        private const float ActiveWindow = 5.0f;
 
         #endregion
 
@@ -49,22 +50,10 @@ namespace AIRefactored.AI.Combat.States
         /// <param name="cache">Bot component cache containing shared systems.</param>
         public InvestigateHandler(BotComponentCache cache)
         {
-            if (cache == null)
+            if (cache == null || cache.Bot == null || cache.TacticalMemory == null)
             {
-                AIRefactoredController.Logger.LogError("[InvestigateHandler] ❌ Constructor failed: cache is null.");
-                throw new ArgumentNullException(nameof(cache));
-            }
-
-            if (cache.Bot == null)
-            {
-                AIRefactoredController.Logger.LogError("[InvestigateHandler] ❌ Constructor failed: BotOwner is null.");
-                throw new InvalidOperationException("InvestigateHandler requires a valid BotOwner.");
-            }
-
-            if (cache.TacticalMemory == null)
-            {
-                AIRefactoredController.Logger.LogError("[InvestigateHandler] ❌ Constructor failed: TacticalMemory is null.");
-                throw new InvalidOperationException("InvestigateHandler requires TacticalMemory to function.");
+                Plugin.LoggerInstance.LogError("[InvestigateHandler] Constructor failed: Cache or required fields are null.");
+                throw new InvalidOperationException("InvestigateHandler requires valid cache, BotOwner, and TacticalMemory.");
             }
 
             this._cache = cache;
@@ -77,39 +66,38 @@ namespace AIRefactored.AI.Combat.States
         #region Public Methods
 
         /// <summary>
-        /// Gets the best target to investigate from last known enemy position or memory.
+        /// Returns the best candidate position for investigation.
         /// </summary>
-        /// <param name="lastKnownEnemyPos">Last known position of enemy if available.</param>
-        /// <returns>Investigate target position.</returns>
-        public Vector3 GetInvestigateTarget(Vector3? lastKnownEnemyPos)
+        /// <param name="visualLastKnown">Visual enemy position if known, or Vector3.zero.</param>
+        public Vector3 GetInvestigateTarget(Vector3 visualLastKnown)
         {
-            if (lastKnownEnemyPos.HasValue)
+            if (!float.IsNaN(visualLastKnown.x) && !float.IsNaN(visualLastKnown.y) && !float.IsNaN(visualLastKnown.z) && visualLastKnown != Vector3.zero)
             {
-                return lastKnownEnemyPos.Value;
+                return visualLastKnown;
             }
 
-            Vector3? memoryPos = this._memory.GetRecentEnemyMemory();
-            if (memoryPos.HasValue)
+            Vector3 memoryPos;
+            if (this.TryGetMemoryEnemyPosition(out memoryPos))
             {
-                return memoryPos.Value;
+                return memoryPos;
             }
 
             return this.RandomNearbyPosition();
         }
 
         /// <summary>
-        /// Starts an investigation by moving to the target and clearing tactical memory.
+        /// Triggers investigate behavior toward the given position.
         /// </summary>
-        /// <param name="target">Investigate position.</param>
+        /// <param name="target">Investigate location.</param>
         public void Investigate(Vector3 target)
         {
-            Vector3 destination = this._cache.SquadPath != null
+            Vector3 destination = (this._cache.SquadPath != null)
                 ? this._cache.SquadPath.ApplyOffsetTo(target)
                 : target;
 
             if (float.IsNaN(destination.x) || float.IsNaN(destination.y) || float.IsNaN(destination.z))
             {
-                AIRefactoredController.Logger.LogWarning("[InvestigateHandler] Skipped investigation: invalid destination.");
+                Plugin.LoggerInstance.LogWarning("[InvestigateHandler] Skipped investigation: invalid destination.");
                 return;
             }
 
@@ -123,56 +111,63 @@ namespace AIRefactored.AI.Combat.States
         }
 
         /// <summary>
-        /// Determines if the bot should transition into Investigate state.
+        /// Determines whether investigate state should activate.
         /// </summary>
-        /// <param name="time">Current time.</param>
-        /// <param name="lastTransition">Last time the bot changed state.</param>
-        /// <returns>True if investigate should activate.</returns>
+        /// <param name="time">Current world time.</param>
+        /// <param name="lastTransition">Last combat state switch time.</param>
         public bool ShallUseNow(float time, float lastTransition)
         {
-            BotPersonalityProfile? profile = this._cache.AIRefactoredBotOwner != null
-                                                 ? this._cache.AIRefactoredBotOwner.PersonalityProfile
-                                                 : null;
-
-            if (profile == null)
+            if (this._cache.AIRefactoredBotOwner == null || this._cache.AIRefactoredBotOwner.PersonalityProfile == null)
             {
                 return false;
             }
 
-            if (profile.Caution < 0.3f)
+            BotPersonalityProfile profile = this._cache.AIRefactoredBotOwner.PersonalityProfile;
+            if (profile.Caution < MinCaution)
             {
                 return false;
             }
 
-            bool heardSomething = (this._cache.LastHeardTime + SoundReactTime) > time;
-            bool delayPassed = (time - lastTransition) > 1.25f;
-
-            return heardSomething && delayPassed;
+            float heardTime = this._cache.LastHeardTime;
+            return (heardTime + SoundReactTime) > time && (time - lastTransition) > ExitDelayBuffer;
         }
 
         /// <summary>
-        /// Determines whether the bot should exit investigate state based on a cooldown.
+        /// Returns true if investigate behavior has expired.
         /// </summary>
         /// <param name="now">Current time.</param>
-        /// <param name="lastHitTime">Last investigate trigger time.</param>
-        /// <param name="cooldown">Cooldown duration.</param>
-        /// <returns>True if bot should exit investigate.</returns>
+        /// <param name="lastHitTime">Start time of investigation.</param>
+        /// <param name="cooldown">Optional state cooldown.</param>
         public bool ShouldExit(float now, float lastHitTime, float cooldown)
         {
-            return (now - lastHitTime) > cooldown || (now - lastHitTime) > MaxInvestigateTime;
+            float elapsed = now - lastHitTime;
+            return elapsed > cooldown || elapsed > MaxInvestigateTime;
         }
 
         /// <summary>
-        /// Returns true if the bot is actively investigating a recent sound or memory event.
+        /// Returns true if bot is within active investigate window.
         /// </summary>
         public bool IsInvestigating()
         {
-            return (Time.time - this._cache.LastHeardTime) <= 5.0f;
+            return (Time.time - this._cache.LastHeardTime) <= ActiveWindow;
         }
 
         #endregion
 
         #region Private Methods
+
+        private bool TryGetMemoryEnemyPosition(out Vector3 result)
+        {
+            Vector3? memory = this._memory.GetRecentEnemyMemory();
+            if (memory.HasValue && !float.IsNaN(memory.Value.x) && !float.IsNaN(memory.Value.y) && !float.IsNaN(memory.Value.z))
+            {
+                result = memory.Value;
+                return true;
+            }
+
+            result = Vector3.zero;
+            return false;
+        }
 
         private Vector3 RandomNearbyPosition()
         {

@@ -6,8 +6,6 @@
 //   Please follow strict StyleCop, ReSharper, and AI-Refactored code standards for all modifications.
 // </auto-generated>
 
-#nullable enable
-
 namespace AIRefactored.AI.Hotspots
 {
     using System;
@@ -19,6 +17,7 @@ namespace AIRefactored.AI.Hotspots
     using BepInEx.Logging;
     using Comfort.Common;
     using EFT;
+    using EFT.HealthSystem;
     using UnityEngine;
 
     /// <summary>
@@ -28,7 +27,7 @@ namespace AIRefactored.AI.Hotspots
     public sealed class HotspotSystem
     {
         private static readonly List<BotOwner> BotList = new List<BotOwner>(64);
-        private static readonly ManualLogSource Logger = AIRefactoredController.Logger;
+        private static readonly ManualLogSource Logger = Plugin.LoggerInstance;
 
         private readonly Dictionary<BotOwner, HotspotSession> _sessions = new Dictionary<BotOwner, HotspotSession>(64);
 
@@ -40,13 +39,14 @@ namespace AIRefactored.AI.Hotspots
         public void Initialize()
         {
             _sessions.Clear();
-            HotspotRegistry.Initialize(GameWorldHandler.GetCurrentMapName());
+            string map = GameWorldHandler.TryGetValidMapName() ?? "factory4_day";
+            HotspotRegistry.Initialize(map);
         }
 
         public void Tick()
         {
-            BotsController? controller = Singleton<BotsController>.Instance;
-            if (controller?.Bots?.BotOwners == null)
+            BotsController controller = Singleton<BotsController>.Instance;
+            if (controller == null || controller.Bots == null || controller.Bots.BotOwners == null)
             {
                 return;
             }
@@ -57,14 +57,15 @@ namespace AIRefactored.AI.Hotspots
             for (int i = 0; i < BotList.Count; i++)
             {
                 BotOwner bot = BotList[i];
-                if (bot == null || bot.IsDead || bot.GetPlayer?.IsYourPlayer == true)
+                if (bot == null || bot.IsDead || bot.GetPlayer == null || bot.GetPlayer.IsYourPlayer)
                 {
                     continue;
                 }
 
-                if (!_sessions.TryGetValue(bot, out HotspotSession? session) || session == null)
+                HotspotSession session;
+                if (!_sessions.TryGetValue(bot, out session))
                 {
-                    session = AssignHotspotRoute(bot);
+                    session = this.AssignHotspotRoute(bot);
                     if (session != null)
                     {
                         _sessions[bot] = session;
@@ -75,10 +76,10 @@ namespace AIRefactored.AI.Hotspots
             }
         }
 
-        private HotspotSession? AssignHotspotRoute(BotOwner bot)
+        private HotspotSession AssignHotspotRoute(BotOwner bot)
         {
             BotPersonalityProfile profile = BotRegistry.Get(bot.ProfileId);
-            string map = GameWorldHandler.GetCurrentMapName();
+            string map = GameWorldHandler.TryGetValidMapName() ?? "factory4_day";
             IReadOnlyList<HotspotRegistry.Hotspot> all = HotspotRegistry.GetAll();
 
             if (all.Count == 0)
@@ -87,7 +88,7 @@ namespace AIRefactored.AI.Hotspots
                 return null;
             }
 
-            List<HotspotRegistry.Hotspot> nearby = HotspotRegistry.QueryNearby(bot.Position, 150f);
+            List<HotspotRegistry.Hotspot> nearby = HotspotRegistry.QueryNearby(bot.Position, 150f, null);
             if (nearby.Count == 0)
             {
                 nearby = new List<HotspotRegistry.Hotspot>(all);
@@ -124,7 +125,7 @@ namespace AIRefactored.AI.Hotspots
             private const float DamageCooldown = 6f;
 
             private readonly BotOwner _bot;
-            private readonly BotComponentCache? _cache;
+            private readonly BotComponentCache _cache;
             private readonly bool _isDefender;
             private readonly List<HotspotRegistry.Hotspot> _route;
 
@@ -134,68 +135,76 @@ namespace AIRefactored.AI.Hotspots
 
             public HotspotSession(BotOwner bot, List<HotspotRegistry.Hotspot> route, bool isDefender)
             {
-                _bot = bot ?? throw new ArgumentNullException(nameof(bot));
-                _route = route ?? throw new ArgumentNullException(nameof(route));
-                _isDefender = isDefender;
-                _cache = BotCacheUtility.GetCache(bot);
-                _lastHitTime = -999f;
-                _index = 0;
-                _nextSwitchTime = Time.time + GetSwitchInterval();
-
-                HealthControllerClass? health = bot.GetPlayer?.HealthController as HealthControllerClass;
-                if (health != null)
+                if (bot == null || route == null || route.Count == 0)
                 {
-                    health.ApplyDamageEvent += OnDamaged;
+                    throw new ArgumentException("Invalid HotspotSession initialization.");
+                }
+
+                this._bot = bot;
+                this._route = route;
+                this._isDefender = isDefender;
+                this._cache = BotCacheUtility.GetCache(bot);
+                this._lastHitTime = -999f;
+                this._index = 0;
+                this._nextSwitchTime = Time.time + this.GetSwitchInterval();
+
+                IHealthController health = bot.GetPlayer != null ? bot.GetPlayer.HealthController : null;
+                if (health != null && health is HealthControllerClass real)
+                {
+                    real.ApplyDamageEvent += this.OnDamaged;
                 }
             }
 
             public void Tick()
             {
-                if (_bot.IsDead || _route.Count == 0 || _bot.GetPlayer?.IsYourPlayer == true)
+                if (this._bot.IsDead || this._route.Count == 0 || this._bot.GetPlayer == null || this._bot.GetPlayer.IsYourPlayer)
                 {
                     return;
                 }
 
-                if (_bot.Memory?.GoalEnemy != null)
+                if (this._bot.Memory != null && this._bot.Memory.GoalEnemy != null)
                 {
-                    _bot.Sprint(true);
+                    this._bot.Sprint(true);
                     return;
                 }
 
-                if (Time.time - _lastHitTime < DamageCooldown)
+                if (Time.time - this._lastHitTime < DamageCooldown)
                 {
                     return;
                 }
 
-                Vector3 target = _route[_index].Position;
+                Vector3 target = this._route[this._index].Position;
 
-                if (_isDefender)
+                if (this._isDefender)
                 {
-                    float dist = Vector3.Distance(_bot.Position, target);
-                    float composure = _cache?.PanicHandler?.GetComposureLevel() ?? 1f;
+                    float dist = Vector3.Distance(this._bot.Position, target);
+                    float composure = this._cache.PanicHandler != null ? this._cache.PanicHandler.GetComposureLevel() : 1f;
                     float defendRadius = BaseDefendRadius * Mathf.Clamp(1f + (1f - composure), 1f, 2f);
 
                     if (dist > defendRadius)
                     {
-                        BotMovementHelper.SmoothMoveTo(_bot, target);
+                        BotMovementHelper.SmoothMoveTo(this._bot, target);
                     }
                 }
                 else
                 {
-                    float distToTarget = Vector3.Distance(_bot.Position, target);
-                    if (Time.time >= _nextSwitchTime || distToTarget < 2f)
+                    float distToTarget = Vector3.Distance(this._bot.Position, target);
+                    if (Time.time >= this._nextSwitchTime || distToTarget < 2f)
                     {
-                        _index = (_index + 1) % _route.Count;
-                        _nextSwitchTime = Time.time + GetSwitchInterval();
+                        this._index = (this._index + 1) % this._route.Count;
+                        this._nextSwitchTime = Time.time + this.GetSwitchInterval();
                     }
 
-                    BotMovementHelper.SmoothMoveTo(_bot, AddJitterTo(target));
+                    BotMovementHelper.SmoothMoveTo(this._bot, this.AddJitterTo(target));
                 }
             }
 
             private Vector3 AddJitterTo(Vector3 target)
             {
-                BotPersonalityProfile? profile = _cache?.AIRefactoredBotOwner?.PersonalityProfile;
+                BotPersonalityProfile profile = this._cache.AIRefactoredBotOwner != null
+                    ? this._cache.AIRefactoredBotOwner.PersonalityProfile
+                    : null;
+
                 if (profile == null)
                 {
                     return target;
@@ -224,151 +233,46 @@ namespace AIRefactored.AI.Hotspots
             private float GetSwitchInterval()
             {
                 BotPersonalityProfile profile = BotRegistry.Get(this._bot.ProfileId);
-                float baseTime = 120f;
-
-                // **Personality handling** with more granular intervals
+                float baseTime;
 
                 switch (profile.Personality)
                 {
-                    case PersonalityType.Cautious:
-                        baseTime = 160f;
-                        break;
-                    case PersonalityType.Strategic:
-                        baseTime = 90f;
-                        break;
-                    case PersonalityType.TeamPlayer:
-                        baseTime = 100f;
-                        break;
-                    case PersonalityType.Explorer:
-                        baseTime = 75f;
-                        break;
-                    case PersonalityType.Dumb:
-                        baseTime = 45f;
-                        break;
-                    case PersonalityType.Aggressive:
-                        baseTime = 50f;
-                        break;
-                    case PersonalityType.Adaptive:
-                        baseTime = 110f;
-                        break;
-                    case PersonalityType.Balanced:
-                        baseTime = 100f;
-                        break;
-                    case PersonalityType.Camper:
-                        baseTime = 200f; // Slowest for stealthy behavior
-                        break;
-                    case PersonalityType.ColdBlooded:
-                        baseTime = 150f; // Higher due to planned, calm behavior
-                        break;
-                    case PersonalityType.Defensive:
-                        baseTime = 130f;
-                        break;
-                    case PersonalityType.Frenzied:
-                        baseTime = 45f; // Very fast as they’re panicked
-                        break;
-                    case PersonalityType.Greedy:
-                        baseTime = 80f;
-                        break;
-                    case PersonalityType.Heroic:
-                        baseTime = 90f;
-                        break;
-                    case PersonalityType.Loner:
-                        baseTime = 120f;
-                        break;
-                    case PersonalityType.Methodical:
-                        baseTime = 180f; // Slow, deliberate moves
-                        break;
-                    case PersonalityType.Paranoid:
-                        baseTime = 110f;
-                        break;
-                    case PersonalityType.Patient:
-                        baseTime = 200f;
-                        break;
-                    case PersonalityType.Reckless:
-                        baseTime = 60f;
-                        break;
-                    case PersonalityType.RiskTaker:
-                        baseTime = 60f;
-                        break;
-                    case PersonalityType.SilentHunter:
-                        baseTime = 150f;
-                        break;
-                    case PersonalityType.Sniper:
-                        baseTime = 180f; // Cautious, steady
-                        break;
-                    case PersonalityType.Stubborn:
-                        baseTime = 140f;
-                        break;
-                    case PersonalityType.Tactical:
-                        baseTime = 100f;
-                        break;
+                    case PersonalityType.Camper: baseTime = 200f; break;
+                    case PersonalityType.Cautious: baseTime = 160f; break;
+                    case PersonalityType.Strategic: baseTime = 90f; break;
+                    case PersonalityType.Explorer: baseTime = 75f; break;
+                    case PersonalityType.Dumb: baseTime = 45f; break;
+                    case PersonalityType.Aggressive: baseTime = 50f; break;
                     case PersonalityType.Unpredictable:
-                        baseTime = UnityEngine.Random.Range(60f, 120f); // Randomized for chaos
-                        break;
-                    case PersonalityType.Vengeful:
-                        baseTime = 70f;
-                        break;
-                    case PersonalityType.Vigilant:
-                        baseTime = 110f;
-                        break;
-                    case PersonalityType.Calculating:
-                        baseTime = 160f;
-                        break;
-                    case PersonalityType.Panicked:
-                        baseTime = 40f; // Fastest when in panic mode
-                        break;
-                    case PersonalityType.Stoic:
-                        baseTime = 190f; // Very slow and calm
-                        break;
-                    case PersonalityType.Bulldozer:
-                        baseTime = 50f; // Very fast, aggressive
-                        break;
-                    case PersonalityType.Covert:
-                        baseTime = 140f; // Slow and stealthy
-                        break;
-                    case PersonalityType.Cowardly:
-                        baseTime = 80f;
-                        break;
                     case PersonalityType.Disruptor:
-                        baseTime = UnityEngine.Random.Range(60f, 120f); // Unpredictable intervals
-                        break;
-                    case PersonalityType.Supportive:
-                        baseTime = 110f;
-                        break;
-                    case PersonalityType.Hunter:
-                        baseTime = 50f; // Fast, predatory
-                        break;
-                    case PersonalityType.Stalker:
-                        baseTime = 130f;
-                        break;
-                    case PersonalityType.Vigilante:
-                        baseTime = 70f;
-                        break;
-                    case PersonalityType.Sentinel:
-                        baseTime = 180f;
-                        break;
                     case PersonalityType.Erratic:
-                        baseTime = UnityEngine.Random.Range(60f, 120f); // Random
-                        break;
+                        baseTime = UnityEngine.Random.Range(60f, 120f); break;
+                    case PersonalityType.Frenzied:
+                    case PersonalityType.Panicked:
+                    case PersonalityType.Hunter:
+                    case PersonalityType.Bulldozer:
                     case PersonalityType.Cowboy:
-                        baseTime = 50f; // Very fast, confident
-                        break;
-                    case PersonalityType.Saboteur:
-                        baseTime = 60f;
+                        baseTime = 50f; break;
+                    case PersonalityType.Methodical:
+                    case PersonalityType.Sniper:
+                    case PersonalityType.Sentinel:
+                    case PersonalityType.Stoic:
+                        baseTime = 180f; break;
+                    default:
+                        baseTime = 100f;
                         break;
                 }
 
-                // Add personality chaos factor (if any) to modify behavior
-                baseTime *= Mathf.Clamp01(1f + profile.ChaosFactor * 0.6f);
-
-                return baseTime;
+                return baseTime * Mathf.Clamp01(1f + profile.ChaosFactor * 0.6f);
             }
-
 
             private void OnDamaged(EBodyPart part, float damage, DamageInfoStruct info)
             {
-                _lastHitTime = Time.time;
-                _cache?.PanicHandler?.TriggerPanic();
+                this._lastHitTime = Time.time;
+                if (this._cache.PanicHandler != null)
+                {
+                    this._cache.PanicHandler.TriggerPanic();
+                }
             }
         }
     }

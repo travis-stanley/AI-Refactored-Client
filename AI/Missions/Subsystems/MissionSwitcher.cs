@@ -6,8 +6,6 @@
 //   Please follow strict StyleCop, ReSharper, and AI-Refactored code standards for all modifications.
 // </auto-generated>
 
-#nullable enable
-
 using MissionType = AIRefactored.AI.Missions.BotMissionController.MissionType;
 
 namespace AIRefactored.AI.Missions.Subsystems
@@ -23,8 +21,7 @@ namespace AIRefactored.AI.Missions.Subsystems
     using UnityEngine;
 
     /// <summary>
-    /// Dynamically switches bot mission type based on context:
-    /// panic, aggression, squad cohesion, loot opportunity, etc.
+    /// Dynamically switches bot mission type based on panic, aggression, loot opportunity, or squad separation.
     /// </summary>
     public sealed class MissionSwitcher
     {
@@ -38,8 +35,8 @@ namespace AIRefactored.AI.Missions.Subsystems
 
         private readonly BotOwner _bot;
         private readonly BotComponentCache _cache;
-        private readonly BotGroupSyncCoordinator? _group;
-        private readonly BotLootDecisionSystem? _lootDecision;
+        private readonly BotGroupSyncCoordinator _group;
+        private readonly BotLootDecisionSystem _lootDecision;
         private readonly BotPersonalityProfile _profile;
         private readonly ManualLogSource _log;
 
@@ -49,33 +46,25 @@ namespace AIRefactored.AI.Missions.Subsystems
 
         #region Constructor
 
-        /// <summary>
-        /// Initializes a new instance of the <see cref="MissionSwitcher"/> class.
-        /// </summary>
-        /// <param name="bot">Bot owner reference.</param>
-        /// <param name="cache">Bot component cache reference.</param>
         public MissionSwitcher(BotOwner bot, BotComponentCache cache)
         {
-            this._bot = bot ?? throw new ArgumentNullException(nameof(bot));
-            this._cache = cache ?? throw new ArgumentNullException(nameof(cache));
-            this._profile = BotRegistry.Get(bot.Profile.Id);
-            this._group = BotCacheUtility.GetGroupSync(cache);
-            this._lootDecision = cache.LootDecisionSystem;
-            this._log = AIRefactoredController.Logger;
+            if (bot == null || cache == null)
+            {
+                throw new ArgumentException("MissionSwitcher: bot or cache is null.");
+            }
+
+            _bot = bot;
+            _cache = cache;
+            _profile = BotRegistry.Get(bot.Profile.Id);
+            _group = BotCacheUtility.GetGroupSync(cache);
+            _lootDecision = cache.LootDecisionSystem;
+            _log = Plugin.LoggerInstance;
         }
 
         #endregion
 
         #region Public Methods
 
-        /// <summary>
-        /// Evaluates and switches the mission type based on current combat and squad context.
-        /// </summary>
-        /// <param name="currentMission">Reference to the bot's current mission type.</param>
-        /// <param name="time">Current game time in seconds.</param>
-        /// <param name="switchToFight">Action to trigger if switching to Fight mission.</param>
-        /// <param name="resumeQuesting">Action to trigger if switching back to Quest mission.</param>
-        /// <param name="isGroupAligned">Function to evaluate squad cohesion.</param>
         public void Evaluate(
             ref MissionType currentMission,
             float time,
@@ -83,45 +72,45 @@ namespace AIRefactored.AI.Missions.Subsystems
             Action resumeQuesting,
             Func<bool> isGroupAligned)
         {
-            if (time - this._lastSwitchTime < SwitchCooldown)
+            if (time - _lastSwitchTime < SwitchCooldown)
             {
                 return;
             }
 
-            string nickname = this._bot.Profile?.Info?.Nickname ?? "Unknown";
+            string nickname = _bot.Profile?.Info?.Nickname ?? "Unknown";
 
             // Escalate to fight if under fire and aggressive
-            if (this._bot.Memory?.IsUnderFire == true &&
-                this._profile.AggressionLevel > 0.6f &&
+            if (_bot.Memory.IsUnderFire &&
+                _profile.AggressionLevel > 0.6f &&
                 currentMission != MissionType.Fight)
             {
-                this._log.LogInfo($"[MissionSwitcher] {nickname} escalating to Fight (under fire + aggressive)");
-                this._lastSwitchTime = time;
+                _log.LogInfo("[MissionSwitcher] " + nickname + " escalating to Fight (under fire + aggressive)");
+                _lastSwitchTime = time;
                 currentMission = MissionType.Fight;
-                switchToFight?.Invoke();
+                switchToFight.Invoke();
                 return;
             }
 
-            // Opportunistically loot if personality allows and loot exists
+            // Opportunistically switch to looting if allowed
             if (currentMission == MissionType.Quest &&
-                this._profile.PreferredMission == MissionBias.Loot &&
-                this._lootDecision != null &&
-                this._lootDecision.ShouldLootNow() &&
-                this._lootDecision.GetLootDestination() != Vector3.zero)
+                _profile.PreferredMission == MissionBias.Loot &&
+                _lootDecision != null &&
+                _lootDecision.ShouldLootNow() &&
+                _lootDecision.GetLootDestination() != Vector3.zero)
             {
-                this._log.LogInfo($"[MissionSwitcher] {nickname} switching to Loot (loot opportunity nearby)");
-                this._lastSwitchTime = time;
+                _log.LogInfo("[MissionSwitcher] " + nickname + " switching to Loot (loot opportunity nearby)");
+                _lastSwitchTime = time;
                 currentMission = MissionType.Loot;
                 return;
             }
 
-            // De-escalate to Quest if squad separated
+            // Fall back to Quest if group is scattered
             if (currentMission == MissionType.Fight && !isGroupAligned())
             {
-                this._log.LogInfo($"[MissionSwitcher] {nickname} falling back to Quest (squad separation)");
-                this._lastSwitchTime = time;
+                _log.LogInfo("[MissionSwitcher] " + nickname + " falling back to Quest (squad separation)");
+                _lastSwitchTime = time;
                 currentMission = MissionType.Quest;
-                resumeQuesting?.Invoke();
+                resumeQuesting.Invoke();
             }
         }
 

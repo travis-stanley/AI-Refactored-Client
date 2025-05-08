@@ -6,8 +6,6 @@
 //   Please follow strict StyleCop, ReSharper, and AI-Refactored code standards for all modifications.
 // </auto-generated>
 
-#nullable enable
-
 namespace AIRefactored.AI.Combat.States
 {
     using System;
@@ -18,17 +16,18 @@ namespace AIRefactored.AI.Combat.States
     using UnityEngine;
 
     /// <summary>
-    /// Coordinates squad echo behavior for fallback, investigation, and enemy spotting.
-    /// Ensures bots react realistically to group triggers and maintain cohesion.
+    /// Coordinates echo behavior for fallback, investigation, and enemy sightings.
+    /// Ensures realistic squad cohesion and tactical communication.
     /// </summary>
     public sealed class EchoCoordinator
     {
         #region Constants
 
         private const float EchoCooldown = 4.0f;
-        private const float MaxEchoRange = 40.0f;
+        private const float MaxEchoRangeSqr = 1600.0f;
         private const float BaseFallbackDistance = 6.0f;
         private const float FallbackChaosOffset = 1.75f;
+        private const float MinDirectionSqr = 0.01f;
 
         #endregion
 
@@ -37,23 +36,23 @@ namespace AIRefactored.AI.Combat.States
         private readonly BotOwner _bot;
         private readonly BotComponentCache _cache;
 
-        private float _lastEchoFallbackTime = -999.0f;
-        private float _lastEchoInvestigateTime = -999.0f;
+        private float _lastEchoFallbackTime = float.NegativeInfinity;
+        private float _lastEchoInvestigateTime = float.NegativeInfinity;
 
         #endregion
 
         #region Constructor
 
         /// <summary>
-        /// Creates a new echo coordinator for the given bot.
+        /// Initializes a new instance of the <see cref="EchoCoordinator"/> class.
         /// </summary>
-        /// <param name="cache">The bot's component cache.</param>
+        /// <param name="cache">Component cache of the bot.</param>
         public EchoCoordinator(BotComponentCache cache)
         {
             if (cache == null || cache.Bot == null)
             {
-                AIRefactoredController.Logger.LogError("[EchoCoordinator] ❌ Initialization failed: cache or bot is null.");
-                throw new ArgumentNullException(nameof(cache));
+                Plugin.LoggerInstance.LogError("[EchoCoordinator] Initialization failed: cache or Bot is null.");
+                throw new ArgumentException("Cache or Bot cannot be null.");
             }
 
             this._cache = cache;
@@ -65,12 +64,12 @@ namespace AIRefactored.AI.Combat.States
         #region Public Methods
 
         /// <summary>
-        /// Sends a fallback signal to nearby squadmates.
+        /// Issues a fallback signal to nearby squadmates with spatial offset and caution filtering.
         /// </summary>
-        /// <param name="retreatPosition">The fallback target position.</param>
+        /// <param name="retreatPosition">Target position to retreat to.</param>
         public void EchoFallbackToSquad(Vector3 retreatPosition)
         {
-            BotsGroup? group = this._bot.BotsGroup;
+            BotsGroup group = this._bot.BotsGroup;
             if (group == null)
             {
                 return;
@@ -83,34 +82,39 @@ namespace AIRefactored.AI.Combat.States
             }
 
             Vector3 selfPos = this._bot.Position;
-            int count = group.MembersCount;
+            int memberCount = group.MembersCount;
 
-            for (int i = 0; i < count; i++)
+            for (int i = 0; i < memberCount; i++)
             {
-                BotOwner? mate = group.Member(i);
-                if (!this.IsValidSquadmate(mate))
+                BotOwner mate = group.Member(i);
+                if (!this.IsValidSquadmate(mate, selfPos))
                 {
                     continue;
                 }
 
-                Vector3 matePos = mate.Position;
-                BotComponentCache? mateCache = BotCacheUtility.GetCache(mate);
-
+                BotComponentCache mateCache = BotCacheUtility.GetCache(mate);
                 if (mateCache == null || mateCache.Combat == null || !this.CanAcceptEcho(mateCache))
                 {
                     continue;
                 }
 
-                Vector3 threatDir = selfPos - matePos;
-                Vector3 fallbackDir = threatDir.sqrMagnitude > 0.01f
-                    ? threatDir.normalized
-                    : (mate.LookDirection.sqrMagnitude > 0.1f ? -mate.LookDirection.normalized : Vector3.back);
+                Vector3 fallbackDir = selfPos - mate.Position;
+                if (fallbackDir.sqrMagnitude < MinDirectionSqr)
+                {
+                    fallbackDir = mate.LookDirection.sqrMagnitude > 0.1f
+                        ? -mate.LookDirection.normalized
+                        : Vector3.back;
+                }
+                else
+                {
+                    fallbackDir.Normalize();
+                }
 
                 Vector3 chaos = UnityEngine.Random.insideUnitSphere * FallbackChaosOffset;
-                chaos.y = 0;
+                chaos.y = 0f;
 
-                Vector3 fallback = matePos - fallbackDir * BaseFallbackDistance + chaos;
-                mateCache.Combat.TriggerFallback(fallback);
+                Vector3 finalPos = mate.Position - fallbackDir * BaseFallbackDistance + chaos;
+                mateCache.Combat.TriggerFallback(finalPos);
 
                 if (!FikaHeadlessDetector.IsHeadless && mate.BotTalk != null)
                 {
@@ -122,11 +126,11 @@ namespace AIRefactored.AI.Combat.States
         }
 
         /// <summary>
-        /// Sends an investigate signal to nearby squadmates.
+        /// Issues an investigation call to nearby squadmates.
         /// </summary>
         public void EchoInvestigateToSquad()
         {
-            BotsGroup? group = this._bot.BotsGroup;
+            BotsGroup group = this._bot.BotsGroup;
             if (group == null)
             {
                 return;
@@ -138,18 +142,18 @@ namespace AIRefactored.AI.Combat.States
                 return;
             }
 
-            int count = group.MembersCount;
+            Vector3 selfPos = this._bot.Position;
+            int memberCount = group.MembersCount;
 
-            for (int i = 0; i < count; i++)
+            for (int i = 0; i < memberCount; i++)
             {
-                BotOwner? mate = group.Member(i);
-                if (!this.IsValidSquadmate(mate))
+                BotOwner mate = group.Member(i);
+                if (!this.IsValidSquadmate(mate, selfPos))
                 {
                     continue;
                 }
 
-                BotComponentCache? mateCache = BotCacheUtility.GetCache(mate);
-
+                BotComponentCache mateCache = BotCacheUtility.GetCache(mate);
                 if (mateCache == null || mateCache.Combat == null || !this.CanAcceptEcho(mateCache))
                 {
                     continue;
@@ -167,38 +171,36 @@ namespace AIRefactored.AI.Combat.States
         }
 
         /// <summary>
-        /// Shares an enemy position with squadmates for tactical memory.
+        /// Broadcasts a seen enemy position to nearby squadmates’ tactical memory systems.
         /// </summary>
-        /// <param name="enemyPosition">The enemy's position.</param>
+        /// <param name="enemyPosition">The position of the observed enemy.</param>
         public void EchoSpottedEnemyToSquad(Vector3 enemyPosition)
         {
-            BotsGroup? group = this._bot.BotsGroup;
+            BotsGroup group = this._bot.BotsGroup;
             if (group == null)
             {
                 return;
             }
 
             string enemyId = string.Empty;
-
             if (this._cache.ThreatSelector != null &&
                 this._cache.ThreatSelector.CurrentTarget != null &&
-                this._cache.ThreatSelector.CurrentTarget.ProfileId != null)
+                !string.IsNullOrEmpty(this._cache.ThreatSelector.CurrentTarget.ProfileId))
             {
                 enemyId = this._cache.ThreatSelector.CurrentTarget.ProfileId;
             }
 
-            int count = group.MembersCount;
+            int memberCount = group.MembersCount;
 
-            for (int i = 0; i < count; i++)
+            for (int i = 0; i < memberCount; i++)
             {
-                BotOwner? mate = group.Member(i);
-                if (!this.IsValidSquadmate(mate))
+                BotOwner mate = group.Member(i);
+                if (mate == null || mate == this._bot || mate.IsDead)
                 {
                     continue;
                 }
 
-                BotComponentCache? mateCache = BotCacheUtility.GetCache(mate);
-
+                BotComponentCache mateCache = BotCacheUtility.GetCache(mate);
                 if (mateCache != null && mateCache.TacticalMemory != null)
                 {
                     mateCache.TacticalMemory.RecordEnemyPosition(enemyPosition, "SquadEcho", enemyId);
@@ -222,20 +224,20 @@ namespace AIRefactored.AI.Combat.States
                 return false;
             }
 
-            BotPersonalityProfile? profile = cache.AIRefactoredBotOwner?.PersonalityProfile;
-            return profile != null && profile.Caution >= 0.15f;
+            return cache.AIRefactoredBotOwner != null &&
+                   cache.AIRefactoredBotOwner.PersonalityProfile != null &&
+                   cache.AIRefactoredBotOwner.PersonalityProfile.Caution >= 0.15f;
         }
 
-        private bool IsValidSquadmate(BotOwner? mate)
+        private bool IsValidSquadmate(BotOwner mate, Vector3 origin)
         {
             if (mate == null || mate == this._bot || mate.IsDead)
             {
                 return false;
             }
 
-            Vector3 matePos = mate.Position;
-            float distSq = (matePos - this._bot.Position).sqrMagnitude;
-            return distSq <= (MaxEchoRange * MaxEchoRange);
+            float distSqr = (mate.Position - origin).sqrMagnitude;
+            return distSqr <= MaxEchoRangeSqr;
         }
 
         #endregion

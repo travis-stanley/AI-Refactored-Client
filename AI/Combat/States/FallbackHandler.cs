@@ -6,8 +6,6 @@
 //   Please follow strict StyleCop, ReSharper, and AI-Refactored code standards for all modifications.
 // </auto-generated>
 
-#nullable enable
-
 namespace AIRefactored.AI.Combat.States
 {
     using System;
@@ -19,8 +17,7 @@ namespace AIRefactored.AI.Combat.States
     using UnityEngine;
 
     /// <summary>
-    /// Handles fallback movement, suppression retreat, and cover repositioning behavior.
-    /// Integrates fallback pathing with squad-aware hybrid cover logic.
+    /// Handles suppression fallback, retreat routing, and cover movement during engagements.
     /// </summary>
     public sealed class FallbackHandler
     {
@@ -43,14 +40,14 @@ namespace AIRefactored.AI.Combat.States
         #region Constructor
 
         /// <summary>
-        /// Initializes a new instance of the <see cref="FallbackHandler"/> class.
+        /// Initializes the fallback handler for the given bot.
         /// </summary>
-        /// <param name="cache">The bot component cache.</param>
+        /// <param name="cache">Component cache of the bot.</param>
         public FallbackHandler(BotComponentCache cache)
         {
             if (cache == null || cache.Bot == null)
             {
-                throw new ArgumentNullException(nameof(cache), "[FallbackHandler] Cache or Bot is null.");
+                throw new ArgumentException("[FallbackHandler] Cache or Bot is null.");
             }
 
             this._cache = cache;
@@ -64,7 +61,7 @@ namespace AIRefactored.AI.Combat.States
         #region Public API
 
         /// <summary>
-        /// Gets the final fallback destination point.
+        /// Gets the fallback destination currently assigned.
         /// </summary>
         public Vector3 GetFallbackPosition()
         {
@@ -72,7 +69,7 @@ namespace AIRefactored.AI.Combat.States
         }
 
         /// <summary>
-        /// Gets fallback destination or returns the default fallback.
+        /// Returns the fallback destination if valid; otherwise returns a default position.
         /// </summary>
         public Vector3 GetFallbackPositionOrDefault(Vector3 defaultPos)
         {
@@ -80,7 +77,7 @@ namespace AIRefactored.AI.Combat.States
         }
 
         /// <summary>
-        /// Checks if the fallback path is valid.
+        /// Checks if a fallback path exists and is viable.
         /// </summary>
         public bool HasValidFallbackPath()
         {
@@ -88,13 +85,13 @@ namespace AIRefactored.AI.Combat.States
         }
 
         /// <summary>
-        /// Directly assigns a fallback destination.
+        /// Assigns a raw fallback target directly.
         /// </summary>
         public void SetFallbackTarget(Vector3 target)
         {
             if (float.IsNaN(target.x) || float.IsNaN(target.y) || float.IsNaN(target.z))
             {
-                AIRefactoredController.Logger?.LogWarning("[FallbackHandler] Ignored fallback target with NaN values.");
+                Plugin.LoggerInstance.LogWarning("[FallbackHandler] Ignored fallback target with NaN values.");
                 return;
             }
 
@@ -102,18 +99,18 @@ namespace AIRefactored.AI.Combat.States
         }
 
         /// <summary>
-        /// Sets fallback path and updates internal target.
+        /// Sets a fallback path and assigns the last point as target.
         /// </summary>
         public void SetFallbackPath(List<Vector3> path)
         {
             if (path == null || path.Count < 2)
             {
-                AIRefactoredController.Logger?.LogWarning("[FallbackHandler] Rejected fallback path: insufficient length.");
+                Plugin.LoggerInstance.LogWarning("[FallbackHandler] Rejected fallback path: insufficient length.");
                 return;
             }
 
             this._currentFallbackPath.Clear();
-            for (int i = 0; i < path.Count; i++)
+            for (int i = 0, len = path.Count; i < len; i++)
             {
                 this._currentFallbackPath.Add(path[i]);
             }
@@ -122,7 +119,7 @@ namespace AIRefactored.AI.Combat.States
         }
 
         /// <summary>
-        /// Determines whether fallback should remain active.
+        /// Returns true if fallback is still necessary based on current position.
         /// </summary>
         public bool ShallUseNow(float time)
         {
@@ -130,42 +127,37 @@ namespace AIRefactored.AI.Combat.States
         }
 
         /// <summary>
-        /// Determines if fallback should be triggered based on suppression and time.
+        /// Determines if suppression fallback should trigger based on time and panic state.
         /// </summary>
         public bool ShouldTriggerSuppressedFallback(float now, float lastStateChangeTime, float minStateDuration)
         {
-            BotSuppressionReactionComponent? suppression = this._cache.Suppression;
-            if (suppression == null)
-            {
-                return false;
-            }
-
-            bool isSuppressed = suppression.IsSuppressed();
-            bool timeElapsed = (now - lastStateChangeTime) >= minStateDuration;
-
-            return isSuppressed && timeElapsed;
+            return this._cache.Suppression != null &&
+                   this._cache.Suppression.IsSuppressed() &&
+                   (now - lastStateChangeTime) >= minStateDuration;
         }
 
         /// <summary>
-        /// Executes fallback movement and updates state if destination is reached.
+        /// Executes fallback move, updates cover and optionally transitions state if arrived.
         /// </summary>
-        public void Tick(float time, Vector3? lastKnownEnemyPos, Action<CombatState, float> forceState)
+        /// <param name="time">Current time.</param>
+        /// <param name="forceState">Callback to transition to a different state.</param>
+        public void Tick(float time, Action<CombatState, float> forceState)
         {
             if (float.IsNaN(this._fallbackTarget.x) || float.IsNaN(this._fallbackTarget.y) || float.IsNaN(this._fallbackTarget.z))
             {
-                AIRefactoredController.Logger?.LogWarning("[FallbackHandler] Skipped Tick: fallback target was invalid.");
+                Plugin.LoggerInstance.LogWarning("[FallbackHandler] Skipped Tick: fallback target was invalid.");
                 return;
             }
 
-            Vector3 currentPosition = this._bot.Position;
-            float distance = Vector3.Distance(currentPosition, this._fallbackTarget);
+            Vector3 currentPos = this._bot.Position;
+            float dist = Vector3.Distance(currentPos, this._fallbackTarget);
 
             BotMovementHelper.SmoothMoveTo(this._bot, this._fallbackTarget);
             BotCoverHelper.TrySetStanceFromNearbyCover(this._cache, this._fallbackTarget);
 
-            if (distance < MinArrivalDistance && forceState != null)
+            if (dist < MinArrivalDistance)
             {
-                forceState.Invoke(CombatState.Patrol, time);
+                forceState(CombatState.Patrol, time);
 
                 if (!FikaHeadlessDetector.IsHeadless && this._bot.BotTalk != null)
                 {
@@ -175,7 +167,7 @@ namespace AIRefactored.AI.Combat.States
         }
 
         /// <summary>
-        /// Returns true if the bot is actively executing a fallback.
+        /// Returns true if fallback logic is still in motion.
         /// </summary>
         public bool IsActive()
         {

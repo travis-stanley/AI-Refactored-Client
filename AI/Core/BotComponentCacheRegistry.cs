@@ -6,8 +6,6 @@
 //   Please follow strict StyleCop, ReSharper, and AI-Refactored code standards for all modifications.
 // </auto-generated>
 
-#nullable enable
-
 namespace AIRefactored.AI.Core
 {
     using System;
@@ -22,55 +20,80 @@ namespace AIRefactored.AI.Core
     /// </summary>
     public static class BotComponentCacheRegistry
     {
-        private static readonly ManualLogSource Logger = AIRefactoredController.Logger;
-        private static readonly Dictionary<string, BotComponentCache> CacheMap = new Dictionary<string, BotComponentCache>(128);
+        private static readonly ManualLogSource Logger = Plugin.LoggerInstance;
+
+        private static readonly Dictionary<string, BotComponentCache> CacheMap =
+            new Dictionary<string, BotComponentCache>(128, StringComparer.OrdinalIgnoreCase);
 
         /// <summary>
         /// Returns the cache for a bot if it exists; otherwise creates and registers a new one.
         /// </summary>
+        /// <param name="bot">BotOwner to resolve or register cache for.</param>
+        /// <returns>Initialized BotComponentCache instance.</returns>
         public static BotComponentCache GetOrCreate(BotOwner bot)
         {
-            if (bot == null || bot.Profile == null)
+            if (bot == null)
             {
-                throw new ArgumentNullException(nameof(bot), "BotOwner or its profile is null.");
+                throw new ArgumentNullException(nameof(bot), "[BotComponentCacheRegistry] BotOwner is null.");
             }
 
-            string profileId = bot.Profile.Id;
+            Profile profile = bot.Profile;
+            if (profile == null || string.IsNullOrWhiteSpace(profile.Id))
+            {
+                throw new InvalidOperationException("[BotComponentCacheRegistry] Cannot register cache — bot profile or ID is invalid.");
+            }
 
-            if (CacheMap.TryGetValue(profileId, out var existing))
+            string id = profile.Id;
+
+            BotComponentCache existing;
+            if (CacheMap.TryGetValue(id, out existing))
             {
                 return existing;
             }
 
-            var newCache = new BotComponentCache();
-            newCache.Initialize(bot);
-            CacheMap[profileId] = newCache;
+            BotComponentCache cache = new BotComponentCache();
+            cache.Initialize(bot);
+            CacheMap[id] = cache;
 
-            Logger.LogDebug("[BotComponentCacheRegistry] Created new cache for bot: " + profileId);
-            return newCache;
+            Logger.LogDebug("[BotComponentCacheRegistry] Created new cache for bot: " + id);
+            return cache;
         }
 
         /// <summary>
-        /// Gets the cache if it exists, or null if not registered.
+        /// Gets the cache if it exists, or returns false if not found.
         /// </summary>
-        public static BotComponentCache? TryGet(string profileId)
+        /// <param name="profileId">Profile ID to look up.</param>
+        /// <param name="cache">Out BotComponentCache if found.</param>
+        /// <returns>True if found.</returns>
+        public static bool TryGet(string profileId, out BotComponentCache cache)
         {
             if (string.IsNullOrWhiteSpace(profileId))
-                return null;
+            {
+                cache = null;
+                return false;
+            }
 
-            CacheMap.TryGetValue(profileId, out var cache);
-            return cache;
+            return CacheMap.TryGetValue(profileId, out cache);
         }
 
         /// <summary>
         /// Removes the cache for the specified bot.
         /// </summary>
+        /// <param name="bot">BotOwner to unregister.</param>
         public static void Remove(BotOwner bot)
         {
-            if (bot?.Profile?.Id is string id && CacheMap.ContainsKey(id))
+            if (bot == null)
             {
-                CacheMap.Remove(id);
-                Logger.LogDebug("[BotComponentCacheRegistry] Removed cache for bot: " + id);
+                throw new ArgumentNullException(nameof(bot));
+            }
+
+            Profile profile = bot.Profile;
+            if (profile != null && !string.IsNullOrWhiteSpace(profile.Id))
+            {
+                if (CacheMap.Remove(profile.Id))
+                {
+                    Logger.LogDebug("[BotComponentCacheRegistry] Removed cache for bot: " + profile.Id);
+                }
             }
         }
 

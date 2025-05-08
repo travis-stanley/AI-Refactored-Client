@@ -6,8 +6,6 @@
 //   Please follow strict StyleCop, ReSharper, and AI-Refactored code standards for all modifications.
 // </auto-generated>
 
-#nullable enable
-
 namespace AIRefactored.AI.Combat
 {
     using System;
@@ -28,10 +26,10 @@ namespace AIRefactored.AI.Combat
 
         #region Fields
 
-        private string? _lastAttackerId;
+        private string _lastAttackerId = string.Empty;
         private float _lastHitTime;
 
-        private string? _lastTargetId;
+        private string _lastTargetId = string.Empty;
         private float _lastShotTime;
 
         #endregion
@@ -45,17 +43,13 @@ namespace AIRefactored.AI.Combat
         /// <param name="now">Optional override of current time.</param>
         /// <param name="memoryWindow">Memory window in seconds.</param>
         /// <returns>True if shot occurred within memory window.</returns>
-        public bool DidRecentlyShoot(string? profileId, float now = -1f, float memoryWindow = DefaultMemoryWindow)
+        public bool DidRecentlyShoot(string profileId, float now = -1f, float memoryWindow = DefaultMemoryWindow)
         {
-            if (string.IsNullOrWhiteSpace(profileId) || string.IsNullOrWhiteSpace(this._lastTargetId))
-            {
+            if (profileId == null || this._lastTargetId.Length == 0)
                 return false;
-            }
 
             if (!string.Equals(this._lastTargetId, profileId, StringComparison.Ordinal))
-            {
                 return false;
-            }
 
             float currentTime = now >= 0f ? now : Time.time;
             return currentTime - this._lastShotTime <= memoryWindow;
@@ -68,17 +62,13 @@ namespace AIRefactored.AI.Combat
         /// <param name="now">Optional override of current time.</param>
         /// <param name="memoryWindow">Memory window in seconds.</param>
         /// <returns>True if hit occurred within memory window.</returns>
-        public bool WasRecentlyShotBy(string? profileId, float now = -1f, float memoryWindow = DefaultMemoryWindow)
+        public bool WasRecentlyShotBy(string profileId, float now = -1f, float memoryWindow = DefaultMemoryWindow)
         {
-            if (string.IsNullOrWhiteSpace(profileId) || string.IsNullOrWhiteSpace(this._lastAttackerId))
-            {
+            if (profileId == null || this._lastAttackerId.Length == 0)
                 return false;
-            }
 
             if (!string.Equals(this._lastAttackerId, profileId, StringComparison.Ordinal))
-            {
                 return false;
-            }
 
             float currentTime = now >= 0f ? now : Time.time;
             return currentTime - this._lastHitTime <= memoryWindow;
@@ -88,20 +78,16 @@ namespace AIRefactored.AI.Combat
         /// Registers that this bot was hit by the specified player.
         /// </summary>
         /// <param name="attacker">Attacking player instance.</param>
-        public void RegisterHitBy(IPlayer? attacker)
+        public void RegisterHitBy(IPlayer attacker)
         {
             if (attacker == null)
-            {
                 return;
-            }
 
-            string profileId = attacker.ProfileId;
-            if (string.IsNullOrWhiteSpace(profileId))
-            {
+            string id = attacker.ProfileId;
+            if (id == null || id.Length == 0)
                 return;
-            }
 
-            this._lastAttackerId = profileId;
+            this._lastAttackerId = id;
             this._lastHitTime = Time.time;
         }
 
@@ -109,20 +95,16 @@ namespace AIRefactored.AI.Combat
         /// Registers a shot fired by this bot at the specified target.
         /// </summary>
         /// <param name="target">Target player instance.</param>
-        public void RegisterShot(IPlayer? target)
+        public void RegisterShot(IPlayer target)
         {
             if (target == null)
-            {
                 return;
-            }
 
-            string profileId = target.ProfileId;
-            if (string.IsNullOrWhiteSpace(profileId))
-            {
+            string id = target.ProfileId;
+            if (id == null || id.Length == 0)
                 return;
-            }
 
-            this._lastTargetId = profileId;
+            this._lastTargetId = id;
             this._lastShotTime = Time.time;
         }
 
@@ -131,8 +113,8 @@ namespace AIRefactored.AI.Combat
         /// </summary>
         public void Reset()
         {
-            this._lastAttackerId = null;
-            this._lastTargetId = null;
+            this._lastAttackerId = string.Empty;
+            this._lastTargetId = string.Empty;
             this._lastHitTime = 0f;
             this._lastShotTime = 0f;
         }

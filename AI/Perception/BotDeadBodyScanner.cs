@@ -6,8 +6,6 @@
 //   Please follow strict StyleCop, ReSharper, and AI-Refactored code standards for all modifications.
 // </auto-generated>
 
-#nullable enable
-
 namespace AIRefactored.AI.Looting
 {
     using System.Collections.Generic;
@@ -19,8 +17,8 @@ namespace AIRefactored.AI.Looting
     using UnityEngine;
 
     /// <summary>
-    /// Scans for nearby dead players and loots if safe and opportunistic.
-    /// Tracks previously looted corpses to avoid redundancy.
+    /// Opportunistically loots dead enemies by checking proximity, visibility, and internal corpse memory cache.
+    /// Aligns with EFT's native BotDeadBodyWork and DeadBodiesController behavior.
     /// </summary>
     public sealed class BotDeadBodyScanner
     {
@@ -29,35 +27,53 @@ namespace AIRefactored.AI.Looting
         private const float MaxLootAngle = 120f;
         private const float RaycastPadding = 0.3f;
         private const float ScanRadius = 12f;
+        private const float MaxContainerDistance = 0.75f;
 
-        private static readonly Dictionary<string, float> _lootTimestamps = new Dictionary<string, float>(32);
-        private static readonly HashSet<string> _recentlyLooted = new HashSet<string>();
+        private static readonly Dictionary<string, float> LootTimestamps = new Dictionary<string, float>(32);
+        private static readonly HashSet<string> RecentlyLooted = new HashSet<string>();
 
-        private BotOwner? _bot;
-        private BotComponentCache? _cache;
+        private BotOwner _bot;
+        private BotComponentCache _cache;
         private float _nextScanTime;
 
+        /// <summary>
+        /// Scans all dead players and registers corpse-container proximity pairs.
+        /// Should be run during or after world initialization to enable realistic looting behavior.
+        /// </summary>
         public static void ScanAll()
         {
+            if (!GameWorldHandler.IsSafeToInitialize)
+            {
+                return;
+            }
+
             List<LootableContainer> containers = LootRegistry.GetAllContainers();
             List<Player> players = GameWorldHandler.GetAllAlivePlayers();
 
             for (int i = 0; i < containers.Count; i++)
             {
                 LootableContainer container = containers[i];
+                Vector3 containerPos = container.transform.position;
 
                 for (int j = 0; j < players.Count; j++)
                 {
                     Player player = players[j];
-
-                    if (player != null && !player.HealthController.IsAlive && !string.IsNullOrEmpty(player.ProfileId))
+                    if (player == null || player.HealthController == null || player.HealthController.IsAlive)
                     {
-                        float dist = Vector3.Distance(player.Transform.position, container.transform.position);
-                        if (dist < 0.75f)
-                        {
-                            DeadBodyContainerCache.Register(player, container);
-                            break;
-                        }
+                        continue;
+                    }
+
+                    string profileId = player.ProfileId;
+                    if (string.IsNullOrEmpty(profileId))
+                    {
+                        continue;
+                    }
+
+                    float dist = Vector3.Distance(player.Transform.position, containerPos);
+                    if (dist < MaxContainerDistance)
+                    {
+                        DeadBodyContainerCache.Register(player, container);
+                        break;
                     }
                 }
             }
@@ -65,13 +81,24 @@ namespace AIRefactored.AI.Looting
 
         public void Initialize(BotComponentCache cache)
         {
+            if (cache == null || cache.Bot == null)
+            {
+                return;
+            }
+
+            BotOwner resolved = cache.Bot.GetComponent<BotOwner>();
+            if (resolved == null)
+            {
+                return;
+            }
+
+            _bot = resolved;
             _cache = cache;
-            _bot = cache.Bot;
         }
 
         public void Tick(float time)
         {
-            if (!CanEvaluate(time))
+            if (time < _nextScanTime || !IsReady())
             {
                 return;
             }
@@ -82,39 +109,56 @@ namespace AIRefactored.AI.Looting
 
         public void TryLootNearby()
         {
-            TryLootOnce();
-        }
-
-        private bool CanEvaluate(float time)
-        {
-            return _bot != null &&
-                   !_bot.IsDead &&
-                   _bot.GetPlayer != null &&
-                   !_bot.GetPlayer.IsYourPlayer &&
-                   _cache?.PanicHandler?.IsPanicking != true &&
-                   time >= _nextScanTime;
-        }
-
-        private Player? FindLootableCorpse()
-        {
-            if (_bot == null)
+            if (IsReady())
             {
-                return null;
+                TryLootOnce();
+            }
+        }
+
+        private bool IsReady()
+        {
+            return _bot != null
+                && !_bot.IsDead
+                && _bot.GetPlayer != null
+                && !_bot.GetPlayer.IsYourPlayer
+                && _cache != null
+                && !_cache.PanicHandler.IsPanicking;
+        }
+
+        private void TryLootOnce()
+        {
+            Player corpse = FindLootableCorpse();
+            if (corpse == null)
+            {
+                return;
             }
 
+            string profileId = corpse.ProfileId;
+            if (string.IsNullOrEmpty(profileId))
+            {
+                return;
+            }
+
+            LootCorpse(corpse);
+            RememberLooted(profileId);
+        }
+
+        private Player FindLootableCorpse()
+        {
             Vector3 origin = _bot.Transform.position;
             Vector3 forward = _bot.WeaponRoot.forward;
             List<Player> players = GameWorldHandler.GetAllAlivePlayers();
 
             for (int i = 0; i < players.Count; i++)
             {
-                Player player = players[i];
-                if (!IsValidCorpse(player))
+                Player candidate = players[i];
+
+                if (!IsValidCorpse(candidate))
                 {
                     continue;
                 }
 
-                Vector3 toCorpse = player.Transform.position - origin;
+                Vector3 toCorpse = candidate.Transform.position - origin;
                 float distance = toCorpse.magnitude;
 
                 if (distance > ScanRadius || Vector3.Angle(forward, toCorpse.normalized) > MaxLootAngle)
@@ -122,62 +166,51 @@ namespace AIRefactored.AI.Looting
                     continue;
                 }
 
-                if (!HasLineOfSight(origin, toCorpse, distance, player))
+                if (!HasLineOfSight(origin, toCorpse, distance, candidate))
                 {
                     continue;
                 }
 
-                return player;
+                return candidate;
             }
 
             return null;
         }
 
-        private bool HasLineOfSight(Vector3 origin, Vector3 direction, float dist, Player corpse)
-        {
-            if (Physics.Raycast(origin, direction.normalized, out RaycastHit hit, dist + RaycastPadding, AIRefactoredLayerMasks.HighPolyWithTerrainMaskAI))
-            {
-                Transform? hitRoot = hit.collider?.transform.root;
-                Transform? corpseRoot = corpse.Transform?.Original?.root;
-
-                return hitRoot != null && corpseRoot != null && hitRoot == corpseRoot;
-            }
-
-            return false;
-        }
-
         private bool IsValidCorpse(Player player)
         {
-            return player != null &&
-                   !player.HealthController.IsAlive &&
-                   player != _bot?.GetPlayer &&
-                   !string.IsNullOrEmpty(player.ProfileId) &&
-                   !WasLootedRecently(player.ProfileId);
+            return player != null
+                && !player.HealthController.IsAlive
+                && player != _bot.GetPlayer
+                && player.ProfileId.Length > 0
+                && !WasLootedRecently(player.ProfileId);
         }
 
-        private void TryLootOnce()
+        private bool HasLineOfSight(Vector3 origin, Vector3 direction, float distance, Player corpse)
         {
-            Player? corpse = FindLootableCorpse();
-            if (corpse == null)
+            Ray ray = new Ray(origin, direction.normalized);
+            if (!Physics.Raycast(ray, out RaycastHit hit, distance + RaycastPadding, AIRefactoredLayerMasks.HighPolyWithTerrainMaskAI))
             {
-                return;
+                return false;
             }
 
-            LootCorpse(corpse);
-            RememberLooted(corpse.ProfileId);
+            Transform hitRoot = hit.collider.transform.root;
+            Transform corpseRoot = corpse.Transform.Original.root;
+
+            return hitRoot == corpseRoot;
         }
 
         private void LootCorpse(Player corpse)
         {
-            InventoryController? source = corpse.InventoryController;
-            InventoryController? target = _bot?.GetPlayer?.InventoryController;
+            InventoryController source = corpse.InventoryController;
+            InventoryController target = _bot.GetPlayer.InventoryController;
 
             if (source == null || target == null)
             {
                 return;
             }
 
-            LootableContainer? container = DeadBodyContainerCache.Get(corpse.ProfileId);
+            LootableContainer container = DeadBodyContainerCache.Get(corpse.ProfileId);
             if (container != null && container.enabled)
             {
                 container.Interact(new InteractionResult(EInteractionType.Open));
@@ -189,7 +222,7 @@ namespace AIRefactored.AI.Looting
 
         private void TryStealBestItem(InventoryController source, InventoryController target)
         {
-            EquipmentSlot[] slots =
+            EquipmentSlot[] prioritySlots =
             {
                 EquipmentSlot.FirstPrimaryWeapon,
                 EquipmentSlot.SecondPrimaryWeapon,
@@ -199,17 +232,15 @@ namespace AIRefactored.AI.Looting
                 EquipmentSlot.Pockets
             };
 
-            for (int i = 0; i < slots.Length; i++)
+            for (int i = 0; i < prioritySlots.Length; i++)
             {
-                EquipmentSlot slot = slots[i];
-                Item? item = source.Inventory.Equipment.GetSlot(slot).ContainedItem;
-
+                Item item = source.Inventory.Equipment.GetSlot(prioritySlots[i]).ContainedItem;
                 if (item == null)
                 {
                     continue;
                 }
 
-                ItemAddress? destination = target.FindSlotToPickUp(item);
+                ItemAddress destination = target.FindSlotToPickUp(item);
                 if (destination == null)
                 {
                     continue;
@@ -226,14 +257,14 @@ namespace AIRefactored.AI.Looting
 
         private void RememberLooted(string profileId)
         {
-            _recentlyLooted.Add(profileId);
-            _lootTimestamps[profileId] = Time.time;
+            RecentlyLooted.Add(profileId);
+            LootTimestamps[profileId] = Time.time;
         }
 
         private bool WasLootedRecently(string profileId)
         {
-            return _lootTimestamps.TryGetValue(profileId, out float lastTime) &&
-                   Time.time - lastTime < LootMemoryDuration;
+            float lastTime;
+            return LootTimestamps.TryGetValue(profileId, out lastTime) && (Time.time - lastTime < LootMemoryDuration);
         }
     }
 }

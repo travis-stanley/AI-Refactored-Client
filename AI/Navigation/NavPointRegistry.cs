@@ -6,22 +6,18 @@
 //   Please follow strict StyleCop, ReSharper, and AI-Refactored code standards for all modifications.
 // </auto-generated>
 
-#nullable enable
-
 namespace AIRefactored.AI.Navigation
 {
     using System;
     using System.Collections.Generic;
+    using AIRefactored.Pools;
     using AIRefactored.Runtime;
     using BepInEx.Logging;
-    using EFT.Game.Spawning;
     using Unity.AI.Navigation;
     using UnityEngine;
 
     /// <summary>
-    /// Central registry for tactical navigation points with metadata.
-    /// Supports cover tagging, elevation bands, indoor/outdoor classification, zone detection,
-    /// jumpability flags, cover orientation, and fast quadtree spatial indexing.
+    /// Registry and spatial query system for navigation points, supporting zone tags and cover scoring.
     /// </summary>
     public static class NavPointRegistry
     {
@@ -29,20 +25,25 @@ namespace AIRefactored.AI.Navigation
 
         private static readonly List<NavPoint> Points = new List<NavPoint>(512);
         private static readonly HashSet<Vector3> Unique = new HashSet<Vector3>();
-        private static QuadtreeNavGrid? _quadtree;
-        private static IZones? _zones;
+        private static QuadtreeNavGrid _quadtree;
         private static bool _useQuadtree;
 
-        #endregion
-
-        #region Properties
-
-        private static ManualLogSource Logger => AIRefactoredController.Logger;
-        public static int Count => Points.Count;
+        private static ManualLogSource Logger => Plugin.LoggerInstance;
 
         #endregion
 
         #region Public API
+
+        public static int Count => Points.Count;
+
+        public static void Initialize()
+        {
+            Points.Clear();
+            Unique.Clear();
+            _quadtree = null;
+            _useQuadtree = false;
+            Logger.LogInfo("[NavPointRegistry] Initialized.");
+        }
 
         public static void Clear()
         {
@@ -57,34 +58,14 @@ namespace AIRefactored.AI.Navigation
             _quadtree = enable ? BuildQuadtree() : null;
         }
 
-        public static void InitializeZoneSystem(IZones zones)
-        {
-            if (zones == null)
-            {
-                throw new ArgumentNullException(nameof(zones));
-            }
-
-            _zones = zones;
-        }
-
-        public static void Register(
-            Vector3 pos,
-            bool isCover = false,
-            string tag = "generic",
-            float elevation = 0f,
-            bool isIndoor = false,
-            bool isJumpable = false,
-            float coverAngle = 0f)
+        public static void Register(Vector3 pos, bool isCover = false, string tag = "generic", float elevation = 0f, bool isIndoor = false, bool isJumpable = false, float coverAngle = 0f)
         {
             if (!Unique.Add(pos))
             {
                 return;
             }
 
-            string zoneName = GetNearestZone(pos);
-            string elevationBand = GetElevationBand(elevation);
-
-            var point = new NavPoint(
+            Points.Add(new NavPoint(
                 pos,
                 isCover,
                 tag,
@@ -92,10 +73,8 @@ namespace AIRefactored.AI.Navigation
                 isIndoor,
                 isJumpable,
                 coverAngle,
-                zoneName,
-                elevationBand);
-
-            Points.Add(point);
+                "Unknown",
+                GetElevationBand(elevation)));
 
             if (_useQuadtree && _quadtree != null)
             {
@@ -105,8 +84,7 @@ namespace AIRefactored.AI.Navigation
 
         public static void RegisterAll(string mapId)
         {
-            Clear();
-
+            Initialize();
             Logger.LogInfo("[NavPointRegistry] Registering nav points for map: " + mapId);
 
             NavMeshSurface surface = GameObject.FindObjectOfType<NavMeshSurface>();
@@ -116,43 +94,7 @@ namespace AIRefactored.AI.Navigation
                 return;
             }
 
-            if (_zones == null)
-            {
-                Logger.LogWarning("[NavPointRegistry] IZones system not yet assigned — zone tagging disabled.");
-            }
-
             NavPointBootstrapper.RegisterAll(mapId);
-        }
-
-        public static void RefreshZones()
-        {
-            if (_zones == null || Points.Count == 0)
-            {
-                Logger.LogWarning("[NavPointRegistry] Cannot refresh zones — IZones unavailable or no points registered.");
-                return;
-            }
-
-            for (int i = 0; i < Points.Count; i++)
-            {
-                NavPoint point = Points[i];
-                string newZone = GetNearestZone(point.WorldPos);
-
-                if (!string.Equals(newZone, point.Zone, StringComparison.OrdinalIgnoreCase))
-                {
-                    Points[i] = new NavPoint(
-                        point.WorldPos,
-                        point.IsCover,
-                        point.Tag,
-                        point.Elevation,
-                        point.IsIndoor,
-                        point.IsJumpable,
-                        point.CoverAngle,
-                        newZone,
-                        point.ElevationBand);
-                }
-            }
-
-            Logger.LogInfo("[NavPointRegistry] Zone tags refreshed.");
         }
 
         public static void RefreshPointsAround(Vector3 center, float radius)
@@ -167,10 +109,7 @@ namespace AIRefactored.AI.Navigation
                     continue;
                 }
 
-                string newZone = GetNearestZone(point.WorldPos);
-                string band = GetElevationBand(point.Elevation);
-                bool isIndoor = Physics.Raycast(point.WorldPos + (Vector3.up * 1.4f), Vector3.up, 12.0f);
-
+                bool isIndoor = Physics.Raycast(point.WorldPos + Vector3.up * 1.4f, Vector3.up, 12f);
                 Points[i] = new NavPoint(
                     point.WorldPos,
                     point.IsCover,
@@ -179,8 +118,8 @@ namespace AIRefactored.AI.Navigation
                     isIndoor,
                     point.IsJumpable,
                     point.CoverAngle,
-                    newZone,
-                    band);
+                    "Unknown",
+                    GetElevationBand(point.Elevation));
             }
 
             Logger.LogInfo("[NavPointRegistry] Refreshed nav points near: " + center.ToString("F1"));
@@ -188,25 +127,25 @@ namespace AIRefactored.AI.Navigation
 
         public static bool IsRegistered(Vector3 pos) => Unique.Contains(pos);
 
-        public static bool IsCoverPoint(Vector3 pos) => TryGetPoint(pos, out NavPoint? p) && p != null && p.IsCover;
+        public static bool IsCoverPoint(Vector3 pos) => TryGetPoint(pos, out var p) && p.IsCover;
 
-        public static bool IsIndoor(Vector3 pos) => TryGetPoint(pos, out NavPoint? p) && p != null && p.IsIndoor;
+        public static bool IsIndoor(Vector3 pos) => TryGetPoint(pos, out var p) && p.IsIndoor;
 
-        public static bool IsJumpable(Vector3 pos) => TryGetPoint(pos, out NavPoint? p) && p != null && p.IsJumpable;
+        public static bool IsJumpable(Vector3 pos) => TryGetPoint(pos, out var p) && p.IsJumpable;
 
-        public static float GetCoverAngle(Vector3 pos) => TryGetPoint(pos, out NavPoint? p) && p != null ? p.CoverAngle : 0f;
+        public static float GetCoverAngle(Vector3 pos) => TryGetPoint(pos, out var p) ? p.CoverAngle : 0f;
 
-        public static float GetElevation(Vector3 pos) => TryGetPoint(pos, out NavPoint? p) && p != null ? p.Elevation : 0f;
+        public static float GetElevation(Vector3 pos) => TryGetPoint(pos, out var p) ? p.Elevation : 0f;
 
-        public static string GetTag(Vector3 pos) => TryGetPoint(pos, out NavPoint? p) && p != null ? p.Tag : "untagged";
+        public static string GetTag(Vector3 pos) => TryGetPoint(pos, out var p) ? p.Tag : "untagged";
 
-        public static string GetZone(Vector3 pos) => TryGetPoint(pos, out NavPoint? p) && p != null ? p.Zone : "unassigned";
+        public static string GetZone(Vector3 pos) => TryGetPoint(pos, out var p) ? p.Zone : "unassigned";
 
-        public static string GetElevationBand(Vector3 pos) => TryGetPoint(pos, out NavPoint? p) && p != null ? p.ElevationBand : "unknown";
+        public static string GetElevationBand(Vector3 pos) => TryGetPoint(pos, out var p) ? p.ElevationBand : "unknown";
 
         public static List<Vector3> GetAllPositions()
         {
-            var result = new List<Vector3>(Points.Count);
+            List<Vector3> result = TempListPool.Rent<Vector3>();
             for (int i = 0; i < Points.Count; i++)
             {
                 result.Add(Points[i].WorldPos);
@@ -215,9 +154,9 @@ namespace AIRefactored.AI.Navigation
             return result;
         }
 
-        public static List<Vector3> QueryNearby(Vector3 origin, float radius, Predicate<Vector3>? filter = null, bool coverOnly = false)
+        public static List<Vector3> QueryNearby(Vector3 origin, float radius, Predicate<Vector3> filter = null, bool coverOnly = false)
         {
-            var result = new List<Vector3>(16);
+            List<Vector3> result = TempListPool.Rent<Vector3>();
             float radiusSq = radius * radius;
 
             if (_useQuadtree && _quadtree != null)
@@ -225,7 +164,7 @@ namespace AIRefactored.AI.Navigation
                 List<Vector3> raw = _quadtree.QueryRaw(origin, radius, filter);
                 for (int i = 0; i < raw.Count; i++)
                 {
-                    if (TryGetPoint(raw[i], out NavPoint? nav) && nav != null && (!coverOnly || nav.IsCover))
+                    if (TryGetPoint(raw[i], out var nav) && (!coverOnly || nav.IsCover))
                     {
                         result.Add(raw[i]);
                     }
@@ -236,7 +175,7 @@ namespace AIRefactored.AI.Navigation
 
             for (int i = 0; i < Points.Count; i++)
             {
-                NavPoint p = Points[i];
+                var p = Points[i];
                 if ((p.WorldPos - origin).sqrMagnitude > radiusSq || (coverOnly && !p.IsCover))
                 {
                     continue;
@@ -251,14 +190,14 @@ namespace AIRefactored.AI.Navigation
             return result;
         }
 
-        public static List<NavPointData> QueryNearby(Vector3 origin, float radius, Predicate<NavPointData>? filter = null)
+        public static List<NavPointData> QueryNearby(Vector3 origin, float radius, Predicate<NavPointData> filter = null)
         {
-            var result = new List<NavPointData>(16);
+            List<NavPointData> result = TempListPool.Rent<NavPointData>();
             float radiusSq = radius * radius;
 
             for (int i = 0; i < Points.Count; i++)
             {
-                NavPoint p = Points[i];
+                var p = Points[i];
                 if ((p.WorldPos - origin).sqrMagnitude > radiusSq)
                 {
                     continue;
@@ -286,9 +225,9 @@ namespace AIRefactored.AI.Navigation
 
         #endregion
 
-        #region Internal Helpers
+        #region Internals
 
-        private static bool TryGetPoint(Vector3 pos, out NavPoint? point)
+        private static bool TryGetPoint(Vector3 pos, out NavPoint point)
         {
             for (int i = 0; i < Points.Count; i++)
             {
@@ -299,34 +238,8 @@ namespace AIRefactored.AI.Navigation
                 }
             }
 
-            point = null;
+            point = default(NavPoint);
             return false;
-        }
-        private static string GetNearestZone(Vector3 pos)
-        {
-            if (_zones == null)
-            {
-                return "Unknown";
-            }
-
-            string best = "Unknown";
-            float bestDist = float.MaxValue;
-
-            foreach (string zone in _zones.ZoneNames())
-            {
-                ISpawnPoint[] spawns = _zones.ZoneSpawnPoints(zone);
-                for (int j = 0; j < spawns.Length; j++)
-                {
-                    float dist = Vector3.Distance(pos, spawns[j].Position);
-                    if (dist < bestDist)
-                    {
-                        bestDist = dist;
-                        best = zone;
-                    }
-                }
-            }
-
-            return best;
         }
 
         private static string GetElevationBand(float elevation)
@@ -344,7 +257,7 @@ namespace AIRefactored.AI.Navigation
             return "High";
         }
 
-        private static QuadtreeNavGrid? BuildQuadtree()
+        private static QuadtreeNavGrid BuildQuadtree()
         {
             if (Points.Count == 0)
             {
@@ -376,23 +289,19 @@ namespace AIRefactored.AI.Navigation
             return tree;
         }
 
-        #endregion
-
-        #region Types
-
         private sealed class NavPoint
         {
             public NavPoint(Vector3 pos, bool isCover, string tag, float elevation, bool isIndoor, bool isJumpable, float coverAngle, string zone, string elevationBand)
             {
-                this.WorldPos = pos;
-                this.IsCover = isCover;
-                this.Tag = tag;
-                this.Elevation = elevation;
-                this.IsIndoor = isIndoor;
-                this.IsJumpable = isJumpable;
-                this.CoverAngle = coverAngle;
-                this.Zone = zone;
-                this.ElevationBand = elevationBand;
+                WorldPos = pos;
+                IsCover = isCover;
+                Tag = tag;
+                Elevation = elevation;
+                IsIndoor = isIndoor;
+                IsJumpable = isJumpable;
+                CoverAngle = coverAngle;
+                Zone = zone;
+                ElevationBand = elevationBand;
             }
 
             public Vector3 WorldPos { get; }

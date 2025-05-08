@@ -6,8 +6,6 @@
 //   Please follow strict StyleCop, ReSharper, and AI-Refactored code standards for all modifications.
 // </auto-generated>
 
-#nullable enable
-
 namespace AIRefactored.AI.Reactions
 {
     using System.Collections.Generic;
@@ -30,16 +28,16 @@ namespace AIRefactored.AI.Reactions
 
         #endregion
 
-        #region Fields
+        #region State
 
-        private BotOwner? _bot;
-        private BotComponentCache? _cache;
+        private BotOwner _bot;
+        private BotComponentCache _cache;
         private bool _isBlinded;
         private float _lastFlashTime = -999f;
 
         #endregion
 
-        #region Public API
+        #region Initialization
 
         /// <summary>
         /// Initializes the flash component with the bot's runtime cache.
@@ -47,37 +45,40 @@ namespace AIRefactored.AI.Reactions
         /// <param name="cache">The bot component cache.</param>
         public void Initialize(BotComponentCache cache)
         {
-            this._cache = cache;
-            this._bot = cache.Bot;
+            _cache = cache;
+            _bot = cache.Bot;
         }
+
+        #endregion
+
+        #region Runtime
 
         /// <summary>
         /// Returns true if the bot is still considered blinded.
         /// </summary>
-        /// <returns>True if blinded; otherwise, false.</returns>
         public bool IsFlashed()
         {
-            return this._isBlinded;
+            return _isBlinded;
         }
 
         /// <summary>
-        /// Forces the bot into a blind state, optionally triggering suppression logic from a known source.
+        /// Forces the bot into a blind state, optionally triggering suppression logic.
         /// </summary>
-        /// <param name="duration">Duration of blindness.</param>
-        /// <param name="source">Optional world position of flash source.</param>
-        public void ForceBlind(float duration = BaseBlindDuration, Vector3? source = default)
+        /// <param name="duration">Custom blindness duration.</param>
+        /// <param name="source">Optional flash origin for suppression.</param>
+        public void ForceBlind(float duration = BaseBlindDuration, Vector3? source = null)
         {
-            if (this._bot == null || this._bot.IsDead)
+            if (_bot == null || _bot.IsDead)
             {
                 return;
             }
 
-            this._lastFlashTime = Time.time;
-            this._isBlinded = true;
+            _lastFlashTime = Time.time;
+            _isBlinded = true;
 
             if (source.HasValue)
             {
-                Player? player = EFTPlayerUtil.ResolvePlayer(this._bot);
+                Player player = EFTPlayerUtil.ResolvePlayer(_bot);
                 if (player != null)
                 {
                     BotSuppressionHelper.TrySuppressBot(player, source.Value);
@@ -88,63 +89,59 @@ namespace AIRefactored.AI.Reactions
         /// <summary>
         /// Evaluates exposure to light and clears blindness after recovery.
         /// </summary>
-        /// <param name="time">The current time in seconds.</param>
+        /// <param name="time">Current world time.</param>
         public void Tick(float time)
         {
-            if (this._bot == null || this._bot.IsDead)
+            if (_bot == null || _bot.IsDead || _cache == null)
             {
                 return;
             }
 
-            Player? player = EFTPlayerUtil.ResolvePlayer(this._bot);
+            Player player = EFTPlayerUtil.ResolvePlayer(_bot);
             if (player == null || !player.IsAI || player.IsYourPlayer)
             {
                 return;
             }
 
-            this.CheckForFlashlightExposure();
+            CheckFlashlightExposure();
 
-            if (this._isBlinded && time - this._lastFlashTime > this.GetBlindRecoveryTime())
+            if (_isBlinded && time - _lastFlashTime > GetBlindRecoveryTime())
             {
-                this._isBlinded = false;
+                _isBlinded = false;
             }
         }
 
         #endregion
 
-        #region Private Methods
+        #region Private
 
-        private void CheckForFlashlightExposure()
+        private void CheckFlashlightExposure()
         {
-            if (this._cache == null || this._bot == null)
-            {
-                return;
-            }
-
-            Transform? head = BotCacheUtility.Head(this._cache);
+            Transform head = BotCacheUtility.Head(_cache);
             if (head == null)
             {
                 return;
             }
 
-            for (int i = 0; i < FlashlightRegistry.GetLastKnownFlashlightPositions().Count; i++)
+            IReadOnlyList<Vector3> sources = FlashlightRegistry.GetLastKnownFlashlightPositions();
+            for (int i = 0; i < sources.Count; i++)
             {
-                Light? light;
+                Light light;
                 if (FlashlightRegistry.IsExposingBot(head, out light) && light != null)
                 {
                     float score = FlashLightUtils.CalculateFlashScore(light.transform, head, 20f);
                     if (score >= TriggerScoreThreshold)
                     {
-                        this._lastFlashTime = Time.time;
-                        this._isBlinded = true;
+                        _lastFlashTime = Time.time;
+                        _isBlinded = true;
 
-                        Player? player = EFTPlayerUtil.ResolvePlayer(this._bot);
+                        Player player = EFTPlayerUtil.ResolvePlayer(_bot);
                         if (player != null)
                         {
                             BotSuppressionHelper.TrySuppressBot(player, light.transform.position);
                         }
 
-                        break;
+                        return;
                     }
                 }
             }
@@ -153,10 +150,9 @@ namespace AIRefactored.AI.Reactions
         private float GetBlindRecoveryTime()
         {
             float composure = 1f;
-
-            if (this._cache != null && this._cache.PanicHandler != null)
+            if (_cache.PanicHandler != null)
             {
-                composure = this._cache.PanicHandler.GetComposureLevel();
+                composure = _cache.PanicHandler.GetComposureLevel();
             }
 
             return Mathf.Lerp(2f, BaseBlindDuration, 1f - composure);

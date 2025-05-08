@@ -6,8 +6,6 @@
 //   Please follow strict StyleCop, ReSharper, and AI-Refactored code standards for all modifications.
 // </auto-generated>
 
-#nullable enable
-
 namespace AIRefactored.AI.Helpers
 {
     using System.Collections.Generic;
@@ -21,15 +19,22 @@ namespace AIRefactored.AI.Helpers
     /// </summary>
     public static class BotSoundRegistry
     {
+        #region Constants
+
         private const float DefaultHearingRadius = 30f;
+
+        #endregion
+
+        #region Fields
 
         private static readonly Dictionary<string, float> FootstepTimestamps = new Dictionary<string, float>(64);
         private static readonly Dictionary<string, float> ShotTimestamps = new Dictionary<string, float>(64);
         private static readonly Dictionary<string, Vector3> SoundZones = new Dictionary<string, Vector3>(64);
 
-        /// <summary>
-        /// Clears all sound tracking data.
-        /// </summary>
+        #endregion
+
+        #region Public Methods
+
         public static void Clear()
         {
             FootstepTimestamps.Clear();
@@ -37,122 +42,118 @@ namespace AIRefactored.AI.Helpers
             SoundZones.Clear();
         }
 
-        /// <summary>
-        /// Returns true if the player fired recently within the given timeframe.
-        /// </summary>
-        public static bool FiredRecently(Player? player, float withinSeconds = 1.5f, float now = -1f)
+        public static bool FiredRecently(Player player, float withinSeconds = 1.5f, float now = -1f)
         {
-            return TryGetLastShot(player, out float time) &&
+            float time;
+            return TryGetLastShot(player, out time) &&
                    ((now >= 0f ? now : Time.time) - time <= withinSeconds);
         }
 
-        /// <summary>
-        /// Returns true if the player stepped recently within the given timeframe.
-        /// </summary>
-        public static bool SteppedRecently(Player? player, float withinSeconds = 1.2f, float now = -1f)
+        public static bool SteppedRecently(Player player, float withinSeconds = 1.2f, float now = -1f)
         {
-            return TryGetLastStep(player, out float time) &&
+            float time;
+            return TryGetLastStep(player, out time) &&
                    ((now >= 0f ? now : Time.time) - time <= withinSeconds);
         }
 
-        /// <summary>
-        /// Records a gunshot sound and position.
-        /// </summary>
-        public static void NotifyShot(Player? player)
+        public static void NotifyShot(Player player)
         {
-            if (player == null || player.IsYourPlayer || string.IsNullOrEmpty(player.ProfileId))
+            if (player == null || player.IsYourPlayer)
             {
                 return;
             }
 
             string id = player.ProfileId;
+            if (string.IsNullOrEmpty(id))
+            {
+                return;
+            }
+
             ShotTimestamps[id] = Time.time;
 
-            if (player is EFT.Player concrete && concrete.Transform != null)
+            if (player.Transform?.Original != null)
             {
-                Vector3 position = concrete.Transform.position;
-                SoundZones[id] = position;
-                TriggerSquadPing(id, position, true);
+                Vector3 pos = player.Transform.Original.position;
+                SoundZones[id] = pos;
+                TriggerSquadPing(id, pos, true);
             }
         }
 
-        /// <summary>
-        /// Records a footstep sound and position.
-        /// </summary>
-        public static void NotifyStep(Player? player)
+        public static void NotifyStep(Player player)
         {
-            if (player == null || player.IsYourPlayer || string.IsNullOrEmpty(player.ProfileId))
+            if (player == null || player.IsYourPlayer)
             {
                 return;
             }
 
             string id = player.ProfileId;
+            if (string.IsNullOrEmpty(id))
+            {
+                return;
+            }
+
             FootstepTimestamps[id] = Time.time;
 
-            if (player is EFT.Player concrete && concrete.Transform != null)
+            if (player.Transform?.Original != null)
             {
-                Vector3 position = concrete.Transform.position;
-                SoundZones[id] = position;
-                TriggerSquadPing(id, position, false);
+                Vector3 pos = player.Transform.Original.position;
+                SoundZones[id] = pos;
+                TriggerSquadPing(id, pos, false);
             }
         }
 
-        /// <summary>
-        /// Tries to get the last recorded shot time for a player.
-        /// </summary>
-        public static bool TryGetLastShot(Player? player, out float time)
+        public static bool TryGetLastShot(Player player, out float time)
         {
             time = -1f;
-
             return player != null &&
                    !string.IsNullOrEmpty(player.ProfileId) &&
                    ShotTimestamps.TryGetValue(player.ProfileId, out time);
         }
 
-        /// <summary>
-        /// Tries to get the last recorded footstep time for a player.
-        /// </summary>
-        public static bool TryGetLastStep(Player? player, out float time)
+        public static bool TryGetLastStep(Player player, out float time)
         {
             time = -1f;
-
             return player != null &&
                    !string.IsNullOrEmpty(player.ProfileId) &&
                    FootstepTimestamps.TryGetValue(player.ProfileId, out time);
         }
 
-        /// <summary>
-        /// Tries to get the last known sound position for a player.
-        /// </summary>
-        public static bool TryGetSoundPosition(Player? player, out Vector3 pos)
+        public static bool TryGetSoundPosition(Player player, out Vector3 pos)
         {
             pos = Vector3.zero;
-
             return player != null &&
                    !string.IsNullOrEmpty(player.ProfileId) &&
                    SoundZones.TryGetValue(player.ProfileId, out pos);
         }
 
-        /// <summary>
-        /// Notifies nearby bots of a squad sound event.
-        /// </summary>
-        /// <param name="sourceId">Profile ID of the sound emitter.</param>
-        /// <param name="location">Sound origin point.</param>
-        /// <param name="isGunshot">Whether this is a gunshot event.</param>
+        #endregion
+
+        #region Private Methods
+
         private static void TriggerSquadPing(string sourceId, Vector3 location, bool isGunshot)
         {
-            float radiusSqr = DefaultHearingRadius * DefaultHearingRadius;
+            float radiusSq = DefaultHearingRadius * DefaultHearingRadius;
 
             foreach (BotComponentCache cache in BotCacheUtility.AllActiveBots())
             {
-                BotOwner? bot = cache.Bot;
+                if (cache == null)
+                {
+                    continue;
+                }
+
+                BotOwner bot = cache.Bot;
                 if (bot == null || bot.IsDead || bot.ProfileId == sourceId)
                 {
                     continue;
                 }
 
-                float distSqr = (bot.Position - location).sqrMagnitude;
-                if (distSqr > radiusSqr)
+                Vector3 pos = bot.Position;
+                float dx = pos.x - location.x;
+                float dy = pos.y - location.y;
+                float dz = pos.z - location.z;
+                float distSq = dx * dx + dy * dy + dz * dz;
+
+                if (distSq > radiusSq)
                 {
                     continue;
                 }
@@ -169,5 +170,7 @@ namespace AIRefactored.AI.Helpers
                 }
             }
         }
+
+        #endregion
     }
 }

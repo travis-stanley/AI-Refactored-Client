@@ -6,14 +6,14 @@
 //   Please follow strict StyleCop, ReSharper, and AI-Refactored code standards for all modifications.
 // </auto-generated>
 
-#nullable enable
-
-namespace AIRefactored.Runtime
+namespace AIRefactored.Bootstrap
 {
     using System.Collections.Generic;
     using AIRefactored.AI.Core;
     using AIRefactored.AI.Looting;
     using AIRefactored.Core;
+    using AIRefactored.Pools;
+    using AIRefactored.Runtime;
     using BepInEx.Logging;
     using EFT;
     using EFT.Interactive;
@@ -26,23 +26,13 @@ namespace AIRefactored.Runtime
     /// </summary>
     public static class LootBootstrapper
     {
-        #region Constants
-
         private const float MaxCorpseLinkDistance = 1.5f;
 
-        #endregion
-
-        #region Static Fields
-
-        private static readonly ManualLogSource Logger = AIRefactoredController.Logger;
-        private static readonly List<Player> PlayerBuffer = new List<Player>(64);
-
-        #endregion
-
-        #region Public API
+        private static readonly ManualLogSource Logger = Plugin.LoggerInstance;
 
         /// <summary>
         /// Registers all scene lootable containers and items.
+        /// Should be called once after GameWorld is ready.
         /// </summary>
         public static void RegisterAllLoot()
         {
@@ -63,10 +53,6 @@ namespace AIRefactored.Runtime
                 RegisterLooseItems(items);
             }
         }
-
-        #endregion
-
-        #region Internal Logic
 
         private static void RegisterContainers(LootableContainer[] containers)
         {
@@ -99,53 +85,64 @@ namespace AIRefactored.Runtime
 
         private static void TryLinkToCorpse(LootableContainer container)
         {
-            if (container == null || container.transform == null)
+            if (container == null)
             {
                 return;
-            }
-
-            PlayerBuffer.Clear();
-
-            List<Player> players = GameWorldHandler.GetAllAlivePlayers();
-            if (players == null || players.Count == 0)
-            {
-                return;
-            }
-
-            for (int i = 0; i < players.Count; i++)
-            {
-                Player player = players[i];
-                if (player != null)
-                {
-                    PlayerBuffer.Add(player);
-                }
             }
 
             Vector3 containerPosition = container.transform.position;
 
-            for (int i = 0; i < PlayerBuffer.Count; i++)
+            List<Player> players = GameWorldHandler.GetAllAlivePlayers();
+            if (players.Count == 0)
             {
-                Player player = PlayerBuffer[i];
-                if (player == null || player.HealthController?.IsAlive == true || string.IsNullOrEmpty(player.ProfileId))
+                return;
+            }
+
+            List<Player> deadPlayers = TempListPool.Rent<Player>();
+            try
+            {
+                for (int i = 0; i < players.Count; i++)
                 {
-                    continue;
+                    Player player = players[i];
+                    if (player != null)
+                    {
+                        deadPlayers.Add(player);
+                    }
                 }
 
-                if (DeadBodyContainerCache.Contains(player.ProfileId))
+                for (int i = 0; i < deadPlayers.Count; i++)
                 {
-                    continue;
-                }
+                    Player p = deadPlayers[i];
+                    if (p == null)
+                    {
+                        continue;
+                    }
 
-                Vector3 playerPosition = EFTPlayerUtil.GetPosition(player);
-                if (Vector3.Distance(containerPosition, playerPosition) <= MaxCorpseLinkDistance)
-                {
-                    DeadBodyContainerCache.Register(player, container);
-                    Logger.LogDebug("[LootBootstrapper] Linked container to corpse: " + (player.Profile?.Info?.Nickname ?? "Unnamed"));
-                    break;
+                    if (p.HealthController == null || p.HealthController.IsAlive)
+                    {
+                        continue;
+                    }
+
+                    string id = p.ProfileId;
+                    if (id.Length == 0 || DeadBodyContainerCache.Contains(id))
+                    {
+                        continue;
+                    }
+
+                    Vector3 corpsePosition = EFTPlayerUtil.GetPosition(p);
+                    if (Vector3.Distance(containerPosition, corpsePosition) <= MaxCorpseLinkDistance)
+                    {
+                        DeadBodyContainerCache.Register(p, container);
+                        string name = p.Profile != null && p.Profile.Info != null ? p.Profile.Info.Nickname : "Unnamed";
+                        Logger.LogDebug("[LootBootstrapper] Linked container to corpse: " + name);
+                        break;
+                    }
                 }
             }
+            finally
+            {
+                TempListPool.Return(deadPlayers);
+            }
         }
-
-        #endregion
     }
 }

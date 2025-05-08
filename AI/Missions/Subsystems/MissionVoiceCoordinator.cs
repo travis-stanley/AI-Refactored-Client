@@ -6,8 +6,6 @@
 //   Please follow strict StyleCop, ReSharper, and AI-Refactored code standards for all modifications.
 // </auto-generated>
 
-#nullable enable
-
 namespace AIRefactored.AI.Missions.Subsystems
 {
     using System;
@@ -23,42 +21,47 @@ namespace AIRefactored.AI.Missions.Subsystems
     /// </summary>
     public sealed class MissionVoiceCoordinator
     {
-        private static readonly ManualLogSource Logger = AIRefactoredController.Logger;
+        #region Fields
 
+        private static readonly ManualLogSource Logger = Plugin.LoggerInstance;
         private readonly BotOwner _bot;
 
-        /// <summary>
-        /// Initializes a new instance of the <see cref="MissionVoiceCoordinator"/> class.
-        /// </summary>
-        /// <param name="bot">The bot owner reference.</param>
+        #endregion
+
+        #region Constructor
+
         public MissionVoiceCoordinator(BotOwner bot)
         {
-            this._bot = bot ?? throw new ArgumentNullException(nameof(bot));
+            if (bot == null)
+            {
+                throw new ArgumentException("MissionVoiceCoordinator: bot is null.");
+            }
+
+            _bot = bot;
         }
 
-        /// <summary>
-        /// Plays extraction located voice line.
-        /// </summary>
+        #endregion
+
+        #region Public Methods
+
         public void OnExitLocated()
         {
-            this.TrySay(EPhraseTrigger.ExitLocated);
+            TrySay(EPhraseTrigger.ExitLocated);
         }
 
-        /// <summary>
-        /// Plays loot acknowledgment voice line.
-        /// </summary>
         public void OnLoot()
         {
-            this.TrySay(EPhraseTrigger.OnLoot);
+            TrySay(EPhraseTrigger.OnLoot);
         }
 
-        /// <summary>
-        /// Plays coordination or mission switch voice line.
-        /// </summary>
         public void OnMissionSwitch()
         {
-            this.TrySay(EPhraseTrigger.Cooperation);
+            TrySay(EPhraseTrigger.Cooperation);
         }
+
+        #endregion
+
+        #region Private Methods
 
         private void TrySay(EPhraseTrigger phrase)
         {
@@ -69,13 +72,19 @@ namespace AIRefactored.AI.Missions.Subsystems
 
             try
             {
-                this._bot.GetPlayer?.Say(phrase);
+                Player player = _bot.GetPlayer;
+                if (player != null)
+                {
+                    player.Say(phrase);
+                }
             }
             catch (Exception ex)
             {
-                string nickname = this._bot.Profile?.Info?.Nickname ?? "Unknown";
-                Logger.LogWarning($"[MissionVoiceCoordinator] VO failed for bot '{nickname}': {ex.Message}");
+                string name = _bot.Profile != null && _bot.Profile.Info != null ? _bot.Profile.Info.Nickname : "Unknown";
+                Logger.LogWarning("[MissionVoiceCoordinator] VO failed for bot '" + name + "': " + ex.Message);
             }
         }
+
+        #endregion
     }
 }

@@ -6,10 +6,9 @@
 //   Please follow strict StyleCop, ReSharper, and AI-Refactored code standards for all modifications.
 // </auto-generated>
 
-#nullable enable
-
 namespace AIRefactored.AI.Optimization
 {
+    using System;
     using AIRefactored.Runtime;
     using BepInEx.Logging;
     using EFT;
@@ -40,10 +39,10 @@ namespace AIRefactored.AI.Optimization
             new Vector3(-60f, 0f, 0f),
             new Vector3(-30f, 0f, 0f),
             new Vector3(30f, 0f, 0f),
-            new Vector3(60f, 0f, 0f),
+            new Vector3(60f, 0f, 0f)
         };
 
-        private static readonly ManualLogSource Logger = AIRefactoredController.Logger;
+        private static readonly ManualLogSource Logger = Plugin.LoggerInstance;
 
         #endregion
 
@@ -58,12 +57,12 @@ namespace AIRefactored.AI.Optimization
         /// <returns>Score between 1 and 10 based on tactical safety.</returns>
         public static float ScoreCoverPoint(BotOwner bot, Vector3 candidate, Vector3 threatDirection)
         {
-            if (bot == null)
+            if (bot == null || bot.Transform == null)
             {
                 return MinScore;
             }
 
-            Vector3 eyePos = candidate + (Vector3.up * EyeHeightOffset);
+            Vector3 eyePos = candidate + Vector3.up * EyeHeightOffset;
             Vector3 toThreat = threatDirection.normalized;
             Vector3 fromThreat = -toThreat;
 
@@ -82,7 +81,7 @@ namespace AIRefactored.AI.Optimization
                 score -= 2.0f;
             }
 
-            // Flank protection bonus
+            // Flank protection bonuses
             for (int i = 0; i < FlankAngles.Length; i++)
             {
                 Vector3 flankDir = Quaternion.Euler(0f, FlankAngles[i].x, 0f) * toThreat;
@@ -94,7 +93,7 @@ namespace AIRefactored.AI.Optimization
                 }
             }
 
-            // Distance modifier
+            // Distance penalty
             float dist = Vector3.Distance(bot.Position, candidate);
             if (dist > IdealFallbackDistance)
             {
@@ -117,7 +116,7 @@ namespace AIRefactored.AI.Optimization
         /// </summary>
         /// <param name="collider">Collider to test.</param>
         /// <returns>True if considered solid tactical cover.</returns>
-        internal static bool IsSolid(Collider? collider)
+        internal static bool IsSolid(Collider collider)
         {
             if (collider == null || collider.isTrigger)
             {
@@ -129,8 +128,8 @@ namespace AIRefactored.AI.Optimization
                 return false;
             }
 
-            string tag = collider.tag?.ToLowerInvariant() ?? string.Empty;
-            string mat = collider.sharedMaterial?.name?.ToLowerInvariant() ?? string.Empty;
+            string tag = collider.tag != null ? collider.tag.ToLowerInvariant() : string.Empty;
+            string mat = collider.sharedMaterial != null ? collider.sharedMaterial.name.ToLowerInvariant() : string.Empty;
 
             if (tag.Contains("glass") || tag.Contains("foliage") || tag.Contains("banner") || tag.Contains("transparent"))
             {

@@ -6,8 +6,6 @@
 //   Please follow strict StyleCop, ReSharper, and AI-Refactored code standards for all modifications.
 // </auto-generated>
 
-#nullable enable
-
 namespace AIRefactored.AI.Hotspots
 {
     using System;
@@ -20,19 +18,29 @@ namespace AIRefactored.AI.Hotspots
     /// </summary>
     public sealed class HotspotSpatialGrid
     {
+        #region Fields
+
         private readonly float _cellSize;
 
-        private readonly Dictionary<Vector2Int, List<HotspotRegistry.Hotspot>> _grid =
-            new Dictionary<Vector2Int, List<HotspotRegistry.Hotspot>>(128);
+        private readonly Dictionary<Vector2Int, List<HotspotRegistry.Hotspot>> _grid;
+
+        #endregion
+
+        #region Constructor
 
         /// <summary>
         /// Initializes a new instance of the <see cref="HotspotSpatialGrid"/> class.
         /// </summary>
         /// <param name="cellSize">Minimum 1f recommended. Determines lookup resolution.</param>
-        public HotspotSpatialGrid(float cellSize = 10f)
+        public HotspotSpatialGrid(float cellSize)
         {
-            _cellSize = Mathf.Max(1f, cellSize);
+            this._cellSize = cellSize < 1f ? 1f : cellSize;
+            this._grid = new Dictionary<Vector2Int, List<HotspotRegistry.Hotspot>>(128);
         }
+
+        #endregion
+
+        #region Public Methods
 
         /// <summary>
         /// Inserts a hotspot into the spatial index.
@@ -40,12 +48,13 @@ namespace AIRefactored.AI.Hotspots
         /// <param name="hotspot">Hotspot to insert.</param>
         public void Insert(HotspotRegistry.Hotspot hotspot)
         {
-            Vector2Int cell = WorldToCell(hotspot.Position);
+            Vector2Int cell = this.WorldToCell(hotspot.Position);
 
-            if (!_grid.TryGetValue(cell, out List<HotspotRegistry.Hotspot>? list))
+            List<HotspotRegistry.Hotspot> list;
+            if (!this._grid.TryGetValue(cell, out list))
             {
                 list = new List<HotspotRegistry.Hotspot>(4);
-                _grid[cell] = list;
+                this._grid[cell] = list;
             }
 
             list.Add(hotspot);
@@ -58,16 +67,13 @@ namespace AIRefactored.AI.Hotspots
         /// <param name="radius">Radius in meters.</param>
         /// <param name="filter">Optional predicate to restrict results.</param>
         /// <returns>List of nearby hotspots.</returns>
-        public List<HotspotRegistry.Hotspot> Query(
-            Vector3 worldPos,
-            float radius,
-            Predicate<HotspotRegistry.Hotspot>? filter = null)
+        public List<HotspotRegistry.Hotspot> Query(Vector3 worldPos, float radius, Predicate<HotspotRegistry.Hotspot> filter)
         {
             List<HotspotRegistry.Hotspot> results = new List<HotspotRegistry.Hotspot>(16);
             float radiusSq = radius * radius;
 
-            Vector2Int center = WorldToCell(worldPos);
-            int cellRadius = Mathf.CeilToInt(radius / _cellSize);
+            Vector2Int center = this.WorldToCell(worldPos);
+            int cellRadius = Mathf.CeilToInt(radius / this._cellSize);
 
             for (int dx = -cellRadius; dx <= cellRadius; dx++)
             {
@@ -75,16 +81,19 @@ namespace AIRefactored.AI.Hotspots
                 {
                     Vector2Int check = new Vector2Int(center.x + dx, center.y + dz);
 
-                    if (_grid.TryGetValue(check, out List<HotspotRegistry.Hotspot>? list))
+                    List<HotspotRegistry.Hotspot> candidates;
+                    if (!this._grid.TryGetValue(check, out candidates))
                     {
-                        for (int i = 0; i < list.Count; i++)
+                        continue;
+                    }
+
+                    for (int i = 0; i < candidates.Count; i++)
+                    {
+                        HotspotRegistry.Hotspot h = candidates[i];
+                        if ((h.Position - worldPos).sqrMagnitude <= radiusSq &&
+                            (filter == null || filter(h)))
                         {
-                            HotspotRegistry.Hotspot h = list[i];
-                            if ((h.Position - worldPos).sqrMagnitude <= radiusSq &&
-                                (filter == null || filter(h)))
-                            {
-                                results.Add(h);
-                            }
+                            results.Add(h);
                         }
                     }
                 }
@@ -93,11 +102,17 @@ namespace AIRefactored.AI.Hotspots
             return results;
         }
 
+        #endregion
+
+        #region Private Methods
+
         private Vector2Int WorldToCell(Vector3 worldPos)
         {
-            int x = Mathf.FloorToInt(worldPos.x / _cellSize);
-            int z = Mathf.FloorToInt(worldPos.z / _cellSize);
+            int x = Mathf.FloorToInt(worldPos.x / this._cellSize);
+            int z = Mathf.FloorToInt(worldPos.z / this._cellSize);
             return new Vector2Int(x, z);
         }
+
+        #endregion
     }
 }

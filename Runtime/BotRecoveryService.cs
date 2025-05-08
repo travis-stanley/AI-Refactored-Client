@@ -6,16 +6,16 @@
 //   Please follow strict StyleCop, ReSharper, and AI-Refactored code standards for all modifications.
 // </auto-generated>
 
-#nullable enable
-
 namespace AIRefactored.Runtime
 {
+    using System;
     using System.Collections.Generic;
     using AIRefactored.AI.Core;
     using AIRefactored.AI.Hotspots;
     using AIRefactored.AI.Looting;
     using AIRefactored.AI.Navigation;
     using AIRefactored.AI.Threads;
+    using AIRefactored.Bootstrap;
     using AIRefactored.Core;
     using BepInEx.Logging;
     using Comfort.Common;
@@ -25,118 +25,159 @@ namespace AIRefactored.Runtime
 
     /// <summary>
     /// Monitors GameWorld state and ensures AIRefactored systems remain functional across sessions.
-    /// Can be called externally by WorldBootstrapper, headless tick scheduler, or raid monitor.
+    /// Called externally by WorldBootstrapper, tick scheduler, or raid monitor.
     /// </summary>
-    public static class BotRecoveryService
+    public sealed class BotRecoveryService : IAIWorldSystemBootstrapper
     {
         private const float TickInterval = 5f;
-        private const int MaxRetryAttempts = 3;
 
         private static float _nextTick = -1f;
-        private static int _retryAttempts;
         private static bool _hasWarnedMissingWorld;
         private static bool _hasRescanned;
+        private static bool _hasInitialized;
 
-        private static readonly ManualLogSource Logger = AIRefactoredController.Logger;
+        private static readonly ManualLogSource Logger = Plugin.LoggerInstance;
 
-        public static void Tick(float now)
+        public static BotRecoveryService Instance { get; } = new BotRecoveryService();
+
+        public void Initialize()
         {
-            if (!GameWorldHandler.IsLocalHost())
-                return;
-
-            if (!GameWorldHandler.IsSafeToInitialize)
-                return;
-
-            if (now < _nextTick)
-                return;
-
-            _nextTick = now + TickInterval;
-
-            GameWorld? world = GameWorldHandler.Get();
-            if (world == null || world.AllAlivePlayersList == null || !GameWorldHandler.IsReady())
+            try
             {
-                HandleWorldRecovery(GameWorldHandler.IsReady());
-                return;
+                Reset();
+                _hasInitialized = true;
+                Logger.LogInfo("[BotRecoveryService] Initialized.");
             }
-
-            if (_hasWarnedMissingWorld)
+            catch (Exception ex)
             {
-                Logger.LogInfo("[BotRecoveryService] GameWorld recovered.");
-                _hasWarnedMissingWorld = false;
+                Logger.LogError("[BotRecoveryService] Initialize failed: " + ex);
             }
+        }
 
-            if (!GameWorldHandler.IsInitialized)
+        public void Tick(float deltaTime)
+        {
+            try
             {
-                Logger.LogWarning("[BotRecoveryService] World not initialized — forcing bootstrap.");
-                GameWorldHandler.TryInitializeWorld();
-                return;
-            }
+                if (!_hasInitialized || !GameWorldHandler.IsLocalHost() || !GameWorldHandler.IsSafeToInitialize)
+                {
+                    return;
+                }
 
-            ZoneAutoRefresher.Tick(now);
-            EnsureSpawnHook();
-            ValidateBotBrains(world.AllAlivePlayersList);
+                float now = Time.time;
+                if (now < _nextTick)
+                {
+                    return;
+                }
+
+                _nextTick = now + TickInterval;
+
+                GameWorld world = GameWorldHandler.Get();
+                if (world == null || world.AllAlivePlayersList == null || !GameWorldHandler.IsReady())
+                {
+                    if (!_hasWarnedMissingWorld)
+                    {
+                        Logger.LogWarning("[BotRecoveryService] GameWorld not ready.");
+                        _hasWarnedMissingWorld = true;
+                    }
+
+                    return;
+                }
+
+                if (_hasWarnedMissingWorld)
+                {
+                    Logger.LogInfo("[BotRecoveryService] GameWorld recovered.");
+                    _hasWarnedMissingWorld = false;
+                }
+
+                EnsureSpawnHook();
+                ValidateBotBrains(world.AllAlivePlayersList);
+            }
+            catch (Exception ex)
+            {
+                Logger.LogError("[BotRecoveryService] Tick error: " + ex);
+            }
+        }
+
+        public void OnRaidEnd()
+        {
+            try
+            {
+                Reset();
+                _hasInitialized = false;
+                Logger.LogInfo("[BotRecoveryService] Reset on raid end.");
+            }
+            catch (Exception ex)
+            {
+                Logger.LogError("[BotRecoveryService] OnRaidEnd error: " + ex);
+            }
         }
 
         public static void Reset()
         {
-            _retryAttempts = 0;
             _nextTick = -1f;
             _hasWarnedMissingWorld = false;
             _hasRescanned = false;
         }
 
-        private static void HandleWorldRecovery(bool worldReady)
+        public bool IsReady()
         {
-            if (!_hasWarnedMissingWorld)
-            {
-                Logger.LogWarning("[BotRecoveryService] GameWorld missing or not ready.");
-                _hasWarnedMissingWorld = true;
-            }
+            return _hasInitialized && GameWorldHandler.IsLocalHost() && GameWorldHandler.IsReady();
+        }
 
-            if (_retryAttempts < MaxRetryAttempts)
-            {
-                _retryAttempts++;
-                GameWorldHandler.TryInitializeWorld();
-                ZoneAutoRefresher.Reset();
-                Logger.LogInfo($"[BotRecoveryService] Retry attempt #{_retryAttempts} to reinitialize world.");
-            }
-            else
-            {
-                Logger.LogError("[BotRecoveryService] Max retries reached — recovery halted.");
-            }
+        public WorldPhase RequiredPhase()
+        {
+            return WorldPhase.WorldReady;
         }
 
         private static void EnsureSpawnHook()
         {
-            if (!Singleton<BotSpawner>.Instantiated)
-                return;
+            try
+            {
+                if (!Singleton<BotSpawner>.Instantiated)
+                {
+                    return;
+                }
 
-            BotSpawner spawner = Singleton<BotSpawner>.Instance;
-            spawner.OnBotCreated -= GameWorldHandler.TryAttachBotBrain;
-            spawner.OnBotCreated += GameWorldHandler.TryAttachBotBrain;
+                BotSpawner spawner = Singleton<BotSpawner>.Instance;
+                spawner.OnBotCreated -= GameWorldHandler.TryAttachBotBrain;
+                spawner.OnBotCreated += GameWorldHandler.TryAttachBotBrain;
+            }
+            catch (Exception ex)
+            {
+                Logger.LogError("[BotRecoveryService] EnsureSpawnHook error: " + ex);
+            }
         }
 
         private static void ValidateBotBrains(List<Player> players)
         {
             for (int i = 0; i < players.Count; i++)
             {
-                Player? player = players[i];
+                Player player = players[i];
                 if (player == null || !player.IsAI || player.gameObject == null)
+                {
                     continue;
+                }
 
                 if (player.GetComponent<BotBrain>() != null)
+                {
                     continue;
+                }
 
-                Logger.LogWarning($"[BotRecoveryService] Bot missing brain — restoring: {player.Profile?.Info?.Nickname ?? "Unnamed"}");
+                Logger.LogWarning("[BotRecoveryService] Bot missing brain — restoring: " + (player.Profile != null ? player.Profile.Info.Nickname : "Unnamed"));
+
                 BotBrainGuardian.Enforce(player.gameObject);
 
-                if (player.AIData == null || player.AIData.BotOwner == null)
-                    continue;
-
-                BotOwner? bot = player.AIData.BotOwner;
-                if (bot != null)
+                try
                 {
-                    GameWorldHandler.TryAttachBotBrain(bot);
+                    BotOwner owner = player.AIData != null ? player.AIData.BotOwner : null;
+                    if (owner != null)
+                    {
+                        GameWorldHandler.TryAttachBotBrain(owner);
+                    }
+                }
+                catch (Exception ex)
+                {
+                    Logger.LogError("[BotRecoveryService] Error reattaching BotOwner: " + ex);
                 }
 
                 if (!_hasRescanned)
@@ -149,21 +190,33 @@ namespace AIRefactored.Runtime
 
         private static void RescanWorld()
         {
-            string mapId = GameWorldHandler.GetCurrentMapName();
-            Logger.LogInfo($"[BotRecoveryService] Rescanning world: {mapId}");
+            try
+            {
+                string mapId = GameWorldHandler.TryGetValidMapName();
+                if (mapId.Length == 0)
+                {
+                    Logger.LogWarning("[BotRecoveryService] Rescan aborted — invalid mapId.");
+                    return;
+                }
 
-            HotspotRegistry.Clear();
-            HotspotRegistry.Initialize(mapId);
+                Logger.LogInfo("[BotRecoveryService] Rescanning world: " + mapId);
 
-            LootRegistry.Clear();
-            LootBootstrapper.RegisterAllLoot();
-            BotDeadBodyScanner.ScanAll();
+                HotspotRegistry.Clear();
+                HotspotRegistry.Initialize(mapId);
 
-            NavPointRegistry.Clear();
-            NavPointRegistry.RegisterAll(mapId);
+                LootRegistry.Clear();
+                LootBootstrapper.RegisterAllLoot();
+                BotDeadBodyScanner.ScanAll();
 
-            ZoneAutoRefresher.Reset();
-            Logger.LogInfo("[BotRecoveryService] Rescan complete.");
+                NavPointRegistry.Clear();
+                NavPointRegistry.RegisterAll(mapId);
+
+                Logger.LogInfo("[BotRecoveryService] Rescan complete.");
+            }
+            catch (Exception ex)
+            {
+                Logger.LogError("[BotRecoveryService] RescanWorld error: " + ex);
+            }
         }
     }
 }

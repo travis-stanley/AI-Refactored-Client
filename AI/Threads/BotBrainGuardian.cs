@@ -6,8 +6,6 @@
 //   Please follow strict StyleCop, ReSharper, and AI-Refactored code standards for all modifications.
 // </auto-generated>
 
-#nullable enable
-
 namespace AIRefactored.AI.Threads
 {
     using System;
@@ -26,7 +24,7 @@ namespace AIRefactored.AI.Threads
     /// </summary>
     public static class BotBrainGuardian
     {
-        private static readonly ManualLogSource Logger = AIRefactoredController.Logger;
+        private static readonly ManualLogSource Logger = Plugin.LoggerInstance;
 
         /// <summary>
         /// Enforces AIRefactored control by destroying any foreign MonoBehaviours on the bot GameObject.
@@ -40,14 +38,14 @@ namespace AIRefactored.AI.Threads
             }
 
             MonoBehaviour[] components = botGameObject.GetComponents<MonoBehaviour>();
-            if (components == null || components.Length == 0)
+            if (components.Length == 0)
             {
                 return;
             }
 
             for (int i = 0; i < components.Length; i++)
             {
-                MonoBehaviour? component = components[i];
+                MonoBehaviour component = components[i];
                 if (component == null)
                 {
                     continue;
@@ -93,12 +91,12 @@ namespace AIRefactored.AI.Threads
                 || name == "botfirearmcontroller"
                 || ns.StartsWith("unity")
                 || ns.StartsWith("eft")
-                || ns.IndexOf("comfort", StringComparison.Ordinal) >= 0;
+                || ns.Contains("comfort");
         }
 
         private static bool IsConflictingBrain(string name, string ns)
         {
-            return name.IndexOf("brain", StringComparison.Ordinal) >= 0
+            return name.Contains("brain")
                 || name.StartsWith("pmc")
                 || name.StartsWith("spt")
                 || name.StartsWith("lua")
@@ -106,24 +104,24 @@ namespace AIRefactored.AI.Threads
                 || name.StartsWith("follower")
                 || name.StartsWith("assault")
                 || name.StartsWith("exusec")
-                || ns.IndexOf("sain", StringComparison.Ordinal) >= 0
-                || ns.IndexOf("mod", StringComparison.Ordinal) >= 0
-                || ns.IndexOf("spt", StringComparison.Ordinal) >= 0
-                || ns.IndexOf("lua", StringComparison.Ordinal) >= 0
-                || (ns.IndexOf("tarkov", StringComparison.Ordinal) < 0 && ns.IndexOf("ai-refactored", StringComparison.Ordinal) < 0);
+                || ns.Contains("sain")
+                || ns.Contains("mod")
+                || ns.Contains("spt")
+                || ns.Contains("lua")
+                || (!ns.Contains("tarkov") && !ns.Contains("ai-refactored"));
         }
 
         private static bool IsHarmonyPatched(Type type)
         {
             try
             {
-                MethodInfo? updateMethod = type.GetMethod("Update", BindingFlags.Instance | BindingFlags.Public | BindingFlags.NonPublic);
+                MethodInfo updateMethod = type.GetMethod("Update", BindingFlags.Instance | BindingFlags.Public | BindingFlags.NonPublic);
                 if (updateMethod == null)
                 {
                     return false;
                 }
 
-                Patches? patch = Harmony.GetPatchInfo(updateMethod);
+                Patches patch = Harmony.GetPatchInfo(updateMethod);
                 return patch != null && patch.Owners.Count > 0;
             }
             catch (Exception ex)
@@ -135,14 +133,13 @@ namespace AIRefactored.AI.Threads
 
         private static bool HasSuspiciousMethods(Type type)
         {
-            string[] suspicious = { "Update", "LateUpdate", "FixedUpdate", "Tick" };
+            string[] names = { "Update", "LateUpdate", "FixedUpdate", "Tick" };
 
-            for (int i = 0; i < suspicious.Length; i++)
+            for (int i = 0; i < names.Length; i++)
             {
-                string methodName = suspicious[i];
                 try
                 {
-                    MethodInfo? method = type.GetMethod(methodName, BindingFlags.Instance | BindingFlags.Public | BindingFlags.NonPublic);
+                    MethodInfo method = type.GetMethod(names[i], BindingFlags.Instance | BindingFlags.Public | BindingFlags.NonPublic);
                     if (method != null && method.DeclaringType != typeof(MonoBehaviour))
                     {
                         return true;
@@ -150,7 +147,7 @@ namespace AIRefactored.AI.Threads
                 }
                 catch (Exception ex)
                 {
-                    Logger.LogError("[BotBrainGuardian] Reflection error on method '" + methodName + "': " + ex.Message);
+                    Logger.LogError("[BotBrainGuardian] Reflection error on method '" + names[i] + "': " + ex.Message);
                 }
             }
 

@@ -6,8 +6,6 @@
 //   Please follow strict StyleCop, ReSharper, and AI-Refactored code standards for all modifications.
 // </auto-generated>
 
-#nullable enable
-
 namespace AIRefactored.AI
 {
     using System;
@@ -20,16 +18,12 @@ namespace AIRefactored.AI
     /// </summary>
     public static class BotPersonalityPresets
     {
-        /// <summary>
-        /// Cached personality preset mappings, generated at startup.
-        /// </summary>
         public static readonly Dictionary<PersonalityType, BotPersonalityProfile> Presets;
 
         static BotPersonalityPresets()
         {
             PersonalityType[] types = (PersonalityType[])Enum.GetValues(typeof(PersonalityType));
             Presets = new Dictionary<PersonalityType, BotPersonalityProfile>(types.Length);
-
             for (int i = 0; i < types.Length; i++)
             {
                 PersonalityType type = types[i];
@@ -38,26 +32,47 @@ namespace AIRefactored.AI
         }
 
         /// <summary>
-        /// Generates a randomized bot profile using base traits and blended variance.
+        /// Generates a randomized personality profile for a given type.
         /// </summary>
-        /// <param name="type">The personality type to generate a profile for.</param>
-        /// <returns>A randomized bot personality profile.</returns>
         public static BotPersonalityProfile GenerateProfile(PersonalityType type)
         {
             BotPersonalityProfile p = new BotPersonalityProfile
             {
                 Personality = type,
-                PreferredMission = MissionBias.Random,
-                MovementJitter = 0.2f,
+                Accuracy = 0.6f,
+                AccuracyUnderFire = 0.5f,
+                AggressionLevel = 0.5f,
+                ReactionSpeed = 0.6f,
+                ReactionTime = 0.35f,
+                CommunicationLevel = 0.5f,
+                Caution = 0.5f,
+                FlinchThreshold = 0.5f,
+                RetreatThreshold = 0.3f,
+                SuppressionSensitivity = 0.5f,
+                RepositionPriority = 0.5f,
+                RiskTolerance = 0.5f,
                 SideStepBias = 0.5f,
-                LeanPeekFrequency = 0.5f,
-                CornerCheckPauseTime = 0.35f,
-                LeaningStyle = LeanPreference.Conservative,
+                FlankBias = 0.5f,
+                Cohesion = 0.5f,
                 SuppressiveFireBias = 0.2f,
                 Greed = 0.5f,
-                StuckTolerance = 0.5f
+                MovementJitter = 0.2f,
+                CornerCheckPauseTime = 0.35f,
+                LeanPeekFrequency = 0.5f,
+                LeaningStyle = LeanPreference.Conservative,
+                PreferredMission = MissionBias.Random,
+                ChaosFactor = 0f,
+                EngagementRange = 60f,
+                StuckTolerance = 0.5f,
+                IsFearful = false,
+                IsFrenzied = false,
+                IsStubborn = false,
+                IsSilentHunter = false,
+                IsCamper = false,
+                IsDumb = false
             };
 
+            // Apply traits based on type (this switch covers all PersonalityType values)
             switch (type)
             {
                 case PersonalityType.Adaptive:
@@ -66,11 +81,7 @@ namespace AIRefactored.AI
                     p.CommunicationLevel = 0.8f;
                     p.ReactionSpeed = 0.75f;
                     p.SuppressiveFireBias = 0.4f;
-                    p.LeaningStyle = LeanPreference.Conservative;
-                    p.Greed = 0.5f;
-                    p.StuckTolerance = 0.5f;
                     break;
-
                 case PersonalityType.Aggressive:
                     p.AggressionLevel = 1f;
                     p.RetreatThreshold = 0.05f;
@@ -80,17 +91,13 @@ namespace AIRefactored.AI
                     p.Greed = 0.4f;
                     p.StuckTolerance = 0.3f;
                     break;
-
                 case PersonalityType.Balanced:
                     p.Accuracy = 0.7f;
                     p.AggressionLevel = 0.6f;
                     p.Caution = 0.5f;
-                    p.LeaningStyle = LeanPreference.Conservative;
-                    p.SuppressiveFireBias = 0.2f;
                     p.Greed = 0.6f;
                     p.StuckTolerance = 0.6f;
                     break;
-
                 case PersonalityType.Camper:
                     p.IsCamper = true;
                     p.EngagementRange = 120f;
@@ -102,37 +109,30 @@ namespace AIRefactored.AI
                     p.Greed = 0.8f;
                     p.StuckTolerance = 0.2f;
                     break;
-
                 case PersonalityType.Cautious:
                     p.Caution = 0.95f;
                     p.RetreatThreshold = 0.6f;
                     p.ReactionTime = 0.3f;
-                    p.LeaningStyle = LeanPreference.Conservative;
                     p.SuppressiveFireBias = 0.3f;
                     p.Greed = 0.4f;
                     p.StuckTolerance = 0.3f;
                     break;
-
                 case PersonalityType.ColdBlooded:
                     p.FlinchThreshold = 1f;
                     p.ReactionTime = 0.3f;
                     p.Caution = 0.8f;
                     p.SuppressiveFireBias = 0.4f;
-                    p.LeaningStyle = LeanPreference.Conservative;
                     p.Greed = 0.3f;
                     p.StuckTolerance = 0.9f;
                     break;
-
                 case PersonalityType.Defensive:
                     p.Caution = 0.8f;
                     p.CommunicationLevel = 0.9f;
                     p.RetreatThreshold = 0.5f;
                     p.SuppressiveFireBias = 0.5f;
-                    p.LeaningStyle = LeanPreference.Conservative;
                     p.Greed = 0.3f;
                     p.StuckTolerance = 0.7f;
                     break;
-
                 case PersonalityType.Dumb:
                     p.IsDumb = true;
                     p.Accuracy = 0.3f;
@@ -143,7 +143,6 @@ namespace AIRefactored.AI
                     p.Greed = 0.2f;
                     p.StuckTolerance = 0.1f;
                     break;
-
                 case PersonalityType.Explorer:
                     p.EngagementRange = 110f;
                     p.RiskTolerance = 0.9f;
@@ -154,7 +153,6 @@ namespace AIRefactored.AI
                     p.Greed = 0.6f;
                     p.StuckTolerance = 0.8f;
                     break;
-
                 case PersonalityType.Fearful:
                     p.IsFearful = true;
                     p.Accuracy = 0.4f;
@@ -162,12 +160,10 @@ namespace AIRefactored.AI
                     p.Caution = 0.9f;
                     p.AggressionLevel = 0.1f;
                     p.PreferredMission = MissionBias.Loot;
-                    p.LeaningStyle = LeanPreference.Conservative;
                     p.SuppressiveFireBias = 0.25f;
                     p.Greed = 0.5f;
                     p.StuckTolerance = 0.2f;
                     break;
-
                 case PersonalityType.Frenzied:
                     p.IsFrenzied = true;
                     p.AggressionLevel = 1f;
@@ -180,7 +176,6 @@ namespace AIRefactored.AI
                     p.Greed = 0.3f;
                     p.StuckTolerance = 0.1f;
                     break;
-
                 case PersonalityType.Greedy:
                     p.RiskTolerance = 0.8f;
                     p.Cohesion = 0.4f;
@@ -215,7 +210,6 @@ namespace AIRefactored.AI
                     p.MovementJitter = 0.1f;
                     p.LeanPeekFrequency = 0.7f;
                     p.CornerCheckPauseTime = 0.5f;
-                    p.LeaningStyle = LeanPreference.Conservative;
                     p.SuppressiveFireBias = 0.6f;
                     p.Greed = 0.5f;
                     p.StuckTolerance = 0.6f;
@@ -226,7 +220,6 @@ namespace AIRefactored.AI
                     p.Caution = 0.95f;
                     p.FlinchThreshold = 0.9f;
                     p.SideStepBias = 0.6f;
-                    p.LeaningStyle = LeanPreference.Conservative;
                     p.SuppressiveFireBias = 0.5f;
                     p.Greed = 0.3f;
                     p.StuckTolerance = 0.4f;
@@ -236,7 +229,6 @@ namespace AIRefactored.AI
                     p.ReactionTime = 0.5f;
                     p.Accuracy = 0.9f;
                     p.SuppressiveFireBias = 0.4f;
-                    p.LeaningStyle = LeanPreference.Conservative;
                     p.Greed = 0.4f;
                     p.StuckTolerance = 0.7f;
                     break;
@@ -246,7 +238,6 @@ namespace AIRefactored.AI
                     p.RetreatThreshold = 0f;
                     p.ChaosFactor = 0.8f;
                     p.SuppressiveFireBias = 0.3f;
-                    p.LeaningStyle = LeanPreference.Aggressive;
                     p.Greed = 0.4f;
                     p.StuckTolerance = 0.2f;
                     break;
@@ -256,7 +247,6 @@ namespace AIRefactored.AI
                     p.RetreatThreshold = 0.1f;
                     p.AggressionLevel = 0.7f;
                     p.SuppressiveFireBias = 0.35f;
-                    p.LeaningStyle = LeanPreference.Aggressive;
                     p.Greed = 0.6f;
                     p.StuckTolerance = 0.3f;
                     break;
@@ -287,7 +277,6 @@ namespace AIRefactored.AI
                     p.CommunicationLevel = 0.9f;
                     p.FlankBias = 0.8f;
                     p.SuppressiveFireBias = 0.5f;
-                    p.LeaningStyle = LeanPreference.Conservative;
                     p.Greed = 0.5f;
                     p.StuckTolerance = 0.7f;
                     break;
@@ -305,7 +294,6 @@ namespace AIRefactored.AI
                     p.Accuracy = 0.85f;
                     p.FlinchThreshold = 0.6f;
                     p.RepositionPriority = 0.9f;
-                    p.LeaningStyle = LeanPreference.Conservative;
                     p.SuppressiveFireBias = 0.6f;
                     p.Greed = 0.6f;
                     p.StuckTolerance = 0.7f;
@@ -316,7 +304,6 @@ namespace AIRefactored.AI
                     p.Cohesion = 1f;
                     p.RiskTolerance = 0.5f;
                     p.SuppressiveFireBias = 0.45f;
-                    p.LeaningStyle = LeanPreference.Conservative;
                     p.Greed = 0.5f;
                     p.StuckTolerance = 0.8f;
                     break;
@@ -324,7 +311,6 @@ namespace AIRefactored.AI
                 case PersonalityType.Unpredictable:
                     p.ChaosFactor = 1f;
                     p.SuppressiveFireBias = 0.3f;
-                    p.LeaningStyle = LeanPreference.Aggressive;
                     p.Greed = 0.5f;
                     p.StuckTolerance = 0.3f;
                     break;
@@ -333,7 +319,6 @@ namespace AIRefactored.AI
                     p.AggressionLevel = 0.9f;
                     p.CommunicationLevel = 0.2f;
                     p.RetreatThreshold = 0.1f;
-                    p.LeaningStyle = LeanPreference.Conservative;
                     p.SuppressiveFireBias = 0.4f;
                     p.Greed = 0.6f;
                     p.StuckTolerance = 0.6f;
@@ -351,7 +336,6 @@ namespace AIRefactored.AI
                     p.FlinchThreshold = 0.8f;
                     p.Caution = 0.7f;
                     p.RepositionPriority = 1f;
-                    p.LeaningStyle = LeanPreference.Conservative;
                     p.SuppressiveFireBias = 0.5f;
                     p.Greed = 0.4f;
                     p.StuckTolerance = 0.9f;
@@ -374,7 +358,6 @@ namespace AIRefactored.AI
                     p.ReactionTime = 0.35f;
                     p.MovementJitter = 0f;
                     p.SuppressiveFireBias = 0.3f;
-                    p.LeaningStyle = LeanPreference.Conservative;
                     p.Greed = 0.4f;
                     p.StuckTolerance = 0.8f;
                     break;
@@ -384,7 +367,6 @@ namespace AIRefactored.AI
                     p.RetreatThreshold = 0f;
                     p.FlinchThreshold = 0.9f;
                     p.SuppressiveFireBias = 0.6f;
-                    p.LeaningStyle = LeanPreference.Aggressive;
                     p.Greed = 0.5f;
                     p.StuckTolerance = 0.3f;
                     break;
@@ -412,7 +394,6 @@ namespace AIRefactored.AI
                     p.ChaosFactor = 1f;
                     p.AggressionLevel = 0.6f;
                     p.SuppressiveFireBias = 0.7f;
-                    p.LeaningStyle = LeanPreference.Aggressive;
                     p.Greed = 0.5f;
                     p.StuckTolerance = 0.4f;
                     break;
@@ -422,7 +403,6 @@ namespace AIRefactored.AI
                     p.FlankBias = 0.5f;
                     p.SuppressiveFireBias = 0.75f;
                     p.Cohesion = 1f;
-                    p.LeaningStyle = LeanPreference.Conservative;
                     p.Greed = 0.5f;
                     p.StuckTolerance = 0.9f;
                     break;
@@ -431,7 +411,6 @@ namespace AIRefactored.AI
                     p.Accuracy = 0.85f;
                     p.PreferredMission = MissionBias.Fight;
                     p.SuppressiveFireBias = 0.4f;
-                    p.LeaningStyle = LeanPreference.Conservative;
                     p.Greed = 0.5f;
                     p.StuckTolerance = 0.6f;
                     break;
@@ -440,7 +419,6 @@ namespace AIRefactored.AI
                     p.Accuracy = 0.8f;
                     p.Caution = 0.6f;
                     p.SuppressiveFireBias = 0.3f;
-                    p.LeaningStyle = LeanPreference.Conservative;
                     p.Greed = 0.6f;
                     p.StuckTolerance = 0.6f;
                     break;
@@ -458,7 +436,6 @@ namespace AIRefactored.AI
                     p.RepositionPriority = 0f;
                     p.Cohesion = 0.8f;
                     p.SuppressiveFireBias = 0.6f;
-                    p.LeaningStyle = LeanPreference.Conservative;
                     p.Greed = 0.4f;
                     p.StuckTolerance = 0.8f;
                     break;
@@ -468,7 +445,6 @@ namespace AIRefactored.AI
                     p.AggressionLevel = 0.5f;
                     p.Caution = 0.5f;
                     p.SuppressiveFireBias = 0.4f;
-                    p.LeaningStyle = LeanPreference.Aggressive;
                     p.Greed = 0.5f;
                     p.StuckTolerance = 0.4f;
                     break;
@@ -491,19 +467,17 @@ namespace AIRefactored.AI
                     p.Greed = 0.9f;
                     p.StuckTolerance = 0.3f;
                     break;
+
             }
 
             ApplyRandomBlend(p);
             return p;
         }
 
-        /// <summary>
-        /// Adds random variation to create behavioral diversity among same-type bots.
-        /// </summary>
-        /// <param name="p">The profile to modify.</param>
         private static void ApplyRandomBlend(BotPersonalityProfile p)
         {
-            float chaos = p.ChaosFactor;
+            const float Min01 = 0f;
+            const float Max01 = 1f;
 
             p.Accuracy += UnityEngine.Random.Range(-0.1f, 0.15f);
             p.AggressionLevel += UnityEngine.Random.Range(-0.1f, 0.15f);
@@ -525,24 +499,25 @@ namespace AIRefactored.AI
             p.Greed += UnityEngine.Random.Range(-0.1f, 0.15f);
             p.StuckTolerance += UnityEngine.Random.Range(-0.1f, 0.15f);
 
-            p.Accuracy = Mathf.Clamp01(p.Accuracy);
-            p.AggressionLevel = Mathf.Clamp01(p.AggressionLevel);
-            p.CommunicationLevel = Mathf.Clamp01(p.CommunicationLevel);
-            p.Cohesion = Mathf.Clamp01(p.Cohesion);
+            p.Accuracy = Mathf.Clamp(p.Accuracy, Min01, Max01);
+            p.AggressionLevel = Mathf.Clamp(p.AggressionLevel, Min01, Max01);
+            p.CommunicationLevel = Mathf.Clamp(p.CommunicationLevel, Min01, Max01);
+            p.Cohesion = Mathf.Clamp(p.Cohesion, Min01, Max01);
             p.MovementJitter = Mathf.Clamp(p.MovementJitter, 0f, 0.5f);
-            p.ReactionSpeed = Mathf.Clamp01(p.ReactionSpeed);
+            p.ReactionSpeed = Mathf.Clamp(p.ReactionSpeed, Min01, Max01);
             p.ReactionTime = Mathf.Clamp(p.ReactionTime, 0.1f, 0.5f);
-            p.SideStepBias = Mathf.Clamp01(p.SideStepBias);
-            p.LeanPeekFrequency = Mathf.Clamp01(p.LeanPeekFrequency);
-            p.FlankBias = Mathf.Clamp01(p.FlankBias);
-            p.SuppressionSensitivity = Mathf.Clamp01(p.SuppressionSensitivity);
-            p.FlinchThreshold = Mathf.Clamp01(p.FlinchThreshold);
-            p.RetreatThreshold = Mathf.Clamp01(p.RetreatThreshold);
-            p.RepositionPriority = Mathf.Clamp01(p.RepositionPriority);
-            p.RiskTolerance = Mathf.Clamp01(p.RiskTolerance);
-            p.SuppressiveFireBias = Mathf.Clamp01(p.SuppressiveFireBias);
-            p.Greed = Mathf.Clamp01(p.Greed);
-            p.StuckTolerance = Mathf.Clamp01(p.StuckTolerance);
+            p.SideStepBias = Mathf.Clamp(p.SideStepBias, Min01, Max01);
+            p.LeanPeekFrequency = Mathf.Clamp(p.LeanPeekFrequency, Min01, Max01);
+            p.FlankBias = Mathf.Clamp(p.FlankBias, Min01, Max01);
+            p.SuppressionSensitivity = Mathf.Clamp(p.SuppressionSensitivity, Min01, Max01);
+            p.FlinchThreshold = Mathf.Clamp(p.FlinchThreshold, Min01, Max01);
+            p.RetreatThreshold = Mathf.Clamp(p.RetreatThreshold, Min01, Max01);
+            p.RepositionPriority = Mathf.Clamp(p.RepositionPriority, Min01, Max01);
+            p.RiskTolerance = Mathf.Clamp(p.RiskTolerance, Min01, Max01);
+            p.SuppressiveFireBias = Mathf.Clamp(p.SuppressiveFireBias, Min01, Max01);
+            p.Greed = Mathf.Clamp(p.Greed, Min01, Max01);
+            p.StuckTolerance = Mathf.Clamp(p.StuckTolerance, Min01, Max01);
         }
     }
 }
+

@@ -6,8 +6,6 @@
 //   Please follow strict StyleCop, ReSharper, and AI-Refactored code standards for all modifications.
 // </auto-generated>
 
-#nullable enable
-
 namespace AIRefactored.AI.Movement
 {
     using System;
@@ -50,18 +48,20 @@ namespace AIRefactored.AI.Movement
 
         public BotJumpController(BotOwner bot, BotComponentCache cache)
         {
-            if (bot == null) throw new ArgumentNullException(nameof(bot));
-            if (cache == null) throw new ArgumentNullException(nameof(cache));
-
-            Player? player = bot.GetPlayer;
-            if (player?.MovementContext == null)
+            if (bot == null || cache == null)
             {
-                throw new InvalidOperationException("[BotJumpController] Missing MovementContext.");
+                throw new ArgumentException("BotJumpController: bot or cache is null.");
             }
 
-            this._bot = bot;
-            this._cache = cache;
-            this._context = player.MovementContext;
+            Player player = bot.GetPlayer;
+            if (player == null || player.MovementContext == null)
+            {
+                throw new InvalidOperationException("[BotJumpController] MovementContext is missing.");
+            }
+
+            _bot = bot;
+            _cache = cache;
+            _context = player.MovementContext;
         }
 
         #endregion
@@ -70,14 +70,14 @@ namespace AIRefactored.AI.Movement
 
         public void Tick(float deltaTime)
         {
-            if (!this.IsJumpAllowed())
+            if (!IsJumpAllowed())
             {
                 return;
             }
 
-            if (this.TryFindJumpTarget(out Vector3 target))
+            if (TryFindJumpTarget(out Vector3 target))
             {
-                this.ExecuteJump(target, deltaTime);
+                ExecuteJump(target, deltaTime);
             }
         }
 
@@ -89,55 +89,49 @@ namespace AIRefactored.AI.Movement
         {
             float now = Time.time;
 
-            if (this._hasRecentlyJumped && now - this._lastJumpTime < JumpCooldown)
+            if (_hasRecentlyJumped && now - _lastJumpTime < JumpCooldown)
             {
                 return false;
             }
 
-            if (!this._context.IsGrounded || this._context.IsInPronePose)
+            if (!_context.IsGrounded || _context.IsInPronePose)
             {
                 return false;
             }
 
-            if (this._cache.PanicHandler != null && this._cache.PanicHandler.IsPanicking)
+            if (_cache.PanicHandler != null && _cache.PanicHandler.IsPanicking)
             {
                 return false;
             }
 
-            this._hasRecentlyJumped = false;
+            _hasRecentlyJumped = false;
             return true;
         }
 
         private void ExecuteJump(Vector3 landingPoint, float deltaTime)
         {
-            this._context.OnJump();
-            this._lastJumpTime = Time.time;
-            this._hasRecentlyJumped = true;
+            _context.OnJump();
+            _lastJumpTime = Time.time;
+            _hasRecentlyJumped = true;
 
-            Vector3 velocity = (landingPoint - this._context.TransformPosition).normalized * JumpVelocityMultiplier;
-            this._context.ApplyMotion(velocity, deltaTime);
+            Vector3 velocity = (landingPoint - _context.TransformPosition).normalized * JumpVelocityMultiplier;
+            _context.ApplyMotion(velocity, deltaTime);
         }
 
         private bool TryFindJumpTarget(out Vector3 target)
         {
             target = Vector3.zero;
 
-            Vector3 origin = this._context.PlayerColliderCenter + Vector3.up * 0.25f;
-            Vector3 forward = this._context.TransformForwardVector;
+            Vector3 origin = _context.PlayerColliderCenter + Vector3.up * 0.25f;
+            Vector3 forward = _context.TransformForwardVector;
 
             if (!Physics.SphereCast(origin, ObstacleCheckRadius, forward, out RaycastHit obstacleHit, JumpCheckDistance, AIRefactoredLayerMasks.ObstacleRayMask))
             {
                 return false;
             }
 
-            Collider? collider = obstacleHit.collider;
-            if (collider == null)
-            {
-                return false;
-            }
-
-            Bounds bounds = collider.bounds;
-            float height = bounds.max.y - this._context.TransformPosition.y;
+            Bounds bounds = obstacleHit.collider.bounds;
+            float height = bounds.max.y - _context.TransformPosition.y;
 
             if (height < MinJumpHeight || height > MaxJumpHeight)
             {
@@ -151,7 +145,7 @@ namespace AIRefactored.AI.Movement
                 return false;
             }
 
-            float fallHeight = this._context.TransformPosition.y - landing.point.y;
+            float fallHeight = _context.TransformPosition.y - landing.point.y;
             if (fallHeight > SafeFallHeight)
             {
                 return false;

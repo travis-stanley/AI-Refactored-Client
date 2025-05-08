@@ -6,8 +6,6 @@
 //   Please follow strict StyleCop, ReSharper, and AI-Refactored code standards for all modifications.
 // </auto-generated>
 
-#nullable enable
-
 namespace AIRefactored.AI.Looting
 {
     using System;
@@ -35,8 +33,8 @@ namespace AIRefactored.AI.Looting
 
         #region Fields
 
-        private BotComponentCache? _cache;
-        private BotOwner? _bot;
+        private BotComponentCache _cache;
+        private BotOwner _bot;
         private float _nextLootTime;
         private readonly HashSet<string> _recentLooted = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
 
@@ -47,10 +45,16 @@ namespace AIRefactored.AI.Looting
         /// <summary>
         /// Initializes the loot decision system with bot context.
         /// </summary>
+        /// <param name="cache">The bot's component cache.</param>
         public void Initialize(BotComponentCache cache)
         {
-            this._cache = cache ?? throw new ArgumentNullException(nameof(cache));
-            this._bot = cache.Bot ?? throw new ArgumentNullException(nameof(cache.Bot));
+            if (cache == null || cache.Bot == null)
+            {
+                throw new ArgumentNullException(nameof(cache), "[BotLootDecisionSystem] Initialization failed: cache or bot is null.");
+            }
+
+            _cache = cache;
+            _bot = cache.Bot;
         }
 
         #endregion
@@ -62,27 +66,27 @@ namespace AIRefactored.AI.Looting
         /// </summary>
         public bool ShouldLootNow()
         {
-            if (this._cache == null || this._bot == null || this._bot.IsDead)
+            if (_bot.IsDead || Time.time < _nextLootTime)
             {
                 return false;
             }
 
-            if (Time.time < this._nextLootTime)
+            if (_cache.PanicHandler != null && _cache.PanicHandler.IsPanicking)
             {
                 return false;
             }
 
-            if (this._cache.PanicHandler?.IsPanicking == true)
+            if (_bot.Memory != null && _bot.Memory.GoalEnemy != null)
             {
                 return false;
             }
 
-            if (this._bot.Memory?.GoalEnemy != null || this._bot.EnemiesController?.EnemyInfos.Count > 0)
+            if (_bot.EnemiesController != null && _bot.EnemiesController.EnemyInfos.Count > 0)
             {
                 return false;
             }
 
-            return this._cache.LootScanner != null && this._cache.LootScanner.TotalLootValue >= HighValueThreshold;
+            return _cache.LootScanner != null && _cache.LootScanner.TotalLootValue >= HighValueThreshold;
         }
 
         /// <summary>
@@ -90,34 +94,34 @@ namespace AIRefactored.AI.Looting
         /// </summary>
         public Vector3 GetLootDestination()
         {
-            if (this._bot == null || this._cache?.LootScanner == null)
+            if (_cache.LootScanner == null)
             {
                 return Vector3.zero;
             }
 
             float bestValue = 0f;
-            Vector3 bestPoint = this._bot.Position;
+            Vector3 bestPoint = _bot.Position;
 
             List<LootableContainer> containers = LootRegistry.GetAllContainers();
             for (int i = 0; i < containers.Count; i++)
             {
-                LootableContainer c = containers[i];
-                if (c == null || !c.enabled || c.transform == null)
+                LootableContainer container = containers[i];
+                if (container == null || !container.enabled || container.transform == null)
                 {
                     continue;
                 }
 
-                float dist = Vector3.Distance(this._bot.Position, c.transform.position);
+                float dist = Vector3.Distance(_bot.Position, container.transform.position);
                 if (dist > MaxLootDistance)
                 {
                     continue;
                 }
 
-                float value = EstimateValue(c);
+                float value = EstimateValue(container);
                 if (value > bestValue)
                 {
                     bestValue = value;
-                    bestPoint = c.transform.position;
+                    bestPoint = container.transform.position;
                 }
             }
 
@@ -127,40 +131,30 @@ namespace AIRefactored.AI.Looting
         /// <summary>
         /// Marks the loot spot as visited and triggers local cooldown.
         /// </summary>
-        public void MarkLooted(string? lootId)
+        /// <param name="lootId">The ID of the loot container.</param>
+        public void MarkLooted(string lootId)
         {
-            if (lootId == null)
+            if (string.IsNullOrWhiteSpace(lootId))
             {
                 return;
             }
 
-            string trimmed = lootId.Trim();
-            if (trimmed.Length == 0)
-            {
-                return;
-            }
-
-            this._recentLooted.Add(trimmed);
-            this._nextLootTime = Time.time + CooldownTime;
+            _recentLooted.Add(lootId.Trim());
+            _nextLootTime = Time.time + CooldownTime;
         }
 
         /// <summary>
         /// Checks if a loot point was recently looted by this bot.
         /// </summary>
-        public bool WasRecentlyLooted(string? lootId)
+        /// <param name="lootId">The loot identifier to check.</param>
+        public bool WasRecentlyLooted(string lootId)
         {
-            if (lootId == null)
+            if (string.IsNullOrWhiteSpace(lootId))
             {
                 return false;
             }
 
-            string trimmed = lootId.Trim();
-            if (trimmed.Length == 0)
-            {
-                return false;
-            }
-
-            return this._recentLooted.Contains(trimmed);
+            return _recentLooted.Contains(lootId.Trim());
         }
 
         #endregion
@@ -169,7 +163,7 @@ namespace AIRefactored.AI.Looting
 
         private static float EstimateValue(LootableContainer container)
         {
-            if (container.ItemOwner?.RootItem == null)
+            if (container.ItemOwner == null || container.ItemOwner.RootItem == null)
             {
                 return 0f;
             }
@@ -179,7 +173,7 @@ namespace AIRefactored.AI.Looting
             for (int i = 0; i < items.Count; i++)
             {
                 Item item = items[i];
-                if (item?.Template?.CreditsPrice > 0)
+                if (item != null && item.Template != null && item.Template.CreditsPrice > 0f)
                 {
                     value += item.Template.CreditsPrice;
                 }

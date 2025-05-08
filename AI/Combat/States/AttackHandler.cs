@@ -6,8 +6,6 @@
 //   Please follow strict StyleCop, ReSharper, and AI-Refactored code standards for all modifications.
 // </auto-generated>
 
-#nullable enable
-
 namespace AIRefactored.AI.Combat.States
 {
     using System;
@@ -19,8 +17,8 @@ namespace AIRefactored.AI.Combat.States
     using UnityEngine;
 
     /// <summary>
-    /// Controls behavior during direct combat engagements.
-    /// Drives toward target, aligns stance, and updates destination dynamically.
+    /// Controls direct combat engagement logic.
+    /// Pushes toward the enemy, recalculates stance and movement based on distance, visibility, and cover presence.
     /// </summary>
     public sealed class AttackHandler
     {
@@ -28,7 +26,11 @@ namespace AIRefactored.AI.Combat.States
 
         private readonly BotOwner _bot;
         private readonly BotComponentCache _cache;
-        private Vector3? _lastTargetPosition;
+
+        private Vector3 _lastTargetPosition;
+        private bool _hasLastTarget;
+
+        private const float PositionUpdateThresholdSqr = 1.0f;
 
         #endregion
 
@@ -42,18 +44,20 @@ namespace AIRefactored.AI.Combat.States
         {
             if (cache == null)
             {
-                AIRefactoredController.Logger.LogError("[AttackHandler] Constructor failed: cache is null.");
+                Plugin.LoggerInstance.LogError("[AttackHandler] Constructor failed: cache is null.");
                 throw new ArgumentNullException(nameof(cache));
             }
 
             if (cache.Bot == null)
             {
-                AIRefactoredController.Logger.LogError("[AttackHandler] Constructor failed: BotOwner is null.");
+                Plugin.LoggerInstance.LogError("[AttackHandler] Constructor failed: BotOwner is null.");
                 throw new InvalidOperationException("AttackHandler requires a valid BotOwner.");
             }
 
             this._cache = cache;
             this._bot = cache.Bot;
+            this._lastTargetPosition = Vector3.zero;
+            this._hasLastTarget = false;
         }
 
         #endregion
@@ -61,51 +65,51 @@ namespace AIRefactored.AI.Combat.States
         #region Public Methods
 
         /// <summary>
-        /// Clears last known target position.
+        /// Resets last tracked enemy position.
         /// </summary>
         public void ClearTarget()
         {
-            this._lastTargetPosition = null;
+            this._hasLastTarget = false;
+            this._lastTargetPosition = Vector3.zero;
         }
 
         /// <summary>
-        /// Determines if the attack state should be used.
+        /// Determines if the bot has a valid reason to enter the attack state.
         /// </summary>
-        /// <returns>True if the bot should use attack logic.</returns>
+        /// <returns>True if a valid enemy target exists.</returns>
         public bool ShallUseNow()
         {
-            Player? target = this.GetCurrentEnemy();
-            return EFTPlayerUtil.IsValid(target);
+            return this.ResolveEnemy(out Player resolved) && EFTPlayerUtil.IsValid(resolved);
         }
 
         /// <summary>
-        /// Updates attack logic based on target position.
+        /// Updates bot movement and stance toward enemy.
         /// </summary>
-        /// <param name="time">Current game time.</param>
+        /// <param name="time">Current world time.</param>
         public void Tick(float time)
         {
-            Player? enemy = this.GetCurrentEnemy();
-            if (!EFTPlayerUtil.IsValid(enemy))
+            Player enemy;
+            if (!this.ResolveEnemy(out enemy))
             {
                 return;
             }
 
-            Transform? enemyTransform = EFTPlayerUtil.GetTransform(enemy);
+            Transform enemyTransform = EFTPlayerUtil.GetTransform(enemy);
             if (enemyTransform == null)
             {
                 return;
             }
 
-            Vector3 targetPosition = enemyTransform.position;
+            Vector3 currentPosition = enemyTransform.position;
 
-            if (!this._lastTargetPosition.HasValue ||
-                (this._lastTargetPosition.Value - targetPosition).sqrMagnitude > 1.0f)
+            if (!this._hasLastTarget || (currentPosition - this._lastTargetPosition).sqrMagnitude > PositionUpdateThresholdSqr)
             {
-                this._lastTargetPosition = targetPosition;
+                this._lastTargetPosition = currentPosition;
+                this._hasLastTarget = true;
 
-                Vector3 destination = this._cache.SquadPath != null
-                    ? this._cache.SquadPath.ApplyOffsetTo(targetPosition)
-                    : targetPosition;
+                Vector3 destination = (this._cache.SquadPath != null)
+                    ? this._cache.SquadPath.ApplyOffsetTo(currentPosition)
+                    : currentPosition;
 
                 BotMovementHelper.SmoothMoveTo(this._bot, destination);
                 BotCoverHelper.TrySetStanceFromNearbyCover(this._cache, destination);
@@ -117,27 +121,35 @@ namespace AIRefactored.AI.Combat.States
         #region Private Methods
 
         /// <summary>
-        /// Gets the current valid enemy, if any.
+        /// Resolves the most current known enemy.
         /// </summary>
-        /// <returns>The current enemy target or null.</returns>
-        private Player? GetCurrentEnemy()
+        /// <param name="resolved">Output enemy player if found.</param>
+        /// <returns>True if a valid enemy was found.</returns>
+        private bool ResolveEnemy(out Player resolved)
         {
-            if (this._cache == null || this._bot == null)
+            resolved = null;
+
+            if (this._cache.ThreatSelector != null)
             {
-                return null;
+                Player current = this._cache.ThreatSelector.CurrentTarget as Player;
+                if (EFTPlayerUtil.IsValid(current))
+                {
+                    resolved = current;
+                    return true;
+                }
             }
 
-            if (this._cache.ThreatSelector?.CurrentTarget is Player target && EFTPlayerUtil.IsValid(target))
+            if (this._bot.Memory != null && this._bot.Memory.GoalEnemy != null)
             {
-                return target;
+                Player fallback = this._bot.Memory.GoalEnemy.Person as Player;
+                if (EFTPlayerUtil.IsValid(fallback))
+                {
+                    resolved = fallback;
+                    return true;
+                }
             }
 
-            if (this._bot.Memory?.GoalEnemy?.Person is Player fallback && EFTPlayerUtil.IsValid(fallback))
-            {
-                return fallback;
-            }
-
-            return null;
+            return false;
         }
 
         #endregion

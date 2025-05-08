@@ -6,8 +6,6 @@
 //   Please follow strict StyleCop, ReSharper, and AI-Refactored code standards for all modifications.
 // </auto-generated>
 
-#nullable enable
-
 namespace AIRefactored.AI.Looting
 {
     using System;
@@ -44,141 +42,162 @@ namespace AIRefactored.AI.Looting
 
         #region Buffers
 
-        private static readonly List<TrackedContainer> _containerBuffer = new List<TrackedContainer>(32);
-        private static readonly List<TrackedItem> _itemBuffer = new List<TrackedItem>(64);
-        private static readonly List<LootableContainer> _containerResultBuffer = new List<LootableContainer>(32);
-        private static readonly List<LootItem> _itemResultBuffer = new List<LootItem>(64);
+        private static readonly List<TrackedContainer> ContainerBuffer = new List<TrackedContainer>(32);
+        private static readonly List<TrackedItem> ItemBuffer = new List<TrackedItem>(64);
+        private static readonly List<LootableContainer> ContainerResultBuffer = new List<LootableContainer>(32);
+        private static readonly List<LootItem> ItemResultBuffer = new List<LootItem>(64);
 
         #endregion
 
         #region State
 
-        private static readonly Dictionary<LootableContainer, TrackedContainer> _containers = new Dictionary<LootableContainer, TrackedContainer>(64);
-        private static readonly Dictionary<LootItem, TrackedItem> _items = new Dictionary<LootItem, TrackedItem>(128);
-        private static readonly HashSet<GameObject> _watchedObjects = new HashSet<GameObject>();
+        private static readonly Dictionary<LootableContainer, TrackedContainer> Containers = new Dictionary<LootableContainer, TrackedContainer>(64);
+        private static readonly Dictionary<LootItem, TrackedItem> Items = new Dictionary<LootItem, TrackedItem>(128);
+        private static readonly HashSet<GameObject> WatchedObjects = new HashSet<GameObject>();
 
-        private static readonly ManualLogSource Logger = AIRefactoredController.Logger;
+        private static readonly ManualLogSource Logger = Plugin.LoggerInstance;
 
         #endregion
 
         #region Public API
 
+        public static void Initialize()
+        {
+            Clear();
+            LootRuntimeWatcher.Reset();
+            Logger.LogInfo("[LootRegistry] Initialized loot tracking system.");
+        }
+
         public static List<LootableContainer> GetAllContainers()
         {
-            _containerResultBuffer.Clear();
-            foreach (var kv in _containers)
+            ContainerResultBuffer.Clear();
+            foreach (KeyValuePair<LootableContainer, TrackedContainer> kv in Containers)
             {
                 if (kv.Key != null)
-                    _containerResultBuffer.Add(kv.Key);
+                {
+                    ContainerResultBuffer.Add(kv.Key);
+                }
             }
 
-            return _containerResultBuffer;
+            return ContainerResultBuffer;
         }
 
         public static List<LootItem> GetAllItems()
         {
-            _itemResultBuffer.Clear();
-            foreach (var kv in _items)
+            ItemResultBuffer.Clear();
+            foreach (KeyValuePair<LootItem, TrackedItem> kv in Items)
             {
                 if (kv.Key != null)
-                    _itemResultBuffer.Add(kv.Key);
+                {
+                    ItemResultBuffer.Add(kv.Key);
+                }
             }
 
-            return _itemResultBuffer;
+            return ItemResultBuffer;
         }
 
         public static void Clear()
         {
-            _containers.Clear();
-            _items.Clear();
-            _watchedObjects.Clear();
-            _containerBuffer.Clear();
-            _itemBuffer.Clear();
-            _containerResultBuffer.Clear();
-            _itemResultBuffer.Clear();
+            Containers.Clear();
+            Items.Clear();
+            WatchedObjects.Clear();
+            ContainerBuffer.Clear();
+            ItemBuffer.Clear();
+            ContainerResultBuffer.Clear();
+            ItemResultBuffer.Clear();
         }
 
         public static List<LootableContainer> GetNearbyContainers(Vector3 origin, float radius)
         {
-            _containerResultBuffer.Clear();
-            float radiusSqr = radius * radius;
+            ContainerResultBuffer.Clear();
+            float radiusSq = radius * radius;
 
-            foreach (var tracked in _containers.Values)
+            foreach (TrackedContainer tracked in Containers.Values)
             {
                 if (tracked.Transform == null)
+                {
                     continue;
+                }
 
                 Vector3 pos = tracked.Transform.position;
-                if ((pos - origin).sqrMagnitude <= radiusSqr)
+                if ((pos - origin).sqrMagnitude <= radiusSq)
                 {
-                    _containerResultBuffer.Add(tracked.Container);
+                    ContainerResultBuffer.Add(tracked.Container);
                 }
             }
 
-            return _containerResultBuffer;
+            return ContainerResultBuffer;
         }
 
         public static List<LootItem> GetNearbyItems(Vector3 origin, float radius)
         {
-            _itemResultBuffer.Clear();
-            float radiusSqr = radius * radius;
+            ItemResultBuffer.Clear();
+            float radiusSq = radius * radius;
 
-            foreach (var tracked in _items.Values)
+            foreach (TrackedItem tracked in Items.Values)
             {
                 if (tracked.Transform == null)
+                {
                     continue;
+                }
 
                 Vector3 pos = tracked.Transform.position;
-                if ((pos - origin).sqrMagnitude <= radiusSqr)
+                if ((pos - origin).sqrMagnitude <= radiusSq)
                 {
-                    _itemResultBuffer.Add(tracked.Item);
+                    ItemResultBuffer.Add(tracked.Item);
                 }
             }
 
-            return _itemResultBuffer;
+            return ItemResultBuffer;
         }
 
-        public static void RegisterContainer(LootableContainer? container)
+        public static void RegisterContainer(LootableContainer container)
         {
             if (container == null || container.transform == null)
+            {
                 return;
+            }
 
-            var tracked = new TrackedContainer
+            TrackedContainer tracked = new TrackedContainer
             {
                 Container = container,
                 Transform = container.transform,
                 LastSeenTime = Time.time
             };
 
-            _containers[container] = tracked;
+            Containers[container] = tracked;
             InjectWatcherIfNeeded(container.gameObject);
         }
 
-        public static void RegisterItem(LootItem? item)
+        public static void RegisterItem(LootItem item)
         {
             if (item == null || item.transform == null)
+            {
                 return;
+            }
 
-            var tracked = new TrackedItem
+            TrackedItem tracked = new TrackedItem
             {
                 Item = item,
                 Transform = item.transform,
                 LastSeenTime = Time.time
             };
 
-            _items[item] = tracked;
+            Items[item] = tracked;
             InjectWatcherIfNeeded(item.gameObject);
         }
 
-        public static bool TryGetContainerByName(string? name, out LootableContainer? found)
+        public static bool TryGetContainerByName(string name, out LootableContainer found)
         {
             found = null;
             if (string.IsNullOrEmpty(name))
-                return false;
-
-            foreach (var kv in _containers)
             {
-                if (string.Equals(kv.Key?.name, name, StringComparison.OrdinalIgnoreCase))
+                return false;
+            }
+
+            foreach (KeyValuePair<LootableContainer, TrackedContainer> kv in Containers)
+            {
+                if (kv.Key != null && string.Equals(kv.Key.name, name, StringComparison.OrdinalIgnoreCase))
                 {
                     found = kv.Key;
                     return true;
@@ -188,15 +207,17 @@ namespace AIRefactored.AI.Looting
             return false;
         }
 
-        public static bool TryGetItemByName(string? name, out LootItem? found)
+        public static bool TryGetItemByName(string name, out LootItem found)
         {
             found = null;
             if (string.IsNullOrEmpty(name))
-                return false;
-
-            foreach (var kv in _items)
             {
-                if (string.Equals(kv.Key?.name, name, StringComparison.OrdinalIgnoreCase))
+                return false;
+            }
+
+            foreach (KeyValuePair<LootItem, TrackedItem> kv in Items)
+            {
+                if (kv.Key != null && string.Equals(kv.Key.name, name, StringComparison.OrdinalIgnoreCase))
                 {
                     found = kv.Key;
                     return true;
@@ -206,44 +227,52 @@ namespace AIRefactored.AI.Looting
             return false;
         }
 
-        public static float? GetLastSeenTime(LootableContainer? container)
+        public static bool TryGetLastSeenTime(LootableContainer container, out float time)
         {
-            if (container != null && _containers.TryGetValue(container, out var tracked))
+            TrackedContainer tracked;
+            if (container != null && Containers.TryGetValue(container, out tracked))
             {
-                return tracked.LastSeenTime;
+                time = tracked.LastSeenTime;
+                return true;
             }
 
-            return null;
+            time = 0f;
+            return false;
         }
 
-        public static float? GetLastSeenTime(LootItem? item)
+        public static bool TryGetLastSeenTime(LootItem item, out float time)
         {
-            if (item != null && _items.TryGetValue(item, out var tracked))
+            TrackedItem tracked;
+            if (item != null && Items.TryGetValue(item, out tracked))
             {
-                return tracked.LastSeenTime;
+                time = tracked.LastSeenTime;
+                return true;
             }
 
-            return null;
+            time = 0f;
+            return false;
         }
 
         public static void PruneStale(float olderThanSeconds)
         {
             float cutoff = Time.time - olderThanSeconds;
 
-            _containers.RemoveWhere(pair => pair.Value.LastSeenTime < cutoff);
-            _items.RemoveWhere(pair => pair.Value.LastSeenTime < cutoff);
+            Containers.RemoveWhere(pair => pair.Value.LastSeenTime < cutoff);
+            Items.RemoveWhere(pair => pair.Value.LastSeenTime < cutoff);
         }
 
         #endregion
 
         #region Internal Logic
 
-        private static void InjectWatcherIfNeeded(GameObject? go)
+        private static void InjectWatcherIfNeeded(GameObject go)
         {
-            if (go == null || _watchedObjects.Contains(go))
+            if (go == null || WatchedObjects.Contains(go))
+            {
                 return;
+            }
 
-            _watchedObjects.Add(go);
+            WatchedObjects.Add(go);
             LootRuntimeWatcher.Register(go);
             Logger.LogDebug("[LootRegistry] Registered static loot watcher for: " + go.name);
         }
@@ -255,9 +284,9 @@ namespace AIRefactored.AI.Looting
     {
         public static void RemoveWhere<TKey, TValue>(this Dictionary<TKey, TValue> dict, Func<KeyValuePair<TKey, TValue>, bool> predicate)
         {
-            var toRemove = new List<TKey>();
+            List<TKey> toRemove = new List<TKey>();
 
-            foreach (var kv in dict)
+            foreach (KeyValuePair<TKey, TValue> kv in dict)
             {
                 if (predicate(kv))
                 {

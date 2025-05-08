@@ -6,10 +6,9 @@
 //   Please follow strict StyleCop, ReSharper, and AI-Refactored code standards for all modifications.
 // </auto-generated>
 
-#nullable enable
-
 namespace AIRefactored.AI.Helpers
 {
+    using EFT;
     using System.Collections.Generic;
     using UnityEngine;
 
@@ -37,9 +36,8 @@ namespace AIRefactored.AI.Helpers
             LastKnownFlashPositions.Clear();
 
             Light[] allLights = Object.FindObjectsOfType<Light>();
-            for (int i = 0; i < allLights.Length; i++)
+            foreach (Light light in allLights)
             {
-                Light light = allLights[i];
                 if (IsValidTacticalLight(light))
                 {
                     ActiveLights.Add(light);
@@ -63,7 +61,7 @@ namespace AIRefactored.AI.Helpers
         /// </summary>
         public static bool IsExposingBot(
             Transform botHead,
-            out Light? blindingLight,
+            out Light blindingLight,
             float customMaxDist = MaxExposureDistance)
         {
             blindingLight = null;
@@ -75,9 +73,8 @@ namespace AIRefactored.AI.Helpers
 
             Vector3 eyePos = botHead.position + (Vector3.up * EyeRayBias);
 
-            for (int i = 0; i < ActiveLights.Count; i++)
+            foreach (Light light in ActiveLights)
             {
-                Light light = ActiveLights[i];
                 if (light == null || !light.enabled || !light.gameObject.activeInHierarchy)
                 {
                     continue;
@@ -85,12 +82,14 @@ namespace AIRefactored.AI.Helpers
 
                 Vector3 toBot = eyePos - light.transform.position;
                 float distance = toBot.magnitude;
+
                 if (distance > customMaxDist)
                 {
                     continue;
                 }
 
                 float angle = Vector3.Angle(light.transform.forward, toBot);
+
                 if (angle > ExposureConeAngle)
                 {
                     continue;
@@ -100,20 +99,15 @@ namespace AIRefactored.AI.Helpers
                 Vector3 direction = toBot.normalized;
                 float rayDistance = distance + 0.1f;
 
-                bool hitSomething = Physics.Raycast(
+                if (Physics.Raycast(
                     origin,
                     direction,
                     out RaycastHit hit,
                     rayDistance,
-                    LayerMaskClass.HighPolyWithTerrainMaskAI);
-
-                if (hitSomething)
+                    LayerMaskClass.HighPolyWithTerrainMaskAI) && (hit.transform == botHead || hit.collider.transform == botHead))
                 {
-                    if (hit.transform == botHead || hit.collider.transform == botHead)
-                    {
-                        blindingLight = light;
-                        return true;
-                    }
+                    blindingLight = light;
+                    return true;
                 }
                 else if (angle < (ExposureConeAngle * 0.5f) && distance < 4.5f)
                 {

@@ -6,8 +6,6 @@
 //   Please follow strict StyleCop, ReSharper, and AI-Refactored code standards for all modifications.
 // </auto-generated>
 
-#nullable enable
-
 namespace AIRefactored.AI.Perception
 {
     /// <summary>
@@ -17,53 +15,50 @@ namespace AIRefactored.AI.Perception
     /// </summary>
     public sealed class BotVisionProfile
     {
-        #region Defaults
+        #region Constants
 
-        private static readonly float DefaultAdaptationSpeed = 1.25f;
-        private static readonly float DefaultAggressionResponse = 0.85f;
-        private static readonly float DefaultLightSensitivity = 1.0f;
-        private static readonly float DefaultMaxBlindness = 1.0f;
-        private static readonly float DefaultClarityRecoverySpeed = 0.3f; // New default recovery speed
+        private const float DefaultAdaptationSpeed = 1.25f;
+        private const float DefaultAggressionResponse = 0.85f;
+        private const float DefaultLightSensitivity = 1.0f;
+        private const float DefaultMaxBlindness = 1.0f;
+        private const float DefaultClarityRecoverySpeed = 0.3f;
 
         #endregion
 
         #region Properties
 
         /// <summary>
-        /// Gets or sets the speed of recovery from flash or flare blindness.
-        /// Higher values = faster visual clarity return.
+        /// Gets or sets the speed of visual range adaptation after blindness.
         /// </summary>
         public float AdaptationSpeed { get; set; } = DefaultAdaptationSpeed;
 
         /// <summary>
-        /// Gets or sets the visual penalty multiplier while under suppression.
-        /// Higher values cause more tunnel vision and reduced perception.
+        /// Gets or sets the suppression visual penalty multiplier.
         /// </summary>
         public float AggressionResponse { get; set; } = DefaultAggressionResponse;
 
         /// <summary>
-        /// Gets or sets how sensitive the bot is to flashlight glare or flare bursts.
+        /// Gets or sets how sensitive the bot is to intense light sources.
         /// </summary>
         public float LightSensitivity { get; set; } = DefaultLightSensitivity;
 
         /// <summary>
-        /// Gets or sets the maximum flash blindness level. 1 = fully blind, 0 = immune.
+        /// Gets or sets the maximum blindness level from flashbangs.
         /// </summary>
         public float MaxBlindness { get; set; } = DefaultMaxBlindness;
 
         /// <summary>
-        /// Gets or sets the speed at which the bot recovers from visual impairments.
+        /// Gets or sets the recovery rate for vision clarity from flares or flash effects.
         /// </summary>
         public float ClarityRecoverySpeed { get; set; } = DefaultClarityRecoverySpeed;
 
         #endregion
 
-        #region Creation
+        #region Static Factory
 
         /// <summary>
-        /// Creates a new default-configured vision profile.
+        /// Returns a new default-configured profile instance.
         /// </summary>
-        /// <returns>A new <see cref="BotVisionProfile"/> with default parameters.</returns>
         public static BotVisionProfile CreateDefault()
         {
             return new BotVisionProfile();
@@ -71,22 +66,22 @@ namespace AIRefactored.AI.Perception
 
         #endregion
 
-        #region Reset
+        #region Reset Logic
 
         /// <summary>
-        /// Resets all profile values to their default balanced configuration.
+        /// Resets all visual parameters to their original values.
         /// </summary>
-        /// <param name="resetAggression">Optional flag to reset aggression response.</param>
+        /// <param name="resetAggression">If true, resets suppression response as well.</param>
         public void Reset(bool resetAggression = true)
         {
-            this.AdaptationSpeed = DefaultAdaptationSpeed;
-            this.LightSensitivity = DefaultLightSensitivity;
-            this.MaxBlindness = DefaultMaxBlindness;
-            this.ClarityRecoverySpeed = DefaultClarityRecoverySpeed; // Reset recovery speed
+            AdaptationSpeed = DefaultAdaptationSpeed;
+            LightSensitivity = DefaultLightSensitivity;
+            MaxBlindness = DefaultMaxBlindness;
+            ClarityRecoverySpeed = DefaultClarityRecoverySpeed;
 
             if (resetAggression)
             {
-                this.AggressionResponse = DefaultAggressionResponse;
+                AggressionResponse = DefaultAggressionResponse;
             }
         }
 

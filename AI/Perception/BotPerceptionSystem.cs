@@ -6,19 +6,18 @@
 //   Please follow strict StyleCop, ReSharper, and AI-Refactored code standards for all modifications.
 // </auto-generated>
 
-#nullable enable
-
 namespace AIRefactored.AI.Perception
 {
     using AIRefactored.AI.Core;
     using AIRefactored.AI.Groups;
     using AIRefactored.AI.Helpers;
+    using AIRefactored.Core;
     using EFT;
     using UnityEngine;
 
     /// <summary>
     /// Controls visual impairment from flashbangs, flares, and suppression.
-    /// Adjusts sight distance, triggers panic and vocalizations, and syncs team awareness.
+    /// Adjusts vision range, triggers panic and speech, and propagates enemy awareness.
     /// </summary>
     public sealed class BotPerceptionSystem : IFlashReactiveBot
     {
@@ -34,92 +33,130 @@ namespace AIRefactored.AI.Perception
 
         #endregion
 
-        #region Fields
+        #region State
 
         private float _blindStartTime = -1f;
-        private float _flareIntensity;
         private float _flashBlindness;
+        private float _flareIntensity;
         private float _suppressionFactor;
 
-        private BotOwner? _bot;
-        private BotComponentCache? _cache;
-        private BotVisionProfile? _profile;
+        private BotOwner _bot;
+        private BotComponentCache _cache;
+        private BotVisionProfile _profile;
 
         #endregion
 
-        #region Public Methods
+        #region Initialization
 
+        /// <summary>
+        /// Initializes the bot visual perception system using validated bot cache.
+        /// </summary>
+        /// <param name="cache">Runtime bot AI cache.</param>
         public void Initialize(BotComponentCache cache)
         {
-            _cache = cache;
-            _bot = cache.Bot;
-
-            if (_bot != null)
-            {
-                Player? player = _bot.GetPlayer;
-                if (player != null && player.IsAI)
-                {
-                    _profile = BotVisionProfiles.Get(player);
-                }
-            }
-        }
-
-        public void Tick(float deltaTime)
-        {
-            if (!IsValid())
+            if (cache == null)
             {
                 return;
             }
 
-            HandleFlashlightExposure();
+            BotOwner owner = cache.Bot;
+            if (owner == null || owner.IsDead)
+            {
+                return;
+            }
+
+            Player player = owner.GetPlayer;
+            if (player == null || !player.IsAI)
+            {
+                return;
+            }
+
+            BotVisionProfile vision = BotVisionProfiles.Get(player);
+            if (vision == null)
+            {
+                return;
+            }
+
+            _bot = owner;
+            _cache = cache;
+            _profile = vision;
+        }
+
+        #endregion
+
+        #region Tick Loop
+
+        /// <summary>
+        /// Updates vision clarity, panic triggers, and sensory impairment over time.
+        /// </summary>
+        /// <param name="deltaTime">Frame delta time.</param>
+        public void Tick(float deltaTime)
+        {
+            if (!IsActive())
+            {
+                return;
+            }
+
+            UpdateFlashlightExposure();
 
             float penalty = Mathf.Max(_flashBlindness, _flareIntensity, _suppressionFactor);
             float adjustedSight = Mathf.Lerp(MinSightDistance, MaxSightDistance, 1f - penalty);
 
-            if (_bot?.LookSensor != null && _profile != null)
+            if (_bot.LookSensor != null)
             {
                 _bot.LookSensor.ClearVisibleDist = adjustedSight * _profile.AdaptationSpeed;
             }
 
-            bool blinded = _flashBlindness > BlindSpeechThreshold;
             float blindDuration = Mathf.Clamp01(_flashBlindness) * 3f;
-
-            if (_cache != null)
-            {
-                _cache.IsBlinded = blinded;
-                _cache.BlindUntilTime = Time.time + blindDuration;
-            }
+            _cache.IsBlinded = _flashBlindness > BlindSpeechThreshold;
+            _cache.BlindUntilTime = Time.time + blindDuration;
 
             TryTriggerPanic();
-            RecoverVisualClarity(deltaTime);
+            RecoverClarity(deltaTime);
             SyncEnemyIfVisible();
         }
 
+        #endregion
+
+        #region Exposure Effects
+
+        /// <summary>
+        /// Applies flare-induced visibility impairment.
+        /// </summary>
+        /// <param name="strength">Intensity of flare.</param>
         public void ApplyFlareExposure(float strength)
         {
             _flareIntensity = Mathf.Clamp(strength * 0.6f, 0f, 0.8f);
         }
 
+        /// <summary>
+        /// Applies flashbang-induced blindness.
+        /// </summary>
+        /// <param name="intensity">Blindness strength.</param>
         public void ApplyFlashBlindness(float intensity)
         {
-            if (!IsValid() || _profile == null)
+            if (!IsActive())
             {
                 return;
             }
 
-            float addedBlindness = intensity * _profile.MaxBlindness;
-            _flashBlindness = Mathf.Clamp01(_flashBlindness + addedBlindness);
+            float added = intensity * _profile.MaxBlindness;
+            _flashBlindness = Mathf.Clamp01(_flashBlindness + added);
             _blindStartTime = Time.time;
 
             if (_flashBlindness > BlindSpeechThreshold)
             {
-                _bot?.BotTalk?.TrySay(EPhraseTrigger.OnBeingHurt);
+                _bot.BotTalk.TrySay(EPhraseTrigger.OnBeingHurt);
             }
         }
 
+        /// <summary>
+        /// Applies suppression penalty from incoming fire.
+        /// </summary>
+        /// <param name="severity">Suppression strength.</param>
         public void ApplySuppression(float severity)
         {
-            if (!IsValid() || _profile == null)
+            if (!IsActive())
             {
                 return;
             }
@@ -127,9 +164,13 @@ namespace AIRefactored.AI.Perception
             _suppressionFactor = Mathf.Clamp01(severity * _profile.AggressionResponse);
         }
 
+        /// <summary>
+        /// Called when direct flash exposure is detected from flashlight or grenade.
+        /// </summary>
+        /// <param name="lightOrigin">Flash source position.</param>
         public void OnFlashExposure(Vector3 lightOrigin)
         {
-            if (IsValid())
+            if (IsActive())
             {
                 ApplyFlashBlindness(0.4f);
             }
@@ -137,22 +178,28 @@ namespace AIRefactored.AI.Perception
 
         #endregion
 
-        #region Private Methods
+        #region Internal Logic
 
-        private void HandleFlashlightExposure()
+        private bool IsActive()
         {
-            if (_cache == null)
-            {
-                return;
-            }
+            return _bot != null &&
+                   !_bot.IsDead &&
+                   _bot.GetPlayer != null &&
+                   _bot.GetPlayer.IsAI &&
+                   _cache != null &&
+                   _profile != null;
+        }
 
-            Transform? head = BotCacheUtility.Head(_cache);
+        private void UpdateFlashlightExposure()
+        {
+            Transform head = BotCacheUtility.Head(_cache);
             if (head == null)
             {
                 return;
             }
 
-            if (FlashlightRegistry.IsExposingBot(head, out Light? source) && source != null)
+            Light source;
+            if (FlashlightRegistry.IsExposingBot(head, out source) && source != null)
             {
                 float score = FlashLightUtils.CalculateFlashScore(source.transform, head, 20f);
                 if (score > 0.25f)
@@ -162,52 +209,41 @@ namespace AIRefactored.AI.Perception
             }
         }
 
-        private void RecoverVisualClarity(float deltaTime)
+        private void RecoverClarity(float deltaTime)
         {
-            float recoveryFactor = _profile?.ClarityRecoverySpeed ?? 1f;
+            float recovery = _profile.ClarityRecoverySpeed;
 
-            _flashBlindness = Mathf.MoveTowards(_flashBlindness, 0f, FlashRecoverySpeed * recoveryFactor * deltaTime);
-            _flareIntensity = Mathf.MoveTowards(_flareIntensity, 0f, FlareRecoverySpeed * recoveryFactor * deltaTime);
-            _suppressionFactor = Mathf.MoveTowards(_suppressionFactor, 0f, SuppressionRecoverySpeed * recoveryFactor * deltaTime);
-        }
-
-        private void SyncEnemyIfVisible()
-        {
-            if (_bot == null || _cache == null || _cache.IsBlinded)
-            {
-                return;
-            }
-
-            IPlayer? seen = _bot.Memory?.GoalEnemy?.Person;
-            if (seen != null)
-            {
-                BotTeamLogic.AddEnemy(_bot, seen);
-            }
+            _flashBlindness = Mathf.MoveTowards(_flashBlindness, 0f, FlashRecoverySpeed * recovery * deltaTime);
+            _flareIntensity = Mathf.MoveTowards(_flareIntensity, 0f, FlareRecoverySpeed * recovery * deltaTime);
+            _suppressionFactor = Mathf.MoveTowards(_suppressionFactor, 0f, SuppressionRecoverySpeed * recovery * deltaTime);
         }
 
         private void TryTriggerPanic()
         {
-            if (_cache?.PanicHandler == null || _bot == null)
+            if (_cache.PanicHandler == null)
             {
                 return;
             }
 
             if (_flashBlindness >= PanicTriggerThreshold &&
-                Time.time - _blindStartTime < 2.5f)
+                (Time.time - _blindStartTime) < 2.5f)
             {
                 _cache.PanicHandler.TriggerPanic();
             }
         }
 
-        private bool IsValid()
+        private void SyncEnemyIfVisible()
         {
-            if (_bot == null || _bot.IsDead || _cache == null || _profile == null)
+            if (_cache.IsBlinded)
             {
-                return false;
+                return;
             }
 
-            Player? player = _bot.GetPlayer;
-            return player != null && player.IsAI;
+            IPlayer visible = _bot.Memory?.GoalEnemy?.Person;
+            if (visible != null)
+            {
+                BotTeamLogic.AddEnemy(_bot, visible);
+            }
         }
 
         #endregion

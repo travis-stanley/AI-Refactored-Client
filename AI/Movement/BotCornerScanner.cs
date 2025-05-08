@@ -6,8 +6,6 @@
 //   Please follow strict StyleCop, ReSharper, and AI-Refactored code standards for all modifications.
 // </auto-generated>
 
-#nullable enable
-
 namespace AIRefactored.AI.Movement
 {
     using System;
@@ -39,11 +37,13 @@ namespace AIRefactored.AI.Movement
 
         #region Fields
 
-        private BotOwner? _bot;
-        private BotComponentCache? _cache;
-        private BotPersonalityProfile? _profile;
+        private BotOwner _bot;
+        private BotComponentCache _cache;
+        private BotPersonalityProfile _profile;
+
         private float _pauseUntil;
         private float _prepCrouchUntil;
+
         private bool _isLeaning;
         private bool _isCrouching;
 
@@ -66,9 +66,9 @@ namespace AIRefactored.AI.Movement
 
         public void Initialize(BotOwner bot, BotComponentCache cache)
         {
-            if (bot == null || cache == null || cache.AIRefactoredBotOwner?.PersonalityProfile == null)
+            if (bot == null || cache == null || cache.AIRefactoredBotOwner == null)
             {
-                throw new ArgumentException("[BotCornerScanner] Invalid init parameters.");
+                throw new ArgumentException("[BotCornerScanner] Invalid initialization.");
             }
 
             _bot = bot;
@@ -89,7 +89,7 @@ namespace AIRefactored.AI.Movement
 
             if (IsApproachingEdge())
             {
-                _cache?.Tilt?.Stop();
+                _cache.Tilt.Stop();
                 PauseMovement(time);
                 return;
             }
@@ -112,14 +112,14 @@ namespace AIRefactored.AI.Movement
                    _bot.Mover != null &&
                    _bot.Transform != null &&
                    !_bot.IsDead &&
-                   _bot.Memory?.GoalEnemy == null &&
+                   _bot.Memory.GoalEnemy == null &&
                    time >= _pauseUntil &&
                    time >= _prepCrouchUntil;
         }
 
         private void PauseMovement(float time)
         {
-            if (_bot == null || _bot.Mover == null || _profile == null)
+            if (_profile == null || _bot.Mover == null)
             {
                 return;
             }
@@ -131,11 +131,6 @@ namespace AIRefactored.AI.Movement
 
         private bool IsApproachingEdge()
         {
-            if (_bot == null || _bot.Transform == null)
-            {
-                return false;
-            }
-
             Vector3 origin = _bot.Position + Vector3.up * 0.2f;
             Vector3 forward = _bot.Transform.forward;
             Vector3 right = _bot.Transform.right;
@@ -161,22 +156,18 @@ namespace AIRefactored.AI.Movement
 
         private bool TryCornerPeekWithCrouch(float time)
         {
-            if (_bot == null || _bot.Transform == null || _profile == null)
-            {
-                return false;
-            }
-
             Vector3 origin = _bot.Position + Vector3.up * WallCheckHeight;
             Vector3 right = _bot.Transform.right;
             Vector3 left = -right;
-            float checkDist = BaseWallCheckDistance + ((1f - _profile.Caution) * 0.5f);
 
-            if (CheckWall(origin, left, checkDist))
+            float dist = BaseWallCheckDistance + ((1f - _profile.Caution) * 0.5f);
+
+            if (CheckWall(origin, left, dist))
             {
                 return TriggerLeanOrCrouch(BotTiltType.left, time);
             }
 
-            if (CheckWall(origin, right, checkDist))
+            if (CheckWall(origin, right, dist))
             {
                 return TriggerLeanOrCrouch(BotTiltType.right, time);
             }
@@ -200,7 +191,7 @@ namespace AIRefactored.AI.Movement
 
             if (!_isLeaning)
             {
-                _cache?.Tilt?.Set(side);
+                _cache.Tilt.Set(side);
                 PauseMovement(time);
                 _isLeaning = true;
             }
@@ -210,11 +201,6 @@ namespace AIRefactored.AI.Movement
 
         private bool AttemptCrouch(float time)
         {
-            if (_cache?.PoseController == null)
-            {
-                return false;
-            }
-
             if (_cache.PoseController.GetPoseLevel() > 30f)
             {
                 _cache.PoseController.SetCrouch();
@@ -227,7 +213,7 @@ namespace AIRefactored.AI.Movement
 
         private void ResetLean(float time)
         {
-            if (_cache?.Tilt?._coreTilt == true)
+            if (_cache.Tilt._coreTilt)
             {
                 _cache.Tilt.tiltOff = time - 1f;
                 _cache.Tilt.ManualUpdate();

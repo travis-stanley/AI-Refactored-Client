@@ -6,13 +6,10 @@
 //   Please follow strict StyleCop, ReSharper, and AI-Refactored code standards for all modifications.
 // </auto-generated>
 
-#nullable enable
-
 namespace AIRefactored.AI.Perception
 {
     using System.Collections.Generic;
     using AIRefactored.AI.Core;
-    using AIRefactored.AI.Groups;
     using AIRefactored.AI.Helpers;
     using AIRefactored.AI.Memory;
     using AIRefactored.Core;
@@ -32,29 +29,40 @@ namespace AIRefactored.AI.Perception
 
         #endregion
 
-        #region Fields
+        #region State
 
-        private BotOwner? _bot;
-        private BotComponentCache? _cache;
+        private BotOwner _bot;
+        private BotComponentCache _cache;
 
         #endregion
 
-        #region Public Methods
+        #region Public API
 
         /// <summary>
-        /// Initializes the hearing system with a bot's runtime cache.
+        /// Initializes the hearing system with the bot's component cache.
         /// </summary>
-        /// <param name="cache">Bot component cache.</param>
+        /// <param name="cache">Runtime bot cache.</param>
         public void Initialize(BotComponentCache cache)
         {
+            if (cache == null || cache.Bot == null)
+            {
+                return;
+            }
+
+            BotOwner owner = cache.Bot.GetComponent<BotOwner>();
+            if (owner == null)
+            {
+                return;
+            }
+
+            _bot = owner;
             _cache = cache;
-            _bot = cache.Bot;
         }
 
         /// <summary>
-        /// Performs a hearing scan based on nearby players and sound events.
+        /// Scans for sound cues from nearby players and bots.
         /// </summary>
-        /// <param name="deltaTime">Frame delta time.</param>
+        /// <param name="deltaTime">Frame time in seconds.</param>
         public void Tick(float deltaTime)
         {
             if (!GameWorldHandler.IsSafeToInitialize || _bot == null || _cache == null)
@@ -62,7 +70,7 @@ namespace AIRefactored.AI.Perception
                 return;
             }
 
-            if (!CanEvaluate())
+            if (!IsActive())
             {
                 return;
             }
@@ -74,6 +82,7 @@ namespace AIRefactored.AI.Perception
             for (int i = 0; i < players.Count; i++)
             {
                 Player player = players[i];
+
                 if (!IsAudibleSource(player, origin, rangeSqr))
                 {
                     continue;
@@ -81,10 +90,10 @@ namespace AIRefactored.AI.Perception
 
                 if (HeardSomething(player))
                 {
-                    Vector3 pos = EFTPlayerUtil.GetPosition(player);
-                    if (pos.sqrMagnitude > 0.01f)
+                    Vector3 position = EFTPlayerUtil.GetPosition(player);
+                    if (position.sqrMagnitude > 0.01f)
                     {
-                        _cache.RegisterHeardSound(pos);
+                        _cache.RegisterHeardSound(position);
                     }
                 }
             }
@@ -92,59 +101,51 @@ namespace AIRefactored.AI.Perception
 
         #endregion
 
-        #region Private Methods
+        #region Internal Logic
 
-        private bool CanEvaluate()
+        private bool IsActive()
         {
             return _bot != null &&
                    !_bot.IsDead &&
                    _bot.GetPlayer != null &&
                    _bot.GetPlayer.IsAI &&
-                   _cache?.PanicHandler?.IsPanicking != true;
+                   !_cache.PanicHandler.IsPanicking;
         }
 
-        private bool HeardSomething(Player player)
+        private bool HeardSomething(Player source)
         {
-            if (_bot == null)
-            {
-                return false;
-            }
-
-            return BotSoundUtils.DidFireRecently(_bot, player, 1f, TimeWindow) ||
-                   BotSoundUtils.DidStepRecently(_bot, player, 1f, TimeWindow);
+            return BotSoundUtils.DidFireRecently(_bot, source, 1f, TimeWindow) ||
+                   BotSoundUtils.DidStepRecently(_bot, source, 1f, TimeWindow);
         }
 
-        private bool IsAudibleSource(Player player, Vector3 origin, float rangeSqr)
+        private bool IsAudibleSource(Player candidate, Vector3 origin, float rangeSqr)
         {
-            if (player == null ||
-                player.HealthController == null ||
-                !player.HealthController.IsAlive)
+            if (!EFTPlayerUtil.IsValid(candidate))
             {
                 return false;
             }
 
-            if (_bot == null || player.ProfileId == _bot.ProfileId)
+            Player self = _bot.GetPlayer;
+            if (candidate == self)
             {
                 return false;
             }
 
-            if (AreInSameTeam(_bot, player))
+            if (IsSameGroup(self, candidate))
             {
                 return false;
             }
 
-            Vector3 targetPos = EFTPlayerUtil.GetPosition(player);
-            return (targetPos - origin).sqrMagnitude <= rangeSqr;
+            Vector3 pos = EFTPlayerUtil.GetPosition(candidate);
+            return (pos - origin).sqrMagnitude <= rangeSqr;
         }
 
-        private static bool AreInSameTeam(BotOwner self, Player target)
+        private static bool IsSameGroup(Player a, Player b)
         {
-            string? selfGroup = self.GetPlayer?.Profile?.Info?.GroupId;
-            string? targetGroup = target.Profile?.Info?.GroupId;
+            string aGroup = a.Profile.Info.GroupId;
+            string bGroup = b.Profile.Info.GroupId;
 
-            return !string.IsNullOrEmpty(selfGroup) &&
-                   !string.IsNullOrEmpty(targetGroup) &&
-                   selfGroup == targetGroup;
+            return aGroup.Length > 0 && aGroup == bGroup;
         }
 
         #endregion

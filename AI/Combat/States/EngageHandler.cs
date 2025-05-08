@@ -6,8 +6,6 @@
 //   Please follow strict StyleCop, ReSharper, and AI-Refactored code standards for all modifications.
 // </auto-generated>
 
-#nullable enable
-
 namespace AIRefactored.AI.Combat.States
 {
     using System;
@@ -17,15 +15,22 @@ namespace AIRefactored.AI.Combat.States
     using UnityEngine;
 
     /// <summary>
-    /// Handles tactical movement toward enemy last-known-positions during engagements.
-    /// Guides advance cautiously while coordinating stance and squad path offsets.
+    /// Guides tactical movement toward enemy's last known location.
+    /// Supports cautious advancement and squad-aware pathing.
     /// </summary>
     public sealed class EngageHandler
     {
+        #region Constants
+
+        private const float DefaultEngagementRange = 25.0f;
+
+        #endregion
+
         #region Fields
 
         private readonly BotOwner _bot;
         private readonly BotComponentCache _cache;
+        private readonly float _fallbackRange;
 
         #endregion
 
@@ -34,16 +39,19 @@ namespace AIRefactored.AI.Combat.States
         /// <summary>
         /// Initializes a new instance of the <see cref="EngageHandler"/> class.
         /// </summary>
-        /// <param name="cache">The bot's component cache.</param>
+        /// <param name="cache">BotComponentCache to bind with this handler.</param>
         public EngageHandler(BotComponentCache cache)
         {
             if (cache == null || cache.Bot == null)
             {
-                throw new ArgumentNullException(nameof(cache), "[EngageHandler] Initialization failed: cache or bot is null.");
+                throw new InvalidOperationException("[EngageHandler] Initialization failed: cache or Bot is null.");
             }
 
             this._cache = cache;
             this._bot = cache.Bot;
+            this._fallbackRange = cache.PersonalityProfile.EngagementRange > 0f
+                ? cache.PersonalityProfile.EngagementRange
+                : DefaultEngagementRange;
         }
 
         #endregion
@@ -51,53 +59,47 @@ namespace AIRefactored.AI.Combat.States
         #region Public Methods
 
         /// <summary>
-        /// Determines whether the Engage state should be active.
+        /// Determines if bot should enter or remain in Engage state.
         /// </summary>
-        /// <returns>True if the bot should continue engaging; otherwise, false.</returns>
         public bool ShallUseNow()
         {
-            CombatStateMachine? combat = this._cache.Combat;
-            return combat != null && combat.LastKnownEnemyPos.HasValue && !this.CanAttack();
+            CombatStateMachine combat = this._cache.Combat;
+            Vector3 enemyPos;
+
+            return combat != null &&
+                   this.TryGetLastKnownEnemy(combat, out enemyPos) &&
+                   !this.IsWithinRange(enemyPos);
         }
 
         /// <summary>
-        /// Determines if the bot is close enough to transition to Attack state.
+        /// Returns true if the bot is close enough to switch from engage to attack.
         /// </summary>
-        /// <returns>True if ready to attack; otherwise, false.</returns>
         public bool CanAttack()
         {
-            CombatStateMachine? combat = this._cache.Combat;
-            if (combat == null || !combat.LastKnownEnemyPos.HasValue)
-            {
-                return false;
-            }
+            CombatStateMachine combat = this._cache.Combat;
+            Vector3 enemyPos;
 
-            Vector3 myPos = this._bot.Position;
-            Vector3 enemyPos = combat.LastKnownEnemyPos.Value;
-            float distance = Vector3.Distance(myPos, enemyPos);
-
-            BotPersonalityProfile? profile = this._cache.AIRefactoredBotOwner?.PersonalityProfile;
-            float engagementRange = profile != null ? profile.EngagementRange : 25.0f;
-
-            return distance < engagementRange;
+            return combat != null &&
+                   this.TryGetLastKnownEnemy(combat, out enemyPos) &&
+                   this.IsWithinRange(enemyPos);
         }
 
         /// <summary>
-        /// Guides the bot toward the last known enemy position with cautious stance updates.
+        /// Ticks the engage behavior, advancing toward the enemy's last known position.
         /// </summary>
         public void Tick()
         {
-            CombatStateMachine? combat = this._cache.Combat;
-            if (combat == null || !combat.LastKnownEnemyPos.HasValue)
+            CombatStateMachine combat = this._cache.Combat;
+            Vector3 enemyPos;
+
+            if (combat == null || !this.TryGetLastKnownEnemy(combat, out enemyPos))
             {
                 return;
             }
 
-            Vector3 target = combat.LastKnownEnemyPos.Value;
-
             Vector3 destination = this._cache.SquadPath != null
-                ? this._cache.SquadPath.ApplyOffsetTo(target)
-                : target;
+                ? this._cache.SquadPath.ApplyOffsetTo(enemyPos)
+                : enemyPos;
 
             if (float.IsNaN(destination.x) || float.IsNaN(destination.y) || float.IsNaN(destination.z))
             {
@@ -109,13 +111,32 @@ namespace AIRefactored.AI.Combat.States
         }
 
         /// <summary>
-        /// Returns true if the bot is actively engaging an unseen enemy.
+        /// Returns true if bot is actively engaging based on memory, not vision.
         /// </summary>
-        /// <returns>True if engaging based on memory or tracking.</returns>
         public bool IsEngaging()
         {
-            CombatStateMachine? combat = this._cache.Combat;
-            return combat != null && combat.LastKnownEnemyPos.HasValue && !this.CanAttack();
+            CombatStateMachine combat = this._cache.Combat;
+            Vector3 enemyPos;
+
+            return combat != null &&
+                   this.TryGetLastKnownEnemy(combat, out enemyPos) &&
+                   !this.IsWithinRange(enemyPos);
+        }
+
+        #endregion
+
+        #region Private Methods
+
+        private bool TryGetLastKnownEnemy(CombatStateMachine combat, out Vector3 result)
+        {
+            result = combat.LastKnownEnemyPos;
+            return result != Vector3.zero;
+        }
+
+        private bool IsWithinRange(Vector3 enemyPos)
+        {
+            float dist = Vector3.Distance(this._bot.Position, enemyPos);
+            return dist < this._fallbackRange;
         }
 
         #endregion

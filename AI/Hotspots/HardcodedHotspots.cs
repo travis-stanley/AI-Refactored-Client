@@ -6,10 +6,9 @@
 //   Please follow strict StyleCop, ReSharper, and AI-Refactored code standards for all modifications.
 // </auto-generated>
 
-#nullable enable
-
 namespace AIRefactored.AI.Hotspots
 {
+    using System;
     using System.Collections.Generic;
     using UnityEngine;
 
@@ -51,7 +50,7 @@ namespace AIRefactored.AI.Hotspots
         /// <param name="points">The list of hotspot data points.</param>
         public HotspotSet(List<HotspotData> points)
         {
-            this.Points = points;
+            this.Points = points ?? new List<HotspotData>();
         }
 
         /// <summary>
@@ -438,23 +437,25 @@ namespace AIRefactored.AI.Hotspots
 
         /// <summary>
         /// Returns a <see cref="HotspotSet"/> for the specified map ID.
+        /// Throws an exception if the map ID is invalid or not found.
         /// </summary>
         /// <param name="mapId">The map ID string, e.g., "bigmap", "factory4_day".</param>
-        /// <returns>The corresponding <see cref="HotspotSet"/>, or null if not found.</returns>
-        public static HotspotSet? GetForMap(string mapId)
+        /// <returns>The corresponding <see cref="HotspotSet"/>.</returns>
+        public static HotspotSet GetForMap(string mapId)
         {
             if (string.IsNullOrEmpty(mapId))
             {
-                return null;
+                throw new ArgumentException("Map ID cannot be null or empty.", nameof(mapId));
             }
 
-            List<HotspotData>? points;
-            if (Hotspots.TryGetValue(mapId.ToLowerInvariant(), out points))
+            // Using TryGetValue to prevent key lookup exceptions
+            if (Hotspots.TryGetValue(mapId.ToLowerInvariant(), out var points))
             {
                 return new HotspotSet(points);
             }
 
-            return null;
+            // If map is not found, throw an exception to maintain robustness
+            throw new KeyNotFoundException($"Hotspot set for map ID '{mapId}' not found.");
         }
     }
 }

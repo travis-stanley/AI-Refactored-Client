@@ -6,8 +6,6 @@
 //   Please follow strict StyleCop, ReSharper, and AI-Refactored code standards for all modifications.
 // </auto-generated>
 
-#nullable enable
-
 namespace AIRefactored.AI.Helpers
 {
     using UnityEngine;
@@ -23,10 +21,11 @@ namespace AIRefactored.AI.Helpers
         /// Combines frontal alignment and proximity to determine severity of exposure.
         /// </summary>
         public static float CalculateFlashScore(
-            Transform? lightTransform,
-            Transform? botHeadTransform,
+            Transform lightTransform,
+            Transform botHeadTransform,
             float maxDistance = 20f)
         {
+            // Null check for safety
             if (lightTransform == null || botHeadTransform == null)
             {
                 return 0f;
@@ -35,17 +34,21 @@ namespace AIRefactored.AI.Helpers
             Vector3 toLight = lightTransform.position - botHeadTransform.position;
             float distance = toLight.magnitude;
 
+            // Return 0 if the distance is too small or too far
             if (distance < 0.01f || distance > maxDistance)
             {
                 return 0f;
             }
 
+            // Calculate the angle between the bot's forward direction and the direction to the light
             Vector3 botForward = botHeadTransform.forward.normalized;
             Vector3 lightDir = toLight.normalized;
-
             float angleFactor = Mathf.Clamp01(Vector3.Dot(botForward, lightDir));
+
+            // Calculate distance factor based on max distance
             float distanceFactor = 1f - Mathf.Clamp01(distance / maxDistance);
 
+            // Return the combined score
             return angleFactor * distanceFactor;
         }
 
@@ -53,17 +56,20 @@ namespace AIRefactored.AI.Helpers
         /// Calculates the normalized frontal exposure to a flashlight.
         /// </summary>
         public static float GetFlashIntensityFactor(
-            Transform? lightTransform,
-            Transform? botHeadTransform)
+            Transform lightTransform,
+            Transform botHeadTransform)
         {
+            // Null check for safety
             if (lightTransform == null || botHeadTransform == null)
             {
                 return 0f;
             }
 
+            // Calculate the vector pointing from bot to the light
             Vector3 toLight = (lightTransform.position - botHeadTransform.position).normalized;
             Vector3 forward = botHeadTransform.forward.normalized;
 
+            // Calculate the angle between the bot's forward direction and the light direction
             return Mathf.Clamp01(Vector3.Dot(forward, toLight));
         }
 
@@ -71,18 +77,21 @@ namespace AIRefactored.AI.Helpers
         /// Determines whether the bot is facing a light source within a dangerous exposure cone.
         /// </summary>
         public static bool IsBlindingLight(
-            Transform? lightTransform,
-            Transform? botHeadTransform,
+            Transform lightTransform,
+            Transform botHeadTransform,
             float angleThreshold = 30f)
         {
+            // Null check for safety
             if (lightTransform == null || botHeadTransform == null)
             {
                 return false;
             }
 
+            // Calculate the angle between the bot's forward direction and the light direction
             Vector3 toLight = lightTransform.position - botHeadTransform.position;
             float angle = Vector3.Angle(botHeadTransform.forward, toLight);
 
+            // Return true if the angle is within the threshold
             return angle <= angleThreshold;
         }
 
@@ -90,18 +99,21 @@ namespace AIRefactored.AI.Helpers
         /// Determines if the flashlight is pointing toward the bot within the specified angle threshold.
         /// </summary>
         public static bool IsFacingTarget(
-            Transform? source,
-            Transform? target,
+            Transform source,
+            Transform target,
             float angleThreshold = 30f)
         {
+            // Null check for safety
             if (source == null || target == null)
             {
                 return false;
             }
 
+            // Calculate the direction from the source to the target
             Vector3 toTarget = target.position - source.position;
             float angle = Vector3.Angle(source.forward, toTarget);
 
+            // Return true if the angle is within the threshold
             return angle <= angleThreshold;
         }
     }

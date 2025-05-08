@@ -6,8 +6,6 @@
 //   Please follow strict StyleCop, ReSharper, and AI-Refactored code standards for all modifications.
 // </auto-generated>
 
-#nullable enable
-
 namespace AIRefactored.AI.Combat
 {
     using System;
@@ -19,7 +17,6 @@ namespace AIRefactored.AI.Combat
     using AIRefactored.Core;
     using AIRefactored.Runtime;
     using EFT;
-    using EFT.HealthSystem;
     using UnityEngine;
 
     /// <summary>
@@ -35,28 +32,36 @@ namespace AIRefactored.AI.Combat
 
         #endregion
 
-        #region Private Fields
+        #region Static Buffers
 
         private static readonly List<Vector3> FallbackPathBuffer = new List<Vector3>(16);
 
-        private AttackHandler? _attack;
-        private EngageHandler? _engage;
-        private FallbackHandler? _fallback;
-        private InvestigateHandler? _investigate;
-        private PatrolHandler? _patrol;
-        private EchoCoordinator? _echo;
+        #endregion
 
-        private BotComponentCache? _cache;
-        private BotOwner? _bot;
-        private Vector3? _lastKnownEnemyPos;
+        #region Fields
+
+        private BotComponentCache _cache;
+        private BotOwner _bot;
+
+        private AttackHandler _attack;
+        private EngageHandler _engage;
+        private FallbackHandler _fallback;
+        private InvestigateHandler _investigate;
+        private PatrolHandler _patrol;
+        private EchoCoordinator _echo;
+
+        private Vector3 _lastKnownEnemyPos;
+        private bool _hasKnownEnemy;
+        private float _lastStateChangeTime;
+        private bool _initialized;
 
         #endregion
 
         #region Properties
 
-        public Vector3? LastKnownEnemyPos => this._lastKnownEnemyPos;
+        public Vector3 LastKnownEnemyPos => this._lastKnownEnemyPos;
 
-        public float LastStateChangeTime { get; private set; }
+        public float LastStateChangeTime => this._lastStateChangeTime;
 
         #endregion
 
@@ -66,7 +71,7 @@ namespace AIRefactored.AI.Combat
         {
             if (componentCache == null || componentCache.Bot == null)
             {
-                AIRefactoredController.Logger?.LogError("[CombatStateMachine] Initialization failed: Missing BotComponentCache or BotOwner.");
+                Plugin.LoggerInstance?.LogError("[CombatStateMachine] Initialization failed: BotComponentCache or Bot is null.");
                 return;
             }
 
@@ -79,27 +84,26 @@ namespace AIRefactored.AI.Combat
             this._attack = new AttackHandler(componentCache);
             this._fallback = new FallbackHandler(componentCache);
             this._echo = new EchoCoordinator(componentCache);
+
+            this._initialized = true;
         }
 
         #endregion
 
-        #region State Checkers
+        #region Public API
 
         public bool IsInCombatState()
         {
-            return (this._fallback?.IsActive() ?? false) ||
-                   (this._engage?.IsEngaging() ?? false) ||
-                   (this._investigate?.IsInvestigating() ?? false) ||
-                   this._cache?.ThreatSelector?.CurrentTarget != null;
+            return this._initialized &&
+                   (this._fallback.IsActive()
+                    || this._engage.IsEngaging()
+                    || this._investigate.IsInvestigating()
+                    || this._cache.ThreatSelector.CurrentTarget != null);
         }
-
-        #endregion
-
-        #region External Triggers
 
         public void NotifyDamaged()
         {
-            if (this._fallback == null || this._bot == null)
+            if (!this._initialized)
             {
                 return;
             }
@@ -108,42 +112,29 @@ namespace AIRefactored.AI.Combat
             if (this._fallback.ShallUseNow(now))
             {
                 this.AssignFallbackIfNeeded();
-
-                if (!FikaHeadlessDetector.IsHeadless && this._bot.BotTalk != null)
-                {
-                    this._bot.BotTalk.TrySay(EPhraseTrigger.OnBeingHurt);
-                }
-
-                this.LastStateChangeTime = now;
+                this._bot.BotTalk?.TrySay(EPhraseTrigger.OnBeingHurt);
+                this._lastStateChangeTime = now;
             }
         }
 
         public void NotifyEchoInvestigate()
         {
-            if (this._investigate == null || this._bot == null)
+            if (!this._initialized)
             {
                 return;
             }
 
             float now = Time.time;
-            if (!this._investigate.ShallUseNow(now, this.LastStateChangeTime))
+            if (!this._investigate.ShallUseNow(now, this._lastStateChangeTime))
             {
-                this.LastStateChangeTime = now;
-
-                if (!FikaHeadlessDetector.IsHeadless && this._bot.BotTalk != null)
-                {
-                    this._bot.BotTalk.TrySay(EPhraseTrigger.Cooperation);
-                }
+                this._lastStateChangeTime = now;
+                this._bot.BotTalk?.TrySay(EPhraseTrigger.Cooperation);
             }
         }
 
-        #endregion
-
-        #region Ticking
-
         public void Tick(float time)
         {
-            if (this._bot == null || this._cache == null || this._bot.IsDead)
+            if (!this._initialized || this._bot.IsDead)
             {
                 return;
             }
@@ -153,46 +144,42 @@ namespace AIRefactored.AI.Combat
                 return;
             }
 
-            if (time - this.LastStateChangeTime < MinTransitionDelay)
+            if (time - this._lastStateChangeTime < MinTransitionDelay)
             {
                 return;
             }
 
-            if (this._fallback != null && this.ShouldTriggerSuppressedFallback(time))
+            if (this.ShouldTriggerSuppressedFallback(time))
             {
                 this.AssignFallbackIfNeeded();
+                this._bot.BotTalk?.TrySay(EPhraseTrigger.OnBeingHurt);
 
-                if (!FikaHeadlessDetector.IsHeadless && this._bot.BotTalk != null)
-                {
-                    this._bot.BotTalk.TrySay(EPhraseTrigger.OnBeingHurt);
-                }
-
-                Vector3 fallbackPos = this._fallback.HasValidFallbackPath()
+                Vector3 fallback = this._fallback.HasValidFallbackPath()
                     ? this._fallback.GetFallbackPosition()
                     : this._bot.Position;
 
-                this._echo?.EchoFallbackToSquad(fallbackPos);
-                this.LastStateChangeTime = time;
+                this._echo.EchoFallbackToSquad(fallback);
+                this._lastStateChangeTime = time;
                 return;
             }
 
-            if (this._fallback != null && this._fallback.ShallUseNow(time))
+            if (this._fallback.ShallUseNow(time))
             {
                 this.AssignFallbackIfNeeded();
-                this._fallback.Tick(time, this._lastKnownEnemyPos, this.SetLastStateChangeTime);
+                this._fallback.Tick(time, this.SetLastStateChangeTime);
                 return;
             }
 
-            BotThreatSelector? selector = this._cache.ThreatSelector;
-            if (selector?.CurrentTarget is Player enemy && EFTPlayerUtil.IsValid(enemy))
+            Player enemy = this._cache.ThreatSelector.CurrentTarget;
+            if (EFTPlayerUtil.IsValid(enemy))
             {
-                Vector3 enemyPos = EFTPlayerUtil.GetPosition(enemy);
-                this._lastKnownEnemyPos = enemyPos;
+                this._lastKnownEnemyPos = EFTPlayerUtil.GetPosition(enemy);
+                this._hasKnownEnemy = true;
 
-                string enemyId = enemy.ProfileId ?? string.Empty;
-                if (!string.IsNullOrWhiteSpace(enemyId))
+                string id = enemy.ProfileId;
+                if (!string.IsNullOrEmpty(id))
                 {
-                    this._cache.TacticalMemory?.RecordEnemyPosition(enemyPos, "Combat", enemyId);
+                    this._cache.TacticalMemory.RecordEnemyPosition(this._lastKnownEnemyPos, "Combat", id);
                 }
 
                 if (this._bot.Mover != null && !this._bot.Mover.Sprinting)
@@ -200,78 +187,84 @@ namespace AIRefactored.AI.Combat
                     this._bot.Sprint(true);
                 }
 
-                this._echo?.EchoSpottedEnemyToSquad(enemyPos);
+                this._echo.EchoSpottedEnemyToSquad(this._lastKnownEnemyPos);
             }
 
-            if (this._engage != null && this._engage.ShallUseNow())
+            if (this._engage.ShallUseNow())
             {
                 if (this._engage.CanAttack())
                 {
-                    this._attack?.Tick(time);
+                    this._attack.Tick(time);
                 }
                 else
                 {
                     this._engage.Tick();
                 }
 
-                this.LastStateChangeTime = time;
+                this._lastStateChangeTime = time;
                 return;
             }
 
-            if (this._investigate != null && this._investigate.ShallUseNow(time, this.LastStateChangeTime))
+            if (this._investigate.ShallUseNow(time, this._lastStateChangeTime))
             {
-                Vector3 investigate = this._investigate.GetInvestigateTarget(this._lastKnownEnemyPos);
-                if (investigate != Vector3.zero)
+                Vector3 investigateTarget = this._investigate.GetInvestigateTarget(this._hasKnownEnemy ? this._lastKnownEnemyPos : Vector3.zero);
+                if (investigateTarget != Vector3.zero)
                 {
-                    this._investigate.Investigate(investigate);
-                    this.LastStateChangeTime = time;
+                    this._investigate.Investigate(investigateTarget);
+                    this._lastStateChangeTime = time;
                 }
 
                 return;
             }
 
-            this._patrol?.Tick(time);
+            this._patrol.Tick(time);
+        }
+
+        public void TriggerFallback(Vector3 fallbackPos)
+        {
+            if (!this._initialized)
+            {
+                return;
+            }
+
+            this._fallback.SetFallbackTarget(fallbackPos);
+            this._bot.BotTalk?.TrySay(EPhraseTrigger.OnLostVisual);
+            this._lastStateChangeTime = Time.time;
+        }
+
+        public void TrySetStanceFromNearbyCover(Vector3 pos)
+        {
+            if (!this._initialized)
+            {
+                return;
+            }
+
+            this._cache.PoseController.TrySetStanceFromNearbyCover(pos);
         }
 
         #endregion
 
-        #region Fallback
-
-        public void TriggerFallback(Vector3 fallbackPos)
-        {
-            this._fallback?.SetFallbackTarget(fallbackPos);
-
-            if (!FikaHeadlessDetector.IsHeadless && this._bot?.BotTalk != null)
-            {
-                this._bot.BotTalk.TrySay(EPhraseTrigger.OnLostVisual);
-            }
-
-            this.LastStateChangeTime = Time.time;
-        }
-
-        public void TrySetStanceFromNearbyCover(Vector3 position)
-        {
-            this._cache?.PoseController?.TrySetStanceFromNearbyCover(position);
-        }
+        #region Private Helpers
 
         private void AssignFallbackIfNeeded()
         {
-            if (this._fallback == null || this._fallback.HasValidFallbackPath())
+            if (this._fallback.HasValidFallbackPath())
             {
                 return;
             }
 
-            if (this._bot == null || this._cache?.Pathing == null)
+            if (this._cache.Pathing == null)
             {
                 return;
             }
 
-            Vector3 retreatDir = -this._bot.LookDirection.normalized;
+            Vector3 lookDir = this._bot.LookDirection;
+            Vector3 retreatDir = lookDir.sqrMagnitude > 0.01f ? -lookDir.normalized : Vector3.back;
 
             FallbackPathBuffer.Clear();
             List<Vector3> path = BotCoverRetreatPlanner.GetCoverRetreatPath(this._bot, retreatDir, this._cache.Pathing);
 
-            if (path != null && path.Count > 0)
+            if (path.Count > 0)
             {
                 Vector3 final = path[path.Count - 1];
                 this._fallback.SetFallbackPath(path);
@@ -280,22 +273,21 @@ namespace AIRefactored.AI.Combat
             }
             else
             {
-                AIRefactoredController.Logger?.LogWarning("[CombatStateMachine] Bot failed to find fallback path.");
+                Plugin.LoggerInstance?.LogWarning("[CombatStateMachine] Fallback path was not found.");
             }
         }
 
         private bool ShouldTriggerSuppressedFallback(float time)
         {
-            float composure = this._cache?.PanicHandler?.GetComposureLevel() ?? 1.0f;
-            float delay = Mathf.Lerp(0.75f, 1.5f, 1.0f - composure);
+            float composure = this._cache.PanicHandler.GetComposureLevel();
+            float delay = Mathf.Lerp(0.75f, 1.5f, 1f - composure);
 
-            return this._fallback != null &&
-                   this._fallback.ShouldTriggerSuppressedFallback(time, this.LastStateChangeTime, delay);
+            return this._fallback.ShouldTriggerSuppressedFallback(time, this._lastStateChangeTime, delay);
         }
 
         private void SetLastStateChangeTime(CombatState state, float time)
         {
-            this.LastStateChangeTime = time;
+            this._lastStateChangeTime = time;
         }
 
         #endregion

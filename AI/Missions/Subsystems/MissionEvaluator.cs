@@ -6,8 +6,6 @@
 //   Please follow strict StyleCop, ReSharper, and AI-Refactored code standards for all modifications.
 // </auto-generated>
 
-#nullable enable
-
 namespace AIRefactored.AI.Missions.Subsystems
 {
     using System;
@@ -17,6 +15,7 @@ namespace AIRefactored.AI.Missions.Subsystems
     using AIRefactored.AI.Helpers;
     using AIRefactored.AI.Optimization;
     using AIRefactored.Core;
+    using AIRefactored.Pools;
     using AIRefactored.Runtime;
     using BepInEx.Logging;
     using EFT;
@@ -25,23 +24,26 @@ namespace AIRefactored.AI.Missions.Subsystems
     using UnityEngine;
 
     /// <summary>
-    /// Evaluates combat, squad alignment, loot threshold, and stuck logic
-    /// to guide mission reassessment and fallback behavior.
+    /// Evaluates combat, squad cohesion, loot status, and fallback triggers to adjust bot missions.
     /// </summary>
     public sealed class MissionEvaluator
     {
+        #region Constants
+
         private const int LootItemCountThreshold = 40;
         private const float SquadCohesionRange = 10f;
         private const float StuckCooldown = 30f;
         private const float StuckDuration = 25f;
 
-        private static readonly ManualLogSource Logger = AIRefactoredController.Logger;
-        private static readonly List<BotOwner> TeammateBuffer = new List<BotOwner>(16);
-        private static readonly List<Item> ItemBuffer = new List<Item>(64);
+        #endregion
+
+        #region Fields
+
+        private static readonly ManualLogSource Logger = Plugin.LoggerInstance;
 
         private readonly BotOwner _bot;
         private readonly BotComponentCache _cache;
-        private readonly BotGroupSyncCoordinator? _group;
+        private readonly BotGroupSyncCoordinator _group;
         private readonly BotPersonalityProfile _profile;
 
         private int _fallbackAttempts;
@@ -49,96 +51,96 @@ namespace AIRefactored.AI.Missions.Subsystems
         private float _stuckSince;
         private Vector3 _lastPos;
 
-        /// <summary>
-        /// Initializes a new instance of the <see cref="MissionEvaluator"/> class.
-        /// </summary>
-        /// <param name="bot">Bot owner reference.</param>
-        /// <param name="cache">Bot component cache reference.</param>
+        #endregion
+
+        #region Constructor
+
         public MissionEvaluator(BotOwner bot, BotComponentCache cache)
         {
-            this._bot = bot ?? throw new ArgumentNullException(nameof(bot));
-            this._cache = cache ?? throw new ArgumentNullException(nameof(cache));
-            this._profile = BotRegistry.Get(bot.Profile.Id);
-            this._group = BotCacheUtility.GetGroupSync(cache);
-            this._lastPos = bot.Position;
-            this._lastMoveTime = Time.time;
+            if (bot == null || cache == null)
+            {
+                throw new ArgumentException("MissionEvaluator: bot or cache is null.");
+            }
+
+            _bot = bot;
+            _cache = cache;
+            _profile = BotRegistry.Get(bot.Profile.Id);
+            _group = BotCacheUtility.GetGroupSync(cache);
+            _lastPos = bot.Position;
+            _lastMoveTime = Time.time;
         }
 
-        /// <summary>
-        /// Checks if the bot's group is sufficiently cohesive.
-        /// </summary>
+        #endregion
+
+        #region Public Methods
+
         public bool IsGroupAligned()
         {
-            if (this._group == null)
+            if (_group == null)
             {
                 return true;
             }
 
-            TeammateBuffer.Clear();
-            TeammateBuffer.AddRange(this._group.GetTeammates());
+            List<BotOwner> teammates = TempListPool.Rent<BotOwner>();
+            teammates.AddRange(_group.GetTeammates());
 
-            int near = 0;
-            for (int i = 0; i < TeammateBuffer.Count; i++)
+            int nearby = 0;
+            Vector3 selfPos = _bot.Position;
+
+            for (int i = 0; i < teammates.Count; i++)
             {
-                BotOwner mate = TeammateBuffer[i];
-                if (mate != null && Vector3.Distance(mate.Position, this._bot.Position) < SquadCohesionRange)
+                BotOwner mate = teammates[i];
+                if (mate != null && Vector3.Distance(mate.Position, selfPos) < SquadCohesionRange)
                 {
-                    near++;
+                    nearby++;
                 }
             }
 
-            int required = Mathf.CeilToInt(TeammateBuffer.Count * 0.6f);
-            return near >= required;
+            int required = Mathf.CeilToInt(teammates.Count * 0.6f);
+            TempListPool.Return(teammates);
+            return nearby >= required;
         }
 
-        /// <summary>
-        /// Determines whether the bot should extract early based on loot and caution level.
-        /// </summary>
         public bool ShouldExtractEarly()
         {
-            float threshold = this._profile.RetreatThreshold;
-            Item? backpack = this._bot.GetPlayer?.Inventory?.Equipment?.GetSlot(EquipmentSlot.Backpack)?.ContainedItem;
+            if (_profile.IsFrenzied || _profile.Caution <= 0.6f)
+            {
+                return false;
+            }
+
+            Item backpack = _bot.GetPlayer.Inventory.Equipment.GetSlot(EquipmentSlot.Backpack)?.ContainedItem;
             if (backpack == null)
             {
                 return false;
             }
 
-            ItemBuffer.Clear();
-            ItemBuffer.AddRange(backpack.GetAllItems());
+            List<Item> items = TempListPool.Rent<Item>();
+            items.AddRange(backpack.GetAllItems());
 
-            int count = 0;
-            for (int i = 0; i < ItemBuffer.Count; i++)
-            {
-                if (ItemBuffer[i] != null)
-                {
-                    count++;
-                }
-            }
-
+            int count = items.Count;
             float fullness = (float)count / LootItemCountThreshold;
-            return fullness >= threshold && this._profile.Caution > 0.6f && !this._profile.IsFrenzied;
+
+            TempListPool.Return(items);
+            return fullness >= _profile.RetreatThreshold;
         }
 
-        /// <summary>
-        /// Attempts to navigate the bot toward an extraction point.
-        /// </summary>
         public void TryExtract()
         {
             try
             {
-                ExfiltrationPoint? closest = null;
+                ExfiltrationPoint closest = null;
                 float minDist = float.MaxValue;
 
-                ExfiltrationPoint[] allPoints = GameObject.FindObjectsOfType<ExfiltrationPoint>();
-                for (int i = 0; i < allPoints.Length; i++)
+                ExfiltrationPoint[] all = GameObject.FindObjectsOfType<ExfiltrationPoint>();
+                for (int i = 0; i < all.Length; i++)
                 {
-                    ExfiltrationPoint point = allPoints[i];
-                    if (point == null || point.Status != EExfiltrationStatus.RegularMode)
+                    ExfiltrationPoint point = all[i];
+                    if (point.Status != EExfiltrationStatus.RegularMode)
                     {
                         continue;
                     }
 
-                    float dist = Vector3.Distance(this._bot.Position, point.transform.position);
+                    float dist = Vector3.Distance(_bot.Position, point.transform.position);
                     if (dist < minDist)
                     {
                         minDist = dist;
@@ -148,45 +150,49 @@ namespace AIRefactored.AI.Missions.Subsystems
 
                 if (closest != null)
                 {
-                    BotMovementHelper.SmoothMoveTo(this._bot, closest.transform.position);
-                    this.Say(EPhraseTrigger.ExitLocated);
+                    BotMovementHelper.SmoothMoveTo(_bot, closest.transform.position);
+                    Say(EPhraseTrigger.ExitLocated);
                 }
             }
             catch (Exception ex)
             {
-                Logger.LogWarning($"[MissionEvaluator] Extraction failed: {ex.Message}");
+                Logger.LogWarning("[MissionEvaluator] Extraction failed: " + ex.Message);
             }
         }
 
-        /// <summary>
-        /// Updates stuck detection and attempts fallback movement if necessary.
-        /// </summary>
         public void UpdateStuckCheck(float time)
         {
-            float moved = Vector3.Distance(this._bot.Position, this._lastPos);
+            float moved = Vector3.Distance(_bot.Position, _lastPos);
+
             if (moved > 0.3f)
             {
-                this._lastPos = this._bot.Position;
-                this._lastMoveTime = time;
-                this._fallbackAttempts = 0;
+                _lastPos = _bot.Position;
+                _lastMoveTime = time;
+                _fallbackAttempts = 0;
                 return;
             }
 
-            if (time - this._lastMoveTime > StuckDuration && time - this._stuckSince > StuckCooldown && this._fallbackAttempts < 2)
+            if (time - _lastMoveTime > StuckDuration &&
+                time - _stuckSince > StuckCooldown &&
+                _fallbackAttempts < 2)
             {
-                this._stuckSince = time;
-                this._fallbackAttempts++;
+                _stuckSince = time;
+                _fallbackAttempts++;
 
-                Vector3 lookDirection = this._bot.LookDirection;
-                Vector3? fallback = HybridFallbackResolver.GetBestRetreatPoint(this._bot, lookDirection);
+                Vector3 direction = _bot.LookDirection;
+                Vector3? fallback = HybridFallbackResolver.GetBestRetreatPoint(_bot, direction);
                 if (fallback.HasValue)
                 {
-                    string nickname = this._bot.Profile?.Info?.Nickname ?? "Unknown";
-                    Logger.LogInfo($"[MissionEvaluator] {nickname} fallback #{this._fallbackAttempts} → {fallback.Value}");
-                    BotMovementHelper.SmoothMoveTo(this._bot, fallback.Value);
+                    string name = _bot.Profile?.Info?.Nickname ?? "Unknown";
+                    Logger.LogInfo("[MissionEvaluator] " + name + " fallback #" + _fallbackAttempts + " → " + fallback.Value);
+                    BotMovementHelper.SmoothMoveTo(_bot, fallback.Value);
                 }
             }
         }
+
+        #endregion
+
+        #region Private Methods
 
         private void Say(EPhraseTrigger phrase)
         {
@@ -194,13 +200,15 @@ namespace AIRefactored.AI.Missions.Subsystems
             {
                 if (!FikaHeadlessDetector.IsHeadless)
                 {
-                    this._bot.GetPlayer?.Say(phrase);
+                    _bot.GetPlayer?.Say(phrase);
                 }
             }
             catch (Exception ex)
             {
-                Logger.LogWarning($"[MissionEvaluator] VO failed: {ex.Message}");
+                Logger.LogWarning("[MissionEvaluator] VO failed: " + ex.Message);
             }
         }
+
+        #endregion
     }
 }

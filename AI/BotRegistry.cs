@@ -6,12 +6,11 @@
 //   Please follow strict StyleCop, ReSharper, and AI-Refactored code standards for all modifications.
 // </auto-generated>
 
-#nullable enable
-
-namespace AIRefactored.AI
+namespace AIRefactored
 {
     using System.Collections.Concurrent;
     using System.Collections.Generic;
+    using AIRefactored.AI;
     using AIRefactored.AI.Core;
     using AIRefactored.Runtime;
     using BepInEx.Logging;
@@ -22,65 +21,81 @@ namespace AIRefactored.AI
     /// </summary>
     public static class BotRegistry
     {
-        #region Fields
-
         private static readonly ConcurrentDictionary<string, BotPersonalityProfile> _profileRegistry =
             new ConcurrentDictionary<string, BotPersonalityProfile>();
 
         private static readonly ConcurrentDictionary<string, AIRefactoredBotOwner> _ownerRegistry =
             new ConcurrentDictionary<string, AIRefactoredBotOwner>();
 
-        private static readonly HashSet<string> _missingLogged = new HashSet<string>();
+        private static readonly HashSet<string> _missingLogged =
+            new HashSet<string>();
+
+        private static readonly Dictionary<PersonalityType, BotPersonalityProfile> _fallbackProfiles =
+            new Dictionary<PersonalityType, BotPersonalityProfile>();
 
         private static bool _debug = true;
 
-        private static ManualLogSource? Logger => AIRefactoredController.Logger;
+        private static ManualLogSource Logger => Plugin.LoggerInstance;
 
-        #endregion
-
-        #region Public API
-
+        /// <summary>
+        /// Clears all internal registries. Should be called on raid teardown.
+        /// </summary>
         public static void Clear()
         {
             _profileRegistry.Clear();
             _ownerRegistry.Clear();
             _missingLogged.Clear();
+            _fallbackProfiles.Clear();
 
-            Logger?.LogInfo("[BotRegistry] Cleared all personality and owner data.");
+            Logger.LogInfo("[BotRegistry] Cleared all personality and owner data.");
         }
 
+        /// <summary>
+        /// Enables or disables debug logging for missing profiles.
+        /// </summary>
+        /// <param name="enable">Whether to enable logging.</param>
         public static void EnableDebug(bool enable)
         {
-            _debug = enable && !FikaHeadlessDetector.IsHeadless; // Disable debug in headless mode
-            Logger?.LogInfo("[BotRegistry] Debug logging " + (enable ? "enabled." : "disabled."));
+            _debug = enable && !FikaHeadlessDetector.IsHeadless;
+            Logger.LogInfo("[BotRegistry] Debug logging " + (enable ? "enabled." : "disabled."));
         }
 
+        /// <summary>
+        /// Returns true if a personality is registered for the given profile ID.
+        /// </summary>
         public static bool Exists(string profileId)
         {
             return !string.IsNullOrEmpty(profileId) && _profileRegistry.ContainsKey(profileId);
         }
 
+        /// <summary>
+        /// Gets a personality profile or returns fallback if missing.
+        /// </summary>
         public static BotPersonalityProfile Get(string profileId, PersonalityType fallback = PersonalityType.Balanced)
         {
             if (string.IsNullOrEmpty(profileId))
             {
-                Logger?.LogWarning("[BotRegistry] Requested null or empty profileId. Returning fallback.");
+                Logger.LogWarning("[BotRegistry] Requested null or empty profileId. Returning fallback.");
                 return GetFallbackProfile(fallback);
             }
 
-            if (_profileRegistry.TryGetValue(profileId, out BotPersonalityProfile profile))
+            BotPersonalityProfile profile;
+            if (_profileRegistry.TryGetValue(profileId, out profile))
             {
                 return profile;
             }
 
             if (_debug && _missingLogged.Add(profileId))
             {
-                Logger?.LogWarning("[BotRegistry] Missing profile for '" + profileId + "'. Using fallback: " + fallback + ".");
+                Logger.LogWarning("[BotRegistry] Missing profile for '" + profileId + "'. Using fallback: " + fallback + ".");
             }
 
-            return GetFallbackProfile(fallback); // Fallback profile if not found
+            return GetFallbackProfile(fallback);
         }
 
+        /// <summary>
+        /// Registers a personality profile by profile ID.
+        /// </summary>
         public static void Register(string profileId, BotPersonalityProfile profile)
         {
             if (string.IsNullOrEmpty(profileId) || profile == null)
@@ -90,67 +105,90 @@ namespace AIRefactored.AI
 
             if (_profileRegistry.ContainsKey(profileId))
             {
-                Logger?.LogInfo("[BotRegistry] Profile already exists for '" + profileId + "'. Skipping registration.");
+                Logger.LogInfo("[BotRegistry] Profile already exists for '" + profileId + "'. Skipping registration.");
                 return;
             }
 
             _profileRegistry[profileId] = profile;
-            Logger?.LogInfo("[BotRegistry] Registered profile for '" + profileId + "': " + profile.Personality);
+            Logger.LogInfo("[BotRegistry] Registered profile for '" + profileId + "': " + profile.Personality);
         }
 
+        /// <summary>
+        /// Registers the AIRefactoredBotOwner for a bot's profile ID.
+        /// </summary>
         public static void RegisterOwner(string profileId, AIRefactoredBotOwner owner)
         {
-            if (string.IsNullOrEmpty(profileId) || owner == null || _ownerRegistry.ContainsKey(profileId))
+            if (string.IsNullOrEmpty(profileId) || owner == null)
             {
-                return; // Prevent overwriting of existing profile
+                return;
+            }
+
+            if (_ownerRegistry.ContainsKey(profileId))
+            {
+                return;
             }
 
             _ownerRegistry[profileId] = owner;
-            Logger?.LogInfo("[BotRegistry] Registered owner for '" + profileId + "'.");
+            Logger.LogInfo("[BotRegistry] Registered owner for '" + profileId + "'.");
         }
 
-        public static BotPersonalityProfile? TryGet(string profileId)
+        /// <summary>
+        /// Tries to get a personality profile without fallback.
+        /// </summary>
+        public static bool TryGet(string profileId, out BotPersonalityProfile profile)
         {
-            if (string.IsNullOrEmpty(profileId))
+            if (!string.IsNullOrEmpty(profileId))
             {
-                return null;
+                return _profileRegistry.TryGetValue(profileId, out profile);
             }
 
-            return _profileRegistry.TryGetValue(profileId, out BotPersonalityProfile profile) ? profile : null;
+            profile = null;
+            return false;
         }
 
-        public static AIRefactoredBotOwner? TryGetRefactoredOwner(string profileId)
+        /// <summary>
+        /// Tries to get the AIRefactoredBotOwner for the given profile ID.
+        /// </summary>
+        public static bool TryGetRefactoredOwner(string profileId, out AIRefactoredBotOwner owner)
         {
-            if (string.IsNullOrEmpty(profileId))
+            if (!string.IsNullOrEmpty(profileId))
             {
-                return null;
+                return _ownerRegistry.TryGetValue(profileId, out owner);
             }
 
-            return _ownerRegistry.TryGetValue(profileId, out AIRefactoredBotOwner owner) ? owner : null;
+            owner = null;
+            return false;
         }
 
-        public static BotComponentCache? TryGetCache(string profileId)
+        /// <summary>
+        /// Tries to get the BotComponentCache for the given profile ID.
+        /// </summary>
+        public static bool TryGetCache(string profileId, out BotComponentCache cache)
         {
-            if (string.IsNullOrEmpty(profileId))
+            cache = null;
+            AIRefactoredBotOwner owner;
+            if (TryGetRefactoredOwner(profileId, out owner))
             {
-                return null;
+                cache = owner.Cache;
+                return cache != null;
             }
 
-            AIRefactoredBotOwner? owner = TryGetRefactoredOwner(profileId);
-            return owner != null ? owner.Cache : null;
+            return false;
         }
-
-        #endregion
-
-        #region Internal Logic
 
         private static BotPersonalityProfile GetFallbackProfile(PersonalityType fallback)
         {
-            var profile = BotPersonalityPresets.GenerateProfile(fallback);
-            Logger?.LogDebug("[BotRegistry] Returning fallback profile: " + profile.Personality);
+            BotPersonalityProfile profile;
+            if (_fallbackProfiles.TryGetValue(fallback, out profile))
+            {
+                return profile;
+            }
+
+            profile = BotPersonalityPresets.GenerateProfile(fallback);
+            _fallbackProfiles[fallback] = profile;
+
+            Logger.LogInfo("[BotRegistry] Created fallback profile: " + profile.Personality);
             return profile;
         }
-
-        #endregion
     }
 }

@@ -6,8 +6,6 @@
 //   Please follow strict StyleCop, ReSharper, and AI-Refactored code standards for all modifications.
 // </auto-generated>
 
-#nullable enable
-
 namespace AIRefactored
 {
     using System;
@@ -17,29 +15,28 @@ namespace AIRefactored
     using BepInEx.Logging;
 
     /// <summary>
-    /// Entry point for AI-Refactored mod. Kicks off the global controller which
-    /// handles all further injection and bootstrapping exactly once.
+    /// Entry point for AI-Refactored mod. Initializes the global AIRefactoredController once.
     /// </summary>
     [BepInPlugin("com.spock.airefactored", "AI-Refactored", "1.0.0")]
     public sealed class Plugin : BaseUnityPlugin
     {
-        private static ManualLogSource? _log;
+        private static ManualLogSource _logger;
         private static bool _initialized;
         private static readonly object LockObj = new object();
 
         /// <summary>
-        /// Global logger for other classes to use.
+        /// Gets the shared logger instance for AIRefactored systems.
         /// </summary>
         public static ManualLogSource LoggerInstance
         {
             get
             {
-                if (_log == null)
+                if (_logger == null)
                 {
-                    throw new InvalidOperationException("Logger was not initialized.");
+                    throw new InvalidOperationException("[Plugin] LoggerInstance accessed before initialization.");
                 }
 
-                return _log;
+                return _logger;
             }
         }
 
@@ -49,17 +46,26 @@ namespace AIRefactored
             {
                 if (_initialized)
                 {
-                    Logger.LogWarning("[AIRefactored] Plugin already initialized; skipping duplicate Awake.");
+                    if (_logger != null)
+                    {
+                        _logger.LogWarning("[AIRefactored] Plugin already initialized — skipping.");
+                    }
+
                     return;
                 }
 
-                _log = Logger;
-                _log.LogInfo("[AIRefactored] Plugin Awake — initializing AIRefactoredController.");
-
-                AIRefactoredController.Initialize(_log);
-                _initialized = true;
-
-                _log.LogInfo("[AIRefactored] Plugin initialization complete.");
+                try
+                {
+                    _logger = Logger;
+                    _logger.LogInfo("[AIRefactored] Plugin Awake — bootstrapping controller.");
+                    AIRefactoredController.Initialize();
+                    _initialized = true;
+                    _logger.LogInfo("[AIRefactored] Initialization complete.");
+                }
+                catch (Exception ex)
+                {
+                    UnityEngine.Debug.LogError("[AIRefactored] Plugin Awake failed: " + ex);
+                }
             }
         }
 
@@ -70,8 +76,19 @@ namespace AIRefactored
                 _initialized = false;
             }
 
-            _log?.LogInfo("[AIRefactored] Plugin OnDestroy — cleaning up.");
-            GameWorldHandler.UnhookBotSpawns();
+            try
+            {
+                if (_logger != null)
+                {
+                    _logger.LogInfo("[AIRefactored] Plugin OnDestroy — cleaning up.");
+                }
+
+                GameWorldHandler.UnhookBotSpawns();
+            }
+            catch (Exception ex)
+            {
+                UnityEngine.Debug.LogError("[AIRefactored] Plugin OnDestroy error: " + ex);
+            }
         }
     }
 }

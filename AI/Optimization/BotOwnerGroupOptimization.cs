@@ -6,8 +6,6 @@
 //   Please follow strict StyleCop, ReSharper, and AI-Refactored code standards for all modifications.
 // </auto-generated>
 
-#nullable enable
-
 namespace AIRefactored.AI.Optimization
 {
     using System.Collections.Generic;
@@ -25,56 +23,57 @@ namespace AIRefactored.AI.Optimization
     {
         #region Static Fields
 
-        private static readonly ManualLogSource Logger = AIRefactoredController.Logger;
+        private static readonly ManualLogSource Logger = Plugin.LoggerInstance;
 
         #endregion
 
-        #region Public API
+        #region Public Methods
 
         /// <summary>
         /// Applies group cohesion and perception modifiers to all valid AI bots in a squad.
         /// </summary>
         /// <param name="botOwners">List of bots in the same squad or group context.</param>
-        public void OptimizeGroupAI(List<BotOwner>? botOwners)
+        public void OptimizeGroupAI(List<BotOwner> botOwners)
         {
             if (botOwners == null || botOwners.Count == 0)
             {
                 return;
             }
 
-            foreach (var bot in botOwners)
+            for (int i = 0; i < botOwners.Count; i++)
             {
+                BotOwner bot = botOwners[i];
                 if (bot == null || bot.IsDead)
                 {
                     continue;
                 }
 
-                Player? player = bot.GetPlayer;
+                Player player = bot.GetPlayer;
                 if (player == null || !player.IsAI || player.IsYourPlayer)
                 {
                     continue;
                 }
 
-                Profile? profile = bot.Profile;
+                Profile profile = bot.Profile;
                 if (profile == null || string.IsNullOrEmpty(profile.Id))
                 {
                     continue;
                 }
 
-                BotSettingsComponents? settings = bot.Settings?.FileSettings;
+                BotSettingsComponents settings = bot.Settings != null ? bot.Settings.FileSettings : null;
                 if (settings == null || settings.Mind == null)
                 {
                     continue;
                 }
 
                 BotGlobalsMindSettings mind = settings.Mind;
-                BotPersonalityProfile? personality = BotRegistry.Get(profile.Id);
-                if (personality == null)
+                BotPersonalityProfile profileData = BotRegistry.Get(profile.Id);
+                if (profileData == null)
                 {
                     continue;
                 }
 
-                ApplyModifiers(bot, personality, mind);
+                ApplyModifiers(bot, profileData, mind);
             }
         }
 
@@ -82,29 +81,20 @@ namespace AIRefactored.AI.Optimization
 
         #region Private Methods
 
-        /// <summary>
-        /// Applies per-bot modifiers to enhance reactivity and squad cohesion realism.
-        /// </summary>
         private static void ApplyModifiers(BotOwner bot, BotPersonalityProfile profile, BotGlobalsMindSettings mind)
         {
             mind.DIST_TO_FOUND_SQRT = Mathf.Lerp(300f, 600f, 1f - profile.Cohesion);
 
-            mind.FRIEND_AGR_KILL = Mathf.Clamp(
-                mind.FRIEND_AGR_KILL + profile.AggressionLevel * 0.15f,
-                0f,
-                1f);
+            float aggroBonus = profile.AggressionLevel * 0.15f;
+            mind.FRIEND_AGR_KILL = Mathf.Clamp(mind.FRIEND_AGR_KILL + aggroBonus, 0f, 1f);
 
-            mind.ENEMY_LOOK_AT_ME_ANG = Mathf.Clamp(
-                mind.ENEMY_LOOK_AT_ME_ANG - profile.Cohesion * 5f,
-                5f,
-                30f);
+            float lookThreshold = Mathf.Clamp(mind.ENEMY_LOOK_AT_ME_ANG - (profile.Cohesion * 5f), 5f, 30f);
+            mind.ENEMY_LOOK_AT_ME_ANG = lookThreshold;
 
-            string nickname = bot.Profile?.Info?.Nickname ?? "Unknown";
+            string name = bot.Profile != null && bot.Profile.Info != null ? bot.Profile.Info.Nickname : "Unknown";
 
             Logger.LogDebug(
-                $"[GroupOpt] {nickname} → Cohesion={profile.Cohesion:F2}, " +
-                $"FRIEND_AGR_KILL={mind.FRIEND_AGR_KILL:F2}, " +
-                $"ENEMY_ANG={mind.ENEMY_LOOK_AT_ME_ANG:F1}°");
+                $"[GroupOpt] {name} → Cohesion={profile.Cohesion:F2}, FRIEND_AGR_KILL={mind.FRIEND_AGR_KILL:F2}, ENEMY_ANG={mind.ENEMY_LOOK_AT_ME_ANG:F1}°");
         }
 
         #endregion

@@ -6,9 +6,7 @@
 //   Please follow strict StyleCop, ReSharper, and AI-Refactored code standards for all modifications.
 // </auto-generated>
 
-#nullable enable
-
-namespace AIRefactored.AI.Combat
+namespace AIRefactored.AI.Medical
 {
     using System;
     using AIRefactored.AI.Core;
@@ -47,9 +45,14 @@ namespace AIRefactored.AI.Combat
         /// <param name="cache">BotComponentCache providing references for squad healing logic.</param>
         public BotGroupHealCoordinator(BotComponentCache cache)
         {
-            if (cache == null || cache.Bot == null)
+            if (cache == null)
             {
-                throw new ArgumentNullException(nameof(cache), "[BotGroupHealCoordinator] Cache or Bot is null.");
+                throw new ArgumentNullException(nameof(cache));
+            }
+
+            if (cache.Bot == null)
+            {
+                throw new ArgumentException("Bot reference in cache cannot be null.", nameof(cache));
             }
 
             this._cache = cache;
@@ -73,35 +76,33 @@ namespace AIRefactored.AI.Combat
 
             this._nextCheckTime = time + HealCheckInterval;
 
-            for (int i = 0; i < this._bot.BotsGroup.MembersCount; i++)
+            int count = this._bot.BotsGroup.MembersCount;
+            for (int i = 0; i < count; i++)
             {
-                BotOwner? mate = this._bot.BotsGroup.Member(i);
+                BotOwner mate = this._bot.BotsGroup.Member(i);
                 if (!this.IsValidMate(mate))
                 {
                     continue;
                 }
 
-                Player? matePlayer = EFTPlayerUtil.ResolvePlayer(mate);
-                if (matePlayer == null || !EFTPlayerUtil.IsValidGroupPlayer(matePlayer))
+                Player matePlayer = EFTPlayerUtil.ResolvePlayer(mate);
+                if (!EFTPlayerUtil.IsValidGroupPlayer(matePlayer))
                 {
                     continue;
                 }
 
-                IHealthController? health = matePlayer.HealthController;
-                if (health == null || !health.IsAlive || !NeedsHealing(health))
+                IHealthController health = matePlayer.HealthController;
+                if (!health.IsAlive || !NeedsHealing(health))
                 {
                     continue;
                 }
 
                 if (this._cache.SquadHealer != null && !this._cache.SquadHealer.IsInProcess)
                 {
-                    IPlayer? iTarget = EFTPlayerUtil.AsSafeIPlayer(matePlayer);
-                    if (iTarget != null)
-                    {
-                        this._cache.SquadHealer.HealAsk(iTarget);
-                        this.TrySaySupport(EPhraseTrigger.Cooperation);
-                        return;
-                    }
+                    IPlayer iTarget = EFTPlayerUtil.AsSafeIPlayer(matePlayer);
+                    this._cache.SquadHealer.HealAsk(iTarget);
+                    this.TrySaySupport(EPhraseTrigger.Cooperation);
+                    return;
                 }
 
                 this.TrySaySupport(EPhraseTrigger.NeedHelp);
@@ -112,25 +113,21 @@ namespace AIRefactored.AI.Combat
 
         #region Private Methods
 
-        private bool IsValidMate(BotOwner? mate)
+        private bool IsValidMate(BotOwner mate)
         {
-            if (mate == null || mate.IsDead || mate == this._bot)
+            if (mate == null || mate.IsDead || ReferenceEquals(mate, this._bot))
             {
                 return false;
             }
 
-            Player? selfPlayer = EFTPlayerUtil.ResolvePlayer(this._bot);
-            Player? matePlayer = EFTPlayerUtil.ResolvePlayer(mate);
-
-            if (selfPlayer == null || matePlayer == null)
-            {
-                return false;
-            }
+            Player selfPlayer = EFTPlayerUtil.ResolvePlayer(this._bot);
+            Player matePlayer = EFTPlayerUtil.ResolvePlayer(mate);
 
             Vector3 selfPos = EFTPlayerUtil.GetPosition(selfPlayer);
             Vector3 matePos = EFTPlayerUtil.GetPosition(matePlayer);
+            float distSq = (matePos - selfPos).sqrMagnitude;
 
-            return Vector3.Distance(selfPos, matePos) <= HealTriggerRange;
+            return distSq <= HealTriggerRange * HealTriggerRange;
         }
 
         private static bool NeedsHealing(IHealthController health)
@@ -138,14 +135,12 @@ namespace AIRefactored.AI.Combat
             Array parts = Enum.GetValues(typeof(EBodyPart));
             for (int i = 0; i < parts.Length; i++)
             {
-                object? val = parts.GetValue(i);
-                if (val is EBodyPart part)
+                EBodyPart part = (EBodyPart)parts.GetValue(i);
+                ValueStruct hp = health.GetBodyPartHealth(part);
+
+                if (hp.Maximum > 0f && hp.Current < hp.Maximum * HealthThreshold)
                 {
-                    ValueStruct hp = health.GetBodyPartHealth(part);
-                    if (hp.Maximum > 0f && hp.Current < hp.Maximum * HealthThreshold)
-                    {
-                        return true;
-                    }
+                    return true;
                 }
             }
 

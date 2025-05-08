@@ -6,8 +6,6 @@
 //   Please follow strict StyleCop, ReSharper, and AI-Refactored code standards for all modifications.
 // </auto-generated>
 
-#nullable enable
-
 namespace AIRefactored.AI.Combat
 {
     using System;
@@ -33,8 +31,8 @@ namespace AIRefactored.AI.Combat
 
         #region Fields
 
-        private BotOwner? _bot;
-        private BotComponentCache? _cache;
+        private BotOwner _bot;
+        private BotComponentCache _cache;
         private bool _isSuppressed;
         private float _suppressionStartTime = -99.0f;
 
@@ -49,9 +47,7 @@ namespace AIRefactored.AI.Combat
         public void Initialize(BotComponentCache componentCache)
         {
             if (componentCache == null || componentCache.Bot == null)
-            {
                 throw new ArgumentNullException(nameof(componentCache), "[Suppression] Bot or cache is null.");
-            }
 
             this._cache = componentCache;
             this._bot = componentCache.Bot;
@@ -72,9 +68,7 @@ namespace AIRefactored.AI.Combat
         public void Tick(float time)
         {
             if (!this._isSuppressed)
-            {
                 return;
-            }
 
             if (!this.IsValid())
             {
@@ -83,9 +77,7 @@ namespace AIRefactored.AI.Combat
             }
 
             if (time - this._suppressionStartTime >= SuppressionDuration)
-            {
                 this._isSuppressed = false;
-            }
         }
 
         /// <summary>
@@ -95,23 +87,26 @@ namespace AIRefactored.AI.Combat
         public void TriggerSuppression(Vector3? source = null)
         {
             if (this._isSuppressed || this._bot == null || this._cache == null)
-            {
                 return;
-            }
 
-            if (this._cache.PanicHandler?.IsPanicking == true)
-            {
+            BotPanicHandler panic = this._cache.PanicHandler;
+            if (panic != null && panic.IsPanicking)
                 return;
-            }
 
             this._isSuppressed = true;
             this._suppressionStartTime = Time.time;
 
-            Vector3 retreatDir = source.HasValue
-                ? (this._bot.Position - source.Value).normalized
-                : (this._bot.LookDirection.sqrMagnitude > 0.1f
-                    ? -this._bot.LookDirection.normalized
-                    : Vector3.back);
+            Vector3 retreatDir = Vector3.back;
+            if (source.HasValue)
+            {
+                retreatDir = (this._bot.Position - source.Value).normalized;
+            }
+            else
+            {
+                Vector3 look = this._bot.LookDirection;
+                if (look.sqrMagnitude > 0.01f)
+                    retreatDir = -look.normalized;
+            }
 
             Vector3 fallback = this.GetFallbackPosition(retreatDir);
             float cohesion = this._cache.AIRefactoredBotOwner?.PersonalityProfile?.Cohesion ?? 1.0f;
@@ -119,13 +114,11 @@ namespace AIRefactored.AI.Combat
             BotMovementHelper.SmoothMoveTo(this._bot, fallback, false, cohesion);
             this._bot.Sprint(true);
 
-            this._cache.PanicHandler?.TriggerPanic();
-            this._cache.Escalation?.NotifyPanicTriggered(); // PATCHED HERE
+            panic?.TriggerPanic();
+            this._cache.Escalation?.NotifyPanicTriggered();
 
             if (!FikaHeadlessDetector.IsHeadless && this._bot.BotTalk != null)
-            {
                 this._bot.BotTalk.TrySay(EPhraseTrigger.OnLostVisual);
-            }
         }
 
         #endregion
@@ -134,20 +127,13 @@ namespace AIRefactored.AI.Combat
 
         private Vector3 GetFallbackPosition(Vector3 retreatDirection)
         {
-            if (this._bot == null)
-            {
-                return Vector3.zero;
-            }
-
             Vector3 basePos = this._bot.Position + (retreatDirection * MinSuppressionRetreatDistance);
 
-            if (this._cache?.Pathing != null)
+            if (this._cache.Pathing != null)
             {
                 var path = BotCoverRetreatPlanner.GetCoverRetreatPath(this._bot, retreatDirection, this._cache.Pathing);
                 if (path.Count > 0)
-                {
                     return Vector3.Distance(path[0], this._bot.Position) < 1.0f && path.Count > 1 ? path[1] : path[0];
-                }
             }
 
             return basePos;

@@ -6,8 +6,6 @@
 //   Please follow strict StyleCop, ReSharper, and AI-Refactored code standards for all modifications.
 // </auto-generated>
 
-#nullable enable
-
 namespace AIRefactored.AI.Missions
 {
     using System;
@@ -20,8 +18,8 @@ namespace AIRefactored.AI.Missions
     using UnityEngine;
 
     /// <summary>
-    /// Decides when a bot should attempt early extraction based on loot value, panic, squad state, isolation, and mobility.
-    /// Fully scales thresholds based on personality traits.
+    /// Decides when a bot should attempt early extraction based on panic, loot value, squad status, isolation, or mobility state.
+    /// Decision thresholds scale based on bot personality.
     /// </summary>
     public sealed class BotExtractionDecisionSystem
     {
@@ -42,12 +40,17 @@ namespace AIRefactored.AI.Missions
 
         public BotExtractionDecisionSystem(BotOwner bot, BotComponentCache cache, BotPersonalityProfile profile)
         {
-            this._bot = bot ?? throw new ArgumentNullException(nameof(bot));
-            this._cache = cache ?? throw new ArgumentNullException(nameof(cache));
-            this._profile = profile ?? new BotPersonalityProfile();
-            this._log = AIRefactoredController.Logger;
-            this._lastPosition = bot.Position;
-            this._lastPositionUpdateTime = Time.time;
+            if (bot == null || cache == null)
+            {
+                throw new ArgumentException("BotExtractionDecisionSystem: bot or cache is null.");
+            }
+
+            _bot = bot;
+            _cache = cache;
+            _profile = profile;
+            _log = Plugin.LoggerInstance;
+            _lastPosition = bot.Position;
+            _lastPositionUpdateTime = Time.time;
         }
 
         #endregion
@@ -56,60 +59,59 @@ namespace AIRefactored.AI.Missions
 
         public void Tick(float time)
         {
-            if (this._hasExtracted)
+            if (_hasExtracted)
             {
                 return;
             }
 
-            if (this.ShouldExtract())
+            if (ShouldExtract())
             {
-                this.TriggerExtraction();
-                this._hasExtracted = true;
+                TriggerExtraction();
+                _hasExtracted = true;
             }
         }
 
         public bool ShouldExtract()
         {
-            if (this._bot.IsDead || this._bot.GetPlayer == null || !this._bot.GetPlayer.HealthController.IsAlive)
+            Player player = _bot.GetPlayer;
+            if (_bot.IsDead || player == null || !player.HealthController.IsAlive)
             {
                 return false;
             }
 
-            float panic = this._cache.PanicHandler?.GetComposureLevel() ?? 1f;
-            float panicThreshold = Mathf.Lerp(0.4f, 0.1f, this._profile.Caution); // Cautious bots extract earlier
-
+            float panic = _cache.PanicHandler.GetComposureLevel();
+            float panicThreshold = Mathf.Lerp(0.4f, 0.1f, _profile.Caution);
             if (panic < panicThreshold)
             {
-                this._log.LogDebug($"[ExtractDecision] {this._bot.name} extracting: panic={panic:F2}");
+                _log.LogDebug("[ExtractDecision] " + _bot.name + " extracting: panic=" + panic.ToString("F2"));
                 return true;
             }
 
-            float loot = this._cache.LootScanner?.TotalLootValue ?? 0f;
-            float greedFactor = Mathf.Lerp(75000f, 50000f, this._profile.Greed); // Greedy bots extract with more
-
-            if (loot >= greedFactor)
+            float loot = _cache.LootScanner.TotalLootValue;
+            float greedThreshold = Mathf.Lerp(75000f, 50000f, _profile.Greed);
+            if (loot >= greedThreshold)
             {
-                this._log.LogDebug($"[ExtractDecision] {this._bot.name} extracting: lootValue={loot}");
+                _log.LogDebug("[ExtractDecision] " + _bot.name + " extracting: lootValue=" + loot.ToString("F0"));
                 return true;
             }
 
-            if (HasSquadWiped(this._bot))
+            if (HasSquadWiped(_bot))
             {
-                this._log.LogDebug($"[ExtractDecision] {this._bot.name} extracting: squad wiped");
+                _log.LogDebug("[ExtractDecision] " + _bot.name + " extracting: squad wiped");
                 return true;
             }
 
-            float isolationDistance = Mathf.Lerp(30f, 60f, 1f - this._profile.Cohesion);
-            if (IsBotIsolated(this._bot, isolationDistance))
+            float isolationDist = Mathf.Lerp(30f, 60f, 1f - _profile.Cohesion);
+            if (IsBotIsolated(_bot, isolationDist))
             {
-                this._log.LogDebug($"[ExtractDecision] {this._bot.name} extracting: isolated");
+                _log.LogDebug("[ExtractDecision] " + _bot.name + " extracting: isolated");
                 return true;
             }
 
-            float stuckTime = Mathf.Lerp(6f, 18f, 1f - this._profile.Caution);
-            if (IsBotStuck(stuckTime))
+            float stuckThreshold = Mathf.Lerp(6f, 18f, 1f - _profile.Caution);
+            if (IsBotStuck(stuckThreshold))
             {
-                this._log.LogDebug($"[ExtractDecision] {this._bot.name} extracting: stuck");
+                _log.LogDebug("[ExtractDecision] " + _bot.name + " extracting: stuck");
                 return true;
             }
 
@@ -118,24 +120,17 @@ namespace AIRefactored.AI.Missions
 
         public void TriggerExtraction()
         {
-            if (this._bot == null || this._cache == null)
+            Player player = _bot.GetPlayer;
+
+            if (_bot.IsDead || _bot.BotState != EBotState.Active || player == null || !player.HealthController.IsAlive)
             {
-                this._log.LogWarning("[ExtractDecision] Failed to trigger extraction: bot or cache is null.");
+                _log.LogWarning("[ExtractDecision] Cannot extract: " + _bot.name + " is dead or not active.");
                 return;
             }
 
-            if (this._bot.IsDead ||
-                this._bot.BotState != EBotState.Active ||
-                this._bot.GetPlayer == null ||
-                !this._bot.GetPlayer.HealthController.IsAlive)
-            {
-                this._log.LogWarning($"[ExtractDecision] Cannot extract: {this._bot.name} is dead or not in Active state.");
-                return;
-            }
-
-            this._cache.TacticalMemory?.MarkExtractionStarted();
-            BotMovementHelper.SmoothMoveToSafeExit(this._bot);
-            this._log.LogInfo($"[ExtractDecision] {this._bot.name} extraction triggered.");
+            _cache.TacticalMemory.MarkExtractionStarted();
+            BotMovementHelper.SmoothMoveToSafeExit(_bot);
+            _log.LogInfo("[ExtractDecision] " + _bot.name + " extraction triggered.");
         }
 
         #endregion
@@ -145,21 +140,21 @@ namespace AIRefactored.AI.Missions
         private bool IsBotStuck(float threshold)
         {
             float now = Time.time;
-            Vector3 currentPos = this._bot.Position;
+            Vector3 current = _bot.Position;
 
-            if ((currentPos - this._lastPosition).sqrMagnitude > 0.5f)
+            if ((current - _lastPosition).sqrMagnitude > 0.5f)
             {
-                this._lastPosition = currentPos;
-                this._lastPositionUpdateTime = now;
+                _lastPosition = current;
+                _lastPositionUpdateTime = now;
                 return false;
             }
 
-            return now - this._lastPositionUpdateTime >= threshold;
+            return now - _lastPositionUpdateTime >= threshold;
         }
 
         private static bool HasSquadWiped(BotOwner bot)
         {
-            BotsGroup? group = bot.BotsGroup;
+            BotsGroup group = bot.BotsGroup;
             if (group == null)
             {
                 return true;
@@ -167,7 +162,7 @@ namespace AIRefactored.AI.Missions
 
             for (int i = 0; i < group.MembersCount; i++)
             {
-                BotOwner? mate = group.Member(i);
+                BotOwner mate = group.Member(i);
                 if (mate != null && mate != bot && !mate.IsDead)
                 {
                     return false;
@@ -179,20 +174,21 @@ namespace AIRefactored.AI.Missions
 
         private static bool IsBotIsolated(BotOwner bot, float threshold)
         {
-            BotsGroup? group = bot.BotsGroup;
+            BotsGroup group = bot.BotsGroup;
             if (group == null)
             {
                 return true;
             }
 
-            float minDistSqr = threshold * threshold;
+            float thresholdSqr = threshold * threshold;
+            Vector3 selfPos = bot.Position;
 
             for (int i = 0; i < group.MembersCount; i++)
             {
-                BotOwner? mate = group.Member(i);
+                BotOwner mate = group.Member(i);
                 if (mate != null && mate != bot && !mate.IsDead)
                 {
-                    if ((mate.Position - bot.Position).sqrMagnitude < minDistSqr)
+                    if ((mate.Position - selfPos).sqrMagnitude < thresholdSqr)
                     {
                         return false;
                     }

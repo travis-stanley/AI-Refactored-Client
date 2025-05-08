@@ -6,8 +6,6 @@
 //   Please follow strict StyleCop, ReSharper, and AI-Refactored code standards for all modifications.
 // </auto-generated>
 
-#nullable enable
-
 namespace AIRefactored.AI.Navigation
 {
     using System;
@@ -35,11 +33,6 @@ namespace AIRefactored.AI.Navigation
 
         #region Constructor
 
-        /// <summary>
-        /// Initializes a new instance of the <see cref="QuadtreeNavGrid"/> class.
-        /// </summary>
-        /// <param name="center">The center of the grid.</param>
-        /// <param name="size">The total side length of the grid.</param>
         public QuadtreeNavGrid(Vector2 center, float size)
         {
             float half = size * 0.5f;
@@ -51,82 +44,55 @@ namespace AIRefactored.AI.Navigation
 
         #region Public API
 
-        /// <summary>
-        /// Clears all stored points and resets the root node.
-        /// </summary>
         public void Clear()
         {
             _root = new Node(_root.Bounds, 0);
         }
 
-        /// <summary>
-        /// Inserts a <see cref="NavPointData"/> point into the quadtree.
-        /// </summary>
-        /// <param name="point">The point to insert.</param>
         public void Insert(NavPointData point)
         {
-            if (point == null)
-            {
-                return;
-            }
-
             Insert(_root, point);
         }
 
-        /// <summary>
-        /// Inserts a raw world position into the quadtree.
-        /// </summary>
-        /// <param name="point">The point to insert.</param>
         public void Insert(Vector3 point)
         {
             Insert(_root, point);
         }
 
-        /// <summary>
-        /// Performs a filtered radius query on stored <see cref="NavPointData"/>.
-        /// </summary>
-        public List<NavPointData> Query(Vector3 position, float radius, Predicate<NavPointData>? filter)
+        public List<NavPointData> Query(Vector3 position, float radius, Predicate<NavPointData> filter)
         {
-            List<NavPointData> result = new List<NavPointData>(16);
+            var result = new List<NavPointData>(16);
             float radiusSq = radius * radius;
             Query(_root, position, radiusSq, result, filter);
             return result;
         }
 
-        /// <summary>
-        /// Performs a filtered query with zone, elevation band, and tag filtering.
-        /// </summary>
-        public List<NavPointData> QueryCombined(Vector3 position, float radius, string? zone, string? elevationBand, string? coverTag)
+        public List<NavPointData> QueryCombined(Vector3 position, float radius, string zone, string elevationBand, string coverTag)
         {
-            Predicate<NavPointData> filter = delegate (NavPointData p)
+            return Query(position, radius, delegate (NavPointData p)
             {
-                if (zone != null && !string.Equals(p.Zone, zone, StringComparison.OrdinalIgnoreCase))
+                if (!string.IsNullOrEmpty(zone) && !string.Equals(p.Zone, zone, StringComparison.OrdinalIgnoreCase))
                 {
                     return false;
                 }
 
-                if (elevationBand != null && !string.Equals(p.ElevationBand, elevationBand, StringComparison.OrdinalIgnoreCase))
+                if (!string.IsNullOrEmpty(elevationBand) && !string.Equals(p.ElevationBand, elevationBand, StringComparison.OrdinalIgnoreCase))
                 {
                     return false;
                 }
 
-                if (coverTag != null && !string.Equals(p.Tag, coverTag, StringComparison.OrdinalIgnoreCase))
+                if (!string.IsNullOrEmpty(coverTag) && !string.Equals(p.Tag, coverTag, StringComparison.OrdinalIgnoreCase))
                 {
                     return false;
                 }
 
                 return true;
-            };
-
-            return Query(position, radius, filter);
+            });
         }
 
-        /// <summary>
-        /// Performs a filtered radius query on stored raw Vector3 points.
-        /// </summary>
-        public List<Vector3> QueryRaw(Vector3 position, float radius, Predicate<Vector3>? filter)
+        public List<Vector3> QueryRaw(Vector3 position, float radius, Predicate<Vector3> filter)
         {
-            List<Vector3> result = new List<Vector3>(16);
+            var result = new List<Vector3>(16);
             float radiusSq = radius * radius;
             QueryRaw(_root, position, radiusSq, result, filter);
             return result;
@@ -150,7 +116,7 @@ namespace AIRefactored.AI.Navigation
                 if (node.NavPoints.Count > MaxPointsPerNode && node.Depth < MaxDepth)
                 {
                     Subdivide(node);
-                    ReinsertPoints(node);
+                    Reinsert(node);
                 }
             }
             else
@@ -176,7 +142,7 @@ namespace AIRefactored.AI.Navigation
                 if (node.RawPoints.Count > MaxPointsPerNode && node.Depth < MaxDepth)
                 {
                     Subdivide(node);
-                    ReinsertPoints(node);
+                    Reinsert(node);
                 }
             }
             else
@@ -188,13 +154,13 @@ namespace AIRefactored.AI.Navigation
             }
         }
 
-        private void Query(Node node, Vector3 worldPos, float radiusSq, List<NavPointData> result, Predicate<NavPointData>? filter)
+        private void Query(Node node, Vector3 position, float radiusSq, List<NavPointData> result, Predicate<NavPointData> filter)
         {
-            Vector2 pos2D = new Vector2(worldPos.x, worldPos.z);
+            Vector2 pos2D = new Vector2(position.x, position.z);
             float radius = Mathf.Sqrt(radiusSq);
-            Rect queryRect = new Rect(pos2D.x - radius, pos2D.y - radius, radius * 2f, radius * 2f);
+            Rect rect = new Rect(pos2D.x - radius, pos2D.y - radius, radius * 2f, radius * 2f);
 
-            if (!node.Bounds.Overlaps(queryRect))
+            if (!node.Bounds.Overlaps(rect))
             {
                 return;
             }
@@ -203,11 +169,10 @@ namespace AIRefactored.AI.Navigation
             {
                 for (int i = 0; i < node.NavPoints.Count; i++)
                 {
-                    NavPointData p = node.NavPoints[i];
-                    float dSq = (p.Position - worldPos).sqrMagnitude;
-                    if (dSq <= radiusSq && (filter == null || filter(p)))
+                    NavPointData point = node.NavPoints[i];
+                    if ((point.Position - position).sqrMagnitude <= radiusSq && (filter == null || filter(point)))
                     {
-                        result.Add(p);
+                        result.Add(point);
                     }
                 }
             }
@@ -215,18 +180,18 @@ namespace AIRefactored.AI.Navigation
             {
                 for (int i = 0; i < node.Children.Length; i++)
                 {
-                    Query(node.Children[i], worldPos, radiusSq, result, filter);
+                    Query(node.Children[i], position, radiusSq, result, filter);
                 }
             }
         }
 
-        private void QueryRaw(Node node, Vector3 worldPos, float radiusSq, List<Vector3> result, Predicate<Vector3>? filter)
+        private void QueryRaw(Node node, Vector3 position, float radiusSq, List<Vector3> result, Predicate<Vector3> filter)
         {
-            Vector2 pos2D = new Vector2(worldPos.x, worldPos.z);
+            Vector2 pos2D = new Vector2(position.x, position.z);
             float radius = Mathf.Sqrt(radiusSq);
-            Rect queryRect = new Rect(pos2D.x - radius, pos2D.y - radius, radius * 2f, radius * 2f);
+            Rect rect = new Rect(pos2D.x - radius, pos2D.y - radius, radius * 2f, radius * 2f);
 
-            if (!node.Bounds.Overlaps(queryRect))
+            if (!node.Bounds.Overlaps(rect))
             {
                 return;
             }
@@ -235,11 +200,10 @@ namespace AIRefactored.AI.Navigation
             {
                 for (int i = 0; i < node.RawPoints.Count; i++)
                 {
-                    Vector3 p = node.RawPoints[i];
-                    float dSq = (p - worldPos).sqrMagnitude;
-                    if (dSq <= radiusSq && (filter == null || filter(p)))
+                    Vector3 point = node.RawPoints[i];
+                    if ((point - position).sqrMagnitude <= radiusSq && (filter == null || filter(point)))
                     {
-                        result.Add(p);
+                        result.Add(point);
                     }
                 }
             }
@@ -247,7 +211,7 @@ namespace AIRefactored.AI.Navigation
             {
                 for (int i = 0; i < node.Children.Length; i++)
                 {
-                    QueryRaw(node.Children[i], worldPos, radiusSq, result, filter);
+                    QueryRaw(node.Children[i], position, radiusSq, result, filter);
                 }
             }
         }
@@ -260,47 +224,42 @@ namespace AIRefactored.AI.Navigation
             float y = node.Bounds.y;
             int d = node.Depth + 1;
 
-            Node[] children = new Node[4];
-            children[0] = new Node(new Rect(x, y, halfW, halfH), d); // Bottom Left
-            children[1] = new Node(new Rect(x + halfW, y, halfW, halfH), d); // Bottom Right
-            children[2] = new Node(new Rect(x, y + halfH, halfW, halfH), d); // Top Left
-            children[3] = new Node(new Rect(x + halfW, y + halfH, halfW, halfH), d); // Top Right
-
-            node.SetChildren(children);
+            node.Children = new[]
+            {
+                new Node(new Rect(x, y, halfW, halfH), d),                        // BL
+                new Node(new Rect(x + halfW, y, halfW, halfH), d),               // BR
+                new Node(new Rect(x, y + halfH, halfW, halfH), d),               // TL
+                new Node(new Rect(x + halfW, y + halfH, halfW, halfH), d)        // TR
+            };
         }
 
-        private void ReinsertPoints(Node node)
+        private void Reinsert(Node node)
         {
-            List<NavPointData> navPoints = node.NavPoints;
+            List<NavPointData> nav = node.NavPoints;
             node.NavPoints = new List<NavPointData>(MaxPointsPerNode);
-
-            for (int i = 0; i < navPoints.Count; i++)
+            for (int i = 0; i < nav.Count; i++)
             {
                 for (int j = 0; j < node.Children.Length; j++)
                 {
-                    Insert(node.Children[j], navPoints[i]);
+                    Insert(node.Children[j], nav[i]);
                 }
             }
 
-            List<Vector3> rawPoints = node.RawPoints;
+            List<Vector3> raw = node.RawPoints;
             node.RawPoints = new List<Vector3>(MaxPointsPerNode);
-
-            for (int i = 0; i < rawPoints.Count; i++)
+            for (int i = 0; i < raw.Count; i++)
             {
                 for (int j = 0; j < node.Children.Length; j++)
                 {
-                    Insert(node.Children[j], rawPoints[i]);
+                    Insert(node.Children[j], raw[i]);
                 }
             }
         }
 
         #endregion
 
-        #region Node Type
+        #region Node Class
 
-        /// <summary>
-        /// Internal node class for quadtree hierarchy.
-        /// </summary>
         private sealed class Node
         {
             public Node(Rect bounds, int depth)
@@ -313,21 +272,11 @@ namespace AIRefactored.AI.Navigation
             }
 
             public Rect Bounds { get; }
-
             public int Depth { get; }
-
             public List<NavPointData> NavPoints;
-
             public List<Vector3> RawPoints;
-
-            public Node[] Children { get; private set; }
-
+            public Node[] Children;
             public bool IsLeaf => Children.Length == 0;
-
-            public void SetChildren(Node[] children)
-            {
-                Children = children ?? Array.Empty<Node>();
-            }
         }
 
         #endregion

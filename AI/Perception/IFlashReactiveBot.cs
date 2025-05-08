@@ -6,23 +6,21 @@
 //   Please follow strict StyleCop, ReSharper, and AI-Refactored code standards for all modifications.
 // </auto-generated>
 
-#nullable enable
-
 namespace AIRefactored.AI.Perception
 {
     using UnityEngine;
 
     /// <summary>
     /// Defines reactive behavior for bots exposed to high-intensity light sources like flashlights or flashbangs.
-    /// Implementing classes simulate temporary blindness, panic triggers, and directional threat response.
+    /// Implementing systems simulate directional blindness, panic triggers, or behavioral overrides.
     /// </summary>
     public interface IFlashReactiveBot
     {
         /// <summary>
-        /// Triggers a flash reaction when the bot is exposed to a bright light source.
-        /// May result in suppression, blindness, panic, or reorientation.
+        /// Called when a bot is exposed to a blinding or disorienting light source.
+        /// Implementers should simulate sensory impairment, directional panic, or suppression.
         /// </summary>
-        /// <param name="lightOrigin">World-space origin point of the light exposure.</param>
+        /// <param name="lightOrigin">The world-space origin of the light exposure.</param>
         void OnFlashExposure(Vector3 lightOrigin);
     }
 }

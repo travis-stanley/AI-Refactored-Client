@@ -6,8 +6,6 @@
 //   Please follow strict StyleCop, ReSharper, and AI-Refactored code standards for all modifications.
 // </auto-generated>
 
-#nullable enable
-
 namespace AIRefactored.AI.Optimization
 {
     using System;
@@ -27,7 +25,7 @@ namespace AIRefactored.AI.Optimization
     /// Supports thread-based workloads in headless environments.
     /// Runs only on the authoritative host (headless or client-host).
     /// </summary>
-    public class BotAsyncProcessor
+    public sealed class BotAsyncProcessor
     {
         #region Constants
 
@@ -39,12 +37,12 @@ namespace AIRefactored.AI.Optimization
 
         #region Fields
 
-        private static ManualLogSource? Logger => AIRefactoredController.Logger;
+        private static readonly ManualLogSource Logger = Plugin.LoggerInstance;
         private readonly BotOwnerGroupOptimization _groupOptimizer = new BotOwnerGroupOptimization();
 
-        private BotOwner? _bot;
-        private BotComponentCache? _cache;
-        private BotOwnerStateCache? _stateCache;
+        private BotOwner _bot;
+        private BotComponentCache _cache;
+        private BotOwnerStateCache _stateCache;
 
         private bool _hasInitialized;
         private float _lastThinkTime;
@@ -56,9 +54,11 @@ namespace AIRefactored.AI.Optimization
         /// <summary>
         /// Initializes the async processor for the specified bot.
         /// </summary>
+        /// <param name="botOwner">The bot owner.</param>
+        /// <param name="cache">Bot component cache.</param>
         public void Initialize(BotOwner botOwner, BotComponentCache cache)
         {
-            if (!GameWorldHandler.IsLocalHost() || botOwner == null)
+            if (!GameWorldHandler.IsLocalHost() || botOwner == null || cache == null)
             {
                 return;
             }
@@ -70,8 +70,7 @@ namespace AIRefactored.AI.Optimization
             Task.Run(async () =>
             {
                 await Task.Delay(TimeSpan.FromSeconds(InitDelaySeconds));
-
-                if (_bot != null && !_hasInitialized)
+                if (!_hasInitialized)
                 {
                     await ApplyInitialPersonalityAsync(_bot);
                 }
@@ -81,6 +80,7 @@ namespace AIRefactored.AI.Optimization
         /// <summary>
         /// Updates bot async logic based on timing and environment.
         /// </summary>
+        /// <param name="time">Current game time.</param>
         public void Tick(float time)
         {
             if (!GameWorldHandler.IsLocalHost() || !_hasInitialized || _bot == null || _bot.IsDead)
@@ -88,7 +88,7 @@ namespace AIRefactored.AI.Optimization
                 return;
             }
 
-            _stateCache?.UpdateBotOwnerStateIfNeeded(_bot);
+            _stateCache.UpdateBotOwnerStateIfNeeded(_bot);
             TryOptimizeGroup();
 
             float cooldown = FikaHeadlessDetector.IsHeadless ? ThinkCooldownHeadless : ThinkCooldownNormal;
@@ -109,7 +109,7 @@ namespace AIRefactored.AI.Optimization
                     }
                     catch (Exception ex)
                     {
-                        Logger?.LogWarning("[AIRefactored] Headless async task failed: " + ex.Message);
+                        Logger.LogWarning("[AIRefactored] Headless async task failed: " + ex.Message);
                     }
                 });
             }
@@ -121,32 +121,33 @@ namespace AIRefactored.AI.Optimization
 
         #endregion
 
-        #region Private Helpers
+        #region Internal Logic
 
-        private async Task ApplyInitialPersonalityAsync(BotOwner botOwner)
+        private async Task ApplyInitialPersonalityAsync(BotOwner bot)
         {
-            if (_hasInitialized || botOwner.Profile == null || botOwner.Settings?.FileSettings?.Mind == null)
+            if (_hasInitialized || bot.Profile == null || bot.Settings == null)
             {
                 return;
             }
 
             await Task.Yield();
 
-            string profileId = botOwner.Profile.Id;
-            if (string.IsNullOrEmpty(profileId))
+            BotGlobalsMindSettings mind = bot.Settings.FileSettings.Mind;
+            string profileId = bot.Profile.Id;
+
+            if (mind == null || string.IsNullOrEmpty(profileId))
             {
                 return;
             }
 
             BotPersonalityProfile personality = BotRegistry.Get(profileId);
 
-            var mind = botOwner.Settings.FileSettings.Mind;
             mind.PANIC_RUN_WEIGHT = Mathf.Lerp(0.5f, 2.0f, personality.RiskTolerance);
             mind.PANIC_SIT_WEIGHT = Mathf.Lerp(10.0f, 80.0f, 1f - personality.RiskTolerance);
             mind.DIST_TO_FOUND_SQRT = Mathf.Lerp(200f, 600f, 1f - personality.Cohesion);
             mind.FRIEND_AGR_KILL = Mathf.Lerp(0f, 0.4f, personality.AggressionLevel);
 
-            Logger?.LogInfo("[AIRefactored] Applied personality to bot: " + GetBotName());
+            Logger.LogInfo("[AIRefactored] Applied personality to bot: " + bot.Profile.Info.Nickname);
             _hasInitialized = true;
         }
 
@@ -163,11 +164,11 @@ namespace AIRefactored.AI.Optimization
                 {
                     try
                     {
-                        _bot?.GetPlayer?.Say(EPhraseTrigger.MumblePhrase);
+                        _bot.GetPlayer.Say(EPhraseTrigger.MumblePhrase);
                     }
                     catch (Exception ex)
                     {
-                        Logger?.LogWarning("[AIRefactored] VO mumble dispatch failed: " + ex.Message);
+                        Logger.LogWarning("[AIRefactored] VO mumble dispatch failed: " + ex.Message);
                     }
                 });
             }
@@ -175,19 +176,17 @@ namespace AIRefactored.AI.Optimization
 
         private void TryOptimizeGroup()
         {
-            if (_bot?.Profile?.Info?.GroupId is string groupId && groupId.Length > 0)
+            string groupId = _bot.Profile.Info.GroupId;
+            if (string.IsNullOrEmpty(groupId))
             {
-                List<BotOwner> squad = BotTeamTracker.GetGroup(groupId);
-                if (squad.Count > 0)
-                {
-                    _groupOptimizer.OptimizeGroupAI(squad);
-                }
+                return;
             }
-        }
 
-        private string GetBotName()
-        {
-            return _bot?.Profile?.Info?.Nickname ?? "UnknownBot";
+            List<BotOwner> squad = BotTeamTracker.GetGroup(groupId);
+            if (squad.Count > 0)
+            {
+                _groupOptimizer.OptimizeGroupAI(squad);
+            }
         }
 
         #endregion

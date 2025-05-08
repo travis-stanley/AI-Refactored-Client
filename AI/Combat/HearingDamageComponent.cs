@@ -6,24 +6,22 @@
 //   Please follow strict StyleCop, ReSharper, and AI-Refactored code standards for all modifications.
 // </auto-generated>
 
-#nullable enable
-
-namespace AIRefactored.AI.Components
+namespace AIRefactored.AI.Combat
 {
     using System;
     using UnityEngine;
 
     /// <summary>
-    /// Simulates hearing damage effects such as deafness after exposure to loud sounds.
-    /// Gradually recovers hearing over time to simulate ear ringing fading out.
+    /// Simulates hearing damage effects such as deafness after loud sounds.
+    /// Fades gradually over time to mimic realistic ear recovery.
     /// </summary>
     public sealed class HearingDamageComponent
     {
         #region Fields
 
-        private float _deafDuration;
-        private float _deafnessLevel;
         private float _targetDeafness;
+        private float _deafnessLevel;
+        private float _deafDuration;
         private float _elapsedTime;
 
         #endregion
@@ -33,37 +31,52 @@ namespace AIRefactored.AI.Components
         /// <summary>
         /// Gets the current deafness intensity (0.0 to 1.0).
         /// </summary>
-        public float Deafness => this._deafnessLevel;
+        public float Deafness
+        {
+            get { return this._deafnessLevel; }
+        }
 
         /// <summary>
-        /// Gets a value indicating whether the bot is currently deafened.
+        /// Gets a value indicating whether the bot is currently affected by deafness.
         /// </summary>
-        public bool IsDeafened => this._deafnessLevel > 0.1f;
+        public bool IsDeafened
+        {
+            get { return this._deafnessLevel > 0.1f; }
+        }
 
         /// <summary>
         /// Gets the remaining deafness duration in seconds.
         /// </summary>
-        public float RemainingTime => Mathf.Max(0f, this._deafDuration - this._elapsedTime);
+        public float RemainingTime
+        {
+            get
+            {
+                float remaining = this._deafDuration - this._elapsedTime;
+                return remaining > 0f ? remaining : 0f;
+            }
+        }
 
         #endregion
 
         #region Public Methods
 
         /// <summary>
-        /// Applies new deafness to the bot with the specified intensity and duration.
+        /// Applies new deafness with specified intensity and duration.
+        /// Ignores weaker overlapping effects.
         /// </summary>
-        /// <param name="intensity">Intensity from 0.0 to 1.0.</param>
-        /// <param name="duration">Duration in seconds.</param>
+        /// <param name="intensity">Clamped from 0.0 to 1.0.</param>
+        /// <param name="duration">Duration in seconds (minimum 0.1s).</param>
         public void ApplyDeafness(float intensity, float duration)
         {
-            float clampedIntensity = Mathf.Clamp01(intensity);
-            float clampedDuration = Mathf.Max(0.1f, duration);
+            float clampedIntensity = intensity > 1f ? 1f : (intensity < 0f ? 0f : intensity);
+            float clampedDuration = duration < 0.1f ? 0.1f : duration;
 
             if (clampedIntensity > this._targetDeafness)
             {
                 this._targetDeafness = clampedIntensity;
                 this._deafDuration = clampedDuration;
                 this._elapsedTime = 0f;
+                this._deafnessLevel = clampedIntensity;
             }
         }
 
@@ -72,34 +85,31 @@ namespace AIRefactored.AI.Components
         /// </summary>
         public void Clear()
         {
-            this._deafnessLevel = 0f;
             this._targetDeafness = 0f;
+            this._deafnessLevel = 0f;
             this._deafDuration = 0f;
             this._elapsedTime = 0f;
         }
 
         /// <summary>
-        /// Updates deafness fading and decay over time.
-        /// Should be called every frame.
+        /// Updates the fading of deafness over time.
+        /// Call once per frame with delta time.
         /// </summary>
-        /// <param name="deltaTime">Delta time in seconds.</param>
+        /// <param name="deltaTime">Frame time in seconds.</param>
         public void Tick(float deltaTime)
         {
             if (this._targetDeafness <= 0.01f)
-            {
                 return;
-            }
 
             this._elapsedTime += deltaTime;
-
             if (this._elapsedTime >= this._deafDuration)
             {
                 this.Clear();
                 return;
             }
 
-            float fadeRatio = 1.0f - Mathf.Clamp01(this._elapsedTime / this._deafDuration);
-            this._deafnessLevel = this._targetDeafness * fadeRatio;
+            float ratio = 1f - (this._elapsedTime / this._deafDuration);
+            this._deafnessLevel = this._targetDeafness * (ratio > 1f ? 1f : (ratio < 0f ? 0f : ratio));
         }
 
         #endregion

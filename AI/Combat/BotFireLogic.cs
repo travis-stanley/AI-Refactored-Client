@@ -6,8 +6,6 @@
 //   Please follow strict StyleCop, ReSharper, and AI-Refactored code standards for all modifications.
 // </auto-generated>
 
-#nullable enable
-
 namespace AIRefactored.AI.Combat
 {
     using System;
@@ -62,41 +60,44 @@ namespace AIRefactored.AI.Combat
 
         public BotFireLogic(BotOwner bot, BotComponentCache cache)
         {
-            this._bot = bot ?? throw new ArgumentNullException(nameof(bot));
-            this._cache = cache ?? throw new ArgumentNullException(nameof(cache));
+            if (bot == null)
+                throw new ArgumentNullException(nameof(bot));
+            if (cache == null)
+                throw new ArgumentNullException(nameof(cache));
+
+            this._bot = bot;
+            this._cache = cache;
         }
 
         #endregion
 
         #region Public Methods
 
+        /// <summary>
+        /// Updates firing logic based on target, distance, suppression, and bot personality.
+        /// </summary>
+        /// <param name="time">Current world time.</param>
         public void Tick(float time)
         {
             if (this._bot == null || this._bot.IsDead || !this._bot.IsAI || this._bot.Memory == null)
-            {
                 return;
-            }
 
-            BotWeaponManager? weaponManager = this._bot.WeaponManager;
-            ShootData? shootData = this._bot.ShootData;
-            BotWeaponInfo? weaponInfo = weaponManager?._currentWeaponInfo;
-            Weapon? weapon = weaponInfo?.weapon;
-            GClass592? settings = this._bot.Settings?.FileSettings?.Core;
-            BotPersonalityProfile? profile = this._cache.AIRefactoredBotOwner?.PersonalityProfile;
+            BotWeaponManager weaponManager = this._bot.WeaponManager;
+            ShootData shootData = this._bot.ShootData;
+            BotWeaponInfo weaponInfo = weaponManager?._currentWeaponInfo;
+            Weapon weapon = weaponInfo?.weapon;
+            GClass592 settings = this._bot.Settings?.FileSettings?.Core;
+            BotPersonalityProfile profile = this._cache.AIRefactoredBotOwner?.PersonalityProfile;
 
             if (weaponManager == null || shootData == null || weaponInfo == null || weapon == null || settings == null || profile == null)
-            {
                 return;
-            }
 
-            IPlayer? target = this._cache.ThreatSelector?.GetPriorityTarget() ?? this._bot.Memory.GoalEnemy?.Person;
+            IPlayer target = this._cache.ThreatSelector?.GetPriorityTarget() ?? this._bot.Memory.GoalEnemy?.Person;
             Vector3 aimPosition = this.GetValidatedAimPosition(target, time);
             this.UpdateBotAiming(aimPosition);
 
-            if (target?.HealthController?.IsAlive != true)
-            {
+            if (target == null || target.HealthController == null || !target.HealthController.IsAlive)
                 return;
-            }
 
             float distance = Vector3.Distance(this._bot.Position, aimPosition);
             float weaponRange = this.EstimateWeaponRange(weapon);
@@ -110,7 +111,7 @@ namespace AIRefactored.AI.Combat
 
             if (distance > maxRange)
             {
-                if (Random.value < profile.ChaosFactor)
+                if (profile.ChaosFactor > 0f && Random.value < profile.ChaosFactor)
                 {
                     BotMovementHelper.SmoothMoveTo(this._bot, aimPosition, false, profile.Cohesion);
                 }
@@ -119,9 +120,7 @@ namespace AIRefactored.AI.Combat
             }
 
             if (time < this._nextDecisionTime)
-            {
                 return;
-            }
 
             this._nextDecisionTime = time + this.GetBurstCadence(profile);
 
@@ -147,38 +146,34 @@ namespace AIRefactored.AI.Combat
 
         private void UpdateBotAiming(Vector3 aimPosition)
         {
-            Vector3 direction = aimPosition - this._bot.Position;
-            if (direction == Vector3.zero)
-            {
+            Vector3 dir = aimPosition - this._bot.Position;
+            if (dir.sqrMagnitude < 0.01f)
                 return;
-            }
 
-            Quaternion targetRotation = Quaternion.LookRotation(direction);
-            Vector3 euler = targetRotation.eulerAngles;
-            euler.x = Mathf.Clamp(euler.x > 180f ? euler.x - 360f : euler.x, -MaxAimPitch, MaxAimPitch);
+            Quaternion rot = Quaternion.LookRotation(dir);
+            float pitch = rot.eulerAngles.x > 180f ? rot.eulerAngles.x - 360f : rot.eulerAngles.x;
+            pitch = Mathf.Clamp(pitch, -MaxAimPitch, MaxAimPitch);
 
-            this._bot.AimingManager?.CurrentAiming?.SetTarget(Quaternion.Euler(euler) * Vector3.forward);
+            Vector3 forward = Quaternion.Euler(pitch, rot.eulerAngles.y, 0f) * Vector3.forward;
+            this._bot.AimingManager?.CurrentAiming?.SetTarget(forward);
         }
 
-        private Vector3 GetValidatedAimPosition(IPlayer? target, float time)
+        private Vector3 GetValidatedAimPosition(IPlayer target, float time)
         {
             if (target != null && target.HealthController?.IsAlive == true)
-            {
                 return target.Position;
-            }
 
-            if (this._bot.Memory?.LastEnemy != null && this._bot.Memory.LastEnemy.CurrPosition != Vector3.zero)
-            {
-                return this._bot.Memory.LastEnemy.CurrPosition;
-            }
+            Vector3 mem = this._bot.Memory?.LastEnemy?.CurrPosition ?? Vector3.zero;
+            if (mem != Vector3.zero)
+                return mem;
 
             if (time - this._lastLookAroundTime > 1.5f)
             {
                 float yaw = Random.Range(-75f, 75f);
                 float pitch = Random.Range(-10f, 10f);
-                Quaternion offset = Quaternion.Euler(pitch, yaw, 0f);
+                Quaternion q = Quaternion.Euler(pitch, yaw, 0f);
                 Vector3 baseDir = this._bot.Transform != null ? this._bot.Transform.forward : Vector3.forward;
-                this._idleLookDirection = offset * baseDir;
+                this._idleLookDirection = q * baseDir;
                 this._lastLookAroundTime = time;
             }
 
@@ -218,9 +213,7 @@ namespace AIRefactored.AI.Combat
             for (int i = 0; i < modes.Length; i++)
             {
                 if (modes[i] == mode)
-                {
                     return true;
-                }
             }
 
             return false;
@@ -228,8 +221,7 @@ namespace AIRefactored.AI.Combat
 
         private void RecoverAccuracy(GClass592 settings)
         {
-            settings.ScatteringPerMeter *= 0.95f;
-            settings.ScatteringPerMeter = Mathf.Clamp(settings.ScatteringPerMeter, 0.4f, 3.0f);
+            settings.ScatteringPerMeter = Mathf.Clamp(settings.ScatteringPerMeter * 0.95f, 0.4f, 3.0f);
         }
 
         private void ApplyScatter(GClass592 settings, bool underFire, BotPersonalityProfile profile)
@@ -243,18 +235,14 @@ namespace AIRefactored.AI.Combat
 
         private float EstimateWeaponRange(Weapon weapon)
         {
-            ItemTemplate? template = weapon.Template;
+            ItemTemplate template = weapon.Template;
             if (template == null || string.IsNullOrEmpty(template.Name))
-            {
                 return 90f;
-            }
 
-            foreach (var kvp in WeaponTypeRanges)
+            foreach (KeyValuePair<string, float> kv in WeaponTypeRanges)
             {
-                if (template.Name.IndexOf(kvp.Key, StringComparison.OrdinalIgnoreCase) >= 0)
-                {
-                    return kvp.Value;
-                }
+                if (template.Name.IndexOf(kv.Key, StringComparison.OrdinalIgnoreCase) >= 0)
+                    return kv.Value;
             }
 
             return 90f;
@@ -271,20 +259,19 @@ namespace AIRefactored.AI.Combat
 
         private float GetHealthRatio()
         {
-            HealthControllerClass? health = this._bot.HealthController as HealthControllerClass;
-            if (health == null || health.Dictionary_0 == null)
-            {
+            HealthControllerClass hc = this._bot.HealthController as HealthControllerClass;
+            if (hc == null || hc.Dictionary_0 == null)
                 return 1f;
-            }
 
             float current = 0f;
             float maximum = 0f;
+            Dictionary<EBodyPart, GClass2814<HealthControllerClass.GClass2819>.BodyPartState> dict = hc.Dictionary_0;
 
-            Dictionary<EBodyPart, GClass2814<HealthControllerClass.GClass2819>.BodyPartState> dict = health.Dictionary_0;
             for (int i = 0; i < AllBodyParts.Length; i++)
             {
                 EBodyPart part = AllBodyParts[i];
-                if (dict.TryGetValue(part, out var state) && state.Health != null)
+                GClass2814<HealthControllerClass.GClass2819>.BodyPartState state;
+                if (dict.TryGetValue(part, out state) && state.Health != null)
                 {
                     current += state.Health.Current;
                     maximum += state.Health.Maximum;
@@ -297,19 +284,11 @@ namespace AIRefactored.AI.Combat
         private void TriggerFallback()
         {
             if (this._cache.Pathing == null)
-            {
                 return;
-            }
 
-            List<Vector3> path = BotCoverRetreatPlanner.GetCoverRetreatPath(
-                this._bot,
-                this._bot.LookDirection.normalized,
-                this._cache.Pathing);
-
-            if (path.Count < 2)
-            {
+            List<Vector3> path = BotCoverRetreatPlanner.GetCoverRetreatPath(this._bot, this._bot.LookDirection.normalized, this._cache.Pathing);
+            if (path == null || path.Count < 2)
                 return;
-            }
 
             Vector3 fallback = path[path.Count - 1];
             BotMovementHelper.SmoothMoveTo(this._bot, fallback, false);

@@ -6,8 +6,6 @@
 //   Please follow strict StyleCop, ReSharper, and AI-Refactored code standards for all modifications.
 // </auto-generated>
 
-#nullable enable
-
 namespace AIRefactored.AI.Combat
 {
     using System;
@@ -36,9 +34,9 @@ namespace AIRefactored.AI.Combat
 
         #region Fields
 
-        private static readonly ManualLogSource Logger = AIRefactoredController.Logger;
+        private static readonly ManualLogSource Logger = Plugin.LoggerInstance;
 
-        private BotOwner? _bot;
+        private BotOwner _bot;
         private bool _hasEscalated;
         private float _lastCheckTime = -1f;
         private float _panicStartTime = -1f;
@@ -54,9 +52,7 @@ namespace AIRefactored.AI.Combat
         public void Initialize(BotOwner botOwner)
         {
             if (botOwner == null)
-            {
                 throw new ArgumentNullException(nameof(botOwner));
-            }
 
             this._bot = botOwner;
         }
@@ -67,9 +63,7 @@ namespace AIRefactored.AI.Combat
         public void NotifyPanicTriggered()
         {
             if (this._panicStartTime < 0f)
-            {
                 this._panicStartTime = Time.time;
-            }
         }
 
         /// <summary>
@@ -79,16 +73,12 @@ namespace AIRefactored.AI.Combat
         public void Tick(float time)
         {
             if (this._hasEscalated || !this.IsValid() || time < this._lastCheckTime)
-            {
                 return;
-            }
 
             this._lastCheckTime = time + CheckInterval;
 
             if (this.ShouldEscalate(time))
-            {
                 this.EscalateBot();
-            }
         }
 
         #endregion
@@ -105,36 +95,31 @@ namespace AIRefactored.AI.Combat
 
         private bool PanicDurationExceeded(float time)
         {
-            return this._panicStartTime >= 0f &&
-                   (time - this._panicStartTime) > PanicDurationThreshold;
+            return this._panicStartTime >= 0f && (time - this._panicStartTime) > PanicDurationThreshold;
         }
 
         private bool MultipleEnemiesVisible()
         {
-            return this._bot?.EnemiesController?.EnemyInfos?.Count >= 2;
+            return this._bot.EnemiesController.EnemyInfos != null &&
+                   this._bot.EnemiesController.EnemyInfos.Count >= 2;
         }
 
         private bool SquadHasLostTeammates()
         {
-            if (this._bot?.BotsGroup == null)
-            {
+            BotsGroup group = this._bot.BotsGroup;
+            if (group == null)
                 return false;
-            }
 
-            int total = this._bot.BotsGroup.MembersCount;
+            int total = group.MembersCount;
             if (total <= 1)
-            {
                 return false;
-            }
 
             int dead = 0;
             for (int i = 0; i < total; i++)
             {
-                BotOwner? member = this._bot.BotsGroup.Member(i);
+                BotOwner member = group.Member(i);
                 if (member == null || member.IsDead)
-                {
                     dead++;
-                }
             }
 
             return dead >= Mathf.CeilToInt(total * SquadCasualtyThreshold);
@@ -142,21 +127,16 @@ namespace AIRefactored.AI.Combat
 
         private bool ShouldEscalate(float time)
         {
-            return this.PanicDurationExceeded(time)
-                   || this.MultipleEnemiesVisible()
-                   || this.SquadHasLostTeammates();
+            return this.PanicDurationExceeded(time) ||
+                   this.MultipleEnemiesVisible() ||
+                   this.SquadHasLostTeammates();
         }
 
         private void EscalateBot()
         {
-            if (this._bot == null)
-            {
-                return;
-            }
-
             this._hasEscalated = true;
-            string nickname = this._bot.Profile?.Info?.Nickname ?? "Unknown";
 
+            string nickname = this._bot.Profile?.Info?.Nickname ?? "Unknown";
             Logger.LogInfo($"[AIRefactored-Escalation] Escalating behavior for bot '{nickname}'.");
 
             AIOptimizationManager.Reset(this._bot);
@@ -165,51 +145,42 @@ namespace AIRefactored.AI.Combat
             this.ApplyEscalationTuning(this._bot);
             this.ApplyPersonalityTuning(this._bot);
 
-            // Ensure BotTalk is not triggered in headless mode
             if (!FikaHeadlessDetector.IsHeadless && this._bot.BotTalk != null)
-            {
                 this._bot.BotTalk.TrySay(EPhraseTrigger.OnFight);
-            }
         }
 
         private void ApplyEscalationTuning(BotOwner botRef)
         {
-            BotSettingsComponents? settings = botRef.Settings?.FileSettings;
+            BotSettingsComponents settings = botRef.Settings?.FileSettings;
             if (settings == null)
-            {
                 return;
-            }
 
             if (settings.Shoot != null)
-            {
                 settings.Shoot.RECOIL_PER_METER = Mathf.Clamp(settings.Shoot.RECOIL_PER_METER * 0.85f, 0.1f, 2.0f);
-            }
 
             if (settings.Mind != null)
             {
                 settings.Mind.DIST_TO_FOUND_SQRT = Mathf.Clamp(settings.Mind.DIST_TO_FOUND_SQRT * 1.2f, 200.0f, 800.0f);
                 settings.Mind.ENEMY_LOOK_AT_ME_ANG = Mathf.Clamp(settings.Mind.ENEMY_LOOK_AT_ME_ANG * 0.75f, 5.0f, 45.0f);
                 settings.Mind.CHANCE_TO_RUN_CAUSE_DAMAGE_0_100 = Mathf.Clamp(
-                    settings.Mind.CHANCE_TO_RUN_CAUSE_DAMAGE_0_100 + 20.0f,
-                    0.0f,
-                    100.0f);
+                    settings.Mind.CHANCE_TO_RUN_CAUSE_DAMAGE_0_100 + 20.0f, 0.0f, 100.0f);
             }
 
             if (settings.Look != null)
-            {
                 settings.Look.MAX_VISION_GRASS_METERS = Mathf.Clamp(settings.Look.MAX_VISION_GRASS_METERS + 5.0f, 5.0f, 40.0f);
-            }
 
             Logger.LogInfo($"[AIRefactored-Tuning] Escalation tuning applied to '{botRef.Profile?.Info?.Nickname ?? "Unknown"}'.");
         }
 
         private void ApplyPersonalityTuning(BotOwner botRef)
         {
-            BotPersonalityProfile? profile = BotRegistry.Get(botRef.ProfileId);
-            if (profile == null)
-            {
+            string profileId = botRef.ProfileId;
+            if (string.IsNullOrEmpty(profileId))
                 return;
-            }
+
+            BotPersonalityProfile profile = BotRegistry.Get(profileId);
+            if (profile == null)
+                return;
 
             profile.AggressionLevel = Mathf.Clamp01(profile.AggressionLevel + 0.25f);
             profile.Caution = Mathf.Clamp01(profile.Caution - 0.25f);

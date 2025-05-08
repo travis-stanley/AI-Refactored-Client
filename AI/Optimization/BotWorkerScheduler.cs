@@ -6,8 +6,6 @@
 //   Please follow strict StyleCop, ReSharper, and AI-Refactored code standards for all modifications.
 // </auto-generated>
 
-#nullable enable
-
 namespace AIRefactored.AI.Optimization
 {
     using System;
@@ -35,14 +33,15 @@ namespace AIRefactored.AI.Optimization
 
         #region Fields
 
-        private static readonly ConcurrentQueue<Action> _mainThreadQueue = new ConcurrentQueue<Action>();
-        private static readonly Queue<Action> _spawnQueue = new Queue<Action>(MaxSpawnQueueSize);
-        private static readonly object _spawnLock = new object();
+        private static readonly ConcurrentQueue<Action> MainThreadQueue = new ConcurrentQueue<Action>();
+        private static readonly Queue<Action> SpawnQueue = new Queue<Action>(MaxSpawnQueueSize);
+        private static readonly object SpawnLock = new object();
 
-        private static ManualLogSource? _log;
         private static int _queuedCount;
         private static int _executedCount;
         private static int _errorCount;
+
+        private static ManualLogSource _logger;
 
         #endregion
 
@@ -51,38 +50,49 @@ namespace AIRefactored.AI.Optimization
         /// <summary>
         /// Schedules a Unity-safe action to run on the next main thread tick.
         /// </summary>
-        public static void EnqueueToMainThread(Action? action)
+        public static void EnqueueToMainThread(Action action)
         {
-            if (action == null || !GameWorldHandler.IsLocalHost())
+            if (action == null)
             {
                 return;
             }
 
-            _mainThreadQueue.Enqueue(action);
+            if (!GameWorldHandler.IsLocalHost())
+            {
+                return;
+            }
+
+            MainThreadQueue.Enqueue(action);
             Interlocked.Increment(ref _queuedCount);
-            EnsureLogger()?.LogDebug("[BotWorkScheduler] Main thread task queued.");
+
+            EnsureLogger().LogDebug("[BotWorkScheduler] Main thread task queued.");
         }
 
         /// <summary>
         /// Enqueues spawn logic for deferred throttling.
         /// </summary>
-        public static void EnqueueSpawnSmoothed(Action? spawnAction)
+        public static void EnqueueSpawnSmoothed(Action action)
         {
-            if (spawnAction == null || !GameWorldHandler.IsLocalHost())
+            if (action == null)
             {
                 return;
             }
 
-            lock (_spawnLock)
+            if (!GameWorldHandler.IsLocalHost())
             {
-                if (_spawnQueue.Count < MaxSpawnQueueSize)
+                return;
+            }
+
+            lock (SpawnLock)
+            {
+                if (SpawnQueue.Count < MaxSpawnQueueSize)
                 {
-                    _spawnQueue.Enqueue(spawnAction);
-                    EnsureLogger()?.LogDebug("[BotWorkScheduler] Spawn action queued.");
+                    SpawnQueue.Enqueue(action);
+                    EnsureLogger().LogDebug("[BotWorkScheduler] Spawn action queued.");
                 }
                 else
                 {
-                    EnsureLogger()?.LogWarning("[BotWorkScheduler] Spawn queue full. Task dropped.");
+                    EnsureLogger().LogWarning("[BotWorkScheduler] Spawn queue full. Task dropped.");
                 }
             }
         }
@@ -98,9 +108,9 @@ namespace AIRefactored.AI.Optimization
                 return;
             }
 
-            ManualLogSource? logger = EnsureLogger();
+            ManualLogSource logger = EnsureLogger();
 
-            while (_mainThreadQueue.TryDequeue(out var task))
+            while (MainThreadQueue.TryDequeue(out Action task))
             {
                 try
                 {
@@ -110,25 +120,25 @@ namespace AIRefactored.AI.Optimization
                 catch (Exception ex)
                 {
                     Interlocked.Increment(ref _errorCount);
-                    logger?.LogWarning("[BotWorkScheduler] Task failed: " + ex.Message + "\n" + ex.StackTrace);
+                    logger.LogWarning("[BotWorkScheduler] Task failed:\n" + ex);
                 }
             }
 
             int allowed = Mathf.Max(1, Mathf.FloorToInt(MaxSpawnsPerSecond * Time.unscaledDeltaTime));
             int executed = 0;
 
-            lock (_spawnLock)
+            lock (SpawnLock)
             {
-                while (executed < allowed && _spawnQueue.Count > 0)
+                while (executed < allowed && SpawnQueue.Count > 0)
                 {
                     try
                     {
-                        _spawnQueue.Dequeue()?.Invoke();
+                        SpawnQueue.Dequeue().Invoke();
                         executed++;
                     }
                     catch (Exception ex)
                     {
-                        logger?.LogWarning("[BotWorkScheduler] Spawn failed: " + ex.Message + "\n" + ex.StackTrace);
+                        logger.LogWarning("[BotWorkScheduler] Spawn failed:\n" + ex);
                     }
                 }
             }
@@ -139,21 +149,24 @@ namespace AIRefactored.AI.Optimization
         /// </summary>
         public static string GetStats()
         {
-            return "[BotWorkScheduler] Queued: " + _queuedCount + ", Executed: " + _executedCount + ", Errors: " + _errorCount + ", SpawnQueue: " + _spawnQueue.Count;
+            return "[BotWorkScheduler] Queued=" + _queuedCount +
+                   ", Executed=" + _executedCount +
+                   ", Errors=" + _errorCount +
+                   ", SpawnQueue=" + SpawnQueue.Count;
         }
 
         #endregion
 
-        #region Helpers
+        #region Internal
 
-        private static ManualLogSource? EnsureLogger()
+        private static ManualLogSource EnsureLogger()
         {
-            if (_log == null)
+            if (_logger == null)
             {
-                _log = AIRefactoredController.Logger;
+                _logger = Plugin.LoggerInstance;
             }
 
-            return _log;
+            return _logger;
         }
 
         #endregion

@@ -6,8 +6,6 @@
 //   Please follow strict StyleCop, ReSharper, and AI-Refactored code standards for all modifications.
 // </auto-generated>
 
-#nullable enable
-
 namespace AIRefactored.AI.Groups
 {
     using AIRefactored.AI.Core;
@@ -30,56 +28,66 @@ namespace AIRefactored.AI.Groups
 
         #region Fields
 
-        private BotOwner? bot;
-        private BotsGroup? group;
-        private Vector3 cachedOffset = Vector3.zero;
-        private int lastGroupSize = -1;
-        private bool offsetInitialized;
+        private BotOwner _bot;
+        private BotsGroup _group;
+        private Vector3 _cachedOffset = Vector3.zero;
+        private int _lastGroupSize = -1;
+        private bool _offsetInitialized;
+
+        #endregion
+
+        #region Initialization
+
+        /// <summary>
+        /// Initializes the squad path coordinator for the given bot cache.
+        /// </summary>
+        public void Initialize(BotComponentCache cache)
+        {
+            BotOwner bot = cache.Bot;
+            BotsGroup group = bot.BotsGroup;
+
+            if (bot == null || group == null || bot.IsDead)
+            {
+                return;
+            }
+
+            this._bot = bot;
+            this._group = group;
+            this._offsetInitialized = false;
+        }
 
         #endregion
 
         #region Public Methods
 
         /// <summary>
-        /// Initializes the squad path coordinator for the given bot cache.
+        /// Applies squad offset to the shared destination.
         /// </summary>
-        /// <param name="cache">The bot component cache.</param>
-        public void Initialize(BotComponentCache cache)
-        {
-            this.bot = cache?.Bot;
-            this.group = this.bot?.BotsGroup;
-            this.offsetInitialized = false;
-        }
-
-        /// <summary>
-        /// Returns a spacing offset applied to a squad-shared destination, unique to this bot.
-        /// </summary>
-        /// <param name="sharedDestination">The shared squad destination.</param>
         public Vector3 ApplyOffsetTo(Vector3 sharedDestination)
         {
             return sharedDestination + this.GetCurrentOffset();
         }
 
         /// <summary>
-        /// Gets the cached or recalculated squad offset for this bot.
+        /// Returns cached or recalculated offset for this bot.
         /// </summary>
         public Vector3 GetCurrentOffset()
         {
-            if (this.bot == null || this.group == null)
+            if (this._bot == null || this._group == null)
             {
                 return Vector3.zero;
             }
 
-            int currentSize = this.group.MembersCount;
+            int currentSize = this._group.MembersCount;
 
-            if (!this.offsetInitialized || currentSize != this.lastGroupSize)
+            if (!this._offsetInitialized || currentSize != this._lastGroupSize)
             {
-                this.cachedOffset = this.ComputeOffset();
-                this.offsetInitialized = true;
-                this.lastGroupSize = currentSize;
+                this._cachedOffset = this.ComputeOffset();
+                this._offsetInitialized = true;
+                this._lastGroupSize = currentSize;
             }
 
-            return this.cachedOffset;
+            return this._cachedOffset;
         }
 
         #endregion
@@ -88,40 +96,39 @@ namespace AIRefactored.AI.Groups
 
         private Vector3 ComputeOffset()
         {
-            if (this.bot == null || this.group == null || this.group.MembersCount < 2)
+            if (this._group == null || this._group.MembersCount < 2 || this._bot == null || this._bot.IsDead)
             {
                 return Vector3.zero;
             }
 
-            int botIndex = GetBotIndexInGroup(this.bot, this.group);
-            if (botIndex < 0)
+            int index = GetBotIndexInGroup(this._bot, this._group);
+            if (index < 0)
             {
                 return Vector3.zero;
             }
 
-            int squadSize = this.group.MembersCount;
-            string profileId = this.bot.ProfileId;
-
-            if (string.IsNullOrEmpty(profileId))
+            string profileId = this._bot.ProfileId;
+            if (profileId.Length == 0)
             {
                 return Vector3.zero;
             }
 
+            int squadSize = this._group.MembersCount;
             int seed = unchecked(profileId.GetHashCode() ^ squadSize);
             Random.InitState(seed);
 
             float spacing = Mathf.Clamp(BaseSpacing + Random.Range(-0.4f, 0.4f), MinSpacing, MaxSpacing);
             float angleStep = 360f / squadSize;
-            float angle = botIndex * angleStep + Random.Range(-8f, 8f);
-            float radians = angle * Mathf.Deg2Rad;
+            float angle = index * angleStep + Random.Range(-8f, 8f);
+            float rad = angle * Mathf.Deg2Rad;
 
-            return new Vector3(Mathf.Cos(radians), 0f, Mathf.Sin(radians)) * spacing;
+            return new Vector3(Mathf.Cos(rad), 0f, Mathf.Sin(rad)) * spacing;
         }
 
         private static int GetBotIndexInGroup(BotOwner bot, BotsGroup group)
         {
             string profileId = bot.ProfileId;
-            if (string.IsNullOrEmpty(profileId))
+            if (profileId.Length == 0)
             {
                 return -1;
             }
@@ -129,8 +136,8 @@ namespace AIRefactored.AI.Groups
             int count = group.MembersCount;
             for (int i = 0; i < count; i++)
             {
-                BotOwner? member = group.Member(i);
-                if (member != null && member.ProfileId == profileId)
+                BotOwner member = group.Member(i);
+                if (member != null && !member.IsDead && member.ProfileId == profileId)
                 {
                     return i;
                 }

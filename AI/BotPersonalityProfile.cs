@@ -6,8 +6,6 @@
 //   Please follow strict StyleCop, ReSharper, and AI-Refactored code standards for all modifications.
 // </auto-generated>
 
-#nullable enable
-
 namespace AIRefactored.AI
 {
     using System;
@@ -16,83 +14,94 @@ namespace AIRefactored.AI
     /// Defines a full personality configuration for AI bots, including behavior flags,
     /// tactical parameters, suppression response, and mission preferences.
     /// </summary>
-    public class BotPersonalityProfile
+    public sealed class BotPersonalityProfile
     {
         #region Personality Parameters
 
-        public float Accuracy { get; set; } = 0.7f;
-        public float AccuracyUnderFire { get; set; } = 0.4f;
-        public float AggressionLevel { get; set; } = 0.6f;
-        public float Caution { get; set; } = 0.5f;
-        public float ChaosFactor { get; set; } = 0f;
-        public float Cohesion { get; set; } = 0.75f;
-        public float CommunicationLevel { get; set; } = 0.6f;
-        public float CornerCheckPauseTime { get; set; } = 0.35f;
-        public float EngagementRange { get; set; } = 80f;
-        public float FlankBias { get; set; } = 0.5f;
-        public float FlinchThreshold { get; set; } = 0.4f;
-        public float LeanPeekFrequency { get; set; } = 0.5f;
-        public float MovementJitter { get; set; } = 0.2f;
-        public float ReactionSpeed { get; set; } = 0.65f;
-        public float ReactionTime { get; set; } = 0.25f;
-        public float RepositionPriority { get; set; } = 0.8f;
-        public float RetreatThreshold { get; set; } = 0.3f;
-        public float RiskTolerance { get; set; } = 0.5f;
-        public float SideStepBias { get; set; } = 0.5f;
-        public float SuppressionSensitivity { get; set; } = 0.4f;
-        public float SuppressiveFireBias { get; set; } = 0.2f;
-
-        /// <summary>
-        /// How greedy the bot is when deciding to extract. 0 = extract early, 1 = hold for more loot.
-        /// </summary>
-        public float Greed { get; set; } = 0.5f;
-
-        /// <summary>
-        /// How tolerant the bot is of being stuck before deciding to extract. 0 = extract quickly, 1 = wait longer.
-        /// </summary>
-        public float StuckTolerance { get; set; } = 0.5f;
+        public float Accuracy;
+        public float AccuracyUnderFire;
+        public float AggressionLevel;
+        public float Caution;
+        public float ChaosFactor;
+        public float Cohesion;
+        public float CommunicationLevel;
+        public float CornerCheckPauseTime;
+        public float EngagementRange;
+        public float FlankBias;
+        public float FlinchThreshold;
+        public float LeanPeekFrequency;
+        public float MovementJitter;
+        public float ReactionSpeed;
+        public float ReactionTime;
+        public float RepositionPriority;
+        public float RetreatThreshold;
+        public float RiskTolerance;
+        public float SideStepBias;
+        public float SuppressionSensitivity;
+        public float SuppressiveFireBias;
+        public float Greed;
+        public float StuckTolerance;
 
         #endregion
 
         #region Behavior Flags
 
-        public bool IsCamper { get; set; } = false;
-        public bool IsDumb { get; set; } = false;
-        public bool IsFearful { get; set; } = false;
-        public bool IsFrenzied { get; set; } = false;
-        public bool IsSadistic { get; set; } = false;
-        public bool IsSilentHunter { get; set; } = false;
-        public bool IsStubborn { get; set; } = false;
-        public bool IsTeamPlayer { get; set; } = false;
-
-        #endregion
-
-        #region Derived Properties
-
-        public bool CanFlank => this.FlankBias > 0.05f;
-        public bool CanRetreat => this.RetreatThreshold > 0.05f;
-        public bool CanSuppress => this.SuppressiveFireBias > 0.05f;
+        public bool IsCamper;
+        public bool IsDumb;
+        public bool IsFearful;
+        public bool IsFrenzied;
+        public bool IsSadistic;
+        public bool IsSilentHunter;
+        public bool IsStubborn;
+        public bool IsTeamPlayer;
 
         #endregion
 
         #region Identity
 
-        public PersonalityType Personality { get; set; } = PersonalityType.Balanced;
-        public MissionBias PreferredMission { get; set; } = MissionBias.Random;
-        public LeanPreference LeaningStyle { get; set; } = LeanPreference.Conservative;
+        public PersonalityType Personality;
+        public MissionBias PreferredMission;
+        public LeanPreference LeaningStyle;
+
+        #endregion
+
+        #region Derived Properties
+
+        public bool CanFlank
+        {
+            get { return this.FlankBias > 0.05f; }
+        }
+
+        public bool CanRetreat
+        {
+            get { return this.RetreatThreshold > 0.05f; }
+        }
+
+        public bool CanSuppress
+        {
+            get { return this.SuppressiveFireBias > 0.05f; }
+        }
 
         #endregion
 
         #region Methods
 
+        /// <summary>
+        /// Returns a shallow copy of this profile for runtime modification.
+        /// </summary>
+        /// <returns>Shallow clone of <see cref="BotPersonalityProfile"/>.</returns>
         public BotPersonalityProfile Clone()
         {
             return (BotPersonalityProfile)this.MemberwiseClone();
         }
 
+        /// <summary>
+        /// Debug-friendly representation for profile introspection.
+        /// </summary>
+        /// <returns>Profile debug string.</returns>
         public override string ToString()
         {
-            return $"[{this.Personality}] Aggro={this.AggressionLevel}, Acc={this.Accuracy}, Chaos={this.ChaosFactor}, Cohesion={this.Cohesion}";
+            return "[" + this.Personality + "] Aggro=" + this.AggressionLevel + ", Acc=" + this.Accuracy + ", Chaos=" + this.ChaosFactor + ", Cohesion=" + this.Cohesion;
         }
 
         #endregion
@@ -100,15 +109,59 @@ namespace AIRefactored.AI
 
     #region Enums
 
+    /// <summary>
+    /// Canonical list of supported personality archetypes.
+    /// </summary>
     public enum PersonalityType
     {
-        Adaptive, Aggressive, Balanced, Camper, Cautious, ColdBlooded, Defensive, Dumb, Explorer,
-        Fearful, Frenzied, Greedy, Heroic, Loner, Methodical, Paranoid, Patient, Reckless, RiskTaker,
-        SilentHunter, Sniper, Strategic, Stubborn, Tactical, TeamPlayer, Unpredictable, Vengeful, Vigilant,
-        Calculating, Panicked, Stoic, Bulldozer, Covert, Cowardly, Disruptor, Supportive, Hunter,
-        Stalker, Vigilante, Sentinel, Erratic, Cowboy, Saboteur
+        Adaptive,
+        Aggressive,
+        Balanced,
+        Camper,
+        Cautious,
+        ColdBlooded,
+        Defensive,
+        Dumb,
+        Explorer,
+        Fearful,
+        Frenzied,
+        Greedy,
+        Heroic,
+        Loner,
+        Methodical,
+        Paranoid,
+        Patient,
+        Reckless,
+        RiskTaker,
+        SilentHunter,
+        Sniper,
+        Strategic,
+        Stubborn,
+        Tactical,
+        TeamPlayer,
+        Unpredictable,
+        Vengeful,
+        Vigilant,
+        Calculating,
+        Panicked,
+        Stoic,
+        Bulldozer,
+        Covert,
+        Cowardly,
+        Disruptor,
+        Supportive,
+        Hunter,
+        Stalker,
+        Vigilante,
+        Sentinel,
+        Erratic,
+        Cowboy,
+        Saboteur
     }
 
+    /// <summary>
+    /// Mission-type inclination to bias looting vs fighting vs questing.
+    /// </summary>
     public enum MissionBias
     {
         Random,
@@ -117,6 +170,9 @@ namespace AIRefactored.AI
         Quest
     }
 
+    /// <summary>
+    /// Determines lean style for tactical positioning.
+    /// </summary>
     public enum LeanPreference
     {
         Never,

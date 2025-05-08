@@ -6,12 +6,11 @@
 //   Please follow strict StyleCop, ReSharper, and AI-Refactored code standards for all modifications.
 // </auto-generated>
 
-#nullable enable
-
 namespace AIRefactored.AI.Navigation
 {
     using System;
     using System.Collections.Generic;
+    using AIRefactored.Pools;
     using UnityEngine;
 
     /// <summary>
@@ -58,7 +57,8 @@ namespace AIRefactored.AI.Navigation
         public void Register(NavPointData point)
         {
             Vector2Int cell = WorldToCell(point.Position);
-            if (!_grid.TryGetValue(cell, out List<NavPointData>? list))
+            List<NavPointData> list;
+            if (!_grid.TryGetValue(cell, out list))
             {
                 list = new List<NavPointData>(8);
                 _grid[cell] = list;
@@ -83,20 +83,21 @@ namespace AIRefactored.AI.Navigation
         /// <param name="radius">Search radius in world units.</param>
         /// <param name="filter">Optional predicate filter.</param>
         /// <returns>List of nearby matching points.</returns>
-        public List<NavPointData> Query(Vector3 position, float radius, Predicate<NavPointData>? filter)
+        public List<NavPointData> Query(Vector3 position, float radius, Predicate<NavPointData> filter)
         {
             float radiusSq = radius * radius;
-            Vector2Int minCell = WorldToCell(position - new Vector3(radius, 0f, radius));
-            Vector2Int maxCell = WorldToCell(position + new Vector3(radius, 0f, radius));
+            Vector2Int minCell = WorldToCell(new Vector3(position.x - radius, 0f, position.z - radius));
+            Vector2Int maxCell = WorldToCell(new Vector3(position.x + radius, 0f, position.z + radius));
 
-            List<NavPointData> result = new List<NavPointData>(16);
+            List<NavPointData> result = TempListPool.Rent<NavPointData>();
 
             for (int x = minCell.x; x <= maxCell.x; x++)
             {
                 for (int z = minCell.y; z <= maxCell.y; z++)
                 {
                     Vector2Int cell = new Vector2Int(x, z);
-                    if (!_grid.TryGetValue(cell, out List<NavPointData>? bucket))
+                    List<NavPointData> bucket;
+                    if (!_grid.TryGetValue(cell, out bucket))
                     {
                         continue;
                     }
@@ -104,8 +105,7 @@ namespace AIRefactored.AI.Navigation
                     for (int i = 0; i < bucket.Count; i++)
                     {
                         NavPointData point = bucket[i];
-                        float distSq = (point.Position - position).sqrMagnitude;
-                        if (distSq <= radiusSq && (filter == null || filter(point)))
+                        if ((point.Position - position).sqrMagnitude <= radiusSq && (filter == null || filter(point)))
                         {
                             result.Add(point);
                         }
@@ -120,11 +120,6 @@ namespace AIRefactored.AI.Navigation
 
         #region Internal Helpers
 
-        /// <summary>
-        /// Converts a world position to a 2D grid cell index.
-        /// </summary>
-        /// <param name="pos">World-space position.</param>
-        /// <returns>Grid cell coordinates.</returns>
         private Vector2Int WorldToCell(Vector3 pos)
         {
             int x = Mathf.FloorToInt(pos.x / _cellSize);

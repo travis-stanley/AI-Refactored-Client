@@ -6,8 +6,6 @@
 //   Please follow strict StyleCop, ReSharper, and AI-Refactored code standards for all modifications.
 // </auto-generated>
 
-#nullable enable
-
 namespace AIRefactored.AI.Perception
 {
     using System;
@@ -28,8 +26,8 @@ namespace AIRefactored.AI.Perception
 
         private readonly List<LightComponent> _devices = new List<LightComponent>(4);
 
-        private BotOwner? _bot;
-        private BotComponentCache? _cache;
+        private BotOwner _bot;
+        private BotComponentCache _cache;
         private float _nextDecisionTime;
 
         #endregion
@@ -42,13 +40,19 @@ namespace AIRefactored.AI.Perception
         /// <param name="cache">Bot component cache.</param>
         public void Initialize(BotComponentCache cache)
         {
-            if (cache == null || cache.Bot == null)
+            if (cache == null)
             {
                 throw new ArgumentNullException(nameof(cache));
             }
 
+            BotOwner resolved = cache.Bot;
+            if (resolved == null)
+            {
+                throw new ArgumentException("Invalid bot reference.");
+            }
+
+            _bot = resolved;
             _cache = cache;
-            _bot = cache.Bot;
         }
 
         #endregion
@@ -67,7 +71,7 @@ namespace AIRefactored.AI.Perception
 
             _nextDecisionTime = Time.time + TacticalConfig.CheckInterval;
 
-            Weapon? weapon = _bot?.WeaponManager?.CurrentWeapon;
+            Weapon weapon = _bot.WeaponManager.CurrentWeapon;
             if (weapon == null)
             {
                 return;
@@ -110,13 +114,20 @@ namespace AIRefactored.AI.Perception
                 return false;
             }
 
-            Player? player = _bot.GetPlayer;
+            Player player = _bot.GetPlayer;
             return player != null && player.IsAI && !player.IsYourPlayer;
         }
 
         private float GetChaosBaitChance()
         {
-            return (_cache?.AIRefactoredBotOwner?.PersonalityProfile?.ChaosFactor ?? 0f) * 0.25f;
+            AIRefactoredBotOwner aiOwner = _cache.AIRefactoredBotOwner;
+            if (aiOwner == null)
+            {
+                return 0f;
+            }
+
+            BotPersonalityProfile profile = aiOwner.PersonalityProfile;
+            return profile != null ? profile.ChaosFactor * 0.25f : 0f;
         }
 
         private static bool IsLowVisibility()
@@ -131,7 +142,7 @@ namespace AIRefactored.AI.Perception
         {
             _devices.Clear();
 
-            IEnumerable<Slot>? slots = weapon.AllSlots;
+            IEnumerable<Slot> slots = weapon.AllSlots;
             if (slots == null)
             {
                 return;
@@ -144,8 +155,8 @@ namespace AIRefactored.AI.Perception
                     continue;
                 }
 
-                Item? mod = slot.ContainedItem;
-                if (mod?.Template?.Name == null)
+                Item mod = slot.ContainedItem;
+                if (mod == null || mod.Template == null || string.IsNullOrEmpty(mod.Template.Name))
                 {
                     continue;
                 }
@@ -158,16 +169,16 @@ namespace AIRefactored.AI.Perception
 
                 switch (mod)
                 {
-                    case FlashlightItemClass flash when flash.Light != null:
-                        _devices.Add(flash.Light);
+                    case FlashlightItemClass f when f.Light != null:
+                        _devices.Add(f.Light);
                         break;
 
-                    case TacticalComboItemClass combo when combo.Light != null:
-                        _devices.Add(combo.Light);
+                    case TacticalComboItemClass c when c.Light != null:
+                        _devices.Add(c.Light);
                         break;
 
-                    case LightLaserItemClass laser when laser.Light != null:
-                        _devices.Add(laser.Light);
+                    case LightLaserItemClass l when l.Light != null:
+                        _devices.Add(l.Light);
                         break;
                 }
             }

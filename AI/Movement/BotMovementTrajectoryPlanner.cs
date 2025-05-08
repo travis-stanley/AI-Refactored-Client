@@ -6,8 +6,6 @@
 //   Please follow strict StyleCop, ReSharper, and AI-Refactored code standards for all modifications.
 // </auto-generated>
 
-#nullable enable
-
 namespace AIRefactored.AI.Movement
 {
     using System;
@@ -44,21 +42,11 @@ namespace AIRefactored.AI.Movement
 
         #region Constructor
 
-        /// <summary>
-        /// Initializes a new instance of the <see cref="BotMovementTrajectoryPlanner"/> class.
-        /// </summary>
-        /// <param name="bot">Bot owner instance.</param>
-        /// <param name="cache">Component cache.</param>
         public BotMovementTrajectoryPlanner(BotOwner bot, BotComponentCache cache)
         {
-            if (bot == null)
+            if (bot == null || cache == null)
             {
-                throw new ArgumentNullException(nameof(bot));
-            }
-
-            if (cache == null)
-            {
-                throw new ArgumentNullException(nameof(cache));
+                throw new ArgumentException("BotMovementTrajectoryPlanner: bot or cache is null.");
             }
 
             _bot = bot;
@@ -69,12 +57,6 @@ namespace AIRefactored.AI.Movement
 
         #region Public Methods
 
-        /// <summary>
-        /// Adjusts the input movement direction using chaos wobble, squad offset, and teammate avoidance.
-        /// </summary>
-        /// <param name="targetDir">The intended move direction.</param>
-        /// <param name="deltaTime">Elapsed frame time.</param>
-        /// <returns>Smoothed and modified trajectory vector.</returns>
         public Vector3 ModifyTrajectory(Vector3 targetDir, float deltaTime)
         {
             float now = Time.unscaledTime;
@@ -85,7 +67,6 @@ namespace AIRefactored.AI.Movement
             }
 
             Vector3 baseDir = targetDir.sqrMagnitude > 0.0001f ? targetDir.normalized : Vector3.forward;
-
             Vector3 offset = baseDir + _chaosOffset;
 
             if (_cache.SquadPath != null)
@@ -97,10 +78,10 @@ namespace AIRefactored.AI.Movement
                 }
             }
 
-            Vector3 avoidance = ComputeAvoidance();
-            if (avoidance.sqrMagnitude > 0.0001f)
+            Vector3 avoid = ComputeAvoidance();
+            if (avoid.sqrMagnitude > 0.0001f)
             {
-                offset += avoidance.normalized * AvoidanceScale;
+                offset += avoid.normalized * AvoidanceScale;
             }
 
             Vector3 velocity = _bot.GetPlayer.Velocity;
@@ -110,7 +91,6 @@ namespace AIRefactored.AI.Movement
             }
 
             offset.y = 0f;
-
             return offset.sqrMagnitude > 0.0001f ? offset.normalized : baseDir;
         }
 
@@ -120,25 +100,19 @@ namespace AIRefactored.AI.Movement
 
         private Vector3 ComputeAvoidance()
         {
-            if (_bot.BotsGroup == null)
-            {
-                return Vector3.zero;
-            }
-
             BotsGroup group = _bot.BotsGroup;
-            int count = group.MembersCount;
-            if (count <= 1)
+            if (group == null || group.MembersCount <= 1)
             {
                 return Vector3.zero;
             }
 
             Vector3 selfPos = _bot.Position;
-            Vector3 sum = Vector3.zero;
+            Vector3 total = Vector3.zero;
             int contributors = 0;
 
-            for (int i = 0; i < count; i++)
+            for (int i = 0; i < group.MembersCount; i++)
             {
-                BotOwner? other = group.Member(i);
+                BotOwner other = group.Member(i);
                 if (other == null || other == _bot || other.IsDead)
                 {
                     continue;
@@ -147,23 +121,19 @@ namespace AIRefactored.AI.Movement
                 float dist = Vector3.Distance(selfPos, other.Position);
                 if (dist < AvoidanceRadius && dist > 0.01f)
                 {
-                    sum += (selfPos - other.Position).normalized / dist;
+                    total += (selfPos - other.Position).normalized / dist;
                     contributors++;
                 }
             }
 
-            return contributors > 0 ? sum / contributors : Vector3.zero;
+            return contributors > 0 ? total / contributors : Vector3.zero;
         }
 
         private void UpdateChaosOffset(float now)
         {
-            float caution = 0.5f;
-            if (_cache.AIRefactoredBotOwner?.PersonalityProfile != null)
-            {
-                caution = Mathf.Clamp01(_cache.AIRefactoredBotOwner.PersonalityProfile.Caution);
-            }
+            float caution = _cache.AIRefactoredBotOwner.PersonalityProfile.Caution;
+            float chaosRange = ChaosRadius * (1f - Mathf.Clamp01(caution));
 
-            float chaosRange = ChaosRadius * (1f - caution);
             float x = UnityEngine.Random.Range(-chaosRange * 0.5f, chaosRange * 0.5f);
             float z = UnityEngine.Random.Range(0f, chaosRange);
 

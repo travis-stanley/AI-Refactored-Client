@@ -6,31 +6,23 @@
 //   Please follow strict StyleCop, ReSharper, and AI-Refactored code standards for all modifications.
 // </auto-generated>
 
-#nullable enable
-
-using AIRefactored.AI.Helpers;
-using EFT;
-using System.Collections.Generic;
-using UnityEngine;
-
 namespace AIRefactored.AI.Perception
 {
+    using System.Collections.Generic;
+    using AIRefactored.AI.Core;
+    using AIRefactored.AI.Helpers;
+    using EFT;
+    using UnityEngine;
+
     /// <summary>
     /// Provides vision profiles per <see cref="WildSpawnType"/>, with optional personality scaling.
     /// Used to simulate flash/flare/suppression resistance and light reactivity.
     /// </summary>
     public static class BotVisionProfiles
     {
-        #region Fields
+        #region Static Defaults
 
-        private static readonly BotVisionProfile DefaultProfile = new BotVisionProfile
-        {
-            AdaptationSpeed = 1f,
-            LightSensitivity = 1f,
-            AggressionResponse = 1f,
-            MaxBlindness = 1f,
-            ClarityRecoverySpeed = 0.3f // Default Clarity Recovery Speed
-        };
+        private static readonly BotVisionProfile DefaultProfile = BotVisionProfile.CreateDefault();
 
         private static readonly Dictionary<WildSpawnType, BotVisionProfile> Profiles = InitializeProfiles();
 
@@ -42,34 +34,35 @@ namespace AIRefactored.AI.Perception
         /// Retrieves the bot vision profile, applying role-based defaults and optional personality blending.
         /// </summary>
         /// <param name="bot">The bot player instance.</param>
-        /// <returns>A <see cref="BotVisionProfile"/> tuned for the bot's role and personality.</returns>
+        /// <returns>A tuned <see cref="BotVisionProfile"/> instance.</returns>
         public static BotVisionProfile Get(Player bot)
         {
-            if (bot == null || bot.Profile?.Info?.Settings == null)
+            if (bot == null || bot.Profile == null || bot.Profile.Info == null || bot.Profile.Info.Settings == null)
             {
                 return DefaultProfile;
             }
 
             WildSpawnType role = bot.Profile.Info.Settings.Role;
 
-            BotVisionProfile baseProfile = Profiles.TryGetValue(role, out BotVisionProfile? found)
-                ? found
-                : DefaultProfile;
+            BotVisionProfile baseProfile;
+            if (!Profiles.TryGetValue(role, out baseProfile))
+            {
+                baseProfile = DefaultProfile;
+            }
 
-            var cache = BotCacheUtility.GetCache(bot);
-            var personality = cache?.AIRefactoredBotOwner?.PersonalityProfile;
-
-            if (personality == null)
+            BotComponentCache cache = BotCacheUtility.GetCache(bot);
+            if (cache == null || cache.AIRefactoredBotOwner == null || cache.AIRefactoredBotOwner.PersonalityProfile == null)
             {
                 return baseProfile;
             }
 
-            // Applying personality blending with bounds checks
+            BotPersonalityProfile personality = cache.AIRefactoredBotOwner.PersonalityProfile;
+
             float adaptationSpeed = Mathf.Clamp(baseProfile.AdaptationSpeed + (1f - personality.Caution) * 0.5f, 0.5f, 3f);
             float maxBlindness = Mathf.Clamp(baseProfile.MaxBlindness + (1f - personality.RiskTolerance) * 0.4f, 0.5f, 2f);
             float lightSensitivity = Mathf.Clamp(baseProfile.LightSensitivity + personality.Caution * 0.5f, 0.3f, 2f);
             float aggressionResponse = Mathf.Clamp(baseProfile.AggressionResponse + personality.AggressionLevel * 0.5f, 0.5f, 3f);
-            float clarityRecoverySpeed = Mathf.Clamp(baseProfile.ClarityRecoverySpeed + (1f - personality.Caution) * 0.3f, 0.1f, 1f); // Adjust based on Caution
+            float clarityRecoverySpeed = Mathf.Clamp(baseProfile.ClarityRecoverySpeed + (1f - personality.Caution) * 0.3f, 0.1f, 1f);
 
             return new BotVisionProfile
             {
@@ -77,18 +70,14 @@ namespace AIRefactored.AI.Perception
                 MaxBlindness = maxBlindness,
                 LightSensitivity = lightSensitivity,
                 AggressionResponse = aggressionResponse,
-                ClarityRecoverySpeed = clarityRecoverySpeed // Return modified Clarity Recovery Speed
+                ClarityRecoverySpeed = clarityRecoverySpeed
             };
         }
 
         #endregion
 
-        #region Profile Data
+        #region Static Initialization
 
-        /// <summary>
-        /// Internal static method that initializes all hardcoded profiles by WildSpawnType.
-        /// </summary>
-        /// <returns>A dictionary mapping WildSpawnType to BotVisionProfile.</returns>
         private static Dictionary<WildSpawnType, BotVisionProfile> InitializeProfiles()
         {
             return new Dictionary<WildSpawnType, BotVisionProfile>

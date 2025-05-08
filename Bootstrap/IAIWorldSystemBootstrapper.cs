@@ -11,8 +11,8 @@ namespace AIRefactored.AI.Core
     using AIRefactored.Bootstrap;
 
     /// <summary>
-    /// Defines the interface for modular world systems to participate in lifecycle events.
-    /// Used during phased initialization, tick execution, and teardown.
+    /// Defines the interface for modular AIRefactored world systems to participate in lifecycle events.
+    /// Used during phased initialization, frame-based execution, and raid teardown.
     /// </summary>
     public interface IAIWorldSystemBootstrapper
     {
@@ -22,26 +22,26 @@ namespace AIRefactored.AI.Core
         void Initialize();
 
         /// <summary>
-        /// Called every frame after initialization for per-frame logic.
+        /// Called every frame after initialization for system logic updates.
         /// </summary>
-        /// <param name="deltaTime">Time elapsed since the last tick, in seconds.</param>
+        /// <param name="deltaTime">The time delta (in seconds) since the last tick.</param>
         void Tick(float deltaTime);
 
         /// <summary>
-        /// Called once at the end of a raid to allow cleanup and reset of internal state.
+        /// Called once at the end of a raid. Used for system teardown or state reset.
         /// </summary>
         void OnRaidEnd();
 
         /// <summary>
-        /// Indicates whether the system has completed initialization and is safe to use.
+        /// Indicates whether the system is fully initialized and safe to tick.
         /// </summary>
-        /// <returns>True if the system is fully initialized and ready; otherwise, false.</returns>
+        /// <returns>True if the system is active and ready; otherwise, false.</returns>
         bool IsReady();
 
         /// <summary>
-        /// Specifies which world phase this system requires in order to safely initialize.
+        /// Specifies which world phase is required before this system can initialize.
         /// </summary>
-        /// <returns>The required initialization phase.</returns>
+        /// <returns>The required <see cref="WorldPhase"/>.</returns>
         WorldPhase RequiredPhase();
     }
 }

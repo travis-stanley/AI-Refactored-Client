@@ -174,8 +174,14 @@ namespace AIRefactored.Runtime
                 {
                     Logger.LogInfo("[AIRefactoredController] OnDestroy — stopping InitPhaseRunner.");
                     InitPhaseRunner.Stop();
+
                     _instance = null;
                     _initialized = false;
+                    _raidActive = false;
+
+                    WorldBootstrapper.Stop();
+                    GameWorldHandler.Cleanup();
+                    BotRecoveryService.Reset();
                 }
             }
             catch (Exception ex)

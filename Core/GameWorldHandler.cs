@@ -41,23 +41,14 @@ namespace AIRefactored.Core
 
         private static ManualLogSource Logger => Plugin.LoggerInstance;
 
-        public static bool IsSafeToInitialize
-        {
-            get
-            {
-                GameWorld world = Get();
-                return world != null && world.RegisteredPlayers != null && world.RegisteredPlayers.Count > 0;
-            }
-        }
+        public static bool IsSafeToInitialize =>
+            Get() != null &&
+            Get().RegisteredPlayers != null &&
+            Get().RegisteredPlayers.Count > 0;
 
-        public static bool IsHost
-        {
-            get
-            {
-                GameWorld world = Get();
-                return world != null && world.AllAlivePlayersList != null;
-            }
-        }
+        public static bool IsHost =>
+            Get() != null &&
+            Get().AllAlivePlayersList != null;
 
         public static bool IsLocalHost()
         {
@@ -394,7 +385,7 @@ namespace AIRefactored.Core
             }
             catch
             {
-                // Logging failed — safe to ignore
+                // Safe to ignore
             }
         }
     }

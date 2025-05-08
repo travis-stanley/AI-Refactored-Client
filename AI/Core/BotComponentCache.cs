@@ -37,33 +37,22 @@ namespace AIRefactored.AI.Core
 
         public BotOwner Bot { get; internal set; }
 
-        public AIRefactoredBotOwner AIRefactoredBotOwner
-        {
-            get { return _owner; }
-        }
+        public AIRefactoredBotOwner AIRefactoredBotOwner => _owner;
 
-        public BotMemoryClass Memory
-        {
-            get { return this.Bot.Memory; }
-        }
+        public BotMemoryClass Memory => Bot.Memory;
 
         public string Nickname
         {
             get
             {
-                if (this.Bot.Profile != null && this.Bot.Profile.Info != null)
-                {
-                    return this.Bot.Profile.Info.Nickname;
-                }
-
-                return "Unknown";
+                Profile profile = Bot.Profile;
+                return profile != null && profile.Info != null
+                    ? profile.Info.Nickname
+                    : "Unknown";
             }
         }
 
-        public Vector3 Position
-        {
-            get { return this.Bot.Position; }
-        }
+        public Vector3 Position => Bot.Position;
 
         #endregion
 
@@ -143,32 +132,21 @@ namespace AIRefactored.AI.Core
 
         public TrackedEnemyVisibility VisibilityTracker { get; set; }
 
-        public BotGroupSyncCoordinator GroupSync
-        {
-            get { return this.GroupBehavior.GroupSync; }
-        }
+        public BotGroupSyncCoordinator GroupSync => GroupBehavior.GroupSync;
 
-        public BotPanicHandler Panic
-        {
-            get { return this.PanicHandler; }
-        }
+        public BotPanicHandler Panic => PanicHandler;
 
         #endregion
 
         #region Properties
 
-        public bool IsReady
-        {
-            get
-            {
-                return this.Bot != null &&
-                       this.Movement != null &&
-                       this.Suppression != null &&
-                       this.PanicHandler != null &&
-                       this.Tactical != null &&
-                       this.FlashGrenade != null;
-            }
-        }
+        public bool IsReady =>
+            Bot != null &&
+            Movement != null &&
+            Suppression != null &&
+            PanicHandler != null &&
+            Tactical != null &&
+            FlashGrenade != null;
 
         #endregion
 
@@ -182,106 +160,113 @@ namespace AIRefactored.AI.Core
                 throw new ArgumentNullException("bot");
             }
 
-            if (this.Bot != null)
+            if (Bot != null)
             {
-                Logger.LogWarning("[BotComponentCache] Already initialized for bot " + (bot.Profile != null ? bot.Profile.Id : "null"));
+                Logger.LogWarning("[BotComponentCache] Already initialized for bot " + bot.Profile?.Id);
                 return;
             }
 
-            this.Bot = bot;
+            Bot = bot;
 
             try
             {
                 string profileId = bot.Profile != null ? bot.Profile.Id : "null-profile";
-                this.PersonalityProfile = BotRegistry.Get(profileId);
-                Logger.LogDebug("[BotComponentCache] Loaded personality for bot " + profileId + ": " + this.PersonalityProfile.Personality);
 
-                this.Pathing = new BotOwnerPathfindingCache();
-
-                this.TacticalMemory = new BotTacticalMemory();
-                this.TacticalMemory.Initialize(this);
-
-                this.TryInitSubsystem("CombatStateMachine", () =>
+                WildSpawnType role = WildSpawnType.assault;
+                if (bot.Profile != null && bot.Profile.Info != null && bot.Profile.Info.Settings != null)
                 {
-                    this.Combat = new CombatStateMachine();
-                    this.Combat.Initialize(this);
-                }, this.TacticalMemory);
+                    role = bot.Profile.Info.Settings.Role;
+                }
 
-                this.TryInitSubsystem("FlashGrenadeComponent", () =>
+                PersonalityProfile = BotRegistry.GetOrGenerate(profileId, PersonalityType.Balanced, role);
+                Logger.LogDebug("[BotComponentCache] Loaded personality for bot " + profileId + ": " + PersonalityProfile.Personality);
+
+                Pathing = new BotOwnerPathfindingCache();
+
+                TacticalMemory = new BotTacticalMemory();
+                TacticalMemory.Initialize(this);
+
+                TryInitSubsystem("CombatStateMachine", () =>
                 {
-                    this.FlashGrenade = new FlashGrenadeComponent();
-                    this.FlashGrenade.Initialize(this);
+                    Combat = new CombatStateMachine();
+                    Combat.Initialize(this);
+                }, TacticalMemory);
+
+                TryInitSubsystem("FlashGrenadeComponent", () =>
+                {
+                    FlashGrenade = new FlashGrenadeComponent();
+                    FlashGrenade.Initialize(this);
                 });
 
-                this.TryInitSubsystem("BotPanicHandler", () =>
+                TryInitSubsystem("BotPanicHandler", () =>
                 {
-                    this.PanicHandler = new BotPanicHandler();
-                    this.PanicHandler.Initialize(this);
+                    PanicHandler = new BotPanicHandler();
+                    PanicHandler.Initialize(this);
                 });
 
-                this.TryInitSubsystem("BotSuppressionReactionComponent", () =>
+                TryInitSubsystem("BotSuppressionReactionComponent", () =>
                 {
-                    this.Suppression = new BotSuppressionReactionComponent();
-                    this.Suppression.Initialize(this);
+                    Suppression = new BotSuppressionReactionComponent();
+                    Suppression.Initialize(this);
                 });
 
-                this.TryInitSubsystem("BotThreatEscalationMonitor", () =>
+                TryInitSubsystem("BotThreatEscalationMonitor", () =>
                 {
-                    this.Escalation = new BotThreatEscalationMonitor();
-                    this.Escalation.Initialize(bot);
+                    Escalation = new BotThreatEscalationMonitor();
+                    Escalation.Initialize(bot);
                 });
 
-                this.TryInitSubsystem("BotGroupBehavior", () =>
+                TryInitSubsystem("BotGroupBehavior", () =>
                 {
-                    this.GroupBehavior = new BotGroupBehavior();
-                    this.GroupBehavior.Initialize(this);
-                }, this.PanicHandler);
+                    GroupBehavior = new BotGroupBehavior();
+                    GroupBehavior.Initialize(this);
+                }, PanicHandler);
 
-                this.TryInitSubsystem("BotMovementController", () =>
+                TryInitSubsystem("BotMovementController", () =>
                 {
-                    this.Movement = new BotMovementController();
-                    this.Movement.Initialize(this);
+                    Movement = new BotMovementController();
+                    Movement.Initialize(this);
                 });
 
-                this.TryInitSubsystem("BotLookController", () =>
+                TryInitSubsystem("BotLookController", () =>
                 {
-                    this.LookController = new BotLookController(bot, this);
+                    LookController = new BotLookController(bot, this);
                 });
 
-                this.TryInitSubsystem("BotTacticalDeviceController", () =>
+                TryInitSubsystem("BotTacticalDeviceController", () =>
                 {
-                    this.Tactical = new BotTacticalDeviceController();
-                    this.Tactical.Initialize(this);
+                    Tactical = new BotTacticalDeviceController();
+                    Tactical.Initialize(this);
                 });
 
-                this.PoseController = new BotPoseController(bot, this);
-                this.HearingDamage = new HearingDamageComponent();
-                this.Tilt = new BotTilt(bot);
+                PoseController = new BotPoseController(bot, this);
+                Tilt = new BotTilt(bot);
+                HearingDamage = new HearingDamageComponent();
 
-                this.SquadPath = new SquadPathCoordinator();
-                this.SquadPath.Initialize(this);
+                SquadPath = new SquadPathCoordinator();
+                SquadPath.Initialize(this);
 
-                this.LootScanner = new BotLootScanner();
-                this.LootScanner.Initialize(this);
+                LootScanner = new BotLootScanner();
+                LootScanner.Initialize(this);
 
-                this.LootDecisionSystem = new BotLootDecisionSystem();
-                this.LootDecisionSystem.Initialize(this);
+                LootDecisionSystem = new BotLootDecisionSystem();
+                LootDecisionSystem.Initialize(this);
 
-                this.DeadBodyScanner = new BotDeadBodyScanner();
-                this.DeadBodyScanner.Initialize(this);
+                DeadBodyScanner = new BotDeadBodyScanner();
+                DeadBodyScanner.Initialize(this);
 
-                this.DoorOpener = new BotDoorOpener(bot);
-                this.InjurySystem = new BotInjurySystem(this);
-                this.LastShotTracker = new BotLastShotTracker();
-                this.GroupComms = new BotGroupComms(this);
-                this.SquadHealer = bot.HealAnotherTarget ?? new BotHealAnotherTarget(bot);
-                this.HealReceiver = bot.HealingBySomebody ?? new BotHealingBySomebody(bot);
+                DoorOpener = new BotDoorOpener(bot);
+                InjurySystem = new BotInjurySystem(this);
+                LastShotTracker = new BotLastShotTracker();
+                GroupComms = new BotGroupComms(this);
+                SquadHealer = bot.HealAnotherTarget ?? new BotHealAnotherTarget(bot);
+                HealReceiver = bot.HealingBySomebody ?? new BotHealingBySomebody(bot);
 
-                Logger.LogDebug("[BotComponentCache] ✅ Initialized for bot: " + this.Nickname);
+                Logger.LogDebug("[BotComponentCache] ✅ Initialized for bot: " + Nickname);
             }
             catch (Exception ex)
             {
-                Logger.LogError("[BotComponentCache] Initialization failed for bot " + (bot.Profile != null ? bot.Profile.Id : "null") + ": " + ex);
+                Logger.LogError("[BotComponentCache] Initialization failed for bot " + Bot.Profile?.Id + ": " + ex);
                 throw;
             }
         }
@@ -316,31 +301,30 @@ namespace AIRefactored.AI.Core
         {
             if (owner == null)
             {
-                Logger.LogWarning("[BotComponentCache] SetOwner() called with null.");
-                return;
+                Logger.LogError("[BotComponentCache] SetOwner() called with null.");
+                throw new ArgumentNullException("owner");
             }
 
-            this._owner = owner;
+            _owner = owner;
 
-            if (this.ThreatSelector == null)
+            if (ThreatSelector == null)
             {
-                this.ThreatSelector = new BotThreatSelector(this);
+                ThreatSelector = new BotThreatSelector(this);
             }
         }
 
         public void RegisterHeardSound(Vector3 source)
         {
-            Player player = this.Bot.GetPlayer;
-            if (player == null || !player.IsAI)
+            if (Bot == null)
             {
-                Logger.LogWarning("[BotComponentCache] RegisterHeardSound failed — bot invalid.");
+                Logger.LogWarning("[BotComponentCache] RegisterHeardSound failed — bot not assigned.");
                 return;
             }
 
             Logger.LogDebug("[BotComponentCache] Registered sound from: " + source);
-            this.LastHeardTime = Time.time;
-            this.LastHeardDirection = source - this.Position;
-            this.HasHeardDirection = true;
+            LastHeardTime = Time.time;
+            LastHeardDirection = source - Position;
+            HasHeardDirection = true;
         }
 
         #endregion

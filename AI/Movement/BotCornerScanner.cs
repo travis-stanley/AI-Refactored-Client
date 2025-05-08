@@ -11,6 +11,7 @@ namespace AIRefactored.AI.Movement
     using System;
     using AIRefactored.AI.Core;
     using AIRefactored.Core;
+    using BepInEx.Logging;
     using EFT;
     using UnityEngine;
     using UnityEngine.AI;
@@ -37,6 +38,8 @@ namespace AIRefactored.AI.Movement
 
         #region Fields
 
+        private static readonly ManualLogSource Log = Plugin.LoggerInstance;
+
         private BotOwner _bot;
         private BotComponentCache _cache;
         private BotPersonalityProfile _profile;
@@ -46,6 +49,7 @@ namespace AIRefactored.AI.Movement
 
         private bool _isLeaning;
         private bool _isCrouching;
+        private bool _isInitialized;
 
         #endregion
 
@@ -57,19 +61,35 @@ namespace AIRefactored.AI.Movement
 
         public BotCornerScanner(BotOwner bot, BotComponentCache cache)
         {
-            Initialize(bot, cache);
+            try
+            {
+                this.Initialize(bot, cache);
+            }
+            catch (Exception ex)
+            {
+                Log.LogError("[BotCornerScanner] Constructor init failed: " + ex.Message);
+            }
         }
 
         public void Initialize(BotOwner bot, BotComponentCache cache)
         {
-            if (bot == null || cache == null || cache.AIRefactoredBotOwner == null)
+            if (bot == null || cache == null || bot.Transform == null || cache.AIRefactoredBotOwner == null)
             {
-                throw new ArgumentException("[BotCornerScanner] Invalid initialization.");
+                Log.LogWarning("[BotCornerScanner] Skipped initialization — missing bot, transform, or personality.");
+                return;
             }
 
             _bot = bot;
             _cache = cache;
             _profile = cache.AIRefactoredBotOwner.PersonalityProfile;
+
+            if (_profile == null)
+            {
+                Log.LogWarning("[BotCornerScanner] Personality profile missing for bot " + bot.ProfileId);
+                return;
+            }
+
+            _isInitialized = true;
         }
 
         #endregion
@@ -78,7 +98,27 @@ namespace AIRefactored.AI.Movement
 
         public void Tick(float time)
         {
-            if (!IsEligible(time))
+            if (!_isInitialized || _bot == null || _cache == null || _profile == null)
+            {
+                return;
+            }
+
+            if (_bot.IsDead || _bot.Mover == null || _bot.Transform == null)
+            {
+                return;
+            }
+
+            if (_cache.Tilt == null || _cache.PoseController == null)
+            {
+                return;
+            }
+
+            if (_bot.Memory != null && _bot.Memory.GoalEnemy != null)
+            {
+                return;
+            }
+
+            if (time < _pauseUntil || time < _prepCrouchUntil)
             {
                 return;
             }
@@ -101,17 +141,6 @@ namespace AIRefactored.AI.Movement
         #endregion
 
         #region Internal Logic
-
-        private bool IsEligible(float time)
-        {
-            return _bot != null &&
-                   !_bot.IsDead &&
-                   _bot.Mover != null &&
-                   _bot.Transform != null &&
-                   _bot.Memory.GoalEnemy == null &&
-                   time >= _pauseUntil &&
-                   time >= _prepCrouchUntil;
-        }
 
         private void PauseMovement(float time)
         {

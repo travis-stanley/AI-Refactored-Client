@@ -41,7 +41,9 @@ namespace AIRefactored.Runtime
                 return;
             }
 
+            GameWorld.OnDispose -= this.OnRaidEnded; // Ensure clean rebind
             GameWorld.OnDispose += this.OnRaidEnded;
+
             AIRefactoredController.OnRaidStarted(world);
             _initialized = true;
         }
@@ -53,6 +55,7 @@ namespace AIRefactored.Runtime
         {
             GameWorld.OnDispose -= this.OnRaidEnded;
             _initialized = false;
+
             AIRefactoredController.OnRaidEnded();
         }
 

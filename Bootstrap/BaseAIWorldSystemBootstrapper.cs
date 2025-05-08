@@ -16,41 +16,28 @@ namespace AIRefactored.AI.Core
     /// </summary>
     public abstract class BaseAIWorldSystemBootstrapper : IAIWorldSystemBootstrapper
     {
-        /// <summary>
-        /// Called when the AI world initializes. Override to inject custom system logic.
-        /// </summary>
+        /// <inheritdoc />
         public virtual void Initialize()
         {
         }
 
-        /// <summary>
-        /// Called every frame or fixed tick. Override to update your system.
-        /// </summary>
-        /// <param name="deltaTime">Delta time since last tick.</param>
+        /// <inheritdoc />
         public virtual void Tick(float deltaTime)
         {
         }
 
-        /// <summary>
-        /// Called when a raid ends. Override to perform teardown or reset logic.
-        /// </summary>
+        /// <inheritdoc />
         public virtual void OnRaidEnd()
         {
         }
 
-        /// <summary>
-        /// Indicates whether this system is ready to run.
-        /// </summary>
-        /// <returns>True if ready; false to skip execution.</returns>
+        /// <inheritdoc />
         public virtual bool IsReady()
         {
             return true;
         }
 
-        /// <summary>
-        /// Specifies which world phase this system should activate during.
-        /// </summary>
-        /// <returns>The required world phase.</returns>
+        /// <inheritdoc />
         public virtual WorldPhase RequiredPhase()
         {
             return WorldPhase.PostInit;

@@ -8,6 +8,7 @@
 
 namespace AIRefactored.Bootstrap
 {
+    using System;
     using System.Collections.Generic;
     using AIRefactored.AI.Core;
     using AIRefactored.AI.Hotspots;
@@ -36,7 +37,7 @@ namespace AIRefactored.Bootstrap
         private static float _lastSweep;
         private const float SweepInterval = 20f;
 
-        private static ManualLogSource Logger => _loggerInstance;
+        private static ManualLogSource Logger => _loggerInstance ?? Plugin.LoggerInstance;
 
         #endregion
 
@@ -56,24 +57,32 @@ namespace AIRefactored.Bootstrap
                 return;
             }
 
-            Systems.Clear();
-            RegisterSystem(BotRecoveryService.Instance);
-            RegisterSystem(BotSpawnWatcherService.Instance);
-            RegisterSystem(LootRuntimeWatcher.Instance);
-            RegisterSystem(DeadBodyObserverService.Instance);
-            RegisterSystem(new HotspotRegistryBootstrapper());
-
-            for (int i = 0; i < Systems.Count; i++)
+            try
             {
-                IAIWorldSystemBootstrapper system = Systems[i];
-                if (system.RequiredPhase() == WorldPhase.WorldReady)
-                {
-                    system.Initialize();
-                }
-            }
+                Systems.Clear();
 
-            _hasInitialized = true;
-            Logger.LogInfo("[WorldBootstrapper] ✅ World systems initialized.");
+                RegisterSystem(BotRecoveryService.Instance);
+                RegisterSystem(BotSpawnWatcherService.Instance);
+                RegisterSystem(LootRuntimeWatcher.Instance);
+                RegisterSystem(DeadBodyObserverService.Instance);
+                RegisterSystem(new HotspotRegistryBootstrapper());
+
+                for (int i = 0; i < Systems.Count; i++)
+                {
+                    IAIWorldSystemBootstrapper system = Systems[i];
+                    if (system.RequiredPhase() == WorldPhase.WorldReady)
+                    {
+                        system.Initialize();
+                    }
+                }
+
+                _hasInitialized = true;
+                Logger.LogInfo("[WorldBootstrapper] ✅ World systems initialized.");
+            }
+            catch (Exception ex)
+            {
+                Logger.LogError("[WorldBootstrapper] Initialization failed: " + ex);
+            }
         }
 
         /// <summary>
@@ -81,15 +90,27 @@ namespace AIRefactored.Bootstrap
         /// </summary>
         public static void Stop()
         {
-            for (int i = 0; i < Systems.Count; i++)
+            if (!_hasInitialized)
             {
-                Systems[i].OnRaidEnd();
+                return;
             }
 
-            Systems.Clear();
-            _hasInitialized = false;
+            try
+            {
+                for (int i = 0; i < Systems.Count; i++)
+                {
+                    Systems[i].OnRaidEnd();
+                }
 
-            Logger.LogInfo("[WorldBootstrapper] 🔻 AIRefactored systems shut down.");
+                Systems.Clear();
+                _hasInitialized = false;
+
+                Logger.LogInfo("[WorldBootstrapper] 🔻 AIRefactored systems shut down.");
+            }
+            catch (Exception ex)
+            {
+                Logger.LogError("[WorldBootstrapper] Stop() encountered error: " + ex);
+            }
         }
 
         #endregion
@@ -107,18 +128,25 @@ namespace AIRefactored.Bootstrap
                 return;
             }
 
-            float now = Time.time;
-
-            for (int i = 0; i < Systems.Count; i++)
+            try
             {
-                Systems[i].Tick(deltaTime);
+                float now = Time.time;
+
+                for (int i = 0; i < Systems.Count; i++)
+                {
+                    Systems[i].Tick(deltaTime);
+                }
+
+                if (now - _lastSweep >= SweepInterval)
+                {
+                    _lastSweep = now;
+                    GameWorldHandler.EnforceBotBrains();
+                    GameWorldHandler.CleanupDeadBotsSmoothly();
+                }
             }
-
-            if (now - _lastSweep >= SweepInterval)
+            catch (Exception ex)
             {
-                _lastSweep = now;
-                GameWorldHandler.EnforceBotBrains();
-                GameWorldHandler.CleanupDeadBotsSmoothly();
+                Logger.LogError("[WorldBootstrapper] Tick() error: " + ex);
             }
         }
 
@@ -138,17 +166,17 @@ namespace AIRefactored.Bootstrap
             }
 
             string mapId = GameWorldHandler.TryGetValidMapName();
-            if (mapId.Length == 0)
+            if (string.IsNullOrEmpty(mapId))
             {
                 Logger.LogWarning("[WorldBootstrapper] Cannot prewarm — no valid map.");
                 return;
             }
 
-            NavMeshSurface[] surfaces = Object.FindObjectsOfType<NavMeshSurface>();
+            NavMeshSurface[] surfaces = UnityEngine.Object.FindObjectsOfType<NavMeshSurface>();
             for (int i = 0; i < surfaces.Length; i++)
             {
                 NavMeshSurface surface = surfaces[i];
-                if (surface.enabled && surface.gameObject.activeInHierarchy)
+                if (surface != null && surface.enabled && surface.gameObject.activeInHierarchy)
                 {
                     surface.BuildNavMesh();
                     BotCoverRetreatPlanner.RegisterSurface(mapId, surface);
@@ -163,23 +191,26 @@ namespace AIRefactored.Bootstrap
         /// <param name="bot">Optional bot owner reference.</param>
         public static void EnforceBotBrain(Player player, BotOwner bot)
         {
-            if (player == null || !player.IsAI)
+            if (player == null || !player.IsAI || player.gameObject == null)
             {
                 return;
             }
 
             GameObject go = player.gameObject;
-            if (go == null)
-            {
-                return;
-            }
 
             BotBrainGuardian.Enforce(go);
 
             if (go.GetComponent<BotBrain>() == null && bot != null)
             {
-                BotBrain brain = go.AddComponent<BotBrain>();
-                brain.Initialize(bot);
+                try
+                {
+                    BotBrain brain = go.AddComponent<BotBrain>();
+                    brain.Initialize(bot);
+                }
+                catch
+                {
+                    Logger.LogWarning("[WorldBootstrapper] Failed to initialize BotBrain for " + player.ProfileId);
+                }
             }
         }
 
@@ -193,10 +224,12 @@ namespace AIRefactored.Bootstrap
         /// <param name="system">System to register.</param>
         public static void RegisterSystem(IAIWorldSystemBootstrapper system)
         {
-            if (system != null && !Systems.Contains(system))
+            if (system == null || Systems.Contains(system))
             {
-                Systems.Add(system);
+                return;
             }
+
+            Systems.Add(system);
         }
 
         #endregion

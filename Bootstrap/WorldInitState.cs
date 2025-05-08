@@ -29,7 +29,7 @@ namespace AIRefactored.Bootstrap
         /// <summary>
         /// Sets the current initialization phase.
         /// </summary>
-        /// <param name="phase">The phase to set.</param>
+        /// <param name="phase">The phase to assign.</param>
         public static void SetPhase(WorldPhase phase)
         {
             _phase = phase;
@@ -38,8 +38,8 @@ namespace AIRefactored.Bootstrap
         /// <summary>
         /// Returns true if the current world phase is equal to or beyond the given phase.
         /// </summary>
-        /// <param name="phase">Phase to compare against.</param>
-        /// <returns>True if current phase is equal or greater.</returns>
+        /// <param name="phase">The phase to compare against.</param>
+        /// <returns>True if the current phase is equal or later.</returns>
         public static bool IsInPhase(WorldPhase phase)
         {
             return _phase >= phase;

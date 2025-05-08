@@ -85,7 +85,7 @@ namespace AIRefactored.Bootstrap
 
         private static void TryLinkToCorpse(LootableContainer container)
         {
-            if (container == null)
+            if (container == null || container.transform == null)
             {
                 return;
             }
@@ -99,6 +99,7 @@ namespace AIRefactored.Bootstrap
             }
 
             List<Player> deadPlayers = TempListPool.Rent<Player>();
+
             try
             {
                 for (int i = 0; i < players.Count; i++)
@@ -113,18 +114,13 @@ namespace AIRefactored.Bootstrap
                 for (int i = 0; i < deadPlayers.Count; i++)
                 {
                     Player p = deadPlayers[i];
-                    if (p == null)
-                    {
-                        continue;
-                    }
-
-                    if (p.HealthController == null || p.HealthController.IsAlive)
+                    if (p == null || p.HealthController == null || p.HealthController.IsAlive)
                     {
                         continue;
                     }
 
                     string id = p.ProfileId;
-                    if (id.Length == 0 || DeadBodyContainerCache.Contains(id))
+                    if (string.IsNullOrEmpty(id) || DeadBodyContainerCache.Contains(id))
                     {
                         continue;
                     }
@@ -133,6 +129,7 @@ namespace AIRefactored.Bootstrap
                     if (Vector3.Distance(containerPosition, corpsePosition) <= MaxCorpseLinkDistance)
                     {
                         DeadBodyContainerCache.Register(p, container);
+
                         string name = p.Profile != null && p.Profile.Info != null ? p.Profile.Info.Nickname : "Unnamed";
                         Logger.LogDebug("[LootBootstrapper] Linked container to corpse: " + name);
                         break;

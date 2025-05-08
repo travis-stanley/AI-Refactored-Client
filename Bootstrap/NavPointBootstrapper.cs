@@ -68,7 +68,6 @@ namespace AIRefactored.AI.Navigation
             float half = ScanRadius * 0.5f;
 
             List<Vector3> pooled = TempListPool.Rent<Vector3>();
-
             try
             {
                 for (float x = -half; x <= half; x += ScanSpacing)
@@ -95,7 +94,11 @@ namespace AIRefactored.AI.Navigation
             if (!_isTaskRunning)
             {
                 _isTaskRunning = true;
-                Task.Run(PrequeueVerticalPoints);
+                Task.Run(() =>
+                {
+                    PrequeueVerticalPoints();
+                    _isTaskRunning = false;
+                });
             }
         }
 
@@ -153,7 +156,7 @@ namespace AIRefactored.AI.Navigation
                 Logger.LogInfo("[NavPointBootstrapper] Queued vertical fallback points.");
             }
 
-            if (ScanQueue.Count == 0)
+            if (ScanQueue.Count == 0 && !_isTaskRunning)
             {
                 _isRunning = false;
                 Logger.LogInfo("[NavPointBootstrapper] ✅ Completed — " + _registered + " nav points registered.");
@@ -172,7 +175,6 @@ namespace AIRefactored.AI.Navigation
         private static void PrequeueVerticalPoints()
         {
             float half = ScanRadius * 0.5f;
-
             List<Vector3> tempList = TempListPool.Rent<Vector3>();
 
             try
@@ -188,12 +190,14 @@ namespace AIRefactored.AI.Navigation
                     }
                 }
 
-                BackgroundPending.AddRange(tempList);
+                lock (BackgroundPending)
+                {
+                    BackgroundPending.AddRange(tempList);
+                }
             }
             finally
             {
                 TempListPool.Return(tempList);
-                _isTaskRunning = false;
             }
         }
 

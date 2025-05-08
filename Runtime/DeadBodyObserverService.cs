@@ -105,14 +105,13 @@ namespace AIRefactored.Runtime
                 for (int i = 0; i < pool.Count; i++)
                 {
                     Player player = pool[i];
-
                     if (player == null || player.HealthController == null || player.HealthController.IsAlive)
                     {
                         continue;
                     }
 
                     string profileId = player.ProfileId;
-                    if (profileId.Length == 0 || DeadBodyContainerCache.Contains(profileId))
+                    if (string.IsNullOrEmpty(profileId) || DeadBodyContainerCache.Contains(profileId))
                     {
                         continue;
                     }

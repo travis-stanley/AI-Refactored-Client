@@ -175,7 +175,14 @@ namespace AIRefactored.Runtime
             _isQueued = false;
             _nextAllowedRefreshTime = -1f;
 
-            _logger.LogInfo("[LootRuntimeWatcher] Reset.");
+            try
+            {
+                _logger?.LogInfo("[LootRuntimeWatcher] Reset.");
+            }
+            catch
+            {
+                // Silent fail
+            }
         }
 
         #endregion

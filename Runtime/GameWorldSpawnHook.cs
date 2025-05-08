@@ -34,6 +34,7 @@ namespace AIRefactored.Runtime
             {
                 if (_hooked)
                 {
+                    Logger.LogInfo("[GameWorldSpawnHook] Already hooked — skipping.");
                     UnityEngine.Object.Destroy(this);
                     return;
                 }
@@ -42,15 +43,14 @@ namespace AIRefactored.Runtime
                 Logger.LogInfo("[GameWorldSpawnHook] Hooking into GameWorld.OnGameStarted...");
 
                 MethodInfo method = AccessTools.Method(typeof(GameWorld), "OnGameStarted");
-                if (method != null)
-                {
-                    Harmony.CreateAndPatchAll(typeof(GameWorldSpawnPatch), "ai.refactored.spawnhook");
-                    Logger.LogInfo("[GameWorldSpawnHook] Harmony patch successfully installed.");
-                }
-                else
+                if (method == null)
                 {
                     Logger.LogError("[GameWorldSpawnHook] Failed to locate OnGameStarted method.");
+                    return;
                 }
+
+                Harmony.CreateAndPatchAll(typeof(GameWorldSpawnPatch), "ai.refactored.spawnhook");
+                Logger.LogInfo("[GameWorldSpawnHook] Harmony patch successfully installed.");
             }
             catch (Exception ex)
             {
@@ -74,10 +74,16 @@ namespace AIRefactored.Runtime
                 try
                 {
                     if (!FikaHeadlessDetector.IsReady)
+                    {
+                        Logger.LogWarning("[GameWorldSpawnHook] Skipped InitPhaseRunner — FIKA not ready.");
                         return;
+                    }
 
                     if (!GameWorldHandler.IsReady())
+                    {
+                        Logger.LogWarning("[GameWorldSpawnHook] Skipped InitPhaseRunner — GameWorldHandler not ready.");
                         return;
+                    }
 
                     Logger.LogInfo("[GameWorldSpawnHook] GameWorld initialized. Triggering InitPhaseRunner...");
                     InitPhaseRunner.Begin(Logger);

@@ -16,6 +16,7 @@ namespace AIRefactored.Runtime
     using AIRefactored.Bootstrap;
     using AIRefactored.Core;
     using BepInEx.Logging;
+    using Comfort.Common;
     using EFT;
     using UnityEngine;
 
@@ -91,17 +92,12 @@ namespace AIRefactored.Runtime
                 for (int i = 0; i < players.Count; i++)
                 {
                     Player player = players[i];
-                    if (player == null || !player.IsAI)
+                    if (player == null || !player.IsAI || player.gameObject == null)
                     {
                         continue;
                     }
 
                     GameObject go = player.gameObject;
-                    if (go == null)
-                    {
-                        continue;
-                    }
-
                     int id = go.GetInstanceID();
                     if (!SeenBotIds.Add(id))
                     {
@@ -113,29 +109,36 @@ namespace AIRefactored.Runtime
                         continue;
                     }
 
-                    if (player.AIData == null || player.AIData.BotOwner == null || player.Profile == null)
+                    if (player.AIData == null || player.Profile == null)
                     {
                         Logger.LogWarning("[BotSpawnWatcher] Skipped bot — missing AIData or Profile: " + player.name);
                         continue;
                     }
 
+                    BotOwner owner = player.AIData as BotOwner;
+                    if (owner == null)
+                    {
+                        Logger.LogWarning("[BotSpawnWatcher] Skipped bot — AIData not a BotOwner: " + player.name);
+                        continue;
+                    }
+
                     try
                     {
-                        BotOwner owner = player.AIData.BotOwner;
                         string profileId = player.Profile.Id;
+                        WildSpawnType role = player.Profile.Info != null ? player.Profile.Info.Settings.Role : WildSpawnType.assault;
 
-                        BotPersonalityProfile personality = BotPersonalityPresets.GenerateProfile(PersonalityType.Balanced);
+                        BotPersonalityProfile personality = BotRegistry.GetOrGenerate(profileId, PersonalityType.Balanced);
                         BotRegistry.Register(profileId, personality);
 
                         BotBrain brain = go.AddComponent<BotBrain>();
                         brain.Initialize(owner);
 
                         string nickname = player.Profile.Info != null ? player.Profile.Info.Nickname : "Unnamed";
-                        Logger.LogDebug("[BotSpawnWatcher] Brain injected for bot: " + nickname);
+                        Logger.LogDebug("[BotSpawnWatcher] ✅ Brain injected for bot: " + nickname);
                     }
                     catch (Exception ex)
                     {
-                        Logger.LogError("[BotSpawnWatcher] Brain injection failed: " + ex);
+                        Logger.LogError("[BotSpawnWatcher] ❌ Brain injection failed for: " + player.Profile?.Info?.Nickname + " — " + ex);
                     }
                 }
             }

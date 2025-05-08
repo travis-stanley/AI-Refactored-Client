@@ -77,7 +77,7 @@ namespace AIRefactored.AI.Threads
             if (current == null || current.HealthController == null || !current.HealthController.IsAlive)
             {
                 _isValid = false;
-                Logger.LogWarning("[BotBrain] Bot invalidated at runtime.");
+                Logger.LogWarning("[BotBrain] Bot invalidated at runtime — health or player missing.");
                 return;
             }
 
@@ -132,14 +132,20 @@ namespace AIRefactored.AI.Threads
         {
             if (!GameWorldHandler.IsLocalHost())
             {
-                Logger.LogWarning("[BotBrain] Initialization skipped: not authoritative.");
+                Logger.LogWarning("[BotBrain] Initialization skipped: not authoritative host.");
+                return;
+            }
+
+            if (bot == null)
+            {
+                Logger.LogError("[BotBrain] Initialization failed: null bot.");
                 return;
             }
 
             Player player = bot.GetPlayer;
-            if (player == null || !player.IsAI || player.IsYourPlayer || bot.IsDead)
+            if (player == null || !player.IsAI || player.IsYourPlayer || bot.IsDead || player.Profile == null || player.Profile.Info == null)
             {
-                Logger.LogWarning("[BotBrain] Initialization rejected: invalid player or bot.");
+                Logger.LogWarning("[BotBrain] Initialization rejected: invalid or non-AI player.");
                 return;
             }
 
@@ -148,18 +154,17 @@ namespace AIRefactored.AI.Threads
 
             try
             {
-                _cache = BotComponentCacheRegistry.GetOrCreate(bot);
-                if (_cache.Combat == null)
+                string profileId = player.Profile.Id;
+
+                if (!BotRegistry.TryGetRefactoredOwner(profileId, out AIRefactoredBotOwner owner))
                 {
-                    Logger.LogError("[BotBrain] Missing combat logic for: " + bot.ProfileId);
-                    return;
+                    owner = new AIRefactoredBotOwner();
+                    owner.Initialize(bot);
+                    BotRegistry.RegisterOwner(profileId, owner);
                 }
 
-                string profileId = bot.ProfileId;
-                if (BotRegistry.TryGetRefactoredOwner(profileId, out AIRefactoredBotOwner owner))
-                {
-                    _cache.SetOwner(owner);
-                }
+                _cache = BotComponentCacheRegistry.GetOrCreate(bot);
+                _cache.SetOwner(owner);
 
                 _combat = _cache.Combat;
                 _movement = _cache.Movement;
@@ -167,9 +172,9 @@ namespace AIRefactored.AI.Threads
                 _look = _cache.LookController;
                 _tilt = _cache.Tilt;
                 _groupBehavior = _cache.GroupBehavior;
-
                 _corner = new BotCornerScanner(bot, _cache);
                 _jump = new BotJumpController(bot, _cache);
+
                 _vision = new BotVisionSystem(); _vision.Initialize(_cache);
                 _hearing = new BotHearingSystem(); _hearing.Initialize(_cache);
                 _perception = new BotPerceptionSystem(); _perception.Initialize(_cache);
@@ -187,7 +192,7 @@ namespace AIRefactored.AI.Threads
                 BotBrainGuardian.Enforce(_player.gameObject);
                 _isValid = true;
 
-                Logger.LogInfo("[BotBrain] ✅ AI initialized for: " + (_player.Profile?.Info?.Nickname ?? "Unnamed"));
+                Logger.LogInfo("[BotBrain] ✅ AI initialized for: " + (_player.Profile.Info.Nickname ?? "Unnamed"));
             }
             catch (Exception ex)
             {

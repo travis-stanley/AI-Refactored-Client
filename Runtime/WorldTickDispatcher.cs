@@ -63,14 +63,27 @@ namespace AIRefactored.Runtime
         /// </summary>
         public static void Reset()
         {
+            if (!_isActive)
+            {
+                return;
+            }
+
             _isActive = false;
 
-            if (_host != null)
+            try
             {
-                UnityEngine.Object.Destroy(_host);
-                _host = null;
-                _monoHost = null;
+                if (_host != null)
+                {
+                    UnityEngine.Object.Destroy(_host);
+                }
             }
+            catch (Exception ex)
+            {
+                Logger.LogError("[WorldTickDispatcher] Error during host destroy: " + ex);
+            }
+
+            _host = null;
+            _monoHost = null;
 
             Logger.LogInfo("[WorldTickDispatcher] Shutdown complete.");
         }
@@ -116,7 +129,14 @@ namespace AIRefactored.Runtime
 
             private void OnDestroy()
             {
-                Reset();
+                try
+                {
+                    Reset();
+                }
+                catch (Exception ex)
+                {
+                    Logger.LogError("[WorldTickDispatcher] OnDestroy failed: " + ex);
+                }
             }
         }
 

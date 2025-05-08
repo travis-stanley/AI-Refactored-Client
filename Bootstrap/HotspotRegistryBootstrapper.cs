@@ -34,11 +34,15 @@ namespace AIRefactored.Bootstrap
             }
 
             string mapId = GameWorldHandler.TryGetValidMapName();
-            if (mapId.Length > 0 && mapId != "unknown")
+            if (string.IsNullOrEmpty(mapId) || mapId == "unknown")
             {
-                HotspotRegistry.Initialize(mapId);
-                _isInitialized = true;
+                Plugin.LoggerInstance.LogWarning("[HotspotRegistry] Skipped initialization — map ID invalid.");
+                return;
             }
+
+            HotspotRegistry.Initialize(mapId);
+            _isInitialized = true;
+            Plugin.LoggerInstance.LogInfo("[HotspotRegistry] Initialized for map: " + mapId);
         }
 
         /// <summary>

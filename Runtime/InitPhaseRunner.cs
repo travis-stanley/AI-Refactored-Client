@@ -56,6 +56,8 @@ namespace AIRefactored.Runtime
             }
             catch (Exception ex)
             {
+                _hasStarted = false;
+
                 if (logger != null)
                 {
                     logger.LogError("[InitPhaseRunner] ❌ Critical initialization failure:\n" + ex);
@@ -74,6 +76,7 @@ namespace AIRefactored.Runtime
             {
                 WorldTickDispatcher.Reset();
                 WorldBootstrapper.Stop();
+                Plugin.LoggerInstance.LogInfo("[InitPhaseRunner] 🧹 Initialization state reset.");
             }
             catch (Exception ex)
             {

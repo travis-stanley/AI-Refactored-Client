@@ -37,20 +37,21 @@ namespace AIRefactored.AI.Optimization
 
         #region Public API
 
-        /// <summary>
-        /// Applies baseline optimization settings to the specified bot.
-        /// Should be called once after initialization to reduce overhead and optimize behavior cadence.
-        /// </summary>
-        /// <param name="bot">The bot to optimize.</param>
         public static void Apply(BotOwner bot)
         {
-            if (!GameWorldHandler.IsLocalHost() || !IsValid(bot))
+            if (!GameWorldHandler.IsLocalHost())
+            {
+                return;
+            }
+
+            if (!IsValid(bot))
             {
                 return;
             }
 
             int id = bot.GetInstanceID();
-            if (BotOptimizationState.ContainsKey(id) && BotOptimizationState[id])
+            bool alreadyOptimized;
+            if (BotOptimizationState.TryGetValue(id, out alreadyOptimized) && alreadyOptimized)
             {
                 Logger.LogDebug("[AIRefactored] Optimization already applied to bot: " + GetName(bot));
                 return;
@@ -62,19 +63,21 @@ namespace AIRefactored.AI.Optimization
             Logger.LogInfo("[AIRefactored] Optimization applied to bot: " + GetName(bot));
         }
 
-        /// <summary>
-        /// Clears prior optimizations, allowing the bot to return to default pacing or be reoptimized.
-        /// </summary>
-        /// <param name="bot">The bot to reset optimization on.</param>
         public static void Reset(BotOwner bot)
         {
-            if (!GameWorldHandler.IsLocalHost() || !IsValid(bot))
+            if (!GameWorldHandler.IsLocalHost())
+            {
+                return;
+            }
+
+            if (!IsValid(bot))
             {
                 return;
             }
 
             int id = bot.GetInstanceID();
-            if (!BotOptimizationState.ContainsKey(id) || !BotOptimizationState[id])
+            bool wasOptimized;
+            if (!BotOptimizationState.TryGetValue(id, out wasOptimized) || !wasOptimized)
             {
                 Logger.LogDebug("[AIRefactored] Bot not optimized, skipping reset: " + GetName(bot));
                 return;
@@ -86,33 +89,29 @@ namespace AIRefactored.AI.Optimization
             Logger.LogInfo("[AIRefactored] Optimization reset for bot: " + GetName(bot));
         }
 
-        /// <summary>
-        /// Escalates bot perception urgency and danger response timing in high-stimulus scenarios.
-        /// Does not enhance vision, accuracy, or combat precision — only cognitive speed and urgency.
-        /// </summary>
-        /// <param name="bot">The bot to escalate.</param>
         public static void TriggerEscalation(BotOwner bot)
         {
-            if (!GameWorldHandler.IsLocalHost() || !IsValid(bot))
+            if (!GameWorldHandler.IsLocalHost())
+            {
+                return;
+            }
+
+            if (!IsValid(bot))
             {
                 return;
             }
 
             int id = bot.GetInstanceID();
             float now = Time.time;
+            float lastTime;
 
-            if (LastEscalationTimes.ContainsKey(id) && now - LastEscalationTimes[id] < EscalationCooldownTime)
+            if (LastEscalationTimes.TryGetValue(id, out lastTime) && now - lastTime < EscalationCooldownTime)
             {
                 Logger.LogDebug("[AIRefactored] Escalation skipped (cooldown) for bot: " + GetName(bot));
                 return;
             }
 
-            BotGlobalsMindSettings mind = bot.Settings != null &&
-                                          bot.Settings.FileSettings != null &&
-                                          bot.Settings.FileSettings.Mind != null
-                ? bot.Settings.FileSettings.Mind
-                : null;
-
+            BotGlobalsMindSettings mind = GetMindSettings(bot);
             if (mind == null)
             {
                 Logger.LogWarning("[AIRefactored] Escalation aborted: missing mind settings for bot: " + GetName(bot));
@@ -145,6 +144,15 @@ namespace AIRefactored.AI.Optimization
             return bot != null && bot.Profile != null && bot.Profile.Info != null
                 ? bot.Profile.Info.Nickname
                 : "Unknown";
+        }
+
+        private static BotGlobalsMindSettings GetMindSettings(BotOwner bot)
+        {
+            return bot.Settings != null &&
+                   bot.Settings.FileSettings != null &&
+                   bot.Settings.FileSettings.Mind != null
+                ? bot.Settings.FileSettings.Mind
+                : null;
         }
 
         #endregion

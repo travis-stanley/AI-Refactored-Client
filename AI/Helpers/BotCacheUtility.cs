@@ -37,7 +37,7 @@ namespace AIRefactored.AI.Helpers
 
         public static IEnumerable<BotComponentCache> AllActiveBots()
         {
-            foreach (var pair in CacheRegistry)
+            foreach (KeyValuePair<BotOwner, BotComponentCache> pair in CacheRegistry)
             {
                 BotOwner bot = pair.Key;
                 if (bot != null && !bot.IsDead)
@@ -50,7 +50,7 @@ namespace AIRefactored.AI.Helpers
         public static void DumpCache()
         {
             Logger.LogInfo("[BotCacheUtility] Dumping bot caches:");
-            foreach (var pair in CacheRegistry)
+            foreach (KeyValuePair<BotOwner, BotComponentCache> pair in CacheRegistry)
             {
                 BotOwner bot = pair.Key;
                 BotComponentCache cache = pair.Value;
@@ -76,8 +76,13 @@ namespace AIRefactored.AI.Helpers
 
         public static BotComponentCache GetCache(BotOwner bot)
         {
+            if (bot == null)
+            {
+                return null;
+            }
+
             BotComponentCache cache;
-            return bot != null && CacheRegistry.TryGetValue(bot, out cache) ? cache : null;
+            return CacheRegistry.TryGetValue(bot, out cache) ? cache : null;
         }
 
         public static BotComponentCache GetCache(Player player)
@@ -92,15 +97,24 @@ namespace AIRefactored.AI.Helpers
 
         public static BotComponentCache GetCache(string profileId)
         {
+            if (string.IsNullOrEmpty(profileId))
+            {
+                return null;
+            }
+
             BotComponentCache cache;
-            return !string.IsNullOrEmpty(profileId) && ProfileIdLookup.TryGetValue(profileId, out cache) ? cache : null;
+            return ProfileIdLookup.TryGetValue(profileId, out cache) ? cache : null;
         }
 
         public static string GetBotName(BotComponentCache cache)
         {
-            if (cache != null && cache.Bot != null && cache.Bot.Profile != null && cache.Bot.Profile.Info != null)
+            if (cache != null)
             {
-                return cache.Bot.Profile.Info.Nickname + " (" + cache.Bot.Profile.Side.ToString() + ")";
+                BotOwner bot = cache.Bot;
+                if (bot != null && bot.Profile != null && bot.Profile.Info != null)
+                {
+                    return bot.Profile.Info.Nickname + " (" + bot.Profile.Side.ToString() + ")";
+                }
             }
 
             return "Unknown";
@@ -110,7 +124,8 @@ namespace AIRefactored.AI.Helpers
         {
             if (cache != null)
             {
-                return cache.GroupSync ?? (cache.GroupBehavior != null ? cache.GroupBehavior.GroupSync : null);
+                return cache.GroupSync != null ? cache.GroupSync :
+                       cache.GroupBehavior != null ? cache.GroupBehavior.GroupSync : null;
             }
 
             return null;
@@ -118,10 +133,11 @@ namespace AIRefactored.AI.Helpers
 
         public static BotComponentCache GetClosestBot(Vector3 origin, float maxDistance)
         {
-            float minDistSq = maxDistance * maxDistance;
+            float maxSqr = maxDistance * maxDistance;
+            float bestSqr = maxSqr;
             BotComponentCache closest = null;
 
-            foreach (var pair in CacheRegistry)
+            foreach (KeyValuePair<BotOwner, BotComponentCache> pair in CacheRegistry)
             {
                 BotOwner bot = pair.Key;
                 if (bot == null || bot.IsDead)
@@ -133,11 +149,11 @@ namespace AIRefactored.AI.Helpers
                 float dx = pos.x - origin.x;
                 float dy = pos.y - origin.y;
                 float dz = pos.z - origin.z;
-                float distSq = (dx * dx) + (dy * dy) + (dz * dz);
+                float distSqr = (dx * dx) + (dy * dy) + (dz * dz);
 
-                if (distSq < minDistSq)
+                if (distSqr < bestSqr)
                 {
-                    minDistSq = distSq;
+                    bestSqr = distSqr;
                     closest = pair.Value;
                 }
             }
@@ -147,12 +163,19 @@ namespace AIRefactored.AI.Helpers
 
         public static Transform Head(BotComponentCache cache)
         {
-            if (cache != null && cache.Bot != null && cache.Bot.MainParts != null)
+            if (cache != null)
             {
-                EnemyPart part;
-                if (cache.Bot.MainParts.TryGetValue(BodyPartType.head, out part) && part != null)
+                BotOwner bot = cache.Bot;
+                if (bot != null && bot.MainParts != null)
                 {
-                    return part._transform.Original;
+                    EnemyPart part;
+                    if (bot.MainParts.TryGetValue(BodyPartType.head, out part))
+                    {
+                        if (part != null && part._transform != null)
+                        {
+                            return part._transform.Original;
+                        }
+                    }
                 }
             }
 
@@ -161,7 +184,7 @@ namespace AIRefactored.AI.Helpers
 
         public static void Register(BotOwner bot, BotComponentCache cache)
         {
-            if (bot == null || bot.IsDead || cache == null)
+            if (bot == null || cache == null || bot.IsDead)
             {
                 return;
             }

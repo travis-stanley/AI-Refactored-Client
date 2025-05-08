@@ -14,6 +14,7 @@ namespace AIRefactored.AI.Combat.States
     using AIRefactored.AI.Helpers;
     using AIRefactored.AI.Hotspots;
     using AIRefactored.AI.Optimization;
+    using AIRefactored.Pools;
     using AIRefactored.Runtime;
     using EFT;
     using UnityEngine;
@@ -29,7 +30,7 @@ namespace AIRefactored.AI.Combat.States
         private const float DeadAllyRadius = 10.0f;
         private const float InvestigateSoundDelay = 3.0f;
         private const float PanicThreshold = 0.25f;
-        private const float FallbackPathMinLength = 2;
+        private const int FallbackPathMinLength = 2;
 
         #endregion
 
@@ -59,62 +60,50 @@ namespace AIRefactored.AI.Combat.States
                 throw new ArgumentException("[PatrolHandler] Initialization failed: cache or Bot is null.");
             }
 
-            this._cache = cache;
-            this._bot = cache.Bot;
-            this._minStateDuration = minStateDuration;
-            this._switchCooldownBase = switchCooldownBase;
+            _cache = cache;
+            _bot = cache.Bot;
+            _minStateDuration = minStateDuration;
+            _switchCooldownBase = switchCooldownBase;
         }
 
         #endregion
 
         #region Public Methods
 
-        /// <summary>
-        /// Patrol state is always available unless superseded by higher priority conditions.
-        /// </summary>
         public bool ShallUseNow()
         {
             return true;
         }
 
-        /// <summary>
-        /// Determines if bot should escalate to investigate based on caution and sound cues.
-        /// </summary>
         public bool ShouldTransitionToInvestigate(float time)
         {
-            CombatStateMachine combat = this._cache.Combat;
-            BotPersonalityProfile profile = this._cache.AIRefactoredBotOwner?.PersonalityProfile;
+            CombatStateMachine combat = _cache.Combat;
+            BotPersonalityProfile profile = _cache.AIRefactoredBotOwner?.PersonalityProfile;
 
             if (combat == null || profile == null || profile.Caution <= 0.35f)
             {
                 return false;
             }
 
-            bool heardSound = this._cache.LastHeardTime + InvestigateSoundDelay > time;
-            bool cooldownPassed = time - combat.LastStateChangeTime > this._minStateDuration;
-
-            return heardSound && cooldownPassed;
+            return (_cache.LastHeardTime + InvestigateSoundDelay > time) &&
+                   (time - combat.LastStateChangeTime > _minStateDuration);
         }
 
-        /// <summary>
-        /// Drives patrol logic. Evaluates fallback triggers and executes patrol route traversal.
-        /// </summary>
         public void Tick(float time)
         {
-            if (this.ShouldTriggerFallback())
+            if (ShouldTriggerFallback())
             {
-                CombatStateMachine combat = this._cache.Combat;
-                if (combat == null)
+                CombatStateMachine combat = _cache.Combat;
+                if (combat != null)
                 {
-                    return;
+                    Vector3 fallback = TryGetFallbackPosition();
+                    combat.TriggerFallback(fallback);
                 }
 
-                Vector3 fallback = this.TryGetFallbackPosition();
-                combat.TriggerFallback(fallback);
                 return;
             }
 
-            if (time < this._nextSwitchTime)
+            if (time < _nextSwitchTime)
             {
                 return;
             }
@@ -122,8 +111,8 @@ namespace AIRefactored.AI.Combat.States
             HotspotRegistry.Hotspot hotspot = HotspotRegistry.GetRandomHotspot();
             Vector3 target = hotspot.Position;
 
-            Vector3 destination = (this._cache.SquadPath != null)
-                ? this._cache.SquadPath.ApplyOffsetTo(target)
+            Vector3 destination = _cache.SquadPath != null
+                ? _cache.SquadPath.ApplyOffsetTo(target)
                 : target;
 
             if (float.IsNaN(destination.x) || float.IsNaN(destination.y) || float.IsNaN(destination.z))
@@ -132,14 +121,14 @@ namespace AIRefactored.AI.Combat.States
                 return;
             }
 
-            BotMovementHelper.SmoothMoveTo(this._bot, destination);
-            BotCoverHelper.TrySetStanceFromNearbyCover(this._cache, destination);
+            BotMovementHelper.SmoothMoveTo(_bot, destination);
+            BotCoverHelper.TrySetStanceFromNearbyCover(_cache, destination);
 
-            this._nextSwitchTime = time + UnityEngine.Random.Range(this._switchCooldownBase, this._switchCooldownBase + 18.0f);
+            _nextSwitchTime = time + UnityEngine.Random.Range(_switchCooldownBase, _switchCooldownBase + 18.0f);
 
-            if (!FikaHeadlessDetector.IsHeadless && this._bot.BotTalk != null && UnityEngine.Random.value < 0.25f)
+            if (!FikaHeadlessDetector.IsHeadless && _bot.BotTalk != null && UnityEngine.Random.value < 0.25f)
             {
-                this._bot.BotTalk.TrySay(EPhraseTrigger.GoForward);
+                _bot.BotTalk.TrySay(EPhraseTrigger.GoForward);
             }
         }
 
@@ -149,32 +138,32 @@ namespace AIRefactored.AI.Combat.States
 
         private bool ShouldTriggerFallback()
         {
-            if (this._cache.PanicHandler != null && this._cache.PanicHandler.GetComposureLevel() < PanicThreshold)
+            if (_cache.PanicHandler != null && _cache.PanicHandler.GetComposureLevel() < PanicThreshold)
             {
                 return true;
             }
 
-            if (this._cache.InjurySystem != null && this._cache.InjurySystem.ShouldHeal())
+            if (_cache.InjurySystem != null && _cache.InjurySystem.ShouldHeal())
             {
                 return true;
             }
 
-            if (this._cache.Suppression != null && this._cache.Suppression.IsSuppressed())
+            if (_cache.Suppression != null && _cache.Suppression.IsSuppressed())
             {
                 return true;
             }
 
-            BotsGroup group = this._bot.BotsGroup;
+            BotsGroup group = _bot.BotsGroup;
             if (group == null)
             {
                 return false;
             }
 
-            Vector3 myPos = this._bot.Position;
+            Vector3 myPos = _bot.Position;
             for (int i = 0, count = group.MembersCount; i < count; i++)
             {
                 BotOwner member = group.Member(i);
-                if (member != null && member != this._bot && member.IsDead)
+                if (member != null && member != _bot && member.IsDead)
                 {
                     if (Vector3.Distance(myPos, member.Position) < DeadAllyRadius)
                     {
@@ -188,20 +177,20 @@ namespace AIRefactored.AI.Combat.States
 
         private Vector3 TryGetFallbackPosition()
         {
-            Vector3 fallback = this._bot.Position;
-
-            if (this._cache.Pathing != null)
+            if (_cache.Pathing == null)
             {
-                Vector3 lookDir = this._bot.LookDirection.normalized;
-                List<Vector3> path = BotCoverRetreatPlanner.GetCoverRetreatPath(this._bot, lookDir, this._cache.Pathing);
-
-                if (path != null && path.Count >= FallbackPathMinLength)
-                {
-                    fallback = path[path.Count - 1];
-                }
+                return _bot.Position;
             }
 
-            return fallback;
+            Vector3 direction = _bot.LookDirection.normalized;
+
+            List<Vector3> path = BotCoverRetreatPlanner.GetCoverRetreatPath(_bot, direction, _cache.Pathing);
+            if (path != null && path.Count >= FallbackPathMinLength)
+            {
+                return path[path.Count - 1];
+            }
+
+            return _bot.Position;
         }
 
         #endregion

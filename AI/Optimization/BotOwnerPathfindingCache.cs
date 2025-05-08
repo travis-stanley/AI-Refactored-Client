@@ -136,32 +136,41 @@ namespace AIRefactored.AI.Optimization
             Vector3 fallbackTarget = origin - threatDirection.normalized * 8f;
             string key = id + "_fb_" + HashVecDir(origin, threatDirection);
 
-            List<Vector3> cached;
-            if (_fallbackCache.TryGetValue(key, out cached) && cached.Count > 1 && !IsPathBlocked(cached))
+            if (_fallbackCache.TryGetValue(key, out var cached) && cached.Count > 1 && !IsPathBlocked(cached))
             {
                 return cached;
             }
 
             List<Vector3> candidates = NavPointRegistry.QueryNearby(origin, 25f, pos => NavPointRegistry.GetTag(pos) == "fallback");
-            for (int i = 0; i < candidates.Count; i++)
+            try
             {
-                var single = TempListPool.Rent<Vector3>();
-                single.Add(candidates[i]);
-                if (IsPathInClearedZone(single))
+                for (int i = 0; i < candidates.Count; i++)
                 {
-                    TempListPool.Return(single);
-                    continue;
-                }
+                    var single = TempListPool.Rent<Vector3>();
+                    try
+                    {
+                        single.Add(candidates[i]);
+                        if (IsPathInClearedZone(single))
+                        {
+                            continue;
+                        }
 
-                List<Vector3> navPath = BuildNavPath(origin, candidates[i]);
-                if (navPath.Count > 1 && !IsPathBlocked(navPath))
-                {
-                    _fallbackCache[key] = navPath;
-                    TempListPool.Return(single);
-                    return navPath;
+                        List<Vector3> navPath = BuildNavPath(origin, candidates[i]);
+                        if (navPath.Count > 1 && !IsPathBlocked(navPath))
+                        {
+                            _fallbackCache[key] = navPath;
+                            return navPath;
+                        }
+                    }
+                    finally
+                    {
+                        TempListPool.Return(single);
+                    }
                 }
-
-                TempListPool.Return(single);
+            }
+            finally
+            {
+                TempListPool.Return(candidates);
             }
 
             List<Vector3> fallback = BuildNavPath(origin, fallbackTarget);

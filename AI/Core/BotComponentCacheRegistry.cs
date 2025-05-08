@@ -34,16 +34,20 @@ namespace AIRefactored.AI.Core
         {
             if (bot == null)
             {
-                throw new ArgumentNullException(nameof(bot), "[BotComponentCacheRegistry] BotOwner is null.");
+                throw new ArgumentNullException("bot", "[BotComponentCacheRegistry] BotOwner is null.");
             }
 
             Profile profile = bot.Profile;
-            if (profile == null || string.IsNullOrWhiteSpace(profile.Id))
+            if (profile == null)
             {
-                throw new InvalidOperationException("[BotComponentCacheRegistry] Cannot register cache — bot profile or ID is invalid.");
+                throw new InvalidOperationException("[BotComponentCacheRegistry] Bot profile is null.");
             }
 
             string id = profile.Id;
+            if (string.IsNullOrEmpty(id))
+            {
+                throw new InvalidOperationException("[BotComponentCacheRegistry] Bot profile ID is null or empty.");
+            }
 
             BotComponentCache existing;
             if (CacheMap.TryGetValue(id, out existing))
@@ -51,12 +55,12 @@ namespace AIRefactored.AI.Core
                 return existing;
             }
 
-            BotComponentCache cache = new BotComponentCache();
-            cache.Initialize(bot);
-            CacheMap[id] = cache;
+            BotComponentCache newCache = new BotComponentCache();
+            newCache.Initialize(bot);
+            CacheMap[id] = newCache;
 
             Logger.LogDebug("[BotComponentCacheRegistry] Created new cache for bot: " + id);
-            return cache;
+            return newCache;
         }
 
         /// <summary>
@@ -67,7 +71,7 @@ namespace AIRefactored.AI.Core
         /// <returns>True if found.</returns>
         public static bool TryGet(string profileId, out BotComponentCache cache)
         {
-            if (string.IsNullOrWhiteSpace(profileId))
+            if (string.IsNullOrEmpty(profileId))
             {
                 cache = null;
                 return false;
@@ -84,15 +88,19 @@ namespace AIRefactored.AI.Core
         {
             if (bot == null)
             {
-                throw new ArgumentNullException(nameof(bot));
+                throw new ArgumentNullException("bot");
             }
 
             Profile profile = bot.Profile;
-            if (profile != null && !string.IsNullOrWhiteSpace(profile.Id))
+            if (profile != null)
             {
-                if (CacheMap.Remove(profile.Id))
+                string id = profile.Id;
+                if (!string.IsNullOrEmpty(id))
                 {
-                    Logger.LogDebug("[BotComponentCacheRegistry] Removed cache for bot: " + profile.Id);
+                    if (CacheMap.Remove(id))
+                    {
+                        Logger.LogDebug("[BotComponentCacheRegistry] Removed cache for bot: " + id);
+                    }
                 }
             }
         }

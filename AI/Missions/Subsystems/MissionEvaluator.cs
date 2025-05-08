@@ -130,8 +130,8 @@ namespace AIRefactored.AI.Missions.Subsystems
             {
                 ExfiltrationPoint closest = null;
                 float minDist = float.MaxValue;
-
                 ExfiltrationPoint[] all = GameObject.FindObjectsOfType<ExfiltrationPoint>();
+
                 for (int i = 0; i < all.Length; i++)
                 {
                     ExfiltrationPoint point = all[i];

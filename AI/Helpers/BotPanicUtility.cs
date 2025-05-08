@@ -23,7 +23,6 @@ namespace AIRefactored.AI.Helpers
         /// <summary>
         /// Triggers panic on a single bot if valid and eligible.
         /// </summary>
-        /// <param name="cache">The bot component cache.</param>
         public static void Trigger(BotComponentCache cache)
         {
             if (cache == null)
@@ -32,12 +31,16 @@ namespace AIRefactored.AI.Helpers
             }
 
             BotOwner bot = cache.Bot;
-            if (bot != null && !bot.IsDead && bot.GetPlayer != null && bot.GetPlayer.IsAI)
+            if (bot != null && !bot.IsDead)
             {
-                BotPanicHandler panic = cache.PanicHandler;
-                if (panic != null)
+                Player player = bot.GetPlayer;
+                if (player != null && player.IsAI)
                 {
-                    panic.TriggerPanic();
+                    BotPanicHandler panic = cache.PanicHandler;
+                    if (panic != null)
+                    {
+                        panic.TriggerPanic();
+                    }
                 }
             }
         }
@@ -45,7 +48,6 @@ namespace AIRefactored.AI.Helpers
         /// <summary>
         /// Triggers panic across an entire squad or cache group.
         /// </summary>
-        /// <param name="group">The list of bot component caches representing the squad.</param>
         public static void TriggerGroup(List<BotComponentCache> group)
         {
             if (group == null || group.Count == 0)
@@ -62,12 +64,16 @@ namespace AIRefactored.AI.Helpers
                 }
 
                 BotOwner bot = cache.Bot;
-                if (bot != null && !bot.IsDead && bot.GetPlayer != null && bot.GetPlayer.IsAI)
+                if (bot != null && !bot.IsDead)
                 {
-                    BotPanicHandler panic = cache.PanicHandler;
-                    if (panic != null)
+                    Player player = bot.GetPlayer;
+                    if (player != null && player.IsAI)
                     {
-                        panic.TriggerPanic();
+                        BotPanicHandler panic = cache.PanicHandler;
+                        if (panic != null)
+                        {
+                            panic.TriggerPanic();
+                        }
                     }
                 }
             }
@@ -75,7 +81,6 @@ namespace AIRefactored.AI.Helpers
 
         /// <summary>
         /// Legacy alias for TryGetPanicComponent.
-        /// Kept for compatibility with older subsystems.
         /// </summary>
         public static bool TryGet(BotComponentCache cache, out BotPanicHandler panic)
         {
@@ -98,7 +103,6 @@ namespace AIRefactored.AI.Helpers
 
         /// <summary>
         /// Triggers panic in all bots within a radius of the given origin.
-        /// Used for fear propagation after explosions, flashes, or loud impacts.
         /// </summary>
         public static void TriggerNearby(Vector3 origin, float radius)
         {
@@ -117,20 +121,24 @@ namespace AIRefactored.AI.Helpers
                 }
 
                 BotOwner bot = cache.Bot;
-                if (bot != null && !bot.IsDead && bot.GetPlayer != null && bot.GetPlayer.IsAI)
+                if (bot != null && !bot.IsDead)
                 {
-                    Vector3 pos = bot.Position;
-                    float dx = pos.x - origin.x;
-                    float dy = pos.y - origin.y;
-                    float dz = pos.z - origin.z;
-                    float distSq = (dx * dx) + (dy * dy) + (dz * dz);
-
-                    if (distSq <= radiusSq)
+                    Player player = bot.GetPlayer;
+                    if (player != null && player.IsAI)
                     {
-                        BotPanicHandler panic = cache.PanicHandler;
-                        if (panic != null)
+                        Vector3 pos = bot.Position;
+                        float dx = pos.x - origin.x;
+                        float dy = pos.y - origin.y;
+                        float dz = pos.z - origin.z;
+                        float distSq = (dx * dx) + (dy * dy) + (dz * dz);
+
+                        if (distSq <= radiusSq)
                         {
-                            panic.TriggerPanic();
+                            BotPanicHandler panic = cache.PanicHandler;
+                            if (panic != null)
+                            {
+                                panic.TriggerPanic();
+                            }
                         }
                     }
                 }

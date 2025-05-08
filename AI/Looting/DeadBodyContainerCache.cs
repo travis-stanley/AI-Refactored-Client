@@ -26,30 +26,17 @@ namespace AIRefactored.AI.Looting
 
         #region Public API
 
-        /// <summary>
-        /// Clears all cached corpse containers.
-        /// </summary>
         public static void Clear()
         {
             Containers.Clear();
         }
 
-        /// <summary>
-        /// Returns true if a corpse container is registered for the given profile ID.
-        /// </summary>
-        /// <param name="profileId">The profile ID of the dead player.</param>
-        /// <returns>True if cached.</returns>
         public static bool Contains(string profileId)
         {
             string key;
             return TryGetValidKey(profileId, out key) && Containers.ContainsKey(key);
         }
 
-        /// <summary>
-        /// Gets the registered corpse container for a given profile ID.
-        /// </summary>
-        /// <param name="profileId">The profile ID of the dead player.</param>
-        /// <returns>The loot container if found; otherwise null.</returns>
         public static LootableContainer Get(string profileId)
         {
             string key;
@@ -57,11 +44,6 @@ namespace AIRefactored.AI.Looting
             return TryGetValidKey(profileId, out key) && Containers.TryGetValue(key, out result) ? result : null;
         }
 
-        /// <summary>
-        /// Registers a dead player's loot container.
-        /// </summary>
-        /// <param name="player">The dead player.</param>
-        /// <param name="container">Their associated lootable container.</param>
         public static void Register(Player player, LootableContainer container)
         {
             if (player == null || container == null)
@@ -88,6 +70,7 @@ namespace AIRefactored.AI.Looting
         private static bool TryGetValidKey(string profileId, out string key)
         {
             key = string.Empty;
+
             if (string.IsNullOrEmpty(profileId))
             {
                 return false;

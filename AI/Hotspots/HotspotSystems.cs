@@ -46,7 +46,7 @@ namespace AIRefactored.AI.Hotspots
         public void Tick()
         {
             BotsController controller = Singleton<BotsController>.Instance;
-            if (controller == null || controller.Bots == null || controller.Bots.BotOwners == null)
+            if (controller?.Bots?.BotOwners == null)
             {
                 return;
             }
@@ -62,10 +62,9 @@ namespace AIRefactored.AI.Hotspots
                     continue;
                 }
 
-                HotspotSession session;
-                if (!_sessions.TryGetValue(bot, out session))
+                if (!_sessions.TryGetValue(bot, out HotspotSession session))
                 {
-                    session = this.AssignHotspotRoute(bot);
+                    session = AssignHotspotRoute(bot);
                     if (session != null)
                     {
                         _sessions[bot] = session;
@@ -126,8 +125,8 @@ namespace AIRefactored.AI.Hotspots
 
             private readonly BotOwner _bot;
             private readonly BotComponentCache _cache;
-            private readonly bool _isDefender;
             private readonly List<HotspotRegistry.Hotspot> _route;
+            private readonly bool _isDefender;
 
             private int _index;
             private float _lastHitTime;
@@ -140,77 +139,73 @@ namespace AIRefactored.AI.Hotspots
                     throw new ArgumentException("Invalid HotspotSession initialization.");
                 }
 
-                this._bot = bot;
-                this._route = route;
-                this._isDefender = isDefender;
-                this._cache = BotCacheUtility.GetCache(bot);
-                this._lastHitTime = -999f;
-                this._index = 0;
-                this._nextSwitchTime = Time.time + this.GetSwitchInterval();
+                _bot = bot;
+                _route = route;
+                _isDefender = isDefender;
+                _cache = BotCacheUtility.GetCache(bot);
+                _index = 0;
+                _lastHitTime = -999f;
+                _nextSwitchTime = Time.time + GetSwitchInterval();
 
-                IHealthController health = bot.GetPlayer != null ? bot.GetPlayer.HealthController : null;
-                if (health != null && health is HealthControllerClass real)
+                if (bot.GetPlayer.HealthController is HealthControllerClass real)
                 {
-                    real.ApplyDamageEvent += this.OnDamaged;
+                    real.ApplyDamageEvent += OnDamaged;
                 }
             }
 
             public void Tick()
             {
-                if (this._bot.IsDead || this._route.Count == 0 || this._bot.GetPlayer == null || this._bot.GetPlayer.IsYourPlayer)
+                if (_bot.IsDead || _route.Count == 0 || _bot.GetPlayer == null || _bot.GetPlayer.IsYourPlayer)
                 {
                     return;
                 }
 
-                if (this._bot.Memory != null && this._bot.Memory.GoalEnemy != null)
+                if (_bot.Memory?.GoalEnemy != null)
                 {
-                    this._bot.Sprint(true);
+                    _bot.Sprint(true);
                     return;
                 }
 
-                if (Time.time - this._lastHitTime < DamageCooldown)
+                if (Time.time - _lastHitTime < DamageCooldown)
                 {
                     return;
                 }
 
-                Vector3 target = this._route[this._index].Position;
+                Vector3 target = _route[_index].Position;
 
-                if (this._isDefender)
+                if (_isDefender)
                 {
-                    float dist = Vector3.Distance(this._bot.Position, target);
-                    float composure = this._cache.PanicHandler != null ? this._cache.PanicHandler.GetComposureLevel() : 1f;
-                    float defendRadius = BaseDefendRadius * Mathf.Clamp(1f + (1f - composure), 1f, 2f);
+                    float dist = Vector3.Distance(_bot.Position, target);
+                    float composure = _cache.PanicHandler != null ? _cache.PanicHandler.GetComposureLevel() : 1f;
+                    float radius = BaseDefendRadius * Mathf.Clamp(1f + (1f - composure), 1f, 2f);
 
-                    if (dist > defendRadius)
+                    if (dist > radius)
                     {
-                        BotMovementHelper.SmoothMoveTo(this._bot, target);
+                        BotMovementHelper.SmoothMoveTo(_bot, target);
                     }
                 }
                 else
                 {
-                    float distToTarget = Vector3.Distance(this._bot.Position, target);
-                    if (Time.time >= this._nextSwitchTime || distToTarget < 2f)
+                    float dist = Vector3.Distance(_bot.Position, target);
+                    if (Time.time >= _nextSwitchTime || dist < 2f)
                     {
-                        this._index = (this._index + 1) % this._route.Count;
-                        this._nextSwitchTime = Time.time + this.GetSwitchInterval();
+                        _index = (_index + 1) % _route.Count;
+                        _nextSwitchTime = Time.time + GetSwitchInterval();
                     }
 
-                    BotMovementHelper.SmoothMoveTo(this._bot, this.AddJitterTo(target));
+                    BotMovementHelper.SmoothMoveTo(_bot, AddJitterTo(target));
                 }
             }
 
             private Vector3 AddJitterTo(Vector3 target)
             {
-                BotPersonalityProfile profile = this._cache.AIRefactoredBotOwner != null
-                    ? this._cache.AIRefactoredBotOwner.PersonalityProfile
-                    : null;
-
+                BotPersonalityProfile profile = _cache.AIRefactoredBotOwner?.PersonalityProfile;
                 if (profile == null)
                 {
                     return target;
                 }
 
-                Vector3 jitter = Vector3.zero;
+                Vector3 jitter;
                 float chaos = profile.ChaosFactor;
 
                 if (profile.IsFrenzied)
@@ -225,6 +220,10 @@ namespace AIRefactored.AI.Hotspots
                 {
                     jitter = new Vector3(Mathf.Sin(Time.time), 0f, Mathf.Cos(Time.time)) * chaos;
                 }
+                else
+                {
+                    jitter = Vector3.zero;
+                }
 
                 jitter.y = 0f;
                 return target + jitter;
@@ -232,7 +231,7 @@ namespace AIRefactored.AI.Hotspots
 
             private float GetSwitchInterval()
             {
-                BotPersonalityProfile profile = BotRegistry.Get(this._bot.ProfileId);
+                BotPersonalityProfile profile = BotRegistry.Get(_bot.ProfileId);
                 float baseTime;
 
                 switch (profile.Personality)
@@ -259,8 +258,7 @@ namespace AIRefactored.AI.Hotspots
                     case PersonalityType.Stoic:
                         baseTime = 180f; break;
                     default:
-                        baseTime = 100f;
-                        break;
+                        baseTime = 100f; break;
                 }
 
                 return baseTime * Mathf.Clamp01(1f + profile.ChaosFactor * 0.6f);
@@ -268,11 +266,8 @@ namespace AIRefactored.AI.Hotspots
 
             private void OnDamaged(EBodyPart part, float damage, DamageInfoStruct info)
             {
-                this._lastHitTime = Time.time;
-                if (this._cache.PanicHandler != null)
-                {
-                    this._cache.PanicHandler.TriggerPanic();
-                }
+                _lastHitTime = Time.time;
+                _cache.PanicHandler?.TriggerPanic();
             }
         }
     }

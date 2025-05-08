@@ -8,7 +8,6 @@
 
 namespace AIRefactored.AI.Combat
 {
-    using System;
     using UnityEngine;
 
     /// <summary>
@@ -33,7 +32,7 @@ namespace AIRefactored.AI.Combat
         /// </summary>
         public float Deafness
         {
-            get { return this._deafnessLevel; }
+            get { return _deafnessLevel; }
         }
 
         /// <summary>
@@ -41,7 +40,7 @@ namespace AIRefactored.AI.Combat
         /// </summary>
         public bool IsDeafened
         {
-            get { return this._deafnessLevel > 0.1f; }
+            get { return _deafnessLevel > 0.1f; }
         }
 
         /// <summary>
@@ -51,8 +50,13 @@ namespace AIRefactored.AI.Combat
         {
             get
             {
-                float remaining = this._deafDuration - this._elapsedTime;
-                return remaining > 0f ? remaining : 0f;
+                float remaining = _deafDuration - _elapsedTime;
+                if (remaining <= 0f)
+                {
+                    return 0f;
+                }
+
+                return remaining;
             }
         }
 
@@ -68,15 +72,28 @@ namespace AIRefactored.AI.Combat
         /// <param name="duration">Duration in seconds (minimum 0.1s).</param>
         public void ApplyDeafness(float intensity, float duration)
         {
-            float clampedIntensity = intensity > 1f ? 1f : (intensity < 0f ? 0f : intensity);
-            float clampedDuration = duration < 0.1f ? 0.1f : duration;
-
-            if (clampedIntensity > this._targetDeafness)
+            float clampedIntensity = intensity;
+            if (clampedIntensity < 0f)
             {
-                this._targetDeafness = clampedIntensity;
-                this._deafDuration = clampedDuration;
-                this._elapsedTime = 0f;
-                this._deafnessLevel = clampedIntensity;
+                clampedIntensity = 0f;
+            }
+            else if (clampedIntensity > 1f)
+            {
+                clampedIntensity = 1f;
+            }
+
+            float clampedDuration = duration;
+            if (clampedDuration < 0.1f)
+            {
+                clampedDuration = 0.1f;
+            }
+
+            if (clampedIntensity > _targetDeafness)
+            {
+                _targetDeafness = clampedIntensity;
+                _deafDuration = clampedDuration;
+                _elapsedTime = 0f;
+                _deafnessLevel = clampedIntensity;
             }
         }
 
@@ -85,10 +102,10 @@ namespace AIRefactored.AI.Combat
         /// </summary>
         public void Clear()
         {
-            this._targetDeafness = 0f;
-            this._deafnessLevel = 0f;
-            this._deafDuration = 0f;
-            this._elapsedTime = 0f;
+            _targetDeafness = 0f;
+            _deafnessLevel = 0f;
+            _deafDuration = 0f;
+            _elapsedTime = 0f;
         }
 
         /// <summary>
@@ -98,18 +115,29 @@ namespace AIRefactored.AI.Combat
         /// <param name="deltaTime">Frame time in seconds.</param>
         public void Tick(float deltaTime)
         {
-            if (this._targetDeafness <= 0.01f)
-                return;
-
-            this._elapsedTime += deltaTime;
-            if (this._elapsedTime >= this._deafDuration)
+            if (_targetDeafness <= 0.01f)
             {
-                this.Clear();
                 return;
             }
 
-            float ratio = 1f - (this._elapsedTime / this._deafDuration);
-            this._deafnessLevel = this._targetDeafness * (ratio > 1f ? 1f : (ratio < 0f ? 0f : ratio));
+            _elapsedTime += deltaTime;
+            if (_elapsedTime >= _deafDuration)
+            {
+                Clear();
+                return;
+            }
+
+            float ratio = 1f - (_elapsedTime / _deafDuration);
+            if (ratio < 0f)
+            {
+                ratio = 0f;
+            }
+            else if (ratio > 1f)
+            {
+                ratio = 1f;
+            }
+
+            _deafnessLevel = _targetDeafness * ratio;
         }
 
         #endregion

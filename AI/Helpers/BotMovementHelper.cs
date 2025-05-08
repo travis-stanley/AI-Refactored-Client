@@ -34,7 +34,7 @@ namespace AIRefactored.AI.Helpers
 
         public static void Reset(BotOwner bot)
         {
-            // Reserved for future use
+            // Reserved for future movement interrupt/clear logic
         }
 
         public static void RetreatToCover(BotOwner bot, Vector3 threatDirection, float distance = RetreatDistance, bool sprint = true)
@@ -68,7 +68,7 @@ namespace AIRefactored.AI.Helpers
             if (BotRegistry.TryGet(bot.ProfileId, out profile))
             {
                 cohesion = Mathf.Clamp(profile.Cohesion, 0.7f, 1.3f);
-                if (profile.IsFearful || profile.IsFrenzied)
+                if (profile.IsFrenzied || profile.IsFearful)
                 {
                     shouldSprint = true;
                 }
@@ -82,6 +82,7 @@ namespace AIRefactored.AI.Helpers
                 bot.Sprint(true);
             }
         }
+
         public static void SmoothLookTo(BotOwner bot, Vector3 lookTarget, float speed = DefaultLookSpeed)
         {
             if (!IsEligible(bot) || FikaHeadlessDetector.IsHeadless)
@@ -89,7 +90,7 @@ namespace AIRefactored.AI.Helpers
                 return;
             }
 
-            Transform transform = bot.Transform?.Original;
+            Transform transform = bot.Transform != null ? bot.Transform.Original : null;
             if (transform == null)
             {
                 return;
@@ -104,7 +105,8 @@ namespace AIRefactored.AI.Helpers
             }
 
             Quaternion targetRotation = Quaternion.LookRotation(direction.normalized, Vector3.up);
-            transform.rotation = Quaternion.Slerp(transform.rotation, targetRotation, Time.deltaTime * Mathf.Clamp(speed, 1f, 8f));
+            float t = Time.deltaTime * Mathf.Clamp(speed, 1f, 8f);
+            transform.rotation = Quaternion.Slerp(transform.rotation, targetRotation, t);
         }
 
         public static void SmoothMoveTo(BotOwner bot, Vector3 target, bool slow = true, float cohesionScale = 1f)
@@ -116,6 +118,7 @@ namespace AIRefactored.AI.Helpers
 
             Vector3 position = bot.Position;
             float radius = DefaultRadius * Mathf.Clamp(cohesionScale, 0.7f, 1.3f);
+
             float dx = position.x - target.x;
             float dz = position.z - target.z;
             float distSqr = (dx * dx) + (dz * dz);

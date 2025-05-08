@@ -9,6 +9,7 @@
 namespace AIRefactored.AI.Helpers
 {
     using System.Collections.Generic;
+    using AIRefactored.AI.Combat;
     using AIRefactored.AI.Core;
     using AIRefactored.AI.Movement;
     using AIRefactored.AI.Navigation;
@@ -28,7 +29,7 @@ namespace AIRefactored.AI.Helpers
 
         #endregion
 
-        #region Static Cache
+        #region Static Memory
 
         private static readonly Dictionary<string, float> CoverMemory = new Dictionary<string, float>(128);
 
@@ -68,7 +69,7 @@ namespace AIRefactored.AI.Helpers
 
         #endregion
 
-        #region Cover Usage Tracking
+        #region Cover Memory Usage
 
         public static void MarkUsed(CustomNavigationPoint point)
         {
@@ -113,22 +114,18 @@ namespace AIRefactored.AI.Helpers
 
         #endregion
 
-        #region Pose Integration
+        #region Pose Application
 
         public static void TrySetStanceFromNearbyCover(BotComponentCache cache, Vector3 position)
         {
-            if (cache == null)
+            if (cache == null || cache.PoseController == null)
             {
                 return;
             }
 
             BotPoseController controller = cache.PoseController;
-            if (controller == null)
-            {
-                return;
-            }
-
             List<NavPointData> points = NavPointRegistry.QueryNearby(position, 4f, null);
+
             for (int i = 0; i < points.Count; i++)
             {
                 NavPointData point = points[i];
@@ -179,9 +176,8 @@ namespace AIRefactored.AI.Helpers
 
             float threatFactor = Mathf.Clamp01(distThreat / 20f);
             float angleFactor = Mathf.Clamp01(angle / 180f);
-            float score = bonus + threatFactor + angleFactor;
 
-            return score / (1f + (distBot * 0.15f));
+            return (bonus + threatFactor + angleFactor) / (1f + distBot * 0.15f);
         }
 
         public static float Score(NavPointData point, Vector3 botPos, Vector3 threatPos)
@@ -197,14 +193,13 @@ namespace AIRefactored.AI.Helpers
 
             float threatFactor = Mathf.Clamp01(distThreat / 20f);
             float angleFactor = Mathf.Clamp01(angle / 180f);
-            float score = bonus + threatFactor + angleFactor;
 
-            return score / (1f + (distBot * 0.15f));
+            return (bonus + threatFactor + angleFactor) / (1f + distBot * 0.15f);
         }
 
         #endregion
 
-        #region EFT-Aware Filtering
+        #region Cover Validation
 
         public static bool IsValidCoverPoint(CustomNavigationPoint point, BotOwner bot, bool requireFree, bool preferIndoor)
         {

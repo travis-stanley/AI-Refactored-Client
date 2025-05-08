@@ -25,13 +25,7 @@ namespace AIRefactored.AI.Perception
 
         #endregion
 
-        #region Static Pool
-
-        private static readonly Queue<string> ExpiredKeys = new Queue<string>(8);
-
-        #endregion
-
-        #region State
+        #region Fields
 
         private readonly Transform _botOrigin;
         private readonly Dictionary<string, BoneInfo> _visibleBones = new Dictionary<string, BoneInfo>(8);
@@ -40,10 +34,6 @@ namespace AIRefactored.AI.Perception
 
         #region Constructor
 
-        /// <summary>
-        /// Creates a new visibility tracker bound to the bot origin.
-        /// </summary>
-        /// <param name="botOrigin">Origin transform of the observing bot.</param>
         public TrackedEnemyVisibility(Transform botOrigin)
         {
             _botOrigin = botOrigin;
@@ -95,17 +85,16 @@ namespace AIRefactored.AI.Perception
             float now = Time.time;
             List<string> keys = TempListPool.Rent<string>();
 
-            foreach (var kvp in _visibleBones)
+            foreach (KeyValuePair<string, BoneInfo> kv in _visibleBones)
             {
-                keys.Add(kvp.Key);
+                keys.Add(kv.Key);
             }
 
             for (int i = 0; i < keys.Count; i++)
             {
                 string key = keys[i];
                 BoneInfo info = _visibleBones[key];
-                float ts = Mathf.Max(0f, info.Timestamp - decayAmount);
-                _visibleBones[key] = new BoneInfo(info.Position, ts);
+                _visibleBones[key] = new BoneInfo(info.Position, Mathf.Max(0f, info.Timestamp - decayAmount));
             }
 
             TempListPool.Return(keys);
@@ -135,30 +124,31 @@ namespace AIRefactored.AI.Perception
             float extra = Mathf.Clamp(motionBonus, 0f, 0.4f);
             float penalty = Mathf.Lerp(0f, 0.2f, 1f - ambientOcclusionFactor);
             float timestamp = now + extra - penalty;
-
             _visibleBones[boneName] = new BoneInfo(worldPosition, timestamp);
         }
 
         #endregion
 
-        #region Internal
+        #region Internal Logic
 
         private void CleanExpired(float now)
         {
-            ExpiredKeys.Clear();
+            List<string> expired = TempListPool.Rent<string>();
 
-            foreach (var kvp in _visibleBones)
+            foreach (KeyValuePair<string, BoneInfo> kv in _visibleBones)
             {
-                if (now - kvp.Value.Timestamp > BoneVisibilityDuration)
+                if (now - kv.Value.Timestamp > BoneVisibilityDuration)
                 {
-                    ExpiredKeys.Enqueue(kvp.Key);
+                    expired.Add(kv.Key);
                 }
             }
 
-            while (ExpiredKeys.Count > 0)
+            for (int i = 0; i < expired.Count; i++)
             {
-                _visibleBones.Remove(ExpiredKeys.Dequeue());
+                _visibleBones.Remove(expired[i]);
             }
+
+            TempListPool.Return(expired);
         }
 
         #endregion

@@ -110,7 +110,7 @@ namespace AIRefactored.AI.Missions
 
         public void Tick(float time)
         {
-            if (_bot.IsDead || _bot.GetPlayer == null || _bot.GetPlayer.HealthController == null || !_bot.GetPlayer.HealthController.IsAlive)
+            if (_bot.IsDead || _bot.GetPlayer == null || !_bot.GetPlayer.HealthController.IsAlive)
             {
                 return;
             }
@@ -130,7 +130,6 @@ namespace AIRefactored.AI.Missions
             if (_cache.Combat != null && _cache.Combat.IsInCombatState())
             {
                 _lastCombatTime = time;
-
                 if (_missionType == MissionType.Quest)
                 {
                     _inCombatPause = true;
@@ -170,8 +169,7 @@ namespace AIRefactored.AI.Missions
                 _lastUpdate = time;
             }
 
-            if (!_inCombatPause &&
-                Vector3.Distance(_bot.Position, _objectives.CurrentObjective) < LootSyncDistance)
+            if (!_inCombatPause && Vector3.Distance(_bot.Position, _objectives.CurrentObjective) < LootSyncDistance)
             {
                 OnObjectiveReached();
             }
@@ -218,7 +216,7 @@ namespace AIRefactored.AI.Missions
             _objectives.SetInitialObjective(_missionType);
             _voice.OnMissionSwitch();
 
-            if (_bot.Profile != null && _bot.Profile.Info != null && _bot.Profile.Info.GroupId != null)
+            if (_bot.Profile?.Info?.GroupId != null)
             {
                 GroupMissionCoordinator.ForceMissionForGroup(_bot.Profile.Info.GroupId, MissionType.Fight);
             }

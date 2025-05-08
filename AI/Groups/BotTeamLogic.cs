@@ -50,7 +50,7 @@ namespace AIRefactored.AI.Groups
                 throw new ArgumentException("Invalid bot or non-AI player.");
             }
 
-            this._bot = bot;
+            _bot = bot;
         }
 
         #endregion
@@ -71,10 +71,11 @@ namespace AIRefactored.AI.Groups
             }
 
             IPlayer safe = EFTPlayerUtil.AsSafeIPlayer(resolved);
-            for (int i = 0; i < bot.BotsGroup.MembersCount; i++)
+            int count = bot.BotsGroup.MembersCount;
+            for (int i = 0; i < count; i++)
             {
                 BotOwner mate = bot.BotsGroup.Member(i);
-                if (mate != null && !mate.IsDead && mate != bot && mate.Memory != null)
+                if (mate != null && mate != bot && !mate.IsDead && mate.Memory != null)
                 {
                     ForceRegisterEnemy(mate, safe);
                 }
@@ -94,24 +95,29 @@ namespace AIRefactored.AI.Groups
                 return;
             }
 
-            for (int i = 0; i < group.MembersCount; i++)
+            int count = group.MembersCount;
+            for (int i = 0; i < count; i++)
             {
                 BotOwner mate = group.Member(i);
-                if (mate != null && !mate.IsDead && mate != bot && mate.GetPlayer != null && mate.GetPlayer.IsAI)
+                if (mate != null && mate != bot && !mate.IsDead)
                 {
-                    mate.BotTalk?.TrySay(EPhraseTrigger.Cooperation);
+                    Player player = mate.GetPlayer;
+                    if (player != null && player.IsAI)
+                    {
+                        mate.BotTalk?.TrySay(EPhraseTrigger.Cooperation);
+                    }
                 }
             }
         }
 
         public void BroadcastFallback(Vector3 retreatPoint)
         {
-            foreach (var pair in this._combatMap)
+            foreach (KeyValuePair<BotOwner, CombatStateMachine> pair in _combatMap)
             {
                 BotOwner mate = pair.Key;
                 CombatStateMachine fsm = pair.Value;
 
-                if (mate != null && mate != this._bot && !mate.IsDead)
+                if (mate != null && mate != _bot && !mate.IsDead)
                 {
                     TriggerDelayedFallback(fsm, retreatPoint);
                 }
@@ -120,7 +126,7 @@ namespace AIRefactored.AI.Groups
 
         public void CoordinateMovement()
         {
-            if (this._bot.IsDead || this._teammates.Count == 0)
+            if (_bot.IsDead || _teammates.Count == 0)
             {
                 return;
             }
@@ -128,9 +134,9 @@ namespace AIRefactored.AI.Groups
             Vector3 center = Vector3.zero;
             int count = 0;
 
-            for (int i = 0; i < this._teammates.Count; i++)
+            for (int i = 0; i < _teammates.Count; i++)
             {
-                BotOwner mate = this._teammates[i];
+                BotOwner mate = _teammates[i];
                 if (mate != null && !mate.IsDead)
                 {
                     center += mate.Position;
@@ -148,27 +154,27 @@ namespace AIRefactored.AI.Groups
             jitter.y = 0f;
 
             Vector3 target = center + jitter;
-            float distSqr = (this._bot.Position - target).sqrMagnitude;
+            float distSqr = (_bot.Position - target).sqrMagnitude;
 
             if (distSqr > RegroupThreshold * RegroupThreshold)
             {
-                BotMovementHelper.SmoothMoveTo(this._bot, target, false);
+                BotMovementHelper.SmoothMoveTo(_bot, target, false);
             }
         }
 
         public void InjectCombatState(BotOwner mate, CombatStateMachine fsm)
         {
-            if (mate != null && fsm != null && mate != this._bot && !this._combatMap.ContainsKey(mate))
+            if (mate != null && fsm != null && mate != _bot && !_combatMap.ContainsKey(mate))
             {
-                this._combatMap.Add(mate, fsm);
+                _combatMap.Add(mate, fsm);
             }
         }
 
         public void SetTeammates(List<BotOwner> allBots)
         {
-            this._teammates.Clear();
+            _teammates.Clear();
 
-            Player player = this._bot.GetPlayer;
+            Player player = _bot.GetPlayer;
             if (player == null || player.Profile == null || player.Profile.Info == null)
             {
                 return;
@@ -183,7 +189,7 @@ namespace AIRefactored.AI.Groups
             for (int i = 0; i < allBots.Count; i++)
             {
                 BotOwner other = allBots[i];
-                if (other != null && other != this._bot && !other.IsDead)
+                if (other != null && other != _bot && !other.IsDead)
                 {
                     Player otherPlayer = other.GetPlayer;
                     if (otherPlayer != null &&
@@ -191,7 +197,7 @@ namespace AIRefactored.AI.Groups
                         otherPlayer.Profile.Info != null &&
                         otherPlayer.Profile.Info.GroupId == groupId)
                     {
-                        this._teammates.Add(other);
+                        _teammates.Add(other);
                     }
                 }
             }
@@ -199,12 +205,18 @@ namespace AIRefactored.AI.Groups
 
         public void ShareTarget(IPlayer enemy)
         {
-            if (enemy == null || string.IsNullOrEmpty(enemy.ProfileId))
+            if (enemy == null)
             {
                 return;
             }
 
-            Player resolved = EFTPlayerUtil.ResolvePlayerById(enemy.ProfileId);
+            string profileId = enemy.ProfileId;
+            if (string.IsNullOrEmpty(profileId))
+            {
+                return;
+            }
+
+            Player resolved = EFTPlayerUtil.ResolvePlayerById(profileId);
             if (!EFTPlayerUtil.IsValid(resolved))
             {
                 return;
@@ -212,9 +224,9 @@ namespace AIRefactored.AI.Groups
 
             IPlayer safe = EFTPlayerUtil.AsSafeIPlayer(resolved);
 
-            for (int i = 0; i < this._teammates.Count; i++)
+            for (int i = 0; i < _teammates.Count; i++)
             {
-                BotOwner mate = this._teammates[i];
+                BotOwner mate = _teammates[i];
                 if (mate != null && !mate.IsDead)
                 {
                     ForceRegisterEnemy(mate, safe);
@@ -251,7 +263,7 @@ namespace AIRefactored.AI.Groups
                 }
                 catch (Exception ex)
                 {
-                    Plugin.LoggerInstance?.LogError("[BotTeamLogic] Error in fallback delay: " + ex.Message);
+                    Plugin.LoggerInstance.LogError("[BotTeamLogic] Error in fallback delay: " + ex.Message);
                 }
             });
         }

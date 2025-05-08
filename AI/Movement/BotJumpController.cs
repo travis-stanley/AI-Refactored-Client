@@ -11,6 +11,7 @@ namespace AIRefactored.AI.Movement
     using System;
     using AIRefactored.AI.Core;
     using AIRefactored.Core;
+    using AIRefactored.Pools;
     using EFT;
     using UnityEngine;
 
@@ -48,20 +49,20 @@ namespace AIRefactored.AI.Movement
 
         public BotJumpController(BotOwner bot, BotComponentCache cache)
         {
-            if (bot == null || cache == null)
+            if (bot == null || cache == null || bot.GetPlayer == null)
             {
-                throw new ArgumentException("BotJumpController: bot or cache is null.");
+                throw new ArgumentException("[BotJumpController] Invalid bot or cache.");
             }
 
-            Player player = bot.GetPlayer;
-            if (player == null || player.MovementContext == null)
+            MovementContext context = bot.GetPlayer.MovementContext;
+            if (context == null)
             {
                 throw new InvalidOperationException("[BotJumpController] MovementContext is missing.");
             }
 
             _bot = bot;
             _cache = cache;
-            _context = player.MovementContext;
+            _context = context;
         }
 
         #endregion
@@ -75,9 +76,17 @@ namespace AIRefactored.AI.Movement
                 return;
             }
 
-            if (TryFindJumpTarget(out Vector3 target))
+            Vector3[] buffer = TempVector3Pool.Rent(1);
+            try
             {
-                ExecuteJump(target, deltaTime);
+                if (TryFindJumpTarget(out buffer[0]))
+                {
+                    ExecuteJump(buffer[0], deltaTime);
+                }
+            }
+            finally
+            {
+                TempVector3Pool.Return(buffer);
             }
         }
 
@@ -108,13 +117,13 @@ namespace AIRefactored.AI.Movement
             return true;
         }
 
-        private void ExecuteJump(Vector3 landingPoint, float deltaTime)
+        private void ExecuteJump(Vector3 target, float deltaTime)
         {
             _context.OnJump();
             _lastJumpTime = Time.time;
             _hasRecentlyJumped = true;
 
-            Vector3 velocity = (landingPoint - _context.TransformPosition).normalized * JumpVelocityMultiplier;
+            Vector3 velocity = (target - _context.TransformPosition).normalized * JumpVelocityMultiplier;
             _context.ApplyMotion(velocity, deltaTime);
         }
 
@@ -125,34 +134,53 @@ namespace AIRefactored.AI.Movement
             Vector3 origin = _context.PlayerColliderCenter + Vector3.up * 0.25f;
             Vector3 forward = _context.TransformForwardVector;
 
-            if (!Physics.SphereCast(origin, ObstacleCheckRadius, forward, out RaycastHit obstacleHit, JumpCheckDistance, AIRefactoredLayerMasks.ObstacleRayMask))
+            RaycastHit[] hits = TempRaycastHitPool.Rent(1);
+            try
             {
-                return false;
+                if (!Physics.SphereCast(origin, ObstacleCheckRadius, forward, out hits[0], JumpCheckDistance, AIRefactoredLayerMasks.ObstacleRayMask))
+                {
+                    return false;
+                }
+
+                Bounds[] boundsArray = TempBoundsPool.Rent(1);
+                boundsArray[0] = hits[0].collider.bounds;
+                float height = boundsArray[0].max.y - _context.TransformPosition.y;
+
+                if (height < MinJumpHeight || height > MaxJumpHeight)
+                {
+                    TempBoundsPool.Return(boundsArray);
+                    return false;
+                }
+
+                Vector3 vaultPoint = boundsArray[0].max + (forward * VaultForwardOffset);
+                TempBoundsPool.Return(boundsArray);
+
+                RaycastHit[] landHits = TempRaycastHitPool.Rent(1);
+                try
+                {
+                    if (!Physics.Raycast(vaultPoint, Vector3.down, out landHits[0], 2.5f, AIRefactoredLayerMasks.JumpRayMask))
+                    {
+                        return false;
+                    }
+
+                    float fallHeight = _context.TransformPosition.y - landHits[0].point.y;
+                    if (fallHeight > SafeFallHeight)
+                    {
+                        return false;
+                    }
+
+                    target = landHits[0].point;
+                    return true;
+                }
+                finally
+                {
+                    TempRaycastHitPool.Return(landHits);
+                }
             }
-
-            Bounds bounds = obstacleHit.collider.bounds;
-            float height = bounds.max.y - _context.TransformPosition.y;
-
-            if (height < MinJumpHeight || height > MaxJumpHeight)
+            finally
             {
-                return false;
+                TempRaycastHitPool.Return(hits);
             }
-
-            Vector3 vaultProbe = bounds.max + (forward * VaultForwardOffset);
-
-            if (!Physics.Raycast(vaultProbe, Vector3.down, out RaycastHit landing, 2.5f, AIRefactoredLayerMasks.JumpRayMask))
-            {
-                return false;
-            }
-
-            float fallHeight = _context.TransformPosition.y - landing.point.y;
-            if (fallHeight > SafeFallHeight)
-            {
-                return false;
-            }
-
-            target = landing.point;
-            return true;
         }
 
         #endregion

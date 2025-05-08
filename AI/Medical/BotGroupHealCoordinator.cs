@@ -35,14 +35,12 @@ namespace AIRefactored.AI.Medical
         private readonly BotComponentCache _cache;
         private float _nextCheckTime;
 
+        private static readonly EBodyPart[] BodyParts = (EBodyPart[])Enum.GetValues(typeof(EBodyPart));
+
         #endregion
 
         #region Constructor
 
-        /// <summary>
-        /// Initializes a new instance of the <see cref="BotGroupHealCoordinator"/> class.
-        /// </summary>
-        /// <param name="cache">BotComponentCache providing references for squad healing logic.</param>
         public BotGroupHealCoordinator(BotComponentCache cache)
         {
             if (cache == null)
@@ -63,10 +61,6 @@ namespace AIRefactored.AI.Medical
 
         #region Public Methods
 
-        /// <summary>
-        /// Periodically scans squadmates and triggers healing logic for nearby allies.
-        /// </summary>
-        /// <param name="time">The current game time.</param>
         public void Tick(float time)
         {
             if (this._bot.IsDead || this._bot.BotsGroup == null || time < this._nextCheckTime)
@@ -75,8 +69,8 @@ namespace AIRefactored.AI.Medical
             }
 
             this._nextCheckTime = time + HealCheckInterval;
-
             int count = this._bot.BotsGroup.MembersCount;
+
             for (int i = 0; i < count; i++)
             {
                 BotOwner mate = this._bot.BotsGroup.Member(i);
@@ -99,8 +93,8 @@ namespace AIRefactored.AI.Medical
 
                 if (this._cache.SquadHealer != null && !this._cache.SquadHealer.IsInProcess)
                 {
-                    IPlayer iTarget = EFTPlayerUtil.AsSafeIPlayer(matePlayer);
-                    this._cache.SquadHealer.HealAsk(iTarget);
+                    IPlayer safeTarget = EFTPlayerUtil.AsSafeIPlayer(matePlayer);
+                    this._cache.SquadHealer.HealAsk(safeTarget);
                     this.TrySaySupport(EPhraseTrigger.Cooperation);
                     return;
                 }
@@ -125,19 +119,20 @@ namespace AIRefactored.AI.Medical
 
             Vector3 selfPos = EFTPlayerUtil.GetPosition(selfPlayer);
             Vector3 matePos = EFTPlayerUtil.GetPosition(matePlayer);
-            float distSq = (matePos - selfPos).sqrMagnitude;
 
-            return distSq <= HealTriggerRange * HealTriggerRange;
+            float dx = matePos.x - selfPos.x;
+            float dz = matePos.z - selfPos.z;
+            float distSqr = (dx * dx) + (dz * dz);
+
+            return distSqr <= HealTriggerRange * HealTriggerRange;
         }
 
         private static bool NeedsHealing(IHealthController health)
         {
-            Array parts = Enum.GetValues(typeof(EBodyPart));
-            for (int i = 0; i < parts.Length; i++)
+            for (int i = 0; i < BodyParts.Length; i++)
             {
-                EBodyPart part = (EBodyPart)parts.GetValue(i);
+                EBodyPart part = BodyParts[i];
                 ValueStruct hp = health.GetBodyPartHealth(part);
-
                 if (hp.Maximum > 0f && hp.Current < hp.Maximum * HealthThreshold)
                 {
                     return true;

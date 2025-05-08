@@ -38,34 +38,27 @@ namespace AIRefactored.AI.Groups
 
         #region Properties
 
-        /// <summary>
-        /// Gets or sets a value indicating whether this bot is muted from triggering voice lines.
-        /// Used by healing and suppression logic.
-        /// </summary>
         public bool IsMuted { get; set; }
 
         #endregion
 
         #region Constructor
 
-        /// <summary>
-        /// Initializes a new instance of the <see cref="BotGroupComms"/> class.
-        /// </summary>
-        /// <param name="cache">The bot's component cache.</param>
         public BotGroupComms(BotComponentCache cache)
         {
             if (cache == null)
             {
-                throw new ArgumentNullException(nameof(cache));
+                throw new ArgumentNullException("cache");
             }
 
-            if (cache.Bot == null)
+            BotOwner bot = cache.Bot;
+            if (bot == null)
             {
-                throw new ArgumentNullException(nameof(cache.Bot));
+                throw new ArgumentException("Bot reference was null in BotComponentCache.", "cache");
             }
 
             this._cache = cache;
-            this._bot = cache.Bot;
+            this._bot = bot;
         }
 
         #endregion
@@ -92,7 +85,8 @@ namespace AIRefactored.AI.Groups
 
         public void SayFragOut()
         {
-            this.TryTriggerVoice(EPhraseTrigger.OnEnemyGrenade, this.HasNearbyAlly() ? 0.8f : 0f);
+            float chance = this.HasNearbyAlly() ? 0.8f : 0.0f;
+            this.TryTriggerVoice(EPhraseTrigger.OnEnemyGrenade, chance);
         }
 
         public void SayHit()
@@ -111,8 +105,18 @@ namespace AIRefactored.AI.Groups
 
         private bool IsEligible()
         {
+            if (this._bot.IsDead)
+            {
+                return false;
+            }
+
             Player player = this._bot.GetPlayer;
-            return player != null && player.IsAI && !this._bot.IsDead && this._bot.BotTalk != null;
+            if (player == null || !player.IsAI)
+            {
+                return false;
+            }
+
+            return this._bot.BotTalk != null;
         }
 
         private void TryTriggerVoice(EPhraseTrigger phrase, float chance)
@@ -128,18 +132,30 @@ namespace AIRefactored.AI.Groups
                 return;
             }
 
-            if (chance < 1.0f && UnityEngine.Random.value > chance)
+            if (chance < 1.0f)
             {
-                return;
+                float roll = UnityEngine.Random.value;
+                if (roll > chance)
+                {
+                    return;
+                }
             }
 
-            this._nextVoiceTime = now + (VoiceCooldown * UnityEngine.Random.Range(0.8f, 1.2f));
+            float randomizedCooldown = VoiceCooldown * UnityEngine.Random.Range(0.8f, 1.2f);
+            this._nextVoiceTime = now + randomizedCooldown;
+
             this._bot.BotTalk.TrySay(phrase);
         }
 
         private bool HasNearbyAlly()
         {
-            string groupId = this._bot.Profile.Info.GroupId;
+            Profile myProfile = this._bot.Profile;
+            if (myProfile == null || myProfile.Info == null)
+            {
+                return false;
+            }
+
+            string groupId = myProfile.Info.GroupId;
             if (string.IsNullOrEmpty(groupId))
             {
                 return false;
@@ -160,10 +176,25 @@ namespace AIRefactored.AI.Groups
                     continue;
                 }
 
-                string otherGroup = otherBot.Profile.Info.GroupId;
-                if (!string.IsNullOrEmpty(otherGroup) &&
-                    otherGroup == groupId &&
-                    (otherBot.Position - myPos).sqrMagnitude <= AllyRadiusSqr)
+                Profile otherProfile = otherBot.Profile;
+                if (otherProfile == null || otherProfile.Info == null)
+                {
+                    continue;
+                }
+
+                string otherGroup = otherProfile.Info.GroupId;
+                if (string.IsNullOrEmpty(otherGroup))
+                {
+                    continue;
+                }
+
+                if (!groupId.Equals(otherGroup, StringComparison.OrdinalIgnoreCase))
+                {
+                    continue;
+                }
+
+                float distSqr = (otherBot.Position - myPos).sqrMagnitude;
+                if (distSqr <= AllyRadiusSqr)
                 {
                     return true;
                 }
@@ -171,6 +202,7 @@ namespace AIRefactored.AI.Groups
 
             return false;
         }
+
 
         #endregion
     }

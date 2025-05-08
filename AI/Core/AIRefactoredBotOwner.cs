@@ -40,7 +40,6 @@ namespace AIRefactored.AI.Core
 
         #region Properties
 
-        /// <summary>Assigned bot instance. Throws if not initialized.</summary>
         public BotOwner Bot
         {
             get
@@ -54,7 +53,6 @@ namespace AIRefactored.AI.Core
             }
         }
 
-        /// <summary>Component cache. Throws if not initialized.</summary>
         public BotComponentCache Cache
         {
             get
@@ -68,7 +66,6 @@ namespace AIRefactored.AI.Core
             }
         }
 
-        /// <summary>Mission controller if assigned. Throws if not set.</summary>
         public BotMissionController MissionController
         {
             get
@@ -82,13 +79,10 @@ namespace AIRefactored.AI.Core
             }
         }
 
-        /// <summary>Active personality configuration.</summary>
         public BotPersonalityProfile PersonalityProfile { get; private set; }
 
-        /// <summary>Display/debug personality name.</summary>
         public string PersonalityName { get; private set; }
 
-        /// <summary>Assigned zone name.</summary>
         public string AssignedZone { get; private set; }
 
         #endregion
@@ -97,24 +91,20 @@ namespace AIRefactored.AI.Core
 
         public AIRefactoredBotOwner()
         {
-            this.PersonalityProfile = new BotPersonalityProfile();
-            this.PersonalityName = "Unknown";
-            this.AssignedZone = "unknown";
+            PersonalityProfile = new BotPersonalityProfile();
+            PersonalityName = "Unknown";
+            AssignedZone = "unknown";
         }
 
         #endregion
 
         #region Initialization
 
-        /// <summary>
-        /// Initializes this AIRefactoredBotOwner with the specified BotOwner.
-        /// </summary>
-        /// <param name="bot">Live bot owner instance.</param>
         public void Initialize(BotOwner bot)
         {
             if (bot == null)
             {
-                throw new ArgumentNullException(nameof(bot));
+                throw new ArgumentNullException("bot");
             }
 
             if (_isInitialized)
@@ -135,14 +125,19 @@ namespace AIRefactored.AI.Core
                     if (!_hasGlobalAssigned)
                     {
                         _hasGlobalAssigned = true;
-                        this.InitProfile(this.GetRandomPersonality());
+                        InitProfile(GetRandomPersonality());
                     }
                 }
 
                 if (!FikaHeadlessDetector.IsHeadless)
                 {
-                    string name = bot.Profile != null && bot.Profile.Info != null ? bot.Profile.Info.Nickname : "Unnamed";
-                    Logger.LogDebug("[AIRefactoredBotOwner] Initialized for bot: " + name);
+                    string nickname = "Unnamed";
+                    if (bot.Profile != null && bot.Profile.Info != null)
+                    {
+                        nickname = bot.Profile.Info.Nickname;
+                    }
+
+                    Logger.LogDebug("[AIRefactoredBotOwner] Initialized for bot: " + nickname);
                 }
             }
             catch (Exception ex)
@@ -156,60 +151,62 @@ namespace AIRefactored.AI.Core
 
         #region Personality
 
-        /// <summary>
-        /// Initializes the personality profile using a named preset.
-        /// </summary>
-        /// <param name="type">Enum value representing preset personality.</param>
         public void InitProfile(PersonalityType type)
         {
             BotPersonalityProfile preset;
-            if (!BotPersonalityPresets.Presets.TryGetValue(type, out preset) || preset == null)
+            if (!BotPersonalityPresets.Presets.TryGetValue(type, out preset))
             {
                 preset = BotPersonalityPresets.Presets[PersonalityType.Adaptive];
-                this.PersonalityName = "Adaptive";
-                Logger.LogWarning("[AIRefactoredBotOwner] Invalid or null personality preset for '" + type + "' — using Adaptive.");
+                PersonalityName = "Adaptive";
+                Logger.LogWarning("[AIRefactoredBotOwner] Missing personality preset for '" + type + "' — using Adaptive.");
+            }
+            else if (preset == null)
+            {
+                preset = BotPersonalityPresets.Presets[PersonalityType.Adaptive];
+                PersonalityName = "Adaptive";
+                Logger.LogWarning("[AIRefactoredBotOwner] Null preset for '" + type + "' — using Adaptive.");
             }
             else
             {
-                this.PersonalityName = type.ToString();
+                PersonalityName = type.ToString();
             }
 
-            this.PersonalityProfile = preset;
+            PersonalityProfile = preset;
 
             if (!FikaHeadlessDetector.IsHeadless)
             {
-                Logger.LogInfo("[AIRefactoredBotOwner] Personality assigned: " + this.PersonalityName);
+                Logger.LogInfo("[AIRefactoredBotOwner] Personality assigned: " + PersonalityName);
             }
         }
 
-        /// <summary>
-        /// Assigns a custom personality profile.
-        /// </summary>
-        /// <param name="profile">The custom profile.</param>
-        /// <param name="name">Optional name for display/debug purposes.</param>
         public void InitProfile(BotPersonalityProfile profile, string name)
         {
             if (profile == null)
             {
-                throw new ArgumentNullException(nameof(profile));
+                throw new ArgumentNullException("profile");
             }
 
-            this.PersonalityProfile = profile;
-            this.PersonalityName = string.IsNullOrEmpty(name) ? "Custom" : name;
+            PersonalityProfile = profile;
+
+            if (string.IsNullOrEmpty(name))
+            {
+                PersonalityName = "Custom";
+            }
+            else
+            {
+                PersonalityName = name;
+            }
 
             if (!FikaHeadlessDetector.IsHeadless)
             {
-                Logger.LogInfo("[AIRefactoredBotOwner] Custom profile assigned: " + this.PersonalityName);
+                Logger.LogInfo("[AIRefactoredBotOwner] Custom profile assigned: " + PersonalityName);
             }
         }
 
-        /// <summary>
-        /// Resets to a blank personality profile.
-        /// </summary>
         public void ClearPersonality()
         {
-            this.PersonalityProfile = new BotPersonalityProfile();
-            this.PersonalityName = "Cleared";
+            PersonalityProfile = new BotPersonalityProfile();
+            PersonalityName = "Cleared";
 
             if (!FikaHeadlessDetector.IsHeadless)
             {
@@ -217,31 +214,24 @@ namespace AIRefactored.AI.Core
             }
         }
 
-        /// <summary>
-        /// Returns true if a personality profile is assigned.
-        /// </summary>
         public bool HasPersonality()
         {
-            return this.PersonalityProfile != null;
+            return PersonalityProfile != null;
         }
 
         #endregion
 
         #region Zone + Mission
 
-        /// <summary>
-        /// Assigns the zone name associated with this bot.
-        /// </summary>
-        /// <param name="zoneName">Valid zone name string.</param>
         public void SetZone(string zoneName)
         {
-            if (string.IsNullOrWhiteSpace(zoneName))
+            if (string.IsNullOrEmpty(zoneName))
             {
                 Logger.LogWarning("[AIRefactoredBotOwner] Ignored empty zone assignment.");
                 return;
             }
 
-            this.AssignedZone = zoneName;
+            AssignedZone = zoneName;
 
             if (!FikaHeadlessDetector.IsHeadless)
             {
@@ -249,18 +239,14 @@ namespace AIRefactored.AI.Core
             }
         }
 
-        /// <summary>
-        /// Attaches a mission controller to this bot owner.
-        /// </summary>
-        /// <param name="controller">Valid mission controller instance.</param>
         public void SetMissionController(BotMissionController controller)
         {
             if (controller == null)
             {
-                throw new ArgumentNullException(nameof(controller));
+                throw new ArgumentNullException("controller");
             }
 
-            this._missionController = controller;
+            _missionController = controller;
         }
 
         #endregion

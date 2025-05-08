@@ -12,6 +12,7 @@ namespace AIRefactored.AI.Movement
     using AIRefactored.AI.Core;
     using AIRefactored.AI.Helpers;
     using AIRefactored.Core;
+    using AIRefactored.Pools;
     using AIRefactored.Runtime;
     using BepInEx.Logging;
     using EFT;
@@ -81,12 +82,7 @@ namespace AIRefactored.AI.Movement
 
         public void Tick(float deltaTime)
         {
-            if (_bot == null || _cache == null || _bot.GetPlayer == null || !_bot.GetPlayer.IsAI)
-            {
-                return;
-            }
-
-            if (_bot.IsDead || !_bot.GetPlayer.HealthController.IsAlive || _cache.PanicHandler.IsPanicking)
+            if (_bot == null || _cache == null || _bot.GetPlayer == null || !_bot.GetPlayer.IsAI || _bot.IsDead || !_bot.GetPlayer.HealthController.IsAlive || _cache.PanicHandler.IsPanicking)
             {
                 return;
             }
@@ -146,7 +142,7 @@ namespace AIRefactored.AI.Movement
             Vector3 modified = _trajectory.ModifyTrajectory(toTarget, deltaTime);
             Vector3 velocity = modified.normalized * 1.65f;
 
-            if (_cache.AIRefactoredBotOwner.PersonalityProfile.AggressionLevel > 0.7f)
+            if (_cache.PersonalityProfile.AggressionLevel > 0.7f)
             {
                 velocity *= 1.2f;
             }
@@ -160,12 +156,7 @@ namespace AIRefactored.AI.Movement
             Vector3 direction = target - _bot.Transform.position;
             direction.y = 0f;
 
-            if (direction.sqrMagnitude < 0.01f)
-            {
-                return;
-            }
-
-            if (_cache.Tilt._coreTilt && Vector3.Angle(_bot.Transform.forward, direction) > 80f)
+            if (direction.sqrMagnitude < 0.01f || (_cache.Tilt._coreTilt && Vector3.Angle(_bot.Transform.forward, direction) > 80f))
             {
                 return;
             }
@@ -229,7 +220,7 @@ namespace AIRefactored.AI.Movement
                 return;
             }
 
-            BotPersonalityProfile profile = _cache.AIRefactoredBotOwner.PersonalityProfile;
+            BotPersonalityProfile profile = _cache.PersonalityProfile;
             if (profile.LeaningStyle == LeanPreference.Never || _bot.Memory.GoalEnemy == null)
             {
                 return;
@@ -276,17 +267,25 @@ namespace AIRefactored.AI.Movement
                 return;
             }
 
-            float aggression = _cache.AIRefactoredBotOwner.PersonalityProfile.AggressionLevel;
+            float aggression = _cache.PersonalityProfile.AggressionLevel;
             float distance = Vector3.Distance(_bot.Position, _bot.Memory.GoalEnemy.CurrPosition);
             float required = aggression > 0.7f ? 30f : 22f;
 
             if (distance < required)
             {
                 FlankPositionPlanner.Side preferred = FlankCoordinator.GetOptimalFlankSide(_bot, _cache);
-                if (FlankPositionPlanner.TryFindFlankPosition(_bot.Position, _bot.Memory.GoalEnemy.CurrPosition, out Vector3 flank, preferred))
+                Vector3[] buffer = TempVector3Pool.Rent(1); 
+                try
                 {
-                    BotMovementHelper.SmoothMoveTo(_bot, flank, false);
-                    Logger.LogDebug("[Movement] Flank triggered: " + flank);
+                    if (FlankPositionPlanner.TryFindFlankPosition(_bot.Position, _bot.Memory.GoalEnemy.CurrPosition, out buffer[0], preferred))
+                    {
+                        BotMovementHelper.SmoothMoveTo(_bot, buffer[0], false);
+                        Logger.LogDebug("[Movement] Flank triggered: " + buffer[0]);
+                    }
+                }
+                finally
+                {
+                    TempVector3Pool.Return(buffer);
                 }
             }
         }
@@ -305,10 +304,19 @@ namespace AIRefactored.AI.Movement
                 _stuckTimer += deltaTime;
                 if (_stuckTimer > MaxStuckDuration)
                 {
-                    Vector3 retry = target + UnityEngine.Random.insideUnitSphere * 1.0f;
-                    retry.y = target.y;
-                    BotMovementHelper.SmoothMoveTo(_bot, retry, false);
-                    Logger.LogDebug("[Movement] Stuck recovery triggered.");
+                    Vector3[] buffer = TempVector3Pool.Rent(1);
+                    try
+                    {
+                        buffer[0] = target + UnityEngine.Random.insideUnitSphere * 1.0f;
+                        buffer[0].y = target.y;
+                        BotMovementHelper.SmoothMoveTo(_bot, buffer[0], false);
+                        Logger.LogDebug("[Movement] Stuck recovery triggered.");
+                    }
+                    finally
+                    {
+                        TempVector3Pool.Return(buffer);
+                    }
+
                     _stuckTimer = 0f;
                 }
             }
@@ -318,10 +326,10 @@ namespace AIRefactored.AI.Movement
             }
         }
 
+
         private bool ValidateNavMeshTarget(Vector3 pos)
         {
-            NavMeshHit hit;
-            if (NavMesh.SamplePosition(pos, out hit, 1.5f, NavMesh.AllAreas))
+            if (NavMesh.SamplePosition(pos, out NavMeshHit hit, 1.5f, NavMesh.AllAreas))
             {
                 return (hit.position - pos).sqrMagnitude < 1.0f;
             }

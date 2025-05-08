@@ -13,6 +13,7 @@ namespace AIRefactored.AI.Perception
     using AIRefactored.AI.Helpers;
     using AIRefactored.AI.Memory;
     using AIRefactored.Core;
+    using AIRefactored.Pools;
     using EFT;
     using UnityEngine;
 
@@ -79,23 +80,30 @@ namespace AIRefactored.AI.Perception
             float rangeSqr = BaseHearingRange * BaseHearingRange;
 
             List<Player> players = BotMemoryStore.GetNearbyPlayers(origin, BaseHearingRange);
-            for (int i = 0; i < players.Count; i++)
+            try
             {
-                Player player = players[i];
-
-                if (!IsAudibleSource(player, origin, rangeSqr))
+                for (int i = 0; i < players.Count; i++)
                 {
-                    continue;
-                }
+                    Player player = players[i];
 
-                if (HeardSomething(player))
-                {
-                    Vector3 position = EFTPlayerUtil.GetPosition(player);
-                    if (position.sqrMagnitude > 0.01f)
+                    if (!IsAudibleSource(player, origin, rangeSqr))
                     {
-                        _cache.RegisterHeardSound(position);
+                        continue;
+                    }
+
+                    if (HeardSomething(player))
+                    {
+                        Vector3 position = EFTPlayerUtil.GetPosition(player);
+                        if (position.sqrMagnitude > 0.01f)
+                        {
+                            _cache.RegisterHeardSound(position);
+                        }
                     }
                 }
+            }
+            finally
+            {
+                TempListPool.Return(players);
             }
         }
 

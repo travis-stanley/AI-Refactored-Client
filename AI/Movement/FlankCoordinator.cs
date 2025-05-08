@@ -28,7 +28,7 @@ namespace AIRefactored.AI.Movement
 
         #endregion
 
-        #region State
+        #region Internal State
 
         private static float _lastLeftUseTime = -10f;
         private static float _lastRightUseTime = -10f;
@@ -45,22 +45,29 @@ namespace AIRefactored.AI.Movement
         /// <returns>Recommended flank side.</returns>
         public static FlankPositionPlanner.Side GetOptimalFlankSide(BotOwner bot, BotComponentCache cache)
         {
-            if (bot == null || bot.Memory == null || bot.Memory.GoalEnemy == null)
+            if (bot == null || cache == null || bot.Memory == null || bot.Memory.GoalEnemy == null)
             {
                 return FlankPositionPlanner.Side.Left;
             }
 
             Vector3 botPos = bot.Position;
             Vector3 enemyPos = bot.Memory.GoalEnemy.CurrPosition;
-            Vector3 enemyDir = bot.Memory.GoalEnemy.Person.Transform.forward;
 
+            BifacialTransform bifacial = bot.Memory.GoalEnemy.Person?.Transform;
+            if (bifacial == null)
+            {
+                return FlankPositionPlanner.Side.Left;
+            }
+
+            Vector3 enemyDir = bifacial.forward;
             float angle = Vector3.SignedAngle(enemyDir, botPos - enemyPos, Vector3.up);
 
             float squadBias = GetSquadBias(bot, enemyPos);
             float suppressionBias = GetSuppressionBias(cache);
 
-            float timeSinceLeft = Time.time - _lastLeftUseTime;
-            float timeSinceRight = Time.time - _lastRightUseTime;
+            float now = Time.time;
+            float leftCooldown = now - _lastLeftUseTime;
+            float rightCooldown = now - _lastRightUseTime;
 
             float leftScore = 0f;
             float rightScore = 0f;
@@ -80,23 +87,23 @@ namespace AIRefactored.AI.Movement
             leftScore += suppressionBias;
             rightScore += suppressionBias;
 
-            if (timeSinceLeft < RecentlyUsedFlankCooldown)
+            if (leftCooldown < RecentlyUsedFlankCooldown)
             {
                 leftScore -= 0.5f;
             }
 
-            if (timeSinceRight < RecentlyUsedFlankCooldown)
+            if (rightCooldown < RecentlyUsedFlankCooldown)
             {
                 rightScore -= 0.5f;
             }
 
             if (leftScore >= rightScore)
             {
-                _lastLeftUseTime = Time.time;
+                _lastLeftUseTime = now;
                 return FlankPositionPlanner.Side.Left;
             }
 
-            _lastRightUseTime = Time.time;
+            _lastRightUseTime = now;
             return FlankPositionPlanner.Side.Right;
         }
 
@@ -109,33 +116,37 @@ namespace AIRefactored.AI.Movement
             return cache.Suppression != null && cache.Suppression.IsSuppressed() ? SuppressionBiasWeight : 0f;
         }
 
-        private static float GetSquadBias(BotOwner bot, Vector3 enemyPos)
+        private static float GetSquadBias(BotOwner bot, Vector3 enemyPosition)
         {
             BotsGroup group = bot.BotsGroup;
-            if (group == null)
+            if (group == null || group.MembersCount <= 1)
             {
                 return 0f;
             }
 
-            Vector3 botVec = bot.Position - enemyPos;
-            int count = 0;
-            float sum = 0f;
+            Vector3 botVec = bot.Position - enemyPosition;
+            Vector3 normSelf = botVec.sqrMagnitude > 0.001f ? botVec.normalized : Vector3.forward;
+
+            float dotSum = 0f;
+            int contributors = 0;
 
             for (int i = 0; i < group.MembersCount; i++)
             {
-                BotOwner other = group.Member(i);
-                if (other == null || other == bot || other.IsDead)
+                BotOwner mate = group.Member(i);
+                if (mate == null || mate == bot || mate.IsDead)
                 {
                     continue;
                 }
 
-                Vector3 mateVec = other.Position - enemyPos;
-                float dot = Vector3.Dot(botVec.normalized, mateVec.normalized);
-                sum += dot;
-                count++;
+                Vector3 mateVec = mate.Position - enemyPosition;
+                if (mateVec.sqrMagnitude > 0.001f)
+                {
+                    dotSum += Vector3.Dot(normSelf, mateVec.normalized);
+                    contributors++;
+                }
             }
 
-            return count > 0 ? (sum / count) * SquadSpreadBias : 0f;
+            return contributors > 0 ? (dotSum / contributors) * SquadSpreadBias : 0f;
         }
 
         #endregion

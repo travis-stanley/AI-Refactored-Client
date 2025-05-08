@@ -47,6 +47,11 @@ namespace AIRefactored.AI.Navigation
         /// </summary>
         public void Clear()
         {
+            foreach (KeyValuePair<Vector2Int, List<NavPointData>> pair in _grid)
+            {
+                TempListPool.Return(pair.Value);
+            }
+
             _grid.Clear();
         }
 
@@ -60,8 +65,8 @@ namespace AIRefactored.AI.Navigation
             List<NavPointData> list;
             if (!_grid.TryGetValue(cell, out list))
             {
-                list = new List<NavPointData>(8);
-                _grid[cell] = list;
+                list = TempListPool.Rent<NavPointData>();
+                _grid.Add(cell, list);
             }
 
             for (int i = 0; i < list.Count; i++)
@@ -105,7 +110,8 @@ namespace AIRefactored.AI.Navigation
                     for (int i = 0; i < bucket.Count; i++)
                     {
                         NavPointData point = bucket[i];
-                        if ((point.Position - position).sqrMagnitude <= radiusSq && (filter == null || filter(point)))
+                        if ((point.Position - position).sqrMagnitude <= radiusSq &&
+                            (filter == null || filter(point)))
                         {
                             result.Add(point);
                         }

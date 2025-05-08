@@ -42,11 +42,10 @@ namespace AIRefactored.AI.Reactions
         /// <summary>
         /// Initializes the flash component with the bot's runtime cache.
         /// </summary>
-        /// <param name="cache">The bot component cache.</param>
         public void Initialize(BotComponentCache cache)
         {
-            _cache = cache;
-            _bot = cache.Bot;
+            _cache = cache ?? throw new System.ArgumentNullException(nameof(cache));
+            _bot = _cache.Bot ?? throw new System.ArgumentException("Bot reference is null.");
         }
 
         #endregion
@@ -64,11 +63,9 @@ namespace AIRefactored.AI.Reactions
         /// <summary>
         /// Forces the bot into a blind state, optionally triggering suppression logic.
         /// </summary>
-        /// <param name="duration">Custom blindness duration.</param>
-        /// <param name="source">Optional flash origin for suppression.</param>
         public void ForceBlind(float duration = BaseBlindDuration, Vector3? source = null)
         {
-            if (_bot == null || _bot.IsDead)
+            if (_bot.IsDead)
             {
                 return;
             }
@@ -89,10 +86,9 @@ namespace AIRefactored.AI.Reactions
         /// <summary>
         /// Evaluates exposure to light and clears blindness after recovery.
         /// </summary>
-        /// <param name="time">Current world time.</param>
         public void Tick(float time)
         {
-            if (_bot == null || _bot.IsDead || _cache == null)
+            if (_bot.IsDead || _cache == null)
             {
                 return;
             }
@@ -113,7 +109,7 @@ namespace AIRefactored.AI.Reactions
 
         #endregion
 
-        #region Private
+        #region Internal
 
         private void CheckFlashlightExposure()
         {

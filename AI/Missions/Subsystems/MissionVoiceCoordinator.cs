@@ -30,6 +30,10 @@ namespace AIRefactored.AI.Missions.Subsystems
 
         #region Constructor
 
+        /// <summary>
+        /// Initializes a new instance of the <see cref="MissionVoiceCoordinator"/> class.
+        /// </summary>
+        /// <param name="bot">The owning bot.</param>
         public MissionVoiceCoordinator(BotOwner bot)
         {
             if (bot == null)
@@ -44,26 +48,35 @@ namespace AIRefactored.AI.Missions.Subsystems
 
         #region Public Methods
 
+        /// <summary>
+        /// Triggers voice line when exit is located.
+        /// </summary>
         public void OnExitLocated()
         {
-            TrySay(EPhraseTrigger.ExitLocated);
+            this.TrySay(EPhraseTrigger.ExitLocated);
         }
 
+        /// <summary>
+        /// Triggers voice line on looting.
+        /// </summary>
         public void OnLoot()
         {
-            TrySay(EPhraseTrigger.OnLoot);
+            this.TrySay(EPhraseTrigger.OnLoot);
         }
 
+        /// <summary>
+        /// Triggers voice line on mission switch.
+        /// </summary>
         public void OnMissionSwitch()
         {
-            TrySay(EPhraseTrigger.Cooperation);
+            this.TrySay(EPhraseTrigger.Cooperation);
         }
 
         #endregion
 
         #region Private Methods
 
-        private void TrySay(EPhraseTrigger phrase)
+        private void TrySay(EPhraseTrigger trigger)
         {
             if (FikaHeadlessDetector.IsHeadless)
             {
@@ -73,15 +86,15 @@ namespace AIRefactored.AI.Missions.Subsystems
             try
             {
                 Player player = _bot.GetPlayer;
-                if (player != null)
+                if (player != null && player.HealthController != null && player.HealthController.IsAlive)
                 {
-                    player.Say(phrase);
+                    player.Say(trigger);
                 }
             }
             catch (Exception ex)
             {
-                string name = _bot.Profile != null && _bot.Profile.Info != null ? _bot.Profile.Info.Nickname : "Unknown";
-                Logger.LogWarning("[MissionVoiceCoordinator] VO failed for bot '" + name + "': " + ex.Message);
+                string name = (_bot.Profile != null && _bot.Profile.Info != null) ? _bot.Profile.Info.Nickname : "Unknown";
+                Logger.LogWarning("[MissionVoiceCoordinator] VO failed for '" + name + "': " + ex.Message);
             }
         }
 

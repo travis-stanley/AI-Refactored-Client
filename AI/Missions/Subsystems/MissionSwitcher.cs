@@ -77,40 +77,42 @@ namespace AIRefactored.AI.Missions.Subsystems
                 return;
             }
 
+            if (_bot.IsDead || _bot.GetPlayer == null || !_bot.GetPlayer.IsAI)
+            {
+                return;
+            }
+
             string nickname = _bot.Profile?.Info?.Nickname ?? "Unknown";
 
-            // Escalate to fight if under fire and aggressive
             if (_bot.Memory.IsUnderFire &&
                 _profile.AggressionLevel > 0.6f &&
                 currentMission != MissionType.Fight)
             {
-                _log.LogInfo("[MissionSwitcher] " + nickname + " escalating to Fight (under fire + aggressive)");
                 _lastSwitchTime = time;
                 currentMission = MissionType.Fight;
-                switchToFight.Invoke();
+                switchToFight();
+                _log.LogInfo("[MissionSwitcher] " + nickname + " escalating → Fight (under fire + aggressive)");
                 return;
             }
 
-            // Opportunistically switch to looting if allowed
             if (currentMission == MissionType.Quest &&
                 _profile.PreferredMission == MissionBias.Loot &&
                 _lootDecision != null &&
                 _lootDecision.ShouldLootNow() &&
                 _lootDecision.GetLootDestination() != Vector3.zero)
             {
-                _log.LogInfo("[MissionSwitcher] " + nickname + " switching to Loot (loot opportunity nearby)");
                 _lastSwitchTime = time;
                 currentMission = MissionType.Loot;
+                _log.LogInfo("[MissionSwitcher] " + nickname + " switching → Loot (loot opportunity nearby)");
                 return;
             }
 
-            // Fall back to Quest if group is scattered
             if (currentMission == MissionType.Fight && !isGroupAligned())
             {
-                _log.LogInfo("[MissionSwitcher] " + nickname + " falling back to Quest (squad separation)");
                 _lastSwitchTime = time;
                 currentMission = MissionType.Quest;
-                resumeQuesting.Invoke();
+                resumeQuesting();
+                _log.LogInfo("[MissionSwitcher] " + nickname + " falling back → Quest (squad separation)");
             }
         }
 

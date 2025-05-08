@@ -42,16 +42,22 @@ namespace AIRefactored.AI.Combat.States
         /// <param name="cache">BotComponentCache to bind with this handler.</param>
         public EngageHandler(BotComponentCache cache)
         {
-            if (cache == null || cache.Bot == null)
+            if (cache == null)
             {
-                throw new InvalidOperationException("[EngageHandler] Initialization failed: cache or Bot is null.");
+                throw new ArgumentNullException(nameof(cache));
             }
 
-            this._cache = cache;
-            this._bot = cache.Bot;
-            this._fallbackRange = cache.PersonalityProfile.EngagementRange > 0f
-                ? cache.PersonalityProfile.EngagementRange
-                : DefaultEngagementRange;
+            BotOwner bot = cache.Bot;
+            if (bot == null)
+            {
+                throw new InvalidOperationException("[EngageHandler] Initialization failed: BotOwner is null.");
+            }
+
+            _bot = bot;
+            _cache = cache;
+
+            float range = cache.PersonalityProfile != null ? cache.PersonalityProfile.EngagementRange : 0f;
+            _fallbackRange = range > 0f ? range : DefaultEngagementRange;
         }
 
         #endregion
@@ -63,12 +69,12 @@ namespace AIRefactored.AI.Combat.States
         /// </summary>
         public bool ShallUseNow()
         {
-            CombatStateMachine combat = this._cache.Combat;
             Vector3 enemyPos;
+            CombatStateMachine combat = _cache.Combat;
 
             return combat != null &&
-                   this.TryGetLastKnownEnemy(combat, out enemyPos) &&
-                   !this.IsWithinRange(enemyPos);
+                   TryGetLastKnownEnemy(combat, out enemyPos) &&
+                   !IsWithinRange(enemyPos);
         }
 
         /// <summary>
@@ -76,12 +82,12 @@ namespace AIRefactored.AI.Combat.States
         /// </summary>
         public bool CanAttack()
         {
-            CombatStateMachine combat = this._cache.Combat;
             Vector3 enemyPos;
+            CombatStateMachine combat = _cache.Combat;
 
             return combat != null &&
-                   this.TryGetLastKnownEnemy(combat, out enemyPos) &&
-                   this.IsWithinRange(enemyPos);
+                   TryGetLastKnownEnemy(combat, out enemyPos) &&
+                   IsWithinRange(enemyPos);
         }
 
         /// <summary>
@@ -89,16 +95,16 @@ namespace AIRefactored.AI.Combat.States
         /// </summary>
         public void Tick()
         {
-            CombatStateMachine combat = this._cache.Combat;
             Vector3 enemyPos;
+            CombatStateMachine combat = _cache.Combat;
 
-            if (combat == null || !this.TryGetLastKnownEnemy(combat, out enemyPos))
+            if (combat == null || !TryGetLastKnownEnemy(combat, out enemyPos))
             {
                 return;
             }
 
-            Vector3 destination = this._cache.SquadPath != null
-                ? this._cache.SquadPath.ApplyOffsetTo(enemyPos)
+            Vector3 destination = _cache.SquadPath != null
+                ? _cache.SquadPath.ApplyOffsetTo(enemyPos)
                 : enemyPos;
 
             if (float.IsNaN(destination.x) || float.IsNaN(destination.y) || float.IsNaN(destination.z))
@@ -106,7 +112,7 @@ namespace AIRefactored.AI.Combat.States
                 return;
             }
 
-            BotMovementHelper.SmoothMoveTo(this._bot, destination);
+            BotMovementHelper.SmoothMoveTo(_bot, destination);
             combat.TrySetStanceFromNearbyCover(destination);
         }
 
@@ -115,12 +121,12 @@ namespace AIRefactored.AI.Combat.States
         /// </summary>
         public bool IsEngaging()
         {
-            CombatStateMachine combat = this._cache.Combat;
             Vector3 enemyPos;
+            CombatStateMachine combat = _cache.Combat;
 
             return combat != null &&
-                   this.TryGetLastKnownEnemy(combat, out enemyPos) &&
-                   !this.IsWithinRange(enemyPos);
+                   TryGetLastKnownEnemy(combat, out enemyPos) &&
+                   !IsWithinRange(enemyPos);
         }
 
         #endregion
@@ -135,8 +141,8 @@ namespace AIRefactored.AI.Combat.States
 
         private bool IsWithinRange(Vector3 enemyPos)
         {
-            float dist = Vector3.Distance(this._bot.Position, enemyPos);
-            return dist < this._fallbackRange;
+            float distance = Vector3.Distance(_bot.Position, enemyPos);
+            return distance < _fallbackRange;
         }
 
         #endregion

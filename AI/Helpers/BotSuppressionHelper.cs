@@ -23,47 +23,36 @@ namespace AIRefactored.AI.Helpers
         /// <summary>
         /// Gets the BotOwner instance from a Player, if AI-controlled.
         /// </summary>
-        /// <param name="player">The player to check.</param>
-        /// <returns>The BotOwner instance, or null if not AI.</returns>
         public static BotOwner GetBotOwner(Player player)
         {
-            if (player != null && player.IsAI && player.AIData is BotOwner owner)
+            if (player == null || !player.IsAI)
             {
-                return owner;
+                return null;
             }
 
-            return null;
+            return player.AIData is BotOwner owner ? owner : null;
         }
 
         /// <summary>
         /// Gets the BotComponentCache from a Player, if AI-controlled.
         /// </summary>
-        /// <param name="player">The player to check.</param>
-        /// <returns>The bot's BotComponentCache, or null if not AI.</returns>
         public static BotComponentCache GetCache(Player player)
         {
-            if (player != null && player.IsAI)
+            if (player == null || !player.IsAI)
             {
-                return BotCacheUtility.GetCache(player);
+                return null;
             }
 
-            return null;
+            return BotCacheUtility.GetCache(player);
         }
 
         /// <summary>
         /// Evaluates whether suppression should occur based on bot visibility and ambient lighting.
         /// </summary>
-        /// <param name="player">The player to evaluate.</param>
-        /// <param name="visibleDistThreshold">The visibility distance threshold.</param>
-        /// <param name="ambientThreshold">The ambient light threshold.</param>
-        /// <returns>True if suppression should be triggered; otherwise, false.</returns>
-        public static bool ShouldTriggerSuppression(
-            Player player,
-            float visibleDistThreshold = 12f,
-            float ambientThreshold = 0.25f)
+        public static bool ShouldTriggerSuppression(Player player, float visibleDistThreshold = 12f, float ambientThreshold = 0.25f)
         {
             BotOwner owner = GetBotOwner(player);
-            if (owner?.LookSensor == null)
+            if (owner == null || owner.LookSensor == null)
             {
                 return false;
             }
@@ -77,7 +66,7 @@ namespace AIRefactored.AI.Helpers
             }
             catch
             {
-                // fallback to default
+                // fallback used
             }
 
             return visibleDist < visibleDistThreshold || ambientLight < ambientThreshold;
@@ -87,9 +76,6 @@ namespace AIRefactored.AI.Helpers
         /// Triggers suppression effects for a bot from a threat source.
         /// Applies panic or flash-based blindness depending on bot state.
         /// </summary>
-        /// <param name="player">The player to suppress.</param>
-        /// <param name="threatPosition">The world-space threat position.</param>
-        /// <param name="source">The enemy player causing the suppression, if known.</param>
         public static void TrySuppressBot(Player player, Vector3 threatPosition, IPlayer source = null)
         {
             if (player == null || !player.IsAI)
@@ -113,8 +99,10 @@ namespace AIRefactored.AI.Helpers
             if (cache.PanicHandler != null && !cache.PanicHandler.IsPanicking)
             {
                 cache.PanicHandler.TriggerPanic();
+                return;
             }
-            else if (cache.FlashGrenade != null)
+
+            if (cache.FlashGrenade != null)
             {
                 cache.FlashGrenade.ForceBlind();
             }

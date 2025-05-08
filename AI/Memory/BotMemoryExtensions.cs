@@ -13,6 +13,7 @@ namespace AIRefactored.AI.Memory
     using AIRefactored.AI.Helpers;
     using AIRefactored.AI.Optimization;
     using AIRefactored.Core;
+    using AIRefactored.Pools;
     using EFT;
     using UnityEngine;
 
@@ -46,7 +47,7 @@ namespace AIRefactored.AI.Memory
             }
 
             BotComponentCache cache = BotCacheUtility.GetCache(bot);
-            if (cache.PanicHandler.IsPanicking)
+            if (cache != null && cache.PanicHandler != null && cache.PanicHandler.IsPanicking)
             {
                 return;
             }
@@ -92,13 +93,12 @@ namespace AIRefactored.AI.Memory
             Vector3 destination = new Vector3(fallback.x, bot.Position.y, fallback.z);
 
             BotComponentCache cache = BotCacheUtility.GetCache(bot);
-            if (cache.Pathing != null)
+            if (cache != null && cache.Pathing != null)
             {
-                List<Vector3> path = BotCoverRetreatPlanner.GetCoverRetreatPath(bot, toEnemy, cache.Pathing);
-                int lastIndex = path.Count - 1;
-                if (lastIndex >= 0)
+                var path = BotCoverRetreatPlanner.GetCoverRetreatPath(bot, toEnemy, cache.Pathing);
+                if (path != null && path.Count > 0)
                 {
-                    Vector3 last = path[lastIndex];
+                    Vector3 last = path[path.Count - 1];
                     destination = new Vector3(last.x, bot.Position.y, last.z);
                 }
             }
@@ -140,12 +140,7 @@ namespace AIRefactored.AI.Memory
 
         public static void SetLastHeardSound(this BotOwner bot, Player source)
         {
-            if (source.ProfileId == bot.ProfileId)
-            {
-                return;
-            }
-
-            if (!EFTPlayerUtil.IsValid(source))
+            if (source == null || source.ProfileId == bot.ProfileId || !EFTPlayerUtil.IsValid(source))
             {
                 return;
             }
@@ -154,17 +149,6 @@ namespace AIRefactored.AI.Memory
             if (sourcePos.sqrMagnitude < 0.01f)
             {
                 return;
-            }
-
-            IPlayer resolved = EFTPlayerUtil.AsSafeIPlayer(source);
-            if (resolved == null)
-            {
-                return;
-            }
-
-            if (bot.BotsGroup != null && bot.BotsGroup.LastSoundsController != null)
-            {
-                bot.BotsGroup.LastSoundsController.AddNeutralSound(resolved, sourcePos);
             }
 
             BotMemoryStore.AddHeardSound(bot.ProfileId, sourcePos, Time.time);

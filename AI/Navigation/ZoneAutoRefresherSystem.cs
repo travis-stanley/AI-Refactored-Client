@@ -12,7 +12,6 @@ namespace AIRefactored.AI.Navigation
     using AIRefactored.Bootstrap;
     using AIRefactored.Core;
     using BepInEx.Logging;
-    using UnityEngine;
 
     /// <summary>
     /// Legacy stub. Previously refreshed NavPointRegistry zone tags using IZones.
@@ -21,14 +20,14 @@ namespace AIRefactored.AI.Navigation
     public sealed class ZoneAutoRefresherSystem : IAIWorldSystemBootstrapper
     {
         private static readonly ManualLogSource Logger = Plugin.LoggerInstance;
-        private static readonly ZoneAutoRefresherSystem InstanceInternal = new ZoneAutoRefresherSystem();
+        private static readonly ZoneAutoRefresherSystem SingletonInstance = new ZoneAutoRefresherSystem();
 
         /// <summary>
-        /// Gets the singleton instance.
+        /// Gets the singleton instance of the disabled refresher system.
         /// </summary>
         public static ZoneAutoRefresherSystem Instance
         {
-            get { return InstanceInternal; }
+            get { return SingletonInstance; }
         }
 
         /// <inheritdoc />
@@ -40,13 +39,11 @@ namespace AIRefactored.AI.Navigation
         /// <inheritdoc />
         public void Tick(float deltaTime)
         {
-            // No-op
         }
 
         /// <inheritdoc />
         public void OnRaidEnd()
         {
-            // No-op
         }
 
         /// <inheritdoc />

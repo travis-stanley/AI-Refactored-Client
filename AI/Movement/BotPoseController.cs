@@ -41,10 +41,10 @@ namespace AIRefactored.AI.Movement
 
         private float _currentPoseLevel;
         private float _targetPoseLevel;
-        private bool _isPoseLocked;
-        private float _nextPoseCheck;
-        private float _suppressedUntil;
+        private float _nextPoseCheckTime;
         private float _lastTickTime;
+        private float _suppressedUntil;
+        private bool _isLocked;
 
         #endregion
 
@@ -54,7 +54,7 @@ namespace AIRefactored.AI.Movement
         {
             if (bot == null || cache == null || bot.GetPlayer == null || bot.GetPlayer.MovementContext == null)
             {
-                throw new ArgumentException("BotPoseController: bot, cache, or MovementContext is null.");
+                throw new ArgumentException("[BotPoseController] Invalid initialization.");
             }
 
             _bot = bot;
@@ -64,8 +64,8 @@ namespace AIRefactored.AI.Movement
 
             _currentPoseLevel = _movement.PoseLevel;
             _targetPoseLevel = _currentPoseLevel;
-            _nextPoseCheck = Time.time;
             _lastTickTime = Time.time;
+            _nextPoseCheckTime = _lastTickTime;
         }
 
         #endregion
@@ -80,12 +80,12 @@ namespace AIRefactored.AI.Movement
         public void LockCrouchPose()
         {
             _targetPoseLevel = 50f;
-            _isPoseLocked = true;
+            _isLocked = true;
         }
 
         public void UnlockPose()
         {
-            _isPoseLocked = false;
+            _isLocked = false;
         }
 
         public void SetCrouch(bool anticipate = false)
@@ -113,15 +113,15 @@ namespace AIRefactored.AI.Movement
             float deltaTime = currentTime - _lastTickTime;
             _lastTickTime = currentTime;
 
-            if (_isPoseLocked)
+            if (_isLocked)
             {
                 BlendPose(deltaTime);
                 return;
             }
 
-            if (currentTime >= _nextPoseCheck)
+            if (currentTime >= _nextPoseCheckTime)
             {
-                _nextPoseCheck = currentTime + PoseCheckInterval;
+                _nextPoseCheckTime = currentTime + PoseCheckInterval;
                 EvaluatePoseIntent(currentTime);
             }
 
@@ -130,7 +130,7 @@ namespace AIRefactored.AI.Movement
 
         public void TrySetStanceFromNearbyCover(Vector3 position)
         {
-            var nearby = NavPointRegistry.QueryNearby(
+            var points = NavPointRegistry.QueryNearby(
                 position,
                 4f,
                 p =>
@@ -140,17 +140,16 @@ namespace AIRefactored.AI.Movement
                            (BotCoverHelper.IsProneCover(p) || BotCoverHelper.IsLowCover(p));
                 });
 
-            for (int i = 0; i < nearby.Count; i++)
+            for (int i = 0; i < points.Count; i++)
             {
-                NavPointData point = nearby[i];
-
-                if (BotCoverHelper.IsProneCover(point))
+                NavPointData p = points[i];
+                if (BotCoverHelper.IsProneCover(p))
                 {
                     SetProne(true);
                     break;
                 }
 
-                if (BotCoverHelper.IsLowCover(point))
+                if (BotCoverHelper.IsLowCover(p))
                 {
                     SetCrouch(true);
                     break;
@@ -160,7 +159,7 @@ namespace AIRefactored.AI.Movement
 
         #endregion
 
-        #region Private Logic
+        #region Internal Logic
 
         private void BlendPose(float deltaTime)
         {
@@ -169,11 +168,11 @@ namespace AIRefactored.AI.Movement
                 return;
             }
 
-            float panicFactor = _cache.PanicHandler.IsPanicking ? 0.6f : 1f;
-            float combatFactor = _cache.Combat.IsInCombatState() ? 1f : 0.4f;
-            float blendSpeed = PoseBlendSpeedBase * panicFactor * combatFactor;
+            float panic = _cache.PanicHandler.IsPanicking ? 0.6f : 1f;
+            float combat = _cache.Combat.IsInCombatState() ? 1f : 0.4f;
+            float speed = PoseBlendSpeedBase * panic * combat;
 
-            _currentPoseLevel = Mathf.MoveTowards(_currentPoseLevel, _targetPoseLevel, blendSpeed * deltaTime);
+            _currentPoseLevel = Mathf.MoveTowards(_currentPoseLevel, _targetPoseLevel, speed * deltaTime);
             _movement.SetPoseLevel(_currentPoseLevel);
         }
 
@@ -198,11 +197,11 @@ namespace AIRefactored.AI.Movement
 
             if (_personality.IsFrenzied || _personality.IsFearful || _personality.Personality == PersonalityType.Sniper)
             {
-                bool flankSuccess;
-                Vector3 flank = _bot.TryGetFlankDirection(out flankSuccess);
-                if (flankSuccess)
+                bool flankFound;
+                Vector3 flankDir = _bot.TryGetFlankDirection(out flankFound);
+                if (flankFound)
                 {
-                    float angle = Vector3.Angle(_bot.LookDirection, flank.normalized);
+                    float angle = Vector3.Angle(_bot.LookDirection, flankDir.normalized);
                     if (angle > FlankAngleThreshold)
                     {
                         _targetPoseLevel = 0f;
@@ -211,32 +210,35 @@ namespace AIRefactored.AI.Movement
                 }
             }
 
-            if (_bot.Memory != null && _bot.Memory.BotCurrentCoverInfo != null && _bot.Memory.BotCurrentCoverInfo.LastCover != null)
+            if (_bot.Memory != null && _bot.Memory.BotCurrentCoverInfo != null)
             {
-                CustomNavigationPoint rawCover = _bot.Memory.BotCurrentCoverInfo.LastCover;
-                NavPointData cover = NavPointConverter.FromCustom(rawCover);
-                float dist = Vector3.Distance(_bot.Position, cover.Position);
-
-                if (dist < 2.5f)
+                CustomNavigationPoint lastCover = _bot.Memory.BotCurrentCoverInfo.LastCover;
+                if (lastCover != null)
                 {
-                    if (BotCoverHelper.IsProneCover(cover))
-                    {
-                        _targetPoseLevel = 0f;
-                        return;
-                    }
+                    NavPointData point = NavPointConverter.FromCustom(lastCover);
+                    float dist = Vector3.Distance(_bot.Position, point.Position);
 
-                    if (BotCoverHelper.IsLowCover(cover))
+                    if (dist < 2.5f)
                     {
-                        _targetPoseLevel = 50f;
-                        return;
+                        if (BotCoverHelper.IsProneCover(point))
+                        {
+                            _targetPoseLevel = 0f;
+                            return;
+                        }
+
+                        if (BotCoverHelper.IsLowCover(point))
+                        {
+                            _targetPoseLevel = 50f;
+                            return;
+                        }
                     }
                 }
             }
 
             bool inCombat = _cache.Combat.IsInCombatState();
-            bool preferCrouch = _personality.Caution > 0.6f || _personality.IsCamper;
+            bool prefersCrouch = _personality.Caution > 0.6f || _personality.IsCamper;
 
-            _targetPoseLevel = inCombat && preferCrouch ? 50f : 100f;
+            _targetPoseLevel = inCombat && prefersCrouch ? 50f : 100f;
         }
 
         #endregion

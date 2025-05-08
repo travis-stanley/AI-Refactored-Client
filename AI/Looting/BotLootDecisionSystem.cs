@@ -42,10 +42,6 @@ namespace AIRefactored.AI.Looting
 
         #region Initialization
 
-        /// <summary>
-        /// Initializes the loot decision system with bot context.
-        /// </summary>
-        /// <param name="cache">The bot's component cache.</param>
         public void Initialize(BotComponentCache cache)
         {
             if (cache == null || cache.Bot == null)
@@ -61,12 +57,9 @@ namespace AIRefactored.AI.Looting
 
         #region Public Methods
 
-        /// <summary>
-        /// Determines if the bot should loot right now based on situational awareness.
-        /// </summary>
         public bool ShouldLootNow()
         {
-            if (_bot.IsDead || Time.time < _nextLootTime)
+            if (_bot == null || _bot.IsDead || Time.time < _nextLootTime)
             {
                 return false;
             }
@@ -89,18 +82,15 @@ namespace AIRefactored.AI.Looting
             return _cache.LootScanner != null && _cache.LootScanner.TotalLootValue >= HighValueThreshold;
         }
 
-        /// <summary>
-        /// Returns the best loot destination within tactical range, or Vector3.zero if none found.
-        /// </summary>
         public Vector3 GetLootDestination()
         {
-            if (_cache.LootScanner == null)
+            if (_cache == null || _cache.LootScanner == null)
             {
                 return Vector3.zero;
             }
 
             float bestValue = 0f;
-            Vector3 bestPoint = _bot.Position;
+            Vector3 bestPoint = Vector3.zero;
 
             List<LootableContainer> containers = LootRegistry.GetAllContainers();
             for (int i = 0; i < containers.Count; i++)
@@ -128,10 +118,6 @@ namespace AIRefactored.AI.Looting
             return bestValue > 0f ? bestPoint : Vector3.zero;
         }
 
-        /// <summary>
-        /// Marks the loot spot as visited and triggers local cooldown.
-        /// </summary>
-        /// <param name="lootId">The ID of the loot container.</param>
         public void MarkLooted(string lootId)
         {
             if (string.IsNullOrWhiteSpace(lootId))
@@ -139,14 +125,16 @@ namespace AIRefactored.AI.Looting
                 return;
             }
 
-            _recentLooted.Add(lootId.Trim());
+            string id = lootId.Trim();
+            if (id.Length == 0)
+            {
+                return;
+            }
+
+            _recentLooted.Add(id);
             _nextLootTime = Time.time + CooldownTime;
         }
 
-        /// <summary>
-        /// Checks if a loot point was recently looted by this bot.
-        /// </summary>
-        /// <param name="lootId">The loot identifier to check.</param>
         public bool WasRecentlyLooted(string lootId)
         {
             if (string.IsNullOrWhiteSpace(lootId))
@@ -163,23 +151,27 @@ namespace AIRefactored.AI.Looting
 
         private static float EstimateValue(LootableContainer container)
         {
-            if (container.ItemOwner == null || container.ItemOwner.RootItem == null)
+            if (container == null || container.ItemOwner == null || container.ItemOwner.RootItem == null)
             {
                 return 0f;
             }
 
-            float value = 0f;
+            float total = 0f;
             List<Item> items = new List<Item>(container.ItemOwner.RootItem.GetAllItems());
             for (int i = 0; i < items.Count; i++)
             {
                 Item item = items[i];
-                if (item != null && item.Template != null && item.Template.CreditsPrice > 0f)
+                if (item != null && item.Template != null)
                 {
-                    value += item.Template.CreditsPrice;
+                    float price = item.Template.CreditsPrice;
+                    if (price > 0f)
+                    {
+                        total += price;
+                    }
                 }
             }
 
-            return value;
+            return total;
         }
 
         #endregion

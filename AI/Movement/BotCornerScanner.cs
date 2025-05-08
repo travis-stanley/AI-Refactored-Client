@@ -49,7 +49,7 @@ namespace AIRefactored.AI.Movement
 
         #endregion
 
-        #region Constructors
+        #region Initialization
 
         public BotCornerScanner()
         {
@@ -59,10 +59,6 @@ namespace AIRefactored.AI.Movement
         {
             Initialize(bot, cache);
         }
-
-        #endregion
-
-        #region Initialization
 
         public void Initialize(BotOwner bot, BotComponentCache cache)
         {
@@ -109,9 +105,9 @@ namespace AIRefactored.AI.Movement
         private bool IsEligible(float time)
         {
             return _bot != null &&
+                   !_bot.IsDead &&
                    _bot.Mover != null &&
                    _bot.Transform != null &&
-                   !_bot.IsDead &&
                    _bot.Memory.GoalEnemy == null &&
                    time >= _pauseUntil &&
                    time >= _prepCrouchUntil;
@@ -119,11 +115,6 @@ namespace AIRefactored.AI.Movement
 
         private void PauseMovement(float time)
         {
-            if (_profile == null || _bot.Mover == null)
-            {
-                return;
-            }
-
             float duration = BasePauseDuration * Mathf.Clamp(0.5f + _profile.Caution, 0.35f, 2.0f);
             _bot.Mover.MovementPause(duration);
             _pauseUntil = time + duration;
@@ -134,17 +125,18 @@ namespace AIRefactored.AI.Movement
             Vector3 origin = _bot.Position + Vector3.up * 0.2f;
             Vector3 forward = _bot.Transform.forward;
             Vector3 right = _bot.Transform.right;
+
             int rays = Mathf.CeilToInt((EdgeCheckDistance * 2f) / EdgeRaySpacing);
 
             for (int i = 0; i < rays; i++)
             {
-                float offset = (i - (rays / 2f)) * EdgeRaySpacing;
+                float offset = (i - (rays * 0.5f)) * EdgeRaySpacing;
                 Vector3 rayOrigin = origin + (right * offset) + (forward * EdgeCheckDistance);
+                Vector3 rayDown = rayOrigin + Vector3.down * MinFallHeight;
 
                 if (!Physics.Raycast(rayOrigin, Vector3.down, MinFallHeight, AIRefactoredLayerMasks.NavObstacleMask))
                 {
-                    if (!NavMesh.SamplePosition(rayOrigin + Vector3.down * MinFallHeight, out NavMeshHit hit, 1.0f, NavMesh.AllAreas) ||
-                        hit.distance > NavSampleTolerance)
+                    if (!NavMesh.SamplePosition(rayDown, out NavMeshHit hit, 1.0f, NavMesh.AllAreas) || hit.distance > NavSampleTolerance)
                     {
                         return true;
                     }
@@ -159,7 +151,6 @@ namespace AIRefactored.AI.Movement
             Vector3 origin = _bot.Position + Vector3.up * WallCheckHeight;
             Vector3 right = _bot.Transform.right;
             Vector3 left = -right;
-
             float dist = BaseWallCheckDistance + ((1f - _profile.Caution) * 0.5f);
 
             if (CheckWall(origin, left, dist))

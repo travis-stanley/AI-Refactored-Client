@@ -21,7 +21,6 @@ namespace AIRefactored.AI.Hotspots
         #region Fields
 
         private readonly float _cellSize;
-
         private readonly Dictionary<Vector2Int, List<HotspotRegistry.Hotspot>> _grid;
 
         #endregion
@@ -31,11 +30,11 @@ namespace AIRefactored.AI.Hotspots
         /// <summary>
         /// Initializes a new instance of the <see cref="HotspotSpatialGrid"/> class.
         /// </summary>
-        /// <param name="cellSize">Minimum 1f recommended. Determines lookup resolution.</param>
+        /// <param name="cellSize">Grid cell size in world units.</param>
         public HotspotSpatialGrid(float cellSize)
         {
-            this._cellSize = cellSize < 1f ? 1f : cellSize;
-            this._grid = new Dictionary<Vector2Int, List<HotspotRegistry.Hotspot>>(128);
+            _cellSize = cellSize < 1f ? 1f : cellSize;
+            _grid = new Dictionary<Vector2Int, List<HotspotRegistry.Hotspot>>(128);
         }
 
         #endregion
@@ -43,37 +42,37 @@ namespace AIRefactored.AI.Hotspots
         #region Public Methods
 
         /// <summary>
-        /// Inserts a hotspot into the spatial index.
+        /// Inserts a hotspot into the appropriate spatial cell.
         /// </summary>
-        /// <param name="hotspot">Hotspot to insert.</param>
+        /// <param name="hotspot">The hotspot to insert.</param>
         public void Insert(HotspotRegistry.Hotspot hotspot)
         {
-            Vector2Int cell = this.WorldToCell(hotspot.Position);
-
+            Vector2Int cell = WorldToCell(hotspot.Position);
             List<HotspotRegistry.Hotspot> list;
-            if (!this._grid.TryGetValue(cell, out list))
+
+            if (!_grid.TryGetValue(cell, out list))
             {
                 list = new List<HotspotRegistry.Hotspot>(4);
-                this._grid[cell] = list;
+                _grid[cell] = list;
             }
 
             list.Add(hotspot);
         }
 
         /// <summary>
-        /// Returns all hotspots within radius of a given world position.
+        /// Queries all hotspots within a radius of the given world position.
         /// </summary>
-        /// <param name="worldPos">World-space origin for the query.</param>
-        /// <param name="radius">Radius in meters.</param>
-        /// <param name="filter">Optional predicate to restrict results.</param>
-        /// <returns>List of nearby hotspots.</returns>
+        /// <param name="worldPos">World position to search from.</param>
+        /// <param name="radius">Search radius in world units.</param>
+        /// <param name="filter">Optional filter to apply to candidates.</param>
+        /// <returns>List of matching hotspots.</returns>
         public List<HotspotRegistry.Hotspot> Query(Vector3 worldPos, float radius, Predicate<HotspotRegistry.Hotspot> filter)
         {
             List<HotspotRegistry.Hotspot> results = new List<HotspotRegistry.Hotspot>(16);
             float radiusSq = radius * radius;
 
-            Vector2Int center = this.WorldToCell(worldPos);
-            int cellRadius = Mathf.CeilToInt(radius / this._cellSize);
+            Vector2Int center = WorldToCell(worldPos);
+            int cellRadius = Mathf.CeilToInt(radius / _cellSize);
 
             for (int dx = -cellRadius; dx <= cellRadius; dx++)
             {
@@ -82,7 +81,7 @@ namespace AIRefactored.AI.Hotspots
                     Vector2Int check = new Vector2Int(center.x + dx, center.y + dz);
 
                     List<HotspotRegistry.Hotspot> candidates;
-                    if (!this._grid.TryGetValue(check, out candidates))
+                    if (!_grid.TryGetValue(check, out candidates))
                     {
                         continue;
                     }
@@ -108,8 +107,8 @@ namespace AIRefactored.AI.Hotspots
 
         private Vector2Int WorldToCell(Vector3 worldPos)
         {
-            int x = Mathf.FloorToInt(worldPos.x / this._cellSize);
-            int z = Mathf.FloorToInt(worldPos.z / this._cellSize);
+            int x = Mathf.FloorToInt(worldPos.x / _cellSize);
+            int z = Mathf.FloorToInt(worldPos.z / _cellSize);
             return new Vector2Int(x, z);
         }
 

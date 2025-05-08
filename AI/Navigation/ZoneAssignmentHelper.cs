@@ -27,19 +27,22 @@ namespace AIRefactored.AI.Navigation
         /// <summary>
         /// Gets a value indicating whether the system is initialized (always false in fallback mode).
         /// </summary>
-        public static bool IsInitialized => false;
+        public static bool IsInitialized
+        {
+            get { return false; }
+        }
 
         /// <summary>
         /// Clears zone data (no-op in fallback mode).
         /// </summary>
         public static void Clear()
         {
-            // Intentionally no-op
         }
 
         /// <summary>
         /// Gets all known zone names (always empty).
         /// </summary>
+        /// <returns>Empty string list.</returns>
         public static IReadOnlyList<string> GetAllZoneNames()
         {
             return EmptyZones;
@@ -48,6 +51,8 @@ namespace AIRefactored.AI.Navigation
         /// <summary>
         /// Gets the nearest zone to a position (always "unassigned").
         /// </summary>
+        /// <param name="position">World-space position.</param>
+        /// <returns>"unassigned"</returns>
         public static string GetNearestZone(Vector3 position)
         {
             return "unassigned";
@@ -56,6 +61,8 @@ namespace AIRefactored.AI.Navigation
         /// <summary>
         /// Gets all spawn points in a zone (always empty).
         /// </summary>
+        /// <param name="zone">Zone name.</param>
+        /// <returns>Empty spawn point list.</returns>
         public static List<ISpawnPoint> GetSpawnPoints(string zone)
         {
             return EmptySpawnPoints;
@@ -64,6 +71,8 @@ namespace AIRefactored.AI.Navigation
         /// <summary>
         /// Gets the center of a zone (always Vector3.zero).
         /// </summary>
+        /// <param name="zone">Zone name.</param>
+        /// <returns>Vector3.zero</returns>
         public static Vector3 GetZoneCenter(string zone)
         {
             return Vector3.zero;
@@ -72,6 +81,8 @@ namespace AIRefactored.AI.Navigation
         /// <summary>
         /// Gets the weight of a zone (always 1.0).
         /// </summary>
+        /// <param name="zone">Zone name.</param>
+        /// <returns>1.0f</returns>
         public static float GetZoneWeight(string zone)
         {
             return 1f;
@@ -80,6 +91,8 @@ namespace AIRefactored.AI.Navigation
         /// <summary>
         /// Determines if the zone is flagged as a boss zone (always false).
         /// </summary>
+        /// <param name="zone">Zone name.</param>
+        /// <returns>False</returns>
         public static bool IsBossZone(string zone)
         {
             return false;
@@ -88,6 +101,8 @@ namespace AIRefactored.AI.Navigation
         /// <summary>
         /// Initializes the fallback zone system (logs stub message).
         /// </summary>
+        /// <param name="zones">Unused IZones ref.</param>
+        /// <param name="includeSnipingZones">Unused flag.</param>
         public static void Initialize(object zones, bool includeSnipingZones = true)
         {
             Logger.LogInfo("[ZoneAssignmentHelper] IZones is disabled. Skipping zone assignment.");

@@ -55,8 +55,8 @@ namespace AIRefactored.AI.Combat.States
                 throw new ArgumentException("Cache or Bot cannot be null.");
             }
 
-            this._cache = cache;
-            this._bot = cache.Bot;
+            _cache = cache;
+            _bot = cache.Bot;
         }
 
         #endregion
@@ -69,31 +69,31 @@ namespace AIRefactored.AI.Combat.States
         /// <param name="retreatPosition">Target position to retreat to.</param>
         public void EchoFallbackToSquad(Vector3 retreatPosition)
         {
-            BotsGroup group = this._bot.BotsGroup;
+            BotsGroup group = _bot.BotsGroup;
             if (group == null)
             {
                 return;
             }
 
             float now = Time.time;
-            if (now - this._lastEchoFallbackTime < EchoCooldown)
+            if (now - _lastEchoFallbackTime < EchoCooldown)
             {
                 return;
             }
 
-            Vector3 selfPos = this._bot.Position;
+            Vector3 selfPos = _bot.Position;
             int memberCount = group.MembersCount;
 
             for (int i = 0; i < memberCount; i++)
             {
                 BotOwner mate = group.Member(i);
-                if (!this.IsValidSquadmate(mate, selfPos))
+                if (!IsValidSquadmate(mate, selfPos))
                 {
                     continue;
                 }
 
                 BotComponentCache mateCache = BotCacheUtility.GetCache(mate);
-                if (mateCache == null || mateCache.Combat == null || !this.CanAcceptEcho(mateCache))
+                if (mateCache == null || mateCache.Combat == null || !CanAcceptEcho(mateCache))
                 {
                     continue;
                 }
@@ -122,7 +122,7 @@ namespace AIRefactored.AI.Combat.States
                 }
             }
 
-            this._lastEchoFallbackTime = now;
+            _lastEchoFallbackTime = now;
         }
 
         /// <summary>
@@ -130,31 +130,31 @@ namespace AIRefactored.AI.Combat.States
         /// </summary>
         public void EchoInvestigateToSquad()
         {
-            BotsGroup group = this._bot.BotsGroup;
+            BotsGroup group = _bot.BotsGroup;
             if (group == null)
             {
                 return;
             }
 
             float now = Time.time;
-            if (now - this._lastEchoInvestigateTime < EchoCooldown)
+            if (now - _lastEchoInvestigateTime < EchoCooldown)
             {
                 return;
             }
 
-            Vector3 selfPos = this._bot.Position;
+            Vector3 selfPos = _bot.Position;
             int memberCount = group.MembersCount;
 
             for (int i = 0; i < memberCount; i++)
             {
                 BotOwner mate = group.Member(i);
-                if (!this.IsValidSquadmate(mate, selfPos))
+                if (!IsValidSquadmate(mate, selfPos))
                 {
                     continue;
                 }
 
                 BotComponentCache mateCache = BotCacheUtility.GetCache(mate);
-                if (mateCache == null || mateCache.Combat == null || !this.CanAcceptEcho(mateCache))
+                if (mateCache == null || mateCache.Combat == null || !CanAcceptEcho(mateCache))
                 {
                     continue;
                 }
@@ -167,7 +167,7 @@ namespace AIRefactored.AI.Combat.States
                 }
             }
 
-            this._lastEchoInvestigateTime = now;
+            _lastEchoInvestigateTime = now;
         }
 
         /// <summary>
@@ -176,18 +176,20 @@ namespace AIRefactored.AI.Combat.States
         /// <param name="enemyPosition">The position of the observed enemy.</param>
         public void EchoSpottedEnemyToSquad(Vector3 enemyPosition)
         {
-            BotsGroup group = this._bot.BotsGroup;
+            BotsGroup group = _bot.BotsGroup;
             if (group == null)
             {
                 return;
             }
 
             string enemyId = string.Empty;
-            if (this._cache.ThreatSelector != null &&
-                this._cache.ThreatSelector.CurrentTarget != null &&
-                !string.IsNullOrEmpty(this._cache.ThreatSelector.CurrentTarget.ProfileId))
+            if (_cache.ThreatSelector != null && _cache.ThreatSelector.CurrentTarget != null)
             {
-                enemyId = this._cache.ThreatSelector.CurrentTarget.ProfileId;
+                string pid = _cache.ThreatSelector.CurrentTarget.ProfileId;
+                if (!string.IsNullOrEmpty(pid))
+                {
+                    enemyId = pid;
+                }
             }
 
             int memberCount = group.MembersCount;
@@ -195,7 +197,7 @@ namespace AIRefactored.AI.Combat.States
             for (int i = 0; i < memberCount; i++)
             {
                 BotOwner mate = group.Member(i);
-                if (mate == null || mate == this._bot || mate.IsDead)
+                if (mate == null || mate == _bot || mate.IsDead)
                 {
                     continue;
                 }
@@ -212,7 +214,7 @@ namespace AIRefactored.AI.Combat.States
 
         #region Private Methods
 
-        private bool CanAcceptEcho(BotComponentCache cache)
+        private static bool CanAcceptEcho(BotComponentCache cache)
         {
             if (cache.IsBlinded)
             {
@@ -231,7 +233,7 @@ namespace AIRefactored.AI.Combat.States
 
         private bool IsValidSquadmate(BotOwner mate, Vector3 origin)
         {
-            if (mate == null || mate == this._bot || mate.IsDead)
+            if (mate == null || mate == _bot || mate.IsDead)
             {
                 return false;
             }

@@ -71,12 +71,16 @@ namespace AIRefactored.AI.Helpers
 
             ShotTimestamps[id] = Time.time;
 
-            if (player.Transform?.Original != null)
+            Transform transform = player.Transform != null ? player.Transform.Original : null;
+            if (transform == null)
             {
-                Vector3 pos = player.Transform.Original.position;
-                SoundZones[id] = pos;
-                TriggerSquadPing(id, pos, true);
+                return;
             }
+
+            Vector3 pos = transform.position;
+            SoundZones[id] = pos;
+
+            TriggerSquadPing(id, pos, true);
         }
 
         public static void NotifyStep(Player player)
@@ -94,36 +98,55 @@ namespace AIRefactored.AI.Helpers
 
             FootstepTimestamps[id] = Time.time;
 
-            if (player.Transform?.Original != null)
+            Transform transform = player.Transform != null ? player.Transform.Original : null;
+            if (transform == null)
             {
-                Vector3 pos = player.Transform.Original.position;
-                SoundZones[id] = pos;
-                TriggerSquadPing(id, pos, false);
+                return;
             }
+
+            Vector3 pos = transform.position;
+            SoundZones[id] = pos;
+
+            TriggerSquadPing(id, pos, false);
         }
 
         public static bool TryGetLastShot(Player player, out float time)
         {
             time = -1f;
-            return player != null &&
-                   !string.IsNullOrEmpty(player.ProfileId) &&
-                   ShotTimestamps.TryGetValue(player.ProfileId, out time);
+
+            if (player == null)
+            {
+                return false;
+            }
+
+            string id = player.ProfileId;
+            return !string.IsNullOrEmpty(id) && ShotTimestamps.TryGetValue(id, out time);
         }
 
         public static bool TryGetLastStep(Player player, out float time)
         {
             time = -1f;
-            return player != null &&
-                   !string.IsNullOrEmpty(player.ProfileId) &&
-                   FootstepTimestamps.TryGetValue(player.ProfileId, out time);
+
+            if (player == null)
+            {
+                return false;
+            }
+
+            string id = player.ProfileId;
+            return !string.IsNullOrEmpty(id) && FootstepTimestamps.TryGetValue(id, out time);
         }
 
         public static bool TryGetSoundPosition(Player player, out Vector3 pos)
         {
             pos = Vector3.zero;
-            return player != null &&
-                   !string.IsNullOrEmpty(player.ProfileId) &&
-                   SoundZones.TryGetValue(player.ProfileId, out pos);
+
+            if (player == null)
+            {
+                return false;
+            }
+
+            string id = player.ProfileId;
+            return !string.IsNullOrEmpty(id) && SoundZones.TryGetValue(id, out pos);
         }
 
         #endregion
@@ -142,7 +165,13 @@ namespace AIRefactored.AI.Helpers
                 }
 
                 BotOwner bot = cache.Bot;
-                if (bot == null || bot.IsDead || bot.ProfileId == sourceId)
+                if (bot == null || bot.IsDead)
+                {
+                    continue;
+                }
+
+                string id = bot.ProfileId;
+                if (id == sourceId)
                 {
                     continue;
                 }
@@ -162,11 +191,17 @@ namespace AIRefactored.AI.Helpers
 
                 if (isGunshot)
                 {
-                    cache.GroupComms?.SaySuppression();
+                    if (cache.GroupComms != null)
+                    {
+                        cache.GroupComms.SaySuppression();
+                    }
                 }
                 else
                 {
-                    cache.GroupComms?.SayFallback();
+                    if (cache.GroupComms != null)
+                    {
+                        cache.GroupComms.SayFallback();
+                    }
                 }
             }
         }

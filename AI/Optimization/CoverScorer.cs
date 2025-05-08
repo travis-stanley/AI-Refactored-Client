@@ -9,6 +9,7 @@
 namespace AIRefactored.AI.Optimization
 {
     using System;
+    using AIRefactored.Pools;
     using AIRefactored.Runtime;
     using BepInEx.Logging;
     using EFT;
@@ -68,29 +69,36 @@ namespace AIRefactored.AI.Optimization
 
             float score = 1.0f;
 
-            // Wall behind bonus
-            if (Physics.Raycast(eyePos, fromThreat, out RaycastHit backHit, BackWallDistance) &&
-                IsSolid(backHit.collider))
+            RaycastHit[] hits = TempRaycastHitPool.Rent(5);
+            try
             {
-                score += 3.0f;
-            }
-
-            // Exposure penalty
-            if (!Physics.Raycast(eyePos, toThreat, ExposureCheckDistance))
-            {
-                score -= 2.0f;
-            }
-
-            // Flank protection bonuses
-            for (int i = 0; i < FlankAngles.Length; i++)
-            {
-                Vector3 flankDir = Quaternion.Euler(0f, FlankAngles[i].x, 0f) * toThreat;
-
-                if (Physics.Raycast(eyePos, flankDir.normalized, out RaycastHit flankHit, FlankRayDistance) &&
-                    IsSolid(flankHit.collider))
+                // Wall behind bonus
+                if (Physics.Raycast(eyePos, fromThreat, out hits[0], BackWallDistance) && IsSolid(hits[0].collider))
                 {
-                    score += 0.5f;
+                    score += 3.0f;
                 }
+
+                // Exposure penalty
+                if (!Physics.Raycast(eyePos, toThreat, ExposureCheckDistance))
+                {
+                    score -= 2.0f;
+                }
+
+                // Flank protection bonuses
+                for (int i = 0; i < FlankAngles.Length; i++)
+                {
+                    Vector3 flankDir = Quaternion.Euler(0f, FlankAngles[i].x, 0f) * toThreat;
+
+                    if (Physics.Raycast(eyePos, flankDir.normalized, out hits[i + 1], FlankRayDistance) &&
+                        IsSolid(hits[i + 1].collider))
+                    {
+                        score += 0.5f;
+                    }
+                }
+            }
+            finally
+            {
+                TempRaycastHitPool.Return(hits);
             }
 
             // Distance penalty

@@ -46,7 +46,7 @@ namespace AIRefactored.AI.Movement
         {
             if (bot == null || cache == null)
             {
-                throw new ArgumentException("BotLookController: bot or cache is null.");
+                throw new ArgumentException("[BotLookController] Invalid bot or cache.");
             }
 
             _bot = bot;
@@ -66,7 +66,12 @@ namespace AIRefactored.AI.Movement
             }
 
             Player player = _bot.GetPlayer;
-            if (player == null || player.PlayerBones == null || player.PlayerBones.Head == null || FikaHeadlessDetector.IsHeadless)
+            if (player == null || player.PlayerBones == null || player.PlayerBones.Head == null)
+            {
+                return;
+            }
+
+            if (FikaHeadlessDetector.IsHeadless)
             {
                 return;
             }

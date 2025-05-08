@@ -56,9 +56,9 @@ namespace AIRefactored.AI.Combat.States
                 throw new InvalidOperationException("InvestigateHandler requires valid cache, BotOwner, and TacticalMemory.");
             }
 
-            this._cache = cache;
-            this._bot = cache.Bot;
-            this._memory = cache.TacticalMemory;
+            _cache = cache;
+            _bot = cache.Bot;
+            _memory = cache.TacticalMemory;
         }
 
         #endregion
@@ -71,18 +71,21 @@ namespace AIRefactored.AI.Combat.States
         /// <param name="visualLastKnown">Visual enemy position if known, or Vector3.zero.</param>
         public Vector3 GetInvestigateTarget(Vector3 visualLastKnown)
         {
-            if (!float.IsNaN(visualLastKnown.x) && !float.IsNaN(visualLastKnown.y) && !float.IsNaN(visualLastKnown.z) && visualLastKnown != Vector3.zero)
+            if (!float.IsNaN(visualLastKnown.x) &&
+                !float.IsNaN(visualLastKnown.y) &&
+                !float.IsNaN(visualLastKnown.z) &&
+                visualLastKnown != Vector3.zero)
             {
                 return visualLastKnown;
             }
 
             Vector3 memoryPos;
-            if (this.TryGetMemoryEnemyPosition(out memoryPos))
+            if (TryGetMemoryEnemyPosition(out memoryPos))
             {
                 return memoryPos;
             }
 
-            return this.RandomNearbyPosition();
+            return RandomNearbyPosition();
         }
 
         /// <summary>
@@ -91,8 +94,8 @@ namespace AIRefactored.AI.Combat.States
         /// <param name="target">Investigate location.</param>
         public void Investigate(Vector3 target)
         {
-            Vector3 destination = (this._cache.SquadPath != null)
-                ? this._cache.SquadPath.ApplyOffsetTo(target)
+            Vector3 destination = _cache.SquadPath != null
+                ? _cache.SquadPath.ApplyOffsetTo(target)
                 : target;
 
             if (float.IsNaN(destination.x) || float.IsNaN(destination.y) || float.IsNaN(destination.z))
@@ -101,12 +104,12 @@ namespace AIRefactored.AI.Combat.States
                 return;
             }
 
-            BotMovementHelper.SmoothMoveTo(this._bot, destination);
-            this._memory.MarkCleared(destination);
+            BotMovementHelper.SmoothMoveTo(_bot, destination);
+            _memory.MarkCleared(destination);
 
-            if (this._cache.Combat != null)
+            if (_cache.Combat != null)
             {
-                this._cache.Combat.TrySetStanceFromNearbyCover(destination);
+                _cache.Combat.TrySetStanceFromNearbyCover(destination);
             }
         }
 
@@ -117,18 +120,18 @@ namespace AIRefactored.AI.Combat.States
         /// <param name="lastTransition">Last combat state switch time.</param>
         public bool ShallUseNow(float time, float lastTransition)
         {
-            if (this._cache.AIRefactoredBotOwner == null || this._cache.AIRefactoredBotOwner.PersonalityProfile == null)
+            if (_cache.AIRefactoredBotOwner == null)
             {
                 return false;
             }
 
-            BotPersonalityProfile profile = this._cache.AIRefactoredBotOwner.PersonalityProfile;
-            if (profile.Caution < MinCaution)
+            BotPersonalityProfile profile = _cache.AIRefactoredBotOwner.PersonalityProfile;
+            if (profile == null || profile.Caution < MinCaution)
             {
                 return false;
             }
 
-            float heardTime = this._cache.LastHeardTime;
+            float heardTime = _cache.LastHeardTime;
             return (heardTime + SoundReactTime) > time && (time - lastTransition) > ExitDelayBuffer;
         }
 
@@ -149,7 +152,7 @@ namespace AIRefactored.AI.Combat.States
         /// </summary>
         public bool IsInvestigating()
         {
-            return (Time.time - this._cache.LastHeardTime) <= ActiveWindow;
+            return (Time.time - _cache.LastHeardTime) <= ActiveWindow;
         }
 
         #endregion
@@ -158,11 +161,15 @@ namespace AIRefactored.AI.Combat.States
 
         private bool TryGetMemoryEnemyPosition(out Vector3 result)
         {
-            Vector3? memory = this._memory.GetRecentEnemyMemory();
-            if (memory.HasValue && !float.IsNaN(memory.Value.x) && !float.IsNaN(memory.Value.y) && !float.IsNaN(memory.Value.z))
+            Vector3? memory = _memory.GetRecentEnemyMemory();
+            if (memory.HasValue)
             {
-                result = memory.Value;
-                return true;
+                Vector3 value = memory.Value;
+                if (!float.IsNaN(value.x) && !float.IsNaN(value.y) && !float.IsNaN(value.z))
+                {
+                    result = value;
+                    return true;
+                }
             }
 
             result = Vector3.zero;
@@ -171,7 +178,7 @@ namespace AIRefactored.AI.Combat.States
 
         private Vector3 RandomNearbyPosition()
         {
-            Vector3 basePos = this._bot.Position;
+            Vector3 basePos = _bot.Position;
             Vector3 offset = UnityEngine.Random.insideUnitSphere * ScanRadius;
             offset.y = 0f;
             return basePos + offset;

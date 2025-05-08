@@ -26,8 +26,11 @@ namespace AIRefactored.AI.Optimization
         #region Fields
 
         private readonly Dictionary<string, bool> _optimizationApplied = new Dictionary<string, bool>(64);
+
         private static readonly Dictionary<int, float> LastOptimizationLogs = new Dictionary<int, float>(64);
+
         private const float OptimizationLogCooldown = 5f;
+
         private static readonly ManualLogSource Logger = Plugin.LoggerInstance;
 
         #endregion
@@ -40,13 +43,19 @@ namespace AIRefactored.AI.Optimization
         /// <param name="botOwner">Target bot to log.</param>
         public void Optimize(BotOwner botOwner)
         {
-            if (!GameWorldHandler.IsLocalHost() || !IsValid(botOwner))
+            if (!GameWorldHandler.IsLocalHost())
+            {
+                return;
+            }
+
+            if (!IsValid(botOwner))
             {
                 return;
             }
 
             string profileId = botOwner.Profile.Id;
-            if (_optimizationApplied.TryGetValue(profileId, out bool alreadyApplied) && alreadyApplied)
+            bool alreadyApplied;
+            if (_optimizationApplied.TryGetValue(profileId, out alreadyApplied) && alreadyApplied)
             {
                 if (!ShouldLogOptimization(botOwner))
                 {
@@ -71,7 +80,12 @@ namespace AIRefactored.AI.Optimization
         /// <param name="botOwner">Bot to reset.</param>
         public void ResetOptimization(BotOwner botOwner)
         {
-            if (!GameWorldHandler.IsLocalHost() || !IsValid(botOwner))
+            if (!GameWorldHandler.IsLocalHost())
+            {
+                return;
+            }
+
+            if (!IsValid(botOwner))
             {
                 return;
             }
@@ -86,12 +100,24 @@ namespace AIRefactored.AI.Optimization
 
         #region Private Helpers
 
+        private static bool IsValid(BotOwner bot)
+        {
+            return bot != null &&
+                   bot.GetPlayer != null &&
+                   bot.GetPlayer.IsAI &&
+                   bot.Profile != null &&
+                   bot.Settings != null &&
+                   bot.Settings.FileSettings != null &&
+                   !bot.IsDead;
+        }
+
         private static bool ShouldLogOptimization(BotOwner bot)
         {
             int id = bot.GetInstanceID();
             float now = Time.time;
 
-            if (LastOptimizationLogs.TryGetValue(id, out float last) && now - last < OptimizationLogCooldown)
+            float last;
+            if (LastOptimizationLogs.TryGetValue(id, out last) && now - last < OptimizationLogCooldown)
             {
                 return false;
             }
@@ -100,18 +126,9 @@ namespace AIRefactored.AI.Optimization
             return true;
         }
 
-        private static bool IsValid(BotOwner bot)
-        {
-            return bot != null &&
-                   bot.GetPlayer != null &&
-                   bot.GetPlayer.IsAI &&
-                   bot.Profile != null &&
-                   !bot.IsDead;
-        }
-
         private static void LogCognition(BotOwner bot)
         {
-            string name = bot.Profile.Info.Nickname;
+            string name = bot.Profile.Info != null ? bot.Profile.Info.Nickname : "Unknown";
             BotGlobalLookData look = bot.Settings.FileSettings.Look;
 
             if (look == null)
@@ -128,7 +145,7 @@ namespace AIRefactored.AI.Optimization
 
         private static void LogMind(BotOwner bot)
         {
-            string name = bot.Profile.Info.Nickname;
+            string name = bot.Profile.Info != null ? bot.Profile.Info.Nickname : "Unknown";
             BotGlobalsMindSettings mind = bot.Settings.FileSettings.Mind;
 
             if (mind == null)
@@ -145,8 +162,10 @@ namespace AIRefactored.AI.Optimization
 
         private static void LogRole(BotOwner bot)
         {
-            string name = bot.Profile.Info.Nickname;
-            WildSpawnType role = bot.Profile.Info.Settings.Role;
+            string name = bot.Profile.Info != null ? bot.Profile.Info.Nickname : "Unknown";
+            WildSpawnType role = bot.Profile.Info.Settings != null
+                ? bot.Profile.Info.Settings.Role
+                : WildSpawnType.assault;
 
             Logger.LogInfo("[BotDiagnostics][Role] " + name + " → ProfileRole=" + role);
         }

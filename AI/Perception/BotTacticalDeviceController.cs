@@ -11,6 +11,8 @@ namespace AIRefactored.AI.Perception
     using System;
     using System.Collections.Generic;
     using AIRefactored.AI.Core;
+    using AIRefactored.Core;
+    using AIRefactored.Pools;
     using EFT;
     using EFT.InventoryLogic;
     using UnityEngine;
@@ -24,8 +26,6 @@ namespace AIRefactored.AI.Perception
     {
         #region Fields
 
-        private readonly List<LightComponent> _devices = new List<LightComponent>(4);
-
         private BotOwner _bot;
         private BotComponentCache _cache;
         private float _nextDecisionTime;
@@ -37,7 +37,6 @@ namespace AIRefactored.AI.Perception
         /// <summary>
         /// Initializes the controller with the bot's runtime cache.
         /// </summary>
-        /// <param name="cache">Bot component cache.</param>
         public void Initialize(BotComponentCache cache)
         {
             if (cache == null)
@@ -77,29 +76,36 @@ namespace AIRefactored.AI.Perception
                 return;
             }
 
-            ScanMods(weapon);
-
-            bool lowVisibility = IsLowVisibility();
-            bool baitTrigger = Random.value < GetChaosBaitChance();
-            bool shouldEnable = lowVisibility || baitTrigger;
-
-            for (int i = 0; i < _devices.Count; i++)
+            List<LightComponent> devices = TempListPool.Rent<LightComponent>();
+            try
             {
-                LightComponent device = _devices[i];
-                if (device.IsActive != shouldEnable)
+                ScanMods(weapon, devices);
+
+                bool lowVisibility = IsLowVisibility();
+                bool baitTrigger = Random.value < GetChaosBaitChance();
+                bool shouldEnable = lowVisibility || baitTrigger;
+
+                for (int i = 0; i < devices.Count; i++)
                 {
-                    device.IsActive = shouldEnable;
+                    LightComponent device = devices[i];
+                    if (device.IsActive != shouldEnable)
+                    {
+                        device.IsActive = shouldEnable;
+                    }
+                }
+
+                if (baitTrigger)
+                {
+                    _nextDecisionTime = Time.time + 1.5f;
+                    for (int i = 0; i < devices.Count; i++)
+                    {
+                        devices[i].IsActive = false;
+                    }
                 }
             }
-
-            if (baitTrigger)
+            finally
             {
-                _nextDecisionTime = Time.time + 1.5f;
-
-                for (int i = 0; i < _devices.Count; i++)
-                {
-                    _devices[i].IsActive = false;
-                }
+                TempListPool.Return(devices);
             }
         }
 
@@ -109,24 +115,21 @@ namespace AIRefactored.AI.Perception
 
         private bool CanThink()
         {
-            if (_bot == null || _cache == null || _bot.IsDead || Time.time < _nextDecisionTime)
-            {
-                return false;
-            }
-
-            Player player = _bot.GetPlayer;
-            return player != null && player.IsAI && !player.IsYourPlayer;
+            return _bot != null &&
+                   _cache != null &&
+                   !_bot.IsDead &&
+                   Time.time >= _nextDecisionTime &&
+                   _bot.GetPlayer != null &&
+                   _bot.GetPlayer.IsAI &&
+                   !_bot.GetPlayer.IsYourPlayer;
         }
 
         private float GetChaosBaitChance()
         {
-            AIRefactoredBotOwner aiOwner = _cache.AIRefactoredBotOwner;
-            if (aiOwner == null)
-            {
-                return 0f;
-            }
+            BotPersonalityProfile profile = _cache.AIRefactoredBotOwner != null
+                ? _cache.AIRefactoredBotOwner.PersonalityProfile
+                : null;
 
-            BotPersonalityProfile profile = aiOwner.PersonalityProfile;
             return profile != null ? profile.ChaosFactor * 0.25f : 0f;
         }
 
@@ -134,14 +137,11 @@ namespace AIRefactored.AI.Perception
         {
             float ambient = RenderSettings.ambientLight.grayscale;
             float fogDensity = RenderSettings.fog ? RenderSettings.fogDensity : 0f;
-
             return ambient < TacticalConfig.LightThreshold || fogDensity > TacticalConfig.FogThreshold;
         }
 
-        private void ScanMods(Weapon weapon)
+        private static void ScanMods(Weapon weapon, List<LightComponent> result)
         {
-            _devices.Clear();
-
             IEnumerable<Slot> slots = weapon.AllSlots;
             if (slots == null)
             {
@@ -170,15 +170,15 @@ namespace AIRefactored.AI.Perception
                 switch (mod)
                 {
                     case FlashlightItemClass f when f.Light != null:
-                        _devices.Add(f.Light);
+                        result.Add(f.Light);
                         break;
 
                     case TacticalComboItemClass c when c.Light != null:
-                        _devices.Add(c.Light);
+                        result.Add(c.Light);
                         break;
 
                     case LightLaserItemClass l when l.Light != null:
-                        _devices.Add(l.Light);
+                        result.Add(l.Light);
                         break;
                 }
             }

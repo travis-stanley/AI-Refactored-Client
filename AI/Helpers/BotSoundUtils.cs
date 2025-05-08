@@ -19,14 +19,15 @@ namespace AIRefactored.AI.Helpers
         /// <summary>
         /// Returns true if a non-teammate fired recently.
         /// </summary>
-        /// <param name="self">The listening bot.</param>
-        /// <param name="source">The source player emitting the sound.</param>
-        /// <param name="recentThreshold">Threshold window in seconds to consider the sound recent.</param>
-        /// <param name="now">Optional time override (defaults to Time.time).</param>
-        /// <returns>True if the source fired recently and is valid for tracking.</returns>
         public static bool DidFireRecently(BotOwner self, Player source, float recentThreshold = 1.5f, float now = -1f)
         {
-            if (self == null || source == null || self.GetPlayer == null || source.AIData == null)
+            if (self == null || source == null)
+            {
+                return false;
+            }
+
+            Player selfPlayer = self.GetPlayer;
+            if (selfPlayer == null || source.AIData == null)
             {
                 return false;
             }
@@ -38,14 +39,15 @@ namespace AIRefactored.AI.Helpers
         /// <summary>
         /// Returns true if a non-teammate stepped recently.
         /// </summary>
-        /// <param name="self">The listening bot.</param>
-        /// <param name="source">The source player emitting the footstep.</param>
-        /// <param name="recentThreshold">Threshold window in seconds to consider the step recent.</param>
-        /// <param name="now">Optional time override (defaults to Time.time).</param>
-        /// <returns>True if the source stepped recently and is valid for tracking.</returns>
         public static bool DidStepRecently(BotOwner self, Player source, float recentThreshold = 1.2f, float now = -1f)
         {
-            if (self == null || source == null || self.GetPlayer == null || source.AIData == null)
+            if (self == null || source == null)
+            {
+                return false;
+            }
+
+            Player selfPlayer = self.GetPlayer;
+            if (selfPlayer == null || source.AIData == null)
             {
                 return false;
             }
@@ -57,9 +59,6 @@ namespace AIRefactored.AI.Helpers
         /// <summary>
         /// Filters out invalid sound sources: null, self, same group, or invalid profile.
         /// </summary>
-        /// <param name="self">The bot checking the sound.</param>
-        /// <param name="source">The player generating the sound.</param>
-        /// <returns>True if the source is valid for sound tracking.</returns>
         private static bool IsValidSoundSource(BotOwner self, Player source)
         {
             if (self == null || self.GetPlayer == null || source == null || source.AIData == null)
@@ -72,10 +71,21 @@ namespace AIRefactored.AI.Helpers
                 return false;
             }
 
-            string selfGroup = self.Profile?.Info?.GroupId ?? string.Empty;
-            string sourceGroup = source.Profile?.Info?.GroupId ?? string.Empty;
+            if (self.Profile == null || self.Profile.Info == null ||
+                source.Profile == null || source.Profile.Info == null)
+            {
+                return false;
+            }
 
-            return selfGroup != sourceGroup;
+            string selfGroup = self.Profile.Info.GroupId;
+            string sourceGroup = source.Profile.Info.GroupId;
+
+            if (string.IsNullOrEmpty(selfGroup) || string.IsNullOrEmpty(sourceGroup))
+            {
+                return true;
+            }
+
+            return !selfGroup.Equals(sourceGroup);
         }
     }
 }

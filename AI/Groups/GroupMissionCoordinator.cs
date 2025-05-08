@@ -20,11 +20,9 @@ namespace AIRefactored.AI.Groups
     /// </summary>
     public static class GroupMissionCoordinator
     {
-        private static readonly Dictionary<string, BotMissionController.MissionType> AssignedMissions = new Dictionary<string, BotMissionController.MissionType>(32);
+        private static readonly Dictionary<string, BotMissionController.MissionType> AssignedMissions =
+            new Dictionary<string, BotMissionController.MissionType>(32);
 
-        /// <summary>
-        /// Forces a specific mission type for the given group ID.
-        /// </summary>
         public static void ForceMissionForGroup(string groupId, BotMissionController.MissionType mission)
         {
             if (!string.IsNullOrEmpty(groupId))
@@ -33,9 +31,6 @@ namespace AIRefactored.AI.Groups
             }
         }
 
-        /// <summary>
-        /// Gets the mission type for the bot's group. Returns a weighted choice if not yet assigned.
-        /// </summary>
         public static BotMissionController.MissionType GetMissionForGroup(BotOwner bot)
         {
             if (bot == null || bot.IsDead)
@@ -44,12 +39,18 @@ namespace AIRefactored.AI.Groups
             }
 
             Player player = bot.GetPlayer;
-            if (player == null || !player.IsAI || player.Profile == null || player.Profile.Info == null)
+            if (player == null || !player.IsAI)
             {
                 return BotMissionController.MissionType.Loot;
             }
 
-            string groupId = player.Profile.Info.GroupId;
+            Profile profile = player.Profile;
+            if (profile == null || profile.Info == null)
+            {
+                return BotMissionController.MissionType.Loot;
+            }
+
+            string groupId = profile.Info.GroupId;
             if (string.IsNullOrEmpty(groupId))
             {
                 return PickMission(bot);
@@ -65,9 +66,6 @@ namespace AIRefactored.AI.Groups
             return result;
         }
 
-        /// <summary>
-        /// Registers the bot's group if not already present.
-        /// </summary>
         public static void RegisterFromBot(BotOwner bot)
         {
             if (bot == null || bot.IsDead)
@@ -76,21 +74,24 @@ namespace AIRefactored.AI.Groups
             }
 
             Player player = bot.GetPlayer;
-            if (player == null || !player.IsAI || player.Profile == null || player.Profile.Info == null)
+            if (player == null || !player.IsAI)
             {
                 return;
             }
 
-            string groupId = player.Profile.Info.GroupId;
+            Profile profile = player.Profile;
+            if (profile == null || profile.Info == null)
+            {
+                return;
+            }
+
+            string groupId = profile.Info.GroupId;
             if (!string.IsNullOrEmpty(groupId) && !AssignedMissions.ContainsKey(groupId))
             {
                 AssignedMissions[groupId] = PickMission(bot);
             }
         }
 
-        /// <summary>
-        /// Clears all cached mission assignments.
-        /// </summary>
         public static void Reset()
         {
             AssignedMissions.Clear();
@@ -120,12 +121,12 @@ namespace AIRefactored.AI.Groups
                     loot += 1.2f;
                     break;
                 case "rezervbase":
-                    fight += 1f;
+                    fight += 1.0f;
                     loot += 0.4f;
                     break;
                 case "lighthouse":
                     quest += 1.2f;
-                    loot += 1f;
+                    loot += 1.0f;
                     break;
                 case "shoreline":
                     quest += 1.4f;
@@ -136,12 +137,12 @@ namespace AIRefactored.AI.Groups
                     loot += 0.5f;
                     break;
                 case "laboratory":
-                    fight += 2f;
+                    fight += 2.0f;
                     break;
                 case "sandbox":
                 case "sandbox_high":
                 case "groundzero":
-                    loot += 1f;
+                    loot += 1.0f;
                     break;
                 default:
                     loot += 0.5f;
@@ -162,7 +163,7 @@ namespace AIRefactored.AI.Groups
 
                 if (personality.IsFearful)
                 {
-                    loot += 1f;
+                    loot += 1.0f;
                 }
 
                 if (personality.IsCamper)
@@ -172,7 +173,7 @@ namespace AIRefactored.AI.Groups
             }
 
             float total = loot + fight + quest;
-            float roll = UnityEngine.Random.value * total;
+            float roll = Random.value * total;
 
             if (roll < loot)
             {

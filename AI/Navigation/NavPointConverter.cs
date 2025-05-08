@@ -33,7 +33,6 @@ namespace AIRefactored.AI.Navigation
         /// <returns>Converted <see cref="NavPointData"/> for AI tactical use.</returns>
         public static NavPointData FromCustom(CustomNavigationPoint custom)
         {
-            // Enforce hard null safety
             if (ReferenceEquals(custom, null))
             {
                 throw new System.ArgumentException("[NavPointConverter] CustomNavigationPoint was null.");
@@ -60,11 +59,12 @@ namespace AIRefactored.AI.Navigation
                 "EFT",
                 elevation,
                 custom.IsGoodInsideBuilding,
-                true, // Always treat CustomNavigationPoints as jump-safe
+                true,
                 coverAngle,
                 "Unassigned",
                 ResolveElevationBand(elevation));
         }
+
 
         #endregion
 

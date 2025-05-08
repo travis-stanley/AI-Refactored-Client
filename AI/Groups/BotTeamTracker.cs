@@ -27,21 +27,16 @@ namespace AIRefactored.AI.Groups
 
         #region Public API
 
-        /// <summary>
-        /// Clears all cached group associations.
-        /// </summary>
         public static void Clear()
         {
             Groups.Clear();
         }
 
-        /// <summary>
-        /// Returns a copy of all currently tracked bot groups.
-        /// </summary>
         public static Dictionary<string, List<BotOwner>> GetAllGroups()
         {
-            var copy = new Dictionary<string, List<BotOwner>>(Groups.Count);
-            foreach (var pair in Groups)
+            Dictionary<string, List<BotOwner>> copy = new Dictionary<string, List<BotOwner>>(Groups.Count);
+
+            foreach (KeyValuePair<string, List<BotOwner>> pair in Groups)
             {
                 copy[pair.Key] = new List<BotOwner>(pair.Value);
             }
@@ -49,23 +44,22 @@ namespace AIRefactored.AI.Groups
             return copy;
         }
 
-        /// <summary>
-        /// Returns the validated bot list for a given groupId.
-        /// Only non-dead AI bots are returned.
-        /// </summary>
         public static List<BotOwner> GetGroup(string groupId)
         {
             TempBuffer.Clear();
 
-            if (groupId.Length > 0 && Groups.TryGetValue(groupId, out var members))
+            if (!string.IsNullOrEmpty(groupId) && Groups.TryGetValue(groupId, out List<BotOwner> members))
             {
                 for (int i = 0; i < members.Count; i++)
                 {
                     BotOwner bot = members[i];
-                    Player player = bot.GetPlayer;
-                    if (!bot.IsDead && player != null && player.IsAI)
+                    if (bot != null && !bot.IsDead)
                     {
-                        TempBuffer.Add(bot);
+                        Player player = bot.GetPlayer;
+                        if (player != null && player.IsAI)
+                        {
+                            TempBuffer.Add(bot);
+                        }
                     }
                 }
             }
@@ -73,23 +67,17 @@ namespace AIRefactored.AI.Groups
             return new List<BotOwner>(TempBuffer);
         }
 
-        /// <summary>
-        /// Logs current group contents to the console.
-        /// </summary>
         public static void PrintGroups()
         {
-            foreach (var entry in Groups)
+            foreach (KeyValuePair<string, List<BotOwner>> entry in Groups)
             {
                 Debug.Log("[BotTeamTracker] Group '" + entry.Key + "': " + entry.Value.Count + " member(s)");
             }
         }
 
-        /// <summary>
-        /// Registers a bot into the specified group.
-        /// </summary>
         public static void Register(string groupId, BotOwner bot)
         {
-            if (groupId.Length == 0 || bot.IsDead)
+            if (string.IsNullOrEmpty(groupId) || bot == null || bot.IsDead)
             {
                 return;
             }
@@ -100,7 +88,8 @@ namespace AIRefactored.AI.Groups
                 return;
             }
 
-            if (!Groups.TryGetValue(groupId, out var list))
+            List<BotOwner> list;
+            if (!Groups.TryGetValue(groupId, out list))
             {
                 list = new List<BotOwner>(4);
                 Groups[groupId] = list;
@@ -112,35 +101,42 @@ namespace AIRefactored.AI.Groups
             }
         }
 
-        /// <summary>
-        /// Registers the bot automatically using its profile GroupId.
-        /// </summary>
         public static void RegisterFromBot(BotOwner bot)
         {
-            if (bot.IsDead)
+            if (bot == null || bot.IsDead)
             {
                 return;
             }
 
             Player player = bot.GetPlayer;
-            if (player != null && player.Profile != null && player.Profile.Info != null)
+            if (player == null)
             {
-                string groupId = player.Profile.Info.GroupId;
-                if (groupId.Length > 0)
-                {
-                    Register(groupId, bot);
-                }
+                return;
+            }
+
+            Profile profile = player.Profile;
+            if (profile == null || profile.Info == null)
+            {
+                return;
+            }
+
+            string groupId = profile.Info.GroupId;
+            if (!string.IsNullOrEmpty(groupId))
+            {
+                Register(groupId, bot);
             }
         }
 
-        /// <summary>
-        /// Removes the bot from any registered group.
-        /// </summary>
         public static void Unregister(BotOwner bot)
         {
+            if (bot == null)
+            {
+                return;
+            }
+
             string groupToRemove = null;
 
-            foreach (var kvp in Groups)
+            foreach (KeyValuePair<string, List<BotOwner>> kvp in Groups)
             {
                 List<BotOwner> list = kvp.Value;
                 if (list.Remove(bot))
@@ -154,7 +150,7 @@ namespace AIRefactored.AI.Groups
                 }
             }
 
-            if (groupToRemove != null)
+            if (!string.IsNullOrEmpty(groupToRemove))
             {
                 Groups.Remove(groupToRemove);
             }

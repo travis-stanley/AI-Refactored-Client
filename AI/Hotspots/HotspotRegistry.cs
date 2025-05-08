@@ -84,7 +84,13 @@ namespace AIRefactored.AI.Hotspots
 
         public static IReadOnlyList<Hotspot> GetAllInZone(string zone)
         {
-            return ByZone.TryGetValue(zone, out List<Hotspot> result) ? result : Array.Empty<Hotspot>();
+            if (string.IsNullOrEmpty(zone))
+            {
+                return Array.Empty<Hotspot>();
+            }
+
+            List<Hotspot> result;
+            return ByZone.TryGetValue(zone, out result) ? result : Array.Empty<Hotspot>();
         }
 
         public static Hotspot GetRandomHotspot()
@@ -119,16 +125,17 @@ namespace AIRefactored.AI.Hotspots
                     continue;
                 }
 
-                Hotspot hotspot = new Hotspot(data.Position, data.Zone);
-                All.Add(hotspot);
+                Hotspot h = new Hotspot(data.Position, data.Zone);
+                All.Add(h);
 
-                if (!ByZone.TryGetValue(data.Zone, out List<Hotspot> zoneList))
+                List<Hotspot> zoneList;
+                if (!ByZone.TryGetValue(data.Zone, out zoneList))
                 {
                     zoneList = new List<Hotspot>(8);
                     ByZone[data.Zone] = zoneList;
                 }
 
-                zoneList.Add(hotspot);
+                zoneList.Add(h);
             }
 
             switch (_activeMode)
@@ -177,7 +184,7 @@ namespace AIRefactored.AI.Hotspots
 
         private static void BuildGrid()
         {
-            _grid = new HotspotSpatialGrid(10.0f);
+            _grid = new HotspotSpatialGrid(10f);
             for (int i = 0; i < All.Count; i++)
             {
                 _grid.Insert(All[i]);
@@ -193,11 +200,11 @@ namespace AIRefactored.AI.Hotspots
 
             for (int i = 0; i < All.Count; i++)
             {
-                Vector3 p = All[i].Position;
-                if (p.x < minX) minX = p.x;
-                if (p.x > maxX) maxX = p.x;
-                if (p.z < minZ) minZ = p.z;
-                if (p.z > maxZ) maxZ = p.z;
+                Vector3 pos = All[i].Position;
+                if (pos.x < minX) minX = pos.x;
+                if (pos.x > maxX) maxX = pos.x;
+                if (pos.z < minZ) minZ = pos.z;
+                if (pos.z > maxZ) maxZ = pos.z;
             }
 
             return new Vector2((minX + maxX) * 0.5f, (minZ + maxZ) * 0.5f);
@@ -206,11 +213,10 @@ namespace AIRefactored.AI.Hotspots
         private static float EstimateBoundsSize(Vector2 center)
         {
             float maxDist = 0f;
-
             for (int i = 0; i < All.Count; i++)
             {
-                Vector3 p = All[i].Position;
-                float dist = Vector2.Distance(center, new Vector2(p.x, p.z));
+                Vector3 pos = All[i].Position;
+                float dist = Vector2.Distance(center, new Vector2(pos.x, pos.z));
                 if (dist > maxDist)
                 {
                     maxDist = dist;
@@ -228,7 +234,8 @@ namespace AIRefactored.AI.Hotspots
             for (int i = 0; i < All.Count; i++)
             {
                 Hotspot h = All[i];
-                if ((h.Position - position).sqrMagnitude <= radiusSq && (filter == null || filter(h)))
+                if ((h.Position - position).sqrMagnitude <= radiusSq &&
+                    (filter == null || filter(h)))
                 {
                     result.Add(h);
                 }

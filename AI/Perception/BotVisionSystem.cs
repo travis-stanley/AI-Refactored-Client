@@ -24,6 +24,8 @@ namespace AIRefactored.AI.Perception
     /// </summary>
     public sealed class BotVisionSystem
     {
+        #region Constants
+
         private const float AutoDetectRadius = 4f;
         private const float BaseViewConeAngle = 120f;
         private const float BoneConfidenceDecay = 0.1f;
@@ -31,7 +33,6 @@ namespace AIRefactored.AI.Perception
         private const float MaxDetectionDistance = 120f;
         private const float SuppressionMissChance = 0.2f;
         private const float MotionBoost = 0.2f;
-
         private static readonly Vector3 EyeOffset = new Vector3(0f, 1.4f, 0f);
 
         private static readonly PlayerBoneType[] BonesToCheck =
@@ -41,11 +42,19 @@ namespace AIRefactored.AI.Perception
             PlayerBoneType.Pelvis, PlayerBoneType.LeftThigh1, PlayerBoneType.RightThigh1
         };
 
+        #endregion
+
+        #region Fields
+
         private BotOwner _bot;
         private BotComponentCache _cache;
         private BotTacticalMemory _memory;
         private BotPersonalityProfile _profile;
-        private float _lastCommitTime = -999f;
+        private float _lastCommitTime;
+
+        #endregion
+
+        #region Initialization
 
         public void Initialize(BotComponentCache cache)
         {
@@ -53,7 +62,12 @@ namespace AIRefactored.AI.Perception
             _cache = cache;
             _profile = cache.AIRefactoredBotOwner.PersonalityProfile;
             _memory = cache.TacticalMemory;
+            _lastCommitTime = -999f;
         }
+
+        #endregion
+
+        #region Tick
 
         public void Tick(float time)
         {
@@ -77,35 +91,35 @@ namespace AIRefactored.AI.Perception
 
             List<Player> players = GameWorldHandler.GetAllAlivePlayers();
             Player bestTarget = null;
-            float bestDistance = float.MaxValue;
+            float bestDist = float.MaxValue;
 
             for (int i = 0; i < players.Count; i++)
             {
-                Player target = players[i];
-                if (!IsValidTarget(target))
+                Player p = players[i];
+                if (!IsValidTarget(p))
                 {
                     continue;
                 }
 
-                Vector3 pos = EFTPlayerUtil.GetPosition(target);
+                Vector3 pos = EFTPlayerUtil.GetPosition(p);
                 float dist = Vector3.Distance(eye, pos);
-                float maxVisible = MaxDetectionDistance * (1f - fogFactor);
+                float maxVis = MaxDetectionDistance * (1f - fogFactor);
 
-                if (dist > maxVisible)
+                if (dist > maxVis)
                 {
                     continue;
                 }
 
                 bool inCone = IsInViewCone(forward, eye, pos, viewCone);
                 bool close = dist <= AutoDetectRadius;
-                bool canSee = HasLineOfSight(eye, target);
+                bool canSee = HasLineOfSight(eye, p);
 
                 if ((inCone && canSee) || (close && canSee))
                 {
-                    if (dist < bestDistance)
+                    if (dist < bestDist)
                     {
-                        bestDistance = dist;
-                        bestTarget = target;
+                        bestDist = dist;
+                        bestTarget = p;
                     }
                 }
                 else if ((inCone || close) && !canSee && !FikaHeadlessDetector.IsHeadless)
@@ -119,34 +133,15 @@ namespace AIRefactored.AI.Perception
                 Vector3 position = EFTPlayerUtil.GetPosition(bestTarget);
                 _memory.RecordEnemyPosition(position, "Visual", bestTarget.ProfileId);
 
-                if (_cache.GroupSync != null)
-                {
-                    List<BotComponentCache> teammates = TempListPool.Rent<BotComponentCache>();
-                    try
-                    {
-                        IReadOnlyList<BotOwner> squad = _cache.GroupSync.GetTeammates();
-                        for (int i = 0; i < squad.Count; i++)
-                        {
-                            BotOwner teammate = squad[i];
-                            if (BotRegistry.TryGetCache(teammate.ProfileId, out BotComponentCache component))
-                            {
-                                teammates.Add(component);
-                            }
-                        }
-
-                        _memory.ShareMemoryWith(teammates);
-                    }
-                    finally
-                    {
-                        TempListPool.Return(teammates);
-                    }
-                }
-
+                ShareMemoryToSquad(position);
                 TrackVisibleBones(eye, bestTarget, fogFactor);
                 EvaluateTargetConfidence(bestTarget, time);
             }
         }
 
+        #endregion
+
+        #region Private Helpers
 
         private void TrackVisibleBones(Vector3 eye, Player target, float fog)
         {
@@ -159,15 +154,20 @@ namespace AIRefactored.AI.Perception
 
             if (target.TryGetComponent<PlayerSpiritBones>(out PlayerSpiritBones bones))
             {
+                Bounds[] bounds = TempBoundsPool.Rent(BonesToCheck.Length);
+
                 for (int i = 0; i < BonesToCheck.Length; i++)
                 {
                     Transform bone = bones.GetBone(BonesToCheck[i]).Original;
                     if (bone != null && !Physics.Linecast(eye, bone.position, out _, AIRefactoredLayerMasks.LineOfSightMask))
                     {
+                        bounds[i] = new Bounds(bone.position, Vector3.one * 0.2f);
                         float boost = IsMovingFast(target) ? MotionBoost : 0f;
                         tracker.UpdateBoneVisibility(BonesToCheck[i].ToString(), bone.position, boost, fog);
                     }
                 }
+
+                TempBoundsPool.Return(bounds);
             }
             else
             {
@@ -190,7 +190,6 @@ namespace AIRefactored.AI.Perception
             }
 
             float confidence = tracker.GetOverallConfidence();
-
             if (_bot.Memory.IsUnderFire && Random.value < SuppressionMissChance)
             {
                 return;
@@ -229,6 +228,34 @@ namespace AIRefactored.AI.Perception
             if (!FikaHeadlessDetector.IsHeadless)
             {
                 _bot.BotTalk?.TrySay(EPhraseTrigger.OnEnemyConversation);
+            }
+        }
+
+        private void ShareMemoryToSquad(Vector3 pos)
+        {
+            if (_cache.GroupSync == null)
+            {
+                return;
+            }
+
+            List<BotComponentCache> teammates = TempListPool.Rent<BotComponentCache>();
+            try
+            {
+                IReadOnlyList<BotOwner> squad = _cache.GroupSync.GetTeammates();
+                for (int i = 0; i < squad.Count; i++)
+                {
+                    BotOwner mate = squad[i];
+                    if (BotRegistry.TryGetCache(mate.ProfileId, out BotComponentCache comp))
+                    {
+                        teammates.Add(comp);
+                    }
+                }
+
+                _memory.ShareMemoryWith(teammates);
+            }
+            finally
+            {
+                TempListPool.Return(teammates);
             }
         }
 
@@ -275,5 +302,7 @@ namespace AIRefactored.AI.Perception
                    EFTPlayerUtil.IsEnemyOf(_bot, t) &&
                    EFTPlayerUtil.IsValid(t);
         }
+
+        #endregion
     }
 }

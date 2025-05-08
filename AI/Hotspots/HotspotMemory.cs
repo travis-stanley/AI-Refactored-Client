@@ -8,7 +8,6 @@
 
 namespace AIRefactored.AI.Hotspots
 {
-    using System;
     using System.Collections.Generic;
     using UnityEngine;
 
@@ -18,14 +17,19 @@ namespace AIRefactored.AI.Hotspots
     /// </summary>
     internal static class HotspotMemory
     {
+        #region Constants
+
+        private const float DefaultVisitLifetime = float.MaxValue;
+
+        #endregion
+
         #region Fields
 
         /// <summary>
         /// Structure: mapId → (position → lastVisitTime).
         /// </summary>
-        private static readonly Dictionary<string, Dictionary<Vector3, float>> VisitedMap = new Dictionary<string, Dictionary<Vector3, float>>(8);
-
-        private const float DefaultVisitLifetime = float.MaxValue;
+        private static readonly Dictionary<string, Dictionary<Vector3, float>> VisitedMap =
+            new Dictionary<string, Dictionary<Vector3, float>>(8);
 
         #endregion
 
@@ -43,8 +47,9 @@ namespace AIRefactored.AI.Hotspots
         /// <summary>
         /// Returns 1 if this hotspot was ever visited; otherwise returns 0.
         /// </summary>
-        /// <param name="mapId">The current map identifier.</param>
-        /// <param name="position">The hotspot position.</param>
+        /// <param name="mapId">Map ID key.</param>
+        /// <param name="position">Hotspot world position.</param>
+        /// <returns>1f if visited; otherwise 0f.</returns>
         public static float GetVisitCount(string mapId, Vector3 position)
         {
             return WasVisitedWithin(mapId, position, DefaultVisitLifetime) ? 1f : 0f;
@@ -53,8 +58,8 @@ namespace AIRefactored.AI.Hotspots
         /// <summary>
         /// Marks a hotspot as visited at current Time.time.
         /// </summary>
-        /// <param name="mapId">Current map name.</param>
-        /// <param name="position">Hotspot location.</param>
+        /// <param name="mapId">Map ID key.</param>
+        /// <param name="position">Hotspot world position.</param>
         public static void MarkVisited(string mapId, Vector3 position)
         {
             if (mapId.Length == 0)
@@ -62,41 +67,40 @@ namespace AIRefactored.AI.Hotspots
                 return;
             }
 
-            Dictionary<Vector3, float> mapVisits;
-            if (!VisitedMap.TryGetValue(mapId, out mapVisits))
+            Dictionary<Vector3, float> visits;
+            if (!VisitedMap.TryGetValue(mapId, out visits))
             {
-                mapVisits = new Dictionary<Vector3, float>(32);
-                VisitedMap[mapId] = mapVisits;
+                visits = new Dictionary<Vector3, float>(32);
+                VisitedMap.Add(mapId, visits);
             }
 
-            mapVisits[position] = Time.time;
+            visits[position] = Time.time;
         }
 
         #endregion
 
         #region Internal Logic
 
-        /// <summary>
-        /// Checks if a hotspot was visited within the last given number of seconds.
-        /// </summary>
-        /// <param name="mapId">Current map ID.</param>
-        /// <param name="position">Hotspot position.</param>
-        /// <param name="cooldown">Cooldown window in seconds.</param>
         private static bool WasVisitedWithin(string mapId, Vector3 position, float cooldown)
         {
-            Dictionary<Vector3, float> mapVisits;
-            if (!VisitedMap.TryGetValue(mapId, out mapVisits))
+            if (mapId.Length == 0)
             {
                 return false;
             }
 
-            float visitTime;
-            if (!mapVisits.TryGetValue(position, out visitTime))
+            Dictionary<Vector3, float> visits;
+            if (!VisitedMap.TryGetValue(mapId, out visits))
             {
                 return false;
             }
 
-            return Time.time - visitTime < cooldown;
+            float lastSeen;
+            if (!visits.TryGetValue(position, out lastSeen))
+            {
+                return false;
+            }
+
+            return (Time.time - lastSeen) < cooldown;
         }
 
         #endregion

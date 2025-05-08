@@ -65,24 +65,7 @@ namespace AIRefactored.AI.Missions.Subsystems
 
         public void OnObjectiveReached(MissionType type)
         {
-            Vector3 next;
-
-            switch (type)
-            {
-                case MissionType.Quest:
-                    next = GetNextQuestObjective();
-                    break;
-                case MissionType.Fight:
-                    next = GetFightZone();
-                    break;
-                case MissionType.Loot:
-                    next = GetLootObjective();
-                    break;
-                default:
-                    next = _bot.Position;
-                    break;
-            }
-
+            Vector3 next = GetObjectiveTarget(type);
             CurrentObjective = next;
             BotMovementHelper.SmoothMoveTo(_bot, next);
         }
@@ -104,24 +87,7 @@ namespace AIRefactored.AI.Missions.Subsystems
 
         public void SetInitialObjective(MissionType type)
         {
-            Vector3 target;
-
-            switch (type)
-            {
-                case MissionType.Quest:
-                    target = GetNextQuestObjective();
-                    break;
-                case MissionType.Fight:
-                    target = GetFightZone();
-                    break;
-                case MissionType.Loot:
-                    target = GetLootObjective();
-                    break;
-                default:
-                    target = _bot.Position;
-                    break;
-            }
-
+            Vector3 target = GetObjectiveTarget(type);
             CurrentObjective = target;
             BotMovementHelper.SmoothMoveTo(_bot, target);
         }
@@ -130,20 +96,34 @@ namespace AIRefactored.AI.Missions.Subsystems
 
         #region Private Methods
 
+        private Vector3 GetObjectiveTarget(MissionType type)
+        {
+            switch (type)
+            {
+                case MissionType.Quest:
+                    return GetNextQuestObjective();
+                case MissionType.Fight:
+                    return GetFightZone();
+                case MissionType.Loot:
+                    return GetLootObjective();
+                default:
+                    return _bot.Position;
+            }
+        }
+
         private Vector3 GetFightZone()
         {
             BotZone[] zones = GameObject.FindObjectsOfType<BotZone>();
-            if (zones.Length > 0)
-            {
-                return zones[_rng.Next(0, zones.Length)].transform.position;
-            }
-
-            return _bot.Position;
+            return zones.Length > 0
+                ? zones[_rng.Next(0, zones.Length)].transform.position
+                : _bot.Position;
         }
 
         private Vector3 GetLootObjective()
         {
-            return _lootScanner != null ? _lootScanner.GetBestLootPosition() : _bot.Position;
+            return _lootScanner != null
+                ? _lootScanner.GetBestLootPosition()
+                : _bot.Position;
         }
 
         private Vector3 GetNextQuestObjective()
@@ -158,32 +138,33 @@ namespace AIRefactored.AI.Missions.Subsystems
 
             Predicate<HotspotRegistry.Hotspot> directionFilter = delegate (HotspotRegistry.Hotspot h)
             {
-                return Vector3.Dot((h.Position - origin).normalized, _bot.LookDirection.normalized) > 0.25f;
+                Vector3 dir = (h.Position - origin).normalized;
+                return Vector3.Dot(dir, _bot.LookDirection.normalized) > 0.25f;
             };
 
-            List<HotspotRegistry.Hotspot> nearby = TempListPool.Rent<HotspotRegistry.Hotspot>();
-            nearby.AddRange(HotspotRegistry.QueryNearby(origin, 100f, directionFilter));
+            List<HotspotRegistry.Hotspot> candidates = TempListPool.Rent<HotspotRegistry.Hotspot>();
+            candidates.AddRange(HotspotRegistry.QueryNearby(origin, 100f, directionFilter));
 
-            if (nearby.Count == 0)
+            if (candidates.Count == 0)
             {
-                TempListPool.Return(nearby);
+                TempListPool.Return(candidates);
                 return;
             }
 
             int desired = UnityEngine.Random.Range(2, 4);
             HashSet<int> used = TempHashSetPool.Rent<int>();
 
-            while (_questRoute.Count < desired && used.Count < nearby.Count)
+            while (_questRoute.Count < desired && used.Count < candidates.Count)
             {
-                int index = UnityEngine.Random.Range(0, nearby.Count);
+                int index = UnityEngine.Random.Range(0, candidates.Count);
                 if (used.Add(index))
                 {
-                    _questRoute.Enqueue(nearby[index].Position);
+                    _questRoute.Enqueue(candidates[index].Position);
                 }
             }
 
             TempHashSetPool.Return(used);
-            TempListPool.Return(nearby);
+            TempListPool.Return(candidates);
         }
 
         #endregion

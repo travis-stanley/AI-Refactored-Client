@@ -13,6 +13,8 @@ namespace AIRefactored.AI.Combat
     using AIRefactored.AI.Core;
     using AIRefactored.AI.Helpers;
     using AIRefactored.AI.Optimization;
+    using AIRefactored.Core;
+    using AIRefactored.Pools;
     using EFT;
     using EFT.HealthSystem;
     using EFT.InventoryLogic;
@@ -61,51 +63,63 @@ namespace AIRefactored.AI.Combat
         public BotFireLogic(BotOwner bot, BotComponentCache cache)
         {
             if (bot == null)
+            {
                 throw new ArgumentNullException(nameof(bot));
-            if (cache == null)
-                throw new ArgumentNullException(nameof(cache));
+            }
 
-            this._bot = bot;
-            this._cache = cache;
+            if (cache == null)
+            {
+                throw new ArgumentNullException(nameof(cache));
+            }
+
+            _bot = bot;
+            _cache = cache;
         }
 
         #endregion
 
         #region Public Methods
 
-        /// <summary>
-        /// Updates firing logic based on target, distance, suppression, and bot personality.
-        /// </summary>
-        /// <param name="time">Current world time.</param>
         public void Tick(float time)
         {
-            if (this._bot == null || this._bot.IsDead || !this._bot.IsAI || this._bot.Memory == null)
+            if (_bot.IsDead || !_bot.IsAI || _bot.Memory == null)
+            {
                 return;
+            }
 
-            BotWeaponManager weaponManager = this._bot.WeaponManager;
-            ShootData shootData = this._bot.ShootData;
+            BotWeaponManager weaponManager = _bot.WeaponManager;
+            ShootData shootData = _bot.ShootData;
             BotWeaponInfo weaponInfo = weaponManager?._currentWeaponInfo;
             Weapon weapon = weaponInfo?.weapon;
-            GClass592 settings = this._bot.Settings?.FileSettings?.Core;
-            BotPersonalityProfile profile = this._cache.AIRefactoredBotOwner?.PersonalityProfile;
+            GClass592 settings = _bot.Settings?.FileSettings?.Core;
+            BotPersonalityProfile profile = _cache.AIRefactoredBotOwner?.PersonalityProfile;
 
             if (weaponManager == null || shootData == null || weaponInfo == null || weapon == null || settings == null || profile == null)
+            {
                 return;
+            }
 
-            IPlayer target = this._cache.ThreatSelector?.GetPriorityTarget() ?? this._bot.Memory.GoalEnemy?.Person;
-            Vector3 aimPosition = this.GetValidatedAimPosition(target, time);
-            this.UpdateBotAiming(aimPosition);
-
-            if (target == null || target.HealthController == null || !target.HealthController.IsAlive)
+            Player target;
+            if (!TryResolveEnemy(out target))
+            {
                 return;
+            }
 
-            float distance = Vector3.Distance(this._bot.Position, aimPosition);
-            float weaponRange = this.EstimateWeaponRange(weapon);
+            Vector3 aimPosition = GetValidatedAimPosition(target, time);
+            UpdateBotAiming(aimPosition);
+
+            if (!EFTPlayerUtil.IsValid(target))
+            {
+                return;
+            }
+
+            float distance = Vector3.Distance(_bot.Position, aimPosition);
+            float weaponRange = EstimateWeaponRange(weapon);
             float maxRange = Mathf.Min(profile.EngagementRange, weaponRange, 200f);
 
-            if (this._bot.Memory.IsUnderFire && this.GetHealthRatio() <= profile.RetreatThreshold)
+            if (_bot.Memory.IsUnderFire && GetHealthRatio() <= profile.RetreatThreshold)
             {
-                this.TriggerFallback();
+                TriggerFallback();
                 return;
             }
 
@@ -113,16 +127,18 @@ namespace AIRefactored.AI.Combat
             {
                 if (profile.ChaosFactor > 0f && Random.value < profile.ChaosFactor)
                 {
-                    BotMovementHelper.SmoothMoveTo(this._bot, aimPosition, false, profile.Cohesion);
+                    BotMovementHelper.SmoothMoveTo(_bot, aimPosition, false, profile.Cohesion);
                 }
 
                 return;
             }
 
-            if (time < this._nextDecisionTime)
+            if (time < _nextDecisionTime)
+            {
                 return;
+            }
 
-            this._nextDecisionTime = time + this.GetBurstCadence(profile);
+            _nextDecisionTime = time + GetBurstCadence(profile);
 
             if (weaponInfo.BulletCount <= 0 && !weaponInfo.CheckHaveAmmoForReload())
             {
@@ -131,12 +147,20 @@ namespace AIRefactored.AI.Combat
                 return;
             }
 
-            this.ApplyFireMode(weaponInfo, weapon, distance, profile, settings);
+            ApplyFireMode(weaponInfo, weapon, distance, profile, settings);
 
             if (weaponManager.IsWeaponReady)
             {
                 shootData.Shoot();
-                this._cache.LastShotTracker?.RegisterShot(target);
+
+                if (_cache.LastShotTracker != null && target != null)
+                {
+                    string id = target.ProfileId;
+                    if (!string.IsNullOrEmpty(id))
+                    {
+                        _cache.LastShotTracker.RegisterShot(id);
+                    }
+                }
             }
         }
 
@@ -146,56 +170,62 @@ namespace AIRefactored.AI.Combat
 
         private void UpdateBotAiming(Vector3 aimPosition)
         {
-            Vector3 dir = aimPosition - this._bot.Position;
+            Vector3 dir = aimPosition - _bot.Position;
             if (dir.sqrMagnitude < 0.01f)
+            {
                 return;
+            }
 
             Quaternion rot = Quaternion.LookRotation(dir);
             float pitch = rot.eulerAngles.x > 180f ? rot.eulerAngles.x - 360f : rot.eulerAngles.x;
             pitch = Mathf.Clamp(pitch, -MaxAimPitch, MaxAimPitch);
 
             Vector3 forward = Quaternion.Euler(pitch, rot.eulerAngles.y, 0f) * Vector3.forward;
-            this._bot.AimingManager?.CurrentAiming?.SetTarget(forward);
+            _bot.AimingManager?.CurrentAiming?.SetTarget(forward);
         }
 
-        private Vector3 GetValidatedAimPosition(IPlayer target, float time)
+        private Vector3 GetValidatedAimPosition(Player target, float time)
         {
-            if (target != null && target.HealthController?.IsAlive == true)
-                return target.Position;
+            if (target != null && target.HealthController != null && target.HealthController.IsAlive)
+            {
+                return EFTPlayerUtil.GetPosition(target);
+            }
 
-            Vector3 mem = this._bot.Memory?.LastEnemy?.CurrPosition ?? Vector3.zero;
-            if (mem != Vector3.zero)
-                return mem;
+            Vector3 memory = _bot.Memory.LastEnemy?.CurrPosition ?? Vector3.zero;
+            if (memory != Vector3.zero)
+            {
+                return memory;
+            }
 
-            if (time - this._lastLookAroundTime > 1.5f)
+            if (time - _lastLookAroundTime > 1.5f)
             {
                 float yaw = Random.Range(-75f, 75f);
                 float pitch = Random.Range(-10f, 10f);
                 Quaternion q = Quaternion.Euler(pitch, yaw, 0f);
-                Vector3 baseDir = this._bot.Transform != null ? this._bot.Transform.forward : Vector3.forward;
-                this._idleLookDirection = q * baseDir;
-                this._lastLookAroundTime = time;
+                Vector3 baseDir = _bot.Transform != null ? _bot.Transform.forward : Vector3.forward;
+                _idleLookDirection = q * baseDir;
+                _lastLookAroundTime = time;
             }
 
-            return this._bot.Position + this._idleLookDirection.normalized * 10f;
+            return _bot.Position + _idleLookDirection.normalized * 10f;
         }
 
         private void ApplyFireMode(BotWeaponInfo info, Weapon weapon, float distance, BotPersonalityProfile profile, GClass592 settings)
         {
             if (distance <= 40f)
             {
-                this.SetFireMode(info, Weapon.EFireMode.fullauto);
-                this.RecoverAccuracy(settings);
+                SetFireMode(info, Weapon.EFireMode.fullauto);
+                RecoverAccuracy(settings);
             }
-            else if (distance <= 100f && this.SupportsFireMode(weapon, Weapon.EFireMode.burst))
+            else if (distance <= 100f && SupportsFireMode(weapon, Weapon.EFireMode.burst))
             {
-                this.SetFireMode(info, Weapon.EFireMode.burst);
-                this.ApplyScatter(settings, true, profile);
+                SetFireMode(info, Weapon.EFireMode.burst);
+                ApplyScatter(settings, true, profile);
             }
             else
             {
-                this.SetFireMode(info, Weapon.EFireMode.single);
-                this.ApplyScatter(settings, true, profile);
+                SetFireMode(info, Weapon.EFireMode.single);
+                ApplyScatter(settings, true, profile);
             }
         }
 
@@ -213,7 +243,9 @@ namespace AIRefactored.AI.Combat
             for (int i = 0; i < modes.Length; i++)
             {
                 if (modes[i] == mode)
+                {
                     return true;
+                }
             }
 
             return false;
@@ -226,7 +258,7 @@ namespace AIRefactored.AI.Combat
 
         private void ApplyScatter(GClass592 settings, bool underFire, BotPersonalityProfile profile)
         {
-            float composure = this._cache.PanicHandler?.GetComposureLevel() ?? 1f;
+            float composure = _cache.PanicHandler != null ? _cache.PanicHandler.GetComposureLevel() : 1f;
             float scatterPenalty = underFire ? (1f - profile.AccuracyUnderFire) * (1f - composure) : 0f;
             float scatterFactor = 1.1f + scatterPenalty;
 
@@ -237,12 +269,16 @@ namespace AIRefactored.AI.Combat
         {
             ItemTemplate template = weapon.Template;
             if (template == null || string.IsNullOrEmpty(template.Name))
+            {
                 return 90f;
+            }
 
             foreach (KeyValuePair<string, float> kv in WeaponTypeRanges)
             {
                 if (template.Name.IndexOf(kv.Key, StringComparison.OrdinalIgnoreCase) >= 0)
+                {
                     return kv.Value;
+                }
             }
 
             return 90f;
@@ -259,9 +295,11 @@ namespace AIRefactored.AI.Combat
 
         private float GetHealthRatio()
         {
-            HealthControllerClass hc = this._bot.HealthController as HealthControllerClass;
+            HealthControllerClass hc = _bot.HealthController as HealthControllerClass;
             if (hc == null || hc.Dictionary_0 == null)
+            {
                 return 1f;
+            }
 
             float current = 0f;
             float maximum = 0f;
@@ -283,21 +321,63 @@ namespace AIRefactored.AI.Combat
 
         private void TriggerFallback()
         {
-            if (this._cache.Pathing == null)
-                return;
-
-            List<Vector3> path = BotCoverRetreatPlanner.GetCoverRetreatPath(this._bot, this._bot.LookDirection.normalized, this._cache.Pathing);
-            if (path == null || path.Count < 2)
-                return;
-
-            Vector3 fallback = path[path.Count - 1];
-            BotMovementHelper.SmoothMoveTo(this._bot, fallback, false);
-            BotCoverHelper.TrySetStanceFromNearbyCover(this._cache, fallback);
-
-            if (!FikaHeadlessDetector.IsHeadless && this._bot.BotTalk != null)
+            if (_cache.Pathing == null)
             {
-                this._bot.BotTalk.TrySay(EPhraseTrigger.OnLostVisual);
+                return;
             }
+
+            List<Vector3> path = TempListPool.Rent<Vector3>();
+            try
+            {
+                path.Clear();
+                List<Vector3> retreatPath = BotCoverRetreatPlanner.GetCoverRetreatPath(_bot, _bot.LookDirection.normalized, _cache.Pathing);
+                for (int i = 0; i < retreatPath.Count; i++)
+                {
+                    path.Add(retreatPath[i]);
+                }
+
+                if (path.Count < 2)
+                {
+                    return;
+                }
+
+                Vector3 fallback = path[path.Count - 1];
+                BotMovementHelper.SmoothMoveTo(_bot, fallback, false);
+                BotCoverHelper.TrySetStanceFromNearbyCover(_cache, fallback);
+
+                if (!FikaHeadlessDetector.IsHeadless && _bot.BotTalk != null)
+                {
+                    _bot.BotTalk.TrySay(EPhraseTrigger.OnLostVisual);
+                }
+            }
+            finally
+            {
+                TempListPool.Return(path);
+            }
+        }
+
+        private bool TryResolveEnemy(out Player result)
+        {
+            result = null;
+
+            BotThreatSelector selector = _cache.ThreatSelector;
+            if (selector != null && selector.CurrentTarget is Player resolved && EFTPlayerUtil.IsValid(resolved))
+            {
+                result = resolved;
+                return true;
+            }
+
+            if (_bot.Memory != null && _bot.Memory.GoalEnemy != null)
+            {
+                Player fallback = _bot.Memory.GoalEnemy.Person as Player;
+                if (fallback != null && EFTPlayerUtil.IsValid(fallback))
+                {
+                    result = fallback;
+                    return true;
+                }
+            }
+
+            return false;
         }
 
         #endregion

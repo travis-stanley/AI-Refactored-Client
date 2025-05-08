@@ -54,7 +54,6 @@ namespace AIRefactored.AI.Looting
         private static readonly Dictionary<LootableContainer, TrackedContainer> Containers = new Dictionary<LootableContainer, TrackedContainer>(64);
         private static readonly Dictionary<LootItem, TrackedItem> Items = new Dictionary<LootItem, TrackedItem>(128);
         private static readonly HashSet<GameObject> WatchedObjects = new HashSet<GameObject>();
-
         private static readonly ManualLogSource Logger = Plugin.LoggerInstance;
 
         #endregion
@@ -66,6 +65,17 @@ namespace AIRefactored.AI.Looting
             Clear();
             LootRuntimeWatcher.Reset();
             Logger.LogInfo("[LootRegistry] Initialized loot tracking system.");
+        }
+
+        public static void Clear()
+        {
+            Containers.Clear();
+            Items.Clear();
+            WatchedObjects.Clear();
+            ContainerBuffer.Clear();
+            ItemBuffer.Clear();
+            ContainerResultBuffer.Clear();
+            ItemResultBuffer.Clear();
         }
 
         public static List<LootableContainer> GetAllContainers()
@@ -96,33 +106,23 @@ namespace AIRefactored.AI.Looting
             return ItemResultBuffer;
         }
 
-        public static void Clear()
-        {
-            Containers.Clear();
-            Items.Clear();
-            WatchedObjects.Clear();
-            ContainerBuffer.Clear();
-            ItemBuffer.Clear();
-            ContainerResultBuffer.Clear();
-            ItemResultBuffer.Clear();
-        }
-
         public static List<LootableContainer> GetNearbyContainers(Vector3 origin, float radius)
         {
             ContainerResultBuffer.Clear();
             float radiusSq = radius * radius;
 
-            foreach (TrackedContainer tracked in Containers.Values)
+            foreach (KeyValuePair<LootableContainer, TrackedContainer> kv in Containers)
             {
-                if (tracked.Transform == null)
+                Transform tf = kv.Value.Transform;
+                if (tf == null)
                 {
                     continue;
                 }
 
-                Vector3 pos = tracked.Transform.position;
+                Vector3 pos = tf.position;
                 if ((pos - origin).sqrMagnitude <= radiusSq)
                 {
-                    ContainerResultBuffer.Add(tracked.Container);
+                    ContainerResultBuffer.Add(kv.Value.Container);
                 }
             }
 
@@ -134,17 +134,18 @@ namespace AIRefactored.AI.Looting
             ItemResultBuffer.Clear();
             float radiusSq = radius * radius;
 
-            foreach (TrackedItem tracked in Items.Values)
+            foreach (KeyValuePair<LootItem, TrackedItem> kv in Items)
             {
-                if (tracked.Transform == null)
+                Transform tf = kv.Value.Transform;
+                if (tf == null)
                 {
                     continue;
                 }
 
-                Vector3 pos = tracked.Transform.position;
+                Vector3 pos = tf.position;
                 if ((pos - origin).sqrMagnitude <= radiusSq)
                 {
-                    ItemResultBuffer.Add(tracked.Item);
+                    ItemResultBuffer.Add(kv.Value.Item);
                 }
             }
 
@@ -197,9 +198,10 @@ namespace AIRefactored.AI.Looting
 
             foreach (KeyValuePair<LootableContainer, TrackedContainer> kv in Containers)
             {
-                if (kv.Key != null && string.Equals(kv.Key.name, name, StringComparison.OrdinalIgnoreCase))
+                LootableContainer c = kv.Key;
+                if (c != null && string.Equals(c.name, name, StringComparison.OrdinalIgnoreCase))
                 {
-                    found = kv.Key;
+                    found = c;
                     return true;
                 }
             }
@@ -217,9 +219,10 @@ namespace AIRefactored.AI.Looting
 
             foreach (KeyValuePair<LootItem, TrackedItem> kv in Items)
             {
-                if (kv.Key != null && string.Equals(kv.Key.name, name, StringComparison.OrdinalIgnoreCase))
+                LootItem item = kv.Key;
+                if (item != null && string.Equals(item.name, name, StringComparison.OrdinalIgnoreCase))
                 {
-                    found = kv.Key;
+                    found = item;
                     return true;
                 }
             }
@@ -284,19 +287,24 @@ namespace AIRefactored.AI.Looting
     {
         public static void RemoveWhere<TKey, TValue>(this Dictionary<TKey, TValue> dict, Func<KeyValuePair<TKey, TValue>, bool> predicate)
         {
-            List<TKey> toRemove = new List<TKey>();
+            if (dict == null || predicate == null)
+            {
+                return;
+            }
+
+            List<TKey> removeList = new List<TKey>();
 
             foreach (KeyValuePair<TKey, TValue> kv in dict)
             {
                 if (predicate(kv))
                 {
-                    toRemove.Add(kv.Key);
+                    removeList.Add(kv.Key);
                 }
             }
 
-            for (int i = 0; i < toRemove.Count; i++)
+            for (int i = 0; i < removeList.Count; i++)
             {
-                dict.Remove(toRemove[i]);
+                dict.Remove(removeList[i]);
             }
         }
     }

@@ -73,7 +73,6 @@ namespace AIRefactored.Core
 
             // Fixed-size arrays
             TempIntArrayPool.Prewarm(32, 8);
-            TempFloatArrayPool.Prewarm(32, 8);
             TempVector3Pool.Prewarm(16, 8);
             TempNavPathCornerPool.Prewarm(16, 8);
 
@@ -86,8 +85,7 @@ namespace AIRefactored.Core
             TempNavMeshPathPool.Prewarm(4);
 
             // Unity objects
-            TempTransformPool.Prewarm(8, 4);
-            TempColliderPool.Prewarm(8, 4);
+
         }
 
         /// <summary>
@@ -102,7 +100,7 @@ namespace AIRefactored.Core
             TempStackPool.ClearAll();
 
             TempIntArrayPool.ClearAll();
-            TempFloatArrayPool.ClearAll();
+
             TempVector3Pool.ClearAll();
             TempNavPathCornerPool.ClearAll();
 
@@ -113,8 +111,6 @@ namespace AIRefactored.Core
             TempRaycastCommandPool.ClearAll();
             TempNavMeshPathPool.ClearAll();
 
-            TempTransformPool.ClearAll();
-            TempColliderPool.ClearAll();
 
             for (int i = 0; i < _registeredCustomClearers.Count; i++)
             {

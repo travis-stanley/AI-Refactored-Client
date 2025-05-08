@@ -24,19 +24,28 @@ namespace AIRefactored.AI.Core
         /// <summary>
         /// Gets a value indicating whether the current client is in headless or batch mode.
         /// </summary>
-        public static bool IsHeadless => _isHeadless;
+        public static bool IsHeadless
+        {
+            get { return _isHeadless; }
+        }
 
         /// <summary>
         /// Gets the map name if parsed from FIKA headless arguments.
         /// Returns string.Empty if not in headless or if parsing failed.
         /// </summary>
-        public static string RaidLocationName => _raidLocation;
+        public static string RaidLocationName
+        {
+            get { return _raidLocation; }
+        }
 
         /// <summary>
         /// Gets a value indicating whether the headless environment has fully parsed its arguments.
         /// Used to delay logic until startup args are loaded.
         /// </summary>
-        public static bool IsReady => _isHeadless && _raidLocation.Length > 0;
+        public static bool IsReady
+        {
+            get { return _isHeadless && _raidLocation.Length > 0; }
+        }
 
         /// <summary>
         /// Static constructor for environment detection.
@@ -49,11 +58,26 @@ namespace AIRefactored.AI.Core
             try
             {
                 string cmd = Environment.CommandLine;
-                _isHeadless = Application.isBatchMode || cmd.IndexOf("-nographics", StringComparison.OrdinalIgnoreCase) >= 0;
+                bool foundHeadless = Application.isBatchMode;
+
+                if (!foundHeadless)
+                {
+                    int index = cmd.IndexOf("-nographics", StringComparison.OrdinalIgnoreCase);
+                    if (index >= 0)
+                    {
+                        foundHeadless = true;
+                    }
+                }
+
+                _isHeadless = foundHeadless;
 
                 if (_isHeadless)
                 {
-                    _raidLocation = TryParseRaidLocationFromArgs();
+                    string result = TryParseRaidLocationFromArgs();
+                    if (result.Length > 0)
+                    {
+                        _raidLocation = result;
+                    }
                 }
             }
             catch (Exception ex)
@@ -75,15 +99,22 @@ namespace AIRefactored.AI.Core
                 string cmd = Environment.CommandLine;
                 Match match = Regex.Match(cmd, "\"location\"\\s*:\\s*\"(.*?)\"", RegexOptions.IgnoreCase);
 
-                if (match.Success && match.Groups.Count > 1)
+                if (match.Success)
                 {
-                    string location = match.Groups[1].Value;
-                    return string.IsNullOrWhiteSpace(location) ? string.Empty : location;
+                    GroupCollection groups = match.Groups;
+                    if (groups != null && groups.Count > 1)
+                    {
+                        string location = groups[1].Value;
+                        if (!string.IsNullOrEmpty(location))
+                        {
+                            return location;
+                        }
+                    }
                 }
             }
             catch
             {
-                // Silent fail
+                // Intentionally silent
             }
 
             return string.Empty;

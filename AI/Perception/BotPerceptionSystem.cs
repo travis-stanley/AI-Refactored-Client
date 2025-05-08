@@ -146,7 +146,7 @@ namespace AIRefactored.AI.Perception
 
             if (_flashBlindness > BlindSpeechThreshold)
             {
-                _bot.BotTalk.TrySay(EPhraseTrigger.OnBeingHurt);
+                _bot.BotTalk?.TrySay(EPhraseTrigger.OnBeingHurt);
             }
         }
 

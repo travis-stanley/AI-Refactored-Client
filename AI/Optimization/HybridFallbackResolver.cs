@@ -13,6 +13,7 @@ namespace AIRefactored.AI.Optimization
     using AIRefactored.AI.Hotspots;
     using AIRefactored.AI.Navigation;
     using AIRefactored.Core;
+    using AIRefactored.Pools;
     using EFT;
     using UnityEngine;
 
@@ -33,12 +34,6 @@ namespace AIRefactored.AI.Optimization
 
         #region Public API
 
-        /// <summary>
-        /// Resolves the best possible retreat point using multiple strategies in order of priority.
-        /// </summary>
-        /// <param name="bot">The bot evaluating retreat options.</param>
-        /// <param name="threatDirection">Direction from which the threat is coming.</param>
-        /// <returns>The most suitable fallback point, or Vector3.zero if none is found.</returns>
         public static Vector3 GetBestRetreatPoint(BotOwner bot, Vector3 threatDirection)
         {
             if (bot == null || bot.Transform == null || !GameWorldHandler.IsLocalHost())
@@ -61,22 +56,29 @@ namespace AIRefactored.AI.Optimization
                 },
                 true);
 
-            if (navCoverPoints.Count > 0)
+            try
             {
-                Vector3 best = Vector3.zero;
-                float bestScore = float.MinValue;
-
-                for (int i = 0; i < navCoverPoints.Count; i++)
+                if (navCoverPoints.Count > 0)
                 {
-                    float score = CoverScorer.ScoreCoverPoint(bot, navCoverPoints[i], threatDirection);
-                    if (score > bestScore)
-                    {
-                        bestScore = score;
-                        best = navCoverPoints[i];
-                    }
-                }
+                    Vector3 best = Vector3.zero;
+                    float bestScore = float.MinValue;
 
-                return best;
+                    for (int i = 0; i < navCoverPoints.Count; i++)
+                    {
+                        float score = CoverScorer.ScoreCoverPoint(bot, navCoverPoints[i], threatDirection);
+                        if (score > bestScore)
+                        {
+                            bestScore = score;
+                            best = navCoverPoints[i];
+                        }
+                    }
+
+                    return best;
+                }
+            }
+            finally
+            {
+                TempListPool.Return(navCoverPoints);
             }
 
             // === Priority 2: Hotspot fallback zones ===
@@ -89,22 +91,29 @@ namespace AIRefactored.AI.Optimization
                     return Vector3.Dot(toHotspot, retreatDirection) > MinDotHotspot;
                 });
 
-            if (fallbackHotspots.Count > 0)
+            try
             {
-                Vector3 closest = Vector3.zero;
-                float minDist = float.MaxValue;
-
-                for (int i = 0; i < fallbackHotspots.Count; i++)
+                if (fallbackHotspots.Count > 0)
                 {
-                    float dist = Vector3.Distance(origin, fallbackHotspots[i].Position);
-                    if (dist < minDist)
-                    {
-                        minDist = dist;
-                        closest = fallbackHotspots[i].Position;
-                    }
-                }
+                    Vector3 closest = Vector3.zero;
+                    float minDist = float.MaxValue;
 
-                return closest;
+                    for (int i = 0; i < fallbackHotspots.Count; i++)
+                    {
+                        float dist = Vector3.Distance(origin, fallbackHotspots[i].Position);
+                        if (dist < minDist)
+                        {
+                            minDist = dist;
+                            closest = fallbackHotspots[i].Position;
+                        }
+                    }
+
+                    return closest;
+                }
+            }
+            finally
+            {
+                TempListPool.Return(fallbackHotspots);
             }
 
             // === Priority 3: Dynamic fallback path ===
@@ -116,6 +125,8 @@ namespace AIRefactored.AI.Optimization
                 {
                     return path[path.Count - 1];
                 }
+
+                TempListPool.Return(path);
             }
 
             // === Priority 4: LOS-blocking fallback ===
@@ -141,18 +152,26 @@ namespace AIRefactored.AI.Optimization
             Vector3 backwards = -threatDir.normalized;
             Vector3 eyeOrigin = origin + Vector3.up * EyeHeight;
 
-            for (float dist = 2f; dist <= MaxSearchDist; dist += StepSize)
+            RaycastHit[] hits = TempRaycastHitPool.Rent(1);
+            try
             {
-                Vector3 probe = origin + backwards * dist + Vector3.up * EyeHeight;
-
-                if (Physics.Raycast(probe, threatDir, out RaycastHit hit, 20f, AIRefactoredLayerMasks.VisionBlockers))
+                for (float dist = 2f; dist <= MaxSearchDist; dist += StepSize)
                 {
-                    if (CoverScorer.IsSolid(hit.collider))
+                    Vector3 probe = origin + backwards * dist + Vector3.up * EyeHeight;
+
+                    if (Physics.Raycast(probe, threatDir, out hits[0], 20f, AIRefactoredLayerMasks.VisionBlockers))
                     {
-                        result = hit.point - threatDir.normalized;
-                        return true;
+                        if (CoverScorer.IsSolid(hits[0].collider))
+                        {
+                            result = hits[0].point - threatDir.normalized;
+                            return true;
+                        }
                     }
                 }
+            }
+            finally
+            {
+                TempRaycastHitPool.Return(hits);
             }
 
             result = Vector3.zero;

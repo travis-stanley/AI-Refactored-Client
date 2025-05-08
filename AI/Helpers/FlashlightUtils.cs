@@ -20,12 +20,12 @@ namespace AIRefactored.AI.Helpers
         /// Returns a visibility score between 0 and 1 based on angle and distance to flashlight.
         /// Combines frontal alignment and proximity to determine severity of exposure.
         /// </summary>
-        public static float CalculateFlashScore(
-            Transform lightTransform,
-            Transform botHeadTransform,
-            float maxDistance = 20f)
+        /// <param name="lightTransform">The transform of the light source.</param>
+        /// <param name="botHeadTransform">The transform of the bot's head.</param>
+        /// <param name="maxDistance">Maximum distance considered for exposure.</param>
+        /// <returns>A normalized flash exposure score.</returns>
+        public static float CalculateFlashScore(Transform lightTransform, Transform botHeadTransform, float maxDistance = 20f)
         {
-            // Null check for safety
             if (lightTransform == null || botHeadTransform == null)
             {
                 return 0f;
@@ -33,87 +33,71 @@ namespace AIRefactored.AI.Helpers
 
             Vector3 toLight = lightTransform.position - botHeadTransform.position;
             float distance = toLight.magnitude;
-
-            // Return 0 if the distance is too small or too far
             if (distance < 0.01f || distance > maxDistance)
             {
                 return 0f;
             }
 
-            // Calculate the angle between the bot's forward direction and the direction to the light
             Vector3 botForward = botHeadTransform.forward.normalized;
-            Vector3 lightDir = toLight.normalized;
-            float angleFactor = Mathf.Clamp01(Vector3.Dot(botForward, lightDir));
-
-            // Calculate distance factor based on max distance
+            Vector3 lightDirection = toLight.normalized;
+            float alignmentFactor = Mathf.Clamp01(Vector3.Dot(botForward, lightDirection));
             float distanceFactor = 1f - Mathf.Clamp01(distance / maxDistance);
 
-            // Return the combined score
-            return angleFactor * distanceFactor;
+            return alignmentFactor * distanceFactor;
         }
 
         /// <summary>
         /// Calculates the normalized frontal exposure to a flashlight.
         /// </summary>
-        public static float GetFlashIntensityFactor(
-            Transform lightTransform,
-            Transform botHeadTransform)
+        /// <param name="lightTransform">The transform of the light source.</param>
+        /// <param name="botHeadTransform">The transform of the bot's head.</param>
+        /// <returns>A normalized intensity factor between 0 and 1.</returns>
+        public static float GetFlashIntensityFactor(Transform lightTransform, Transform botHeadTransform)
         {
-            // Null check for safety
             if (lightTransform == null || botHeadTransform == null)
             {
                 return 0f;
             }
 
-            // Calculate the vector pointing from bot to the light
             Vector3 toLight = (lightTransform.position - botHeadTransform.position).normalized;
-            Vector3 forward = botHeadTransform.forward.normalized;
-
-            // Calculate the angle between the bot's forward direction and the light direction
-            return Mathf.Clamp01(Vector3.Dot(forward, toLight));
+            return Mathf.Clamp01(Vector3.Dot(botHeadTransform.forward.normalized, toLight));
         }
 
         /// <summary>
         /// Determines whether the bot is facing a light source within a dangerous exposure cone.
         /// </summary>
-        public static bool IsBlindingLight(
-            Transform lightTransform,
-            Transform botHeadTransform,
-            float angleThreshold = 30f)
+        /// <param name="lightTransform">The transform of the light source.</param>
+        /// <param name="botHeadTransform">The transform of the bot's head.</param>
+        /// <param name="angleThreshold">Maximum allowed angle (in degrees) for dangerous exposure.</param>
+        /// <returns>True if the light exposure is dangerous; otherwise, false.</returns>
+        public static bool IsBlindingLight(Transform lightTransform, Transform botHeadTransform, float angleThreshold = 30f)
         {
-            // Null check for safety
             if (lightTransform == null || botHeadTransform == null)
             {
                 return false;
             }
 
-            // Calculate the angle between the bot's forward direction and the light direction
             Vector3 toLight = lightTransform.position - botHeadTransform.position;
             float angle = Vector3.Angle(botHeadTransform.forward, toLight);
-
-            // Return true if the angle is within the threshold
             return angle <= angleThreshold;
         }
 
         /// <summary>
-        /// Determines if the flashlight is pointing toward the bot within the specified angle threshold.
+        /// Determines if the flashlight is pointing toward the target within the specified angle threshold.
         /// </summary>
-        public static bool IsFacingTarget(
-            Transform source,
-            Transform target,
-            float angleThreshold = 30f)
+        /// <param name="source">The transform of the flashlight.</param>
+        /// <param name="target">The transform of the target.</param>
+        /// <param name="angleThreshold">Angle threshold in degrees.</param>
+        /// <returns>True if the source is facing the target; otherwise, false.</returns>
+        public static bool IsFacingTarget(Transform source, Transform target, float angleThreshold = 30f)
         {
-            // Null check for safety
             if (source == null || target == null)
             {
                 return false;
             }
 
-            // Calculate the direction from the source to the target
             Vector3 toTarget = target.position - source.position;
             float angle = Vector3.Angle(source.forward, toTarget);
-
-            // Return true if the angle is within the threshold
             return angle <= angleThreshold;
         }
     }

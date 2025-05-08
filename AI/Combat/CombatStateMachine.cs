@@ -8,13 +8,13 @@
 
 namespace AIRefactored.AI.Combat
 {
-    using System;
     using System.Collections.Generic;
     using AIRefactored.AI.Combat.States;
     using AIRefactored.AI.Core;
     using AIRefactored.AI.Memory;
     using AIRefactored.AI.Optimization;
     using AIRefactored.Core;
+    using AIRefactored.Pools;
     using AIRefactored.Runtime;
     using EFT;
     using UnityEngine;
@@ -32,17 +32,10 @@ namespace AIRefactored.AI.Combat
 
         #endregion
 
-        #region Static Buffers
-
-        private static readonly List<Vector3> FallbackPathBuffer = new List<Vector3>(16);
-
-        #endregion
-
         #region Fields
 
         private BotComponentCache _cache;
         private BotOwner _bot;
-
         private AttackHandler _attack;
         private EngageHandler _engage;
         private FallbackHandler _fallback;
@@ -59,9 +52,9 @@ namespace AIRefactored.AI.Combat
 
         #region Properties
 
-        public Vector3 LastKnownEnemyPos => this._lastKnownEnemyPos;
+        public Vector3 LastKnownEnemyPos => _lastKnownEnemyPos;
 
-        public float LastStateChangeTime => this._lastStateChangeTime;
+        public float LastStateChangeTime => _lastStateChangeTime;
 
         #endregion
 
@@ -71,223 +64,233 @@ namespace AIRefactored.AI.Combat
         {
             if (componentCache == null || componentCache.Bot == null)
             {
-                Plugin.LoggerInstance?.LogError("[CombatStateMachine] Initialization failed: BotComponentCache or Bot is null.");
+                Plugin.LoggerInstance.LogError("[CombatStateMachine] Initialization failed: componentCache or Bot is null.");
                 return;
             }
 
-            this._cache = componentCache;
-            this._bot = componentCache.Bot;
+            _cache = componentCache;
+            _bot = componentCache.Bot;
 
-            this._patrol = new PatrolHandler(componentCache, PatrolMinDuration, PatrolCooldown);
-            this._investigate = new InvestigateHandler(componentCache);
-            this._engage = new EngageHandler(componentCache);
-            this._attack = new AttackHandler(componentCache);
-            this._fallback = new FallbackHandler(componentCache);
-            this._echo = new EchoCoordinator(componentCache);
+            _patrol = new PatrolHandler(componentCache, PatrolMinDuration, PatrolCooldown);
+            _investigate = new InvestigateHandler(componentCache);
+            _engage = new EngageHandler(componentCache);
+            _attack = new AttackHandler(componentCache);
+            _fallback = new FallbackHandler(componentCache);
+            _echo = new EchoCoordinator(componentCache);
 
-            this._initialized = true;
+            _initialized = true;
         }
 
         #endregion
 
-        #region Public API
+        #region Public Methods
 
         public bool IsInCombatState()
         {
-            return this._initialized &&
-                   (this._fallback.IsActive()
-                    || this._engage.IsEngaging()
-                    || this._investigate.IsInvestigating()
-                    || this._cache.ThreatSelector.CurrentTarget != null);
+            if (!_initialized)
+            {
+                return false;
+            }
+
+            return _fallback.IsActive()
+                || _engage.IsEngaging()
+                || _investigate.IsInvestigating()
+                || _cache.ThreatSelector.CurrentTarget != null;
         }
 
         public void NotifyDamaged()
         {
-            if (!this._initialized)
+            if (!_initialized)
             {
                 return;
             }
 
-            float now = Time.time;
-            if (this._fallback.ShallUseNow(now))
+            float time = Time.time;
+            if (_fallback.ShallUseNow(time))
             {
-                this.AssignFallbackIfNeeded();
-                this._bot.BotTalk?.TrySay(EPhraseTrigger.OnBeingHurt);
-                this._lastStateChangeTime = now;
+                AssignFallbackIfNeeded();
+                _bot.BotTalk?.TrySay(EPhraseTrigger.OnBeingHurt);
+                _lastStateChangeTime = time;
             }
         }
 
         public void NotifyEchoInvestigate()
         {
-            if (!this._initialized)
+            if (!_initialized)
             {
                 return;
             }
 
-            float now = Time.time;
-            if (!this._investigate.ShallUseNow(now, this._lastStateChangeTime))
+            float time = Time.time;
+            if (!_investigate.ShallUseNow(time, _lastStateChangeTime))
             {
-                this._lastStateChangeTime = now;
-                this._bot.BotTalk?.TrySay(EPhraseTrigger.Cooperation);
+                _lastStateChangeTime = time;
+                _bot.BotTalk?.TrySay(EPhraseTrigger.Cooperation);
             }
         }
 
         public void Tick(float time)
         {
-            if (!this._initialized || this._bot.IsDead)
+            if (!_initialized || _bot.IsDead)
             {
                 return;
             }
 
-            if (!EFTPlayerUtil.IsValid(this._bot.GetPlayer))
+            if (!EFTPlayerUtil.IsValid(_bot.GetPlayer))
             {
                 return;
             }
 
-            if (time - this._lastStateChangeTime < MinTransitionDelay)
+            if (time - _lastStateChangeTime < MinTransitionDelay)
             {
                 return;
             }
 
-            if (this.ShouldTriggerSuppressedFallback(time))
+            if (ShouldTriggerSuppressedFallback(time))
             {
-                this.AssignFallbackIfNeeded();
-                this._bot.BotTalk?.TrySay(EPhraseTrigger.OnBeingHurt);
+                AssignFallbackIfNeeded();
+                _bot.BotTalk?.TrySay(EPhraseTrigger.OnBeingHurt);
 
-                Vector3 fallback = this._fallback.HasValidFallbackPath()
-                    ? this._fallback.GetFallbackPosition()
-                    : this._bot.Position;
+                Vector3 fallback = _fallback.HasValidFallbackPath()
+                    ? _fallback.GetFallbackPosition()
+                    : _bot.Position;
 
-                this._echo.EchoFallbackToSquad(fallback);
-                this._lastStateChangeTime = time;
+                _echo.EchoFallbackToSquad(fallback);
+                _lastStateChangeTime = time;
                 return;
             }
 
-            if (this._fallback.ShallUseNow(time))
+            if (_fallback.ShallUseNow(time))
             {
-                this.AssignFallbackIfNeeded();
-                this._fallback.Tick(time, this.SetLastStateChangeTime);
+                AssignFallbackIfNeeded();
+                _fallback.Tick(time, SetLastStateChangeTime);
                 return;
             }
 
-            Player enemy = this._cache.ThreatSelector.CurrentTarget;
+            Player enemy = _cache.ThreatSelector.CurrentTarget;
             if (EFTPlayerUtil.IsValid(enemy))
             {
-                this._lastKnownEnemyPos = EFTPlayerUtil.GetPosition(enemy);
-                this._hasKnownEnemy = true;
+                _lastKnownEnemyPos = EFTPlayerUtil.GetPosition(enemy);
+                _hasKnownEnemy = true;
 
                 string id = enemy.ProfileId;
-                if (!string.IsNullOrEmpty(id))
+                if (id.Length > 0)
                 {
-                    this._cache.TacticalMemory.RecordEnemyPosition(this._lastKnownEnemyPos, "Combat", id);
+                    _cache.TacticalMemory.RecordEnemyPosition(_lastKnownEnemyPos, "Combat", id);
                 }
 
-                if (this._bot.Mover != null && !this._bot.Mover.Sprinting)
+                if (_bot.Mover != null && !_bot.Mover.Sprinting)
                 {
-                    this._bot.Sprint(true);
+                    _bot.Sprint(true);
                 }
 
-                this._echo.EchoSpottedEnemyToSquad(this._lastKnownEnemyPos);
+                _echo.EchoSpottedEnemyToSquad(_lastKnownEnemyPos);
             }
 
-            if (this._engage.ShallUseNow())
+            if (_engage.ShallUseNow())
             {
-                if (this._engage.CanAttack())
+                if (_engage.CanAttack())
                 {
-                    this._attack.Tick(time);
+                    _attack.Tick(time);
                 }
                 else
                 {
-                    this._engage.Tick();
+                    _engage.Tick();
                 }
 
-                this._lastStateChangeTime = time;
+                _lastStateChangeTime = time;
                 return;
             }
 
-            if (this._investigate.ShallUseNow(time, this._lastStateChangeTime))
+            if (_investigate.ShallUseNow(time, _lastStateChangeTime))
             {
-                Vector3 investigateTarget = this._investigate.GetInvestigateTarget(this._hasKnownEnemy ? this._lastKnownEnemyPos : Vector3.zero);
-                if (investigateTarget != Vector3.zero)
+                Vector3 target = _investigate.GetInvestigateTarget(_hasKnownEnemy ? _lastKnownEnemyPos : Vector3.zero);
+                if (target != Vector3.zero)
                 {
-                    this._investigate.Investigate(investigateTarget);
-                    this._lastStateChangeTime = time;
+                    _investigate.Investigate(target);
+                    _lastStateChangeTime = time;
                 }
 
                 return;
             }
 
-            this._patrol.Tick(time);
+            _patrol.Tick(time);
         }
 
         public void TriggerFallback(Vector3 fallbackPos)
         {
-            if (!this._initialized)
+            if (!_initialized)
             {
                 return;
             }
 
-            this._fallback.SetFallbackTarget(fallbackPos);
-            this._bot.BotTalk?.TrySay(EPhraseTrigger.OnLostVisual);
-            this._lastStateChangeTime = Time.time;
+            _fallback.SetFallbackTarget(fallbackPos);
+            _bot.BotTalk?.TrySay(EPhraseTrigger.OnLostVisual);
+            _lastStateChangeTime = Time.time;
         }
 
         public void TrySetStanceFromNearbyCover(Vector3 pos)
         {
-            if (!this._initialized)
+            if (!_initialized)
             {
                 return;
             }
 
-            this._cache.PoseController.TrySetStanceFromNearbyCover(pos);
+            _cache.PoseController.TrySetStanceFromNearbyCover(pos);
         }
 
         #endregion
 
-        #region Private Helpers
+        #region Private Methods
 
         private void AssignFallbackIfNeeded()
         {
-            if (this._fallback.HasValidFallbackPath())
+            if (_fallback.HasValidFallbackPath() || _cache.Pathing == null)
             {
                 return;
             }
 
-            if (this._cache.Pathing == null)
-            {
-                return;
-            }
-
-            Vector3 lookDir = this._bot.LookDirection;
+            Vector3 lookDir = _bot.LookDirection;
             Vector3 retreatDir = lookDir.sqrMagnitude > 0.01f ? -lookDir.normalized : Vector3.back;
 
-            FallbackPathBuffer.Clear();
-            List<Vector3> path = BotCoverRetreatPlanner.GetCoverRetreatPath(this._bot, retreatDir, this._cache.Pathing);
+            List<Vector3> path = TempListPool.Rent<Vector3>();
+            try
+            {
+                path.Clear();
+                List<Vector3> generated = BotCoverRetreatPlanner.GetCoverRetreatPath(_bot, retreatDir, _cache.Pathing);
+                for (int i = 0; i < generated.Count; i++)
+                {
+                    path.Add(generated[i]);
+                }
 
-            if (path.Count > 0)
-            {
-                Vector3 final = path[path.Count - 1];
-                this._fallback.SetFallbackPath(path);
-                this._fallback.SetFallbackTarget(final);
-                this.TrySetStanceFromNearbyCover(final);
+                if (path.Count > 0)
+                {
+                    Vector3 final = path[path.Count - 1];
+                    _fallback.SetFallbackPath(path);
+                    _fallback.SetFallbackTarget(final);
+                    TrySetStanceFromNearbyCover(final);
+                }
+                else
+                {
+                    Plugin.LoggerInstance.LogWarning("[CombatStateMachine] Fallback path not found.");
+                }
             }
-            else
+            finally
             {
-                Plugin.LoggerInstance?.LogWarning("[CombatStateMachine] Fallback path was not found.");
+                TempListPool.Return(path);
             }
         }
 
         private bool ShouldTriggerSuppressedFallback(float time)
         {
-            float composure = this._cache.PanicHandler.GetComposureLevel();
+            float composure = _cache.PanicHandler.GetComposureLevel();
             float delay = Mathf.Lerp(0.75f, 1.5f, 1f - composure);
-
-            return this._fallback.ShouldTriggerSuppressedFallback(time, this._lastStateChangeTime, delay);
+            return _fallback.ShouldTriggerSuppressedFallback(time, _lastStateChangeTime, delay);
         }
 
         private void SetLastStateChangeTime(CombatState state, float time)
         {
-            this._lastStateChangeTime = time;
+            _lastStateChangeTime = time;
         }
 
         #endregion

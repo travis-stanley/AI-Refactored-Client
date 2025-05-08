@@ -46,10 +46,9 @@ namespace AIRefactored.AI.Reactions
         /// <summary>
         /// Links this flash reaction handler to the active bot's shared component cache.
         /// </summary>
-        /// <param name="cache">The component cache containing bot references.</param>
         public void Initialize(BotComponentCache cache)
         {
-            _cache = cache;
+            _cache = cache ?? throw new System.ArgumentNullException(nameof(cache));
         }
 
         #endregion
@@ -67,7 +66,6 @@ namespace AIRefactored.AI.Reactions
         /// <summary>
         /// Called every frame from BotBrain. Updates suppression state and performs exposure checks.
         /// </summary>
-        /// <param name="time">Current global time.</param>
         public void Tick(float time)
         {
             if (_cache == null || _cache.Bot == null)
@@ -86,7 +84,6 @@ namespace AIRefactored.AI.Reactions
                 return;
             }
 
-            // Iterate known lights — exit early if any trigger suppression
             var lights = FlashlightRegistry.GetLastKnownFlashlightPositions();
             for (int i = 0; i < lights.Count; i++)
             {
@@ -106,7 +103,6 @@ namespace AIRefactored.AI.Reactions
         /// <summary>
         /// Triggers suppression, fallback, and panic based on light strength and composure.
         /// </summary>
-        /// <param name="strength">Flash strength [0..1].</param>
         public void TriggerSuppression(float strength = 0.6f)
         {
             if (_cache == null || _cache.Bot == null)
@@ -164,7 +160,7 @@ namespace AIRefactored.AI.Reactions
             }
 
             Vector3 lateral = new Vector3(-dir.x, 0f, -dir.z).normalized;
-            Vector3 fallback = bot.Position + lateral * FallbackDistance + Random.insideUnitSphere * FallbackJitter;
+            Vector3 fallback = bot.Position + lateral * FallbackDistance + UnityEngine.Random.insideUnitSphere * FallbackJitter;
             fallback.y = bot.Position.y;
 
             BotMovementHelper.SmoothMoveTo(bot, fallback);

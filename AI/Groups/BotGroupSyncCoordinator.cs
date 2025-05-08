@@ -52,7 +52,12 @@ namespace AIRefactored.AI.Groups
             }
 
             _bot = botOwner;
-            _group = botOwner.BotsGroup ?? throw new ArgumentException("BotsGroup is null.");
+            _group = botOwner.BotsGroup;
+            if (_group == null)
+            {
+                throw new ArgumentException("BotsGroup is null.");
+            }
+
             _group.OnMemberAdd += OnMemberAdded;
             _group.OnMemberRemove += OnMemberRemoved;
 
@@ -63,7 +68,7 @@ namespace AIRefactored.AI.Groups
         {
             if (localCache == null)
             {
-                throw new ArgumentNullException(nameof(localCache));
+                throw new ArgumentNullException("localCache");
             }
 
             _cache = localCache;
@@ -74,11 +79,12 @@ namespace AIRefactored.AI.Groups
             _fallbackPoint = point;
             _hasFallback = true;
 
-            foreach (var teammate in _teammateCaches.Values)
+            foreach (KeyValuePair<BotOwner, BotComponentCache> kvp in _teammateCaches)
             {
+                BotComponentCache teammate = kvp.Value;
                 if (!teammate.Bot.IsDead)
                 {
-                    teammate.Combat?.TriggerFallback(point);
+                    teammate.Combat.TriggerFallback(point);
                     if (!teammate.PanicHandler.IsPanicking)
                     {
                         teammate.PanicHandler.TriggerPanic();
@@ -104,8 +110,9 @@ namespace AIRefactored.AI.Groups
             LastDangerBroadcastTime = Time.time;
             LastDangerPosition = position;
 
-            foreach (var teammate in _teammateCaches.Values)
+            foreach (KeyValuePair<BotOwner, BotComponentCache> kvp in _teammateCaches)
             {
+                BotComponentCache teammate = kvp.Value;
                 if (!teammate.Bot.IsDead && !teammate.PanicHandler.IsPanicking)
                 {
                     float delay = UnityEngine.Random.Range(0.1f, 0.35f);
@@ -116,12 +123,24 @@ namespace AIRefactored.AI.Groups
 
         public void Tick(float time)
         {
-            if (!_bot.GetPlayer.IsAI || _teammateCaches.Count == 0 || time < _nextSyncTime)
+            if (_bot == null || _bot.IsDead || _teammateCaches.Count == 0)
+            {
+                return;
+            }
+
+            Player player = _bot.GetPlayer;
+            if (player == null || !player.IsAI)
+            {
+                return;
+            }
+
+            if (time < _nextSyncTime)
             {
                 return;
             }
 
             _nextSyncTime = time + BaseSyncInterval * UnityEngine.Random.Range(0.8f, 1.2f);
+
             if (!_cache.PanicHandler.IsPanicking)
             {
                 return;
@@ -168,27 +187,31 @@ namespace AIRefactored.AI.Groups
                 return result;
             }
 
-            throw new KeyNotFoundException("No teammate cache found for: " + teammate?.ProfileId);
+            throw new KeyNotFoundException("No teammate cache found for: " + (teammate != null ? teammate.ProfileId : "null"));
         }
 
         public IReadOnlyList<BotOwner> GetTeammates()
         {
             List<BotOwner> list = TempListPool.Rent<BotOwner>();
-
-            foreach (KeyValuePair<BotOwner, BotComponentCache> kvp in _teammateCaches)
+            try
             {
-                BotOwner mate = kvp.Key;
-                Player player = mate.GetPlayer;
-                if (!mate.IsDead && player != null && player.IsAI)
+                foreach (KeyValuePair<BotOwner, BotComponentCache> kvp in _teammateCaches)
                 {
-                    list.Add(mate);
+                    BotOwner mate = kvp.Key;
+                    Player player = mate.GetPlayer;
+
+                    if (!mate.IsDead && player != null && player.IsAI)
+                    {
+                        list.Add(mate);
+                    }
                 }
+
+                return new List<BotOwner>(list);
             }
-
-            List<BotOwner> result = new List<BotOwner>(list);
-            TempListPool.Return(list);
-
-            return result;
+            finally
+            {
+                TempListPool.Return(list);
+            }
         }
 
         private void OnMemberAdded(BotOwner teammate)
@@ -198,13 +221,20 @@ namespace AIRefactored.AI.Groups
                 return;
             }
 
-            if (teammate.IsDead || teammate.GetPlayer == null || !teammate.GetPlayer.IsAI)
+            Player player = teammate.GetPlayer;
+            if (player == null || !player.IsAI || teammate.IsDead)
+            {
+                return;
+            }
+
+            string profileId = teammate.ProfileId;
+            if (string.IsNullOrEmpty(profileId))
             {
                 return;
             }
 
             AIRefactoredBotOwner owner;
-            if (!BotRegistry.TryGetRefactoredOwner(teammate.ProfileId, out owner))
+            if (!BotRegistry.TryGetRefactoredOwner(profileId, out owner))
             {
                 return;
             }

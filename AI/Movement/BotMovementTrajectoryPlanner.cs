@@ -27,6 +27,7 @@ namespace AIRefactored.AI.Movement
         private const float ChaosRadius = 0.65f;
         private const float SquadOffsetScale = 0.75f;
         private const float VelocityFactor = 1.5f;
+        private const float MinMagnitude = 0.0001f;
 
         #endregion
 
@@ -35,7 +36,7 @@ namespace AIRefactored.AI.Movement
         private readonly BotOwner _bot;
         private readonly BotComponentCache _cache;
 
-        private Vector3 _chaosOffset = Vector3.zero;
+        private Vector3 _chaosOffset;
         private float _nextChaosUpdate;
 
         #endregion
@@ -57,6 +58,9 @@ namespace AIRefactored.AI.Movement
 
         #region Public Methods
 
+        /// <summary>
+        /// Computes the adjusted trajectory vector with chaos, offset, avoidance, and velocity blending.
+        /// </summary>
         public Vector3 ModifyTrajectory(Vector3 targetDir, float deltaTime)
         {
             float now = Time.unscaledTime;
@@ -66,37 +70,37 @@ namespace AIRefactored.AI.Movement
                 UpdateChaosOffset(now);
             }
 
-            Vector3 baseDir = targetDir.sqrMagnitude > 0.0001f ? targetDir.normalized : Vector3.forward;
-            Vector3 offset = baseDir + _chaosOffset;
+            Vector3 baseDir = targetDir.sqrMagnitude > MinMagnitude ? targetDir.normalized : Vector3.forward;
+            Vector3 adjusted = baseDir + _chaosOffset;
 
             if (_cache.SquadPath != null)
             {
                 Vector3 squadOffset = _cache.SquadPath.GetCurrentOffset();
-                if (squadOffset.sqrMagnitude > 0.0001f)
+                if (squadOffset.sqrMagnitude > MinMagnitude)
                 {
-                    offset += squadOffset.normalized * SquadOffsetScale;
+                    adjusted += squadOffset.normalized * SquadOffsetScale;
                 }
             }
 
-            Vector3 avoid = ComputeAvoidance();
-            if (avoid.sqrMagnitude > 0.0001f)
+            Vector3 avoidVector = ComputeAvoidance();
+            if (avoidVector.sqrMagnitude > MinMagnitude)
             {
-                offset += avoid.normalized * AvoidanceScale;
+                adjusted += avoidVector.normalized * AvoidanceScale;
             }
 
             Vector3 velocity = _bot.GetPlayer.Velocity;
             if (velocity.sqrMagnitude > 0.1f)
             {
-                offset += velocity.normalized * VelocityFactor;
+                adjusted += velocity.normalized * VelocityFactor;
             }
 
-            offset.y = 0f;
-            return offset.sqrMagnitude > 0.0001f ? offset.normalized : baseDir;
+            adjusted.y = 0f;
+            return adjusted.sqrMagnitude > MinMagnitude ? adjusted.normalized : baseDir;
         }
 
         #endregion
 
-        #region Private Methods
+        #region Internal Logic
 
         private Vector3 ComputeAvoidance()
         {
@@ -106,9 +110,9 @@ namespace AIRefactored.AI.Movement
                 return Vector3.zero;
             }
 
-            Vector3 selfPos = _bot.Position;
-            Vector3 total = Vector3.zero;
-            int contributors = 0;
+            Vector3 self = _bot.Position;
+            Vector3 repulsion = Vector3.zero;
+            int count = 0;
 
             for (int i = 0; i < group.MembersCount; i++)
             {
@@ -118,21 +122,23 @@ namespace AIRefactored.AI.Movement
                     continue;
                 }
 
-                float dist = Vector3.Distance(selfPos, other.Position);
+                Vector3 offset = self - other.Position;
+                float dist = offset.magnitude;
                 if (dist < AvoidanceRadius && dist > 0.01f)
                 {
-                    total += (selfPos - other.Position).normalized / dist;
-                    contributors++;
+                    repulsion += offset.normalized / dist;
+                    count++;
                 }
             }
 
-            return contributors > 0 ? total / contributors : Vector3.zero;
+            return count > 0 ? repulsion / count : Vector3.zero;
         }
 
         private void UpdateChaosOffset(float now)
         {
-            float caution = _cache.AIRefactoredBotOwner.PersonalityProfile.Caution;
-            float chaosRange = ChaosRadius * (1f - Mathf.Clamp01(caution));
+            BotPersonalityProfile profile = _cache.AIRefactoredBotOwner.PersonalityProfile;
+            float caution = Mathf.Clamp01(profile.Caution);
+            float chaosRange = ChaosRadius * (1f - caution);
 
             float x = UnityEngine.Random.Range(-chaosRange * 0.5f, chaosRange * 0.5f);
             float z = UnityEngine.Random.Range(0f, chaosRange);

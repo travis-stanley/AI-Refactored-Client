@@ -25,7 +25,6 @@ namespace AIRefactored.Runtime
     public sealed class GameWorldSpawnHook : MonoBehaviour
     {
         private static bool _hooked;
-
         private static readonly ManualLogSource Logger = Plugin.LoggerInstance;
 
         private void Awake()
@@ -73,19 +72,9 @@ namespace AIRefactored.Runtime
             {
                 try
                 {
-                    if (!FikaHeadlessDetector.IsReady)
-                    {
-                        Logger.LogWarning("[GameWorldSpawnHook] Skipped InitPhaseRunner — FIKA not ready.");
-                        return;
-                    }
-
-                    if (!GameWorldHandler.IsReady())
-                    {
-                        Logger.LogWarning("[GameWorldSpawnHook] Skipped InitPhaseRunner — GameWorldHandler not ready.");
-                        return;
-                    }
-
                     Logger.LogInfo("[GameWorldSpawnHook] GameWorld initialized. Triggering InitPhaseRunner...");
+
+                    // Always invoke — internal guards will decide if it's safe
                     InitPhaseRunner.Begin(Logger);
                 }
                 catch (Exception ex)

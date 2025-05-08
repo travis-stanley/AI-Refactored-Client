@@ -9,6 +9,7 @@
 namespace AIRefactored.Runtime
 {
     using System;
+    using AIRefactored.AI.Core;
     using AIRefactored.Bootstrap;
     using AIRefactored.Core;
     using BepInEx.Logging;
@@ -44,6 +45,18 @@ namespace AIRefactored.Runtime
                 if (logger != null)
                 {
                     logger.LogInfo("[InitPhaseRunner] 🚀 Beginning AIRefactored world initialization.");
+                }
+
+                if (!GameWorldHandler.IsReady())
+                {
+                    if (FikaHeadlessDetector.IsHeadless)
+                    {
+                        logger?.LogWarning("[InitPhaseRunner] GameWorld not fully ready, but FIKA headless is active — forcing initialization.");
+                    }
+                    else
+                    {
+                        logger?.LogWarning("[InitPhaseRunner] GameWorldHandler not ready — trying fallback init.");
+                    }
                 }
 
                 GameWorldHandler.Initialize();

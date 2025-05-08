@@ -91,7 +91,6 @@ namespace AIRefactored.Runtime
         /// <summary>
         /// Called when a raid begins and GameWorld is valid.
         /// </summary>
-        /// <param name="world">The GameWorld instance.</param>
         public static void OnRaidStarted(GameWorld world)
         {
             if (!_initialized || _raidActive || world == null)
@@ -140,6 +139,7 @@ namespace AIRefactored.Runtime
         {
             Logger.LogInfo("[AIRefactoredController] Starting GameWorld wait coroutine...");
             StartCoroutine(WaitForGameWorld());
+            StartCoroutine(ForceInitAfterTimeout());
         }
 
         private IEnumerator WaitForGameWorld()
@@ -156,6 +156,17 @@ namespace AIRefactored.Runtime
 
             Logger.LogInfo("[AIRefactoredController] ✅ GameWorld ready. Launching InitPhaseRunner...");
             InitPhaseRunner.Begin(Logger);
+        }
+
+        private IEnumerator ForceInitAfterTimeout()
+        {
+            yield return new WaitForSecondsRealtime(15f);
+
+            if (!WorldInitState.IsInitialized)
+            {
+                Logger.LogWarning("[AIRefactoredController] ⚠️ Forcing InitPhaseRunner fallback after timeout.");
+                InitPhaseRunner.Begin(Logger);
+            }
         }
 
         private void Update()

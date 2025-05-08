@@ -59,6 +59,7 @@ namespace AIRefactored
                     _logger = Logger;
                     _logger.LogInfo("[AIRefactored] Plugin Awake — bootstrapping controller.");
                     AIRefactoredController.Initialize();
+                    UnityEngine.Debug.Log("[AIRefactored] AIRefactoredController.Initialize() invoked.");
                     _initialized = true;
                     _logger.LogInfo("[AIRefactored] Initialization complete.");
                 }

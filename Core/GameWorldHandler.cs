@@ -150,12 +150,21 @@ namespace AIRefactored.Core
         public static bool IsReady()
         {
             GameWorld world = Get();
+
+            if (FikaHeadlessDetector.IsHeadless)
+            {
+                return world != null &&
+                       !string.IsNullOrEmpty(world.LocationId) &&
+                       !world.LocationId.Equals("unknown", StringComparison.OrdinalIgnoreCase);
+            }
+
             return world != null &&
                    world.RegisteredPlayers != null &&
                    world.RegisteredPlayers.Count > 0 &&
                    !string.IsNullOrEmpty(world.LocationId) &&
                    !world.LocationId.Equals("unknown", StringComparison.OrdinalIgnoreCase);
         }
+
 
         public static void HookBotSpawns()
         {

@@ -30,8 +30,8 @@ namespace AIRefactored.AI.Movement
 
         #region Internal State
 
-        private static float _lastLeftUseTime = -10f;
-        private static float _lastRightUseTime = -10f;
+        private static float _lastLeftUseTime = -999f;
+        private static float _lastRightUseTime = -999f;
 
         #endregion
 
@@ -39,6 +39,7 @@ namespace AIRefactored.AI.Movement
 
         /// <summary>
         /// Determines the best flank side based on squad spacing, suppression, and enemy angle.
+        /// Enforces per-side cooldown to avoid flank spam.
         /// </summary>
         /// <param name="bot">The requesting bot owner.</param>
         /// <param name="cache">Bot component cache.</param>
@@ -52,20 +53,19 @@ namespace AIRefactored.AI.Movement
 
             Vector3 botPos = bot.Position;
             Vector3 enemyPos = bot.Memory.GoalEnemy.CurrPosition;
-
             BifacialTransform bifacial = bot.Memory.GoalEnemy.Person?.Transform;
+
             if (bifacial == null)
             {
                 return FlankPositionPlanner.Side.Left;
             }
 
+            float now = Time.time;
             Vector3 enemyDir = bifacial.forward;
             float angle = Vector3.SignedAngle(enemyDir, botPos - enemyPos, Vector3.up);
 
             float squadBias = GetSquadBias(bot, enemyPos);
             float suppressionBias = GetSuppressionBias(cache);
-
-            float now = Time.time;
             float leftCooldown = now - _lastLeftUseTime;
             float rightCooldown = now - _lastRightUseTime;
 
@@ -81,20 +81,18 @@ namespace AIRefactored.AI.Movement
                 rightScore += 1f;
             }
 
-            leftScore += squadBias;
+            leftScore += squadBias + suppressionBias;
             rightScore -= squadBias;
-
-            leftScore += suppressionBias;
             rightScore += suppressionBias;
 
             if (leftCooldown < RecentlyUsedFlankCooldown)
             {
-                leftScore -= 0.5f;
+                leftScore -= 0.75f;
             }
 
             if (rightCooldown < RecentlyUsedFlankCooldown)
             {
-                rightScore -= 0.5f;
+                rightScore -= 0.75f;
             }
 
             if (leftScore >= rightScore)

@@ -28,6 +28,7 @@ namespace AIRefactored.AI.Memory
         private static readonly List<DangerZone> Zones = new List<DangerZone>(64);
         private static readonly Dictionary<string, List<DangerZone>> ZoneCaches = new Dictionary<string, List<DangerZone>>(64);
         private static readonly Dictionary<string, List<HeardSound>> ShortTermHeardSounds = new Dictionary<string, List<HeardSound>>(64);
+        private static readonly Dictionary<string, float> LastFlankTimes = new Dictionary<string, float>(64);
 
         #region Danger Zones
 
@@ -197,6 +198,38 @@ namespace AIRefactored.AI.Memory
         public static void ClearHitSources()
         {
             LastHitSources.Clear();
+        }
+
+        #endregion
+
+        #region Flank Cooldown
+
+        public static void SetLastFlankTime(string profileId)
+        {
+            string key;
+            if (!TryGetSafeKey(profileId, out key))
+            {
+                return;
+            }
+
+            LastFlankTimes[key] = Time.time;
+        }
+
+        public static bool CanFlankNow(string profileId, float cooldown)
+        {
+            string key;
+            if (!TryGetSafeKey(profileId, out key))
+            {
+                return false;
+            }
+
+            float last;
+            return !LastFlankTimes.TryGetValue(key, out last) || Time.time - last >= cooldown;
+        }
+
+        public static void ClearFlankCooldowns()
+        {
+            LastFlankTimes.Clear();
         }
 
         #endregion

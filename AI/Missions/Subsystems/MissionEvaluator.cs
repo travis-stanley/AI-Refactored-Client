@@ -49,6 +49,7 @@ namespace AIRefactored.AI.Missions.Subsystems
         private int _fallbackAttempts;
         private float _lastMoveTime;
         private float _stuckSince;
+        private float _lastStuckFallbackTime;
         private Vector3 _lastPos;
 
         #endregion
@@ -122,7 +123,19 @@ namespace AIRefactored.AI.Missions.Subsystems
                 return false;
             }
 
-            Item backpack = _bot.GetPlayer.Inventory.Equipment.GetSlot(EquipmentSlot.Backpack)?.ContainedItem;
+            Player player = _bot.GetPlayer;
+            if (player == null || player.Inventory == null)
+            {
+                return false;
+            }
+
+            Slot backpackSlot = player.Inventory.Equipment.GetSlot(EquipmentSlot.Backpack);
+            if (backpackSlot == null)
+            {
+                return false;
+            }
+
+            Item backpack = backpackSlot.ContainedItem;
             if (backpack == null)
             {
                 return false;
@@ -132,9 +145,7 @@ namespace AIRefactored.AI.Missions.Subsystems
             try
             {
                 items.AddRange(backpack.GetAllItems());
-
-                int count = items.Count;
-                float fullness = (float)count / LootItemCountThreshold;
+                float fullness = (float)items.Count / LootItemCountThreshold;
                 return fullness >= _profile.RetreatThreshold;
             }
             finally
@@ -191,11 +202,14 @@ namespace AIRefactored.AI.Missions.Subsystems
                 return;
             }
 
-            if (time - _lastMoveTime > StuckDuration &&
-                time - _stuckSince > StuckCooldown &&
-                _fallbackAttempts < 2)
+            bool cooldownPassed = time - _stuckSince > StuckCooldown;
+            bool stuckLongEnough = time - _lastMoveTime > StuckDuration;
+            bool notRecentlyFellback = time - _lastStuckFallbackTime > StuckCooldown;
+
+            if (stuckLongEnough && cooldownPassed && notRecentlyFellback && _fallbackAttempts < 2)
             {
                 _stuckSince = time;
+                _lastStuckFallbackTime = time;
                 _fallbackAttempts++;
 
                 Vector3 direction = _bot.LookDirection;

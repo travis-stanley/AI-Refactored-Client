@@ -23,8 +23,9 @@ namespace AIRefactored.AI.Navigation
     public sealed class BotDoorInteractionSystem
     {
         private const float DoorRetryCooldown = 2.5f;
-        private const float InteractionDistance = 2.0f;
         private const float DoorCheckInterval = 0.4f;
+        private const float DoorCastRange = 1.75f;
+        private const float DoorCastRadius = 0.4f;
 
         private readonly BotOwner _bot;
         private readonly ManualLogSource _log;
@@ -59,23 +60,26 @@ namespace AIRefactored.AI.Navigation
             }
 
             _lastDoorCheckTime = time;
-            Vector3 botPos = _bot.Position;
 
-            Door nearest = FindNearestBlockingDoor(botPos);
-            if (nearest == null)
+            Vector3 origin = _bot.Position + Vector3.up * 1.2f;
+            Vector3 forward = _bot.LookDirection;
+
+            if (!Physics.SphereCast(origin, DoorCastRadius, forward, out RaycastHit hit, DoorCastRange, AIRefactoredLayerMasks.Interactive))
             {
                 IsBlockedByDoor = false;
+                _currentDoor = null;
                 return;
             }
 
-            float distance = Vector3.Distance(botPos, nearest.transform.position);
-            if (distance > InteractionDistance)
+            Door door = hit.collider != null ? hit.collider.GetComponentInParent<Door>() : null;
+            if (door == null || !door.enabled || (door.DoorState & EDoorState.Open) != 0 || (door.DoorState & EDoorState.Breaching) != 0)
             {
                 IsBlockedByDoor = false;
+                _currentDoor = null;
                 return;
             }
 
-            if (nearest.DoorState == EDoorState.Interacting)
+            if (door.DoorState == EDoorState.Interacting)
             {
                 IsBlockedByDoor = true;
                 return;
@@ -87,9 +91,9 @@ namespace AIRefactored.AI.Navigation
                 return;
             }
 
-            if (!nearest.Operatable)
+            if (!door.Operatable)
             {
-                _log.LogWarning("[BotDoorInteraction] Cannot operate door: " + nearest.name);
+                _log.LogWarning("[BotDoorInteraction] Cannot operate door: " + door.name);
                 IsBlockedByDoor = true;
                 return;
             }
@@ -100,15 +104,15 @@ namespace AIRefactored.AI.Navigation
                 return;
             }
 
-            EInteractionType type = GetBestInteractionType(nearest);
+            EInteractionType type = GetBestInteractionType(door);
             InteractionResult result = new InteractionResult(type);
-            _bot.GetPlayer.CurrentManagedState.StartDoorInteraction(nearest, result, null);
+            _bot.GetPlayer.CurrentManagedState.StartDoorInteraction(door, result, null);
 
             _nextRetryTime = time + DoorRetryCooldown;
-            _currentDoor = nearest;
+            _currentDoor = door;
             IsBlockedByDoor = true;
 
-            _log.LogDebug("[BotDoorInteraction] " + _bot.name + " → " + type + " door " + nearest.name);
+            _log.LogDebug("[BotDoorInteraction] " + _bot.name + " → " + type + " door " + door.name);
         }
 
         public bool IsDoorBlocking(Vector3 position)
@@ -119,7 +123,7 @@ namespace AIRefactored.AI.Navigation
             }
 
             float dist = Vector3.Distance(_currentDoor.transform.position, position);
-            return dist < InteractionDistance && (_currentDoor.DoorState & EDoorState.Open) == 0;
+            return dist < DoorCastRange && (_currentDoor.DoorState & EDoorState.Open) == 0;
         }
 
         public void Reset()
@@ -130,38 +134,7 @@ namespace AIRefactored.AI.Navigation
             _lastDoorCheckTime = 0f;
         }
 
-        private Door FindNearestBlockingDoor(Vector3 botPos)
-        {
-            Door[] all = UnityEngine.Object.FindObjectsOfType<Door>();
-            float bestDist = float.MaxValue;
-            Door best = null;
-
-            for (int i = 0; i < all.Length; i++)
-            {
-                Door d = all[i];
-                if (d == null || !d.enabled)
-                {
-                    continue;
-                }
-
-                EDoorState state = d.DoorState;
-                if ((state & EDoorState.Open) != 0 || (state & EDoorState.Breaching) != 0)
-                {
-                    continue;
-                }
-
-                float dist = Vector3.Distance(botPos, d.transform.position);
-                if (dist < bestDist)
-                {
-                    bestDist = dist;
-                    best = d;
-                }
-            }
-
-            return best;
-        }
-
-        private EInteractionType GetBestInteractionType(Door door)
+        private static EInteractionType GetBestInteractionType(Door door)
         {
             EDoorState state = door.DoorState;
             if ((state & EDoorState.Shut) != 0 || state == EDoorState.None)

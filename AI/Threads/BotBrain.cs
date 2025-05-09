@@ -36,6 +36,7 @@ namespace AIRefactored.AI.Threads
         private BotComponentCache _cache;
 
         private bool _isValid;
+        private float _lastWarningTime;
 
         private CombatStateMachine _combat;
         private BotMovementController _movement;
@@ -84,44 +85,60 @@ namespace AIRefactored.AI.Threads
             float now = Time.time;
             float delta = Time.deltaTime;
 
+            // Validate core systems
+            if (_movement == null || _combat == null || _mission == null || _cache == null)
+            {
+                if (now > _lastWarningTime + 1f)
+                {
+                    Logger.LogWarning("[BotBrain] Tick skipped — missing core system: "
+                        + (_movement == null ? "Movement " : "")
+                        + (_combat == null ? "Combat " : "")
+                        + (_mission == null ? "Mission " : "")
+                        + (_cache == null ? "Cache " : ""));
+                    _lastWarningTime = now;
+                }
+
+                return;
+            }
+
             if (now >= _nextPerceptionTick)
             {
-                _vision.Tick(now);
-                _hearing.Tick(now);
-                _perception.Tick(delta);
+                _vision?.Tick(now);
+                _hearing?.Tick(now);
+                _perception?.Tick(delta);
                 _nextPerceptionTick = now + PerceptionTickRate;
             }
 
             if (now >= _nextCombatTick)
             {
-                _combat.Tick(now);
-                _cache.Escalation.Tick(now);
-                _flashReaction.Tick(now);
-                _flashDetector.Tick(now);
-                _groupSync.Tick(now);
-                _teamLogic.CoordinateMovement();
-                _threatEscalationMonitor.Tick(now);
+                _combat?.Tick(now);
+                _cache?.Escalation?.Tick(now);
+                _flashReaction?.Tick(now);
+                _flashDetector?.Tick(now);
+                _groupSync?.Tick(now);
+                _teamLogic?.CoordinateMovement();
+                _threatEscalationMonitor?.Tick(now);
                 _nextCombatTick = now + CombatTickRate;
             }
 
             if (now >= _nextLogicTick)
             {
-                _mission.Tick(now);
-                _hearingDamage.Tick(delta);
-                _tactical.Tick();
-                _cache.LootScanner.Tick(delta);
-                _cache.DeadBodyScanner.Tick(now);
-                _asyncProcessor.Tick(now);
+                _mission?.Tick(now);
+                _hearingDamage?.Tick(delta);
+                _tactical?.Tick();
+                _cache?.LootScanner?.Tick(delta);
+                _cache?.DeadBodyScanner?.Tick(now);
+                _asyncProcessor?.Tick(now);
                 _nextLogicTick = now + LogicTickRate;
             }
 
-            _movement.Tick(delta);
-            _jump.Tick(delta);
-            _pose.Tick(now);
-            _look.Tick(delta);
-            _corner.Tick(now);
-            _tilt.ManualUpdate();
-            _groupBehavior.Tick(delta);
+            _movement?.Tick(delta);
+            _jump?.Tick(delta);
+            _pose?.Tick(now);
+            _look?.Tick(delta);
+            _corner?.Tick(now);
+            _tilt?.ManualUpdate();
+            _groupBehavior?.Tick(delta);
         }
 
         /// <summary>

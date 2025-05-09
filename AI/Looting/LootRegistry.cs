@@ -53,7 +53,7 @@ namespace AIRefactored.AI.Looting
 
         private static readonly Dictionary<LootableContainer, TrackedContainer> Containers = new Dictionary<LootableContainer, TrackedContainer>(64);
         private static readonly Dictionary<LootItem, TrackedItem> Items = new Dictionary<LootItem, TrackedItem>(128);
-        private static readonly HashSet<GameObject> WatchedObjects = new HashSet<GameObject>();
+        private static readonly HashSet<int> WatchedInstanceIds = new HashSet<int>();
         private static readonly ManualLogSource Logger = Plugin.LoggerInstance;
 
         #endregion
@@ -71,7 +71,7 @@ namespace AIRefactored.AI.Looting
         {
             Containers.Clear();
             Items.Clear();
-            WatchedObjects.Clear();
+            WatchedInstanceIds.Clear();
             ContainerBuffer.Clear();
             ItemBuffer.Clear();
             ContainerResultBuffer.Clear();
@@ -81,7 +81,7 @@ namespace AIRefactored.AI.Looting
         public static List<LootableContainer> GetAllContainers()
         {
             ContainerResultBuffer.Clear();
-            foreach (KeyValuePair<LootableContainer, TrackedContainer> kv in Containers)
+            foreach (var kv in Containers)
             {
                 if (kv.Key != null)
                 {
@@ -95,7 +95,7 @@ namespace AIRefactored.AI.Looting
         public static List<LootItem> GetAllItems()
         {
             ItemResultBuffer.Clear();
-            foreach (KeyValuePair<LootItem, TrackedItem> kv in Items)
+            foreach (var kv in Items)
             {
                 if (kv.Key != null)
                 {
@@ -109,18 +109,18 @@ namespace AIRefactored.AI.Looting
         public static List<LootableContainer> GetNearbyContainers(Vector3 origin, float radius)
         {
             ContainerResultBuffer.Clear();
-            float radiusSq = radius * radius;
+            float radiusSqr = radius * radius;
 
-            foreach (KeyValuePair<LootableContainer, TrackedContainer> kv in Containers)
+            foreach (var kv in Containers)
             {
-                Transform tf = kv.Value.Transform;
+                var tf = kv.Value.Transform;
                 if (tf == null)
                 {
                     continue;
                 }
 
                 Vector3 pos = tf.position;
-                if ((pos - origin).sqrMagnitude <= radiusSq)
+                if ((pos - origin).sqrMagnitude <= radiusSqr)
                 {
                     ContainerResultBuffer.Add(kv.Value.Container);
                 }
@@ -132,18 +132,18 @@ namespace AIRefactored.AI.Looting
         public static List<LootItem> GetNearbyItems(Vector3 origin, float radius)
         {
             ItemResultBuffer.Clear();
-            float radiusSq = radius * radius;
+            float radiusSqr = radius * radius;
 
-            foreach (KeyValuePair<LootItem, TrackedItem> kv in Items)
+            foreach (var kv in Items)
             {
-                Transform tf = kv.Value.Transform;
+                var tf = kv.Value.Transform;
                 if (tf == null)
                 {
                     continue;
                 }
 
                 Vector3 pos = tf.position;
-                if ((pos - origin).sqrMagnitude <= radiusSq)
+                if ((pos - origin).sqrMagnitude <= radiusSqr)
                 {
                     ItemResultBuffer.Add(kv.Value.Item);
                 }
@@ -159,14 +159,13 @@ namespace AIRefactored.AI.Looting
                 return;
             }
 
-            TrackedContainer tracked = new TrackedContainer
+            Containers[container] = new TrackedContainer
             {
                 Container = container,
                 Transform = container.transform,
                 LastSeenTime = Time.time
             };
 
-            Containers[container] = tracked;
             InjectWatcherIfNeeded(container.gameObject);
         }
 
@@ -177,14 +176,13 @@ namespace AIRefactored.AI.Looting
                 return;
             }
 
-            TrackedItem tracked = new TrackedItem
+            Items[item] = new TrackedItem
             {
                 Item = item,
                 Transform = item.transform,
                 LastSeenTime = Time.time
             };
 
-            Items[item] = tracked;
             InjectWatcherIfNeeded(item.gameObject);
         }
 
@@ -196,12 +194,11 @@ namespace AIRefactored.AI.Looting
                 return false;
             }
 
-            foreach (KeyValuePair<LootableContainer, TrackedContainer> kv in Containers)
+            foreach (var kv in Containers)
             {
-                LootableContainer c = kv.Key;
-                if (c != null && string.Equals(c.name, name, StringComparison.OrdinalIgnoreCase))
+                if (kv.Key != null && string.Equals(kv.Key.name, name, StringComparison.OrdinalIgnoreCase))
                 {
-                    found = c;
+                    found = kv.Key;
                     return true;
                 }
             }
@@ -217,12 +214,11 @@ namespace AIRefactored.AI.Looting
                 return false;
             }
 
-            foreach (KeyValuePair<LootItem, TrackedItem> kv in Items)
+            foreach (var kv in Items)
             {
-                LootItem item = kv.Key;
-                if (item != null && string.Equals(item.name, name, StringComparison.OrdinalIgnoreCase))
+                if (kv.Key != null && string.Equals(kv.Key.name, name, StringComparison.OrdinalIgnoreCase))
                 {
-                    found = item;
+                    found = kv.Key;
                     return true;
                 }
             }
@@ -259,7 +255,6 @@ namespace AIRefactored.AI.Looting
         public static void PruneStale(float olderThanSeconds)
         {
             float cutoff = Time.time - olderThanSeconds;
-
             Containers.RemoveWhere(pair => pair.Value.LastSeenTime < cutoff);
             Items.RemoveWhere(pair => pair.Value.LastSeenTime < cutoff);
         }
@@ -270,14 +265,19 @@ namespace AIRefactored.AI.Looting
 
         private static void InjectWatcherIfNeeded(GameObject go)
         {
-            if (go == null || WatchedObjects.Contains(go))
+            if (go == null)
             {
                 return;
             }
 
-            WatchedObjects.Add(go);
+            int id = go.GetInstanceID();
+            if (WatchedInstanceIds.Contains(id))
+            {
+                return;
+            }
+
+            WatchedInstanceIds.Add(id);
             LootRuntimeWatcher.Register(go);
-            Logger.LogDebug("[LootRegistry] Registered static loot watcher for: " + go.name);
         }
 
         #endregion
@@ -292,19 +292,18 @@ namespace AIRefactored.AI.Looting
                 return;
             }
 
-            List<TKey> removeList = new List<TKey>();
-
-            foreach (KeyValuePair<TKey, TValue> kv in dict)
+            List<TKey> toRemove = new List<TKey>();
+            foreach (var kv in dict)
             {
                 if (predicate(kv))
                 {
-                    removeList.Add(kv.Key);
+                    toRemove.Add(kv.Key);
                 }
             }
 
-            for (int i = 0; i < removeList.Count; i++)
+            for (int i = 0; i < toRemove.Count; i++)
             {
-                dict.Remove(removeList[i]);
+                dict.Remove(toRemove[i]);
             }
         }
     }

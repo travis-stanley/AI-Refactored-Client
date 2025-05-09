@@ -36,6 +36,7 @@ namespace AIRefactored.AI.Movement
         private const float ScanDistance = 2.5f;
         private const float ScanRadius = 0.25f;
         private const float StuckThreshold = 0.1f;
+        private const float FlankCooldown = 4.5f;
 
         #endregion
 
@@ -51,6 +52,7 @@ namespace AIRefactored.AI.Movement
         private Vector3 _lastVelocity;
         private float _nextLeanAllowed;
         private float _nextScanTime;
+        private float _nextFlankAllowed;
         private float _strafeTimer;
         private float _stuckTimer;
         private bool _isStrafingRight;
@@ -74,6 +76,7 @@ namespace AIRefactored.AI.Movement
             _lastVelocity = Vector3.zero;
             _nextScanTime = Time.time;
             _nextLeanAllowed = Time.time;
+            _nextFlankAllowed = Time.time;
         }
 
         #endregion
@@ -128,7 +131,6 @@ namespace AIRefactored.AI.Movement
 
             DetectStuck(deltaTime);
         }
-
 
         public void EnterLootingMode()
         {
@@ -277,7 +279,7 @@ namespace AIRefactored.AI.Movement
 
         private void TryFlankAroundEnemy()
         {
-            if (_bot.Memory.GoalEnemy == null)
+            if (_bot.Memory.GoalEnemy == null || Time.time < _nextFlankAllowed)
             {
                 return;
             }
@@ -289,12 +291,13 @@ namespace AIRefactored.AI.Movement
             if (distance < required)
             {
                 FlankPositionPlanner.Side preferred = FlankCoordinator.GetOptimalFlankSide(_bot, _cache);
-                Vector3[] buffer = TempVector3Pool.Rent(1); 
+                Vector3[] buffer = TempVector3Pool.Rent(1);
                 try
                 {
                     if (FlankPositionPlanner.TryFindFlankPosition(_bot.Position, _bot.Memory.GoalEnemy.CurrPosition, out buffer[0], preferred))
                     {
                         BotMovementHelper.SmoothMoveTo(_bot, buffer[0], false);
+                        _nextFlankAllowed = Time.time + FlankCooldown;
                         Logger.LogDebug("[Movement] Flank triggered: " + buffer[0]);
                     }
                 }
@@ -340,7 +343,6 @@ namespace AIRefactored.AI.Movement
                 _stuckTimer = 0f;
             }
         }
-
 
         private bool ValidateNavMeshTarget(Vector3 pos)
         {

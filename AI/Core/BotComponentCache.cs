@@ -9,6 +9,7 @@
 namespace AIRefactored.AI.Core
 {
     using System;
+    using System.Collections.Generic;
     using AIRefactored.AI;
     using AIRefactored.AI.Combat;
     using AIRefactored.AI.Groups;
@@ -16,6 +17,7 @@ namespace AIRefactored.AI.Core
     using AIRefactored.AI.Medical;
     using AIRefactored.AI.Memory;
     using AIRefactored.AI.Movement;
+    using AIRefactored.AI.Navigation;
     using AIRefactored.AI.Optimization;
     using AIRefactored.AI.Perception;
     using AIRefactored.AI.Reactions;
@@ -31,6 +33,8 @@ namespace AIRefactored.AI.Core
     public sealed class BotComponentCache
     {
         private static readonly ManualLogSource Logger = Plugin.LoggerInstance;
+        private static readonly HashSet<string> InitializedBots = new HashSet<string>();
+
         private AIRefactoredBotOwner _owner;
 
         #region Core References
@@ -120,7 +124,7 @@ namespace AIRefactored.AI.Core
 
         public SquadPathCoordinator SquadPath { get; private set; }
 
-        public BotDoorOpener DoorOpener { get; private set; }
+        public BotDoorInteractionSystem DoorInteraction { get; private set; }
 
         public BotHealingBySomebody HealReceiver { get; private set; }
 
@@ -160,26 +164,27 @@ namespace AIRefactored.AI.Core
                 throw new ArgumentNullException("bot");
             }
 
-            if (Bot != null)
+            string id = bot.Profile?.Id ?? "null";
+
+            if (Bot != null || InitializedBots.Contains(id))
             {
-                Logger.LogWarning("[BotComponentCache] Already initialized for bot " + bot.Profile?.Id);
+                Logger.LogWarning("[BotComponentCache] Already initialized for bot: " + id);
                 return;
             }
 
+            InitializedBots.Add(id);
             Bot = bot;
 
             try
             {
-                string profileId = bot.Profile != null ? bot.Profile.Id : "null-profile";
-
                 WildSpawnType role = WildSpawnType.assault;
                 if (bot.Profile != null && bot.Profile.Info != null && bot.Profile.Info.Settings != null)
                 {
                     role = bot.Profile.Info.Settings.Role;
                 }
 
-                PersonalityProfile = BotRegistry.GetOrGenerate(profileId, PersonalityType.Balanced, role);
-                Logger.LogDebug("[BotComponentCache] Loaded personality for bot " + profileId + ": " + PersonalityProfile.Personality);
+                PersonalityProfile = BotRegistry.GetOrGenerate(id, PersonalityType.Balanced, role);
+                Logger.LogDebug("[BotComponentCache] Loaded personality for bot " + id + ": " + PersonalityProfile.Personality);
 
                 Pathing = new BotOwnerPathfindingCache();
 
@@ -255,7 +260,7 @@ namespace AIRefactored.AI.Core
                 DeadBodyScanner = new BotDeadBodyScanner();
                 DeadBodyScanner.Initialize(this);
 
-                DoorOpener = new BotDoorOpener(bot);
+                DoorInteraction = new BotDoorInteractionSystem(bot);
                 InjurySystem = new BotInjurySystem(this);
                 LastShotTracker = new BotLastShotTracker();
                 GroupComms = new BotGroupComms(this);

@@ -9,7 +9,6 @@
 namespace AIRefactored.AI.Navigation
 {
     using System;
-    using System.Collections.Generic;
     using AIRefactored.AI.Core;
     using AIRefactored.Core;
     using BepInEx.Logging;
@@ -19,7 +18,7 @@ namespace AIRefactored.AI.Navigation
 
     /// <summary>
     /// Handles door interactions for bots using fallback-agnostic, deadlock-free logic.
-    /// Replaces EFT.BotDoorOpener with fully AIRefactored logic.
+    /// Replaces EFT.BotDoorInteraction with fully AIRefactored logic.
     /// </summary>
     public sealed class BotDoorInteractionSystem
     {
@@ -110,6 +109,17 @@ namespace AIRefactored.AI.Navigation
             IsBlockedByDoor = true;
 
             _log.LogDebug("[BotDoorInteraction] " + _bot.name + " → " + type + " door " + nearest.name);
+        }
+
+        public bool IsDoorBlocking(Vector3 position)
+        {
+            if (_currentDoor == null || !_currentDoor.enabled)
+            {
+                return false;
+            }
+
+            float dist = Vector3.Distance(_currentDoor.transform.position, position);
+            return dist < InteractionDistance && (_currentDoor.DoorState & EDoorState.Open) == 0;
         }
 
         public void Reset()

@@ -95,11 +95,11 @@ namespace AIRefactored.AI.Movement
 
             _jump.Tick(deltaTime);
 
-            if (_cache.DoorOpener != null)
+            if (_cache.DoorInteraction != null)
             {
-                _cache.DoorOpener.Tick(Time.time);
+                _cache.DoorInteraction.Tick(Time.time);
 
-                if (_cache.DoorOpener.IsDoorBlocking())
+                if (_cache.DoorInteraction.IsBlockedByDoor)
                 {
                     Logger.LogDebug("[Movement] Door blocked — waiting.");
                     return;

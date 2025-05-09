@@ -42,7 +42,13 @@ namespace AIRefactored.AI.Groups
         private float _nextSyncTime;
 
         public float LastDangerBroadcastTime { get; private set; }
+
         public Vector3 LastDangerPosition { get; private set; }
+
+        /// <summary>
+        /// Gets whether the squad sync system is active and initialized.
+        /// </summary>
+        public bool IsActive => _bot != null && !_bot.IsDead && _group != null && _cache != null;
 
         public void Initialize(BotOwner botOwner)
         {
@@ -53,6 +59,7 @@ namespace AIRefactored.AI.Groups
 
             _bot = botOwner;
             _group = botOwner.BotsGroup;
+
             if (_group == null)
             {
                 throw new ArgumentException("BotsGroup is null.");
@@ -123,13 +130,7 @@ namespace AIRefactored.AI.Groups
 
         public void Tick(float time)
         {
-            if (_bot == null || _bot.IsDead || _teammateCaches.Count == 0)
-            {
-                return;
-            }
-
-            Player player = _bot.GetPlayer;
-            if (player == null || !player.IsAI)
+            if (!IsActive || _teammateCaches.Count == 0)
             {
                 return;
             }
@@ -148,12 +149,12 @@ namespace AIRefactored.AI.Groups
 
             Vector3 myPos = _bot.Position;
 
-            if (!_hasFallback || (_fallbackPoint - myPos).sqrMagnitude > PositionEpsilon * PositionEpsilon)
+            if (!_hasFallback || (myPos - _fallbackPoint).sqrMagnitude > PositionEpsilon * PositionEpsilon)
             {
                 BroadcastFallbackPoint(myPos);
             }
 
-            if ((LastDangerPosition - myPos).sqrMagnitude > PositionEpsilon * PositionEpsilon)
+            if ((myPos - LastDangerPosition).sqrMagnitude > PositionEpsilon * PositionEpsilon)
             {
                 BroadcastDanger(myPos);
             }
@@ -192,26 +193,19 @@ namespace AIRefactored.AI.Groups
 
         public IReadOnlyList<BotOwner> GetTeammates()
         {
-            List<BotOwner> list = TempListPool.Rent<BotOwner>();
-            try
+            List<BotOwner> list = new List<BotOwner>(8);
+            foreach (KeyValuePair<BotOwner, BotComponentCache> kvp in _teammateCaches)
             {
-                foreach (KeyValuePair<BotOwner, BotComponentCache> kvp in _teammateCaches)
+                BotOwner mate = kvp.Key;
+                Player player = mate.GetPlayer;
+
+                if (!mate.IsDead && player != null && player.IsAI)
                 {
-                    BotOwner mate = kvp.Key;
-                    Player player = mate.GetPlayer;
-
-                    if (!mate.IsDead && player != null && player.IsAI)
-                    {
-                        list.Add(mate);
-                    }
+                    list.Add(mate);
                 }
+            }
 
-                return new List<BotOwner>(list);
-            }
-            finally
-            {
-                TempListPool.Return(list);
-            }
+            return list;
         }
 
         private void OnMemberAdded(BotOwner teammate)

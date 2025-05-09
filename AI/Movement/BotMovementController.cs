@@ -82,17 +82,28 @@ namespace AIRefactored.AI.Movement
 
         public void Tick(float deltaTime)
         {
-            if (_bot == null || _cache == null || _bot.GetPlayer == null || !_bot.GetPlayer.IsAI || _bot.IsDead || !_bot.GetPlayer.HealthController.IsAlive || _cache.PanicHandler.IsPanicking)
+            if (_bot == null ||
+                _cache == null ||
+                _bot.GetPlayer == null ||
+                !_bot.GetPlayer.IsAI ||
+                _bot.IsDead ||
+                !_bot.GetPlayer.HealthController.IsAlive ||
+                _cache.PanicHandler.IsPanicking)
             {
                 return;
             }
 
             _jump.Tick(deltaTime);
 
-            if (_cache.DoorOpener != null && !_cache.DoorOpener.Update())
+            if (_cache.DoorOpener != null)
             {
-                Logger.LogDebug("[Movement] Door blocked — waiting.");
-                return;
+                _cache.DoorOpener.Tick(Time.time);
+
+                if (_cache.DoorOpener.IsDoorBlocking())
+                {
+                    Logger.LogDebug("[Movement] Door blocked — waiting.");
+                    return;
+                }
             }
 
             if (Time.time >= _nextScanTime)
@@ -105,7 +116,10 @@ namespace AIRefactored.AI.Movement
             SmoothLookTo(target, deltaTime);
             ApplyInertia(target, deltaTime);
 
-            if (!_inLootingMode && _bot.Memory.GoalEnemy != null && _bot.WeaponManager != null && _bot.WeaponManager.IsReady)
+            if (!_inLootingMode &&
+                _bot.Memory.GoalEnemy != null &&
+                _bot.WeaponManager != null &&
+                _bot.WeaponManager.IsReady)
             {
                 CombatStrafe(deltaTime);
                 TryCombatLean();
@@ -114,6 +128,7 @@ namespace AIRefactored.AI.Movement
 
             DetectStuck(deltaTime);
         }
+
 
         public void EnterLootingMode()
         {

@@ -82,23 +82,37 @@ namespace AIRefactored.AI.Missions.Subsystems
             }
 
             List<BotOwner> teammates = TempListPool.Rent<BotOwner>();
-            teammates.AddRange(_group.GetTeammates());
-
-            int nearby = 0;
-            Vector3 selfPos = _bot.Position;
-
-            for (int i = 0; i < teammates.Count; i++)
+            try
             {
-                BotOwner mate = teammates[i];
-                if (mate != null && Vector3.Distance(mate.Position, selfPos) < SquadCohesionRange)
+                IReadOnlyList<BotOwner> groupMembers = _group.GetTeammates();
+                for (int i = 0; i < groupMembers.Count; i++)
                 {
-                    nearby++;
+                    BotOwner member = groupMembers[i];
+                    if (member != null)
+                    {
+                        teammates.Add(member);
+                    }
                 }
-            }
 
-            int required = Mathf.CeilToInt(teammates.Count * 0.6f);
-            TempListPool.Return(teammates);
-            return nearby >= required;
+                int nearby = 0;
+                Vector3 selfPos = _bot.Position;
+
+                for (int i = 0; i < teammates.Count; i++)
+                {
+                    BotOwner mate = teammates[i];
+                    if (mate != null && Vector3.Distance(mate.Position, selfPos) < SquadCohesionRange)
+                    {
+                        nearby++;
+                    }
+                }
+
+                int required = Mathf.CeilToInt(teammates.Count * 0.6f);
+                return nearby >= required;
+            }
+            finally
+            {
+                TempListPool.Return(teammates);
+            }
         }
 
         public bool ShouldExtractEarly()
@@ -115,13 +129,18 @@ namespace AIRefactored.AI.Missions.Subsystems
             }
 
             List<Item> items = TempListPool.Rent<Item>();
-            items.AddRange(backpack.GetAllItems());
+            try
+            {
+                items.AddRange(backpack.GetAllItems());
 
-            int count = items.Count;
-            float fullness = (float)count / LootItemCountThreshold;
-
-            TempListPool.Return(items);
-            return fullness >= _profile.RetreatThreshold;
+                int count = items.Count;
+                float fullness = (float)count / LootItemCountThreshold;
+                return fullness >= _profile.RetreatThreshold;
+            }
+            finally
+            {
+                TempListPool.Return(items);
+            }
         }
 
         public void TryExtract()
@@ -135,7 +154,7 @@ namespace AIRefactored.AI.Missions.Subsystems
                 for (int i = 0; i < all.Length; i++)
                 {
                     ExfiltrationPoint point = all[i];
-                    if (point.Status != EExfiltrationStatus.RegularMode)
+                    if (point == null || point.Status != EExfiltrationStatus.RegularMode)
                     {
                         continue;
                     }

@@ -40,10 +40,6 @@ namespace AIRefactored.AI.Combat.States
 
         #region Constructor
 
-        /// <summary>
-        /// Initializes the fallback handler for the given bot.
-        /// </summary>
-        /// <param name="cache">Component cache of the bot.</param>
         public FallbackHandler(BotComponentCache cache)
         {
             if (cache == null || cache.Bot == null)
@@ -144,6 +140,12 @@ namespace AIRefactored.AI.Combat.States
         public bool IsActive()
         {
             return Vector3.Distance(_bot.Position, _fallbackTarget) > MinArrivalDistance;
+        }
+
+        public void Cancel()
+        {
+            _fallbackTarget = _bot.Position;
+            _currentFallbackPath.Clear();
         }
 
         #endregion

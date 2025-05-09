@@ -28,9 +28,12 @@ namespace AIRefactored.AI.Missions
         private readonly ManualLogSource _log;
         private readonly BotPersonalityProfile _profile;
 
-        private float _lastPositionUpdateTime;
-        private Vector3 _lastPosition;
-        private bool _hasExtracted;
+        private float _lastMoveUpdate;
+        private Vector3 _lastPos;
+        private int _stuckChecks;
+        private bool _extracted;
+
+        private const int MaxStuckRetries = 3;
 
         public BotExtractionDecisionSystem(BotOwner bot, BotComponentCache cache, BotPersonalityProfile profile)
         {
@@ -43,25 +46,27 @@ namespace AIRefactored.AI.Missions
             _cache = cache;
             _profile = profile;
             _log = Plugin.LoggerInstance;
-            _lastPosition = bot.Position;
-            _lastPositionUpdateTime = Time.time;
+
+            _lastPos = bot.Position;
+            _lastMoveUpdate = Time.time;
+            _stuckChecks = 0;
         }
 
         public void Tick(float time)
         {
-            if (_hasExtracted)
+            if (_extracted)
             {
                 return;
             }
 
-            if (ShouldExtract())
+            if (ShouldExtract(time))
             {
                 TriggerExtraction();
-                _hasExtracted = true;
+                _extracted = true;
             }
         }
 
-        public bool ShouldExtract()
+        public bool ShouldExtract(float now)
         {
             if (_bot.IsDead || _bot.GetPlayer == null || !_bot.GetPlayer.HealthController.IsAlive)
             {
@@ -69,7 +74,8 @@ namespace AIRefactored.AI.Missions
             }
 
             float composure = _cache.PanicHandler.GetComposureLevel();
-            float panicThreshold = Mathf.Lerp(0.4f, 0.1f, _profile.Caution);
+            float panicThreshold = Mathf.Lerp(0.35f, 0.15f, _profile.Caution);
+
             if (composure < panicThreshold)
             {
                 _log.LogDebug("[ExtractDecision] Panic threshold met: " + _bot.name + " (" + composure.ToString("F2") + ")");
@@ -77,31 +83,39 @@ namespace AIRefactored.AI.Missions
             }
 
             float lootValue = _cache.LootScanner.TotalLootValue;
-            float lootThreshold = Mathf.Lerp(75000f, 50000f, _profile.Greed);
+            float lootThreshold = Mathf.Lerp(85000f, 50000f, _profile.Greed);
+
             if (lootValue >= lootThreshold)
             {
                 _log.LogDebug("[ExtractDecision] Loot threshold met: " + _bot.name + " (" + lootValue.ToString("F0") + ")");
                 return true;
             }
 
-            if (HasSquadWiped(_bot))
+            if (HasSquadWiped())
             {
                 _log.LogDebug("[ExtractDecision] Squad wiped: " + _bot.name);
                 return true;
             }
 
-            float isolationRadius = Mathf.Lerp(30f, 60f, 1f - _profile.Cohesion);
-            if (IsBotIsolated(_bot, isolationRadius))
+            float cohesionDist = Mathf.Lerp(35f, 60f, 1f - _profile.Cohesion);
+            if (IsBotIsolated(cohesionDist))
             {
                 _log.LogDebug("[ExtractDecision] Bot is isolated: " + _bot.name);
                 return true;
             }
 
-            float stuckTime = Mathf.Lerp(6f, 18f, 1f - _profile.Caution);
-            if (IsBotStuck(stuckTime))
+            float stuckTimeout = Mathf.Lerp(8f, 18f, 1f - _profile.Caution);
+            if (IsBotStuck(now, stuckTimeout))
             {
-                _log.LogDebug("[ExtractDecision] Bot is stuck: " + _bot.name);
-                return true;
+                _stuckChecks++;
+                if (_stuckChecks >= MaxStuckRetries)
+                {
+                    _log.LogDebug("[ExtractDecision] Bot failed recovery after " + _stuckChecks + " attempts: " + _bot.name);
+                    return true;
+                }
+
+                _log.LogDebug("[ExtractDecision] Bot stuck detected — retrying (" + _stuckChecks + "): " + _bot.name);
+                BotMovementHelper.ForceFallbackMove(_bot);
             }
 
             return false;
@@ -119,27 +133,26 @@ namespace AIRefactored.AI.Missions
 
             _cache.TacticalMemory.MarkExtractionStarted();
             BotMovementHelper.SmoothMoveToSafeExit(_bot);
-            _log.LogInfo("[ExtractDecision] Extraction triggered for: " + _bot.name);
+            _log.LogInfo("[ExtractDecision] ✅ Extraction triggered for: " + _bot.name);
         }
 
-        private bool IsBotStuck(float threshold)
+        private bool IsBotStuck(float now, float threshold)
         {
-            float now = Time.time;
-            Vector3 currentPos = _bot.Position;
-
-            if ((currentPos - _lastPosition).sqrMagnitude > 0.5f)
+            float dist = (_bot.Position - _lastPos).sqrMagnitude;
+            if (dist > 0.4f)
             {
-                _lastPosition = currentPos;
-                _lastPositionUpdateTime = now;
+                _lastPos = _bot.Position;
+                _lastMoveUpdate = now;
+                _stuckChecks = 0;
                 return false;
             }
 
-            return now - _lastPositionUpdateTime >= threshold;
+            return now - _lastMoveUpdate >= threshold;
         }
 
-        private static bool HasSquadWiped(BotOwner bot)
+        private bool HasSquadWiped()
         {
-            BotsGroup group = bot.BotsGroup;
+            BotsGroup group = _bot.BotsGroup;
             if (group == null)
             {
                 return true;
@@ -148,7 +161,7 @@ namespace AIRefactored.AI.Missions
             for (int i = 0; i < group.MembersCount; i++)
             {
                 BotOwner mate = group.Member(i);
-                if (mate != null && mate != bot && !mate.IsDead)
+                if (mate != null && mate != _bot && !mate.IsDead)
                 {
                     return false;
                 }
@@ -157,24 +170,24 @@ namespace AIRefactored.AI.Missions
             return true;
         }
 
-        private static bool IsBotIsolated(BotOwner bot, float threshold)
+        private bool IsBotIsolated(float radius)
         {
-            BotsGroup group = bot.BotsGroup;
+            BotsGroup group = _bot.BotsGroup;
             if (group == null)
             {
                 return true;
             }
 
-            Vector3 botPos = bot.Position;
-            float thresholdSqr = threshold * threshold;
+            Vector3 pos = _bot.Position;
+            float radiusSqr = radius * radius;
 
             for (int i = 0; i < group.MembersCount; i++)
             {
                 BotOwner mate = group.Member(i);
-                if (mate != null && mate != bot && !mate.IsDead)
+                if (mate != null && mate != _bot && !mate.IsDead)
                 {
-                    float distSqr = (mate.Position - botPos).sqrMagnitude;
-                    if (distSqr < thresholdSqr)
+                    float dSqr = (mate.Position - pos).sqrMagnitude;
+                    if (dSqr < radiusSqr)
                     {
                         return false;
                     }

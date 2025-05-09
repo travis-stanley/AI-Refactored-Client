@@ -170,6 +170,21 @@ namespace AIRefactored.AI.Helpers
             bot.Mover.GoToPoint(target, false, 1f);
         }
 
+        public static void ForceFallbackMove(BotOwner bot)
+        {
+            if (!IsEligible(bot))
+            {
+                return;
+            }
+
+            Vector3 dir = bot.LookDirection;
+            Vector3? point = HybridFallbackResolver.GetBestRetreatPoint(bot, dir);
+            if (point.HasValue)
+            {
+                bot.Mover.GoToPoint(point.Value, true, 1f);
+            }
+        }
+
         #endregion
 
         #region Private Methods

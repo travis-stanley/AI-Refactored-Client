@@ -11,6 +11,7 @@ namespace AIRefactored.AI.Combat
     using System.Collections.Generic;
     using AIRefactored.AI.Combat.States;
     using AIRefactored.AI.Core;
+    using AIRefactored.AI.Groups;
     using AIRefactored.AI.Memory;
     using AIRefactored.AI.Optimization;
     using AIRefactored.Core;
@@ -29,6 +30,7 @@ namespace AIRefactored.AI.Combat
         private const float MinTransitionDelay = 0.4f;
         private const float PatrolMinDuration = 1.25f;
         private const float PatrolCooldown = 12.0f;
+        private const float ReentryCooldown = 3.0f;
 
         #endregion
 
@@ -131,18 +133,19 @@ namespace AIRefactored.AI.Combat
 
         public void Tick(float time)
         {
-            if (!_initialized || _bot.IsDead)
-            {
-                return;
-            }
-
-            if (!EFTPlayerUtil.IsValid(_bot.GetPlayer))
+            if (!_initialized || _bot.IsDead || !EFTPlayerUtil.IsValid(_bot.GetPlayer))
             {
                 return;
             }
 
             if (time - _lastStateChangeTime < MinTransitionDelay)
             {
+                return;
+            }
+
+            if (TryReenterCombatState(time))
+            {
+                _lastStateChangeTime = time;
                 return;
             }
 
@@ -231,12 +234,10 @@ namespace AIRefactored.AI.Combat
 
         public void TrySetStanceFromNearbyCover(Vector3 pos)
         {
-            if (!_initialized)
+            if (_initialized)
             {
-                return;
+                _cache.PoseController.TrySetStanceFromNearbyCover(pos);
             }
-
-            _cache.PoseController.TrySetStanceFromNearbyCover(pos);
         }
 
         #endregion
@@ -286,6 +287,50 @@ namespace AIRefactored.AI.Combat
             float composure = _cache.PanicHandler.GetComposureLevel();
             float delay = Mathf.Lerp(0.75f, 1.5f, 1f - composure);
             return _fallback.ShouldTriggerSuppressedFallback(time, _lastStateChangeTime, delay);
+        }
+
+        private bool TryReenterCombatState(float time)
+        {
+            if (!_fallback.IsActive())
+            {
+                return false;
+            }
+
+            if (_cache.ThreatSelector.CurrentTarget != null)
+            {
+                _fallback.Cancel();
+                _bot.BotTalk?.TrySay(EPhraseTrigger.OnEnemyConversation);
+                return true;
+            }
+
+            if (_cache.GroupSync != null && _cache.GroupSync.IsSquadReady())
+            {
+                Vector3 self = _bot.Position;
+                IReadOnlyList<BotOwner> mates = _cache.GroupSync.GetTeammates();
+                for (int i = 0; i < mates.Count; i++)
+                {
+                    BotOwner mate = mates[i];
+                    if (mate != null && mate != _bot && !mate.IsDead)
+                    {
+                        float dist = Vector3.Distance(mate.Position, self);
+                        if (dist < 12f)
+                        {
+                            _fallback.Cancel();
+                            _bot.BotTalk?.TrySay(EPhraseTrigger.Cooperation);
+                            return true;
+                        }
+                    }
+                }
+            }
+
+            if (time - _lastStateChangeTime > ReentryCooldown)
+            {
+                _fallback.Cancel();
+                _bot.BotTalk?.TrySay(EPhraseTrigger.Ready);
+                return true;
+            }
+
+            return false;
         }
 
         private void SetLastStateChangeTime(CombatState state, float time)

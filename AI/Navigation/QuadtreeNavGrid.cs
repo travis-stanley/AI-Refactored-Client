@@ -19,20 +19,10 @@ namespace AIRefactored.AI.Navigation
     /// </summary>
     public sealed class QuadtreeNavGrid
     {
-        #region Constants
-
         private const int MaxDepth = 6;
         private const int MaxPointsPerNode = 8;
 
-        #endregion
-
-        #region Fields
-
         private Node _root;
-
-        #endregion
-
-        #region Constructor
 
         public QuadtreeNavGrid(Vector2 center, float size)
         {
@@ -40,10 +30,6 @@ namespace AIRefactored.AI.Navigation
             Rect bounds = new Rect(center.x - half, center.y - half, size, size);
             _root = new Node(bounds, 0);
         }
-
-        #endregion
-
-        #region Public API
 
         public void Clear()
         {
@@ -72,21 +58,9 @@ namespace AIRefactored.AI.Navigation
         {
             return Query(position, radius, delegate (NavPointData p)
             {
-                if (!string.IsNullOrEmpty(zone) && !string.Equals(p.Zone, zone, StringComparison.OrdinalIgnoreCase))
-                {
-                    return false;
-                }
-
-                if (!string.IsNullOrEmpty(elevationBand) && !string.Equals(p.ElevationBand, elevationBand, StringComparison.OrdinalIgnoreCase))
-                {
-                    return false;
-                }
-
-                if (!string.IsNullOrEmpty(coverTag) && !string.Equals(p.Tag, coverTag, StringComparison.OrdinalIgnoreCase))
-                {
-                    return false;
-                }
-
+                if (!string.IsNullOrEmpty(zone) && !string.Equals(p.Zone, zone, StringComparison.OrdinalIgnoreCase)) return false;
+                if (!string.IsNullOrEmpty(elevationBand) && !string.Equals(p.ElevationBand, elevationBand, StringComparison.OrdinalIgnoreCase)) return false;
+                if (!string.IsNullOrEmpty(coverTag) && !string.Equals(p.Tag, coverTag, StringComparison.OrdinalIgnoreCase)) return false;
                 return true;
             });
         }
@@ -99,17 +73,10 @@ namespace AIRefactored.AI.Navigation
             return result;
         }
 
-        #endregion
-
-        #region Internal Logic
-
         private void Insert(Node node, NavPointData point)
         {
             Vector2 pos2D = new Vector2(point.Position.x, point.Position.z);
-            if (!node.Bounds.Contains(pos2D))
-            {
-                return;
-            }
+            if (!node.Bounds.Contains(pos2D)) return;
 
             if (node.IsLeaf)
             {
@@ -132,10 +99,7 @@ namespace AIRefactored.AI.Navigation
         private void Insert(Node node, Vector3 point)
         {
             Vector2 pos2D = new Vector2(point.x, point.z);
-            if (!node.Bounds.Contains(pos2D))
-            {
-                return;
-            }
+            if (!node.Bounds.Contains(pos2D)) return;
 
             if (node.IsLeaf)
             {
@@ -161,10 +125,7 @@ namespace AIRefactored.AI.Navigation
             float radius = Mathf.Sqrt(radiusSq);
             Rect rect = new Rect(pos2D.x - radius, pos2D.y - radius, radius * 2f, radius * 2f);
 
-            if (!node.Bounds.Overlaps(rect))
-            {
-                return;
-            }
+            if (!node.Bounds.Overlaps(rect)) return;
 
             if (node.IsLeaf)
             {
@@ -192,10 +153,7 @@ namespace AIRefactored.AI.Navigation
             float radius = Mathf.Sqrt(radiusSq);
             Rect rect = new Rect(pos2D.x - radius, pos2D.y - radius, radius * 2f, radius * 2f);
 
-            if (!node.Bounds.Overlaps(rect))
-            {
-                return;
-            }
+            if (!node.Bounds.Overlaps(rect)) return;
 
             if (node.IsLeaf)
             {
@@ -257,10 +215,6 @@ namespace AIRefactored.AI.Navigation
             }
         }
 
-        #endregion
-
-        #region Node Class
-
         private sealed class Node
         {
             public Node(Rect bounds, int depth)
@@ -279,7 +233,5 @@ namespace AIRefactored.AI.Navigation
             public Node[] Children;
             public bool IsLeaf => this.Children.Length == 0;
         }
-
-        #endregion
     }
 }

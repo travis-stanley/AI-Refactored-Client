@@ -17,6 +17,7 @@ namespace AIRefactored.AI.Navigation
     /// <summary>
     /// Legacy stub. Previously assigned zone names using IZones.
     /// Now fallback-only for compatibility — always returns 'unassigned' or empty values.
+    /// Safe for all environments.
     /// </summary>
     public static class ZoneAssignmentHelper
     {

@@ -9,9 +9,11 @@
 namespace AIRefactored.AI.Helpers
 {
     using System.Collections.Generic;
+    using AIRefactored.AI.Combat;
     using AIRefactored.AI.Core;
+    using AIRefactored.AI.Movement;
     using AIRefactored.AI.Optimization;
-    using AIRefactored.Core;
+    using AIRefactored.Pools;
     using EFT;
     using UnityEngine;
 
@@ -84,7 +86,7 @@ namespace AIRefactored.AI.Helpers
 
         public static void SmoothLookTo(BotOwner bot, Vector3 lookTarget, float speed = DefaultLookSpeed)
         {
-            if (!IsEligible(bot) || FikaHeadlessDetector.IsHeadless)
+            if (!IsEligible(bot))
             {
                 return;
             }

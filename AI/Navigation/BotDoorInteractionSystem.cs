@@ -11,7 +11,6 @@ namespace AIRefactored.AI.Navigation
     using System;
     using AIRefactored.AI.Core;
     using AIRefactored.Core;
-    using AIRefactored.Pools;
     using BepInEx.Logging;
     using EFT;
     using EFT.Interactive;
@@ -58,7 +57,7 @@ namespace AIRefactored.AI.Navigation
         {
             if (bot == null)
             {
-                throw new ArgumentNullException(nameof(bot), "BotDoorInteractionSystem constructor: bot was null");
+                throw new ArgumentNullException(nameof(bot), "[BotDoorInteractionSystem] Constructor: BotOwner was null.");
             }
 
             _bot = bot;
@@ -80,7 +79,7 @@ namespace AIRefactored.AI.Navigation
             }
 
             Player player = _bot.GetPlayer;
-            if (player == null || !player.IsAI)
+            if (!EFTPlayerUtil.IsValid(player) || !player.IsAI || player.CurrentManagedState == null)
             {
                 return;
             }
@@ -98,69 +97,52 @@ namespace AIRefactored.AI.Navigation
             RaycastHit hit;
             if (!Physics.SphereCast(origin, DoorCastRadius, forward, out hit, DoorCastRange, AIRefactoredLayerMasks.Interactive))
             {
-                IsBlockedByDoor = false;
-                _currentDoor = null;
+                ClearDoorState();
                 return;
             }
 
-            Collider collider = hit.collider;
-            if (collider == null)
+            Door door = hit.collider?.GetComponentInParent<Door>();
+            if (door == null || !door.enabled || !door.Operatable)
             {
-                IsBlockedByDoor = false;
-                _currentDoor = null;
-                return;
-            }
-
-            Door door = collider.GetComponentInParent<Door>();
-            if (door == null || !door.enabled)
-            {
-                IsBlockedByDoor = false;
-                _currentDoor = null;
+                ClearDoorState();
                 return;
             }
 
             EDoorState state = door.DoorState;
             if ((state & EDoorState.Open) != 0 || (state & EDoorState.Breaching) != 0)
             {
-                IsBlockedByDoor = false;
-                _currentDoor = null;
+                ClearDoorState();
                 return;
             }
 
             if (state == EDoorState.Interacting)
             {
-                IsBlockedByDoor = true;
+                MarkBlocked(door);
                 return;
             }
 
             if (time < _nextRetryTime)
             {
-                IsBlockedByDoor = true;
+                MarkBlocked(door);
                 return;
             }
 
-            if (!door.Operatable)
+            try
             {
-                _log.LogWarning("[BotDoorInteraction] Cannot operate door: " + door.name);
-                IsBlockedByDoor = true;
-                return;
-            }
+                EInteractionType interactionType = GetBestInteractionType(state);
+                InteractionResult result = new InteractionResult(interactionType);
+                player.CurrentManagedState.StartDoorInteraction(door, result, null);
 
-            if (player.CurrentManagedState == null)
+                _log.LogDebug("[BotDoorInteraction] " + _bot.name + " → " + interactionType + " door " + door.name);
+            }
+            catch (Exception ex)
             {
-                _log.LogWarning("[BotDoorInteraction] Missing ManagedState for bot: " + _bot.name);
-                return;
+                _log.LogError("[BotDoorInteraction] Door interaction failed: " + ex);
             }
-
-            EInteractionType type = GetBestInteractionType(state);
-            InteractionResult result = new InteractionResult(type);
-            player.CurrentManagedState.StartDoorInteraction(door, result, null);
 
             _nextRetryTime = time + DoorRetryCooldown;
             _currentDoor = door;
             IsBlockedByDoor = true;
-
-            _log.LogDebug("[BotDoorInteraction] " + _bot.name + " → " + type + " door " + door.name);
         }
 
         /// <summary>
@@ -191,6 +173,18 @@ namespace AIRefactored.AI.Navigation
         #endregion
 
         #region Private Helpers
+
+        private void ClearDoorState()
+        {
+            _currentDoor = null;
+            IsBlockedByDoor = false;
+        }
+
+        private void MarkBlocked(Door door)
+        {
+            _currentDoor = door;
+            IsBlockedByDoor = true;
+        }
 
         private static EInteractionType GetBestInteractionType(EDoorState state)
         {

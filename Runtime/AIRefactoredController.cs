@@ -169,7 +169,7 @@ namespace AIRefactored.Runtime
         {
             try
             {
-                if (_instance.IsValueCreated && _instance.Value == this)
+                if (_instance.IsValueCreated && ReferenceEquals(_instance.Value, this))
                 {
                     Logger.LogDebug("[AIRefactoredController] OnDestroy — stopping InitPhaseRunner and cleaning up...");
                     InitPhaseRunner.Stop();

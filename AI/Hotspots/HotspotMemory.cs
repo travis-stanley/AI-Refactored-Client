@@ -42,7 +42,7 @@ namespace AIRefactored.AI.Hotspots
         /// </summary>
         public static void Clear()
         {
-            foreach (var kv in VisitedMap)
+            foreach (KeyValuePair<string, Dictionary<Vector3, float>> kv in VisitedMap)
             {
                 kv.Value.Clear();
                 TempDictionaryPool.Return(kv.Value);
@@ -64,7 +64,7 @@ namespace AIRefactored.AI.Hotspots
         /// </summary>
         public static void MarkVisited(string mapId, Vector3 position)
         {
-            if (string.IsNullOrEmpty(mapId))
+            if (mapId == null || mapId.Length == 0)
             {
                 return;
             }
@@ -91,7 +91,7 @@ namespace AIRefactored.AI.Hotspots
 
         private static bool WasVisitedWithin(string mapId, Vector3 position, float cooldown)
         {
-            if (string.IsNullOrEmpty(mapId))
+            if (mapId == null || mapId.Length == 0)
             {
                 return false;
             }

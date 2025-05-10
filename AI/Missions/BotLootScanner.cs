@@ -79,7 +79,7 @@ namespace AIRefactored.AI.Looting
 
         public void Tick(float time)
         {
-            if (_bot == null || _bot.IsDead || time < _nextScanTime || FikaHeadlessDetector.IsHeadless)
+            if (_bot == null || _bot.IsDead || time < _nextScanTime )
             {
                 return;
             }
@@ -108,7 +108,7 @@ namespace AIRefactored.AI.Looting
 
         public Vector3 GetBestLootPosition()
         {
-            if (_bot == null || FikaHeadlessDetector.IsHeadless)
+            if (_bot == null )
             {
                 return Vector3.zero;
             }

@@ -136,8 +136,15 @@ namespace AIRefactored.AI.Movement
 
         private void UpdateChaosOffset(float now)
         {
-            BotPersonalityProfile profile = _cache.AIRefactoredBotOwner.PersonalityProfile;
-            float caution = Mathf.Clamp01(profile.Caution);
+            AIRefactoredBotOwner owner = _cache.AIRefactoredBotOwner;
+            if (owner == null || owner.PersonalityProfile == null)
+            {
+                _chaosOffset = Vector3.zero;
+                _nextChaosUpdate = now + ChaosInterval;
+                return;
+            }
+
+            float caution = Mathf.Clamp01(owner.PersonalityProfile.Caution);
             float chaosRange = ChaosRadius * (1f - caution);
 
             float x = UnityEngine.Random.Range(-chaosRange * 0.5f, chaosRange * 0.5f);

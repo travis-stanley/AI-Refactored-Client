@@ -85,7 +85,7 @@ namespace AIRefactored.AI.Groups
 
         public static void BroadcastMissionType(BotOwner bot, MissionType mission)
         {
-            if (bot == null || bot.IsDead || FikaHeadlessDetector.IsHeadless)
+            if (bot == null || bot.IsDead )
             {
                 return;
             }

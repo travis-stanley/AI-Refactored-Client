@@ -53,11 +53,6 @@ namespace AIRefactored.AI.Movement
         /// Attempts to find a valid flank point on a preferred side of the enemy.
         /// Falls back to the opposite side if preferred side fails.
         /// </summary>
-        /// <param name="botPos">The position of the bot.</param>
-        /// <param name="enemyPos">The position of the enemy.</param>
-        /// <param name="flankPoint">The resulting flank point, if successful.</param>
-        /// <param name="preferred">The preferred side to flank.</param>
-        /// <returns>True if a valid flank point was found; otherwise, false.</returns>
         public static bool TryFindFlankPosition(Vector3 botPos, Vector3 enemyPos, out Vector3 flankPoint, Side preferred)
         {
             flankPoint = Vector3.zero;
@@ -84,11 +79,6 @@ namespace AIRefactored.AI.Movement
         /// <summary>
         /// Uses enemy forward vector and bot position to smartly pick a flank side.
         /// </summary>
-        /// <param name="botPos">The position of the bot.</param>
-        /// <param name="enemyPos">The position of the enemy.</param>
-        /// <param name="enemyForward">The forward vector of the enemy.</param>
-        /// <param name="flankPoint">The resulting flank point, if successful.</param>
-        /// <returns>True if a valid flank point was found; otherwise, false.</returns>
         public static bool TrySmartFlank(Vector3 botPos, Vector3 enemyPos, Vector3 enemyForward, out Vector3 flankPoint)
         {
             flankPoint = Vector3.zero;

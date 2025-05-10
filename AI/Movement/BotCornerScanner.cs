@@ -67,7 +67,7 @@ namespace AIRefactored.AI.Movement
             }
             catch (Exception ex)
             {
-                Log.LogError("[BotCornerScanner] Constructor init failed: " + ex.Message);
+                Log.LogError("[BotCornerScanner] Constructor init failed: " + ex);
             }
         }
 
@@ -166,8 +166,7 @@ namespace AIRefactored.AI.Movement
                 Vector3 rayOrigin = origin + (right * offset) + (forward * EdgeCheckDistance);
                 Vector3 rayDown = rayOrigin + Vector3.down * MinFallHeight;
 
-                bool hasObstacle = Physics.Raycast(rayOrigin, Vector3.down, MinFallHeight, AIRefactoredLayerMasks.NavObstacleMask);
-                if (!hasObstacle)
+                if (!Physics.Raycast(rayOrigin, Vector3.down, MinFallHeight, AIRefactoredLayerMasks.NavObstacleMask))
                 {
                     NavMeshHit hit;
                     bool navHit = NavMesh.SamplePosition(rayDown, out hit, 1.0f, NavMesh.AllAreas);

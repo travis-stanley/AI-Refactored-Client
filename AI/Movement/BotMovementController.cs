@@ -25,8 +25,6 @@ namespace AIRefactored.AI.Movement
     /// </summary>
     public sealed class BotMovementController
     {
-        #region Constants
-
         private const float CornerScanInterval = 1.2f;
         private const float InertiaWeight = 8f;
         private const float LeanCooldown = 1.5f;
@@ -37,10 +35,6 @@ namespace AIRefactored.AI.Movement
         private const float ScanRadius = 0.25f;
         private const float StuckThreshold = 0.1f;
         private const float FlankCooldown = 4.5f;
-
-        #endregion
-
-        #region Fields
 
         private static readonly ManualLogSource Logger = Plugin.LoggerInstance;
 
@@ -57,10 +51,6 @@ namespace AIRefactored.AI.Movement
         private float _stuckTimer;
         private bool _isStrafingRight;
         private bool _inLootingMode;
-
-        #endregion
-
-        #region Initialization
 
         public void Initialize(BotComponentCache cache)
         {
@@ -79,19 +69,9 @@ namespace AIRefactored.AI.Movement
             _nextFlankAllowed = Time.time;
         }
 
-        #endregion
-
-        #region Public Methods
-
         public void Tick(float deltaTime)
         {
-            if (_bot == null ||
-                _cache == null ||
-                _bot.GetPlayer == null ||
-                !_bot.GetPlayer.IsAI ||
-                _bot.IsDead ||
-                !_bot.GetPlayer.HealthController.IsAlive ||
-                _cache.PanicHandler.IsPanicking)
+            if (_bot == null || _cache == null || _bot.GetPlayer == null || !_bot.GetPlayer.IsAI || _bot.IsDead || !_bot.GetPlayer.HealthController.IsAlive || _cache.PanicHandler.IsPanicking)
             {
                 return;
             }
@@ -118,10 +98,7 @@ namespace AIRefactored.AI.Movement
             SmoothLookTo(target, deltaTime);
             ApplyInertia(target, deltaTime);
 
-            if (!_inLootingMode &&
-                _bot.Memory.GoalEnemy != null &&
-                _bot.WeaponManager != null &&
-                _bot.WeaponManager.IsReady)
+            if (!_inLootingMode && _bot.Memory.GoalEnemy != null && _bot.WeaponManager != null && _bot.WeaponManager.IsReady)
             {
                 CombatStrafe(deltaTime);
                 TryCombatLean();
@@ -131,19 +108,9 @@ namespace AIRefactored.AI.Movement
             DetectStuck(deltaTime);
         }
 
-        public void EnterLootingMode()
-        {
-            _inLootingMode = true;
-        }
+        public void EnterLootingMode() => _inLootingMode = true;
 
-        public void ExitLootingMode()
-        {
-            _inLootingMode = false;
-        }
-
-        #endregion
-
-        #region Internal Logic
+        public void ExitLootingMode() => _inLootingMode = false;
 
         private void ApplyInertia(Vector3 target, float deltaTime)
         {
@@ -353,7 +320,5 @@ namespace AIRefactored.AI.Movement
             Logger.LogWarning("[Movement] Invalid NavMesh target: " + pos);
             return false;
         }
-
-        #endregion
     }
 }

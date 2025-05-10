@@ -10,6 +10,7 @@ namespace AIRefactored.AI.Navigation
 {
     using System;
     using System.Collections.Generic;
+    using AIRefactored.Core;
     using AIRefactored.Pools;
     using UnityEngine;
 
@@ -35,7 +36,7 @@ namespace AIRefactored.AI.Navigation
         public SpatialNavGrid(float cellSize)
         {
             _cellSize = Mathf.Max(1f, cellSize);
-            _grid = new Dictionary<Vector2Int, List<NavPointData>>(256);
+            _grid = new Dictionary<Vector2Int, List<NavPointData>>(512);
         }
 
         #endregion
@@ -61,6 +62,11 @@ namespace AIRefactored.AI.Navigation
         /// <param name="point">The navigation point to register.</param>
         public void Register(NavPointData point)
         {
+            if (!IsPositionValid(point.Position))
+            {
+                return;
+            }
+
             Vector2Int cell = WorldToCell(point.Position);
             List<NavPointData> list;
             if (!_grid.TryGetValue(cell, out list))
@@ -90,11 +96,16 @@ namespace AIRefactored.AI.Navigation
         /// <returns>List of nearby matching points.</returns>
         public List<NavPointData> Query(Vector3 position, float radius, Predicate<NavPointData> filter)
         {
+            List<NavPointData> result = TempListPool.Rent<NavPointData>();
+
+            if (!IsPositionValid(position))
+            {
+                return result;
+            }
+
             float radiusSq = radius * radius;
             Vector2Int minCell = WorldToCell(new Vector3(position.x - radius, 0f, position.z - radius));
             Vector2Int maxCell = WorldToCell(new Vector3(position.x + radius, 0f, position.z + radius));
-
-            List<NavPointData> result = TempListPool.Rent<NavPointData>();
 
             for (int x = minCell.x; x <= maxCell.x; x++)
             {
@@ -131,6 +142,13 @@ namespace AIRefactored.AI.Navigation
             int x = Mathf.FloorToInt(pos.x / _cellSize);
             int z = Mathf.FloorToInt(pos.z / _cellSize);
             return new Vector2Int(x, z);
+        }
+
+        private static bool IsPositionValid(Vector3 pos)
+        {
+            return !float.IsNaN(pos.x) && !float.IsNaN(pos.y) && !float.IsNaN(pos.z)
+                && pos.x > -10000f && pos.x < 10000f
+                && pos.z > -10000f && pos.z < 10000f;
         }
 
         #endregion

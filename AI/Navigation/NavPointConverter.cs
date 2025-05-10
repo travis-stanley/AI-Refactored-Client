@@ -57,7 +57,7 @@ namespace AIRefactored.AI.Navigation
             return new NavPointData(
                 position,
                 isCover,
-                "EFT",
+                "eft",
                 elevation,
                 custom.IsGoodInsideBuilding,
                 true,

@@ -41,9 +41,6 @@ namespace AIRefactored.AI.Movement
         /// Determines the best flank side based on squad spacing, suppression, and enemy angle.
         /// Enforces per-side cooldown to avoid flank spam.
         /// </summary>
-        /// <param name="bot">The requesting bot owner.</param>
-        /// <param name="cache">Bot component cache.</param>
-        /// <returns>Recommended flank side.</returns>
         public static FlankPositionPlanner.Side GetOptimalFlankSide(BotOwner bot, BotComponentCache cache)
         {
             if (bot == null || cache == null || bot.Memory == null || bot.Memory.GoalEnemy == null)

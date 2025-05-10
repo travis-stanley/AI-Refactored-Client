@@ -219,11 +219,6 @@ namespace AIRefactored.Bootstrap
 
         public static void PrewarmAllNavMeshes()
         {
-            if (Application.isBatchMode || FikaHeadlessDetector.IsHeadless)
-            {
-                Logger.LogDebug("[WorldBootstrapper] Skipping NavMesh prewarm in headless.");
-                return;
-            }
 
             string mapId = GameWorldHandler.TryGetValidMapName();
             if (string.IsNullOrEmpty(mapId))

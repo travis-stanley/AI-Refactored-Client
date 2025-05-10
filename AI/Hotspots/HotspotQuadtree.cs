@@ -10,6 +10,7 @@ namespace AIRefactored.AI.Hotspots
 {
     using System;
     using System.Collections.Generic;
+    using AIRefactored.Pools;
     using UnityEngine;
 
     /// <summary>
@@ -37,7 +38,7 @@ namespace AIRefactored.AI.Hotspots
         {
             float half = size * 0.5f;
             Rect bounds = new Rect(center.x - half, center.y - half, size, size);
-            this._root = new Node(bounds, 0);
+            _root = new Node(bounds, 0);
         }
 
         #endregion
@@ -54,18 +55,22 @@ namespace AIRefactored.AI.Hotspots
                 return;
             }
 
-            Insert(this._root, hotspot);
+            Insert(_root, hotspot);
         }
 
         /// <summary>
         /// Queries all hotspots within the radius of a 3D world position.
+        /// Uses pooled result list which must be returned by caller.
         /// </summary>
         public List<HotspotRegistry.Hotspot> Query(Vector3 position, float radius, Predicate<HotspotRegistry.Hotspot> filter)
         {
-            List<HotspotRegistry.Hotspot> result = new List<HotspotRegistry.Hotspot>(16);
+            // Rent a list of HotspotRegistry.Hotspot using the pool.
+            List<HotspotRegistry.Hotspot> results = TempListPool.Rent<HotspotRegistry.Hotspot>();
+
             float radiusSq = radius * radius;
-            Query(this._root, position, radiusSq, result, filter);
-            return result;
+            Query(_root, position, radiusSq, results, filter);
+
+            return results;
         }
 
         #endregion
@@ -87,6 +92,7 @@ namespace AIRefactored.AI.Hotspots
                 if (node.Points.Count > MaxPerNode && node.Depth < MaxDepth)
                 {
                     Subdivide(node);
+
                     List<HotspotRegistry.Hotspot> existing = node.Points;
                     for (int i = 0; i < existing.Count; i++)
                     {
@@ -125,7 +131,8 @@ namespace AIRefactored.AI.Hotspots
                 for (int i = 0; i < node.Points.Count; i++)
                 {
                     HotspotRegistry.Hotspot h = node.Points[i];
-                    if ((h.Position - position).sqrMagnitude <= radiusSq && (filter == null || filter(h)))
+                    Vector3 delta = h.Position - position;
+                    if (delta.sqrMagnitude <= radiusSq && (filter == null || filter(h)))
                     {
                         results.Add(h);
                     }
@@ -172,17 +179,17 @@ namespace AIRefactored.AI.Hotspots
 
             public Node(Rect bounds, int depth)
             {
-                this.Bounds = bounds;
-                this.Depth = depth;
-                this.Points = new List<HotspotRegistry.Hotspot>(8);
-                this.Children = EmptyArray;
+                Bounds = bounds;
+                Depth = depth;
+                Points = new List<HotspotRegistry.Hotspot>(8);
+                Children = EmptyArray;
             }
 
-            public bool IsLeaf => this.Children.Length == 0;
+            public bool IsLeaf => Children.Length == 0;
 
             public void SetChildren(Node[] children)
             {
-                this.Children = children ?? EmptyArray;
+                Children = children != null ? children : EmptyArray;
             }
         }
 

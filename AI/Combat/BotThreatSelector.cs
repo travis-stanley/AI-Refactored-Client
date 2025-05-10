@@ -6,8 +6,6 @@
 //   Please follow strict StyleCop, ReSharper, and AI-Refactored code standards for all modifications.
 // </auto-generated>
 
-#pragma warning disable SA1306 // Field names must begin with lower-case letter
-
 namespace AIRefactored.AI.Combat
 {
     using System;
@@ -168,6 +166,14 @@ namespace AIRefactored.AI.Combat
 
             Player fallback = EFTPlayerUtil.ResolvePlayerById(id);
             return EFTPlayerUtil.IsValid(fallback) ? fallback : null;
+        }
+
+        /// <summary>
+        /// Returns the profile ID of the current target safely without referencing IPlayer.
+        /// </summary>
+        public string GetTargetProfileId()
+        {
+            return _currentTarget != null ? _currentTarget.ProfileId : string.Empty;
         }
 
         #endregion

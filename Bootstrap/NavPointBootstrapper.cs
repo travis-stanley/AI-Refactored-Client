@@ -8,6 +8,7 @@
 
 namespace AIRefactored.AI.Navigation
 {
+	using System;
 	using System.Collections.Generic;
 	using System.Threading.Tasks;
 	using AIRefactored.AI.Core;
@@ -43,10 +44,6 @@ namespace AIRefactored.AI.Navigation
 		private static bool _isTaskRunning;
 		private static int _registered;
 
-		/// <summary>
-		/// Starts the async and frame-based scan of nav points for the current scene.
-		/// </summary>
-		/// <param name="mapId">Current map ID, only used for logging.</param>
 		public static void RegisterAll(string mapId)
 		{
 			if (_isRunning || !IsHostEnvironment())
@@ -60,7 +57,7 @@ namespace AIRefactored.AI.Navigation
 			ScanQueue.Clear();
 			BackgroundPending.Clear();
 
-			NavMeshSurface surface = Object.FindObjectOfType<NavMeshSurface>();
+			NavMeshSurface surface = UnityEngine.Object.FindObjectOfType<NavMeshSurface>();
 			if (surface == null)
 			{
 				Logger.LogWarning("[NavPointBootstrapper] No NavMeshSurface found.");
@@ -106,9 +103,6 @@ namespace AIRefactored.AI.Navigation
 			}
 		}
 
-		/// <summary>
-		/// Processes scan queue in small batches each frame.
-		/// </summary>
 		public static void Tick()
 		{
 			try
@@ -170,15 +164,12 @@ namespace AIRefactored.AI.Navigation
 					Logger.LogDebug("[NavPointBootstrapper] ✅ Completed — " + _registered + " nav points registered.");
 				}
 			}
-			catch (System.Exception ex)
+			catch (Exception ex)
 			{
 				Logger.LogError("[NavPointBootstrapper] Tick exception: " + ex);
 			}
 		}
 
-		/// <summary>
-		/// Resets the internal scan queue and state.
-		/// </summary>
 		public static void Reset()
 		{
 			ScanQueue.Clear();
@@ -220,7 +211,6 @@ namespace AIRefactored.AI.Navigation
 		private static bool IsCoverPoint(Vector3 pos)
 		{
 			Vector3 eye = pos + Vector3.up * 1.4f;
-
 			for (float angle = -45f; angle <= 45f; angle += 15f)
 			{
 				Vector3 dir = Quaternion.Euler(0f, angle, 0f) * Vector3.forward;

@@ -67,24 +67,19 @@ namespace AIRefactored.AI.Movement
                 return;
             }
 
-            Player player = _bot.GetPlayer;
+            Player player = EFTPlayerUtil.ResolvePlayer(_bot);
             if (!EFTPlayerUtil.IsValid(player))
             {
                 return;
             }
 
-            PlayerBones bones = player.PlayerBones;
-            if (bones == null || bones.Head == null)
+            Transform bodyTransform = EFTPlayerUtil.GetTransform(player);
+            if (bodyTransform == null)
             {
                 return;
             }
 
-            if (FikaHeadlessDetector.IsHeadless)
-            {
-                return;
-            }
-
-            Vector3 origin = _bot.Position;
+            Vector3 origin = bodyTransform.position;
             Vector3 lookTarget = ResolveLookTarget(origin);
             Vector3 direction = lookTarget - origin;
             direction.y = 0f;
@@ -94,9 +89,9 @@ namespace AIRefactored.AI.Movement
                 return;
             }
 
-            Quaternion current = bones.Head.rotation;
+            Quaternion current = bodyTransform.rotation;
             Quaternion target = Quaternion.LookRotation(direction);
-            bones.Head.rotation = Quaternion.Slerp(current, target, Mathf.Clamp01(MaxTurnSpeed * deltaTime));
+            bodyTransform.rotation = Quaternion.Slerp(current, target, Mathf.Clamp01(MaxTurnSpeed * deltaTime));
         }
 
         /// <summary>
@@ -156,12 +151,20 @@ namespace AIRefactored.AI.Movement
                 return origin + _bot.LookDirection;
             }
 
-            if (_cache.ThreatSelector != null && _cache.ThreatSelector.CurrentTarget != null)
+            if (_cache.ThreatSelector != null)
             {
-                Vector3 targetPos = EFTPlayerUtil.GetPosition(_cache.ThreatSelector.CurrentTarget);
-                if (targetPos.sqrMagnitude > 0.01f)
+                string profileId = _cache.ThreatSelector.GetTargetProfileId();
+                if (profileId.Length != 0)
                 {
-                    return targetPos;
+                    Player player = EFTPlayerUtil.ResolvePlayerById(profileId);
+                    if (EFTPlayerUtil.IsValid(player))
+                    {
+                        Vector3 pos = EFTPlayerUtil.GetPosition(player);
+                        if (pos.sqrMagnitude > 0.01f)
+                        {
+                            return pos;
+                        }
+                    }
                 }
             }
 

@@ -39,8 +39,20 @@ namespace AIRefactored.AI.Hotspots
         public void Initialize()
         {
             _sessions.Clear();
-            string map = GameWorldHandler.TryGetValidMapName() ?? "factory4_day";
-            HotspotRegistry.Initialize(map);
+
+            // Dynamically get the valid map name from the GameWorldHandler
+            string map = GameWorldHandler.TryGetValidMapName();
+
+            // If the map name is invalid or unavailable, let EFT handle default behavior without setting a map
+            if (string.IsNullOrEmpty(map))
+            {
+                Logger.LogWarning("[HotspotSystem] No valid map found. Falling back to default EFT behavior.");
+                HotspotRegistry.Initialize(string.Empty); // Pass an empty string to trigger default EFT behavior
+            }
+            else
+            {
+                HotspotRegistry.Initialize(map);  // Sync with the actual dynamic map name
+            }
         }
 
         public void Tick()
@@ -79,7 +91,15 @@ namespace AIRefactored.AI.Hotspots
         private HotspotSession AssignHotspotRoute(BotOwner bot)
         {
             BotPersonalityProfile profile = BotRegistry.Get(bot.ProfileId);
-            string map = GameWorldHandler.TryGetValidMapName() ?? "factory4_day";
+
+            // Dynamically retrieve the current map name from GameWorldHandler
+            string map = GameWorldHandler.TryGetValidMapName();
+            if (string.IsNullOrEmpty(map))
+            {
+                Logger.LogWarning("[HotspotSystem] ❌ No valid map found. Falling back to default EFT behavior.");
+                return null; // Return null if map name is invalid or not found
+            }
+
             IReadOnlyList<HotspotRegistry.Hotspot> all = HotspotRegistry.GetAll();
 
             if (all.Count == 0)
@@ -234,7 +254,6 @@ namespace AIRefactored.AI.Hotspots
 
                 switch (profile.Personality)
                 {
-                    // Long hold or strategic
                     case PersonalityType.Camper:
                     case PersonalityType.Stoic:
                     case PersonalityType.Sentinel:
@@ -246,7 +265,6 @@ namespace AIRefactored.AI.Hotspots
                         baseTime = 200f;
                         break;
 
-                    // Methodical slow movers
                     case PersonalityType.Methodical:
                     case PersonalityType.Tactical:
                     case PersonalityType.Strategic:
@@ -257,7 +275,6 @@ namespace AIRefactored.AI.Hotspots
                         baseTime = 160f;
                         break;
 
-                    // Average move patterns
                     case PersonalityType.Balanced:
                     case PersonalityType.Explorer:
                     case PersonalityType.Adaptive:
@@ -266,7 +283,6 @@ namespace AIRefactored.AI.Hotspots
                         baseTime = 100f;
                         break;
 
-                    // Reactive or aggressive movers
                     case PersonalityType.Aggressive:
                     case PersonalityType.Bulldozer:
                     case PersonalityType.Cowboy:
@@ -277,7 +293,6 @@ namespace AIRefactored.AI.Hotspots
                         baseTime = 60f;
                         break;
 
-                    // Cautious/defensive with random variance
                     case PersonalityType.Cautious:
                     case PersonalityType.Paranoid:
                     case PersonalityType.Loner:
@@ -286,7 +301,6 @@ namespace AIRefactored.AI.Hotspots
                         baseTime = UnityEngine.Random.Range(120f, 180f);
                         break;
 
-                    // Erratic or chaotic personalities
                     case PersonalityType.Unpredictable:
                     case PersonalityType.Disruptor:
                     case PersonalityType.Erratic:
@@ -298,7 +312,6 @@ namespace AIRefactored.AI.Hotspots
                         baseTime = UnityEngine.Random.Range(45f, 90f);
                         break;
 
-                    // Passive or fearful
                     case PersonalityType.Dumb:
                     case PersonalityType.Fearful:
                     case PersonalityType.Cowardly:

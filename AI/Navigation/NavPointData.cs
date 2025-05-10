@@ -19,40 +19,20 @@ namespace AIRefactored.AI.Navigation
     {
         #region Fields
 
-        /// <summary>World-space position of the navigation point.</summary>
         public readonly Vector3 Position;
-
-        /// <summary>True if this point offers any kind of cover (prone, low, standing).</summary>
         public readonly bool IsCover;
-
-        /// <summary>Short tag classifying the point (e.g. Room, Street, Roof).</summary>
         public readonly string Tag;
-
-        /// <summary>Y-axis elevation of the point for band classification.</summary>
         public readonly float Elevation;
-
-        /// <summary>True if point is marked as being indoors.</summary>
         public readonly bool IsIndoor;
-
-        /// <summary>True if this point is safe and reachable via jump movement.</summary>
         public readonly bool IsJumpable;
-
-        /// <summary>Precomputed cover angle used for AI scoring vs threats.</summary>
         public readonly float CoverAngle;
-
-        /// <summary>Zone name or spatial label associated with this point.</summary>
         public readonly string Zone;
-
-        /// <summary>Elevation band name (Low, Mid, High) for tactical posture logic.</summary>
         public readonly string ElevationBand;
 
         #endregion
 
         #region Constructor
 
-        /// <summary>
-        /// Constructs a fully resolved <see cref="NavPointData"/> with all tactical metadata.
-        /// </summary>
         public NavPointData(
             Vector3 position,
             bool isCover,
@@ -94,10 +74,6 @@ namespace AIRefactored.AI.Navigation
 
         #region Public Methods
 
-        /// <summary>
-        /// Returns squared distance between this nav point and a given world position.
-        /// Used to avoid Vector3.Distance overhead during proximity checks.
-        /// </summary>
         public float DistanceSqr(Vector3 other)
         {
             float dx = this.Position.x - other.x;
@@ -106,9 +82,6 @@ namespace AIRefactored.AI.Navigation
             return (dx * dx) + (dy * dy) + (dz * dz);
         }
 
-        /// <summary>
-        /// String summary of this navigation point for debugging and tooltips.
-        /// </summary>
         public override string ToString()
         {
             return string.Concat(

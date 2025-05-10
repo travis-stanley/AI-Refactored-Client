@@ -39,7 +39,7 @@ namespace AIRefactored.AI.Navigation
         /// <inheritdoc />
         public void Initialize()
         {
-            _logger.LogDebug("[ZoneAutoRefresherSystem] Disabled — IZones no longer used.");
+            _logger.LogDebug("[ZoneAutoRefresherSystem] Skipped — IZones system is disabled. No tag refresh performed.");
         }
 
         /// <inheritdoc />

@@ -8,6 +8,7 @@
 
 namespace AIRefactored.AI.Hotspots
 {
+    using AIRefactored.Pools;
     using System;
     using System.Collections.Generic;
     using UnityEngine;
@@ -68,7 +69,7 @@ namespace AIRefactored.AI.Hotspots
         /// </summary>
         public List<HotspotRegistry.Hotspot> Query(Vector3 worldPos, float radius, Predicate<HotspotRegistry.Hotspot> filter)
         {
-            List<HotspotRegistry.Hotspot> results = new List<HotspotRegistry.Hotspot>(16);
+            List<HotspotRegistry.Hotspot> results = TempListPool.Rent<HotspotRegistry.Hotspot>();  // Pooled list
             float radiusSq = radius * radius;
 
             Vector2Int center = this.WorldToCell(worldPos);

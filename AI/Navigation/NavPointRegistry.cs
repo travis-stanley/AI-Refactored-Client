@@ -10,6 +10,8 @@ namespace AIRefactored.AI.Navigation
 {
     using System;
     using System.Collections.Generic;
+    using AIRefactored.AI.Core;
+    using AIRefactored.Core;
     using AIRefactored.Pools;
     using AIRefactored.Runtime;
     using BepInEx.Logging;
@@ -55,6 +57,13 @@ namespace AIRefactored.AI.Navigation
         public static void RegisterAll(string mapId)
         {
             Initialize();
+
+            if (!GameWorldHandler.IsLocalHost() && !FikaHeadlessDetector.IsHeadless)
+            {
+                Logger.LogDebug("[NavPointRegistry] Skipped RegisterAll — not host.");
+                return;
+            }
+
             Logger.LogDebug("[NavPointRegistry] Registering nav points for map: " + mapId);
 
             NavMeshSurface surface = GameObject.FindObjectOfType<NavMeshSurface>();
@@ -226,16 +235,8 @@ namespace AIRefactored.AI.Navigation
 
         private static string GetElevationBand(float elevation)
         {
-            if (elevation < 2f)
-            {
-                return "Low";
-            }
-
-            if (elevation < 7f)
-            {
-                return "Mid";
-            }
-
+            if (elevation < 2f) return "Low";
+            if (elevation < 7f) return "Mid";
             return "High";
         }
 

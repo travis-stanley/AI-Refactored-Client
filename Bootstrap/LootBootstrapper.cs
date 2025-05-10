@@ -36,8 +36,9 @@ namespace AIRefactored.Bootstrap
 		/// </summary>
 		public static void RegisterAllLoot()
 		{
-			if (!GameWorldHandler.IsInitialized || !GameWorldHandler.IsLocalHost())
+			if (!GameWorldHandler.IsInitialized || !GameWorldHandler.IsHost)
 			{
+				Logger.LogDebug("[LootBootstrapper] Skipped loot registration — not host or not ready.");
 				return;
 			}
 

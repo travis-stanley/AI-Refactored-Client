@@ -46,7 +46,7 @@ namespace AIRefactored.AI.Navigation
 
 		public static void RegisterAll(string mapId)
 		{
-			if (_isRunning || !IsHostEnvironment())
+			if (_isRunning || !GameWorldHandler.IsHost || !GameWorldHandler.IsInitialized)
 			{
 				Logger.LogWarning("[NavPointBootstrapper] Skipped — already running or not host.");
 				return;
@@ -107,7 +107,7 @@ namespace AIRefactored.AI.Navigation
 		{
 			try
 			{
-				if (!_isRunning || !IsHostEnvironment())
+				if (!_isRunning || !GameWorldHandler.IsHost)
 				{
 					return;
 				}
@@ -241,11 +241,6 @@ namespace AIRefactored.AI.Navigation
 			}
 
 			return isCover ? "fallback" : "flank";
-		}
-
-		private static bool IsHostEnvironment()
-		{
-			return GameWorldHandler.IsLocalHost() || FikaHeadlessDetector.IsHeadless;
 		}
 	}
 }

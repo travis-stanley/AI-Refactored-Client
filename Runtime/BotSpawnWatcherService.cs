@@ -53,16 +53,11 @@ namespace AIRefactored.Runtime
 		{
 			try
 			{
-				if (!FikaHeadlessDetector.IsReady || !GameWorldHandler.IsSafeToInitialize || !GameWorldHandler.IsInitialized || !GameWorldHandler.IsLocalHost())
-				{
-					return;
-				}
-
-				if (!GameWorldHandler.IsReady())
+				if (!GameWorldHandler.IsHost || !GameWorldHandler.IsInitialized || !GameWorldHandler.IsReady())
 				{
 					if (!_hasWarnedInvalid)
 					{
-						Logger.LogWarning("[BotSpawnWatcher] GameWorld not ready — deferring.");
+						Logger.LogWarning("[BotSpawnWatcher] GameWorld not ready or not host — deferring.");
 						_hasWarnedInvalid = true;
 					}
 
@@ -139,9 +134,11 @@ namespace AIRefactored.Runtime
 							continue;
 						}
 
-						WildSpawnType role = player.Profile.Info.Settings != null
-							? player.Profile.Info.Settings.Role
-							: WildSpawnType.assault;
+						WildSpawnType role = WildSpawnType.assault;
+						if (player.Profile.Info.Settings != null)
+						{
+							role = player.Profile.Info.Settings.Role;
+						}
 
 						BotPersonalityProfile profile = BotRegistry.GetOrGenerate(profileId, PersonalityType.Balanced, role);
 						BotRegistry.Register(profileId, profile);

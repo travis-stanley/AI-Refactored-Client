@@ -23,10 +23,6 @@ namespace AIRefactored.AI.Threads
 	using EFT;
 	using UnityEngine;
 
-	/// <summary>
-	/// Core AI tick controller for AIRefactored bots.
-	/// Runs subsystem logic in real-time for combat, movement, perception, and group logic.
-	/// </summary>
 	public sealed class BotBrain : MonoBehaviour
 	{
 		private static readonly ManualLogSource Logger = Plugin.LoggerInstance;
@@ -76,7 +72,7 @@ namespace AIRefactored.AI.Threads
 					return;
 				}
 
-				Player current = _bot.GetPlayer;
+				var current = _bot.GetPlayer;
 				if (current == null || current.HealthController == null || !current.HealthController.IsAlive)
 				{
 					_isValid = false;
@@ -97,53 +93,58 @@ namespace AIRefactored.AI.Threads
 							+ (_cache == null ? "Cache " : ""));
 						_lastWarningTime = now;
 					}
-
 					return;
 				}
 
 				if (now >= _nextPerceptionTick)
 				{
-					_vision?.Tick(now);
-					_hearing?.Tick(now);
-					_perception?.Tick(Time.deltaTime);
+					Try(() => _vision?.Tick(now), "Vision");
+					Try(() => _hearing?.Tick(now), "Hearing");
+					Try(() => _perception?.Tick(deltaTime), "Perception");
 					_nextPerceptionTick = now + PerceptionTickRate;
 				}
 
 				if (now >= _nextCombatTick)
 				{
-					_combat?.Tick(now);
-					_cache?.Escalation?.Tick(now);
-					_flashReaction?.Tick(now);
-					_flashDetector?.Tick(now);
-					_groupSync?.Tick(now);
-					_teamLogic?.CoordinateMovement();
-					_threatEscalationMonitor?.Tick(now);
+					Try(() => _combat?.Tick(now), "Combat");
+					Try(() => _cache?.Escalation?.Tick(now), "Escalation");
+					Try(() => _flashReaction?.Tick(now), "FlashReaction");
+					Try(() => _flashDetector?.Tick(now), "FlashDetector");
+					Try(() => _groupSync?.Tick(now), "GroupSync");
+					Try(() => _teamLogic?.CoordinateMovement(), "TeamLogic");
+					Try(() => _threatEscalationMonitor?.Tick(now), "ThreatEscalation");
 					_nextCombatTick = now + CombatTickRate;
 				}
 
 				if (now >= _nextLogicTick)
 				{
-					_mission?.Tick(now);
-					_hearingDamage?.Tick(Time.deltaTime);
-					_tactical?.Tick();
-					_cache?.LootScanner?.Tick(Time.deltaTime);
-					_cache?.DeadBodyScanner?.Tick(now);
-					_asyncProcessor?.Tick(now);
+					Try(() => _mission?.Tick(now), "Mission");
+					Try(() => _hearingDamage?.Tick(deltaTime), "HearingDamage");
+					Try(() => _tactical?.Tick(), "Tactical");
+					Try(() => _cache?.LootScanner?.Tick(deltaTime), "LootScanner");
+					Try(() => _cache?.DeadBodyScanner?.Tick(now), "DeadBodyScanner");
+					Try(() => _asyncProcessor?.Tick(now), "AsyncProcessor");
 					_nextLogicTick = now + LogicTickRate;
 				}
 
-				_movement?.Tick(Time.deltaTime);
-				_jump?.Tick(Time.deltaTime);
-				_pose?.Tick(now);
-				_look?.Tick(Time.deltaTime);
-				_corner?.Tick(now);
-				_tilt?.ManualUpdate();
-				_groupBehavior?.Tick(Time.deltaTime);
+				Try(() => _movement?.Tick(deltaTime), "Movement");
+				Try(() => _jump?.Tick(deltaTime), "Jump");
+				Try(() => _pose?.Tick(now), "Pose");
+				Try(() => _look?.Tick(deltaTime), "Look");
+				Try(() => _corner?.Tick(now), "CornerScanner");
+				Try(() => _tilt?.ManualUpdate(), "Tilt");
+				Try(() => _groupBehavior?.Tick(deltaTime), "GroupBehavior");
 			}
 			catch (Exception ex)
 			{
 				Logger.LogError("[BotBrain] Tick error: " + ex);
 			}
+		}
+
+		private static void Try(Action action, string label)
+		{
+			try { action(); }
+			catch (Exception ex) { Logger.LogError($"[BotBrain] {label} Tick failed: {ex}"); }
 		}
 
 		public void Initialize(BotOwner bot)
@@ -160,8 +161,8 @@ namespace AIRefactored.AI.Threads
 				return;
 			}
 
-			Player player = bot.GetPlayer;
-			if (player == null || !player.IsAI || player.IsYourPlayer || bot.IsDead || player.Profile == null || player.Profile.Info == null)
+			var player = bot.GetPlayer;
+			if (player == null || !player.IsAI || player.IsYourPlayer || bot.IsDead || player.Profile?.Info == null)
 			{
 				Logger.LogWarning("[BotBrain] Initialization rejected: invalid or non-AI player.");
 				return;

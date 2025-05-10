@@ -31,9 +31,9 @@ namespace AIRefactored.Bootstrap
             {
                 HotspotRegistry.Clear();
 
-                if (!GameWorldHandler.IsSafeToInitialize)
+                if (!GameWorldHandler.IsHost || !GameWorldHandler.IsSafeToInitialize)
                 {
-                    Logger.LogWarning("[HotspotRegistry] Skipped init — world not ready.");
+                    Logger.LogWarning("[HotspotRegistry] Skipped init — not host or world not ready.");
                     return;
                 }
 

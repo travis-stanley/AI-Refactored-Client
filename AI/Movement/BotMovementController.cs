@@ -19,10 +19,6 @@ namespace AIRefactored.AI.Movement
     using UnityEngine;
     using UnityEngine.AI;
 
-    /// <summary>
-    /// Controls advanced bot movement logic including inertia, smooth look, combat strafe, lean, jump, and flank mechanics.
-    /// Designed for natural, player-like behavior and fluid real-time responsiveness.
-    /// </summary>
     public sealed class BotMovementController
     {
         private const float CornerScanInterval = 1.2f;
@@ -94,7 +90,17 @@ namespace AIRefactored.AI.Movement
                 _nextScanTime = Time.time + CornerScanInterval;
             }
 
-            Vector3 target = _bot.Mover != null ? _bot.Mover.LastTargetPoint(1.0f) : _bot.Position;
+            Vector3 target;
+            try
+            {
+                target = _bot.Mover != null ? _bot.Mover.LastTargetPoint(1.0f) : _bot.Position;
+            }
+            catch (Exception ex)
+            {
+                Logger.LogError($"[Movement] Exception in LastTargetPoint: {ex}");
+                target = _bot.Position;
+            }
+
             SmoothLookTo(target, deltaTime);
             ApplyInertia(target, deltaTime);
 
@@ -276,7 +282,17 @@ namespace AIRefactored.AI.Movement
 
         private void DetectStuck(float deltaTime)
         {
-            Vector3 target = _bot.Mover != null ? _bot.Mover.LastTargetPoint(1.0f) : _bot.Position;
+            Vector3 target;
+            try
+            {
+                target = _bot.Mover != null ? _bot.Mover.LastTargetPoint(1.0f) : _bot.Position;
+            }
+            catch (Exception ex)
+            {
+                Logger.LogError($"[Movement] Exception in DetectStuck LastTargetPoint: {ex}");
+                target = _bot.Position;
+            }
+
             if (_inLootingMode || !ValidateNavMeshTarget(target))
             {
                 return;

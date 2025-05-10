@@ -48,9 +48,6 @@ namespace AIRefactored.Runtime
 
         #region Properties
 
-        /// <summary>
-        /// Shared logger for runtime use.
-        /// </summary>
         public static ManualLogSource Logger
         {
             get
@@ -69,20 +66,10 @@ namespace AIRefactored.Runtime
 
         #region Initialization
 
-        /// <summary>
-        /// Initializes the AIRefactoredController host and launches boot sequence.
-        /// Safe to call repeatedly.
-        /// </summary>
         public static void Initialize()
         {
             try
             {
-                if (!Application.isBatchMode && !FikaHeadlessDetector.IsHeadless)
-                {
-                    Logger.LogDebug("[AIRefactoredController] Skipped Initialize — not a headless or batch environment.");
-                    return;
-                }
-
                 if (_initialized)
                 {
                     Logger.LogDebug("[AIRefactoredController] Already initialized — skipping.");
@@ -106,9 +93,6 @@ namespace AIRefactored.Runtime
 
         #region Lifecycle Hooks
 
-        /// <summary>
-        /// Called when a raid begins and GameWorld is valid.
-        /// </summary>
         public static void OnRaidStarted(GameWorld world)
         {
             if (!_initialized || _raidActive || world == null)
@@ -116,8 +100,37 @@ namespace AIRefactored.Runtime
                 return;
             }
 
+            if (!GameWorldHandler.IsHost)
+            {
+                Logger.LogDebug("[AIRefactoredController] Skipped OnRaidStarted — not a valid host.");
+                return;
+            }
+
             try
             {
+                if (world.RegisteredPlayers == null || world.RegisteredPlayers.Count == 0)
+                {
+                    Logger.LogWarning("[AIRefactoredController] OnRaidStarted skipped — GameWorld players not ready.");
+                    return;
+                }
+
+                bool hasValid = false;
+                for (int i = 0; i < world.RegisteredPlayers.Count; i++)
+                {
+                    var p = EFTPlayerUtil.AsEFTPlayer(world.RegisteredPlayers[i]);
+                    if (p != null && EFTPlayerUtil.IsValid(p))
+                    {
+                        hasValid = true;
+                        break;
+                    }
+                }
+
+                if (!hasValid)
+                {
+                    Logger.LogWarning("[AIRefactoredController] OnRaidStarted skipped — no valid players in world.");
+                    return;
+                }
+
                 Logger.LogDebug("[AIRefactoredController] 🚀 Raid started. Bootstrapping world systems...");
                 GameWorldHandler.Initialize(world);
                 WorldBootstrapper.Begin(Logger);
@@ -129,9 +142,6 @@ namespace AIRefactored.Runtime
             }
         }
 
-        /// <summary>
-        /// Called when a raid ends and GameWorld is disposed.
-        /// </summary>
         public static void OnRaidEnded()
         {
             if (!_raidActive)

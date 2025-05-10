@@ -47,7 +47,7 @@ namespace AIRefactored.Runtime
 		{
 			try
 			{
-				if (!Application.isPlaying || !GameWorldHandler.IsInitialized || !GameWorldHandler.IsLocalHost() || !GameWorldHandler.IsReady())
+				if (!Application.isPlaying || !GameWorldHandler.IsInitialized || !GameWorldHandler.IsHost || !GameWorldHandler.IsReady())
 				{
 					return;
 				}

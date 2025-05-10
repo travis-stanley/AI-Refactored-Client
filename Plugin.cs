@@ -17,7 +17,7 @@ namespace AIRefactored
     /// <summary>
     /// Entry point for AI-Refactored mod. Initializes the global AIRefactoredController once.
     /// </summary>
-    [BepInPlugin("com.spock.airefactored", "AI-Refactored", "1.0.0")]
+    [BepInPlugin("com.spock.airefactored", "AI-Refactored (Host Only)", "1.0.0")]
     public sealed class Plugin : BaseUnityPlugin
     {
         private static ManualLogSource _logger;
@@ -57,15 +57,15 @@ namespace AIRefactored
                 try
                 {
                     _logger = Logger;
-                    _logger.LogDebug("[AIRefactored] Plugin Awake — bootstrapping controller.");
+                    LoggerInstance.LogDebug("[AIRefactored] Plugin Awake — bootstrapping controller.");
                     AIRefactoredController.Initialize();
-                    _logger.LogDebug("[AIRefactored] AIRefactoredController.Initialize() invoked.");
+                    LoggerInstance.LogDebug("[AIRefactored] AIRefactoredController.Initialize() invoked.");
                     _initialized = true;
-                    _logger.LogDebug("[AIRefactored] Initialization complete.");
+                    LoggerInstance.LogDebug("[AIRefactored] Initialization complete.");
                 }
                 catch (Exception ex)
                 {
-                    Logger.LogError("[AIRefactored] Plugin Awake failed: " + ex);
+                    LoggerInstance.LogError("[AIRefactored] Plugin Awake failed: " + ex);
                 }
             }
         }
@@ -88,7 +88,10 @@ namespace AIRefactored
             }
             catch (Exception ex)
             {
-                Logger.LogError("[AIRefactored] Plugin OnDestroy error: " + ex);
+                if (_logger != null)
+                {
+                    _logger.LogError("[AIRefactored] Plugin OnDestroy error: " + ex);
+                }
             }
         }
     }

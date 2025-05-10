@@ -79,6 +79,12 @@ namespace AIRefactored.Runtime
                         return;
                     }
 
+                    if (!GameWorldHandler.IsHost)
+                    {
+                        Logger.LogDebug("[GameWorldSpawnHook] Skipped InitPhaseRunner — not a valid host.");
+                        return;
+                    }
+
                     Logger.LogDebug("[GameWorldSpawnHook] GameWorld initialized. Triggering InitPhaseRunner...");
                     InitPhaseRunner.Begin(Logger);
                 }

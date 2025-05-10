@@ -55,7 +55,7 @@ namespace AIRefactored.Runtime
                 return;
             }
 
-            if (!GameWorldHandler.IsReady() || !GameWorldHandler.IsLocalHost())
+            if (!GameWorldHandler.IsReady() || !GameWorldHandler.IsHost)
             {
                 return;
             }
@@ -91,7 +91,7 @@ namespace AIRefactored.Runtime
                 return;
             }
 
-            if (!GameWorldHandler.IsReady() || !GameWorldHandler.IsLocalHost())
+            if (!GameWorldHandler.IsReady() || !GameWorldHandler.IsHost)
             {
                 return;
             }
@@ -102,7 +102,7 @@ namespace AIRefactored.Runtime
 
         public static void TriggerManualRefresh()
         {
-            if (!GameWorldHandler.IsReady() || !GameWorldHandler.IsLocalHost())
+            if (!GameWorldHandler.IsReady() || !GameWorldHandler.IsHost)
             {
                 return;
             }

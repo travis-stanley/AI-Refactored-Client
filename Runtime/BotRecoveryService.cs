@@ -80,7 +80,7 @@ namespace AIRefactored.Runtime
 
 		public bool IsReady()
 		{
-			return _hasInitialized && GameWorldHandler.IsLocalHost() && GameWorldHandler.IsReady();
+			return _hasInitialized && GameWorldHandler.IsReady();
 		}
 
 		public WorldPhase RequiredPhase()
@@ -103,7 +103,7 @@ namespace AIRefactored.Runtime
 		{
 			try
 			{
-				if (!_hasInitialized || !GameWorldHandler.IsLocalHost() || !GameWorldHandler.IsSafeToInitialize)
+				if (!_hasInitialized || !GameWorldHandler.IsHost || !GameWorldHandler.IsReady())
 				{
 					return;
 				}
@@ -117,7 +117,7 @@ namespace AIRefactored.Runtime
 				_nextTickTime = now + TickInterval;
 
 				GameWorld world = GameWorldHandler.Get();
-				if (world == null || !GameWorldHandler.IsReady())
+				if (world == null || world.AllAlivePlayersList == null)
 				{
 					if (!_hasWarned)
 					{
@@ -135,12 +135,7 @@ namespace AIRefactored.Runtime
 				}
 
 				EnsureSpawnHook();
-
-				List<Player> players = world.AllAlivePlayersList;
-				if (players != null && players.Count > 0)
-				{
-					ValidateBotBrains(players);
-				}
+				ValidateBotBrains(world.AllAlivePlayersList);
 			}
 			catch (Exception ex)
 			{
@@ -178,7 +173,7 @@ namespace AIRefactored.Runtime
 				for (int i = 0; i < players.Count; i++)
 				{
 					Player player = players[i];
-					if (player == null || !player.IsAI || player.gameObject == null)
+					if (!EFTPlayerUtil.IsValid(player) || !player.IsAI || player.gameObject == null)
 					{
 						continue;
 					}

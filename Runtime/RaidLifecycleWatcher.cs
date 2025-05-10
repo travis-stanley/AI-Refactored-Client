@@ -43,7 +43,7 @@ namespace AIRefactored.Runtime
                     return;
                 }
 
-                if (!GameWorldHandler.IsReady())
+                if (!GameWorldHandler.IsHost || !GameWorldHandler.IsReady())
                 {
                     return;
                 }

@@ -9,6 +9,7 @@
 namespace AIRefactored.Bootstrap
 {
     using System;
+    using System.Collections;
     using System.Collections.Generic;
     using AIRefactored.AI.Core;
     using AIRefactored.AI.Hotspots;
@@ -20,13 +21,11 @@ namespace AIRefactored.Bootstrap
     using AIRefactored.Pools;
     using AIRefactored.Runtime;
     using BepInEx.Logging;
+    using Comfort.Common;
     using Unity.AI.Navigation;
     using UnityEngine;
     using EFT;
 
-    /// <summary>
-    /// Initializes and ticks all AIRefactored world systems after GameWorld is stable.
-    /// </summary>
     public static class WorldBootstrapper
     {
         #region Fields
@@ -85,6 +84,11 @@ namespace AIRefactored.Bootstrap
 
                 _hasInitialized = true;
                 Logger.LogDebug("[WorldBootstrapper] ✅ World systems initialized.");
+
+                if (GameWorldHandler.IsHost)
+                {
+                    StaticManager.Instance.StartCoroutine(DelayedNavMeshWarmup());
+                }
             }
             catch (Exception ex)
             {
@@ -217,14 +221,29 @@ namespace AIRefactored.Bootstrap
 
         #region Utility
 
-        public static void PrewarmAllNavMeshes()
+        private static IEnumerator DelayedNavMeshWarmup()
         {
+            const int maxFrames = 300;
+            int frame = 0;
+
+            while (!CanWarmupNavMesh() && frame++ < maxFrames)
+            {
+                yield return null;
+            }
+
+            if (!CanWarmupNavMesh())
+            {
+                Logger.LogWarning("[WorldBootstrapper] NavMesh warmup timed out waiting for valid world.");
+                yield break;
+            }
+
+            Logger.LogInfo("[WorldBootstrapper] Starting NavMesh warmup...");
 
             string mapId = GameWorldHandler.TryGetValidMapName();
             if (string.IsNullOrEmpty(mapId))
             {
                 Logger.LogWarning("[WorldBootstrapper] Cannot prewarm — no valid map.");
-                return;
+                yield break;
             }
 
             NavMeshSurface[] surfaces = UnityEngine.Object.FindObjectsOfType<NavMeshSurface>();
@@ -244,6 +263,29 @@ namespace AIRefactored.Bootstrap
                     }
                 }
             }
+
+            Logger.LogInfo("[WorldBootstrapper] ✅ NavMesh warmup complete.");
+        }
+
+        private static bool CanWarmupNavMesh()
+        {
+            var world = Singleton<GameWorld>.Instance;
+            if (world == null || world.RegisteredPlayers == null || world.RegisteredPlayers.Count == 0)
+            {
+                return false;
+            }
+
+            for (int i = 0; i < world.RegisteredPlayers.Count; i++)
+            {
+                var iPlayer = world.RegisteredPlayers[i];
+                var player = EFTPlayerUtil.AsEFTPlayer(iPlayer);
+                if (player != null && EFTPlayerUtil.IsValid(player))
+                {
+                    return true;
+                }
+            }
+
+            return false;
         }
 
         public static void EnforceBotBrain(Player player, BotOwner bot)

@@ -387,6 +387,29 @@ namespace AIRefactored.Core
                 return;
             }
 
+            if (world.RegisteredPlayers == null || world.RegisteredPlayers.Count == 0)
+            {
+                LogSafe("[GameWorldHandler] Initialization skipped — GameWorld has no players.");
+                return;
+            }
+
+            bool hasValid = false;
+            for (int i = 0; i < world.RegisteredPlayers.Count; i++)
+            {
+                var p = EFTPlayerUtil.AsEFTPlayer(world.RegisteredPlayers[i]);
+                if (p != null && EFTPlayerUtil.IsValid(p))
+                {
+                    hasValid = true;
+                    break;
+                }
+            }
+
+            if (!hasValid)
+            {
+                LogSafe("[GameWorldHandler] Initialization skipped — no valid EFT.Player in GameWorld.");
+                return;
+            }
+
             try
             {
                 ForceAssign(world);

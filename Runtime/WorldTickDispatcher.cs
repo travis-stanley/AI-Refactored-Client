@@ -104,7 +104,7 @@ namespace AIRefactored.Runtime
         /// <param name="deltaTime">The time delta since the last frame.</param>
         public static void Tick(float deltaTime)
         {
-            if (!_isActive || !GameWorldHandler.IsInitialized)
+            if (!_isActive || !GameWorldHandler.IsInitialized || !GameWorldHandler.IsHost)
             {
                 return;
             }

@@ -13,6 +13,8 @@ namespace AIRefactored.Runtime
     using AIRefactored.Bootstrap;
     using AIRefactored.Core;
     using BepInEx.Logging;
+    using Comfort.Common;
+    using EFT;
 
     /// <summary>
     /// Orchestrates the full AI-Refactored initialization lifecycle using staged world boot phases.
@@ -41,16 +43,11 @@ namespace AIRefactored.Runtime
                 WorldInitState.SetPhase(WorldPhase.PreInit);
                 logger.LogDebug("[InitPhaseRunner] 🚀 Beginning AIRefactored world initialization.");
 
-                if (!GameWorldHandler.IsReady())
+                if (!IsWorldSafe())
                 {
-                    if (FikaHeadlessDetector.IsHeadless)
-                    {
-                        logger.LogWarning("[InitPhaseRunner] GameWorld not ready, but FIKA headless is active — forcing initialization.");
-                    }
-                    else
-                    {
-                        logger.LogWarning("[InitPhaseRunner] GameWorldHandler not ready — attempting fallback.");
-                    }
+                    logger.LogWarning("[InitPhaseRunner] World not fully ready. Delaying init to avoid FIKA stall.");
+                    _hasStarted = false;
+                    return;
                 }
 
                 WorldInitState.SetPhase(WorldPhase.AwaitWorld);
@@ -59,10 +56,8 @@ namespace AIRefactored.Runtime
                 WorldBootstrapper.Begin(logger);
 
                 WorldInitState.SetPhase(WorldPhase.WorldReady);
-
                 logger.LogDebug("[InitPhaseRunner] ✅ AIRefactored world systems initialized.");
 
-                // Final post init handoff
                 WorldInitState.SetPhase(WorldPhase.PostInit);
             }
             catch (Exception ex)
@@ -96,6 +91,27 @@ namespace AIRefactored.Runtime
             {
                 Plugin.LoggerInstance.LogError("[InitPhaseRunner] Stop() encountered error: " + ex);
             }
+        }
+
+        private static bool IsWorldSafe()
+        {
+            var world = Singleton<GameWorld>.Instance;
+            if (world == null || world.RegisteredPlayers == null || world.RegisteredPlayers.Count == 0)
+            {
+                return false;
+            }
+
+            for (int i = 0; i < world.RegisteredPlayers.Count; i++)
+            {
+                var raw = world.RegisteredPlayers[i];
+                var player = EFTPlayerUtil.AsEFTPlayer(raw);
+                if (player != null && EFTPlayerUtil.IsValid(player))
+                {
+                    return true;
+                }
+            }
+
+            return false;
         }
     }
 }

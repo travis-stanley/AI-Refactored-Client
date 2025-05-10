@@ -62,13 +62,13 @@ namespace AIRefactored.AI.Movement
         /// </summary>
         public void Tick(float deltaTime)
         {
-            if (_frozen || _bot.IsDead || !GameWorldHandler.IsSafeToInitialize)
+            if (_frozen || _bot == null || _cache == null || _bot.IsDead || !GameWorldHandler.IsSafeToInitialize)
             {
                 return;
             }
 
             Player player = _bot.GetPlayer;
-            if (player == null)
+            if (!EFTPlayerUtil.IsValid(player))
             {
                 return;
             }
@@ -158,7 +158,11 @@ namespace AIRefactored.AI.Movement
 
             if (_cache.ThreatSelector != null && _cache.ThreatSelector.CurrentTarget != null)
             {
-                return EFTPlayerUtil.GetPosition(_cache.ThreatSelector.CurrentTarget);
+                Vector3 targetPos = EFTPlayerUtil.GetPosition(_cache.ThreatSelector.CurrentTarget);
+                if (targetPos.sqrMagnitude > 0.01f)
+                {
+                    return targetPos;
+                }
             }
 
             if (_cache.HasHeardDirection && (now - _cache.LastHeardTime) < SoundMemoryDuration)

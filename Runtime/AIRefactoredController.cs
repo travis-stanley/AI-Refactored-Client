@@ -23,6 +23,8 @@ namespace AIRefactored.Runtime
     /// </summary>
     public sealed class AIRefactoredController : MonoBehaviour
     {
+        #region Static Fields
+
         private static readonly Lazy<GameObject> _host = new Lazy<GameObject>(() =>
         {
             GameObject obj = new GameObject("AIRefactoredHost");
@@ -34,14 +36,17 @@ namespace AIRefactored.Runtime
         {
             GameObject go = _host.Value;
             AIRefactoredController controller = go.AddComponent<AIRefactoredController>();
-            go.AddComponent<RaidLifecycleWatcher>();
             go.AddComponent<GameWorldSpawnHook>();
-            Logger.LogDebug("[AIRefactoredController] Host object created and lifecycle + spawn hook attached.");
+            Logger.LogDebug("[AIRefactoredController] Host object created and spawn hook attached.");
             return controller;
         });
 
         private static bool _initialized;
         private static bool _raidActive;
+
+        #endregion
+
+        #region Properties
 
         /// <summary>
         /// Shared logger for runtime use.
@@ -60,6 +65,10 @@ namespace AIRefactored.Runtime
             }
         }
 
+        #endregion
+
+        #region Initialization
+
         /// <summary>
         /// Initializes the AIRefactoredController host and launches boot sequence.
         /// Safe to call repeatedly.
@@ -70,7 +79,7 @@ namespace AIRefactored.Runtime
             {
                 if (!Application.isBatchMode && !FikaHeadlessDetector.IsHeadless)
                 {
-                    Logger.LogDebug("[AIRefactoredController] Skipped Initialize — not a headless environment.");
+                    Logger.LogDebug("[AIRefactoredController] Skipped Initialize — not a headless or batch environment.");
                     return;
                 }
 
@@ -92,6 +101,10 @@ namespace AIRefactored.Runtime
                 Logger.LogError("[AIRefactoredController] Initialization failed: " + ex);
             }
         }
+
+        #endregion
+
+        #region Lifecycle Hooks
 
         /// <summary>
         /// Called when a raid begins and GameWorld is valid.
@@ -140,6 +153,10 @@ namespace AIRefactored.Runtime
             }
         }
 
+        #endregion
+
+        #region Unity Events
+
         private void Update()
         {
             if (WorldInitState.IsInitialized)
@@ -154,9 +171,8 @@ namespace AIRefactored.Runtime
             {
                 if (_instance.IsValueCreated && _instance.Value == this)
                 {
-                    Logger.LogDebug("[AIRefactoredController] OnDestroy — stopping InitPhaseRunner.");
+                    Logger.LogDebug("[AIRefactoredController] OnDestroy — stopping InitPhaseRunner and cleaning up...");
                     InitPhaseRunner.Stop();
-
                     WorldBootstrapper.Stop();
                     GameWorldHandler.Cleanup();
                     BotRecoveryService.Reset();
@@ -170,5 +186,7 @@ namespace AIRefactored.Runtime
                 Logger.LogError("[AIRefactoredController] OnDestroy error: " + ex);
             }
         }
+
+        #endregion
     }
 }

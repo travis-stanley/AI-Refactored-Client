@@ -6,186 +6,185 @@
 //   Please follow strict StyleCop, ReSharper, and AI-Refactored code standards for all modifications.
 // </auto-generated>
 
-
 namespace AIRefactored.Runtime
 {
-    using System;
-    using System.Collections.Generic;
-    using AIRefactored.AI.Core;
-    using AIRefactored.AI.Looting;
-    using AIRefactored.Bootstrap;
-    using AIRefactored.Core;
-    using AIRefactored.Pools;
-    using BepInEx.Logging;
-    using EFT;
-    using EFT.Interactive;
-    using UnityEngine;
+	using System;
+	using System.Collections.Generic;
+	using AIRefactored.AI.Core;
+	using AIRefactored.AI.Looting;
+	using AIRefactored.Bootstrap;
+	using AIRefactored.Core;
+	using AIRefactored.Pools;
+	using BepInEx.Logging;
+	using EFT;
+	using EFT.Interactive;
+	using UnityEngine;
 
-    /// <summary>
-    /// Scans for dead players and associates them with nearby loot containers.
-    /// Executed as a runtime service from WorldBootstrapper or BotWorkScheduler.
-    /// </summary>
-    public sealed class DeadBodyObserverService : IAIWorldSystemBootstrapper
-    {
-        private const float ScanIntervalSeconds = 1.0f;
-        private const float AssociationRadius = 1.5f;
+	/// <summary>
+	/// Scans for dead players and associates them with nearby loot containers.
+	/// Executed as a runtime service from WorldBootstrapper or BotWorkScheduler.
+	/// </summary>
+	public sealed class DeadBodyObserverService : IAIWorldSystemBootstrapper
+	{
+		private const float ScanIntervalSeconds = 1.0f;
+		private const float AssociationRadius = 1.5f;
 
-        private static readonly ManualLogSource Logger = Plugin.LoggerInstance;
+		private static readonly ManualLogSource Logger = Plugin.LoggerInstance;
 
-        private static LootableContainer[] _containers = Array.Empty<LootableContainer>();
-        private static float _nextScanTime = -1f;
-        private static bool _containersUpdated;
+		private static LootableContainer[] _containers = Array.Empty<LootableContainer>();
+		private static float _nextScanTime = -1f;
+		private static bool _containersUpdated;
 
-        /// <summary>
-        /// Singleton instance for registration into WorldBootstrapper.
-        /// </summary>
-        public static DeadBodyObserverService Instance { get; } = new DeadBodyObserverService();
+		public void Initialize()
+		{
+			Reset();
+			Logger.LogDebug("[DeadBodyObserver] Initialized.");
+		}
 
-        /// <inheritdoc />
-        public void Initialize()
-        {
-            Reset();
-            Logger.LogDebug("[DeadBodyObserver] Initialized.");
-        }
+		public void Tick(float deltaTime)
+		{
+			try
+			{
+				if (!Application.isPlaying || !GameWorldHandler.IsInitialized || !GameWorldHandler.IsLocalHost() || !GameWorldHandler.IsReady())
+				{
+					return;
+				}
 
-        /// <inheritdoc />
-        public void Tick(float deltaTime)
-        {
-            if (!Application.isPlaying || !GameWorldHandler.IsInitialized || !GameWorldHandler.IsLocalHost() || !GameWorldHandler.IsReady())
-            {
-                return;
-            }
+				float now = Time.time;
+				if (now < _nextScanTime)
+				{
+					return;
+				}
 
-            float now = Time.time;
-            if (now < _nextScanTime)
-            {
-                return;
-            }
+				_nextScanTime = now + ScanIntervalSeconds;
 
-            _nextScanTime = now + ScanIntervalSeconds;
+				if (!_containersUpdated)
+				{
+					try
+					{
+						_containers = UnityEngine.Object.FindObjectsOfType<LootableContainer>();
+						_containersUpdated = true;
+						Logger.LogDebug("[DeadBodyObserver] Found " + _containers.Length + " lootable containers.");
+					}
+					catch (Exception ex)
+					{
+						Logger.LogError("[DeadBodyObserver] Failed to find containers: " + ex);
+						return;
+					}
+				}
 
-            if (!_containersUpdated)
-            {
-                try
-                {
-                    _containers = UnityEngine.Object.FindObjectsOfType<LootableContainer>();
-                    _containersUpdated = true;
-                    Logger.LogDebug("[DeadBodyObserver] Found " + _containers.Length + " lootable containers.");
-                }
-                catch (Exception ex)
-                {
-                    Logger.LogError("[DeadBodyObserver] Failed to find containers: " + ex);
-                    return;
-                }
-            }
+				if (_containers.Length == 0)
+				{
+					return;
+				}
 
-            if (_containers.Length == 0)
-            {
-                return;
-            }
+				List<Player> players = GameWorldHandler.GetAllAlivePlayers();
+				if (players.Count == 0)
+				{
+					return;
+				}
 
-            List<Player> players = GameWorldHandler.GetAllAlivePlayers();
-            if (players.Count == 0)
-            {
-                return;
-            }
+				List<Player> pool = TempListPool.Rent<Player>();
 
-            List<Player> pool = TempListPool.Rent<Player>();
+				try
+				{
+					for (int i = 0; i < players.Count; i++)
+					{
+						Player p = players[i];
+						if (EFTPlayerUtil.IsValid(p))
+						{
+							pool.Add(p);
+						}
+					}
 
-            try
-            {
-                for (int i = 0; i < players.Count; i++)
-                {
-                    Player p = players[i];
-                    if (p != null)
-                    {
-                        pool.Add(p);
-                    }
-                }
+					for (int i = 0; i < pool.Count; i++)
+					{
+						Player player = pool[i];
+						if (player == null || player.HealthController == null || player.HealthController.IsAlive)
+						{
+							continue;
+						}
 
-                for (int i = 0; i < pool.Count; i++)
-                {
-                    Player player = pool[i];
-                    if (player == null || player.HealthController == null || player.HealthController.IsAlive)
-                    {
-                        continue;
-                    }
+						string profileId = player.ProfileId;
+						if (string.IsNullOrEmpty(profileId) || DeadBodyContainerCache.Contains(profileId))
+						{
+							continue;
+						}
 
-                    string profileId = player.ProfileId;
-                    if (string.IsNullOrEmpty(profileId) || DeadBodyContainerCache.Contains(profileId))
-                    {
-                        continue;
-                    }
+						Vector3 corpsePosition = EFTPlayerUtil.GetPosition(player);
+						Transform root = player.Transform?.Original?.root;
+						if (root == null)
+						{
+							continue;
+						}
 
-                    Vector3 corpsePosition = EFTPlayerUtil.GetPosition(player);
-                    Transform root = player.Transform.Original.root;
+						for (int j = 0; j < _containers.Length; j++)
+						{
+							LootableContainer container = _containers[j];
+							if (container == null || !container.enabled || container.transform == null)
+							{
+								continue;
+							}
 
-                    for (int j = 0; j < _containers.Length; j++)
-                    {
-                        LootableContainer container = _containers[j];
-                        if (container == null || !container.enabled || container.transform == null)
-                        {
-                            continue;
-                        }
+							bool isRootMatch = container.transform.root == root;
+							bool isNearby = Vector3.Distance(container.transform.position, corpsePosition) <= AssociationRadius;
 
-                        bool isRootMatch = container.transform.root == root;
-                        bool isNearby = Vector3.Distance(container.transform.position, corpsePosition) <= AssociationRadius;
+							if (isRootMatch || isNearby)
+							{
+								DeadBodyContainerCache.Register(player, container);
 
-                        if (isRootMatch || isNearby)
-                        {
-                            DeadBodyContainerCache.Register(player, container);
-                            string nickname = player.Profile != null && player.Profile.Info != null ? player.Profile.Info.Nickname : "Unnamed";
-                            Logger.LogDebug("[DeadBodyObserver] Associated container with dead bot: " + nickname);
-                            break;
-                        }
-                    }
-                }
-            }
-            catch (Exception ex)
-            {
-                Logger.LogError("[DeadBodyObserver] Tick scan error: " + ex);
-            }
-            finally
-            {
-                TempListPool.Return(pool);
-            }
-        }
+								string nickname = player.Profile?.Info?.Nickname ?? "Unnamed";
+								Logger.LogDebug("[DeadBodyObserver] Associated container with dead bot: " + nickname);
+								break;
+							}
+						}
+					}
+				}
+				catch (Exception ex)
+				{
+					Logger.LogError("[DeadBodyObserver] Tick scan error: " + ex);
+				}
+				finally
+				{
+					TempListPool.Return(pool);
+					TempListPool.Return(players);
+				}
+			}
+			catch (Exception ex)
+			{
+				Logger.LogError("[DeadBodyObserver] Tick outer error: " + ex);
+			}
+		}
 
-        /// <inheritdoc />
-        public void OnRaidEnd()
-        {
-            Reset();
-        }
+		public void OnRaidEnd()
+		{
+			Reset();
+		}
 
-        /// <summary>
-        /// Clears cached state and forces a container rescan next tick.
-        /// </summary>
-        public static void Reset()
-        {
-            _nextScanTime = -1f;
-            _containers = Array.Empty<LootableContainer>();
-            _containersUpdated = false;
+		public static void Reset()
+		{
+			_nextScanTime = -1f;
+			_containers = Array.Empty<LootableContainer>();
+			_containersUpdated = false;
 
-            try
-            {
-                Logger.LogDebug("[DeadBodyObserver] Reset.");
-            }
-            catch
-            {
-                // Silent fallback — logger not available during shutdown
-            }
-        }
+			try
+			{
+				Logger.LogDebug("[DeadBodyObserver] Reset.");
+			}
+			catch
+			{
+				// Silent fallback — logger not available during shutdown
+			}
+		}
 
-        /// <inheritdoc />
-        public bool IsReady()
-        {
-            return true;
-        }
+		public bool IsReady()
+		{
+			return true;
+		}
 
-        /// <inheritdoc />
-        public WorldPhase RequiredPhase()
-        {
-            return WorldPhase.WorldReady;
-        }
-    }
+		public WorldPhase RequiredPhase()
+		{
+			return WorldPhase.WorldReady;
+		}
+	}
 }

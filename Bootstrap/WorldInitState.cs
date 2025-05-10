@@ -32,6 +32,12 @@ namespace AIRefactored.Bootstrap
         /// <param name="phase">The phase to assign.</param>
         public static void SetPhase(WorldPhase phase)
         {
+            if (phase < WorldPhase.None || phase > WorldPhase.PostInit)
+            {
+                Plugin.LoggerInstance.LogWarning("[WorldInitState] Invalid phase value: " + phase);
+                return;
+            }
+
             _phase = phase;
         }
 

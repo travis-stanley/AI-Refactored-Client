@@ -8,6 +8,7 @@
 
 namespace AIRefactored.AI.Core
 {
+    using System;
     using AIRefactored.Bootstrap;
 
     /// <summary>
@@ -31,6 +32,22 @@ namespace AIRefactored.AI.Core
         /// <param name="deltaTime">Elapsed time since last tick.</param>
         public virtual void Tick(float deltaTime)
         {
+            try
+            {
+                OnTick(deltaTime);
+            }
+            catch (Exception ex)
+            {
+                Plugin.LoggerInstance.LogError($"[BaseAIWorldSystem] Tick error in {GetType().Name}: {ex}");
+            }
+        }
+
+        /// <summary>
+        /// Hook for derived class tick logic.
+        /// </summary>
+        /// <param name="deltaTime">Time delta.</param>
+        protected virtual void OnTick(float deltaTime)
+        {
         }
 
         /// <summary>
@@ -39,13 +56,27 @@ namespace AIRefactored.AI.Core
         /// </summary>
         public virtual void OnRaidEnd()
         {
+            try
+            {
+                Cleanup();
+            }
+            catch (Exception ex)
+            {
+                Plugin.LoggerInstance.LogError($"[BaseAIWorldSystem] OnRaidEnd error in {GetType().Name}: {ex}");
+            }
+        }
+
+        /// <summary>
+        /// Called to cleanup static references or world-specific memory.
+        /// </summary>
+        protected virtual void Cleanup()
+        {
         }
 
         /// <summary>
         /// Determines if the system is ready to be used.
         /// Override to gate logic on world conditions.
         /// </summary>
-        /// <returns>True if system is ready; otherwise, false.</returns>
         public virtual bool IsReady()
         {
             return true;
@@ -53,8 +84,8 @@ namespace AIRefactored.AI.Core
 
         /// <summary>
         /// Defines the required phase during which this system must be initialized.
+        /// Override to control registration timing.
         /// </summary>
-        /// <returns>The required world phase.</returns>
         public virtual WorldPhase RequiredPhase()
         {
             return WorldPhase.PostInit;

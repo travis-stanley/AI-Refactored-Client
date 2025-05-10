@@ -34,7 +34,7 @@ namespace AIRefactored.AI.Helpers
 
         #endregion
 
-        #region Public Methods
+        #region Public API
 
         public static void Clear()
         {
@@ -150,7 +150,7 @@ namespace AIRefactored.AI.Helpers
 
         #endregion
 
-        #region Private Methods
+        #region Private Helpers
 
         private static void TriggerSquadPing(string sourceId, Vector3 location, bool isGunshot)
         {

@@ -10,6 +10,7 @@ namespace AIRefactored.AI.Hotspots
 {
     using System;
     using System.Collections.Generic;
+    using AIRefactored.Pools;
     using AIRefactored.Runtime;
     using BepInEx.Logging;
     using UnityEngine;
@@ -20,13 +21,7 @@ namespace AIRefactored.AI.Hotspots
     /// </summary>
     public static class HotspotRegistry
     {
-        #region Constants
-
         private static readonly ManualLogSource Logger = Plugin.LoggerInstance;
-
-        #endregion
-
-        #region Fields
 
         private static readonly List<Hotspot> All = new List<Hotspot>(256);
         private static readonly Dictionary<string, List<Hotspot>> ByZone = new Dictionary<string, List<Hotspot>>(StringComparer.OrdinalIgnoreCase);
@@ -52,20 +47,12 @@ namespace AIRefactored.AI.Hotspots
         private static HotspotQuadtree _quadtree;
         private static HotspotSpatialGrid _grid;
 
-        #endregion
-
-        #region Enums
-
         private enum SpatialIndexMode
         {
             None,
             Quadtree,
             Grid
         }
-
-        #endregion
-
-        #region Public API
 
         public static void Clear()
         {
@@ -173,10 +160,6 @@ namespace AIRefactored.AI.Hotspots
             return FallbackQuery(position, radius, filter);
         }
 
-        #endregion
-
-        #region Internal Logic
-
         private static void BuildQuadtree()
         {
             Vector2 center = EstimateCenter();
@@ -235,7 +218,7 @@ namespace AIRefactored.AI.Hotspots
 
         private static List<Hotspot> FallbackQuery(Vector3 position, float radius, Predicate<Hotspot> filter)
         {
-            List<Hotspot> result = new List<Hotspot>(16);
+            var result = TempListPool.Rent<Hotspot>();
             float radiusSq = radius * radius;
 
             for (int i = 0; i < All.Count; i++)
@@ -250,10 +233,6 @@ namespace AIRefactored.AI.Hotspots
 
             return result;
         }
-
-        #endregion
-
-        #region Type
 
         /// <summary>
         /// Represents a runtime hotspot: a tactical point on the map with a zone label.
@@ -270,7 +249,5 @@ namespace AIRefactored.AI.Hotspots
 
             public string Zone { get; }
         }
-
-        #endregion
     }
 }

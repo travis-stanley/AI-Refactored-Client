@@ -50,7 +50,7 @@ namespace AIRefactored.AI.Memory
 
         public static List<DangerZone> GetZonesForMap(string mapId)
         {
-            List<DangerZone> result = TempListPool.Rent<DangerZone>();
+            var result = TempListPool.Rent<DangerZone>();
 
             string key;
             if (!TryGetSafeKey(mapId, out key))
@@ -62,7 +62,7 @@ namespace AIRefactored.AI.Memory
             if (!ZoneCaches.TryGetValue(key, out cache))
             {
                 cache = TempListPool.Rent<DangerZone>();
-                ZoneCaches.Add(key, cache);
+                ZoneCaches[key] = cache;
             }
             else
             {
@@ -100,9 +100,7 @@ namespace AIRefactored.AI.Memory
                     continue;
                 }
 
-                float distSqr = (zone.Position - position).sqrMagnitude;
-                float radiusSqr = zone.Radius * zone.Radius;
-                if (distSqr <= radiusSqr)
+                if ((zone.Position - position).sqrMagnitude <= zone.Radius * zone.Radius)
                 {
                     return true;
                 }
@@ -114,6 +112,7 @@ namespace AIRefactored.AI.Memory
         public static void ClearZones()
         {
             Zones.Clear();
+            ZoneCaches.Clear();
         }
 
         #endregion
@@ -132,7 +131,7 @@ namespace AIRefactored.AI.Memory
             if (!ShortTermHeardSounds.TryGetValue(key, out list))
             {
                 list = TempListPool.Rent<HeardSound>();
-                ShortTermHeardSounds.Add(key, list);
+                ShortTermHeardSounds[key] = list;
             }
 
             list.Add(new HeardSound(position, time));
@@ -140,8 +139,8 @@ namespace AIRefactored.AI.Memory
 
         public static bool TryGetHeardSound(string profileId, out HeardSound sound)
         {
-            string key;
             sound = default(HeardSound);
+            string key;
             return TryGetSafeKey(profileId, out key) && HeardSounds.TryGetValue(key, out sound);
         }
 
@@ -165,6 +164,10 @@ namespace AIRefactored.AI.Memory
         public static void ClearAllHeardSounds()
         {
             HeardSounds.Clear();
+            foreach (var entry in ShortTermHeardSounds)
+            {
+                entry.Value.Clear();
+            }
         }
 
         #endregion
@@ -208,12 +211,10 @@ namespace AIRefactored.AI.Memory
         public static void SetLastFlankTime(string profileId)
         {
             string key;
-            if (!TryGetSafeKey(profileId, out key))
+            if (TryGetSafeKey(profileId, out key))
             {
-                return;
+                LastFlankTimes[key] = Time.time;
             }
-
-            LastFlankTimes[key] = Time.time;
         }
 
         public static bool CanFlankNow(string profileId, float cooldown)
@@ -225,7 +226,7 @@ namespace AIRefactored.AI.Memory
             }
 
             float last;
-            return !LastFlankTimes.TryGetValue(key, out last) || Time.time - last >= cooldown;
+            return !LastFlankTimes.TryGetValue(key, out last) || (Time.time - last >= cooldown);
         }
 
         public static void ClearFlankCooldowns()
@@ -239,7 +240,7 @@ namespace AIRefactored.AI.Memory
 
         public static List<Player> GetNearbyPlayers(Vector3 origin, float radius)
         {
-            List<Player> result = TempListPool.Rent<Player>();
+            var result = TempListPool.Rent<Player>();
             List<Player> players = GameWorldHandler.GetAllAlivePlayers();
             float rangeSqr = radius * radius;
 
@@ -248,8 +249,7 @@ namespace AIRefactored.AI.Memory
                 Player p = players[i];
                 if (p != null && IsRealPlayer(p))
                 {
-                    float distSqr = (p.Transform.position - origin).sqrMagnitude;
-                    if (distSqr <= rangeSqr)
+                    if ((p.Transform.position - origin).sqrMagnitude <= rangeSqr)
                     {
                         result.Add(p);
                     }
@@ -277,7 +277,7 @@ namespace AIRefactored.AI.Memory
 
         private static bool IsRealPlayer(Player player)
         {
-            return player.AIData == null || !player.AIData.IsAI;
+            return player != null && (player.AIData == null || !player.AIData.IsAI);
         }
 
         #endregion
@@ -294,11 +294,11 @@ namespace AIRefactored.AI.Memory
 
             public DangerZone(string map, Vector3 position, DangerTriggerType type, float radius, float timestamp)
             {
-                this.Map = map;
-                this.Position = position;
-                this.Type = type;
-                this.Radius = radius;
-                this.Timestamp = timestamp;
+                Map = map;
+                Position = position;
+                Type = type;
+                Radius = radius;
+                Timestamp = timestamp;
             }
         }
 
@@ -309,8 +309,8 @@ namespace AIRefactored.AI.Memory
 
             public HeardSound(Vector3 position, float time)
             {
-                this.Position = position;
-                this.Time = time;
+                Position = position;
+                Time = time;
             }
         }
 
@@ -321,8 +321,8 @@ namespace AIRefactored.AI.Memory
 
             public LastHitInfo(string attackerId, float time)
             {
-                this.AttackerId = attackerId;
-                this.Time = time;
+                AttackerId = attackerId;
+                Time = time;
             }
         }
 

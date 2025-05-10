@@ -89,7 +89,7 @@ namespace AIRefactored.AI.Core
         {
             if (bot == null)
             {
-                throw new ArgumentNullException("bot");
+                return;
             }
 
             Profile profile = bot.Profile;

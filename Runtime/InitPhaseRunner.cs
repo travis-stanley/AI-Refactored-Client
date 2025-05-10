@@ -6,7 +6,6 @@
 //   Please follow strict StyleCop, ReSharper, and AI-Refactored code standards for all modifications.
 // </auto-generated>
 
-
 namespace AIRefactored.Runtime
 {
     using System;
@@ -39,24 +38,32 @@ namespace AIRefactored.Runtime
 
             try
             {
+                WorldInitState.SetPhase(WorldPhase.PreInit);
                 logger.LogDebug("[InitPhaseRunner] 🚀 Beginning AIRefactored world initialization.");
 
                 if (!GameWorldHandler.IsReady())
                 {
                     if (FikaHeadlessDetector.IsHeadless)
                     {
-                        logger.LogWarning("[InitPhaseRunner] GameWorld not fully ready, but FIKA headless is active — forcing initialization.");
+                        logger.LogWarning("[InitPhaseRunner] GameWorld not ready, but FIKA headless is active — forcing initialization.");
                     }
                     else
                     {
-                        logger.LogWarning("[InitPhaseRunner] GameWorldHandler not ready — trying fallback init.");
+                        logger.LogWarning("[InitPhaseRunner] GameWorldHandler not ready — attempting fallback.");
                     }
                 }
+
+                WorldInitState.SetPhase(WorldPhase.AwaitWorld);
 
                 GameWorldHandler.Initialize();
                 WorldBootstrapper.Begin(logger);
 
+                WorldInitState.SetPhase(WorldPhase.WorldReady);
+
                 logger.LogDebug("[InitPhaseRunner] ✅ AIRefactored world systems initialized.");
+
+                // Final post init handoff
+                WorldInitState.SetPhase(WorldPhase.PostInit);
             }
             catch (Exception ex)
             {
@@ -70,13 +77,15 @@ namespace AIRefactored.Runtime
         /// </summary>
         public static void Stop()
         {
-            _hasStarted = false;
-
             try
             {
+                _hasStarted = false;
+                WorldInitState.Reset();
                 WorldTickDispatcher.Reset();
                 WorldBootstrapper.Stop();
-                Plugin.LoggerInstance.LogDebug("[InitPhaseRunner] 🧹 Initialization state reset.");
+                GameWorldHandler.Cleanup();
+
+                Plugin.LoggerInstance.LogDebug("[InitPhaseRunner] 🧹 Initialization state reset and memory cleaned.");
             }
             catch (Exception ex)
             {

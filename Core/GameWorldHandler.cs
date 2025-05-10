@@ -17,6 +17,7 @@ namespace AIRefactored.Core
     using AIRefactored.AI.Optimization;
     using AIRefactored.AI.Threads;
     using AIRefactored.Bootstrap;
+    using AIRefactored.Pools;
     using AIRefactored.Runtime;
     using BepInEx.Logging;
     using Comfort.Common;
@@ -41,14 +42,23 @@ namespace AIRefactored.Core
 
         public static bool IsInitialized { get; private set; }
 
-        public static bool IsSafeToInitialize =>
-            Get() != null &&
-            Get().RegisteredPlayers != null &&
-            Get().RegisteredPlayers.Count > 0;
+        public static bool IsSafeToInitialize
+        {
+            get
+            {
+                GameWorld world = TryGetGameWorld();
+                return world != null && world.RegisteredPlayers != null && world.RegisteredPlayers.Count > 0;
+            }
+        }
 
-        public static bool IsHost =>
-            Get() != null &&
-            Get().AllAlivePlayersList != null;
+        public static bool IsHost
+        {
+            get
+            {
+                GameWorld world = TryGetGameWorld();
+                return world != null && world.AllAlivePlayersList != null;
+            }
+        }
 
         public static bool IsLocalHost()
         {
@@ -57,13 +67,19 @@ namespace AIRefactored.Core
                 return true;
             }
 
-            ClientGameWorld world = Singleton<ClientGameWorld>.Instance;
-            return world != null && world.MainPlayer != null && world.MainPlayer.IsYourPlayer;
+            GameWorld world = TryGetGameWorld();
+            return world is ClientGameWorld client && client.MainPlayer != null && client.MainPlayer.IsYourPlayer;
         }
 
         public static GameWorld Get()
         {
             return CachedWorld;
+        }
+
+        public static GameWorld TryGetGameWorld()
+        {
+            GameWorld world = CachedWorld;
+            return world != null && world.RegisteredPlayers != null ? world : null;
         }
 
         private static GameWorld CachedWorld
@@ -163,7 +179,7 @@ namespace AIRefactored.Core
 
         public static bool IsReady()
         {
-            GameWorld world = Get();
+            GameWorld world = TryGetGameWorld();
 
             if (FikaHeadlessDetector.IsHeadless)
             {
@@ -189,25 +205,28 @@ namespace AIRefactored.Core
                     return;
                 }
 
-                _bootstrapHost = new GameObject("AIRefactored.BootstrapHost");
-                UnityEngine.Object.DontDestroyOnLoad(_bootstrapHost);
-
                 try
                 {
+                    _bootstrapHost = new GameObject("AIRefactored.BootstrapHost");
+                    UnityEngine.Object.DontDestroyOnLoad(_bootstrapHost);
+
                     BotRecoveryService.Reset();
                     BotSpawnWatcherService.Reset();
                     LootRuntimeWatcher.Reset();
+                    DeadBodyObserverService.Reset();
 
-                    WorldBootstrapper.RegisterSystem(BotRecoveryService.Instance);
-                    WorldBootstrapper.RegisterSystem(BotSpawnWatcherService.Instance);
-                    WorldBootstrapper.RegisterSystem(LootRuntimeWatcher.Instance);
+                    WorldBootstrapper.RegisterSystem(new BotRecoveryService());
+                    WorldBootstrapper.RegisterSystem(new BotSpawnWatcherService());
+                    WorldBootstrapper.RegisterSystem(new LootRuntimeWatcher());
+                    WorldBootstrapper.RegisterSystem(new DeadBodyObserverService());
+                    WorldBootstrapper.RegisterSystem(new HotspotRegistryBootstrapper());
+
+                    LogSafe("[GameWorldHandler] Spawn systems attached and registered.");
                 }
                 catch (Exception ex)
                 {
-                    LogSafe("[GameWorldHandler] Error injecting runtime components: " + ex);
+                    LogSafe("[GameWorldHandler] ❌ Failed to attach spawn systems: " + ex);
                 }
-
-                LogSafe("[GameWorldHandler] Spawn systems attached.");
             }
         }
 
@@ -215,25 +234,36 @@ namespace AIRefactored.Core
         {
             lock (GameWorldLock)
             {
-                if (_bootstrapHost != null)
+                try
                 {
-                    UnityEngine.Object.Destroy(_bootstrapHost);
-                    _bootstrapHost = null;
+                    if (_bootstrapHost != null)
+                    {
+                        UnityEngine.Object.Destroy(_bootstrapHost);
+                        _bootstrapHost = null;
+                    }
+
+                    KnownDeadBotIds.Clear();
+                    HotspotRegistry.Clear();
+                    LootRegistry.Clear();
+                    NavPointRegistry.Clear();
+
+                    BotRecoveryService.Reset();
+                    BotSpawnWatcherService.Reset();
+                    LootRuntimeWatcher.Reset();
+                    DeadBodyObserverService.Reset();
+
+                    _isRecovering = false;
+                    IsInitialized = false;
+
+                    LogSafe("[GameWorldHandler] 🔻 All runtime systems cleaned up.");
                 }
-
-                KnownDeadBotIds.Clear();
-                HotspotRegistry.Clear();
-                LootRegistry.Clear();
-                NavPointRegistry.Clear();
-                BotSpawnWatcherService.Reset();
-                BotRecoveryService.Reset();
-
-                _isRecovering = false;
-                IsInitialized = false;
-
-                LogSafe("[GameWorldHandler] AIRefactored systems fully shut down.");
+                catch (Exception ex)
+                {
+                    LogSafe("[GameWorldHandler] Unhook error: " + ex);
+                }
             }
         }
+
 
         public static void TryAttachBotBrain(BotOwner bot)
         {
@@ -251,7 +281,7 @@ namespace AIRefactored.Core
 
         public static void EnforceBotBrains()
         {
-            GameWorld world = Get();
+            GameWorld world = TryGetGameWorld();
             if (world == null || world.AllAlivePlayersList == null)
             {
                 return;
@@ -261,7 +291,7 @@ namespace AIRefactored.Core
             {
                 foreach (Player player in world.AllAlivePlayersList)
                 {
-                    if (player != null && player.IsAI && player.HealthController != null && player.HealthController.IsAlive)
+                    if (EFTPlayerUtil.IsValid(player) && player.HealthController.IsAlive)
                     {
                         BotOwner owner = player.GetComponent<BotOwner>();
                         if (owner != null)
@@ -283,7 +313,7 @@ namespace AIRefactored.Core
 
             _lastCleanupTime = now;
 
-            GameWorld world = Get();
+            GameWorld world = TryGetGameWorld();
             if (world == null || world.AllAlivePlayersList == null)
             {
                 return;
@@ -291,7 +321,7 @@ namespace AIRefactored.Core
 
             foreach (Player player in world.AllAlivePlayersList)
             {
-                if (player == null || !player.IsAI || player.HealthController == null || player.HealthController.IsAlive)
+                if (!EFTPlayerUtil.IsValid(player) || !player.IsAI || player.HealthController.IsAlive)
                 {
                     continue;
                 }
@@ -301,22 +331,24 @@ namespace AIRefactored.Core
                 {
                     player.gameObject.SetActive(false);
                     UnityEngine.Object.Destroy(player.gameObject, 3f);
-                    LogSafe("[GameWorldHandler] Cleaned up dead bot: " + (player.Profile != null && player.Profile.Info != null ? player.Profile.Info.Nickname : "Unnamed"));
+
+                    string nickname = player.Profile?.Info?.Nickname ?? "Unnamed";
+                    LogSafe("[GameWorldHandler] Cleaned up dead bot: " + nickname);
                 }
             }
         }
 
         public static List<Player> GetAllAlivePlayers()
         {
-            List<Player> list = new List<Player>(64);
-            GameWorld world = Get();
+            List<Player> list = TempListPool.Rent<Player>();
+            GameWorld world = TryGetGameWorld();
 
             if (world != null && world.AllAlivePlayersList != null)
             {
                 for (int i = 0; i < world.AllAlivePlayersList.Count; i++)
                 {
                     Player p = world.AllAlivePlayersList[i];
-                    if (p != null && p.HealthController != null && p.HealthController.IsAlive)
+                    if (EFTPlayerUtil.IsValid(p) && p.HealthController.IsAlive)
                     {
                         list.Add(p);
                     }
@@ -387,7 +419,7 @@ namespace AIRefactored.Core
 
         public static void Initialize()
         {
-            GameWorld world = Get();
+            GameWorld world = TryGetGameWorld();
             if (world != null)
             {
                 Initialize(world);

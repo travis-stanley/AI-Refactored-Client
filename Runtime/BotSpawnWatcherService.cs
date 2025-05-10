@@ -8,193 +8,197 @@
 
 namespace AIRefactored.Runtime
 {
-    using System;
-    using System.Collections.Generic;
-    using AIRefactored.AI;
-    using AIRefactored.AI.Core;
-    using AIRefactored.AI.Threads;
-    using AIRefactored.Bootstrap;
-    using AIRefactored.Core;
-    using BepInEx.Logging;
-    using Comfort.Common;
-    using EFT;
-    using UnityEngine;
+	using System;
+	using System.Collections.Generic;
+	using AIRefactored.AI;
+	using AIRefactored.AI.Core;
+	using AIRefactored.AI.Threads;
+	using AIRefactored.Bootstrap;
+	using AIRefactored.Core;
+	using BepInEx.Logging;
+	using Comfort.Common;
+	using EFT;
+	using UnityEngine;
 
-    /// <summary>
-    /// Static bot spawn tracker. Injects brains for new bots without using MonoBehaviours.
-    /// Called externally on update by WorldBootstrapper or BotWorkScheduler.
-    /// </summary>
-    public sealed class BotSpawnWatcherService : IAIWorldSystemBootstrapper
-    {
-        private const float PollInterval = 1.5f;
+	/// <summary>
+	/// Static bot spawn tracker. Injects brains for new bots without using MonoBehaviours.
+	/// Called externally on update by WorldBootstrapper or BotWorkScheduler.
+	/// </summary>
+	public sealed class BotSpawnWatcherService : IAIWorldSystemBootstrapper
+	{
+		private const float PollInterval = 1.5f;
 
-        private static readonly HashSet<int> SeenBotIds = new HashSet<int>();
-        private static readonly ManualLogSource Logger = Plugin.LoggerInstance;
+		private static readonly HashSet<int> SeenBotIds = new HashSet<int>();
+		private static readonly ManualLogSource Logger = Plugin.LoggerInstance;
 
-        private static float _nextPollTime = -1f;
-        private static bool _hasWarnedInvalid;
+		private static float _nextPollTime = -1f;
+		private static bool _hasWarnedInvalid;
 
-        public static BotSpawnWatcherService Instance { get; } = new BotSpawnWatcherService();
+		public void Initialize()
+		{
+			try
+			{
+				Reset();
+				Logger.LogDebug("[BotSpawnWatcher] Initialized.");
+			}
+			catch (Exception ex)
+			{
+				Logger.LogError("[BotSpawnWatcher] Initialize failed: " + ex);
+			}
+		}
 
-        public void Initialize()
-        {
-            try
-            {
-                Reset();
-                Logger.LogDebug("[BotSpawnWatcher] Initialized.");
-            }
-            catch (Exception ex)
-            {
-                Logger.LogError("[BotSpawnWatcher] Initialize failed: " + ex);
-            }
-        }
+		public void Tick(float deltaTime)
+		{
+			try
+			{
+				if (!FikaHeadlessDetector.IsReady || !GameWorldHandler.IsSafeToInitialize || !GameWorldHandler.IsInitialized || !GameWorldHandler.IsLocalHost())
+				{
+					return;
+				}
 
-        public void Tick(float deltaTime)
-        {
-            try
-            {
-                if (!FikaHeadlessDetector.IsReady || !GameWorldHandler.IsSafeToInitialize || !GameWorldHandler.IsInitialized || !GameWorldHandler.IsLocalHost())
-                {
-                    return;
-                }
+				if (!GameWorldHandler.IsReady())
+				{
+					if (!_hasWarnedInvalid)
+					{
+						Logger.LogWarning("[BotSpawnWatcher] GameWorld not ready — deferring.");
+						_hasWarnedInvalid = true;
+					}
 
-                if (!GameWorldHandler.IsReady())
-                {
-                    if (!_hasWarnedInvalid)
-                    {
-                        Logger.LogWarning("[BotSpawnWatcher] GameWorld not ready — deferring.");
-                        _hasWarnedInvalid = true;
-                    }
+					return;
+				}
 
-                    return;
-                }
+				if (_hasWarnedInvalid)
+				{
+					Logger.LogDebug("[BotSpawnWatcher] World is now ready. Resuming.");
+					_hasWarnedInvalid = false;
+				}
 
-                if (_hasWarnedInvalid)
-                {
-                    Logger.LogDebug("[BotSpawnWatcher] World is now ready. Resuming.");
-                    _hasWarnedInvalid = false;
-                }
+				float now = Time.time;
+				if (now < _nextPollTime)
+				{
+					return;
+				}
 
-                float now = Time.time;
-                if (now < _nextPollTime)
-                {
-                    return;
-                }
+				_nextPollTime = now + PollInterval;
 
-                _nextPollTime = now + PollInterval;
+				List<Player> players = GameWorldHandler.GetAllAlivePlayers();
+				int count = players.Count;
+				if (count == 0)
+				{
+					return;
+				}
 
-                List<Player> players = GameWorldHandler.GetAllAlivePlayers();
-                int count = players.Count;
-                if (count == 0)
-                {
-                    return;
-                }
+				for (int i = 0; i < count; i++)
+				{
+					Player player = players[i];
+					if (!EFTPlayerUtil.IsValid(player) || !player.IsAI || player.gameObject == null)
+					{
+						continue;
+					}
 
-                for (int i = 0; i < count; i++)
-                {
-                    Player player = players[i];
-                    if (player == null || !player.IsAI || player.gameObject == null)
-                    {
-                        continue;
-                    }
+					GameObject go = player.gameObject;
+					int id = go.GetInstanceID();
+					if (!SeenBotIds.Add(id))
+					{
+						continue;
+					}
 
-                    GameObject go = player.gameObject;
-                    int id = go.GetInstanceID();
-                    if (!SeenBotIds.Add(id))
-                    {
-                        continue;
-                    }
+					BotBrain existingBrain = go.GetComponent<BotBrain>();
+					if (existingBrain != null)
+					{
+						if (!existingBrain.enabled)
+						{
+							existingBrain.enabled = true;
+							Logger.LogWarning("[BotSpawnWatcher] Re-enabled disabled brain: " + player.ProfileId);
+						}
 
-                    BotBrain brain = go.GetComponent<BotBrain>();
-                    if (brain != null)
-                    {
-                        if (!brain.enabled)
-                        {
-                            brain.enabled = true;
-                            Logger.LogWarning("[BotSpawnWatcher] Re-enabled disabled brain: " + player.ProfileId);
-                        }
+						continue;
+					}
 
-                        continue;
-                    }
+					if (player.AIData == null || player.Profile == null || player.Profile.Info == null)
+					{
+						Logger.LogWarning("[BotSpawnWatcher] Skipped bot — missing AIData or Profile: " + player.name);
+						continue;
+					}
 
-                    if (player.AIData == null || player.Profile == null)
-                    {
-                        Logger.LogWarning("[BotSpawnWatcher] Skipped bot — missing AIData or Profile: " + player.name);
-                        continue;
-                    }
+					BotOwner owner = player.AIData.BotOwner;
+					if (owner == null)
+					{
+						Logger.LogWarning("[BotSpawnWatcher] Skipped bot — AIData.BotOwner is null: " + player.name);
+						continue;
+					}
 
-                    BotOwner owner = player.AIData.BotOwner;
-                    if (owner == null)
-                    {
-                        Logger.LogWarning("[BotSpawnWatcher] Skipped bot — AIData.BotOwner is null: " + player.name);
-                        continue;
-                    }
+					try
+					{
+						string profileId = player.Profile.Id;
+						if (string.IsNullOrEmpty(profileId))
+						{
+							Logger.LogWarning("[BotSpawnWatcher] Skipped bot — null ProfileId: " + player.name);
+							continue;
+						}
 
-                    try
-                    {
-                        string profileId = player.Profile.Id;
-                        WildSpawnType role = player.Profile.Info != null && player.Profile.Info.Settings != null
-                            ? player.Profile.Info.Settings.Role
-                            : WildSpawnType.assault;
+						WildSpawnType role = player.Profile.Info.Settings != null
+							? player.Profile.Info.Settings.Role
+							: WildSpawnType.assault;
 
-                        BotPersonalityProfile personality = BotRegistry.GetOrGenerate(profileId, PersonalityType.Balanced, role);
-                        BotRegistry.Register(profileId, personality);
+						BotPersonalityProfile profile = BotRegistry.GetOrGenerate(profileId, PersonalityType.Balanced, role);
+						BotRegistry.Register(profileId, profile);
 
-                        BotBrain newBrain = go.AddComponent<BotBrain>();
-                        newBrain.Initialize(owner);
+						BotBrain brain = go.AddComponent<BotBrain>();
+						brain.enabled = true;
+						brain.Initialize(owner);
 
-                        string nickname = player.Profile.Info != null ? player.Profile.Info.Nickname : "Unnamed";
-                        Logger.LogDebug("[BotSpawnWatcher] ✅ Brain injected for bot: " + nickname);
-                    }
-                    catch (Exception ex)
-                    {
-                        string name = player.Profile != null && player.Profile.Info != null ? player.Profile.Info.Nickname : "Unknown";
-                        Logger.LogError("[BotSpawnWatcher] ❌ Brain injection failed for: " + name + " — " + ex);
-                    }
-                }
-            }
-            catch (Exception ex)
-            {
-                Logger.LogError("[BotSpawnWatcher] Tick error: " + ex);
-            }
-        }
+						Logger.LogDebug("[BotSpawnWatcher] ✅ Brain injected for bot: " + (player.Profile.Info.Nickname ?? "Unnamed"));
+					}
+					catch (Exception ex)
+					{
+						string name = player.Profile?.Info?.Nickname ?? "Unknown";
+						Logger.LogError("[BotSpawnWatcher] ❌ Brain injection failed for: " + name + " — " + ex);
+					}
+				}
+			}
+			catch (Exception ex)
+			{
+				Logger.LogError("[BotSpawnWatcher] Tick error: " + ex);
+			}
+		}
 
-        public void OnRaidEnd()
-        {
-            try
-            {
-                Reset();
-            }
-            catch (Exception ex)
-            {
-                Logger.LogError("[BotSpawnWatcher] OnRaidEnd error: " + ex);
-            }
-        }
+		public void OnRaidEnd()
+		{
+			try
+			{
+				Reset();
+			}
+			catch (Exception ex)
+			{
+				Logger.LogError("[BotSpawnWatcher] OnRaidEnd error: " + ex);
+			}
+		}
 
-        public static void Reset()
-        {
-            SeenBotIds.Clear();
-            _nextPollTime = -1f;
-            _hasWarnedInvalid = false;
+		public static void Reset()
+		{
+			SeenBotIds.Clear();
+			_nextPollTime = -1f;
+			_hasWarnedInvalid = false;
 
-            try
-            {
-                Logger.LogDebug("[BotSpawnWatcher] Reset.");
-            }
-            catch
-            {
-                // Silent fail: logger not ready during shutdown
-            }
-        }
+			try
+			{
+				Logger.LogDebug("[BotSpawnWatcher] Reset.");
+			}
+			catch
+			{
+				// Silent fail: logger not ready during shutdown
+			}
+		}
 
-        public bool IsReady()
-        {
-            return true;
-        }
+		public bool IsReady()
+		{
+			return true;
+		}
 
-        public WorldPhase RequiredPhase()
-        {
-            return WorldPhase.WorldReady;
-        }
-    }
+		public WorldPhase RequiredPhase()
+		{
+			return WorldPhase.WorldReady;
+		}
+	}
 }

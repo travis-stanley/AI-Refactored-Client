@@ -8,236 +8,253 @@
 
 namespace AIRefactored.Runtime
 {
-    using System;
-    using System.Collections.Generic;
-    using AIRefactored.AI.Core;
-    using AIRefactored.AI.Hotspots;
-    using AIRefactored.AI.Looting;
-    using AIRefactored.AI.Navigation;
-    using AIRefactored.AI.Threads;
-    using AIRefactored.Bootstrap;
-    using AIRefactored.Core;
-    using BepInEx.Logging;
-    using Comfort.Common;
-    using EFT;
-    using EFT.Game.Spawning;
-    using UnityEngine;
+	using System;
+	using System.Collections.Generic;
+	using AIRefactored.AI.Core;
+	using AIRefactored.AI.Hotspots;
+	using AIRefactored.AI.Looting;
+	using AIRefactored.AI.Navigation;
+	using AIRefactored.AI.Threads;
+	using AIRefactored.Bootstrap;
+	using AIRefactored.Core;
+	using BepInEx.Logging;
+	using Comfort.Common;
+	using EFT;
+	using EFT.Game.Spawning;
+	using UnityEngine;
 
-    /// <summary>
-    /// Monitors GameWorld state and ensures AIRefactored systems remain functional across sessions.
-    /// Called externally by WorldBootstrapper, tick scheduler, or raid monitor.
-    /// </summary>
-    public sealed class BotRecoveryService : IAIWorldSystemBootstrapper
-    {
-        private const float TickInterval = 5f;
+	/// <summary>
+	/// Monitors GameWorld state and ensures AIRefactored systems remain functional across sessions.
+	/// Called externally by WorldBootstrapper, tick scheduler, or raid monitor.
+	/// </summary>
+	public sealed class BotRecoveryService : IAIWorldSystemBootstrapper
+	{
+		#region Constants
 
-        private static readonly ManualLogSource Logger = Plugin.LoggerInstance;
+		private const float TickInterval = 5f;
 
-        private static float _nextTick = -1f;
-        private static bool _hasWarnedMissingWorld;
-        private static bool _hasRescanned;
-        private static bool _hasInitialized;
+		#endregion
 
-        public static BotRecoveryService Instance { get; } = new BotRecoveryService();
+		#region Fields
 
-        public void Initialize()
-        {
-            try
-            {
-                Reset();
-                _hasInitialized = true;
-                Logger.LogDebug("[BotRecoveryService] Initialized.");
-            }
-            catch (Exception ex)
-            {
-                Logger.LogError("[BotRecoveryService] Initialize failed: " + ex);
-            }
-        }
+		private static readonly ManualLogSource Logger = Plugin.LoggerInstance;
 
-        public void Tick(float deltaTime)
-        {
-            try
-            {
-                if (!_hasInitialized || !GameWorldHandler.IsLocalHost() || !GameWorldHandler.IsSafeToInitialize)
-                {
-                    return;
-                }
+		private static float _nextTickTime = -1f;
+		private static bool _hasWarned;
+		private static bool _hasRescanned;
+		private static bool _hasInitialized;
 
-                float now = Time.time;
-                if (now < _nextTick)
-                {
-                    return;
-                }
+		public static BotRecoveryService Instance { get; } = new BotRecoveryService();
 
-                _nextTick = now + TickInterval;
+		#endregion
 
-                GameWorld world = GameWorldHandler.Get();
-                if (world == null || !GameWorldHandler.IsReady())
-                {
-                    if (!_hasWarnedMissingWorld)
-                    {
-                        Logger.LogWarning("[BotRecoveryService] GameWorld not ready.");
-                        _hasWarnedMissingWorld = true;
-                    }
+		#region Initialization
 
-                    return;
-                }
+		public void Initialize()
+		{
+			try
+			{
+				Reset();
+				_hasInitialized = true;
+				Logger.LogDebug("[BotRecoveryService] Initialized.");
+			}
+			catch (Exception ex)
+			{
+				Logger.LogError("[BotRecoveryService] Initialize failed: " + ex);
+			}
+		}
 
-                if (_hasWarnedMissingWorld)
-                {
-                    Logger.LogDebug("[BotRecoveryService] GameWorld recovered.");
-                    _hasWarnedMissingWorld = false;
-                }
+		public void OnRaidEnd()
+		{
+			try
+			{
+				Reset();
+				_hasInitialized = false;
+				Logger.LogDebug("[BotRecoveryService] Reset on raid end.");
+			}
+			catch (Exception ex)
+			{
+				Logger.LogError("[BotRecoveryService] OnRaidEnd error: " + ex);
+			}
+		}
 
-                EnsureSpawnHook();
+		public bool IsReady()
+		{
+			return _hasInitialized && GameWorldHandler.IsLocalHost() && GameWorldHandler.IsReady();
+		}
 
-                List<Player> players = world.AllAlivePlayersList;
-                if (players != null && players.Count > 0)
-                {
-                    ValidateBotBrains(players);
-                }
-            }
-            catch (Exception ex)
-            {
-                Logger.LogError("[BotRecoveryService] Tick error: " + ex);
-            }
-        }
+		public WorldPhase RequiredPhase()
+		{
+			return WorldPhase.WorldReady;
+		}
 
-        public void OnRaidEnd()
-        {
-            try
-            {
-                Reset();
-                _hasInitialized = false;
-                Logger.LogDebug("[BotRecoveryService] Reset on raid end.");
-            }
-            catch (Exception ex)
-            {
-                Logger.LogError("[BotRecoveryService] OnRaidEnd error: " + ex);
-            }
-        }
+		public static void Reset()
+		{
+			_nextTickTime = -1f;
+			_hasWarned = false;
+			_hasRescanned = false;
+		}
 
-        public static void Reset()
-        {
-            _nextTick = -1f;
-            _hasWarnedMissingWorld = false;
-            _hasRescanned = false;
-        }
+		#endregion
 
-        public bool IsReady()
-        {
-            return _hasInitialized && GameWorldHandler.IsLocalHost() && GameWorldHandler.IsReady();
-        }
+		#region Ticking
 
-        public WorldPhase RequiredPhase()
-        {
-            return WorldPhase.WorldReady;
-        }
+		public void Tick(float deltaTime)
+		{
+			try
+			{
+				if (!_hasInitialized || !GameWorldHandler.IsLocalHost() || !GameWorldHandler.IsSafeToInitialize)
+				{
+					return;
+				}
 
-        private static void EnsureSpawnHook()
-        {
-            try
-            {
-                if (!Singleton<BotSpawner>.Instantiated)
-                {
-                    return;
-                }
+				float now = Time.time;
+				if (now < _nextTickTime)
+				{
+					return;
+				}
 
-                BotSpawner spawner = Singleton<BotSpawner>.Instance;
-                spawner.OnBotCreated -= GameWorldHandler.TryAttachBotBrain;
-                spawner.OnBotCreated += GameWorldHandler.TryAttachBotBrain;
-            }
-            catch (Exception ex)
-            {
-                Logger.LogError("[BotRecoveryService] EnsureSpawnHook error: " + ex);
-            }
-        }
+				_nextTickTime = now + TickInterval;
 
-        private static void ValidateBotBrains(List<Player> players)
-        {
-            try
-            {
-                int count = players.Count;
-                for (int i = 0; i < count; i++)
-                {
-                    Player player = players[i];
-                    if (player == null || !player.IsAI || player.gameObject == null)
-                    {
-                        continue;
-                    }
+				GameWorld world = GameWorldHandler.Get();
+				if (world == null || !GameWorldHandler.IsReady())
+				{
+					if (!_hasWarned)
+					{
+						Logger.LogWarning("[BotRecoveryService] GameWorld not ready.");
+						_hasWarned = true;
+					}
 
-                    GameObject go = player.gameObject;
-                    BotBrain brain = go.GetComponent<BotBrain>();
-                    if (brain != null)
-                    {
-                        if (!brain.enabled)
-                        {
-                            brain.enabled = true;
-                            Logger.LogWarning("[BotRecoveryService] Re-enabled disabled brain: " + player.ProfileId);
-                        }
+					return;
+				}
 
-                        continue;
-                    }
+				if (_hasWarned)
+				{
+					Logger.LogDebug("[BotRecoveryService] GameWorld recovered.");
+					_hasWarned = false;
+				}
 
-                    string name = player.Profile != null ? player.Profile.Info?.Nickname ?? "Unnamed" : "Unnamed";
-                    Logger.LogWarning("[BotRecoveryService] Bot missing brain — restoring: " + name);
+				EnsureSpawnHook();
 
-                    BotBrainGuardian.Enforce(go);
+				List<Player> players = world.AllAlivePlayersList;
+				if (players != null && players.Count > 0)
+				{
+					ValidateBotBrains(players);
+				}
+			}
+			catch (Exception ex)
+			{
+				Logger.LogError("[BotRecoveryService] Tick error: " + ex);
+			}
+		}
 
-                    if (player.AIData != null && player.AIData.BotOwner != null)
-                    {
-                        try
-                        {
-                            GameWorldHandler.TryAttachBotBrain(player.AIData.BotOwner);
-                        }
-                        catch (Exception ex)
-                        {
-                            Logger.LogError("[BotRecoveryService] Error attaching BotBrain to BotOwner: " + ex);
-                        }
-                    }
+		#endregion
 
-                    if (!_hasRescanned)
-                    {
-                        _hasRescanned = true;
-                        RescanWorld();
-                    }
-                }
-            }
-            catch (Exception ex)
-            {
-                Logger.LogError("[BotRecoveryService] ValidateBotBrains failed: " + ex);
-            }
-        }
+		#region Helpers
 
-        private static void RescanWorld()
-        {
-            try
-            {
-                string mapId = GameWorldHandler.TryGetValidMapName();
-                if (string.IsNullOrEmpty(mapId))
-                {
-                    Logger.LogWarning("[BotRecoveryService] Rescan aborted — invalid mapId.");
-                    return;
-                }
+		private static void EnsureSpawnHook()
+		{
+			try
+			{
+				if (!Singleton<BotSpawner>.Instantiated)
+				{
+					return;
+				}
 
-                Logger.LogDebug("[BotRecoveryService] Rescanning world: " + mapId);
+				BotSpawner spawner = Singleton<BotSpawner>.Instance;
+				spawner.OnBotCreated -= GameWorldHandler.TryAttachBotBrain;
+				spawner.OnBotCreated += GameWorldHandler.TryAttachBotBrain;
+			}
+			catch (Exception ex)
+			{
+				Logger.LogError("[BotRecoveryService] EnsureSpawnHook error: " + ex);
+			}
+		}
 
-                HotspotRegistry.Clear();
-                HotspotRegistry.Initialize(mapId);
+		private static void ValidateBotBrains(List<Player> players)
+		{
+			try
+			{
+				for (int i = 0; i < players.Count; i++)
+				{
+					Player player = players[i];
+					if (player == null || !player.IsAI || player.gameObject == null)
+					{
+						continue;
+					}
 
-                LootRegistry.Clear();
-                LootBootstrapper.RegisterAllLoot();
-                BotDeadBodyScanner.ScanAll();
+					GameObject go = player.gameObject;
+					BotBrain brain = go.GetComponent<BotBrain>();
+					if (brain != null)
+					{
+						if (!brain.enabled)
+						{
+							brain.enabled = true;
+							Logger.LogWarning("[BotRecoveryService] Re-enabled disabled BotBrain for: " + player.ProfileId);
+						}
 
-                NavPointRegistry.Clear();
-                NavPointRegistry.RegisterAll(mapId);
+						continue;
+					}
 
-                Logger.LogDebug("[BotRecoveryService] Rescan complete.");
-            }
-            catch (Exception ex)
-            {
-                Logger.LogError("[BotRecoveryService] RescanWorld error: " + ex);
-            }
-        }
-    }
+					Logger.LogWarning("[BotRecoveryService] Bot missing brain — restoring: " + (player.Profile?.Info?.Nickname ?? "Unnamed"));
+					BotBrainGuardian.Enforce(go);
+
+					if (player.AIData != null && player.AIData.BotOwner != null)
+					{
+						try
+						{
+							GameWorldHandler.TryAttachBotBrain(player.AIData.BotOwner);
+						}
+						catch (Exception ex)
+						{
+							Logger.LogError("[BotRecoveryService] Error attaching BotBrain to BotOwner: " + ex);
+						}
+					}
+
+					if (!_hasRescanned)
+					{
+						_hasRescanned = true;
+						RescanWorld();
+					}
+				}
+			}
+			catch (Exception ex)
+			{
+				Logger.LogError("[BotRecoveryService] ValidateBotBrains error: " + ex);
+			}
+		}
+
+		private static void RescanWorld()
+		{
+			try
+			{
+				string mapId = GameWorldHandler.TryGetValidMapName();
+				if (string.IsNullOrEmpty(mapId))
+				{
+					Logger.LogWarning("[BotRecoveryService] Rescan aborted — invalid mapId.");
+					return;
+				}
+
+				Logger.LogDebug("[BotRecoveryService] Rescanning world: " + mapId);
+
+				HotspotRegistry.Clear();
+				HotspotRegistry.Initialize(mapId);
+
+				LootRegistry.Clear();
+				LootBootstrapper.RegisterAllLoot();
+				BotDeadBodyScanner.ScanAll();
+
+				NavPointRegistry.Clear();
+				NavPointRegistry.RegisterAll(mapId);
+
+				Logger.LogDebug("[BotRecoveryService] Rescan complete.");
+			}
+			catch (Exception ex)
+			{
+				Logger.LogError("[BotRecoveryService] RescanWorld error: " + ex);
+			}
+		}
+
+		#endregion
+	}
 }

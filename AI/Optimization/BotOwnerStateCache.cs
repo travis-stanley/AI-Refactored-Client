@@ -23,9 +23,6 @@ namespace AIRefactored.AI.Optimization
     {
         private readonly Dictionary<string, BotStateSnapshot> _cache = new Dictionary<string, BotStateSnapshot>(64);
 
-        /// <summary>
-        /// Captures the bot's personality state into the cache at mission start.
-        /// </summary>
         public void CacheBotOwnerState(BotOwner botOwner)
         {
             if (!IsValidBot(botOwner))
@@ -40,9 +37,6 @@ namespace AIRefactored.AI.Optimization
             }
         }
 
-        /// <summary>
-        /// Checks for personality state changes and applies behavior adjustments if needed.
-        /// </summary>
         public void UpdateBotOwnerStateIfNeeded(BotOwner botOwner)
         {
             if (!IsValidBot(botOwner))
@@ -123,12 +117,13 @@ namespace AIRefactored.AI.Optimization
 
         private static void TriggerZoneShift(BotOwner botOwner, bool? advance)
         {
-            if (botOwner.Transform == null)
+            if (botOwner?.Transform == null)
             {
                 return;
             }
 
             Vector3 shift = Vector3.zero;
+
             if (advance == true)
             {
                 shift = botOwner.Transform.forward * 8f;

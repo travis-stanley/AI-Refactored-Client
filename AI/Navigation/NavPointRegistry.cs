@@ -21,18 +21,12 @@ namespace AIRefactored.AI.Navigation
     /// </summary>
     public static class NavPointRegistry
     {
-        #region Fields
-
         private static readonly List<NavPoint> Points = new List<NavPoint>(512);
         private static readonly HashSet<Vector3> Unique = new HashSet<Vector3>();
         private static QuadtreeNavGrid _quadtree;
         private static bool _useQuadtree;
 
         private static ManualLogSource Logger => Plugin.LoggerInstance;
-
-        #endregion
-
-        #region Lifecycle
 
         public static int Count => Points.Count;
 
@@ -72,10 +66,6 @@ namespace AIRefactored.AI.Navigation
 
             NavPointBootstrapper.RegisterAll(mapId);
         }
-
-        #endregion
-
-        #region Registration
 
         public static void Register(Vector3 pos, bool isCover = false, string tag = "generic", float elevation = 0f, bool isIndoor = false, bool isJumpable = false, float coverAngle = 0f)
         {
@@ -128,10 +118,6 @@ namespace AIRefactored.AI.Navigation
 
             Logger.LogDebug("[NavPointRegistry] Refreshed nav points near: " + center.ToString("F1"));
         }
-
-        #endregion
-
-        #region Queries
 
         public static bool IsRegistered(Vector3 pos) => Unique.Contains(pos);
         public static bool IsCoverPoint(Vector3 pos) => TryGetPoint(pos, out var p) && p.IsCover;
@@ -223,10 +209,6 @@ namespace AIRefactored.AI.Navigation
             return result;
         }
 
-        #endregion
-
-        #region Internals
-
         private static bool TryGetPoint(Vector3 pos, out NavPoint point)
         {
             for (int i = 0; i < Points.Count; i++)
@@ -316,7 +298,5 @@ namespace AIRefactored.AI.Navigation
             public string Zone { get; }
             public string ElevationBand { get; }
         }
-
-        #endregion
     }
 }

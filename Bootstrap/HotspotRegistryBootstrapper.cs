@@ -6,77 +6,90 @@
 //   Please follow strict StyleCop, ReSharper, and AI-Refactored code standards for all modifications.
 // </auto-generated>
 
-
 namespace AIRefactored.Bootstrap
 {
+    using System;
     using AIRefactored.AI.Core;
     using AIRefactored.AI.Hotspots;
     using AIRefactored.Core;
-    using UnityEngine;
+    using BepInEx.Logging;
 
     /// <summary>
     /// Bootstraps the HotspotRegistry system and manages its lifecycle per raid.
     /// </summary>
     public sealed class HotspotRegistryBootstrapper : IAIWorldSystemBootstrapper
     {
+        private static readonly ManualLogSource Logger = Plugin.LoggerInstance;
         private bool _isInitialized;
 
-        /// <summary>
-        /// Initializes the HotspotRegistry with the current map ID if valid.
-        /// </summary>
+        /// <inheritdoc />
         public void Initialize()
         {
             _isInitialized = false;
-            HotspotRegistry.Clear();
 
-            if (!GameWorldHandler.IsSafeToInitialize)
+            try
             {
-                return;
-            }
+                HotspotRegistry.Clear();
 
-            string mapId = GameWorldHandler.TryGetValidMapName();
-            if (string.IsNullOrEmpty(mapId) || mapId == "unknown")
+                if (!GameWorldHandler.IsSafeToInitialize)
+                {
+                    Logger.LogWarning("[HotspotRegistry] Skipped init — world not ready.");
+                    return;
+                }
+
+                string mapId = GameWorldHandler.TryGetValidMapName();
+                if (string.IsNullOrEmpty(mapId) || mapId == "unknown")
+                {
+                    Logger.LogWarning("[HotspotRegistry] Skipped init — invalid map ID.");
+                    return;
+                }
+
+                HotspotRegistry.Initialize(mapId);
+                _isInitialized = true;
+
+                Logger.LogDebug("[HotspotRegistry] ✅ Initialized for map: " + mapId);
+            }
+            catch (Exception ex)
             {
-                Plugin.LoggerInstance.LogWarning("[HotspotRegistry] Initialization skipped — invalid or unknown map ID.");
-                return;
+                Logger.LogError("[HotspotRegistry] Initialize failed: " + ex);
             }
-
-            HotspotRegistry.Initialize(mapId);
-            _isInitialized = true;
-
-            Plugin.LoggerInstance.LogDebug("[HotspotRegistry] Initialized successfully for map: " + mapId);
         }
 
-        /// <summary>
-        /// Hotspot systems are static and do not tick.
-        /// </summary>
-        /// <param name="deltaTime">Unused delta time.</param>
+        /// <inheritdoc />
         public void Tick(float deltaTime)
         {
+            try
+            {
+                // No runtime logic yet; reserved for future validation or dynamic linking.
+            }
+            catch (Exception ex)
+            {
+                Logger.LogError("[HotspotRegistry] Tick() error: " + ex);
+            }
         }
 
-        /// <summary>
-        /// Clears all hotspot data when the raid ends.
-        /// </summary>
+        /// <inheritdoc />
         public void OnRaidEnd()
         {
-            HotspotRegistry.Clear();
-            _isInitialized = false;
+            try
+            {
+                HotspotRegistry.Clear();
+                _isInitialized = false;
+                Logger.LogDebug("[HotspotRegistry] 🔻 Cleared on raid end.");
+            }
+            catch (Exception ex)
+            {
+                Logger.LogError("[HotspotRegistry] OnRaidEnd() error: " + ex);
+            }
         }
 
-        /// <summary>
-        /// Returns whether the HotspotRegistry is active and ready for queries.
-        /// </summary>
-        /// <returns>True if initialized and ready; otherwise, false.</returns>
+        /// <inheritdoc />
         public bool IsReady()
         {
             return _isInitialized;
         }
 
-        /// <summary>
-        /// Specifies the world phase at which this system should be initialized.
-        /// </summary>
-        /// <returns>The required world phase for initialization.</returns>
+        /// <inheritdoc />
         public WorldPhase RequiredPhase()
         {
             return WorldPhase.WorldReady;

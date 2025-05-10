@@ -10,6 +10,7 @@ namespace AIRefactored.AI.Looting
 {
     using System;
     using System.Collections.Generic;
+    using AIRefactored.Pools;
     using AIRefactored.Runtime;
     using BepInEx.Logging;
     using EFT.Interactive;
@@ -22,8 +23,6 @@ namespace AIRefactored.AI.Looting
     /// </summary>
     public static class LootRegistry
     {
-        #region Internal Structs
-
         private struct TrackedContainer
         {
             public LootableContainer Container;
@@ -38,27 +37,10 @@ namespace AIRefactored.AI.Looting
             public float LastSeenTime;
         }
 
-        #endregion
-
-        #region Buffers
-
-        private static readonly List<TrackedContainer> ContainerBuffer = new List<TrackedContainer>(32);
-        private static readonly List<TrackedItem> ItemBuffer = new List<TrackedItem>(64);
-        private static readonly List<LootableContainer> ContainerResultBuffer = new List<LootableContainer>(32);
-        private static readonly List<LootItem> ItemResultBuffer = new List<LootItem>(64);
-
-        #endregion
-
-        #region State
-
         private static readonly Dictionary<LootableContainer, TrackedContainer> Containers = new Dictionary<LootableContainer, TrackedContainer>(64);
         private static readonly Dictionary<LootItem, TrackedItem> Items = new Dictionary<LootItem, TrackedItem>(128);
         private static readonly HashSet<int> WatchedInstanceIds = new HashSet<int>();
         private static readonly ManualLogSource Logger = Plugin.LoggerInstance;
-
-        #endregion
-
-        #region Public API
 
         public static void Initialize()
         {
@@ -72,45 +54,39 @@ namespace AIRefactored.AI.Looting
             Containers.Clear();
             Items.Clear();
             WatchedInstanceIds.Clear();
-            ContainerBuffer.Clear();
-            ItemBuffer.Clear();
-            ContainerResultBuffer.Clear();
-            ItemResultBuffer.Clear();
         }
 
         public static List<LootableContainer> GetAllContainers()
         {
-            ContainerResultBuffer.Clear();
-
+            var list = TempListPool.Rent<LootableContainer>();
             foreach (var kv in Containers)
             {
                 if (kv.Key != null)
                 {
-                    ContainerResultBuffer.Add(kv.Key);
+                    list.Add(kv.Key);
                 }
             }
 
-            return ContainerResultBuffer;
+            return list;
         }
 
         public static List<LootItem> GetAllItems()
         {
-            ItemResultBuffer.Clear();
-
+            var list = TempListPool.Rent<LootItem>();
             foreach (var kv in Items)
             {
                 if (kv.Key != null)
                 {
-                    ItemResultBuffer.Add(kv.Key);
+                    list.Add(kv.Key);
                 }
             }
 
-            return ItemResultBuffer;
+            return list;
         }
 
         public static List<LootableContainer> GetNearbyContainers(Vector3 origin, float radius)
         {
-            ContainerResultBuffer.Clear();
+            var result = TempListPool.Rent<LootableContainer>();
             float radiusSqr = radius * radius;
 
             foreach (var kv in Containers)
@@ -124,16 +100,16 @@ namespace AIRefactored.AI.Looting
                 Vector3 pos = tf.position;
                 if ((pos - origin).sqrMagnitude <= radiusSqr)
                 {
-                    ContainerResultBuffer.Add(kv.Value.Container);
+                    result.Add(kv.Value.Container);
                 }
             }
 
-            return ContainerResultBuffer;
+            return result;
         }
 
         public static List<LootItem> GetNearbyItems(Vector3 origin, float radius)
         {
-            ItemResultBuffer.Clear();
+            var result = TempListPool.Rent<LootItem>();
             float radiusSqr = radius * radius;
 
             foreach (var kv in Items)
@@ -147,11 +123,11 @@ namespace AIRefactored.AI.Looting
                 Vector3 pos = tf.position;
                 if ((pos - origin).sqrMagnitude <= radiusSqr)
                 {
-                    ItemResultBuffer.Add(kv.Value.Item);
+                    result.Add(kv.Value.Item);
                 }
             }
 
-            return ItemResultBuffer;
+            return result;
         }
 
         public static void RegisterContainer(LootableContainer container)
@@ -258,13 +234,9 @@ namespace AIRefactored.AI.Looting
         {
             float cutoff = Time.time - olderThanSeconds;
 
-            Containers.RemoveWhere(pair => pair.Value.LastSeenTime < cutoff);
-            Items.RemoveWhere(pair => pair.Value.LastSeenTime < cutoff);
+            RemoveWhere(Containers, kv => kv.Value.LastSeenTime < cutoff);
+            RemoveWhere(Items, kv => kv.Value.LastSeenTime < cutoff);
         }
-
-        #endregion
-
-        #region Internal Logic
 
         private static void InjectWatcherIfNeeded(GameObject go)
         {
@@ -283,30 +255,27 @@ namespace AIRefactored.AI.Looting
             LootRuntimeWatcher.Register(go);
         }
 
-        #endregion
-    }
-
-    internal static class DictionaryRemoveWhereExtensions
-    {
-        public static void RemoveWhere<TKey, TValue>(this Dictionary<TKey, TValue> dict, Func<KeyValuePair<TKey, TValue>, bool> predicate)
+        private static void RemoveWhere<TKey, TValue>(Dictionary<TKey, TValue> dict, Func<KeyValuePair<TKey, TValue>, bool> predicate)
         {
-            if (dict == null || predicate == null)
+            var toRemove = TempListPool.Rent<TKey>();
+            try
             {
-                return;
-            }
-
-            List<TKey> toRemove = new List<TKey>();
-            foreach (KeyValuePair<TKey, TValue> kv in dict)
-            {
-                if (predicate(kv))
+                foreach (var kv in dict)
                 {
-                    toRemove.Add(kv.Key);
+                    if (predicate(kv))
+                    {
+                        toRemove.Add(kv.Key);
+                    }
+                }
+
+                for (int i = 0; i < toRemove.Count; i++)
+                {
+                    dict.Remove(toRemove[i]);
                 }
             }
-
-            for (int i = 0; i < toRemove.Count; i++)
+            finally
             {
-                dict.Remove(toRemove[i]);
+                TempListPool.Return(toRemove);
             }
         }
     }

@@ -23,6 +23,7 @@ namespace AIRefactored.AI.Core
 
         /// <summary>
         /// Called every frame after initialization for system logic updates.
+        /// Implementers must wrap logic in try/catch and validate state for null-safety.
         /// </summary>
         /// <param name="deltaTime">The time delta (in seconds) since the last tick.</param>
         void Tick(float deltaTime);

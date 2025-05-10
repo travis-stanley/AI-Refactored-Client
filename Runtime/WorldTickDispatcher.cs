@@ -9,6 +9,7 @@
 namespace AIRefactored.Runtime
 {
     using System;
+    using AIRefactored.AI.Core;
     using AIRefactored.Bootstrap;
     using AIRefactored.Core;
     using BepInEx.Logging;
@@ -26,10 +27,7 @@ namespace AIRefactored.Runtime
         private static TickHost _monoHost;
         private static bool _isActive;
 
-        private static ManualLogSource Logger
-        {
-            get { return Plugin.LoggerInstance; }
-        }
+        private static ManualLogSource Logger => Plugin.LoggerInstance;
 
         #endregion
 
@@ -40,7 +38,7 @@ namespace AIRefactored.Runtime
         /// </summary>
         public static void Initialize()
         {
-            if (_isActive && _host != null && _monoHost != null)
+            if (_isActive || _host != null || _monoHost != null)
             {
                 return;
             }
@@ -127,12 +125,20 @@ namespace AIRefactored.Runtime
 
         /// <summary>
         /// Internal MonoBehaviour host that drives frame-based ticking.
+        /// Used in all modes — traditional or headless client.
         /// </summary>
         private sealed class TickHost : MonoBehaviour
         {
             private void Update()
             {
-                WorldTickDispatcher.Tick(Time.deltaTime);
+                try
+                {
+                    WorldTickDispatcher.Tick(Time.deltaTime);
+                }
+                catch (Exception ex)
+                {
+                    Logger.LogError("[WorldTickDispatcher] Update() exception: " + ex);
+                }
             }
 
             private void OnDestroy()

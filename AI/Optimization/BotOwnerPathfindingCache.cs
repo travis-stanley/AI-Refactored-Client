@@ -140,6 +140,7 @@ namespace AIRefactored.AI.Optimization
             }
 
             List<Vector3> candidates = NavPointRegistry.QueryNearby(origin, 25f, pos => NavPointRegistry.GetTag(pos) == "fallback");
+
             try
             {
                 for (int i = 0; i < candidates.Count; i++)
@@ -187,7 +188,7 @@ namespace AIRefactored.AI.Optimization
 
         private static bool IsAIBot(BotOwner bot)
         {
-            Player player = bot.GetPlayer;
+            Player player = bot?.GetPlayer;
             return player != null && player.IsAI && !player.IsYourPlayer;
         }
 

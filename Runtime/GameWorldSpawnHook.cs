@@ -6,12 +6,10 @@
 //   Please follow strict StyleCop, ReSharper, and AI-Refactored code standards for all modifications.
 // </auto-generated>
 
-
 namespace AIRefactored.Runtime
 {
     using System;
     using System.Reflection;
-    using AIRefactored.AI.Core;
     using AIRefactored.Core;
     using BepInEx.Logging;
     using Comfort.Common;
@@ -35,7 +33,7 @@ namespace AIRefactored.Runtime
                 if (_hooked)
                 {
                     Logger.LogDebug("[GameWorldSpawnHook] Already hooked — skipping.");
-                    UnityEngine.Object.Destroy(this);
+                    Destroy(this);
                     return;
                 }
 
@@ -45,7 +43,8 @@ namespace AIRefactored.Runtime
                 MethodInfo method = AccessTools.Method(typeof(GameWorld), "OnGameStarted");
                 if (method == null)
                 {
-                    Logger.LogError("[GameWorldSpawnHook] Failed to locate OnGameStarted method.");
+                    Logger.LogError("[GameWorldSpawnHook] Failed to locate GameWorld.OnGameStarted method.");
+                    Destroy(this);
                     return;
                 }
 
@@ -56,7 +55,7 @@ namespace AIRefactored.Runtime
             }
             catch (Exception ex)
             {
-                Logger.LogError("[GameWorldSpawnHook] Exception during hook initialization: " + ex);
+                Logger.LogError("[GameWorldSpawnHook] Exception during Awake: " + ex);
             }
         }
 
@@ -74,12 +73,18 @@ namespace AIRefactored.Runtime
             {
                 try
                 {
+                    if (!Singleton<GameWorld>.Instantiated || Singleton<GameWorld>.Instance == null)
+                    {
+                        Logger.LogWarning("[GameWorldSpawnHook] GameWorld.Instance is null — skipping InitPhaseRunner.");
+                        return;
+                    }
+
                     Logger.LogDebug("[GameWorldSpawnHook] GameWorld initialized. Triggering InitPhaseRunner...");
                     InitPhaseRunner.Begin(Logger);
                 }
                 catch (Exception ex)
                 {
-                    Logger.LogError("[GameWorldSpawnHook] Error during Postfix: " + ex);
+                    Logger.LogError("[GameWorldSpawnHook] Error in Postfix: " + ex);
                 }
             }
         }

@@ -9,6 +9,7 @@
 namespace AIRefactored.AI.Hotspots
 {
     using System.Collections.Generic;
+    using AIRefactored.Pools;
     using UnityEngine;
 
     /// <summary>
@@ -41,6 +42,12 @@ namespace AIRefactored.AI.Hotspots
         /// </summary>
         public static void Clear()
         {
+            foreach (var kv in VisitedMap)
+            {
+                kv.Value.Clear();
+                TempDictionaryPool.Return(kv.Value);
+            }
+
             VisitedMap.Clear();
         }
 
@@ -71,7 +78,7 @@ namespace AIRefactored.AI.Hotspots
             Dictionary<Vector3, float> visits;
             if (!VisitedMap.TryGetValue(key, out visits))
             {
-                visits = new Dictionary<Vector3, float>(32);
+                visits = TempDictionaryPool.Rent<Vector3, float>();
                 VisitedMap.Add(key, visits);
             }
 

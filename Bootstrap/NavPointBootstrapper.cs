@@ -6,251 +6,256 @@
 //   Please follow strict StyleCop, ReSharper, and AI-Refactored code standards for all modifications.
 // </auto-generated>
 
-
 namespace AIRefactored.AI.Navigation
 {
-    using System.Collections.Generic;
-    using System.Threading.Tasks;
-    using AIRefactored.AI.Core;
-    using AIRefactored.Core;
-    using AIRefactored.Pools;
-    using AIRefactored.Runtime;
-    using BepInEx.Logging;
-    using Unity.AI.Navigation;
-    using UnityEngine;
-    using UnityEngine.AI;
+	using System.Collections.Generic;
+	using System.Threading.Tasks;
+	using AIRefactored.AI.Core;
+	using AIRefactored.Core;
+	using AIRefactored.Pools;
+	using AIRefactored.Runtime;
+	using BepInEx.Logging;
+	using Unity.AI.Navigation;
+	using UnityEngine;
+	using UnityEngine.AI;
 
-    /// <summary>
-    /// Dynamically scans valid AI navigation points including cover, rooftop, flank, and fallback zones.
-    /// Headless-safe, memory-safe, and deferred for runtime performance.
-    /// </summary>
-    public static class NavPointBootstrapper
-    {
-        private const float ForwardCoverCheckDistance = 4.0f;
-        private const float MaxSampleHeight = 30.0f;
-        private const float MinNavPointClearance = 1.6f;
-        private const float RoofRaycastHeight = 12.0f;
-        private const float ScanRadius = 80.0f;
-        private const float ScanSpacing = 2.5f;
-        private const float VerticalProbeMax = 24.0f;
-        private const float VerticalStep = 2.0f;
+	/// <summary>
+	/// Dynamically scans valid AI navigation points including cover, rooftop, flank, and fallback zones.
+	/// Headless-safe, memory-safe, and deferred for runtime performance.
+	/// </summary>
+	public static class NavPointBootstrapper
+	{
+		private const float ForwardCoverCheckDistance = 4.0f;
+		private const float MaxSampleHeight = 30.0f;
+		private const float MinNavPointClearance = 1.6f;
+		private const float RoofRaycastHeight = 12.0f;
+		private const float ScanRadius = 80.0f;
+		private const float ScanSpacing = 2.5f;
+		private const float VerticalProbeMax = 24.0f;
+		private const float VerticalStep = 2.0f;
 
-        private static readonly List<Vector3> BackgroundPending = new List<Vector3>(1024);
-        private static readonly Queue<Vector3> ScanQueue = new Queue<Vector3>(2048);
-        private static readonly ManualLogSource Logger = Plugin.LoggerInstance;
+		private static readonly List<Vector3> BackgroundPending = new List<Vector3>(1024);
+		private static readonly Queue<Vector3> ScanQueue = new Queue<Vector3>(2048);
+		private static readonly ManualLogSource Logger = Plugin.LoggerInstance;
 
-        private static Vector3 _center = Vector3.zero;
-        private static bool _isRunning;
-        private static bool _isTaskRunning;
-        private static int _registered;
+		private static Vector3 _center = Vector3.zero;
+		private static bool _isRunning;
+		private static bool _isTaskRunning;
+		private static int _registered;
 
-        /// <summary>
-        /// Starts the async and frame-based scan of nav points for the current scene.
-        /// </summary>
-        /// <param name="mapId">Current map ID, only used for logging.</param>
-        public static void RegisterAll(string mapId)
-        {
-            if (_isRunning || !IsHostEnvironment())
-            {
-                Logger.LogWarning("[NavPointBootstrapper] Skipped — already running or non-host.");
-                return;
-            }
+		/// <summary>
+		/// Starts the async and frame-based scan of nav points for the current scene.
+		/// </summary>
+		/// <param name="mapId">Current map ID, only used for logging.</param>
+		public static void RegisterAll(string mapId)
+		{
+			if (_isRunning || !IsHostEnvironment())
+			{
+				Logger.LogWarning("[NavPointBootstrapper] Skipped — already running or not host.");
+				return;
+			}
 
-            _isRunning = true;
-            _registered = 0;
-            ScanQueue.Clear();
-            BackgroundPending.Clear();
+			_isRunning = true;
+			_registered = 0;
+			ScanQueue.Clear();
+			BackgroundPending.Clear();
 
-            NavMeshSurface surface = Object.FindObjectOfType<NavMeshSurface>();
-            if (surface == null)
-            {
-                Logger.LogWarning("[NavPointBootstrapper] No NavMeshSurface found.");
-                _isRunning = false;
-                return;
-            }
+			NavMeshSurface surface = Object.FindObjectOfType<NavMeshSurface>();
+			if (surface == null)
+			{
+				Logger.LogWarning("[NavPointBootstrapper] No NavMeshSurface found.");
+				_isRunning = false;
+				return;
+			}
 
-            _center = surface.transform.position;
-            float half = ScanRadius * 0.5f;
+			_center = surface.transform.position;
+			float half = ScanRadius * 0.5f;
 
-            List<Vector3> pooled = TempListPool.Rent<Vector3>();
-            try
-            {
-                for (float x = -half; x <= half; x += ScanSpacing)
-                {
-                    for (float z = -half; z <= half; z += ScanSpacing)
-                    {
-                        Vector3 basePos = new Vector3(x, MaxSampleHeight, z) + _center;
-                        pooled.Add(basePos);
-                    }
-                }
+			List<Vector3> pooled = TempListPool.Rent<Vector3>();
+			try
+			{
+				for (float x = -half; x <= half; x += ScanSpacing)
+				{
+					for (float z = -half; z <= half; z += ScanSpacing)
+					{
+						Vector3 basePos = new Vector3(x, MaxSampleHeight, z) + _center;
+						pooled.Add(basePos);
+					}
+				}
 
-                for (int i = 0; i < pooled.Count; i++)
-                {
-                    ScanQueue.Enqueue(pooled[i]);
-                }
-            }
-            finally
-            {
-                TempListPool.Return(pooled);
-            }
+				for (int i = 0; i < pooled.Count; i++)
+				{
+					ScanQueue.Enqueue(pooled[i]);
+				}
+			}
+			finally
+			{
+				TempListPool.Return(pooled);
+			}
 
-            Logger.LogDebug("[NavPointBootstrapper] Queued " + ScanQueue.Count + " surface points.");
+			Logger.LogDebug("[NavPointBootstrapper] Queued " + ScanQueue.Count + " surface points.");
 
-            if (!_isTaskRunning)
-            {
-                _isTaskRunning = true;
-                Task.Run(() =>
-                {
-                    PrequeueVerticalPoints();
-                    _isTaskRunning = false;
-                });
-            }
-        }
+			if (!_isTaskRunning)
+			{
+				_isTaskRunning = true;
+				Task.Run(() =>
+				{
+					PrequeueVerticalPoints();
+					_isTaskRunning = false;
+				});
+			}
+		}
 
-        /// <summary>
-        /// Processes scan queue in small batches each frame.
-        /// </summary>
-        public static void Tick()
-        {
-            if (!_isRunning || !IsHostEnvironment())
-            {
-                return;
-            }
+		/// <summary>
+		/// Processes scan queue in small batches each frame.
+		/// </summary>
+		public static void Tick()
+		{
+			try
+			{
+				if (!_isRunning || !IsHostEnvironment())
+				{
+					return;
+				}
 
-            int maxPerFrame = FikaHeadlessDetector.IsHeadless ? 80 : 40;
-            int processed = 0;
+				int maxPerFrame = FikaHeadlessDetector.IsHeadless ? 80 : 40;
+				int processed = 0;
 
-            while (ScanQueue.Count > 0 && processed++ < maxPerFrame)
-            {
-                Vector3 probe = ScanQueue.Dequeue();
+				while (ScanQueue.Count > 0 && processed++ < maxPerFrame)
+				{
+					Vector3 probe = ScanQueue.Dequeue();
 
-                RaycastHit hit;
-                if (!Physics.Raycast(probe, Vector3.down, out hit, MaxSampleHeight))
-                {
-                    continue;
-                }
+					RaycastHit hit;
+					if (!Physics.Raycast(probe, Vector3.down, out hit, MaxSampleHeight))
+					{
+						continue;
+					}
 
-                Vector3 pos = hit.point;
-                NavMeshHit navHit;
+					Vector3 pos = hit.point;
+					NavMeshHit navHit;
+					if (!NavMesh.SamplePosition(pos, out navHit, 1.0f, NavMesh.AllAreas))
+					{
+						continue;
+					}
 
-                if (!NavMesh.SamplePosition(pos, out navHit, 1.0f, NavMesh.AllAreas))
-                {
-                    continue;
-                }
+					if (Physics.Raycast(pos + Vector3.up * 0.5f, Vector3.up, MinNavPointClearance))
+					{
+						continue;
+					}
 
-                if (Physics.Raycast(pos + Vector3.up * 0.5f, Vector3.up, MinNavPointClearance))
-                {
-                    continue;
-                }
+					Vector3 final = navHit.position;
+					float elevation = final.y - _center.y;
+					bool isCover = IsCoverPoint(final);
+					bool isIndoor = IsIndoorPoint(final);
+					string tag = ClassifyNavPoint(elevation, isCover, isIndoor);
 
-                Vector3 final = navHit.position;
-                float elevation = final.y - _center.y;
-                bool isCover = IsCoverPoint(final);
-                bool isIndoor = IsIndoorPoint(final);
-                string tag = ClassifyNavPoint(elevation, isCover, isIndoor);
+					NavPointRegistry.Register(final, isCover, tag, elevation, isIndoor);
+					_registered++;
+				}
 
-                NavPointRegistry.Register(final, isCover, tag, elevation, isIndoor);
-                _registered++;
-            }
+				if (ScanQueue.Count == 0 && BackgroundPending.Count > 0)
+				{
+					for (int i = 0; i < BackgroundPending.Count; i++)
+					{
+						ScanQueue.Enqueue(BackgroundPending[i]);
+					}
 
-            if (ScanQueue.Count == 0 && BackgroundPending.Count > 0)
-            {
-                for (int i = 0; i < BackgroundPending.Count; i++)
-                {
-                    ScanQueue.Enqueue(BackgroundPending[i]);
-                }
+					BackgroundPending.Clear();
+					Logger.LogDebug("[NavPointBootstrapper] Queued vertical fallback points.");
+				}
 
-                BackgroundPending.Clear();
-                Logger.LogDebug("[NavPointBootstrapper] Queued vertical fallback points.");
-            }
+				if (ScanQueue.Count == 0 && !_isTaskRunning)
+				{
+					_isRunning = false;
+					Logger.LogDebug("[NavPointBootstrapper] ✅ Completed — " + _registered + " nav points registered.");
+				}
+			}
+			catch (System.Exception ex)
+			{
+				Logger.LogError("[NavPointBootstrapper] Tick exception: " + ex);
+			}
+		}
 
-            if (ScanQueue.Count == 0 && !_isTaskRunning)
-            {
-                _isRunning = false;
-                Logger.LogDebug("[NavPointBootstrapper] ✅ Completed — " + _registered + " nav points registered.");
-            }
-        }
+		/// <summary>
+		/// Resets the internal scan queue and state.
+		/// </summary>
+		public static void Reset()
+		{
+			ScanQueue.Clear();
+			BackgroundPending.Clear();
+			_registered = 0;
+			_isRunning = false;
+			_isTaskRunning = false;
+		}
 
-        /// <summary>
-        /// Resets the internal scan queue and state.
-        /// </summary>
-        public static void Reset()
-        {
-            ScanQueue.Clear();
-            BackgroundPending.Clear();
-            _registered = 0;
-            _isRunning = false;
-            _isTaskRunning = false;
-        }
+		private static void PrequeueVerticalPoints()
+		{
+			float half = ScanRadius * 0.5f;
+			List<Vector3> tempList = TempListPool.Rent<Vector3>();
 
-        private static void PrequeueVerticalPoints()
-        {
-            float half = ScanRadius * 0.5f;
-            List<Vector3> tempList = TempListPool.Rent<Vector3>();
+			try
+			{
+				for (float x = -half; x <= half; x += ScanSpacing)
+				{
+					for (float z = -half; z <= half; z += ScanSpacing)
+					{
+						for (float y = 5.0f; y <= VerticalProbeMax; y += VerticalStep)
+						{
+							tempList.Add(_center + new Vector3(x, y, z));
+						}
+					}
+				}
 
-            try
-            {
-                for (float x = -half; x <= half; x += ScanSpacing)
-                {
-                    for (float z = -half; z <= half; z += ScanSpacing)
-                    {
-                        for (float y = 5.0f; y <= VerticalProbeMax; y += VerticalStep)
-                        {
-                            tempList.Add(_center + new Vector3(x, y, z));
-                        }
-                    }
-                }
+				lock (BackgroundPending)
+				{
+					BackgroundPending.AddRange(tempList);
+				}
+			}
+			finally
+			{
+				TempListPool.Return(tempList);
+			}
+		}
 
-                lock (BackgroundPending)
-                {
-                    BackgroundPending.AddRange(tempList);
-                }
-            }
-            finally
-            {
-                TempListPool.Return(tempList);
-            }
-        }
+		private static bool IsCoverPoint(Vector3 pos)
+		{
+			Vector3 eye = pos + Vector3.up * 1.4f;
 
-        private static bool IsCoverPoint(Vector3 pos)
-        {
-            Vector3 eye = pos + Vector3.up * 1.4f;
+			for (float angle = -45f; angle <= 45f; angle += 15f)
+			{
+				Vector3 dir = Quaternion.Euler(0f, angle, 0f) * Vector3.forward;
+				if (Physics.Raycast(eye, dir, ForwardCoverCheckDistance, AIRefactoredLayerMasks.HighPolyCollider))
+				{
+					return true;
+				}
+			}
 
-            for (float angle = -45f; angle <= 45f; angle += 15f)
-            {
-                Vector3 dir = Quaternion.Euler(0f, angle, 0f) * Vector3.forward;
-                if (Physics.Raycast(eye, dir, ForwardCoverCheckDistance, AIRefactoredLayerMasks.HighPolyCollider))
-                {
-                    return true;
-                }
-            }
+			return false;
+		}
 
-            return false;
-        }
+		private static bool IsIndoorPoint(Vector3 pos)
+		{
+			return Physics.Raycast(pos + Vector3.up * 1.4f, Vector3.up, RoofRaycastHeight);
+		}
 
-        private static bool IsIndoorPoint(Vector3 pos)
-        {
-            return Physics.Raycast(pos + Vector3.up * 1.4f, Vector3.up, RoofRaycastHeight);
-        }
+		private static string ClassifyNavPoint(float elevation, bool isCover, bool isIndoor)
+		{
+			if (isIndoor)
+			{
+				return "indoor";
+			}
 
-        private static string ClassifyNavPoint(float elevation, bool isCover, bool isIndoor)
-        {
-            if (isIndoor)
-            {
-                return "indoor";
-            }
+			if (elevation > 6.0f)
+			{
+				return "roof";
+			}
 
-            if (elevation > 6.0f)
-            {
-                return "roof";
-            }
+			return isCover ? "fallback" : "flank";
+		}
 
-            return isCover ? "fallback" : "flank";
-        }
-
-        private static bool IsHostEnvironment()
-        {
-            return GameWorldHandler.IsLocalHost() || FikaHeadlessDetector.IsHeadless;
-        }
-    }
+		private static bool IsHostEnvironment()
+		{
+			return GameWorldHandler.IsLocalHost() || FikaHeadlessDetector.IsHeadless;
+		}
+	}
 }

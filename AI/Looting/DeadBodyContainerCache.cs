@@ -9,6 +9,7 @@
 namespace AIRefactored.AI.Looting
 {
     using System.Collections.Generic;
+    using AIRefactored.Core;
     using EFT;
     using EFT.Interactive;
 
@@ -58,7 +59,7 @@ namespace AIRefactored.AI.Looting
         /// </summary>
         public static void Register(Player player, LootableContainer container)
         {
-            if (player == null || container == null)
+            if (!EFTPlayerUtil.IsValid(player) || container == null)
             {
                 return;
             }

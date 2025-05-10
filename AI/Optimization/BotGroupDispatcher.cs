@@ -8,142 +8,155 @@
 
 namespace AIRefactored.AI.Optimization
 {
-    using System;
-    using System.Collections.Generic;
-    using System.Threading;
-    using System.Threading.Tasks;
-    using AIRefactored.Core;
-    using AIRefactored.Runtime;
-    using BepInEx.Logging;
-    using EFT;
-    using UnityEngine;
+	using System;
+	using System.Collections.Generic;
+	using System.Threading.Tasks;
+	using AIRefactored.Core;
+	using AIRefactored.Pools;
+	using AIRefactored.Runtime;
+	using BepInEx.Logging;
+	using EFT;
+	using UnityEngine;
 
-    /// <summary>
-    /// Schedules and dispatches thread-safe bot workloads during headless or client-hosted execution.
-    /// </summary>
-    public static class BotWorkGroupDispatcher
-    {
-        #region Constants
+	/// <summary>
+	/// Schedules and dispatches thread-safe bot workloads during headless or client-hosted execution.
+	/// </summary>
+	public static class BotWorkGroupDispatcher
+	{
+		#region Constants
 
-        private const int MaxWorkPerTick = 256;
-        private const int MaxThreads = 16;
+		private const int MaxWorkPerTick = 256;
+		private const int MaxThreads = 16;
 
-        #endregion
+		#endregion
 
-        #region Static Fields
+		#region Static Fields
 
-        private static readonly List<IBotWorkload> WorkQueue = new List<IBotWorkload>(MaxWorkPerTick);
-        private static readonly object Sync = new object();
-        private static readonly ManualLogSource Log = Plugin.LoggerInstance;
-        private static readonly int ThreadCount = Mathf.Clamp(Environment.ProcessorCount, 1, MaxThreads);
+		private static readonly object Sync = new object();
+		private static readonly ManualLogSource Log = Plugin.LoggerInstance;
+		private static readonly List<IBotWorkload> WorkQueue = new List<IBotWorkload>(MaxWorkPerTick);
+		private static readonly int ThreadCount = Mathf.Clamp(Environment.ProcessorCount, 1, MaxThreads);
 
-        #endregion
+		#endregion
 
-        #region Public API
+		#region Public API
 
-        /// <summary>
-        /// Queues a bot workload for background execution.
-        /// </summary>
-        /// <param name="workload">The workload to queue.</param>
-        public static void Schedule(IBotWorkload workload)
-        {
-            if (workload == null)
-            {
-                return;
-            }
+		/// <summary>
+		/// Queues a bot workload for background execution.
+		/// </summary>
+		public static void Schedule(IBotWorkload workload)
+		{
+			if (workload == null)
+			{
+				return;
+			}
 
-            lock (Sync)
-            {
-                if (WorkQueue.Count >= MaxWorkPerTick)
-                {
-                    Log.LogWarning("[BotWorkGroupDispatcher] Max queue capacity reached. Dropping workload.");
-                    return;
-                }
+			lock (Sync)
+			{
+				if (WorkQueue.Count >= MaxWorkPerTick)
+				{
+					Log.LogWarning("[BotWorkGroupDispatcher] Max queue capacity reached. Dropping workload.");
+					return;
+				}
 
-                WorkQueue.Add(workload);
-            }
-        }
+				WorkQueue.Add(workload);
+			}
+		}
 
-        /// <summary>
-        /// Executes queued workloads in thread batches. Call from Update().
-        /// </summary>
-        public static void Tick()
-        {
-            if (!GameWorldHandler.IsLocalHost())
-            {
-                return;
-            }
+		/// <summary>
+		/// Executes queued workloads in thread batches. Call from Update().
+		/// </summary>
+		public static void Tick()
+		{
+			if (!GameWorldHandler.IsLocalHost())
+			{
+				return;
+			}
 
-            List<IBotWorkload> batch;
+			List<IBotWorkload> batch = null;
 
-            lock (Sync)
-            {
-                if (WorkQueue.Count == 0)
-                {
-                    return;
-                }
+			lock (Sync)
+			{
+				if (WorkQueue.Count == 0)
+				{
+					return;
+				}
 
-                int slice = Mathf.Min(WorkQueue.Count, MaxWorkPerTick);
-                batch = new List<IBotWorkload>(slice);
-                for (int i = 0; i < slice; i++)
-                {
-                    batch.Add(WorkQueue[i]);
-                }
+				int count = Mathf.Min(WorkQueue.Count, MaxWorkPerTick);
+				batch = TempListPool.Rent<IBotWorkload>();
 
-                WorkQueue.RemoveRange(0, slice);
-            }
+				for (int i = 0; i < count; i++)
+				{
+					batch.Add(WorkQueue[i]);
+				}
 
-            Dispatch(batch);
-        }
+				WorkQueue.RemoveRange(0, count);
+			}
 
-        #endregion
+			try
+			{
+				Dispatch(batch);
+			}
+			finally
+			{
+				TempListPool.Return(batch);
+			}
+		}
 
-        #region Dispatch
+		#endregion
 
-        private static void Dispatch(List<IBotWorkload> batch)
-        {
-            int total = batch.Count;
-            if (total == 0)
-            {
-                return;
-            }
+		#region Dispatch
 
-            int threads = Mathf.Clamp(ThreadCount, 1, total);
-            int blockSize = Mathf.CeilToInt(total / (float)threads);
+		private static void Dispatch(List<IBotWorkload> batch)
+		{
+			if (batch == null || batch.Count == 0)
+			{
+				return;
+			}
 
-            for (int i = 0; i < total; i += blockSize)
-            {
-                int start = i;
-                int end = Mathf.Min(i + blockSize, total);
+			int total = batch.Count;
+			int threads = Mathf.Clamp(ThreadCount, 1, total);
+			int blockSize = Mathf.CeilToInt(total / (float)threads);
 
-                Task.Run(() =>
-                {
-                    for (int j = start; j < end; j++)
-                    {
-                        try
-                        {
-                            batch[j].RunBackgroundWork();
-                        }
-                        catch (Exception ex)
-                        {
-                            Log.LogWarning("[BotWorkGroupDispatcher] Background workload exception: " + ex.Message + "\n" + ex.StackTrace);
-                        }
-                    }
-                });
-            }
-        }
+			for (int i = 0; i < total; i += blockSize)
+			{
+				int start = i;
+				int end = Mathf.Min(i + blockSize, total);
 
-        #endregion
-    }
+				Task.Run(() =>
+				{
+					for (int j = start; j < end; j++)
+					{
+						IBotWorkload job = batch[j];
+						if (job == null)
+						{
+							continue;
+						}
 
-    /// <summary>
-    /// Background-safe interface for threaded bot logic. Must not use Unity APIs.
-    /// </summary>
-    public interface IBotWorkload
-    {
-        /// <summary>
-        /// Executes the workload from a thread pool context.
-        /// </summary>
-        void RunBackgroundWork();
-    }
+						try
+						{
+							job.RunBackgroundWork();
+						}
+						catch (Exception ex)
+						{
+							Log.LogWarning("[BotWorkGroupDispatcher] Background workload exception:\n" + ex);
+						}
+					}
+				});
+			}
+		}
+
+		#endregion
+	}
+
+	/// <summary>
+	/// Background-safe interface for threaded bot logic. Must not use Unity APIs.
+	/// </summary>
+	public interface IBotWorkload
+	{
+		/// <summary>
+		/// Executes the workload from a thread pool context.
+		/// </summary>
+		void RunBackgroundWork();
+	}
 }

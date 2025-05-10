@@ -53,18 +53,18 @@ namespace AIRefactored.AI.Core
 
         public AIRefactoredBotOwner AIRefactoredBotOwner => _owner;
 
-        public BotMemoryClass Memory => Bot.Memory;
+        public BotMemoryClass Memory => Bot != null ? Bot.Memory : null;
 
         public string Nickname
         {
             get
             {
-                Profile profile = Bot.Profile;
+                Profile profile = Bot?.Profile;
                 return profile != null && profile.Info != null ? profile.Info.Nickname : "Unknown";
             }
         }
 
-        public Vector3 Position => Bot.Position;
+        public Vector3 Position => Bot != null ? Bot.Position : Vector3.zero;
 
         #endregion
 
@@ -120,7 +120,6 @@ namespace AIRefactored.AI.Core
         public TrackedEnemyVisibility VisibilityTracker { get; set; }
 
         public BotGroupSyncCoordinator GroupSync => GroupBehavior != null ? GroupBehavior.GroupSync : null;
-
         public BotPanicHandler Panic => PanicHandler;
 
         #endregion
@@ -147,8 +146,7 @@ namespace AIRefactored.AI.Core
                 throw new ArgumentNullException("bot");
             }
 
-            Profile profile = bot.Profile;
-            string id = profile != null ? profile.Id : "null";
+            string id = bot.Profile?.Id ?? "null";
 
             if (Bot != null || InitializedBots.Contains(id))
             {
@@ -162,9 +160,9 @@ namespace AIRefactored.AI.Core
             try
             {
                 WildSpawnType role = WildSpawnType.assault;
-                if (profile?.Info?.Settings != null)
+                if (bot.Profile?.Info?.Settings != null)
                 {
-                    role = profile.Info.Settings.Role;
+                    role = bot.Profile.Info.Settings.Role;
                 }
 
                 PersonalityProfile = BotRegistry.GetOrGenerate(id, PersonalityType.Balanced, role);

@@ -6,67 +6,98 @@
 //   Please follow strict StyleCop, ReSharper, and AI-Refactored code standards for all modifications.
 // </auto-generated>
 
-
 namespace AIRefactored.Runtime
 {
-    using Comfort.Common;
+    using System;
+    using AIRefactored.AI.Core;
+    using AIRefactored.Bootstrap;
+    using AIRefactored.Core;
+    using BepInEx.Logging;
     using EFT;
-    using UnityEngine;
 
     /// <summary>
     /// Detects GameWorld lifecycle events and triggers mod startup/teardown accordingly.
     /// Works in both FIKA headless and standard modes.
     /// </summary>
-    public sealed class RaidLifecycleWatcher : MonoBehaviour
+    public sealed class RaidLifecycleWatcher : IAIWorldSystemBootstrapper
     {
-        private bool _initialized;
+        private static readonly ManualLogSource Logger = Plugin.LoggerInstance;
 
-        /// <summary>
-        /// Monitors for GameWorld presence and invokes raid start logic once.
-        /// </summary>
-        private void Update()
+        private static bool _initialized;
+        private static bool _bound;
+
+        public static RaidLifecycleWatcher Instance { get; } = new RaidLifecycleWatcher();
+
+        public void Initialize()
         {
-            if (_initialized)
-            {
-                return;
-            }
-
-            if (!Singleton<GameWorld>.Instantiated)
-            {
-                return;
-            }
-
-            GameWorld world = Singleton<GameWorld>.Instance;
-            if (world == null)
-            {
-                return;
-            }
-
-            GameWorld.OnDispose -= OnRaidEnded; // Ensure clean rebind
-            GameWorld.OnDispose += OnRaidEnded;
-
-            AIRefactoredController.OnRaidStarted(world);
-            _initialized = true;
+            _initialized = false;
+            _bound = false;
         }
 
-        /// <summary>
-        /// Called by EFT when GameWorld is disposed. Triggers raid shutdown.
-        /// </summary>
-        private void OnRaidEnded()
+        public void Tick(float deltaTime)
         {
-            GameWorld.OnDispose -= OnRaidEnded;
-            _initialized = false;
+            try
+            {
+                if (_initialized)
+                {
+                    return;
+                }
 
-            AIRefactoredController.OnRaidEnded();
+                if (!GameWorldHandler.IsReady())
+                {
+                    return;
+                }
+
+                GameWorld world = GameWorldHandler.Get();
+                if (world == null)
+                {
+                    return;
+                }
+
+                if (!_bound)
+                {
+                    GameWorld.OnDispose -= OnRaidEnded;
+                    GameWorld.OnDispose += OnRaidEnded;
+                    _bound = true;
+                }
+
+                AIRefactoredController.OnRaidStarted(world);
+                _initialized = true;
+            }
+            catch (Exception ex)
+            {
+                Logger.LogError("[RaidLifecycleWatcher] Tick error: " + ex);
+            }
         }
 
-        /// <summary>
-        /// Unity teardown handler to unbind all lifecycle hooks.
-        /// </summary>
-        private void OnDestroy()
+        public void OnRaidEnd()
         {
-            GameWorld.OnDispose -= OnRaidEnded;
-            _initialized = false;
+            try
+            {
+                GameWorld.OnDispose -= OnRaidEnded;
+                _initialized = false;
+                _bound = false;
+                AIRefactoredController.OnRaidEnded();
+            }
+            catch (Exception ex)
+            {
+                Logger.LogError("[RaidLifecycleWatcher] OnRaidEnded error: " + ex);
+            }
+        }
+
+        public bool IsReady()
+        {
+            return true;
+        }
+
+        public WorldPhase RequiredPhase()
+        {
+            return WorldPhase.AwaitWorld;
+        }
+
+        private static void OnRaidEnded()
+        {
+            Instance.OnRaidEnd();
         }
     }
 }

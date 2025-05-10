@@ -36,12 +36,10 @@ namespace AIRefactored.AI.Memory
 
         public static void ClearLastHeardSound(this BotOwner bot)
         {
-            if (bot == null)
+            if (bot != null)
             {
-                return;
+                BotMemoryStore.ClearHeardSound(bot.ProfileId);
             }
-
-            BotMemoryStore.ClearHeardSound(bot.ProfileId);
         }
 
         public static void FallbackTo(this BotOwner bot, Vector3 fallbackPosition)
@@ -62,12 +60,10 @@ namespace AIRefactored.AI.Memory
 
         public static void ForceMoveTo(this BotOwner bot, Vector3 position)
         {
-            if (bot == null || position.sqrMagnitude < MinMoveThreshold)
+            if (bot != null && position.sqrMagnitude >= MinMoveThreshold)
             {
-                return;
+                BotMovementHelper.SmoothMoveTo(bot, position);
             }
-
-            BotMovementHelper.SmoothMoveTo(bot, position);
         }
 
         #endregion
@@ -81,7 +77,7 @@ namespace AIRefactored.AI.Memory
                 return;
             }
 
-            EnemyInfo goal = bot.Memory.GoalEnemy;
+            EnemyInfo goal = bot.Memory?.GoalEnemy;
             if (goal == null || !goal.IsVisible)
             {
                 return;
@@ -129,36 +125,30 @@ namespace AIRefactored.AI.Memory
 
         public static void SetCautiousSearchMode(this BotOwner bot)
         {
-            if (bot == null)
+            if (bot?.Memory != null)
             {
-                return;
+                bot.Memory.AttackImmediately = false;
+                bot.Memory.IsPeace = false;
             }
-
-            bot.Memory.AttackImmediately = false;
-            bot.Memory.IsPeace = false;
         }
 
         public static void SetCombatAggressionMode(this BotOwner bot)
         {
-            if (bot == null)
+            if (bot?.Memory != null)
             {
-                return;
+                bot.Memory.AttackImmediately = true;
+                bot.Memory.IsPeace = false;
             }
-
-            bot.Memory.AttackImmediately = true;
-            bot.Memory.IsPeace = false;
         }
 
         public static void SetPeaceMode(this BotOwner bot)
         {
-            if (bot == null)
+            if (bot?.Memory != null)
             {
-                return;
+                bot.Memory.AttackImmediately = false;
+                bot.Memory.IsPeace = true;
+                bot.Memory.CheckIsPeace();
             }
-
-            bot.Memory.AttackImmediately = false;
-            bot.Memory.IsPeace = true;
-            bot.Memory.CheckIsPeace();
         }
 
         #endregion
@@ -175,12 +165,7 @@ namespace AIRefactored.AI.Memory
             string botId = bot.ProfileId;
             string sourceId = source.ProfileId;
 
-            if (string.Equals(botId, sourceId))
-            {
-                return;
-            }
-
-            if (!EFTPlayerUtil.IsValid(source))
+            if (string.Equals(botId, sourceId) || !EFTPlayerUtil.IsValid(source))
             {
                 return;
             }
@@ -215,7 +200,7 @@ namespace AIRefactored.AI.Memory
                 return Vector3.zero;
             }
 
-            EnemyInfo goal = bot.Memory.GoalEnemy;
+            EnemyInfo goal = bot.Memory?.GoalEnemy;
             if (goal == null)
             {
                 return Vector3.zero;

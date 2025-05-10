@@ -118,9 +118,9 @@ namespace AIRefactored.AI.Core
 
             try
             {
-                string profileId = bot.Profile != null ? bot.Profile.Id : "null-profile";
-
+                string profileId = bot.Profile?.Id ?? "null-profile";
                 WildSpawnType role = WildSpawnType.assault;
+
                 if (bot.Profile?.Info?.Settings != null)
                 {
                     role = bot.Profile.Info.Settings.Role;
@@ -148,7 +148,8 @@ namespace AIRefactored.AI.Core
 
         public void InitProfile(PersonalityType type)
         {
-            if (!BotPersonalityPresets.Presets.TryGetValue(type, out BotPersonalityProfile preset) || preset == null)
+            BotPersonalityProfile preset;
+            if (!BotPersonalityPresets.Presets.TryGetValue(type, out preset) || preset == null)
             {
                 preset = BotPersonalityPresets.Presets[PersonalityType.Adaptive];
                 PersonalityName = "Adaptive";

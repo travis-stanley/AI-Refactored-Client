@@ -8,140 +8,149 @@
 
 namespace AIRefactored.Bootstrap
 {
-    using System.Collections.Generic;
-    using AIRefactored.AI.Core;
-    using AIRefactored.AI.Looting;
-    using AIRefactored.Core;
-    using AIRefactored.Pools;
-    using AIRefactored.Runtime;
-    using BepInEx.Logging;
-    using EFT;
-    using EFT.Interactive;
-    using UnityEngine;
+	using System;
+	using System.Collections.Generic;
+	using AIRefactored.AI.Core;
+	using AIRefactored.AI.Looting;
+	using AIRefactored.Core;
+	using AIRefactored.Pools;
+	using AIRefactored.Runtime;
+	using BepInEx.Logging;
+	using EFT;
+	using EFT.Interactive;
+	using UnityEngine;
 
-    /// <summary>
-    /// Registers all lootable containers and loose loot items in the scene.
-    /// Also links dead player corpses to nearby loot containers for bot prioritization.
-    /// Executes only on authoritative hosts.
-    /// </summary>
-    public static class LootBootstrapper
-    {
-        private const float MaxCorpseLinkDistance = 1.5f;
-        private static readonly ManualLogSource Logger = Plugin.LoggerInstance;
+	/// <summary>
+	/// Registers all lootable containers and loose loot items in the scene.
+	/// Also links dead player corpses to nearby loot containers for bot prioritization.
+	/// Executes only on authoritative hosts.
+	/// </summary>
+	public static class LootBootstrapper
+	{
+		private const float MaxCorpseLinkDistance = 1.5f;
+		private static readonly ManualLogSource Logger = Plugin.LoggerInstance;
 
-        /// <summary>
-        /// Registers all scene lootable containers and items.
-        /// Should be called once after GameWorld is ready.
-        /// </summary>
-        public static void RegisterAllLoot()
-        {
-            if (!GameWorldHandler.IsInitialized || !GameWorldHandler.IsLocalHost())
-            {
-                return;
-            }
+		/// <summary>
+		/// Registers all scene lootable containers and items.
+		/// Should be called once after GameWorld is ready.
+		/// </summary>
+		public static void RegisterAllLoot()
+		{
+			if (!GameWorldHandler.IsInitialized || !GameWorldHandler.IsLocalHost())
+			{
+				return;
+			}
 
-            LootableContainer[] containers = Object.FindObjectsOfType<LootableContainer>();
-            if (containers != null && containers.Length > 0)
-            {
-                RegisterContainers(containers);
-            }
+			try
+			{
+				LootableContainer[] containers = UnityEngine.Object.FindObjectsOfType<LootableContainer>();
+				if (containers != null && containers.Length > 0)
+				{
+					RegisterContainers(containers);
+				}
 
-            LootItem[] items = Object.FindObjectsOfType<LootItem>();
-            if (items != null && items.Length > 0)
-            {
-                RegisterLooseItems(items);
-            }
-        }
+				LootItem[] items = UnityEngine.Object.FindObjectsOfType<LootItem>();
+				if (items != null && items.Length > 0)
+				{
+					RegisterLooseItems(items);
+				}
+			}
+			catch (Exception ex)
+			{
+				Logger.LogError("[LootBootstrapper] Error during RegisterAllLoot: " + ex);
+			}
+		}
 
-        private static void RegisterContainers(LootableContainer[] containers)
-        {
-            for (int i = 0; i < containers.Length; i++)
-            {
-                LootableContainer container = containers[i];
-                if (container == null || !container.enabled)
-                {
-                    continue;
-                }
+		private static void RegisterContainers(LootableContainer[] containers)
+		{
+			for (int i = 0; i < containers.Length; i++)
+			{
+				LootableContainer container = containers[i];
+				if (container == null || !container.enabled || container.transform == null)
+				{
+					continue;
+				}
 
-                LootRegistry.RegisterContainer(container);
-                TryLinkToCorpse(container);
-            }
-        }
+				LootRegistry.RegisterContainer(container);
+				TryLinkToCorpse(container);
+			}
+		}
 
-        private static void RegisterLooseItems(LootItem[] items)
-        {
-            for (int i = 0; i < items.Length; i++)
-            {
-                LootItem item = items[i];
-                if (item == null || !item.enabled)
-                {
-                    continue;
-                }
+		private static void RegisterLooseItems(LootItem[] items)
+		{
+			for (int i = 0; i < items.Length; i++)
+			{
+				LootItem item = items[i];
+				if (item == null || !item.enabled)
+				{
+					continue;
+				}
 
-                LootRegistry.RegisterItem(item);
-            }
-        }
+				LootRegistry.RegisterItem(item);
+			}
+		}
 
-        private static void TryLinkToCorpse(LootableContainer container)
-        {
-            if (container == null || container.transform == null)
-            {
-                return;
-            }
+		private static void TryLinkToCorpse(LootableContainer container)
+		{
+			if (container == null || container.transform == null)
+			{
+				return;
+			}
 
-            Vector3 containerPosition = container.transform.position;
-            List<Player> players = GameWorldHandler.GetAllAlivePlayers();
+			Vector3 containerPosition = container.transform.position;
+			List<Player> players = GameWorldHandler.GetAllAlivePlayers();
+			if (players.Count == 0)
+			{
+				return;
+			}
 
-            if (players.Count == 0)
-            {
-                return;
-            }
+			List<Player> deadPlayers = TempListPool.Rent<Player>();
+			try
+			{
+				for (int i = 0; i < players.Count; i++)
+				{
+					Player player = players[i];
+					if (!EFTPlayerUtil.IsValid(player) || player.HealthController.IsAlive)
+					{
+						continue;
+					}
 
-            List<Player> deadPlayers = TempListPool.Rent<Player>();
-            try
-            {
-                for (int i = 0; i < players.Count; i++)
-                {
-                    Player player = players[i];
-                    if (player != null)
-                    {
-                        deadPlayers.Add(player);
-                    }
-                }
+					deadPlayers.Add(player);
+				}
 
-                for (int i = 0; i < deadPlayers.Count; i++)
-                {
-                    Player p = deadPlayers[i];
-                    if (p == null || p.HealthController == null || p.HealthController.IsAlive)
-                    {
-                        continue;
-                    }
+				for (int i = 0; i < deadPlayers.Count; i++)
+				{
+					Player p = deadPlayers[i];
+					if (!EFTPlayerUtil.IsValid(p) || p.HealthController.IsAlive)
+					{
+						continue;
+					}
 
-                    string profileId = p.ProfileId;
-                    if (string.IsNullOrEmpty(profileId) || DeadBodyContainerCache.Contains(profileId))
-                    {
-                        continue;
-                    }
+					string profileId = p.Profile?.Id;
+					if (string.IsNullOrEmpty(profileId) || DeadBodyContainerCache.Contains(profileId))
+					{
+						continue;
+					}
 
-                    Vector3 corpsePosition = EFTPlayerUtil.GetPosition(p);
-                    float distance = Vector3.Distance(containerPosition, corpsePosition);
-                    if (distance <= MaxCorpseLinkDistance)
-                    {
-                        DeadBodyContainerCache.Register(p, container);
-
-                        string nickname = (p.Profile != null && p.Profile.Info != null)
-                            ? p.Profile.Info.Nickname
-                            : "Unnamed";
-
-                        Logger.LogDebug("[LootBootstrapper] Linked container to corpse: " + nickname);
-                        break;
-                    }
-                }
-            }
-            finally
-            {
-                TempListPool.Return(deadPlayers);
-            }
-        }
-    }
+					Vector3 corpsePosition = EFTPlayerUtil.GetPosition(p);
+					float distance = Vector3.Distance(containerPosition, corpsePosition);
+					if (distance <= MaxCorpseLinkDistance)
+					{
+						DeadBodyContainerCache.Register(p, container);
+						string nickname = p.Profile?.Info?.Nickname ?? "Unnamed";
+						Logger.LogDebug("[LootBootstrapper] Linked container to corpse: " + nickname);
+						break;
+					}
+				}
+			}
+			catch (Exception ex)
+			{
+				Logger.LogError("[LootBootstrapper] TryLinkToCorpse failed: " + ex);
+			}
+			finally
+			{
+				TempListPool.Return(deadPlayers);
+			}
+		}
+	}
 }

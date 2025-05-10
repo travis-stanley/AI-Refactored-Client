@@ -17,12 +17,12 @@ namespace AIRefactored.Bootstrap
     using AIRefactored.AI.Optimization;
     using AIRefactored.AI.Threads;
     using AIRefactored.Core;
+    using AIRefactored.Pools;
     using AIRefactored.Runtime;
     using BepInEx.Logging;
-    using Comfort.Common;
-    using EFT;
     using Unity.AI.Navigation;
     using UnityEngine;
+    using EFT;
 
     /// <summary>
     /// Initializes and ticks all AIRefactored world systems after GameWorld is stable.
@@ -58,15 +58,16 @@ namespace AIRefactored.Bootstrap
             {
                 Systems.Clear();
 
-                RegisterSystem(BotRecoveryService.Instance);
-                RegisterSystem(BotSpawnWatcherService.Instance);
-                RegisterSystem(LootRuntimeWatcher.Instance);
-                RegisterSystem(DeadBodyObserverService.Instance);
+                RegisterSystem(new RaidLifecycleWatcher());
+                RegisterSystem(new BotRecoveryService());
+                RegisterSystem(new BotSpawnWatcherService());
+                RegisterSystem(new LootRuntimeWatcher());
+                RegisterSystem(new DeadBodyObserverService());
                 RegisterSystem(new HotspotRegistryBootstrapper());
 
                 for (int i = 0; i < Systems.Count; i++)
                 {
-                    IAIWorldSystemBootstrapper system = Systems[i];
+                    var system = Systems[i];
                     if (system != null)
                     {
                         try
@@ -131,9 +132,19 @@ namespace AIRefactored.Bootstrap
 
                 for (int i = 0; i < Systems.Count; i++)
                 {
+                    var system = Systems[i];
+                    if (system == null)
+                    {
+                        continue;
+                    }
+
                     try
                     {
-                        Systems[i]?.Tick(deltaTime);
+                        // ✅ Phase-gated tick
+                        if (WorldInitState.IsInPhase(system.RequiredPhase()))
+                        {
+                            system.Tick(deltaTime);
+                        }
                     }
                     catch (Exception ex)
                     {
@@ -141,28 +152,40 @@ namespace AIRefactored.Bootstrap
                     }
                 }
 
-                // PATCH: Tick all active bot brains
-                List<Player> players = GameWorldHandler.GetAllAlivePlayers();
-                for (int i = 0; i < players.Count; i++)
+                var players = GameWorldHandler.GetAllAlivePlayers();
+                try
                 {
-                    Player player = players[i];
-                    if (player == null || !player.IsAI || player.gameObject == null)
+                    for (int i = 0; i < players.Count; i++)
                     {
-                        continue;
-                    }
+                        var player = players[i];
+                        if (!EFTPlayerUtil.IsValid(player) || !player.IsAI)
+                        {
+                            continue;
+                        }
 
-                    BotBrain brain = player.gameObject.GetComponent<BotBrain>();
-                    if (brain != null && brain.enabled)
-                    {
-                        try
+                        GameObject go = player.gameObject;
+                        if (go == null)
                         {
-                            brain.Tick(deltaTime);
+                            continue;
                         }
-                        catch (Exception ex)
+
+                        BotBrain brain = go.GetComponent<BotBrain>();
+                        if (brain != null && brain.enabled)
                         {
-                            Logger.LogError("[WorldBootstrapper] BotBrain.Tick() error: " + ex);
+                            try
+                            {
+                                brain.Tick(deltaTime);
+                            }
+                            catch (Exception ex)
+                            {
+                                Logger.LogError("[WorldBootstrapper] BotBrain.Tick() error: " + ex);
+                            }
                         }
                     }
+                }
+                finally
+                {
+                    TempListPool.Return(players);
                 }
 
                 if (now - _lastSweep >= SweepInterval)
@@ -174,7 +197,7 @@ namespace AIRefactored.Bootstrap
             }
             catch (Exception ex)
             {
-                Logger.LogError("[WorldBootstrapper] Tick() error: " + ex);
+                Logger.LogError("[WorldBootstrapper] Tick() outer error: " + ex);
             }
         }
 
@@ -200,7 +223,7 @@ namespace AIRefactored.Bootstrap
             NavMeshSurface[] surfaces = UnityEngine.Object.FindObjectsOfType<NavMeshSurface>();
             for (int i = 0; i < surfaces.Length; i++)
             {
-                NavMeshSurface surface = surfaces[i];
+                var surface = surfaces[i];
                 if (surface != null && surface.enabled && surface.gameObject.activeInHierarchy)
                 {
                     try
@@ -218,12 +241,16 @@ namespace AIRefactored.Bootstrap
 
         public static void EnforceBotBrain(Player player, BotOwner bot)
         {
-            if (player == null || !player.IsAI || player.gameObject == null)
+            if (!EFTPlayerUtil.IsValid(player) || !player.IsAI)
             {
                 return;
             }
 
             GameObject go = player.gameObject;
+            if (go == null)
+            {
+                return;
+            }
 
             try
             {
@@ -236,13 +263,10 @@ namespace AIRefactored.Bootstrap
                     brain.enabled = true;
                     brain.Initialize(bot);
                 }
-                else if (existing != null)
+                else if (existing != null && !existing.enabled)
                 {
-                    if (!existing.enabled)
-                    {
-                        existing.enabled = true;
-                        Logger.LogWarning("[WorldBootstrapper] Re-enabled disabled BotBrain for: " + player.ProfileId);
-                    }
+                    existing.enabled = true;
+                    Logger.LogWarning("[WorldBootstrapper] Re-enabled disabled BotBrain for: " + player.ProfileId);
                 }
             }
             catch (Exception ex)

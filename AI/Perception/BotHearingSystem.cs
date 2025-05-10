@@ -115,6 +115,7 @@ namespace AIRefactored.AI.Perception
             return _bot != null &&
                    !_bot.IsDead &&
                    EFTPlayerUtil.IsValid(_bot.GetPlayer) &&
+                   _cache.PanicHandler != null &&
                    !_cache.PanicHandler.IsPanicking;
         }
 
@@ -156,7 +157,7 @@ namespace AIRefactored.AI.Perception
             string aGroup = a.Profile.Info.GroupId;
             string bGroup = b.Profile.Info.GroupId;
 
-            return aGroup.Length > 0 && aGroup == bGroup;
+            return !string.IsNullOrEmpty(aGroup) && aGroup == bGroup;
         }
 
         #endregion

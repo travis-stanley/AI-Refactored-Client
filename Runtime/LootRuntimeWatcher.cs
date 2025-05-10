@@ -35,6 +35,7 @@ namespace AIRefactored.Runtime
 
         private static float _nextAllowedRefreshTime = -1f;
         private static bool _isQueued;
+        private static bool _hasLoggedReset;
 
         #endregion
 
@@ -42,6 +43,7 @@ namespace AIRefactored.Runtime
 
         public void Initialize()
         {
+            _hasLoggedReset = false;
             Reset();
             Logger.LogDebug("[LootRuntimeWatcher] Initialized.");
         }
@@ -140,9 +142,15 @@ namespace AIRefactored.Runtime
 
         public static void Reset()
         {
+            if (_hasLoggedReset)
+            {
+                return;
+            }
+
             RegisteredInstanceIds.Clear();
             _isQueued = false;
             _nextAllowedRefreshTime = -1f;
+            _hasLoggedReset = true;
 
             try
             {

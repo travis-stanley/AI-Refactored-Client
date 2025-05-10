@@ -35,6 +35,7 @@ namespace AIRefactored.Bootstrap
         private static ManualLogSource _loggerInstance = Plugin.LoggerInstance;
 
         private static bool _hasInitialized;
+        private static bool _hasShutdownLogged;
         private static float _lastSweep;
         private const float SweepInterval = 20f;
 
@@ -56,6 +57,7 @@ namespace AIRefactored.Bootstrap
 
             try
             {
+                _hasShutdownLogged = false;
                 Systems.Clear();
 
                 RegisterSystem(new RaidLifecycleWatcher());
@@ -101,13 +103,24 @@ namespace AIRefactored.Bootstrap
             {
                 for (int i = 0; i < Systems.Count; i++)
                 {
-                    Systems[i]?.OnRaidEnd();
+                    try
+                    {
+                        Systems[i]?.OnRaidEnd();
+                    }
+                    catch (Exception ex)
+                    {
+                        Logger.LogError("[WorldBootstrapper] OnRaidEnd error in system: " + ex);
+                    }
                 }
 
                 Systems.Clear();
                 _hasInitialized = false;
 
-                Logger.LogDebug("[WorldBootstrapper] 🔻 AIRefactored systems shut down.");
+                if (!_hasShutdownLogged)
+                {
+                    _hasShutdownLogged = true;
+                    Logger.LogDebug("[WorldBootstrapper] 🔻 AIRefactored systems shut down.");
+                }
             }
             catch (Exception ex)
             {
@@ -140,7 +153,6 @@ namespace AIRefactored.Bootstrap
 
                     try
                     {
-                        // ✅ Phase-gated tick
                         if (WorldInitState.IsInPhase(system.RequiredPhase()))
                         {
                             system.Tick(deltaTime);

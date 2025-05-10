@@ -34,9 +34,11 @@ namespace AIRefactored.Runtime
 		private static LootableContainer[] _containers = Array.Empty<LootableContainer>();
 		private static float _nextScanTime = -1f;
 		private static bool _containersUpdated;
+		private static bool _hasLoggedReset;
 
 		public void Initialize()
 		{
+			_hasLoggedReset = false;
 			Reset();
 			Logger.LogDebug("[DeadBodyObserver] Initialized.");
 		}
@@ -163,9 +165,15 @@ namespace AIRefactored.Runtime
 
 		public static void Reset()
 		{
+			if (_hasLoggedReset)
+			{
+				return;
+			}
+
 			_nextScanTime = -1f;
 			_containers = Array.Empty<LootableContainer>();
 			_containersUpdated = false;
+			_hasLoggedReset = true;
 
 			try
 			{

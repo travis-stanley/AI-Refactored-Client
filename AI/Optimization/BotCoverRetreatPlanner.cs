@@ -27,8 +27,6 @@ namespace AIRefactored.AI.Optimization
 	/// </summary>
 	public static class BotCoverRetreatPlanner
 	{
-		#region Constants
-
 		private const float RetreatDistance = 12f;
 		private const float MinSpacing = 3f;
 		private const float SquadSpacingThreshold = 4.25f;
@@ -38,17 +36,9 @@ namespace AIRefactored.AI.Optimization
 		private const float MemoryClearInterval = 60f;
 		private const float ChaosOffsetRadius = 2.5f;
 
-		#endregion
-
-		#region Fields
-
 		private static readonly Dictionary<string, Dictionary<string, List<Vector3>>> _squadRetreatCache = new Dictionary<string, Dictionary<string, List<Vector3>>>();
 		private static readonly Dictionary<string, NavMeshSurface> _mapNavSurfaces = new Dictionary<string, NavMeshSurface>();
 		private static float _lastClearTime = -999f;
-
-		#endregion
-
-		#region Public API
 
 		public static void Initialize()
 		{
@@ -115,15 +105,13 @@ namespace AIRefactored.AI.Optimization
 			ClearExpiredCache();
 
 			string squadId = bot.Profile?.Info?.GroupId ?? bot.ProfileId;
-			Dictionary<string, List<Vector3>> squadCache;
-			if (!_squadRetreatCache.TryGetValue(map, out squadCache))
+			if (!_squadRetreatCache.TryGetValue(map, out Dictionary<string, List<Vector3>> squadCache))
 			{
 				squadCache = new Dictionary<string, List<Vector3>>();
 				_squadRetreatCache[map] = squadCache;
 			}
 
-			List<Vector3> cached;
-			if (squadCache.TryGetValue(squadId, out cached) &&
+			if (squadCache.TryGetValue(squadId, out List<Vector3> cached) &&
 				cached.Count >= 2 &&
 				!IsPathBlockedByDoor(cached) &&
 				!IsPathUnsafe(bot, cached))
@@ -144,6 +132,13 @@ namespace AIRefactored.AI.Optimization
 			Vector3 origin = bot.Position;
 			Vector3 away = -threatDir.normalized;
 			BotComponentCache cache = BotCacheUtility.GetCache(bot);
+			if (cache == null || cache.PanicHandler == null || cache.PersonalityProfile == null)
+			{
+				result.Add(origin);
+				result.Add(origin + away * RetreatDistance);
+				return result;
+			}
+
 			float composure = cache.PanicHandler.GetComposureLevel();
 			BotPersonalityProfile profile = cache.PersonalityProfile;
 			float effectiveDist = RetreatDistance * Mathf.Lerp(1.0f, 1.3f, profile.RiskTolerance);
@@ -211,10 +206,6 @@ namespace AIRefactored.AI.Optimization
 			result.Add(best);
 			return result;
 		}
-
-		#endregion
-
-		#region Internal Helpers
 
 		private static void ClearExpiredCache()
 		{
@@ -311,6 +302,11 @@ namespace AIRefactored.AI.Optimization
 
 		private static bool HasSquadConflict(BotOwner bot, Vector3 pos)
 		{
+			if (bot == null)
+			{
+				return false;
+			}
+
 			BotsGroup group = bot.BotsGroup;
 			if (group == null)
 			{
@@ -351,10 +347,20 @@ namespace AIRefactored.AI.Optimization
 
 		private static bool IsPathUnsafe(BotOwner bot, List<Vector3> path)
 		{
-			BotTacticalMemory memory = BotCacheUtility.GetCache(bot).TacticalMemory;
+			if (bot == null || path == null || path.Count == 0)
+			{
+				return false;
+			}
+
+			BotComponentCache cache = BotCacheUtility.GetCache(bot);
+			if (cache == null || cache.TacticalMemory == null)
+			{
+				return false;
+			}
+
 			for (int i = 0; i < path.Count; i++)
 			{
-				if (memory.IsZoneUnsafe(path[i]))
+				if (cache.TacticalMemory.IsZoneUnsafe(path[i]))
 				{
 					return true;
 				}
@@ -365,7 +371,13 @@ namespace AIRefactored.AI.Optimization
 
 		private static bool IsPositionUnsafe(BotOwner bot, Vector3 pos)
 		{
-			return BotCacheUtility.GetCache(bot).TacticalMemory.IsZoneUnsafe(pos);
+			BotComponentCache cache = BotCacheUtility.GetCache(bot);
+			if (cache == null || cache.TacticalMemory == null)
+			{
+				return false;
+			}
+
+			return cache.TacticalMemory.IsZoneUnsafe(pos);
 		}
 
 		private static bool IsAIBot(BotOwner bot)
@@ -373,7 +385,5 @@ namespace AIRefactored.AI.Optimization
 			Player player = bot.GetPlayer;
 			return player != null && player.IsAI && !player.IsYourPlayer;
 		}
-
-		#endregion
 	}
 }

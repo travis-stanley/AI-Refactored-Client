@@ -79,6 +79,11 @@ namespace AIRefactored.Runtime
         {
             try
             {
+                if (!_hasStarted)
+                {
+                    return;
+                }
+
                 _hasStarted = false;
                 WorldInitState.Reset();
                 WorldTickDispatcher.Reset();

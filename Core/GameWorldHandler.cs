@@ -37,6 +37,7 @@ namespace AIRefactored.Core
         private static float _lastCleanupTime = -999f;
         private static float _lastLootRefresh = -999f;
         private static bool _isRecovering;
+        private static bool _hasShutdown;
 
         private static ManualLogSource Logger => Plugin.LoggerInstance;
 
@@ -71,10 +72,7 @@ namespace AIRefactored.Core
             return world is ClientGameWorld client && client.MainPlayer != null && client.MainPlayer.IsYourPlayer;
         }
 
-        public static GameWorld Get()
-        {
-            return CachedWorld;
-        }
+        public static GameWorld Get() => CachedWorld;
 
         public static GameWorld TryGetGameWorld()
         {
@@ -172,10 +170,7 @@ namespace AIRefactored.Core
             return string.Empty;
         }
 
-        public static bool TryForceResolveMapName()
-        {
-            return TryGetValidMapName().Length > 0;
-        }
+        public static bool TryForceResolveMapName() => TryGetValidMapName().Length > 0;
 
         public static bool IsReady()
         {
@@ -199,9 +194,8 @@ namespace AIRefactored.Core
         {
             lock (GameWorldLock)
             {
-                if (_bootstrapHost != null)
+                if (_bootstrapHost != null || _hasShutdown)
                 {
-                    LogSafe("[GameWorldHandler] Bootstrap host already active — skipping spawn hook.");
                     return;
                 }
 
@@ -234,6 +228,13 @@ namespace AIRefactored.Core
         {
             lock (GameWorldLock)
             {
+                if (_hasShutdown)
+                {
+                    return;
+                }
+
+                _hasShutdown = true;
+
                 try
                 {
                     if (_bootstrapHost != null)
@@ -263,7 +264,6 @@ namespace AIRefactored.Core
                 }
             }
         }
-
 
         public static void TryAttachBotBrain(BotOwner bot)
         {
@@ -375,9 +375,9 @@ namespace AIRefactored.Core
 
         public static void Initialize(GameWorld world)
         {
-            if (IsInitialized)
+            if (IsInitialized || _hasShutdown)
             {
-                LogSafe("[GameWorldHandler] Already initialized — skipping.");
+                LogSafe("[GameWorldHandler] Already initialized or shut down — skipping.");
                 return;
             }
 
@@ -432,6 +432,11 @@ namespace AIRefactored.Core
 
         public static void Cleanup()
         {
+            if (_hasShutdown)
+            {
+                return;
+            }
+
             try
             {
                 UnhookBotSpawns();

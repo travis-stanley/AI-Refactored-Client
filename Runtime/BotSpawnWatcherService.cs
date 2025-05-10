@@ -33,11 +33,13 @@ namespace AIRefactored.Runtime
 
 		private static float _nextPollTime = -1f;
 		private static bool _hasWarnedInvalid;
+		private static bool _hasLoggedReset;
 
 		public void Initialize()
 		{
 			try
 			{
+				_hasLoggedReset = false;
 				Reset();
 				Logger.LogDebug("[BotSpawnWatcher] Initialized.");
 			}
@@ -177,9 +179,15 @@ namespace AIRefactored.Runtime
 
 		public static void Reset()
 		{
+			if (_hasLoggedReset)
+			{
+				return;
+			}
+
 			SeenBotIds.Clear();
 			_nextPollTime = -1f;
 			_hasWarnedInvalid = false;
+			_hasLoggedReset = true;
 
 			try
 			{

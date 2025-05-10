@@ -6,6 +6,7 @@
 //   Please follow strict StyleCop, ReSharper, and AI-Refactored code standards for all modifications.
 // </auto-generated>
 
+
 namespace AIRefactored.Pools
 {
     using System;
@@ -34,10 +35,10 @@ namespace AIRefactored.Pools
         public static Dictionary<TKey, TValue> Rent<TKey, TValue>()
         {
             string typeKey = GetTypeKey<TKey, TValue>();
-            Stack<object> stack;
 
             lock (SyncRoot)
             {
+                Stack<object> stack;
                 if (PoolByTypeKey.TryGetValue(typeKey, out stack) && stack.Count > 0)
                 {
                     return (Dictionary<TKey, TValue>)stack.Pop();
@@ -61,12 +62,11 @@ namespace AIRefactored.Pools
             }
 
             dict.Clear();
-
             string typeKey = GetTypeKey<TKey, TValue>();
-            Stack<object> stack;
 
             lock (SyncRoot)
             {
+                Stack<object> stack;
                 if (!PoolByTypeKey.TryGetValue(typeKey, out stack))
                 {
                     stack = new Stack<object>(32);
@@ -91,10 +91,10 @@ namespace AIRefactored.Pools
             }
 
             string typeKey = GetTypeKey<TKey, TValue>();
-            Stack<object> stack;
 
             lock (SyncRoot)
             {
+                Stack<object> stack;
                 if (!PoolByTypeKey.TryGetValue(typeKey, out stack))
                 {
                     stack = new Stack<object>(count);
@@ -124,6 +124,9 @@ namespace AIRefactored.Pools
             }
         }
 
+        /// <summary>
+        /// Constructs a unique type key for identifying generic dictionary stacks.
+        /// </summary>
         private static string GetTypeKey<TKey, TValue>()
         {
             return typeof(TKey).FullName + "|" + typeof(TValue).FullName;

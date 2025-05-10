@@ -49,18 +49,18 @@ namespace AIRefactored.AI.Core
                 throw new InvalidOperationException("[BotComponentCacheRegistry] Bot profile ID is null or empty.");
             }
 
-            BotComponentCache existing;
-            if (CacheMap.TryGetValue(id, out existing))
+            BotComponentCache cache;
+            if (CacheMap.TryGetValue(id, out cache))
             {
-                return existing;
+                return cache;
             }
 
-            BotComponentCache newCache = new BotComponentCache();
-            newCache.Initialize(bot);
-            CacheMap[id] = newCache;
+            cache = new BotComponentCache();
+            cache.Initialize(bot);
+            CacheMap[id] = cache;
 
             Logger.LogDebug("[BotComponentCacheRegistry] Created new cache for bot: " + id);
-            return newCache;
+            return cache;
         }
 
         /// <summary>
@@ -71,9 +71,10 @@ namespace AIRefactored.AI.Core
         /// <returns>True if found.</returns>
         public static bool TryGet(string profileId, out BotComponentCache cache)
         {
+            cache = null;
+
             if (string.IsNullOrEmpty(profileId))
             {
-                cache = null;
                 return false;
             }
 

@@ -59,24 +59,33 @@ namespace AIRefactored.AI
 
         #region Identity
 
-        public PersonalityType Personality;
-        public MissionBias PreferredMission;
-        public LeanPreference LeaningStyle;
+        public PersonalityType Personality = PersonalityType.Balanced;
+        public MissionBias PreferredMission = MissionBias.Random;
+        public LeanPreference LeaningStyle = LeanPreference.Conservative;
 
         #endregion
 
         #region Derived Properties
 
+        /// <summary>
+        /// Gets a value indicating whether this personality supports flanking behavior.
+        /// </summary>
         public bool CanFlank
         {
             get { return this.FlankBias > 0.05f; }
         }
 
+        /// <summary>
+        /// Gets a value indicating whether this personality supports tactical retreats.
+        /// </summary>
         public bool CanRetreat
         {
             get { return this.RetreatThreshold > 0.05f; }
         }
 
+        /// <summary>
+        /// Gets a value indicating whether this personality will use suppressive fire.
+        /// </summary>
         public bool CanSuppress
         {
             get { return this.SuppressiveFireBias > 0.05f; }
@@ -84,7 +93,7 @@ namespace AIRefactored.AI
 
         #endregion
 
-        #region Methods
+        #region Public Methods
 
         /// <summary>
         /// Returns a shallow copy of this profile for runtime modification.

@@ -44,23 +44,16 @@ namespace AIRefactored.AI.Combat.States
         /// <summary>
         /// Initializes the attack handler with bot component cache.
         /// </summary>
-        /// <param name="cache">The component cache for the bot.</param>
         public AttackHandler(BotComponentCache cache)
         {
-            if (cache == null)
+            if (cache == null || cache.Bot == null)
             {
-                throw new ArgumentNullException(nameof(cache));
-            }
-
-            BotOwner bot = cache.Bot;
-            if (bot == null)
-            {
-                Plugin.LoggerInstance.LogError("[AttackHandler] BotOwner is null during construction.");
-                throw new InvalidOperationException("AttackHandler requires a valid BotOwner.");
+                Plugin.LoggerInstance.LogError("[AttackHandler] Null cache or BotOwner during construction.");
+                throw new ArgumentException("AttackHandler requires a valid cache with BotOwner.");
             }
 
             _cache = cache;
-            _bot = bot;
+            _bot = cache.Bot;
             _lastTargetPosition = Vector3.zero;
             _hasLastTarget = false;
         }
@@ -81,7 +74,6 @@ namespace AIRefactored.AI.Combat.States
         /// <summary>
         /// Determines if the bot currently has a valid target to attack.
         /// </summary>
-        /// <returns>True if a valid enemy is found.</returns>
         public bool ShallUseNow()
         {
             Player dummy;
@@ -91,7 +83,6 @@ namespace AIRefactored.AI.Combat.States
         /// <summary>
         /// Executes per-frame attack logic: move toward enemy and adjust stance.
         /// </summary>
-        /// <param name="time">Current time value.</param>
         public void Tick(float time)
         {
             Player enemy;
@@ -107,7 +98,6 @@ namespace AIRefactored.AI.Combat.States
             }
 
             Vector3 currentPos = transform.position;
-
             Vector3[] deltaArray = TempVector3Pool.Rent(1);
             deltaArray[0] = currentPos - _lastTargetPosition;
 
@@ -116,7 +106,7 @@ namespace AIRefactored.AI.Combat.States
                 _lastTargetPosition = currentPos;
                 _hasLastTarget = true;
 
-                Vector3 moveTarget = _cache.SquadPath != null
+                Vector3 moveTarget = (_cache.SquadPath != null)
                     ? _cache.SquadPath.ApplyOffsetTo(currentPos)
                     : currentPos;
 
@@ -136,9 +126,9 @@ namespace AIRefactored.AI.Combat.States
             result = null;
 
             BotThreatSelector selector = _cache.ThreatSelector;
-            if (selector != null && selector.CurrentTarget is Player player && EFTPlayerUtil.IsValid(player))
+            if (selector != null && selector.CurrentTarget is Player direct && EFTPlayerUtil.IsValid(direct))
             {
-                result = player;
+                result = direct;
                 return true;
             }
 

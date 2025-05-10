@@ -36,12 +36,17 @@ namespace AIRefactored.AI.Memory
 
         public static void ClearLastHeardSound(this BotOwner bot)
         {
+            if (bot == null)
+            {
+                return;
+            }
+
             BotMemoryStore.ClearHeardSound(bot.ProfileId);
         }
 
         public static void FallbackTo(this BotOwner bot, Vector3 fallbackPosition)
         {
-            if (fallbackPosition.sqrMagnitude < MinMoveThreshold)
+            if (bot == null || fallbackPosition.sqrMagnitude < MinMoveThreshold)
             {
                 return;
             }
@@ -57,10 +62,12 @@ namespace AIRefactored.AI.Memory
 
         public static void ForceMoveTo(this BotOwner bot, Vector3 position)
         {
-            if (position.sqrMagnitude >= MinMoveThreshold)
+            if (bot == null || position.sqrMagnitude < MinMoveThreshold)
             {
-                BotMovementHelper.SmoothMoveTo(bot, position);
+                return;
             }
+
+            BotMovementHelper.SmoothMoveTo(bot, position);
         }
 
         #endregion
@@ -69,6 +76,11 @@ namespace AIRefactored.AI.Memory
 
         public static void ReevaluateCurrentCover(this BotOwner bot)
         {
+            if (bot == null)
+            {
+                return;
+            }
+
             EnemyInfo goal = bot.Memory.GoalEnemy;
             if (goal == null || !goal.IsVisible)
             {
@@ -89,13 +101,13 @@ namespace AIRefactored.AI.Memory
                 return;
             }
 
-            Vector3 fallback = bot.Position - toEnemy.normalized * 5f;
+            Vector3 fallback = bot.Position - (toEnemy.normalized * 5f);
             Vector3 destination = new Vector3(fallback.x, bot.Position.y, fallback.z);
 
             BotComponentCache cache = BotCacheUtility.GetCache(bot);
             if (cache != null && cache.Pathing != null)
             {
-                var path = BotCoverRetreatPlanner.GetCoverRetreatPath(bot, toEnemy, cache.Pathing);
+                List<Vector3> path = BotCoverRetreatPlanner.GetCoverRetreatPath(bot, toEnemy, cache.Pathing);
                 if (path != null && path.Count > 0)
                 {
                     Vector3 last = path[path.Count - 1];
@@ -117,18 +129,33 @@ namespace AIRefactored.AI.Memory
 
         public static void SetCautiousSearchMode(this BotOwner bot)
         {
+            if (bot == null)
+            {
+                return;
+            }
+
             bot.Memory.AttackImmediately = false;
             bot.Memory.IsPeace = false;
         }
 
         public static void SetCombatAggressionMode(this BotOwner bot)
         {
+            if (bot == null)
+            {
+                return;
+            }
+
             bot.Memory.AttackImmediately = true;
             bot.Memory.IsPeace = false;
         }
 
         public static void SetPeaceMode(this BotOwner bot)
         {
+            if (bot == null)
+            {
+                return;
+            }
+
             bot.Memory.AttackImmediately = false;
             bot.Memory.IsPeace = true;
             bot.Memory.CheckIsPeace();
@@ -140,7 +167,20 @@ namespace AIRefactored.AI.Memory
 
         public static void SetLastHeardSound(this BotOwner bot, Player source)
         {
-            if (source == null || source.ProfileId == bot.ProfileId || !EFTPlayerUtil.IsValid(source))
+            if (bot == null || source == null)
+            {
+                return;
+            }
+
+            string botId = bot.ProfileId;
+            string sourceId = source.ProfileId;
+
+            if (string.Equals(botId, sourceId))
+            {
+                return;
+            }
+
+            if (!EFTPlayerUtil.IsValid(source))
             {
                 return;
             }
@@ -151,9 +191,9 @@ namespace AIRefactored.AI.Memory
                 return;
             }
 
-            BotMemoryStore.AddHeardSound(bot.ProfileId, sourcePos, Time.time);
+            BotMemoryStore.AddHeardSound(botId, sourcePos, Time.time);
 
-            Vector3 cautiousAdvance = sourcePos + (bot.Position - sourcePos).normalized * 3f;
+            Vector3 cautiousAdvance = sourcePos + ((bot.Position - sourcePos).normalized * 3f);
             BotMovementHelper.SmoothMoveTo(bot, cautiousAdvance);
 
             if (!FikaHeadlessDetector.IsHeadless && bot.BotTalk != null)
@@ -169,6 +209,11 @@ namespace AIRefactored.AI.Memory
         public static Vector3 TryGetFlankDirection(this BotOwner bot, out bool success)
         {
             success = false;
+
+            if (bot == null)
+            {
+                return Vector3.zero;
+            }
 
             EnemyInfo goal = bot.Memory.GoalEnemy;
             if (goal == null)

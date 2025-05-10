@@ -41,12 +41,19 @@ namespace AIRefactored.AI.Perception
 
         #endregion
 
-        #region Public API
+        #region Properties
 
+        /// <summary>
+        /// Gets whether the bot has enough visual data to estimate a threat confidently.
+        /// </summary>
         public bool HasEnoughData
         {
             get { return _visibleBones.Count >= 2; }
         }
+
+        #endregion
+
+        #region Public Methods
 
         public bool CanSeeAny()
         {
@@ -56,8 +63,7 @@ namespace AIRefactored.AI.Perception
 
         public bool CanShootTo(string boneName)
         {
-            BoneInfo info;
-            if (!_visibleBones.TryGetValue(boneName, out info))
+            if (!_visibleBones.TryGetValue(boneName, out BoneInfo info))
             {
                 return false;
             }
@@ -71,13 +77,22 @@ namespace AIRefactored.AI.Perception
             Vector3 eye = _botOrigin.position + new Vector3(0f, 1.4f, 0f);
             float dist = Vector3.Distance(eye, info.Position);
 
-            RaycastHit hit;
-            return !Physics.Linecast(eye, info.Position, out hit) || hit.distance >= dist - LinecastSlack;
+            return !Physics.Linecast(eye, info.Position, out RaycastHit hit) || hit.distance >= dist - LinecastSlack;
         }
 
-        public void Clear()
+        public void UpdateBoneVisibility(string boneName, Vector3 worldPosition)
         {
-            _visibleBones.Clear();
+            _visibleBones[boneName] = new BoneInfo(worldPosition, Time.time);
+        }
+
+        public void UpdateBoneVisibility(string boneName, Vector3 worldPosition, float motionBonus, float ambientOcclusionFactor)
+        {
+            float now = Time.time;
+            float extra = Mathf.Clamp(motionBonus, 0f, 0.4f);
+            float penalty = Mathf.Lerp(0f, 0.2f, 1f - ambientOcclusionFactor);
+            float timestamp = now + extra - penalty;
+
+            _visibleBones[boneName] = new BoneInfo(worldPosition, timestamp);
         }
 
         public void DecayConfidence(float decayAmount)
@@ -101,35 +116,26 @@ namespace AIRefactored.AI.Perception
             CleanExpired(now);
         }
 
-        public int ExposedBoneCount()
-        {
-            CleanExpired(Time.time);
-            return _visibleBones.Count;
-        }
-
         public float GetOverallConfidence()
         {
             CleanExpired(Time.time);
             return Mathf.Clamp01(_visibleBones.Count / 8f);
         }
 
-        public void UpdateBoneVisibility(string boneName, Vector3 worldPosition)
+        public int ExposedBoneCount()
         {
-            _visibleBones[boneName] = new BoneInfo(worldPosition, Time.time);
+            CleanExpired(Time.time);
+            return _visibleBones.Count;
         }
 
-        public void UpdateBoneVisibility(string boneName, Vector3 worldPosition, float motionBonus, float ambientOcclusionFactor)
+        public void Clear()
         {
-            float now = Time.time;
-            float extra = Mathf.Clamp(motionBonus, 0f, 0.4f);
-            float penalty = Mathf.Lerp(0f, 0.2f, 1f - ambientOcclusionFactor);
-            float timestamp = now + extra - penalty;
-            _visibleBones[boneName] = new BoneInfo(worldPosition, timestamp);
+            _visibleBones.Clear();
         }
 
         #endregion
 
-        #region Internal Logic
+        #region Internal Methods
 
         private void CleanExpired(float now)
         {

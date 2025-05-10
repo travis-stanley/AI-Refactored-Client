@@ -31,7 +31,7 @@ namespace AIRefactored.AI.Navigation
         /// <summary>
         /// Initializes a new instance of the <see cref="SpatialNavGrid"/> class.
         /// </summary>
-        /// <param name="cellSize">Grid cell size in world units (defaults to 10).</param>
+        /// <param name="cellSize">Grid cell size in world units (minimum 1.0f).</param>
         public SpatialNavGrid(float cellSize)
         {
             _cellSize = Mathf.Max(1f, cellSize);

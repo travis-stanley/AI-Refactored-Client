@@ -13,6 +13,7 @@ namespace AIRefactored.AI.Helpers
     using AIRefactored.AI.Core;
     using AIRefactored.AI.Movement;
     using AIRefactored.AI.Navigation;
+    using AIRefactored.Pools;
     using EFT;
     using UnityEngine;
 
@@ -96,20 +97,20 @@ namespace AIRefactored.AI.Helpers
                 return false;
             }
 
-            float timeUsed;
-            return CoverMemory.TryGetValue(GetKey(point.Position), out timeUsed) && (Time.time - timeUsed) < MemoryDuration;
+            float last;
+            return CoverMemory.TryGetValue(GetKey(point.Position), out last) && (Time.time - last) < MemoryDuration;
         }
 
         public static bool WasRecentlyUsed(NavPointData point)
         {
-            float timeUsed;
-            return CoverMemory.TryGetValue(GetKey(point.Position), out timeUsed) && (Time.time - timeUsed) < MemoryDuration;
+            float last;
+            return CoverMemory.TryGetValue(GetKey(point.Position), out last) && (Time.time - last) < MemoryDuration;
         }
 
         public static bool WasRecentlyUsed(Vector3 position)
         {
-            float timeUsed;
-            return CoverMemory.TryGetValue(GetKey(position), out timeUsed) && (Time.time - timeUsed) < MemoryDuration;
+            float last;
+            return CoverMemory.TryGetValue(GetKey(position), out last) && (Time.time - last) < MemoryDuration;
         }
 
         #endregion
@@ -129,7 +130,6 @@ namespace AIRefactored.AI.Helpers
             for (int i = 0; i < points.Count; i++)
             {
                 NavPointData point = points[i];
-
                 if (!point.IsCover)
                 {
                     continue;

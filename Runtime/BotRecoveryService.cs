@@ -46,7 +46,7 @@ namespace AIRefactored.Runtime
             {
                 Reset();
                 _hasInitialized = true;
-                Logger.LogInfo("[BotRecoveryService] Initialized.");
+                Logger.LogDebug("[BotRecoveryService] Initialized.");
             }
             catch (Exception ex)
             {
@@ -85,7 +85,7 @@ namespace AIRefactored.Runtime
 
                 if (_hasWarnedMissingWorld)
                 {
-                    Logger.LogInfo("[BotRecoveryService] GameWorld recovered.");
+                    Logger.LogDebug("[BotRecoveryService] GameWorld recovered.");
                     _hasWarnedMissingWorld = false;
                 }
 
@@ -109,7 +109,7 @@ namespace AIRefactored.Runtime
             {
                 Reset();
                 _hasInitialized = false;
-                Logger.LogInfo("[BotRecoveryService] Reset on raid end.");
+                Logger.LogDebug("[BotRecoveryService] Reset on raid end.");
             }
             catch (Exception ex)
             {
@@ -167,8 +167,15 @@ namespace AIRefactored.Runtime
                     }
 
                     GameObject go = player.gameObject;
-                    if (go.GetComponent<BotBrain>() != null)
+                    BotBrain brain = go.GetComponent<BotBrain>();
+                    if (brain != null)
                     {
+                        if (!brain.enabled)
+                        {
+                            brain.enabled = true;
+                            Logger.LogWarning("[BotRecoveryService] Re-enabled disabled brain: " + player.ProfileId);
+                        }
+
                         continue;
                     }
 
@@ -213,7 +220,7 @@ namespace AIRefactored.Runtime
                     return;
                 }
 
-                Logger.LogInfo("[BotRecoveryService] Rescanning world: " + mapId);
+                Logger.LogDebug("[BotRecoveryService] Rescanning world: " + mapId);
 
                 HotspotRegistry.Clear();
                 HotspotRegistry.Initialize(mapId);
@@ -225,7 +232,7 @@ namespace AIRefactored.Runtime
                 NavPointRegistry.Clear();
                 NavPointRegistry.RegisterAll(mapId);
 
-                Logger.LogInfo("[BotRecoveryService] Rescan complete.");
+                Logger.LogDebug("[BotRecoveryService] Rescan complete.");
             }
             catch (Exception ex)
             {

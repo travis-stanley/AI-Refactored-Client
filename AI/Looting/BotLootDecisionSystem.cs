@@ -16,6 +16,7 @@ namespace AIRefactored.AI.Looting
     using EFT.Interactive;
     using EFT.InventoryLogic;
     using UnityEngine;
+    using AIRefactored.Pools;
 
     /// <summary>
     /// Makes dynamic decisions about whether a bot should loot.
@@ -36,12 +37,16 @@ namespace AIRefactored.AI.Looting
         private BotComponentCache _cache;
         private BotOwner _bot;
         private float _nextLootTime;
+
         private readonly HashSet<string> _recentLooted = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
 
         #endregion
 
         #region Initialization
 
+        /// <summary>
+        /// Initializes the looting decision system for a bot.
+        /// </summary>
         public void Initialize(BotComponentCache cache)
         {
             if (cache == null || cache.Bot == null)
@@ -57,6 +62,9 @@ namespace AIRefactored.AI.Looting
 
         #region Public Methods
 
+        /// <summary>
+        /// Determines whether the bot is eligible to begin looting.
+        /// </summary>
         public bool ShouldLootNow()
         {
             if (_bot == null || _bot.IsDead || Time.time < _nextLootTime)
@@ -82,9 +90,12 @@ namespace AIRefactored.AI.Looting
             return _cache.LootScanner != null && _cache.LootScanner.TotalLootValue >= HighValueThreshold;
         }
 
+        /// <summary>
+        /// Finds the best nearby loot container destination based on value.
+        /// </summary>
         public Vector3 GetLootDestination()
         {
-            if (_cache == null || _cache.LootScanner == null)
+            if (_cache == null || _cache.LootScanner == null || _bot == null)
             {
                 return Vector3.zero;
             }
@@ -118,9 +129,12 @@ namespace AIRefactored.AI.Looting
             return bestValue > 0f ? bestPoint : Vector3.zero;
         }
 
+        /// <summary>
+        /// Marks a container as recently looted and applies cooldown.
+        /// </summary>
         public void MarkLooted(string lootId)
         {
-            if (string.IsNullOrWhiteSpace(lootId))
+            if (string.IsNullOrEmpty(lootId))
             {
                 return;
             }
@@ -135,14 +149,18 @@ namespace AIRefactored.AI.Looting
             _nextLootTime = Time.time + CooldownTime;
         }
 
+        /// <summary>
+        /// Checks if a container was recently looted.
+        /// </summary>
         public bool WasRecentlyLooted(string lootId)
         {
-            if (string.IsNullOrWhiteSpace(lootId))
+            if (string.IsNullOrEmpty(lootId))
             {
                 return false;
             }
 
-            return _recentLooted.Contains(lootId.Trim());
+            string id = lootId.Trim();
+            return id.Length > 0 && _recentLooted.Contains(id);
         }
 
         #endregion
@@ -157,7 +175,9 @@ namespace AIRefactored.AI.Looting
             }
 
             float total = 0f;
-            List<Item> items = new List<Item>(container.ItemOwner.RootItem.GetAllItems());
+            List<Item> items = TempListPool.Rent<Item>();
+            container.ItemOwner.RootItem.GetAllItemsNonAlloc(items);
+
             for (int i = 0; i < items.Count; i++)
             {
                 Item item = items[i];
@@ -171,6 +191,7 @@ namespace AIRefactored.AI.Looting
                 }
             }
 
+            TempListPool.Return(items);
             return total;
         }
 

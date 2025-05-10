@@ -20,10 +20,6 @@ namespace AIRefactored.AI.Helpers
         /// Returns a visibility score between 0 and 1 based on angle and distance to flashlight.
         /// Combines frontal alignment and proximity to determine severity of exposure.
         /// </summary>
-        /// <param name="lightTransform">The transform of the light source.</param>
-        /// <param name="botHeadTransform">The transform of the bot's head.</param>
-        /// <param name="maxDistance">Maximum distance considered for exposure.</param>
-        /// <returns>A normalized flash exposure score.</returns>
         public static float CalculateFlashScore(Transform lightTransform, Transform botHeadTransform, float maxDistance = 20f)
         {
             if (lightTransform == null || botHeadTransform == null)
@@ -33,14 +29,13 @@ namespace AIRefactored.AI.Helpers
 
             Vector3 toLight = lightTransform.position - botHeadTransform.position;
             float distance = toLight.magnitude;
+
             if (distance < 0.01f || distance > maxDistance)
             {
                 return 0f;
             }
 
-            Vector3 botForward = botHeadTransform.forward.normalized;
-            Vector3 lightDirection = toLight.normalized;
-            float alignmentFactor = Mathf.Clamp01(Vector3.Dot(botForward, lightDirection));
+            float alignmentFactor = Mathf.Clamp01(Vector3.Dot(botHeadTransform.forward, toLight.normalized));
             float distanceFactor = 1f - Mathf.Clamp01(distance / maxDistance);
 
             return alignmentFactor * distanceFactor;
@@ -49,9 +44,6 @@ namespace AIRefactored.AI.Helpers
         /// <summary>
         /// Calculates the normalized frontal exposure to a flashlight.
         /// </summary>
-        /// <param name="lightTransform">The transform of the light source.</param>
-        /// <param name="botHeadTransform">The transform of the bot's head.</param>
-        /// <returns>A normalized intensity factor between 0 and 1.</returns>
         public static float GetFlashIntensityFactor(Transform lightTransform, Transform botHeadTransform)
         {
             if (lightTransform == null || botHeadTransform == null)
@@ -59,17 +51,13 @@ namespace AIRefactored.AI.Helpers
                 return 0f;
             }
 
-            Vector3 toLight = (lightTransform.position - botHeadTransform.position).normalized;
-            return Mathf.Clamp01(Vector3.Dot(botHeadTransform.forward.normalized, toLight));
+            Vector3 directionToLight = lightTransform.position - botHeadTransform.position;
+            return Mathf.Clamp01(Vector3.Dot(botHeadTransform.forward, directionToLight.normalized));
         }
 
         /// <summary>
         /// Determines whether the bot is facing a light source within a dangerous exposure cone.
         /// </summary>
-        /// <param name="lightTransform">The transform of the light source.</param>
-        /// <param name="botHeadTransform">The transform of the bot's head.</param>
-        /// <param name="angleThreshold">Maximum allowed angle (in degrees) for dangerous exposure.</param>
-        /// <returns>True if the light exposure is dangerous; otherwise, false.</returns>
         public static bool IsBlindingLight(Transform lightTransform, Transform botHeadTransform, float angleThreshold = 30f)
         {
             if (lightTransform == null || botHeadTransform == null)
@@ -85,10 +73,6 @@ namespace AIRefactored.AI.Helpers
         /// <summary>
         /// Determines if the flashlight is pointing toward the target within the specified angle threshold.
         /// </summary>
-        /// <param name="source">The transform of the flashlight.</param>
-        /// <param name="target">The transform of the target.</param>
-        /// <param name="angleThreshold">Angle threshold in degrees.</param>
-        /// <returns>True if the source is facing the target; otherwise, false.</returns>
         public static bool IsFacingTarget(Transform source, Transform target, float angleThreshold = 30f)
         {
             if (source == null || target == null)

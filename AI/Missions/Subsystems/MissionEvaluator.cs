@@ -58,9 +58,14 @@ namespace AIRefactored.AI.Missions.Subsystems
 
         public MissionEvaluator(BotOwner bot, BotComponentCache cache)
         {
-            if (bot == null || cache == null)
+            if (bot == null)
             {
-                throw new ArgumentException("MissionEvaluator: bot or cache is null.");
+                throw new ArgumentNullException(nameof(bot));
+            }
+
+            if (cache == null)
+            {
+                throw new ArgumentNullException(nameof(cache));
             }
 
             _bot = bot;
@@ -101,9 +106,13 @@ namespace AIRefactored.AI.Missions.Subsystems
                 for (int i = 0; i < teammates.Count; i++)
                 {
                     BotOwner mate = teammates[i];
-                    if (mate != null && Vector3.Distance(mate.Position, selfPos) < SquadCohesionRange)
+                    if (mate != null)
                     {
-                        nearby++;
+                        float dist = Vector3.Distance(mate.Position, selfPos);
+                        if (dist < SquadCohesionRange)
+                        {
+                            nearby++;
+                        }
                     }
                 }
 
@@ -124,12 +133,18 @@ namespace AIRefactored.AI.Missions.Subsystems
             }
 
             Player player = _bot.GetPlayer;
-            if (player == null || player.Inventory == null)
+            if (player == null)
             {
                 return false;
             }
 
-            Slot backpackSlot = player.Inventory.Equipment.GetSlot(EquipmentSlot.Backpack);
+            Inventory inventory = player.Inventory;
+            if (inventory == null)
+            {
+                return false;
+            }
+
+            Slot backpackSlot = inventory.Equipment?.GetSlot(EquipmentSlot.Backpack);
             if (backpackSlot == null)
             {
                 return false;
@@ -165,16 +180,14 @@ namespace AIRefactored.AI.Missions.Subsystems
                 for (int i = 0; i < all.Length; i++)
                 {
                     ExfiltrationPoint point = all[i];
-                    if (point == null || point.Status != EExfiltrationStatus.RegularMode)
+                    if (point != null && point.Status == EExfiltrationStatus.RegularMode)
                     {
-                        continue;
-                    }
-
-                    float dist = Vector3.Distance(_bot.Position, point.transform.position);
-                    if (dist < minDist)
-                    {
-                        minDist = dist;
-                        closest = point;
+                        float dist = Vector3.Distance(_bot.Position, point.transform.position);
+                        if (dist < minDist)
+                        {
+                            minDist = dist;
+                            closest = point;
+                        }
                     }
                 }
 
@@ -216,8 +229,8 @@ namespace AIRefactored.AI.Missions.Subsystems
                 Vector3? fallback = HybridFallbackResolver.GetBestRetreatPoint(_bot, direction);
                 if (fallback.HasValue)
                 {
-                    string name = _bot.Profile?.Info?.Nickname ?? "Unknown";
-                    Logger.LogInfo("[MissionEvaluator] " + name + " fallback #" + _fallbackAttempts + " → " + fallback.Value);
+                    string name = _bot.Profile != null && _bot.Profile.Info != null ? _bot.Profile.Info.Nickname : "Unknown";
+                    Logger.LogDebug("[MissionEvaluator] " + name + " fallback #" + _fallbackAttempts + " → " + fallback.Value);
                     BotMovementHelper.SmoothMoveTo(_bot, fallback.Value);
                 }
             }
@@ -233,7 +246,11 @@ namespace AIRefactored.AI.Missions.Subsystems
             {
                 if (!FikaHeadlessDetector.IsHeadless)
                 {
-                    _bot.GetPlayer?.Say(phrase);
+                    Player player = _bot.GetPlayer;
+                    if (player != null)
+                    {
+                        player.Say(phrase);
+                    }
                 }
             }
             catch (Exception ex)

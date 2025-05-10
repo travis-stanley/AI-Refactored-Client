@@ -54,7 +54,7 @@ namespace AIRefactored.AI.Perception
 
         #endregion
 
-        #region Static Factory
+        #region Factory
 
         /// <summary>
         /// Returns a new default-configured profile instance.
@@ -66,7 +66,7 @@ namespace AIRefactored.AI.Perception
 
         #endregion
 
-        #region Reset Logic
+        #region Reset
 
         /// <summary>
         /// Resets all visual parameters to their original values.
@@ -83,6 +83,28 @@ namespace AIRefactored.AI.Perception
             {
                 AggressionResponse = DefaultAggressionResponse;
             }
+        }
+
+        #endregion
+
+        #region Copy
+
+        /// <summary>
+        /// Sets this instance's fields based on another profile.
+        /// </summary>
+        /// <param name="source">Source profile to copy from.</param>
+        public void SetFrom(BotVisionProfile source)
+        {
+            if (source == null)
+            {
+                return;
+            }
+
+            AdaptationSpeed = source.AdaptationSpeed;
+            AggressionResponse = source.AggressionResponse;
+            LightSensitivity = source.LightSensitivity;
+            MaxBlindness = source.MaxBlindness;
+            ClarityRecoverySpeed = source.ClarityRecoverySpeed;
         }
 
         #endregion

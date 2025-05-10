@@ -51,6 +51,7 @@ namespace AIRefactored.AI.Memory
         public static List<DangerZone> GetZonesForMap(string mapId)
         {
             List<DangerZone> result = TempListPool.Rent<DangerZone>();
+
             string key;
             if (!TryGetSafeKey(mapId, out key))
             {

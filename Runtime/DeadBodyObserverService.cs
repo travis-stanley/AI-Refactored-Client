@@ -6,6 +6,7 @@
 //   Please follow strict StyleCop, ReSharper, and AI-Refactored code standards for all modifications.
 // </auto-generated>
 
+
 namespace AIRefactored.Runtime
 {
     using System;
@@ -29,11 +30,11 @@ namespace AIRefactored.Runtime
         private const float ScanIntervalSeconds = 1.0f;
         private const float AssociationRadius = 1.5f;
 
+        private static readonly ManualLogSource Logger = Plugin.LoggerInstance;
+
         private static LootableContainer[] _containers = Array.Empty<LootableContainer>();
         private static float _nextScanTime = -1f;
         private static bool _containersUpdated;
-
-        private static readonly ManualLogSource Logger = Plugin.LoggerInstance;
 
         /// <summary>
         /// Singleton instance for registration into WorldBootstrapper.
@@ -44,7 +45,7 @@ namespace AIRefactored.Runtime
         public void Initialize()
         {
             Reset();
-            Logger.LogInfo("[DeadBodyObserver] Initialized.");
+            Logger.LogDebug("[DeadBodyObserver] Initialized.");
         }
 
         /// <inheritdoc />
@@ -69,7 +70,7 @@ namespace AIRefactored.Runtime
                 {
                     _containers = UnityEngine.Object.FindObjectsOfType<LootableContainer>();
                     _containersUpdated = true;
-                    Logger.LogInfo("[DeadBodyObserver] Found " + _containers.Length + " lootable containers.");
+                    Logger.LogDebug("[DeadBodyObserver] Found " + _containers.Length + " lootable containers.");
                 }
                 catch (Exception ex)
                 {
@@ -140,6 +141,10 @@ namespace AIRefactored.Runtime
                     }
                 }
             }
+            catch (Exception ex)
+            {
+                Logger.LogError("[DeadBodyObserver] Tick scan error: " + ex);
+            }
             finally
             {
                 TempListPool.Return(pool);
@@ -163,11 +168,11 @@ namespace AIRefactored.Runtime
 
             try
             {
-                Logger.LogInfo("[DeadBodyObserver] Reset.");
+                Logger.LogDebug("[DeadBodyObserver] Reset.");
             }
             catch
             {
-                // Logger fallback — silent ignore
+                // Silent fallback — logger not available during shutdown
             }
         }
 

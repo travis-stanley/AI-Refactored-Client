@@ -27,7 +27,6 @@ namespace AIRefactored.Bootstrap
     public static class LootBootstrapper
     {
         private const float MaxCorpseLinkDistance = 1.5f;
-
         private static readonly ManualLogSource Logger = Plugin.LoggerInstance;
 
         /// <summary>
@@ -91,15 +90,14 @@ namespace AIRefactored.Bootstrap
             }
 
             Vector3 containerPosition = container.transform.position;
-
             List<Player> players = GameWorldHandler.GetAllAlivePlayers();
+
             if (players.Count == 0)
             {
                 return;
             }
 
             List<Player> deadPlayers = TempListPool.Rent<Player>();
-
             try
             {
                 for (int i = 0; i < players.Count; i++)
@@ -119,19 +117,23 @@ namespace AIRefactored.Bootstrap
                         continue;
                     }
 
-                    string id = p.ProfileId;
-                    if (string.IsNullOrEmpty(id) || DeadBodyContainerCache.Contains(id))
+                    string profileId = p.ProfileId;
+                    if (string.IsNullOrEmpty(profileId) || DeadBodyContainerCache.Contains(profileId))
                     {
                         continue;
                     }
 
                     Vector3 corpsePosition = EFTPlayerUtil.GetPosition(p);
-                    if (Vector3.Distance(containerPosition, corpsePosition) <= MaxCorpseLinkDistance)
+                    float distance = Vector3.Distance(containerPosition, corpsePosition);
+                    if (distance <= MaxCorpseLinkDistance)
                     {
                         DeadBodyContainerCache.Register(p, container);
 
-                        string name = p.Profile != null && p.Profile.Info != null ? p.Profile.Info.Nickname : "Unnamed";
-                        Logger.LogDebug("[LootBootstrapper] Linked container to corpse: " + name);
+                        string nickname = (p.Profile != null && p.Profile.Info != null)
+                            ? p.Profile.Info.Nickname
+                            : "Unnamed";
+
+                        Logger.LogDebug("[LootBootstrapper] Linked container to corpse: " + nickname);
                         break;
                     }
                 }

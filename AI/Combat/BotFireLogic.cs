@@ -62,14 +62,9 @@ namespace AIRefactored.AI.Combat
 
         public BotFireLogic(BotOwner bot, BotComponentCache cache)
         {
-            if (bot == null)
+            if (bot == null || cache == null)
             {
-                throw new ArgumentNullException(nameof(bot));
-            }
-
-            if (cache == null)
-            {
-                throw new ArgumentNullException(nameof(cache));
+                throw new ArgumentNullException("[BotFireLogic] Missing bot or cache.");
             }
 
             _bot = bot;
@@ -142,8 +137,8 @@ namespace AIRefactored.AI.Combat
 
             if (weaponInfo.BulletCount <= 0 && !weaponInfo.CheckHaveAmmoForReload())
             {
-                weaponManager.Selector.TryChangeWeaponCauseNoAmmo();
-                weaponManager.Melee.Activate();
+                weaponManager.Selector?.TryChangeWeaponCauseNoAmmo();
+                weaponManager.Melee?.Activate();
                 return;
             }
 
@@ -303,13 +298,11 @@ namespace AIRefactored.AI.Combat
 
             float current = 0f;
             float maximum = 0f;
-            Dictionary<EBodyPart, GClass2814<HealthControllerClass.GClass2819>.BodyPartState> dict = hc.Dictionary_0;
 
-            for (int i = 0; i < AllBodyParts.Length; i++)
+            foreach (EBodyPart part in AllBodyParts)
             {
-                EBodyPart part = AllBodyParts[i];
                 GClass2814<HealthControllerClass.GClass2819>.BodyPartState state;
-                if (dict.TryGetValue(part, out state) && state.Health != null)
+                if (hc.Dictionary_0.TryGetValue(part, out state) && state.Health != null)
                 {
                     current += state.Health.Current;
                     maximum += state.Health.Maximum;
@@ -326,33 +319,24 @@ namespace AIRefactored.AI.Combat
                 return;
             }
 
-            List<Vector3> path = TempListPool.Rent<Vector3>();
-            try
+            List<Vector3> retreatPath = BotCoverRetreatPlanner.GetCoverRetreatPath(_bot, _bot.LookDirection.normalized, _cache.Pathing);
+            if (retreatPath == null || retreatPath.Count < 2)
             {
-                path.Clear();
-                List<Vector3> retreatPath = BotCoverRetreatPlanner.GetCoverRetreatPath(_bot, _bot.LookDirection.normalized, _cache.Pathing);
-                for (int i = 0; i < retreatPath.Count; i++)
-                {
-                    path.Add(retreatPath[i]);
-                }
-
-                if (path.Count < 2)
-                {
-                    return;
-                }
-
-                Vector3 fallback = path[path.Count - 1];
-                BotMovementHelper.SmoothMoveTo(_bot, fallback, false);
-                BotCoverHelper.TrySetStanceFromNearbyCover(_cache, fallback);
-
-                if (!FikaHeadlessDetector.IsHeadless && _bot.BotTalk != null)
-                {
-                    _bot.BotTalk.TrySay(EPhraseTrigger.OnLostVisual);
-                }
+                return;
             }
-            finally
+
+            Vector3 fallback = retreatPath[retreatPath.Count - 1];
+            if (float.IsNaN(fallback.x) || float.IsNaN(fallback.y) || float.IsNaN(fallback.z))
             {
-                TempListPool.Return(path);
+                return;
+            }
+
+            BotMovementHelper.SmoothMoveTo(_bot, fallback, false);
+            BotCoverHelper.TrySetStanceFromNearbyCover(_cache, fallback);
+
+            if (!FikaHeadlessDetector.IsHeadless && _bot.BotTalk != null)
+            {
+                _bot.BotTalk.TrySay(EPhraseTrigger.OnLostVisual);
             }
         }
 

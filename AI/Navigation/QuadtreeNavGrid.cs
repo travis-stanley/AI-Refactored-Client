@@ -10,6 +10,7 @@ namespace AIRefactored.AI.Navigation
 {
     using System;
     using System.Collections.Generic;
+    using AIRefactored.Pools;
     using UnityEngine;
 
     /// <summary>
@@ -61,7 +62,7 @@ namespace AIRefactored.AI.Navigation
 
         public List<NavPointData> Query(Vector3 position, float radius, Predicate<NavPointData> filter)
         {
-            var result = new List<NavPointData>(16);
+            List<NavPointData> result = TempListPool.Rent<NavPointData>();
             float radiusSq = radius * radius;
             Query(_root, position, radiusSq, result, filter);
             return result;
@@ -92,7 +93,7 @@ namespace AIRefactored.AI.Navigation
 
         public List<Vector3> QueryRaw(Vector3 position, float radius, Predicate<Vector3> filter)
         {
-            var result = new List<Vector3>(16);
+            List<Vector3> result = TempListPool.Rent<Vector3>();
             float radiusSq = radius * radius;
             QueryRaw(_root, position, radiusSq, result, filter);
             return result;
@@ -226,17 +227,17 @@ namespace AIRefactored.AI.Navigation
 
             node.Children = new[]
             {
-                new Node(new Rect(x, y, halfW, halfH), d),                        // BL
-                new Node(new Rect(x + halfW, y, halfW, halfH), d),               // BR
-                new Node(new Rect(x, y + halfH, halfW, halfH), d),               // TL
-                new Node(new Rect(x + halfW, y + halfH, halfW, halfH), d)        // TR
+                new Node(new Rect(x, y, halfW, halfH), d),
+                new Node(new Rect(x + halfW, y, halfW, halfH), d),
+                new Node(new Rect(x, y + halfH, halfW, halfH), d),
+                new Node(new Rect(x + halfW, y + halfH, halfW, halfH), d)
             };
         }
 
         private void Reinsert(Node node)
         {
             List<NavPointData> nav = node.NavPoints;
-            node.NavPoints = new List<NavPointData>(MaxPointsPerNode);
+            node.NavPoints = TempListPool.Rent<NavPointData>();
             for (int i = 0; i < nav.Count; i++)
             {
                 for (int j = 0; j < node.Children.Length; j++)
@@ -246,7 +247,7 @@ namespace AIRefactored.AI.Navigation
             }
 
             List<Vector3> raw = node.RawPoints;
-            node.RawPoints = new List<Vector3>(MaxPointsPerNode);
+            node.RawPoints = TempListPool.Rent<Vector3>();
             for (int i = 0; i < raw.Count; i++)
             {
                 for (int j = 0; j < node.Children.Length; j++)
@@ -264,11 +265,11 @@ namespace AIRefactored.AI.Navigation
         {
             public Node(Rect bounds, int depth)
             {
-                Bounds = bounds;
-                Depth = depth;
-                NavPoints = new List<NavPointData>(MaxPointsPerNode);
-                RawPoints = new List<Vector3>(MaxPointsPerNode);
-                Children = Array.Empty<Node>();
+                this.Bounds = bounds;
+                this.Depth = depth;
+                this.NavPoints = TempListPool.Rent<NavPointData>();
+                this.RawPoints = TempListPool.Rent<Vector3>();
+                this.Children = Array.Empty<Node>();
             }
 
             public Rect Bounds { get; }
@@ -276,7 +277,7 @@ namespace AIRefactored.AI.Navigation
             public List<NavPointData> NavPoints;
             public List<Vector3> RawPoints;
             public Node[] Children;
-            public bool IsLeaf => Children.Length == 0;
+            public bool IsLeaf => this.Children.Length == 0;
         }
 
         #endregion

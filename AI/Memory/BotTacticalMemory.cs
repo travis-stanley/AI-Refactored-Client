@@ -81,7 +81,12 @@ namespace AIRefactored.AI.Memory
 
         public void RecordEnemyPosition(Vector3 position, string tag, string enemyId)
         {
-            if (_cache == null || _cache.IsBlinded || (_cache.PanicHandler != null && _cache.PanicHandler.IsPanicking))
+            if (_cache == null || _cache.IsBlinded)
+            {
+                return;
+            }
+
+            if (_cache.PanicHandler != null && _cache.PanicHandler.IsPanicking)
             {
                 return;
             }
@@ -243,6 +248,9 @@ namespace AIRefactored.AI.Memory
                 Mathf.Round(pos.z / GridSnapSize) * GridSnapSize);
         }
 
+        /// <summary>
+        /// Enemy record containing position, timestamp, and tactical tag.
+        /// </summary>
         public struct SeenEnemyRecord
         {
             public Vector3 Position;
@@ -257,6 +265,9 @@ namespace AIRefactored.AI.Memory
             }
         }
 
+        /// <summary>
+        /// Equality comparer for grid-snapped Vector3 keys in dictionaries.
+        /// </summary>
         private sealed class Vector3EqualityComparer : IEqualityComparer<Vector3>
         {
             public bool Equals(Vector3 a, Vector3 b)

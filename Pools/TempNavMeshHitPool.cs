@@ -6,6 +6,8 @@
 //   Please follow strict StyleCop, ReSharper, and AI-Refactored code standards for all modifications.
 // </auto-generated>
 
+
+
 namespace AIRefactored.Pools
 {
     using System;
@@ -25,6 +27,11 @@ namespace AIRefactored.Pools
             AppDomain.CurrentDomain.DomainUnload += (_, __) => ClearAll();
         }
 
+        /// <summary>
+        /// Rents a pooled <see cref="NavMeshHit"/> array of the specified size.
+        /// </summary>
+        /// <param name="size">Requested array size.</param>
+        /// <returns>Reusable NavMeshHit array.</returns>
         public static NavMeshHit[] Rent(int size)
         {
             if (size <= 0)
@@ -32,9 +39,9 @@ namespace AIRefactored.Pools
                 size = 1;
             }
 
-            Stack<NavMeshHit[]> stack;
             lock (SyncRoot)
             {
+                Stack<NavMeshHit[]> stack;
                 if (PoolBySize.TryGetValue(size, out stack) && stack.Count > 0)
                 {
                     return stack.Pop();
@@ -44,6 +51,10 @@ namespace AIRefactored.Pools
             return new NavMeshHit[size];
         }
 
+        /// <summary>
+        /// Returns a <see cref="NavMeshHit"/> array to the pool.
+        /// </summary>
+        /// <param name="array">Array to return.</param>
         public static void Return(NavMeshHit[] array)
         {
             if (array == null || array.Length == 0)
@@ -51,9 +62,9 @@ namespace AIRefactored.Pools
                 return;
             }
 
-            Stack<NavMeshHit[]> stack;
             lock (SyncRoot)
             {
+                Stack<NavMeshHit[]> stack;
                 if (!PoolBySize.TryGetValue(array.Length, out stack))
                 {
                     stack = new Stack<NavMeshHit[]>(8);
@@ -64,6 +75,11 @@ namespace AIRefactored.Pools
             }
         }
 
+        /// <summary>
+        /// Prewarms the pool with reusable <see cref="NavMeshHit"/> arrays.
+        /// </summary>
+        /// <param name="size">Length of each array.</param>
+        /// <param name="count">Number of arrays to cache.</param>
         public static void Prewarm(int size, int count)
         {
             if (size <= 0 || count <= 0)
@@ -71,9 +87,9 @@ namespace AIRefactored.Pools
                 return;
             }
 
-            Stack<NavMeshHit[]> stack;
             lock (SyncRoot)
             {
+                Stack<NavMeshHit[]> stack;
                 if (!PoolBySize.TryGetValue(size, out stack))
                 {
                     stack = new Stack<NavMeshHit[]>(count);
@@ -87,11 +103,14 @@ namespace AIRefactored.Pools
             }
         }
 
+        /// <summary>
+        /// Clears all pooled <see cref="NavMeshHit"/> arrays and resets internal pool state.
+        /// </summary>
         public static void ClearAll()
         {
             lock (SyncRoot)
             {
-                foreach (var kvp in PoolBySize)
+                foreach (KeyValuePair<int, Stack<NavMeshHit[]>> kvp in PoolBySize)
                 {
                     kvp.Value.Clear();
                 }

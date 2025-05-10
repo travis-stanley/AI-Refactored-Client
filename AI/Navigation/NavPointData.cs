@@ -8,6 +8,7 @@
 
 namespace AIRefactored.AI.Navigation
 {
+    using System;
     using UnityEngine;
 
     /// <summary>
@@ -63,6 +64,21 @@ namespace AIRefactored.AI.Navigation
             string zone,
             string elevationBand)
         {
+            if (tag == null)
+            {
+                throw new ArgumentNullException(nameof(tag), "NavPointData constructor: tag must not be null.");
+            }
+
+            if (zone == null)
+            {
+                throw new ArgumentNullException(nameof(zone), "NavPointData constructor: zone must not be null.");
+            }
+
+            if (elevationBand == null)
+            {
+                throw new ArgumentNullException(nameof(elevationBand), "NavPointData constructor: elevationBand must not be null.");
+            }
+
             this.Position = position;
             this.IsCover = isCover;
             this.Tag = tag;
@@ -95,7 +111,14 @@ namespace AIRefactored.AI.Navigation
         /// </summary>
         public override string ToString()
         {
-            return $"[{this.Tag}] {this.Position} | Cover={this.IsCover} Jump={this.IsJumpable} Indoor={this.IsIndoor} Zone={this.Zone} ElevBand={this.ElevationBand}";
+            return string.Concat(
+                "[", this.Tag, "] ",
+                this.Position.ToString(),
+                " | Cover=", this.IsCover ? "Y" : "N",
+                " Jump=", this.IsJumpable ? "Y" : "N",
+                " Indoor=", this.IsIndoor ? "Y" : "N",
+                " Zone=", this.Zone,
+                " ElevBand=", this.ElevationBand);
         }
 
         #endregion

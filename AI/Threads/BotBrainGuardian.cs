@@ -32,13 +32,18 @@ namespace AIRefactored.AI.Threads
         /// <param name="botGameObject">The bot GameObject to sanitize.</param>
         public static void Enforce(GameObject botGameObject)
         {
-            if (botGameObject == null || !GameWorldHandler.IsLocalHost())
+            if (botGameObject == null)
+            {
+                return;
+            }
+
+            if (!GameWorldHandler.IsLocalHost())
             {
                 return;
             }
 
             MonoBehaviour[] components = botGameObject.GetComponents<MonoBehaviour>();
-            if (components.Length == 0)
+            if (components == null || components.Length == 0)
             {
                 return;
             }
@@ -122,7 +127,7 @@ namespace AIRefactored.AI.Threads
                 }
 
                 Patches patch = Harmony.GetPatchInfo(updateMethod);
-                return patch != null && patch.Owners.Count > 0;
+                return patch != null && patch.Owners != null && patch.Owners.Count > 0;
             }
             catch (Exception ex)
             {

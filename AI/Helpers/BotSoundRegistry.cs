@@ -10,6 +10,7 @@ namespace AIRefactored.AI.Helpers
 {
     using System.Collections.Generic;
     using AIRefactored.AI.Core;
+    using AIRefactored.Core;
     using EFT;
     using UnityEngine;
 
@@ -45,20 +46,20 @@ namespace AIRefactored.AI.Helpers
         public static bool FiredRecently(Player player, float withinSeconds = 1.5f, float now = -1f)
         {
             float time;
-            return TryGetLastShot(player, out time) &&
-                   ((now >= 0f ? now : Time.time) - time <= withinSeconds);
+            return TryGetLastShot(player, out time)
+                && ((now >= 0f ? now : Time.time) - time <= withinSeconds);
         }
 
         public static bool SteppedRecently(Player player, float withinSeconds = 1.2f, float now = -1f)
         {
             float time;
-            return TryGetLastStep(player, out time) &&
-                   ((now >= 0f ? now : Time.time) - time <= withinSeconds);
+            return TryGetLastStep(player, out time)
+                && ((now >= 0f ? now : Time.time) - time <= withinSeconds);
         }
 
         public static void NotifyShot(Player player)
         {
-            if (player == null || player.IsYourPlayer)
+            if (!EFTPlayerUtil.IsValid(player))
             {
                 return;
             }
@@ -79,13 +80,12 @@ namespace AIRefactored.AI.Helpers
 
             Vector3 pos = transform.position;
             SoundZones[id] = pos;
-
             TriggerSquadPing(id, pos, true);
         }
 
         public static void NotifyStep(Player player)
         {
-            if (player == null || player.IsYourPlayer)
+            if (!EFTPlayerUtil.IsValid(player))
             {
                 return;
             }
@@ -106,7 +106,6 @@ namespace AIRefactored.AI.Helpers
 
             Vector3 pos = transform.position;
             SoundZones[id] = pos;
-
             TriggerSquadPing(id, pos, false);
         }
 
@@ -114,7 +113,7 @@ namespace AIRefactored.AI.Helpers
         {
             time = -1f;
 
-            if (player == null)
+            if (!EFTPlayerUtil.IsValid(player))
             {
                 return false;
             }
@@ -127,7 +126,7 @@ namespace AIRefactored.AI.Helpers
         {
             time = -1f;
 
-            if (player == null)
+            if (!EFTPlayerUtil.IsValid(player))
             {
                 return false;
             }
@@ -140,7 +139,7 @@ namespace AIRefactored.AI.Helpers
         {
             pos = Vector3.zero;
 
-            if (player == null)
+            if (!EFTPlayerUtil.IsValid(player))
             {
                 return false;
             }
@@ -159,28 +158,22 @@ namespace AIRefactored.AI.Helpers
 
             foreach (BotComponentCache cache in BotCacheUtility.AllActiveBots())
             {
-                if (cache == null)
+                if (cache == null || cache.Bot == null || cache.Bot.IsDead)
                 {
                     continue;
                 }
 
-                BotOwner bot = cache.Bot;
-                if (bot == null || bot.IsDead)
-                {
-                    continue;
-                }
-
-                string id = bot.ProfileId;
+                string id = cache.Bot.ProfileId;
                 if (id == sourceId)
                 {
                     continue;
                 }
 
-                Vector3 pos = bot.Position;
+                Vector3 pos = cache.Bot.Position;
                 float dx = pos.x - location.x;
                 float dy = pos.y - location.y;
                 float dz = pos.z - location.z;
-                float distSq = dx * dx + dy * dy + dz * dz;
+                float distSq = (dx * dx) + (dy * dy) + (dz * dz);
 
                 if (distSq > radiusSq)
                 {
@@ -189,16 +182,13 @@ namespace AIRefactored.AI.Helpers
 
                 cache.RegisterHeardSound(location);
 
-                if (isGunshot)
+                if (cache.GroupComms != null)
                 {
-                    if (cache.GroupComms != null)
+                    if (isGunshot)
                     {
                         cache.GroupComms.SaySuppression();
                     }
-                }
-                else
-                {
-                    if (cache.GroupComms != null)
+                    else
                     {
                         cache.GroupComms.SayFallback();
                     }

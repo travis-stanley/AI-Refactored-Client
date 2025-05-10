@@ -33,7 +33,7 @@ namespace AIRefactored.AI.Perception
 
         #endregion
 
-        #region State
+        #region Fields
 
         private float _blindStartTime = -1f;
         private float _flashBlindness;
@@ -48,48 +48,34 @@ namespace AIRefactored.AI.Perception
 
         #region Initialization
 
-        /// <summary>
-        /// Initializes the bot visual perception system using validated bot cache.
-        /// </summary>
-        /// <param name="cache">Runtime bot AI cache.</param>
         public void Initialize(BotComponentCache cache)
         {
-            if (cache == null)
+            if (cache == null || cache.Bot == null)
             {
                 return;
             }
 
             BotOwner owner = cache.Bot;
-            if (owner == null || owner.IsDead)
+            if (owner.IsDead || owner.GetPlayer == null || !owner.GetPlayer.IsAI)
             {
                 return;
             }
 
-            Player player = owner.GetPlayer;
-            if (player == null || !player.IsAI)
-            {
-                return;
-            }
-
-            BotVisionProfile vision = BotVisionProfiles.Get(player);
-            if (vision == null)
+            BotVisionProfile profile = BotVisionProfiles.Get(owner.GetPlayer);
+            if (profile == null)
             {
                 return;
             }
 
             _bot = owner;
             _cache = cache;
-            _profile = vision;
+            _profile = profile;
         }
 
         #endregion
 
-        #region Tick Loop
+        #region Tick
 
-        /// <summary>
-        /// Updates vision clarity, panic triggers, and sensory impairment over time.
-        /// </summary>
-        /// <param name="deltaTime">Frame delta time.</param>
         public void Tick(float deltaTime)
         {
             if (!IsActive())
@@ -101,10 +87,11 @@ namespace AIRefactored.AI.Perception
 
             float penalty = Mathf.Max(_flashBlindness, _flareIntensity, _suppressionFactor);
             float adjustedSight = Mathf.Lerp(MinSightDistance, MaxSightDistance, 1f - penalty);
+            float visibleDist = adjustedSight * _profile.AdaptationSpeed;
 
             if (_bot.LookSensor != null)
             {
-                _bot.LookSensor.ClearVisibleDist = adjustedSight * _profile.AdaptationSpeed;
+                _bot.LookSensor.ClearVisibleDist = visibleDist;
             }
 
             float blindDuration = Mathf.Clamp01(_flashBlindness) * 3f;
@@ -118,21 +105,13 @@ namespace AIRefactored.AI.Perception
 
         #endregion
 
-        #region Exposure Effects
+        #region Exposure
 
-        /// <summary>
-        /// Applies flare-induced visibility impairment.
-        /// </summary>
-        /// <param name="strength">Intensity of flare.</param>
         public void ApplyFlareExposure(float strength)
         {
             _flareIntensity = Mathf.Clamp(strength * 0.6f, 0f, 0.8f);
         }
 
-        /// <summary>
-        /// Applies flashbang-induced blindness.
-        /// </summary>
-        /// <param name="intensity">Blindness strength.</param>
         public void ApplyFlashBlindness(float intensity)
         {
             if (!IsActive())
@@ -144,16 +123,12 @@ namespace AIRefactored.AI.Perception
             _flashBlindness = Mathf.Clamp01(_flashBlindness + added);
             _blindStartTime = Time.time;
 
-            if (_flashBlindness > BlindSpeechThreshold)
+            if (_flashBlindness > BlindSpeechThreshold && _bot.BotTalk != null && !FikaHeadlessDetector.IsHeadless)
             {
-                _bot.BotTalk?.TrySay(EPhraseTrigger.OnBeingHurt);
+                _bot.BotTalk.TrySay(EPhraseTrigger.OnBeingHurt);
             }
         }
 
-        /// <summary>
-        /// Applies suppression penalty from incoming fire.
-        /// </summary>
-        /// <param name="severity">Suppression strength.</param>
         public void ApplySuppression(float severity)
         {
             if (!IsActive())
@@ -164,10 +139,6 @@ namespace AIRefactored.AI.Perception
             _suppressionFactor = Mathf.Clamp01(severity * _profile.AggressionResponse);
         }
 
-        /// <summary>
-        /// Called when direct flash exposure is detected from flashlight or grenade.
-        /// </summary>
-        /// <param name="lightOrigin">Flash source position.</param>
         public void OnFlashExposure(Vector3 lightOrigin)
         {
             if (IsActive())
@@ -178,7 +149,7 @@ namespace AIRefactored.AI.Perception
 
         #endregion
 
-        #region Internal Logic
+        #region Internals
 
         private bool IsActive()
         {
@@ -212,7 +183,6 @@ namespace AIRefactored.AI.Perception
         private void RecoverClarity(float deltaTime)
         {
             float recovery = _profile.ClarityRecoverySpeed;
-
             _flashBlindness = Mathf.MoveTowards(_flashBlindness, 0f, FlashRecoverySpeed * recovery * deltaTime);
             _flareIntensity = Mathf.MoveTowards(_flareIntensity, 0f, FlareRecoverySpeed * recovery * deltaTime);
             _suppressionFactor = Mathf.MoveTowards(_suppressionFactor, 0f, SuppressionRecoverySpeed * recovery * deltaTime);
@@ -225,8 +195,8 @@ namespace AIRefactored.AI.Perception
                 return;
             }
 
-            if (_flashBlindness >= PanicTriggerThreshold &&
-                (Time.time - _blindStartTime) < 2.5f)
+            float elapsed = Time.time - _blindStartTime;
+            if (_flashBlindness >= PanicTriggerThreshold && elapsed < 2.5f)
             {
                 _cache.PanicHandler.TriggerPanic();
             }
@@ -239,10 +209,10 @@ namespace AIRefactored.AI.Perception
                 return;
             }
 
-            IPlayer visible = _bot.Memory?.GoalEnemy?.Person;
-            if (visible != null)
+            IPlayer target = _bot.Memory != null ? _bot.Memory.GoalEnemy?.Person : null;
+            if (target != null)
             {
-                BotTeamLogic.AddEnemy(_bot, visible);
+                BotTeamLogic.AddEnemy(_bot, target);
             }
         }
 

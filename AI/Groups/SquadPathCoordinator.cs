@@ -75,7 +75,6 @@ namespace AIRefactored.AI.Groups
             }
 
             int currentSize = _group.MembersCount;
-
             if (!_offsetInitialized || currentSize != _lastGroupSize)
             {
                 _cachedOffset = ComputeOffset();
@@ -92,7 +91,7 @@ namespace AIRefactored.AI.Groups
 
         private Vector3 ComputeOffset()
         {
-            if (_bot == null || _group == null || _group.MembersCount < 2 || _bot.IsDead)
+            if (_bot == null || _group == null || _bot.IsDead || _group.MembersCount < 2)
             {
                 return Vector3.zero;
             }
@@ -110,12 +109,13 @@ namespace AIRefactored.AI.Groups
             }
 
             int squadSize = _group.MembersCount;
-            int seed = unchecked(profileId.GetHashCode() ^ squadSize);
+            int seed = unchecked(profileId.GetHashCode() ^ (squadSize * 397));
             Random.InitState(seed);
 
-            float spacing = Mathf.Clamp(BaseSpacing + Random.Range(-0.4f, 0.4f), MinSpacing, MaxSpacing);
+            float baseNoise = Random.Range(-0.4f, 0.4f);
+            float spacing = Mathf.Clamp(BaseSpacing + baseNoise, MinSpacing, MaxSpacing);
             float angleStep = 360f / squadSize;
-            float angle = index * angleStep + Random.Range(-8f, 8f);
+            float angle = (index * angleStep) + Random.Range(-8f, 8f);
             float radians = angle * Mathf.Deg2Rad;
 
             float x = Mathf.Cos(radians) * spacing;

@@ -15,6 +15,7 @@ namespace AIRefactored.AI.Missions
     using AIRefactored.Runtime;
     using BepInEx.Logging;
     using EFT;
+    using EFT.HealthSystem;
     using UnityEngine;
     using Random = UnityEngine.Random;
 
@@ -71,9 +72,14 @@ namespace AIRefactored.AI.Missions
 
         public BotMissionController(BotOwner bot, BotComponentCache cache)
         {
-            if (bot == null || cache == null)
+            if (bot == null)
             {
-                throw new ArgumentException("BotMissionController: bot or cache is null.");
+                throw new ArgumentNullException(nameof(bot));
+            }
+
+            if (cache == null)
+            {
+                throw new ArgumentNullException(nameof(cache));
             }
 
             _bot = bot;
@@ -95,7 +101,12 @@ namespace AIRefactored.AI.Missions
             _objectives.SetInitialObjective(_missionType);
 
             cache.AIRefactoredBotOwner?.SetMissionController(this);
-            Logger.LogDebug("[BotMissionController] Assigned mission: " + _missionType + " for bot " + (bot.Profile?.Info?.Nickname ?? "Unknown"));
+
+            string nickname = (bot.Profile != null && bot.Profile.Info != null)
+                ? bot.Profile.Info.Nickname
+                : "Unknown";
+
+            Logger.LogDebug("[BotMissionController] Assigned mission: " + _missionType + " for bot " + nickname);
         }
 
         #endregion
@@ -110,7 +121,10 @@ namespace AIRefactored.AI.Missions
 
         public void Tick(float time)
         {
-            if (_bot.IsDead || _bot.GetPlayer == null || !_bot.GetPlayer.HealthController.IsAlive)
+            Player player = _bot.GetPlayer;
+            IHealthController hc = player != null ? player.HealthController : null;
+
+            if (_bot.IsDead || player == null || hc == null || !hc.IsAlive)
             {
                 return;
             }
@@ -144,7 +158,8 @@ namespace AIRefactored.AI.Missions
 
             _extraction.Tick(time);
 
-            if (!_evaluator.IsGroupAligned() && _missionType != MissionType.Fight)
+            bool groupSplit = !_evaluator.IsGroupAligned() && _missionType != MissionType.Fight;
+            if (groupSplit)
             {
                 if (_groupWaitStart < 0f)
                 {
@@ -169,7 +184,8 @@ namespace AIRefactored.AI.Missions
                 _lastUpdate = time;
             }
 
-            if (!_inCombatPause && Vector3.Distance(_bot.Position, _objectives.CurrentObjective) < LootSyncDistance)
+            if (!_inCombatPause &&
+                Vector3.Distance(_bot.Position, _objectives.CurrentObjective) < LootSyncDistance)
             {
                 OnObjectiveReached();
             }
@@ -187,7 +203,6 @@ namespace AIRefactored.AI.Missions
                 _cache.GroupBehavior.GroupSync != null)
             {
                 Vector3 myPos = _bot.Position;
-
                 _cache.GroupBehavior.GroupSync.BroadcastLootPoint(myPos);
 
                 Vector3? fallback = _cache.GroupBehavior.GroupSync.GetSharedFallbackTarget();
@@ -201,7 +216,10 @@ namespace AIRefactored.AI.Missions
                 _cache.PoseController.LockCrouchPose();
 
                 _cache.LootScanner.TryLootNearby();
-                _cache.DeadBodyScanner?.TryLootNearby();
+                if (_cache.DeadBodyScanner != null)
+                {
+                    _cache.DeadBodyScanner.TryLootNearby();
+                }
 
                 _cache.Movement.ExitLootingMode();
                 _voice.OnLoot();
@@ -216,7 +234,7 @@ namespace AIRefactored.AI.Missions
             _objectives.SetInitialObjective(_missionType);
             _voice.OnMissionSwitch();
 
-            if (_bot.Profile?.Info?.GroupId != null)
+            if (_bot.Profile != null && _bot.Profile.Info != null && _bot.Profile.Info.GroupId != null)
             {
                 GroupMissionCoordinator.ForceMissionForGroup(_bot.Profile.Info.GroupId, MissionType.Fight);
             }

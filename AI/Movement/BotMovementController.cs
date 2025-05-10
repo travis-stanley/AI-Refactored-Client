@@ -101,7 +101,6 @@ namespace AIRefactored.AI.Movement
             if (_cache.DoorInteraction != null)
             {
                 _cache.DoorInteraction.Tick(Time.time);
-
                 if (_cache.DoorInteraction.IsBlockedByDoor)
                 {
                     Logger.LogDebug("[Movement] Door blocked — waiting.");

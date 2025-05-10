@@ -69,7 +69,7 @@ namespace AIRefactored.AI.Threads
 
         private void Update()
         {
-            if (!_isValid || _bot == null || _bot.IsDead || _player == null)
+            if (!enabled || !_isValid || _bot == null || _bot.IsDead || _player == null)
             {
                 return;
             }
@@ -85,7 +85,6 @@ namespace AIRefactored.AI.Threads
             float now = Time.time;
             float delta = Time.deltaTime;
 
-            // Validate core systems
             if (_movement == null || _combat == null || _mission == null || _cache == null)
             {
                 if (now > _lastWarningTime + 1f)
@@ -142,6 +141,15 @@ namespace AIRefactored.AI.Threads
         }
 
         /// <summary>
+        /// Called externally by WorldBootstrapper to drive per-frame AI logic.
+        /// </summary>
+        /// <param name="deltaTime">Time since last frame.</param>
+        public void Tick(float deltaTime)
+        {
+            Update();
+        }
+
+        /// <summary>
         /// Initializes this brain instance with its owning bot.
         /// </summary>
         /// <param name="bot">The BotOwner reference to attach to.</param>
@@ -172,7 +180,6 @@ namespace AIRefactored.AI.Threads
             try
             {
                 string profileId = player.Profile.Id;
-
                 if (!BotRegistry.TryGetRefactoredOwner(profileId, out AIRefactoredBotOwner owner))
                 {
                     owner = new AIRefactoredBotOwner();
@@ -197,8 +204,8 @@ namespace AIRefactored.AI.Threads
                 _perception = new BotPerceptionSystem(); _perception.Initialize(_cache);
                 _flashReaction = new BotFlashReactionComponent(); _flashReaction.Initialize(_cache);
                 _flashDetector = new FlashGrenadeComponent(); _flashDetector.Initialize(_cache);
-                _hearingDamage = new HearingDamageComponent();
 
+                _hearingDamage = new HearingDamageComponent();
                 _tactical = _cache.Tactical;
                 _mission = new BotMissionController(bot, _cache);
                 _groupSync = new BotGroupSyncCoordinator(); _groupSync.Initialize(bot); _groupSync.InjectLocalCache(_cache);
@@ -208,8 +215,9 @@ namespace AIRefactored.AI.Threads
 
                 BotBrainGuardian.Enforce(_player.gameObject);
                 _isValid = true;
+                enabled = true;
 
-                Logger.LogInfo("[BotBrain] ✅ AI initialized for: " + (_player.Profile.Info.Nickname ?? "Unnamed"));
+                Logger.LogDebug("[BotBrain] ✅ AI initialized for: " + (_player.Profile.Info.Nickname ?? "Unnamed"));
             }
             catch (Exception ex)
             {

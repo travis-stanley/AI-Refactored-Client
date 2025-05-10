@@ -9,6 +9,7 @@
 namespace AIRefactored.AI.Helpers
 {
     using AIRefactored.AI.Core;
+    using AIRefactored.Core;
     using EFT;
     using UnityEngine;
 
@@ -21,29 +22,26 @@ namespace AIRefactored.AI.Helpers
         private const float FlashBlindDuration = 4.5f;
 
         /// <summary>
-        /// Gets the BotOwner instance from a Player, if AI-controlled.
+        /// Gets the BotOwner instance from a Player, if valid AI.
         /// </summary>
         public static BotOwner GetBotOwner(Player player)
         {
-            if (player == null || !player.IsAI)
+            if (!EFTPlayerUtil.IsValid(player) || !player.IsAI)
             {
                 return null;
             }
 
-            return player.AIData is BotOwner owner ? owner : null;
+            return player.AIData != null ? player.AIData.BotOwner : null;
         }
 
         /// <summary>
-        /// Gets the BotComponentCache from a Player, if AI-controlled.
+        /// Gets the BotComponentCache from a Player, if valid AI.
         /// </summary>
         public static BotComponentCache GetCache(Player player)
         {
-            if (player == null || !player.IsAI)
-            {
-                return null;
-            }
-
-            return BotCacheUtility.GetCache(player);
+            return EFTPlayerUtil.IsValid(player) && player.IsAI
+                ? BotCacheUtility.GetCache(player)
+                : null;
         }
 
         /// <summary>
@@ -78,7 +76,7 @@ namespace AIRefactored.AI.Helpers
         /// </summary>
         public static void TrySuppressBot(Player player, Vector3 threatPosition, IPlayer source = null)
         {
-            if (player == null || !player.IsAI)
+            if (!EFTPlayerUtil.IsValid(player) || !player.IsAI)
             {
                 return;
             }

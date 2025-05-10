@@ -6,6 +6,7 @@
 //   Please follow strict StyleCop, ReSharper, and AI-Refactored code standards for all modifications.
 // </auto-generated>
 
+
 namespace AIRefactored.Pools
 {
     using System;
@@ -25,27 +26,44 @@ namespace AIRefactored.Pools
             AppDomain.CurrentDomain.DomainUnload += (_, __) => ClearAll();
         }
 
+        /// <summary>
+        /// Rents a pooled <see cref="Vector3"/> array of the given size.
+        /// </summary>
+        /// <param name="size">Minimum array length.</param>
+        /// <returns>Reusable path corner array.</returns>
         public static Vector3[] Rent(int size)
         {
-            if (size <= 0) size = 1;
+            if (size <= 0)
+            {
+                size = 1;
+            }
 
-            Stack<Vector3[]> stack;
             lock (SyncRoot)
             {
+                Stack<Vector3[]> stack;
                 if (PoolBySize.TryGetValue(size, out stack) && stack.Count > 0)
+                {
                     return stack.Pop();
+                }
             }
 
             return new Vector3[size];
         }
 
+        /// <summary>
+        /// Returns a <see cref="Vector3"/> array to the pool.
+        /// </summary>
+        /// <param name="array">Array to return.</param>
         public static void Return(Vector3[] array)
         {
-            if (array == null || array.Length == 0) return;
+            if (array == null || array.Length == 0)
+            {
+                return;
+            }
 
-            Stack<Vector3[]> stack;
             lock (SyncRoot)
             {
+                Stack<Vector3[]> stack;
                 if (!PoolBySize.TryGetValue(array.Length, out stack))
                 {
                     stack = new Stack<Vector3[]>(8);
@@ -56,13 +74,21 @@ namespace AIRefactored.Pools
             }
         }
 
+        /// <summary>
+        /// Pre-warms the pool with reusable <see cref="Vector3"/> arrays.
+        /// </summary>
+        /// <param name="size">Length of each array.</param>
+        /// <param name="count">Number of arrays to allocate.</param>
         public static void Prewarm(int size, int count)
         {
-            if (size <= 0 || count <= 0) return;
+            if (size <= 0 || count <= 0)
+            {
+                return;
+            }
 
-            Stack<Vector3[]> stack;
             lock (SyncRoot)
             {
+                Stack<Vector3[]> stack;
                 if (!PoolBySize.TryGetValue(size, out stack))
                 {
                     stack = new Stack<Vector3[]>(count);
@@ -70,16 +96,23 @@ namespace AIRefactored.Pools
                 }
 
                 for (int i = 0; i < count; i++)
+                {
                     stack.Push(new Vector3[size]);
+                }
             }
         }
 
+        /// <summary>
+        /// Clears all pooled <see cref="Vector3"/> arrays.
+        /// </summary>
         public static void ClearAll()
         {
             lock (SyncRoot)
             {
-                foreach (var kvp in PoolBySize)
+                foreach (KeyValuePair<int, Stack<Vector3[]>> kvp in PoolBySize)
+                {
                     kvp.Value.Clear();
+                }
 
                 PoolBySize.Clear();
             }

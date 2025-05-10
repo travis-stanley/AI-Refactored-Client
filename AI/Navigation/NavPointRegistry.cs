@@ -32,7 +32,7 @@ namespace AIRefactored.AI.Navigation
 
         #endregion
 
-        #region Public API
+        #region Lifecycle
 
         public static int Count => Points.Count;
 
@@ -42,7 +42,7 @@ namespace AIRefactored.AI.Navigation
             Unique.Clear();
             _quadtree = null;
             _useQuadtree = false;
-            Logger.LogInfo("[NavPointRegistry] Initialized.");
+            Logger.LogDebug("[NavPointRegistry] Initialized.");
         }
 
         public static void Clear()
@@ -57,6 +57,25 @@ namespace AIRefactored.AI.Navigation
             _useQuadtree = enable;
             _quadtree = enable ? BuildQuadtree() : null;
         }
+
+        public static void RegisterAll(string mapId)
+        {
+            Initialize();
+            Logger.LogDebug("[NavPointRegistry] Registering nav points for map: " + mapId);
+
+            NavMeshSurface surface = GameObject.FindObjectOfType<NavMeshSurface>();
+            if (surface == null)
+            {
+                Logger.LogWarning("[NavPointRegistry] No NavMeshSurface found.");
+                return;
+            }
+
+            NavPointBootstrapper.RegisterAll(mapId);
+        }
+
+        #endregion
+
+        #region Registration
 
         public static void Register(Vector3 pos, bool isCover = false, string tag = "generic", float elevation = 0f, bool isIndoor = false, bool isJumpable = false, float coverAngle = 0f)
         {
@@ -80,21 +99,6 @@ namespace AIRefactored.AI.Navigation
             {
                 _quadtree.Insert(pos);
             }
-        }
-
-        public static void RegisterAll(string mapId)
-        {
-            Initialize();
-            Logger.LogInfo("[NavPointRegistry] Registering nav points for map: " + mapId);
-
-            NavMeshSurface surface = GameObject.FindObjectOfType<NavMeshSurface>();
-            if (surface == null)
-            {
-                Logger.LogWarning("[NavPointRegistry] No NavMeshSurface found.");
-                return;
-            }
-
-            NavPointBootstrapper.RegisterAll(mapId);
         }
 
         public static void RefreshPointsAround(Vector3 center, float radius)
@@ -122,25 +126,21 @@ namespace AIRefactored.AI.Navigation
                     GetElevationBand(point.Elevation));
             }
 
-            Logger.LogInfo("[NavPointRegistry] Refreshed nav points near: " + center.ToString("F1"));
+            Logger.LogDebug("[NavPointRegistry] Refreshed nav points near: " + center.ToString("F1"));
         }
 
+        #endregion
+
+        #region Queries
+
         public static bool IsRegistered(Vector3 pos) => Unique.Contains(pos);
-
         public static bool IsCoverPoint(Vector3 pos) => TryGetPoint(pos, out var p) && p.IsCover;
-
         public static bool IsIndoor(Vector3 pos) => TryGetPoint(pos, out var p) && p.IsIndoor;
-
         public static bool IsJumpable(Vector3 pos) => TryGetPoint(pos, out var p) && p.IsJumpable;
-
         public static float GetCoverAngle(Vector3 pos) => TryGetPoint(pos, out var p) ? p.CoverAngle : 0f;
-
         public static float GetElevation(Vector3 pos) => TryGetPoint(pos, out var p) ? p.Elevation : 0f;
-
         public static string GetTag(Vector3 pos) => TryGetPoint(pos, out var p) ? p.Tag : "untagged";
-
         public static string GetZone(Vector3 pos) => TryGetPoint(pos, out var p) ? p.Zone : "unassigned";
-
         public static string GetElevationBand(Vector3 pos) => TryGetPoint(pos, out var p) ? p.ElevationBand : "unknown";
 
         public static List<Vector3> GetAllPositions()
@@ -264,16 +264,18 @@ namespace AIRefactored.AI.Navigation
                 return null;
             }
 
-            float minX = float.MaxValue, maxX = float.MinValue;
-            float minZ = float.MaxValue, maxZ = float.MinValue;
+            float minX = float.MaxValue;
+            float maxX = float.MinValue;
+            float minZ = float.MaxValue;
+            float maxZ = float.MinValue;
 
             for (int i = 0; i < Points.Count; i++)
             {
                 Vector3 pos = Points[i].WorldPos;
-                minX = Mathf.Min(minX, pos.x);
-                maxX = Mathf.Max(maxX, pos.x);
-                minZ = Mathf.Min(minZ, pos.z);
-                maxZ = Mathf.Max(maxZ, pos.z);
+                if (pos.x < minX) minX = pos.x;
+                if (pos.x > maxX) maxX = pos.x;
+                if (pos.z < minZ) minZ = pos.z;
+                if (pos.z > maxZ) maxZ = pos.z;
             }
 
             Vector2 center = new Vector2((minX + maxX) * 0.5f, (minZ + maxZ) * 0.5f);
@@ -285,7 +287,7 @@ namespace AIRefactored.AI.Navigation
                 tree.Insert(Points[i].WorldPos);
             }
 
-            Logger.LogInfo("[NavPointRegistry] Quadtree built for " + Points.Count + " points.");
+            Logger.LogDebug("[NavPointRegistry] Quadtree built for " + Points.Count + " points.");
             return tree;
         }
 
@@ -293,15 +295,15 @@ namespace AIRefactored.AI.Navigation
         {
             public NavPoint(Vector3 pos, bool isCover, string tag, float elevation, bool isIndoor, bool isJumpable, float coverAngle, string zone, string elevationBand)
             {
-                WorldPos = pos;
-                IsCover = isCover;
-                Tag = tag;
-                Elevation = elevation;
-                IsIndoor = isIndoor;
-                IsJumpable = isJumpable;
-                CoverAngle = coverAngle;
-                Zone = zone;
-                ElevationBand = elevationBand;
+                this.WorldPos = pos;
+                this.IsCover = isCover;
+                this.Tag = tag;
+                this.Elevation = elevation;
+                this.IsIndoor = isIndoor;
+                this.IsJumpable = isJumpable;
+                this.CoverAngle = coverAngle;
+                this.Zone = zone;
+                this.ElevationBand = elevationBand;
             }
 
             public Vector3 WorldPos { get; }

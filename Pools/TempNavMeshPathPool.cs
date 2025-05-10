@@ -6,6 +6,7 @@
 //   Please follow strict StyleCop, ReSharper, and AI-Refactored code standards for all modifications.
 // </auto-generated>
 
+
 namespace AIRefactored.Pools
 {
     using System;
@@ -26,6 +27,10 @@ namespace AIRefactored.Pools
             AppDomain.CurrentDomain.DomainUnload += (_, __) => ClearAll();
         }
 
+        /// <summary>
+        /// Rents a pooled <see cref="NavMeshPath"/> instance, or allocates a new one.
+        /// </summary>
+        /// <returns>A reusable NavMeshPath instance.</returns>
         public static NavMeshPath Rent()
         {
             lock (SyncRoot)
@@ -39,6 +44,11 @@ namespace AIRefactored.Pools
             return new NavMeshPath();
         }
 
+        /// <summary>
+        /// Returns a <see cref="NavMeshPath"/> instance to the pool.
+        /// Caller is responsible for clearing any internal state before reuse.
+        /// </summary>
+        /// <param name="path">The path to return.</param>
         public static void Return(NavMeshPath path)
         {
             if (path == null)
@@ -46,13 +56,16 @@ namespace AIRefactored.Pools
                 return;
             }
 
-            // NavMeshPath has no Clear() method; reset handled by caller.
             lock (SyncRoot)
             {
                 Pool.Push(path);
             }
         }
 
+        /// <summary>
+        /// Prewarms the pool with a number of <see cref="NavMeshPath"/> instances.
+        /// </summary>
+        /// <param name="count">Number of paths to preallocate.</param>
         public static void Prewarm(int count)
         {
             if (count <= 0)
@@ -69,6 +82,9 @@ namespace AIRefactored.Pools
             }
         }
 
+        /// <summary>
+        /// Clears all pooled <see cref="NavMeshPath"/> instances.
+        /// </summary>
         public static void ClearAll()
         {
             lock (SyncRoot)

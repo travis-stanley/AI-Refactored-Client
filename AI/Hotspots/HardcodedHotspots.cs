@@ -13,9 +13,9 @@ namespace AIRefactored.AI.Hotspots
     using UnityEngine;
 
     /// <summary>
-    /// Represents a single tactical hotspot point with a position and associated zone label.
+    /// Represents a single tactical hotspot in the world.
     /// </summary>
-    public class HotspotData
+    public sealed class HotspotData
     {
         /// <summary>
         /// Initializes a new instance of the <see cref="HotspotData"/> class.
@@ -24,8 +24,13 @@ namespace AIRefactored.AI.Hotspots
         /// <param name="zone">Label or tactical area name associated with this hotspot.</param>
         public HotspotData(Vector3 position, string zone)
         {
+            if (string.IsNullOrEmpty(zone))
+            {
+                throw new ArgumentException("Zone label cannot be null or empty.", nameof(zone));
+            }
+
             this.Position = position;
-            this.Zone = zone;
+            this.Zone = zone.Trim();
         }
 
         /// <summary>
@@ -42,7 +47,7 @@ namespace AIRefactored.AI.Hotspots
     /// <summary>
     /// Represents a collection of hotspots for a map.
     /// </summary>
-    public class HotspotSet
+    public sealed class HotspotSet
     {
         /// <summary>
         /// Initializes a new instance of the <see cref="HotspotSet"/> class.
@@ -50,7 +55,20 @@ namespace AIRefactored.AI.Hotspots
         /// <param name="points">The list of hotspot data points.</param>
         public HotspotSet(List<HotspotData> points)
         {
-            this.Points = points ?? new List<HotspotData>();
+            if (points == null)
+            {
+                throw new ArgumentNullException(nameof(points));
+            }
+
+            this.Points = new List<HotspotData>(points.Count);
+            for (int i = 0; i < points.Count; i++)
+            {
+                HotspotData entry = points[i];
+                if (entry != null)
+                {
+                    this.Points.Add(entry);
+                }
+            }
         }
 
         /// <summary>
@@ -448,14 +466,20 @@ namespace AIRefactored.AI.Hotspots
                 throw new ArgumentException("Map ID cannot be null or empty.", nameof(mapId));
             }
 
-            // Using TryGetValue to prevent key lookup exceptions
-            if (Hotspots.TryGetValue(mapId.ToLowerInvariant(), out var points))
+            string key = mapId.Trim().ToLowerInvariant();
+            if (key.Length == 0)
+            {
+                throw new ArgumentException("Map ID cannot be whitespace.", nameof(mapId));
+            }
+
+            List<HotspotData> points;
+            if (Hotspots.TryGetValue(key, out points))
             {
                 return new HotspotSet(points);
             }
 
-            // If map is not found, throw an exception to maintain robustness
             throw new KeyNotFoundException($"Hotspot set for map ID '{mapId}' not found.");
         }
+
     }
 }

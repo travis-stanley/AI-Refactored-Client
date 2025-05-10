@@ -19,21 +19,27 @@ namespace AIRefactored.AI.Navigation
     /// </summary>
     public sealed class ZoneAutoRefresherSystem : IAIWorldSystemBootstrapper
     {
-        private static readonly ManualLogSource Logger = Plugin.LoggerInstance;
-        private static readonly ZoneAutoRefresherSystem SingletonInstance = new ZoneAutoRefresherSystem();
+        #region Static
+
+        private static readonly ZoneAutoRefresherSystem _instance = new ZoneAutoRefresherSystem();
+        private static readonly ManualLogSource _logger = Plugin.LoggerInstance;
 
         /// <summary>
         /// Gets the singleton instance of the disabled refresher system.
         /// </summary>
         public static ZoneAutoRefresherSystem Instance
         {
-            get { return SingletonInstance; }
+            get { return _instance; }
         }
+
+        #endregion
+
+        #region Lifecycle
 
         /// <inheritdoc />
         public void Initialize()
         {
-            Logger.LogInfo("[ZoneAutoRefresherSystem] Disabled — IZones no longer used.");
+            _logger.LogDebug("[ZoneAutoRefresherSystem] Disabled — IZones no longer used.");
         }
 
         /// <inheritdoc />
@@ -57,5 +63,7 @@ namespace AIRefactored.AI.Navigation
         {
             return WorldPhase.WorldReady;
         }
+
+        #endregion
     }
 }

@@ -39,18 +39,12 @@ namespace AIRefactored.AI.Perception
         /// </summary>
         public void Initialize(BotComponentCache cache)
         {
-            if (cache == null)
+            if (cache == null || cache.Bot == null)
             {
                 throw new ArgumentNullException(nameof(cache));
             }
 
-            BotOwner resolved = cache.Bot;
-            if (resolved == null)
-            {
-                throw new ArgumentException("Invalid bot reference.");
-            }
-
-            _bot = resolved;
+            _bot = cache.Bot;
             _cache = cache;
         }
 
@@ -88,7 +82,7 @@ namespace AIRefactored.AI.Perception
                 for (int i = 0; i < devices.Count; i++)
                 {
                     LightComponent device = devices[i];
-                    if (device.IsActive != shouldEnable)
+                    if (device != null && device.IsActive != shouldEnable)
                     {
                         device.IsActive = shouldEnable;
                     }
@@ -99,7 +93,11 @@ namespace AIRefactored.AI.Perception
                     _nextDecisionTime = Time.time + 1.5f;
                     for (int i = 0; i < devices.Count; i++)
                     {
-                        devices[i].IsActive = false;
+                        LightComponent device = devices[i];
+                        if (device != null)
+                        {
+                            device.IsActive = false;
+                        }
                     }
                 }
             }
@@ -119,9 +117,8 @@ namespace AIRefactored.AI.Perception
                    _cache != null &&
                    !_bot.IsDead &&
                    Time.time >= _nextDecisionTime &&
-                   _bot.GetPlayer != null &&
-                   _bot.GetPlayer.IsAI &&
-                   !_bot.GetPlayer.IsYourPlayer;
+                   EFTPlayerUtil.IsValid(_bot.GetPlayer) &&
+                   _bot.GetPlayer.IsAI;
         }
 
         private float GetChaosBaitChance()

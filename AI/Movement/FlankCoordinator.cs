@@ -53,7 +53,10 @@ namespace AIRefactored.AI.Movement
 
             Vector3 botPos = bot.Position;
             Vector3 enemyPos = bot.Memory.GoalEnemy.CurrPosition;
-            BifacialTransform bifacial = bot.Memory.GoalEnemy.Person?.Transform;
+
+            BifacialTransform bifacial = bot.Memory.GoalEnemy.Person != null
+                ? bot.Memory.GoalEnemy.Person.Transform
+                : null;
 
             if (bifacial == null)
             {
@@ -61,8 +64,8 @@ namespace AIRefactored.AI.Movement
             }
 
             float now = Time.time;
-            Vector3 enemyDir = bifacial.forward;
-            float angle = Vector3.SignedAngle(enemyDir, botPos - enemyPos, Vector3.up);
+            Vector3 enemyForward = bifacial.forward;
+            float angle = Vector3.SignedAngle(enemyForward, botPos - enemyPos, Vector3.up);
 
             float squadBias = GetSquadBias(bot, enemyPos);
             float suppressionBias = GetSuppressionBias(cache);
@@ -111,7 +114,9 @@ namespace AIRefactored.AI.Movement
 
         private static float GetSuppressionBias(BotComponentCache cache)
         {
-            return cache.Suppression != null && cache.Suppression.IsSuppressed() ? SuppressionBiasWeight : 0f;
+            return cache.Suppression != null && cache.Suppression.IsSuppressed()
+                ? SuppressionBiasWeight
+                : 0f;
         }
 
         private static float GetSquadBias(BotOwner bot, Vector3 enemyPosition)
@@ -122,8 +127,8 @@ namespace AIRefactored.AI.Movement
                 return 0f;
             }
 
-            Vector3 botVec = bot.Position - enemyPosition;
-            Vector3 normSelf = botVec.sqrMagnitude > 0.001f ? botVec.normalized : Vector3.forward;
+            Vector3 botVector = bot.Position - enemyPosition;
+            Vector3 normSelf = botVector.sqrMagnitude > 0.001f ? botVector.normalized : Vector3.forward;
 
             float dotSum = 0f;
             int contributors = 0;
@@ -136,10 +141,10 @@ namespace AIRefactored.AI.Movement
                     continue;
                 }
 
-                Vector3 mateVec = mate.Position - enemyPosition;
-                if (mateVec.sqrMagnitude > 0.001f)
+                Vector3 mateVector = mate.Position - enemyPosition;
+                if (mateVector.sqrMagnitude > 0.001f)
                 {
-                    dotSum += Vector3.Dot(normSelf, mateVec.normalized);
+                    dotSum += Vector3.Dot(normSelf, mateVector.normalized);
                     contributors++;
                 }
             }

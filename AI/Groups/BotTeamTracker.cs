@@ -9,8 +9,8 @@
 namespace AIRefactored.AI.Groups
 {
     using System.Collections.Generic;
+    using AIRefactored.Core;
     using EFT;
-    using UnityEngine;
 
     /// <summary>
     /// Tracks and manages squads of bots by GroupId for tactical queries and squad-level behaviors.
@@ -18,7 +18,7 @@ namespace AIRefactored.AI.Groups
     /// </summary>
     public static class BotTeamTracker
     {
-        #region Fields
+        #region Static State
 
         private static readonly Dictionary<string, List<BotOwner>> Groups = new Dictionary<string, List<BotOwner>>(32);
         private static readonly List<BotOwner> TempBuffer = new List<BotOwner>(8);
@@ -65,14 +65,6 @@ namespace AIRefactored.AI.Groups
             }
 
             return new List<BotOwner>(TempBuffer);
-        }
-
-        public static void PrintGroups()
-        {
-            foreach (KeyValuePair<string, List<BotOwner>> entry in Groups)
-            {
-                Debug.Log("[BotTeamTracker] Group '" + entry.Key + "': " + entry.Value.Count + " member(s)");
-            }
         }
 
         public static void Register(string groupId, BotOwner bot)
@@ -155,6 +147,15 @@ namespace AIRefactored.AI.Groups
                 Groups.Remove(groupToRemove);
             }
         }
+
+        // Disabled: Logging not permitted during runtime
+        // public static void PrintGroups()
+        // {
+        //     foreach (KeyValuePair<string, List<BotOwner>> entry in Groups)
+        //     {
+        //         Plugin.LoggerInstance.LogDebug("[BotTeamTracker] Group '" + entry.Key + "': " + entry.Value.Count + " member(s)");
+        //     }
+        // }
 
         #endregion
     }

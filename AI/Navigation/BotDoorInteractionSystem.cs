@@ -11,6 +11,7 @@ namespace AIRefactored.AI.Navigation
     using System;
     using AIRefactored.AI.Core;
     using AIRefactored.Core;
+    using AIRefactored.Pools;
     using BepInEx.Logging;
     using EFT;
     using EFT.Interactive;
@@ -22,10 +23,16 @@ namespace AIRefactored.AI.Navigation
     /// </summary>
     public sealed class BotDoorInteractionSystem
     {
+        #region Constants
+
         private const float DoorRetryCooldown = 2.5f;
         private const float DoorCheckInterval = 0.4f;
         private const float DoorCastRange = 1.75f;
         private const float DoorCastRadius = 0.4f;
+
+        #endregion
+
+        #region Fields
 
         private readonly BotOwner _bot;
         private readonly ManualLogSource _log;
@@ -34,22 +41,46 @@ namespace AIRefactored.AI.Navigation
         private float _nextRetryTime;
         private Door _currentDoor;
 
+        #endregion
+
+        #region Properties
+
+        /// <summary>
+        /// Gets a value indicating whether a door is currently blocking the bot.
+        /// </summary>
         public bool IsBlockedByDoor { get; private set; }
+
+        #endregion
+
+        #region Constructor
 
         public BotDoorInteractionSystem(BotOwner bot)
         {
             if (bot == null)
             {
-                throw new ArgumentNullException("BotDoorInteractionSystem constructor: bot was null");
+                throw new ArgumentNullException(nameof(bot), "BotDoorInteractionSystem constructor: bot was null");
             }
 
             _bot = bot;
             _log = Plugin.LoggerInstance;
         }
 
+        #endregion
+
+        #region Public API
+
+        /// <summary>
+        /// Updates door interaction logic.
+        /// </summary>
         public void Tick(float time)
         {
-            if (_bot == null || _bot.IsDead || _bot.GetPlayer == null || !_bot.GetPlayer.IsAI)
+            if (_bot == null || _bot.IsDead)
+            {
+                return;
+            }
+
+            Player player = _bot.GetPlayer;
+            if (player == null || !player.IsAI)
             {
                 return;
             }
@@ -64,22 +95,39 @@ namespace AIRefactored.AI.Navigation
             Vector3 origin = _bot.Position + Vector3.up * 1.2f;
             Vector3 forward = _bot.LookDirection;
 
-            if (!Physics.SphereCast(origin, DoorCastRadius, forward, out RaycastHit hit, DoorCastRange, AIRefactoredLayerMasks.Interactive))
+            RaycastHit hit;
+            if (!Physics.SphereCast(origin, DoorCastRadius, forward, out hit, DoorCastRange, AIRefactoredLayerMasks.Interactive))
             {
                 IsBlockedByDoor = false;
                 _currentDoor = null;
                 return;
             }
 
-            Door door = hit.collider != null ? hit.collider.GetComponentInParent<Door>() : null;
-            if (door == null || !door.enabled || (door.DoorState & EDoorState.Open) != 0 || (door.DoorState & EDoorState.Breaching) != 0)
+            Collider collider = hit.collider;
+            if (collider == null)
             {
                 IsBlockedByDoor = false;
                 _currentDoor = null;
                 return;
             }
 
-            if (door.DoorState == EDoorState.Interacting)
+            Door door = collider.GetComponentInParent<Door>();
+            if (door == null || !door.enabled)
+            {
+                IsBlockedByDoor = false;
+                _currentDoor = null;
+                return;
+            }
+
+            EDoorState state = door.DoorState;
+            if ((state & EDoorState.Open) != 0 || (state & EDoorState.Breaching) != 0)
+            {
+                IsBlockedByDoor = false;
+                _currentDoor = null;
+                return;
+            }
+
+            if (state == EDoorState.Interacting)
             {
                 IsBlockedByDoor = true;
                 return;
@@ -98,15 +146,15 @@ namespace AIRefactored.AI.Navigation
                 return;
             }
 
-            if (_bot.GetPlayer.CurrentManagedState == null)
+            if (player.CurrentManagedState == null)
             {
-                _log.LogWarning("[BotDoorInteraction] Missing ManagedState for: " + _bot.name);
+                _log.LogWarning("[BotDoorInteraction] Missing ManagedState for bot: " + _bot.name);
                 return;
             }
 
-            EInteractionType type = GetBestInteractionType(door);
+            EInteractionType type = GetBestInteractionType(state);
             InteractionResult result = new InteractionResult(type);
-            _bot.GetPlayer.CurrentManagedState.StartDoorInteraction(door, result, null);
+            player.CurrentManagedState.StartDoorInteraction(door, result, null);
 
             _nextRetryTime = time + DoorRetryCooldown;
             _currentDoor = door;
@@ -115,6 +163,9 @@ namespace AIRefactored.AI.Navigation
             _log.LogDebug("[BotDoorInteraction] " + _bot.name + " → " + type + " door " + door.name);
         }
 
+        /// <summary>
+        /// Checks if a door is currently blocking the specified position.
+        /// </summary>
         public bool IsDoorBlocking(Vector3 position)
         {
             if (_currentDoor == null || !_currentDoor.enabled)
@@ -126,6 +177,9 @@ namespace AIRefactored.AI.Navigation
             return dist < DoorCastRange && (_currentDoor.DoorState & EDoorState.Open) == 0;
         }
 
+        /// <summary>
+        /// Clears door interaction state and resets cooldowns.
+        /// </summary>
         public void Reset()
         {
             _currentDoor = null;
@@ -134,9 +188,12 @@ namespace AIRefactored.AI.Navigation
             _lastDoorCheckTime = 0f;
         }
 
-        private static EInteractionType GetBestInteractionType(Door door)
+        #endregion
+
+        #region Private Helpers
+
+        private static EInteractionType GetBestInteractionType(EDoorState state)
         {
-            EDoorState state = door.DoorState;
             if ((state & EDoorState.Shut) != 0 || state == EDoorState.None)
             {
                 return EInteractionType.Open;
@@ -149,5 +206,7 @@ namespace AIRefactored.AI.Navigation
 
             return EInteractionType.Open;
         }
+
+        #endregion
     }
 }

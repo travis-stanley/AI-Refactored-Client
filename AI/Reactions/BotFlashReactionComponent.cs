@@ -84,6 +84,7 @@ namespace AIRefactored.AI.Reactions
                 return;
             }
 
+            // Get last known flashlight positions to detect flashbangs or flashlight exposure.
             var lights = FlashlightRegistry.GetLastKnownFlashlightPositions();
             for (int i = 0; i < lights.Count; i++)
             {
@@ -159,6 +160,7 @@ namespace AIRefactored.AI.Reactions
                 return;
             }
 
+            // Lateral fallback in case of no retreat path found
             Vector3 lateral = new Vector3(-dir.x, 0f, -dir.z).normalized;
             Vector3 fallback = bot.Position + lateral * FallbackDistance + UnityEngine.Random.insideUnitSphere * FallbackJitter;
             fallback.y = bot.Position.y;

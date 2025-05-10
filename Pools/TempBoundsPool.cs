@@ -6,6 +6,7 @@
 //   Please follow strict StyleCop, ReSharper, and AI-Refactored code standards for all modifications.
 // </auto-generated>
 
+
 namespace AIRefactored.Pools
 {
     using System;
@@ -25,6 +26,11 @@ namespace AIRefactored.Pools
             AppDomain.CurrentDomain.DomainUnload += (_, __) => ClearAll();
         }
 
+        /// <summary>
+        /// Rents a pooled <see cref="Bounds"/> array of the specified size.
+        /// </summary>
+        /// <param name="size">Minimum length of the array.</param>
+        /// <returns>A cleared or new Bounds array of the requested size.</returns>
         public static Bounds[] Rent(int size)
         {
             if (size <= 0)
@@ -32,9 +38,9 @@ namespace AIRefactored.Pools
                 size = 1;
             }
 
-            Stack<Bounds[]> stack;
             lock (SyncRoot)
             {
+                Stack<Bounds[]> stack;
                 if (PoolBySize.TryGetValue(size, out stack) && stack.Count > 0)
                 {
                     return stack.Pop();
@@ -44,6 +50,10 @@ namespace AIRefactored.Pools
             return new Bounds[size];
         }
 
+        /// <summary>
+        /// Returns a <see cref="Bounds"/> array to the pool.
+        /// </summary>
+        /// <param name="array">The array to return.</param>
         public static void Return(Bounds[] array)
         {
             if (array == null || array.Length == 0)
@@ -51,9 +61,9 @@ namespace AIRefactored.Pools
                 return;
             }
 
-            Stack<Bounds[]> stack;
             lock (SyncRoot)
             {
+                Stack<Bounds[]> stack;
                 if (!PoolBySize.TryGetValue(array.Length, out stack))
                 {
                     stack = new Stack<Bounds[]>(8);
@@ -64,6 +74,11 @@ namespace AIRefactored.Pools
             }
         }
 
+        /// <summary>
+        /// Prewarms the pool with a number of preallocated <see cref="Bounds"/> arrays.
+        /// </summary>
+        /// <param name="size">Size of each array.</param>
+        /// <param name="count">Number of arrays to preallocate.</param>
         public static void Prewarm(int size, int count)
         {
             if (size <= 0 || count <= 0)
@@ -71,9 +86,9 @@ namespace AIRefactored.Pools
                 return;
             }
 
-            Stack<Bounds[]> stack;
             lock (SyncRoot)
             {
+                Stack<Bounds[]> stack;
                 if (!PoolBySize.TryGetValue(size, out stack))
                 {
                     stack = new Stack<Bounds[]>(count);
@@ -87,6 +102,9 @@ namespace AIRefactored.Pools
             }
         }
 
+        /// <summary>
+        /// Clears all pooled <see cref="Bounds"/> arrays and resets internal state.
+        /// </summary>
         public static void ClearAll()
         {
             lock (SyncRoot)

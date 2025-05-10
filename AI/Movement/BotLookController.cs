@@ -34,7 +34,6 @@ namespace AIRefactored.AI.Movement
 
         private readonly BotOwner _bot;
         private readonly BotComponentCache _cache;
-
         private Vector3 _fallbackLookTarget;
         private bool _frozen;
 
@@ -58,6 +57,9 @@ namespace AIRefactored.AI.Movement
 
         #region Public Methods
 
+        /// <summary>
+        /// Updates the look direction every frame unless frozen or blocked.
+        /// </summary>
         public void Tick(float deltaTime)
         {
             if (_frozen || _bot.IsDead || !GameWorldHandler.IsSafeToInitialize)
@@ -66,7 +68,13 @@ namespace AIRefactored.AI.Movement
             }
 
             Player player = _bot.GetPlayer;
-            if (player == null || player.PlayerBones == null || player.PlayerBones.Head == null)
+            if (player == null)
+            {
+                return;
+            }
+
+            PlayerBones bones = player.PlayerBones;
+            if (bones == null || bones.Head == null)
             {
                 return;
             }
@@ -86,26 +94,38 @@ namespace AIRefactored.AI.Movement
                 return;
             }
 
-            Quaternion current = player.PlayerBones.Head.rotation;
+            Quaternion current = bones.Head.rotation;
             Quaternion target = Quaternion.LookRotation(direction);
-            player.PlayerBones.Head.rotation = Quaternion.Slerp(current, target, Mathf.Clamp01(MaxTurnSpeed * deltaTime));
+            bones.Head.rotation = Quaternion.Slerp(current, target, Mathf.Clamp01(MaxTurnSpeed * deltaTime));
         }
 
+        /// <summary>
+        /// Sets a fallback target to look toward when no threats or distractions are present.
+        /// </summary>
         public void SetLookTarget(Vector3 worldPos)
         {
             _fallbackLookTarget = worldPos;
         }
 
+        /// <summary>
+        /// Disables all look control (used during animations or forced behavior).
+        /// </summary>
         public void FreezeLook()
         {
             _frozen = true;
         }
 
+        /// <summary>
+        /// Re-enables look control if previously frozen.
+        /// </summary>
         public void ResumeLook()
         {
             _frozen = false;
         }
 
+        /// <summary>
+        /// Gets the bot's current look direction vector.
+        /// </summary>
         public Vector3 GetLookDirection()
         {
             return _bot.LookDirection;
@@ -121,7 +141,9 @@ namespace AIRefactored.AI.Movement
 
             if (_cache.IsBlinded && now < _cache.BlindUntilTime)
             {
-                return origin + UnityEngine.Random.insideUnitSphere.normalized * BlindLookRadius;
+                Vector3 offset = UnityEngine.Random.insideUnitSphere;
+                offset.y = 0f;
+                return origin + offset.normalized * BlindLookRadius;
             }
 
             if (_cache.Panic != null && _cache.Panic.IsPanicking)
@@ -139,7 +161,7 @@ namespace AIRefactored.AI.Movement
                 return EFTPlayerUtil.GetPosition(_cache.ThreatSelector.CurrentTarget);
             }
 
-            if (_cache.HasHeardDirection && now - _cache.LastHeardTime < SoundMemoryDuration)
+            if (_cache.HasHeardDirection && (now - _cache.LastHeardTime) < SoundMemoryDuration)
             {
                 return origin + _cache.LastHeardDirection.normalized * HeardDirectionWeight;
             }

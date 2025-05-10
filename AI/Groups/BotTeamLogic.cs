@@ -45,9 +45,9 @@ namespace AIRefactored.AI.Groups
 
         public BotTeamLogic(BotOwner bot)
         {
-            if (bot == null || bot.GetPlayer == null || !bot.GetPlayer.IsAI)
+            if (!EFTPlayerUtil.IsValidBotOwner(bot))
             {
-                throw new ArgumentException("Invalid bot or non-AI player.");
+                throw new ArgumentException("Invalid or non-AI bot owner.");
             }
 
             _bot = bot;
@@ -72,6 +72,7 @@ namespace AIRefactored.AI.Groups
 
             IPlayer safe = EFTPlayerUtil.AsSafeIPlayer(resolved);
             int count = bot.BotsGroup.MembersCount;
+
             for (int i = 0; i < count; i++)
             {
                 BotOwner mate = bot.BotsGroup.Member(i);
@@ -99,13 +100,9 @@ namespace AIRefactored.AI.Groups
             for (int i = 0; i < count; i++)
             {
                 BotOwner mate = group.Member(i);
-                if (mate != null && mate != bot && !mate.IsDead)
+                if (mate != null && mate != bot && !mate.IsDead && mate.BotTalk != null)
                 {
-                    Player player = mate.GetPlayer;
-                    if (player != null && player.IsAI)
-                    {
-                        mate.BotTalk?.TrySay(EPhraseTrigger.Cooperation);
-                    }
+                    mate.BotTalk.TrySay(EPhraseTrigger.Cooperation);
                 }
             }
         }
@@ -117,7 +114,7 @@ namespace AIRefactored.AI.Groups
                 BotOwner mate = pair.Key;
                 CombatStateMachine fsm = pair.Value;
 
-                if (mate != null && mate != _bot && !mate.IsDead)
+                if (mate != null && !mate.IsDead && mate != _bot)
                 {
                     TriggerDelayedFallback(fsm, retreatPoint);
                 }

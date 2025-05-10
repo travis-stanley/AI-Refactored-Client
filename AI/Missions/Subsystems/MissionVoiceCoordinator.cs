@@ -14,6 +14,7 @@ namespace AIRefactored.AI.Missions.Subsystems
     using AIRefactored.Runtime;
     using BepInEx.Logging;
     using EFT;
+    using EFT.HealthSystem;
 
     /// <summary>
     /// Handles voice lines for looting, extraction, and coordination.
@@ -38,7 +39,7 @@ namespace AIRefactored.AI.Missions.Subsystems
         {
             if (bot == null)
             {
-                throw new ArgumentException("MissionVoiceCoordinator: bot is null.");
+                throw new ArgumentNullException(nameof(bot));
             }
 
             _bot = bot;
@@ -53,7 +54,7 @@ namespace AIRefactored.AI.Missions.Subsystems
         /// </summary>
         public void OnExitLocated()
         {
-            this.TrySay(EPhraseTrigger.ExitLocated);
+            TrySay(EPhraseTrigger.ExitLocated);
         }
 
         /// <summary>
@@ -61,7 +62,7 @@ namespace AIRefactored.AI.Missions.Subsystems
         /// </summary>
         public void OnLoot()
         {
-            this.TrySay(EPhraseTrigger.OnLoot);
+            TrySay(EPhraseTrigger.OnLoot);
         }
 
         /// <summary>
@@ -69,7 +70,7 @@ namespace AIRefactored.AI.Missions.Subsystems
         /// </summary>
         public void OnMissionSwitch()
         {
-            this.TrySay(EPhraseTrigger.Cooperation);
+            TrySay(EPhraseTrigger.Cooperation);
         }
 
         #endregion
@@ -86,14 +87,24 @@ namespace AIRefactored.AI.Missions.Subsystems
             try
             {
                 Player player = _bot.GetPlayer;
-                if (player != null && player.HealthController != null && player.HealthController.IsAlive)
+                if (player != null)
                 {
-                    player.Say(trigger);
+                    IHealthController hc = player.HealthController;
+                    if (hc != null && hc.IsAlive)
+                    {
+                        player.Say(trigger);
+                    }
                 }
             }
             catch (Exception ex)
             {
-                string name = (_bot.Profile != null && _bot.Profile.Info != null) ? _bot.Profile.Info.Nickname : "Unknown";
+                string name = "Unknown";
+                Profile profile = _bot.Profile;
+                if (profile != null && profile.Info != null)
+                {
+                    name = profile.Info.Nickname;
+                }
+
                 Logger.LogWarning("[MissionVoiceCoordinator] VO failed for '" + name + "': " + ex.Message);
             }
         }

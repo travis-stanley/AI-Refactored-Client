@@ -6,6 +6,7 @@
 //   Please follow strict StyleCop, ReSharper, and AI-Refactored code standards for all modifications.
 // </auto-generated>
 
+
 namespace AIRefactored.Core
 {
     using UnityEngine;
@@ -48,7 +49,7 @@ namespace AIRefactored.Core
 
         #endregion
 
-        #region Precomputed Masks
+        #region Precomputed Single Masks
 
         private static readonly LayerMask _playerMask = 1 << Player;
         private static readonly LayerMask _defaultMask = 1 << Default;

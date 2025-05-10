@@ -6,6 +6,7 @@
 //   Please follow strict StyleCop, ReSharper, and AI-Refactored code standards for all modifications.
 // </auto-generated>
 
+
 namespace AIRefactored.Pools
 {
     using System;
@@ -32,10 +33,9 @@ namespace AIRefactored.Pools
         /// <returns>A clean stack ready for use.</returns>
         public static Stack<T> Rent<T>()
         {
-            Stack<object> stack;
-
             lock (SyncRoot)
             {
+                Stack<object> stack;
                 if (PoolByType.TryGetValue(typeof(T), out stack) && stack.Count > 0)
                 {
                     return (Stack<T>)stack.Pop();
@@ -58,10 +58,10 @@ namespace AIRefactored.Pools
             }
 
             stackInstance.Clear();
-            Stack<object> stack;
 
             lock (SyncRoot)
             {
+                Stack<object> stack;
                 if (!PoolByType.TryGetValue(typeof(T), out stack))
                 {
                     stack = new Stack<object>(32);
@@ -84,10 +84,9 @@ namespace AIRefactored.Pools
                 return;
             }
 
-            Stack<object> stack;
-
             lock (SyncRoot)
             {
+                Stack<object> stack;
                 if (!PoolByType.TryGetValue(typeof(T), out stack))
                 {
                     stack = new Stack<object>(count);

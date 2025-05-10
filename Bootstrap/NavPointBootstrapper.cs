@@ -6,6 +6,7 @@
 //   Please follow strict StyleCop, ReSharper, and AI-Refactored code standards for all modifications.
 // </auto-generated>
 
+
 namespace AIRefactored.AI.Navigation
 {
     using System.Collections.Generic;
@@ -43,6 +44,10 @@ namespace AIRefactored.AI.Navigation
         private static bool _isTaskRunning;
         private static int _registered;
 
+        /// <summary>
+        /// Starts the async and frame-based scan of nav points for the current scene.
+        /// </summary>
+        /// <param name="mapId">Current map ID, only used for logging.</param>
         public static void RegisterAll(string mapId)
         {
             if (_isRunning || !IsHostEnvironment())
@@ -89,7 +94,7 @@ namespace AIRefactored.AI.Navigation
                 TempListPool.Return(pooled);
             }
 
-            Logger.LogInfo("[NavPointBootstrapper] Queued " + ScanQueue.Count + " surface points.");
+            Logger.LogDebug("[NavPointBootstrapper] Queued " + ScanQueue.Count + " surface points.");
 
             if (!_isTaskRunning)
             {
@@ -102,6 +107,9 @@ namespace AIRefactored.AI.Navigation
             }
         }
 
+        /// <summary>
+        /// Processes scan queue in small batches each frame.
+        /// </summary>
         public static void Tick()
         {
             if (!_isRunning || !IsHostEnvironment())
@@ -153,16 +161,19 @@ namespace AIRefactored.AI.Navigation
                 }
 
                 BackgroundPending.Clear();
-                Logger.LogInfo("[NavPointBootstrapper] Queued vertical fallback points.");
+                Logger.LogDebug("[NavPointBootstrapper] Queued vertical fallback points.");
             }
 
             if (ScanQueue.Count == 0 && !_isTaskRunning)
             {
                 _isRunning = false;
-                Logger.LogInfo("[NavPointBootstrapper] ✅ Completed — " + _registered + " nav points registered.");
+                Logger.LogDebug("[NavPointBootstrapper] ✅ Completed — " + _registered + " nav points registered.");
             }
         }
 
+        /// <summary>
+        /// Resets the internal scan queue and state.
+        /// </summary>
         public static void Reset()
         {
             ScanQueue.Clear();

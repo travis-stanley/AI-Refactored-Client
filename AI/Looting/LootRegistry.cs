@@ -64,7 +64,7 @@ namespace AIRefactored.AI.Looting
         {
             Clear();
             LootRuntimeWatcher.Reset();
-            Logger.LogInfo("[LootRegistry] Initialized loot tracking system.");
+            Logger.LogDebug("[LootRegistry] Initialized loot tracking system.");
         }
 
         public static void Clear()
@@ -81,6 +81,7 @@ namespace AIRefactored.AI.Looting
         public static List<LootableContainer> GetAllContainers()
         {
             ContainerResultBuffer.Clear();
+
             foreach (var kv in Containers)
             {
                 if (kv.Key != null)
@@ -95,6 +96,7 @@ namespace AIRefactored.AI.Looting
         public static List<LootItem> GetAllItems()
         {
             ItemResultBuffer.Clear();
+
             foreach (var kv in Items)
             {
                 if (kv.Key != null)
@@ -113,7 +115,7 @@ namespace AIRefactored.AI.Looting
 
             foreach (var kv in Containers)
             {
-                var tf = kv.Value.Transform;
+                Transform tf = kv.Value.Transform;
                 if (tf == null)
                 {
                     continue;
@@ -136,7 +138,7 @@ namespace AIRefactored.AI.Looting
 
             foreach (var kv in Items)
             {
-                var tf = kv.Value.Transform;
+                Transform tf = kv.Value.Transform;
                 if (tf == null)
                 {
                     continue;
@@ -255,6 +257,7 @@ namespace AIRefactored.AI.Looting
         public static void PruneStale(float olderThanSeconds)
         {
             float cutoff = Time.time - olderThanSeconds;
+
             Containers.RemoveWhere(pair => pair.Value.LastSeenTime < cutoff);
             Items.RemoveWhere(pair => pair.Value.LastSeenTime < cutoff);
         }
@@ -293,7 +296,7 @@ namespace AIRefactored.AI.Looting
             }
 
             List<TKey> toRemove = new List<TKey>();
-            foreach (var kv in dict)
+            foreach (KeyValuePair<TKey, TValue> kv in dict)
             {
                 if (predicate(kv))
                 {

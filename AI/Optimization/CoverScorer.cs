@@ -8,7 +8,7 @@
 
 namespace AIRefactored.AI.Optimization
 {
-    using System;
+    using System.Collections.Generic;
     using AIRefactored.Pools;
     using AIRefactored.Runtime;
     using BepInEx.Logging;
@@ -69,6 +69,7 @@ namespace AIRefactored.AI.Optimization
 
             float score = 1.0f;
 
+            // Use pooled raycast hits to avoid unnecessary heap allocations.
             RaycastHit[] hits = TempRaycastHitPool.Rent(5);
             try
             {
@@ -98,6 +99,7 @@ namespace AIRefactored.AI.Optimization
             }
             finally
             {
+                // Return raycast hits to the pool to avoid heap allocations.
                 TempRaycastHitPool.Return(hits);
             }
 
@@ -109,8 +111,10 @@ namespace AIRefactored.AI.Optimization
                 score -= Mathf.Min(excess * 0.25f, 3.0f);
             }
 
+            // Log score for debugging purposes
             Logger.LogDebug($"[CoverScorer] Score={score:F2} @ {candidate} | From={bot.Position} | Dir={toThreat}");
 
+            // Ensure score is within valid range
             return Mathf.Clamp(score, MinScore, MaxScore);
         }
 

@@ -46,7 +46,6 @@ namespace AIRefactored.AI.Combat.States
         /// <summary>
         /// Initializes a new instance of the <see cref="EchoCoordinator"/> class.
         /// </summary>
-        /// <param name="cache">Component cache of the bot.</param>
         public EchoCoordinator(BotComponentCache cache)
         {
             if (cache == null || cache.Bot == null)
@@ -63,10 +62,6 @@ namespace AIRefactored.AI.Combat.States
 
         #region Public Methods
 
-        /// <summary>
-        /// Issues a fallback signal to nearby squadmates with spatial offset and caution filtering.
-        /// </summary>
-        /// <param name="retreatPosition">Target position to retreat to.</param>
         public void EchoFallbackToSquad(Vector3 retreatPosition)
         {
             BotsGroup group = _bot.BotsGroup;
@@ -125,9 +120,6 @@ namespace AIRefactored.AI.Combat.States
             _lastEchoFallbackTime = now;
         }
 
-        /// <summary>
-        /// Issues an investigation call to nearby squadmates.
-        /// </summary>
         public void EchoInvestigateToSquad()
         {
             BotsGroup group = _bot.BotsGroup;
@@ -170,10 +162,6 @@ namespace AIRefactored.AI.Combat.States
             _lastEchoInvestigateTime = now;
         }
 
-        /// <summary>
-        /// Broadcasts a seen enemy position to nearby squadmates’ tactical memory systems.
-        /// </summary>
-        /// <param name="enemyPosition">The position of the observed enemy.</param>
         public void EchoSpottedEnemyToSquad(Vector3 enemyPosition)
         {
             BotsGroup group = _bot.BotsGroup;
@@ -193,7 +181,6 @@ namespace AIRefactored.AI.Combat.States
             }
 
             int memberCount = group.MembersCount;
-
             for (int i = 0; i < memberCount; i++)
             {
                 BotOwner mate = group.Member(i);
@@ -226,9 +213,10 @@ namespace AIRefactored.AI.Combat.States
                 return false;
             }
 
-            return cache.AIRefactoredBotOwner != null &&
-                   cache.AIRefactoredBotOwner.PersonalityProfile != null &&
-                   cache.AIRefactoredBotOwner.PersonalityProfile.Caution >= 0.15f;
+            AIRefactoredBotOwner owner = cache.AIRefactoredBotOwner;
+            return owner != null &&
+                   owner.PersonalityProfile != null &&
+                   owner.PersonalityProfile.Caution >= 0.15f;
         }
 
         private bool IsValidSquadmate(BotOwner mate, Vector3 origin)

@@ -33,17 +33,12 @@ namespace AIRefactored.AI.Groups
 
         public static BotMissionController.MissionType GetMissionForGroup(BotOwner bot)
         {
-            if (bot == null || bot.IsDead)
+            if (!EFTPlayerUtil.IsValidBotOwner(bot))
             {
                 return BotMissionController.MissionType.Loot;
             }
 
             Player player = bot.GetPlayer;
-            if (player == null || !player.IsAI)
-            {
-                return BotMissionController.MissionType.Loot;
-            }
-
             Profile profile = player.Profile;
             if (profile == null || profile.Info == null)
             {
@@ -68,17 +63,12 @@ namespace AIRefactored.AI.Groups
 
         public static void RegisterFromBot(BotOwner bot)
         {
-            if (bot == null || bot.IsDead)
+            if (!EFTPlayerUtil.IsValidBotOwner(bot))
             {
                 return;
             }
 
             Player player = bot.GetPlayer;
-            if (player == null || !player.IsAI)
-            {
-                return;
-            }
-
             Profile profile = player.Profile;
             if (profile == null || profile.Info == null)
             {

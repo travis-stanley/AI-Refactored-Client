@@ -44,6 +44,10 @@ namespace AIRefactored.AI.Medical
 
         #region Constructor
 
+        /// <summary>
+        /// Constructs the injury system from a component cache.
+        /// </summary>
+        /// <param name="cache">Bot component cache.</param>
         public BotInjurySystem(BotComponentCache cache)
         {
             if (cache == null)
@@ -59,6 +63,9 @@ namespace AIRefactored.AI.Medical
 
         #region Public API
 
+        /// <summary>
+        /// Called when the bot is hit, to record damage and start healing logic.
+        /// </summary>
         public void OnHit(EBodyPart part, float damage)
         {
             BotOwner bot = this._cache.Bot;
@@ -67,7 +74,8 @@ namespace AIRefactored.AI.Medical
                 return;
             }
 
-            IHealthController health = bot.GetPlayer.HealthController;
+            Player player = bot.GetPlayer;
+            IHealthController health = player.HealthController;
             if (health == null)
             {
                 return;
@@ -80,6 +88,9 @@ namespace AIRefactored.AI.Medical
             this._hasBlackLimb = health.IsBodyPartDestroyed(part);
         }
 
+        /// <summary>
+        /// Resets all injury memory.
+        /// </summary>
         public void Reset()
         {
             this._injuredLimb = EBodyPart.Common;
@@ -89,11 +100,17 @@ namespace AIRefactored.AI.Medical
             this._hasBlackLimb = false;
         }
 
+        /// <summary>
+        /// Determines if the bot is eligible to start healing.
+        /// </summary>
         public bool ShouldHeal()
         {
             return this.ShouldHeal(Time.time);
         }
 
+        /// <summary>
+        /// Determines if the bot is eligible to start healing at a given time.
+        /// </summary>
         public bool ShouldHeal(float time)
         {
             if (!this._hasInjury || !this._hasBlackLimb)
@@ -119,6 +136,9 @@ namespace AIRefactored.AI.Medical
             return true;
         }
 
+        /// <summary>
+        /// Tick update; initiates healing if eligible.
+        /// </summary>
         public void Tick(float time)
         {
             if (this.ShouldHeal(time))
@@ -140,13 +160,13 @@ namespace AIRefactored.AI.Medical
             }
 
             Player player = bot.GetPlayer;
-            if (player == null || player.HealthController == null)
+            if (player == null)
             {
                 return;
             }
 
             IHealthController health = player.HealthController;
-            if (!health.IsBodyPartDestroyed(this._injuredLimb))
+            if (health == null || !health.IsBodyPartDestroyed(this._injuredLimb))
             {
                 return;
             }
@@ -159,12 +179,16 @@ namespace AIRefactored.AI.Medical
 
             bot.Sprint(false);
             bot.WeaponManager?.Selector?.TakePrevWeapon();
-            bot.BotTalk?.TrySay(EPhraseTrigger.StartHeal);
+
+            if (!FikaHeadlessDetector.IsHeadless && bot.BotTalk != null)
+            {
+                bot.BotTalk.TrySay(EPhraseTrigger.StartHeal);
+            }
 
             surgery.ApplyToCurrentPart();
             this.Reset();
 
-            string nick = bot.Profile != null && bot.Profile.Info != null ? bot.Profile.Info.Nickname : "Unknown";
+            string nick = (bot.Profile != null && bot.Profile.Info != null) ? bot.Profile.Info.Nickname : "Unknown";
             Logger.LogDebug("[BotInjurySystem] 🛠 " + nick + " applied surgery to " + this._injuredLimb);
         }
 

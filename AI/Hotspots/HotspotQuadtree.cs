@@ -37,13 +37,16 @@ namespace AIRefactored.AI.Hotspots
         {
             float half = size * 0.5f;
             Rect bounds = new Rect(center.x - half, center.y - half, size, size);
-            _root = new Node(bounds, 0);
+            this._root = new Node(bounds, 0);
         }
 
         #endregion
 
         #region Public API
 
+        /// <summary>
+        /// Inserts a hotspot into the quadtree.
+        /// </summary>
         public void Insert(HotspotRegistry.Hotspot hotspot)
         {
             if (hotspot == null)
@@ -51,14 +54,17 @@ namespace AIRefactored.AI.Hotspots
                 return;
             }
 
-            Insert(_root, hotspot);
+            Insert(this._root, hotspot);
         }
 
+        /// <summary>
+        /// Queries all hotspots within the radius of a 3D world position.
+        /// </summary>
         public List<HotspotRegistry.Hotspot> Query(Vector3 position, float radius, Predicate<HotspotRegistry.Hotspot> filter)
         {
             List<HotspotRegistry.Hotspot> result = new List<HotspotRegistry.Hotspot>(16);
             float radiusSq = radius * radius;
-            Query(_root, position, radiusSq, result, filter);
+            Query(this._root, position, radiusSq, result, filter);
             return result;
         }
 
@@ -81,21 +87,17 @@ namespace AIRefactored.AI.Hotspots
                 if (node.Points.Count > MaxPerNode && node.Depth < MaxDepth)
                 {
                     Subdivide(node);
-
-                    if (node.Children.Length == 4)
+                    List<HotspotRegistry.Hotspot> existing = node.Points;
+                    for (int i = 0; i < existing.Count; i++)
                     {
-                        List<HotspotRegistry.Hotspot> existing = node.Points;
-                        for (int i = 0; i < existing.Count; i++)
+                        HotspotRegistry.Hotspot h = existing[i];
+                        for (int j = 0; j < 4; j++)
                         {
-                            HotspotRegistry.Hotspot h = existing[i];
-                            for (int j = 0; j < 4; j++)
-                            {
-                                Insert(node.Children[j], h);
-                            }
+                            Insert(node.Children[j], h);
                         }
-
-                        node.Points.Clear();
                     }
+
+                    node.Points.Clear();
                 }
 
                 return;
@@ -123,8 +125,7 @@ namespace AIRefactored.AI.Hotspots
                 for (int i = 0; i < node.Points.Count; i++)
                 {
                     HotspotRegistry.Hotspot h = node.Points[i];
-                    if ((h.Position - position).sqrMagnitude <= radiusSq &&
-                        (filter == null || filter(h)))
+                    if ((h.Position - position).sqrMagnitude <= radiusSq && (filter == null || filter(h)))
                     {
                         results.Add(h);
                     }
@@ -167,19 +168,21 @@ namespace AIRefactored.AI.Hotspots
             public readonly List<HotspotRegistry.Hotspot> Points;
             public Node[] Children;
 
+            private static readonly Node[] EmptyArray = new Node[0];
+
             public Node(Rect bounds, int depth)
             {
-                Bounds = bounds;
-                Depth = depth;
-                Points = new List<HotspotRegistry.Hotspot>(8);
-                Children = Array.Empty<Node>();
+                this.Bounds = bounds;
+                this.Depth = depth;
+                this.Points = new List<HotspotRegistry.Hotspot>(8);
+                this.Children = EmptyArray;
             }
 
-            public bool IsLeaf => Children.Length == 0;
+            public bool IsLeaf => this.Children.Length == 0;
 
             public void SetChildren(Node[] children)
             {
-                Children = children ?? Array.Empty<Node>();
+                this.Children = children ?? EmptyArray;
             }
         }
 

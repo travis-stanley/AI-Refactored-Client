@@ -8,6 +8,7 @@
 
 namespace AIRefactored.AI.Navigation
 {
+    using System;
     using EFT;
     using UnityEngine;
 
@@ -29,13 +30,13 @@ namespace AIRefactored.AI.Navigation
         /// <summary>
         /// Converts a <see cref="CustomNavigationPoint"/> into a standardized <see cref="NavPointData"/> format.
         /// </summary>
-        /// <param name="custom">The original EFT navigation point (must be non-null).</param>
+        /// <param name="custom">The original EFT navigation point (must not be null).</param>
         /// <returns>Converted <see cref="NavPointData"/> for AI tactical use.</returns>
         public static NavPointData FromCustom(CustomNavigationPoint custom)
         {
-            if (ReferenceEquals(custom, null))
+            if (custom == null)
             {
-                throw new System.ArgumentException("[NavPointConverter] CustomNavigationPoint was null.");
+                throw new ArgumentNullException(nameof(custom), "[NavPointConverter] CustomNavigationPoint was null.");
             }
 
             Vector3 position = custom.Position;
@@ -64,7 +65,6 @@ namespace AIRefactored.AI.Navigation
                 "Unassigned",
                 ResolveElevationBand(elevation));
         }
-
 
         #endregion
 

@@ -6,6 +6,7 @@
 //   Please follow strict StyleCop, ReSharper, and AI-Refactored code standards for all modifications.
 // </auto-generated>
 
+
 namespace AIRefactored.Pools
 {
     using System;
@@ -27,15 +28,15 @@ namespace AIRefactored.Pools
         }
 
         /// <summary>
-        /// Retrieves a pooled list of type <typeparamref name="T"/>, or creates one if pool is empty.
+        /// Retrieves a pooled list of type <typeparamref name="T"/>, or creates one if the pool is empty.
         /// </summary>
         /// <typeparam name="T">Element type.</typeparam>
         /// <returns>A cleared and ready-to-use list.</returns>
         public static List<T> Rent<T>()
         {
-            Stack<object> stack;
             lock (SyncRoot)
             {
+                Stack<object> stack;
                 if (PoolByType.TryGetValue(typeof(T), out stack) && stack.Count > 0)
                 {
                     return (List<T>)stack.Pop();
@@ -58,10 +59,10 @@ namespace AIRefactored.Pools
             }
 
             list.Clear();
-            Stack<object> stack;
 
             lock (SyncRoot)
             {
+                Stack<object> stack;
                 if (!PoolByType.TryGetValue(typeof(T), out stack))
                 {
                     stack = new Stack<object>(32);
@@ -84,10 +85,9 @@ namespace AIRefactored.Pools
                 return;
             }
 
-            Stack<object> stack;
-
             lock (SyncRoot)
             {
+                Stack<object> stack;
                 if (!PoolByType.TryGetValue(typeof(T), out stack))
                 {
                     stack = new Stack<object>(count);

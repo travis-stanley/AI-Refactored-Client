@@ -89,9 +89,9 @@ namespace AIRefactored.AI.Core
 
         public AIRefactoredBotOwner()
         {
-            this.PersonalityProfile = new BotPersonalityProfile();
-            this.PersonalityName = "Unknown";
-            this.AssignedZone = "unknown";
+            PersonalityProfile = new BotPersonalityProfile();
+            PersonalityName = "Unknown";
+            AssignedZone = "unknown";
         }
 
         #endregion
@@ -121,7 +121,7 @@ namespace AIRefactored.AI.Core
                 string profileId = bot.Profile != null ? bot.Profile.Id : "null-profile";
 
                 WildSpawnType role = WildSpawnType.assault;
-                if (bot.Profile != null && bot.Profile.Info != null && bot.Profile.Info.Settings != null)
+                if (bot.Profile?.Info?.Settings != null)
                 {
                     role = bot.Profile.Info.Settings.Role;
                 }
@@ -148,23 +148,22 @@ namespace AIRefactored.AI.Core
 
         public void InitProfile(PersonalityType type)
         {
-            BotPersonalityProfile preset;
-            if (!BotPersonalityPresets.Presets.TryGetValue(type, out preset) || preset == null)
+            if (!BotPersonalityPresets.Presets.TryGetValue(type, out BotPersonalityProfile preset) || preset == null)
             {
                 preset = BotPersonalityPresets.Presets[PersonalityType.Adaptive];
-                this.PersonalityName = "Adaptive";
+                PersonalityName = "Adaptive";
                 Logger.LogWarning("[AIRefactoredBotOwner] Invalid personality preset for '" + type + "' — using Adaptive.");
             }
             else
             {
-                this.PersonalityName = type.ToString();
+                PersonalityName = type.ToString();
             }
 
-            this.PersonalityProfile = preset;
+            PersonalityProfile = preset;
 
             if (!FikaHeadlessDetector.IsHeadless)
             {
-                Logger.LogInfo("[AIRefactoredBotOwner] Personality assigned: " + this.PersonalityName);
+                Logger.LogDebug("[AIRefactoredBotOwner] Personality assigned: " + PersonalityName);
             }
         }
 
@@ -175,29 +174,29 @@ namespace AIRefactored.AI.Core
                 throw new ArgumentNullException("profile");
             }
 
-            this.PersonalityProfile = profile;
-            this.PersonalityName = string.IsNullOrEmpty(name) ? "Custom" : name;
+            PersonalityProfile = profile;
+            PersonalityName = string.IsNullOrEmpty(name) ? "Custom" : name;
 
             if (!FikaHeadlessDetector.IsHeadless)
             {
-                Logger.LogInfo("[AIRefactoredBotOwner] Custom profile assigned: " + this.PersonalityName);
+                Logger.LogDebug("[AIRefactoredBotOwner] Custom profile assigned: " + PersonalityName);
             }
         }
 
         public void ClearPersonality()
         {
-            this.PersonalityProfile = new BotPersonalityProfile();
-            this.PersonalityName = "Cleared";
+            PersonalityProfile = new BotPersonalityProfile();
+            PersonalityName = "Cleared";
 
             if (!FikaHeadlessDetector.IsHeadless)
             {
-                Logger.LogInfo("[AIRefactoredBotOwner] Personality cleared.");
+                Logger.LogDebug("[AIRefactoredBotOwner] Personality cleared.");
             }
         }
 
         public bool HasPersonality()
         {
-            return this.PersonalityProfile != null;
+            return PersonalityProfile != null;
         }
 
         #endregion
@@ -212,11 +211,11 @@ namespace AIRefactored.AI.Core
                 return;
             }
 
-            this.AssignedZone = zoneName;
+            AssignedZone = zoneName;
 
             if (!FikaHeadlessDetector.IsHeadless)
             {
-                Logger.LogInfo("[AIRefactoredBotOwner] Zone assigned: " + zoneName);
+                Logger.LogDebug("[AIRefactoredBotOwner] Zone assigned: " + zoneName);
             }
         }
 
@@ -227,7 +226,7 @@ namespace AIRefactored.AI.Core
                 throw new ArgumentNullException("controller");
             }
 
-            this._missionController = controller;
+            _missionController = controller;
         }
 
         #endregion

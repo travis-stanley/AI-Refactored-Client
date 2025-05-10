@@ -6,6 +6,7 @@
 //   Please follow strict StyleCop, ReSharper, and AI-Refactored code standards for all modifications.
 // </auto-generated>
 
+
 namespace AIRefactored.Core
 {
     using System;
@@ -32,9 +33,9 @@ namespace AIRefactored.Core
         /// <returns>A cleared, reusable hash set.</returns>
         public static HashSet<T> Rent<T>()
         {
-            Stack<object> stack;
             lock (SyncRoot)
             {
+                Stack<object> stack;
                 if (PoolByType.TryGetValue(typeof(T), out stack) && stack.Count > 0)
                 {
                     return (HashSet<T>)stack.Pop();
@@ -57,10 +58,10 @@ namespace AIRefactored.Core
             }
 
             set.Clear();
-            Stack<object> stack;
 
             lock (SyncRoot)
             {
+                Stack<object> stack;
                 if (!PoolByType.TryGetValue(typeof(T), out stack))
                 {
                     stack = new Stack<object>(32);
@@ -83,9 +84,9 @@ namespace AIRefactored.Core
                 return;
             }
 
-            Stack<object> stack;
             lock (SyncRoot)
             {
+                Stack<object> stack;
                 if (!PoolByType.TryGetValue(typeof(T), out stack))
                 {
                     stack = new Stack<object>(count);

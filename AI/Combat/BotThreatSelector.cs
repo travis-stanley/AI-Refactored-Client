@@ -6,6 +6,8 @@
 //   Please follow strict StyleCop, ReSharper, and AI-Refactored code standards for all modifications.
 // </auto-generated>
 
+#pragma warning disable SA1306 // Field names must begin with lower-case letter
+
 namespace AIRefactored.AI.Combat
 {
     using System;
@@ -46,11 +48,19 @@ namespace AIRefactored.AI.Combat
         private float _lastTargetSwitchTime = -999f;
         private float _nextEvaluateTime;
 
+        private Player _currentTarget;
+
         #endregion
 
         #region Properties
 
-        public Player CurrentTarget { get; private set; }
+        /// <summary>
+        /// Gets the currently prioritized target for this bot.
+        /// </summary>
+        public Player CurrentTarget
+        {
+            get { return _currentTarget; }
+        }
 
         #endregion
 
@@ -66,6 +76,7 @@ namespace AIRefactored.AI.Combat
             _cache = cache;
             _bot = cache.Bot;
             _profile = cache.AIRefactoredBotOwner.PersonalityProfile;
+            _currentTarget = null;
         }
 
         #endregion
@@ -122,14 +133,14 @@ namespace AIRefactored.AI.Combat
                 return;
             }
 
-            if (CurrentTarget == null)
+            if (_currentTarget == null)
             {
                 SetTarget(bestTarget, time);
                 return;
             }
 
-            float currentScore = ScoreTarget(CurrentTarget, time);
-            float cooldown = SwitchCooldown * (1f - _profile.AggressionLevel * 0.5f);
+            float currentScore = ScoreTarget(_currentTarget, time);
+            float cooldown = SwitchCooldown * (1f - (_profile.AggressionLevel * 0.5f));
 
             if (bestScore > currentScore + TargetSwitchThreshold && time > _lastTargetSwitchTime + cooldown)
             {
@@ -139,14 +150,14 @@ namespace AIRefactored.AI.Combat
 
         public void ResetTarget()
         {
-            CurrentTarget = null;
+            _currentTarget = null;
         }
 
         public Player GetPriorityTarget()
         {
-            if (CurrentTarget != null && EFTPlayerUtil.IsValid(CurrentTarget))
+            if (_currentTarget != null && EFTPlayerUtil.IsValid(_currentTarget))
             {
-                return CurrentTarget;
+                return _currentTarget;
             }
 
             string id = _cache.TacticalMemory.GetMostRecentEnemyId();
@@ -175,26 +186,7 @@ namespace AIRefactored.AI.Combat
             }
 
             float score = MaxScanDistance - distance;
-            EnemyInfo info = null;
-
-            string id = candidate.ProfileId;
-            if (!string.IsNullOrEmpty(id) && _bot.EnemiesController != null && _bot.EnemiesController.EnemyInfos != null)
-            {
-                foreach (var pair in _bot.EnemiesController.EnemyInfos)
-                {
-                    Player known = pair.Key as Player;
-                    if (known != null && known.ProfileId == id)
-                    {
-                        info = pair.Value;
-                        break;
-                    }
-                }
-            }
-
-            if (info == null && _bot.Memory != null && _bot.Memory.GoalEnemy?.Person?.ProfileId == id)
-            {
-                info = _bot.Memory.GoalEnemy;
-            }
+            EnemyInfo info = GetEnemyInfo(candidate);
 
             if (info != null)
             {
@@ -239,15 +231,49 @@ namespace AIRefactored.AI.Combat
             return score;
         }
 
+        private EnemyInfo GetEnemyInfo(Player candidate)
+        {
+            if (candidate == null || _bot == null || _bot.EnemiesController == null)
+            {
+                return null;
+            }
 
+            string id = candidate.ProfileId;
+            if (string.IsNullOrEmpty(id))
+            {
+                return null;
+            }
+
+            var enemyInfos = _bot.EnemiesController.EnemyInfos;
+            if (enemyInfos != null)
+            {
+                foreach (var kvp in enemyInfos)
+                {
+                    var known = kvp.Key as Player;
+                    if (known != null && known.ProfileId == id)
+                    {
+                        return kvp.Value;
+                    }
+                }
+            }
+
+            if (_bot.Memory != null && _bot.Memory.GoalEnemy != null &&
+                _bot.Memory.GoalEnemy.Person != null &&
+                _bot.Memory.GoalEnemy.Person.ProfileId == id)
+            {
+                return _bot.Memory.GoalEnemy;
+            }
+
+            return null;
+        }
 
         private void SetTarget(Player target, float time)
         {
-            CurrentTarget = target;
+            _currentTarget = target;
             _lastTargetSwitchTime = time;
 
             string id = target.ProfileId;
-            if (id.Length > 0)
+            if (!string.IsNullOrEmpty(id))
             {
                 _cache.TacticalMemory.RecordEnemyPosition(EFTPlayerUtil.GetPosition(target), "Target", id);
                 _cache.LastShotTracker.RegisterHit(id);

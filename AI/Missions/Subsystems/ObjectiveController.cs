@@ -41,9 +41,14 @@ namespace AIRefactored.AI.Missions.Subsystems
 
         public ObjectiveController(BotOwner bot, BotComponentCache cache)
         {
-            if (bot == null || cache == null)
+            if (bot == null)
             {
-                throw new ArgumentException("ObjectiveController: bot or cache is null.");
+                throw new ArgumentNullException(nameof(bot));
+            }
+
+            if (cache == null)
+            {
+                throw new ArgumentNullException(nameof(cache));
             }
 
             _bot = bot;
@@ -63,6 +68,9 @@ namespace AIRefactored.AI.Missions.Subsystems
 
         #region Public Methods
 
+        /// <summary>
+        /// Called when a bot reaches its current objective.
+        /// </summary>
         public void OnObjectiveReached(MissionType type)
         {
             Vector3 next = GetObjectiveTarget(type);
@@ -70,6 +78,9 @@ namespace AIRefactored.AI.Missions.Subsystems
             BotMovementHelper.SmoothMoveTo(_bot, next);
         }
 
+        /// <summary>
+        /// Resumes movement along the quest path.
+        /// </summary>
         public void ResumeQuesting()
         {
             if (_questRoute.Count == 0)
@@ -85,6 +96,9 @@ namespace AIRefactored.AI.Missions.Subsystems
             }
         }
 
+        /// <summary>
+        /// Sets the initial movement objective based on mission type.
+        /// </summary>
         public void SetInitialObjective(MissionType type)
         {
             Vector3 target = GetObjectiveTarget(type);
@@ -114,9 +128,14 @@ namespace AIRefactored.AI.Missions.Subsystems
         private Vector3 GetFightZone()
         {
             BotZone[] zones = GameObject.FindObjectsOfType<BotZone>();
-            return zones.Length > 0
-                ? zones[_rng.Next(0, zones.Length)].transform.position
-                : _bot.Position;
+            if (zones.Length == 0)
+            {
+                return _bot.Position;
+            }
+
+            int index = _rng.Next(0, zones.Length);
+            BotZone zone = zones[index];
+            return zone != null ? zone.transform.position : _bot.Position;
         }
 
         private Vector3 GetLootObjective()
@@ -128,7 +147,9 @@ namespace AIRefactored.AI.Missions.Subsystems
 
         private Vector3 GetNextQuestObjective()
         {
-            return _questRoute.Count > 0 ? _questRoute.Dequeue() : _bot.Position;
+            return _questRoute.Count > 0
+                ? _questRoute.Dequeue()
+                : _bot.Position;
         }
 
         private void PopulateQuestRoute()
@@ -138,8 +159,13 @@ namespace AIRefactored.AI.Missions.Subsystems
 
             Predicate<HotspotRegistry.Hotspot> directionFilter = delegate (HotspotRegistry.Hotspot h)
             {
-                Vector3 dir = (h.Position - origin).normalized;
-                return Vector3.Dot(dir, _bot.LookDirection.normalized) > 0.25f;
+                Vector3 dir = h.Position - origin;
+                if (dir.sqrMagnitude < 0.01f)
+                {
+                    return false;
+                }
+
+                return Vector3.Dot(dir.normalized, _bot.LookDirection.normalized) > 0.25f;
             };
 
             List<HotspotRegistry.Hotspot> candidates = TempListPool.Rent<HotspotRegistry.Hotspot>();
@@ -159,7 +185,8 @@ namespace AIRefactored.AI.Missions.Subsystems
                 int index = UnityEngine.Random.Range(0, candidates.Count);
                 if (used.Add(index))
                 {
-                    _questRoute.Enqueue(candidates[index].Position);
+                    HotspotRegistry.Hotspot hotspot = candidates[index];
+                    _questRoute.Enqueue(hotspot.Position);
                 }
             }
 

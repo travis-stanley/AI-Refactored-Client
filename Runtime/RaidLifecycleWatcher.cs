@@ -6,6 +6,7 @@
 //   Please follow strict StyleCop, ReSharper, and AI-Refactored code standards for all modifications.
 // </auto-generated>
 
+
 namespace AIRefactored.Runtime
 {
     using Comfort.Common;
@@ -41,8 +42,8 @@ namespace AIRefactored.Runtime
                 return;
             }
 
-            GameWorld.OnDispose -= this.OnRaidEnded; // Ensure clean rebind
-            GameWorld.OnDispose += this.OnRaidEnded;
+            GameWorld.OnDispose -= OnRaidEnded; // Ensure clean rebind
+            GameWorld.OnDispose += OnRaidEnded;
 
             AIRefactoredController.OnRaidStarted(world);
             _initialized = true;
@@ -53,7 +54,7 @@ namespace AIRefactored.Runtime
         /// </summary>
         private void OnRaidEnded()
         {
-            GameWorld.OnDispose -= this.OnRaidEnded;
+            GameWorld.OnDispose -= OnRaidEnded;
             _initialized = false;
 
             AIRefactoredController.OnRaidEnded();
@@ -64,7 +65,7 @@ namespace AIRefactored.Runtime
         /// </summary>
         private void OnDestroy()
         {
-            GameWorld.OnDispose -= this.OnRaidEnded;
+            GameWorld.OnDispose -= OnRaidEnded;
             _initialized = false;
         }
     }

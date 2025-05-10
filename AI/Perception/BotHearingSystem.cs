@@ -30,7 +30,7 @@ namespace AIRefactored.AI.Perception
 
         #endregion
 
-        #region State
+        #region Fields
 
         private BotOwner _bot;
         private BotComponentCache _cache;
@@ -50,13 +50,13 @@ namespace AIRefactored.AI.Perception
                 return;
             }
 
-            BotOwner owner = cache.Bot.GetComponent<BotOwner>();
-            if (owner == null)
+            Player player = cache.Bot.GetPlayer;
+            if (!EFTPlayerUtil.IsValid(player))
             {
                 return;
             }
 
-            _bot = owner;
+            _bot = cache.Bot;
             _cache = cache;
         }
 
@@ -84,19 +84,18 @@ namespace AIRefactored.AI.Perception
             {
                 for (int i = 0; i < players.Count; i++)
                 {
-                    Player player = players[i];
-
-                    if (!IsAudibleSource(player, origin, rangeSqr))
+                    Player candidate = players[i];
+                    if (!IsAudibleSource(candidate, origin, rangeSqr))
                     {
                         continue;
                     }
 
-                    if (HeardSomething(player))
+                    if (HeardSomething(candidate))
                     {
-                        Vector3 position = EFTPlayerUtil.GetPosition(player);
-                        if (position.sqrMagnitude > 0.01f)
+                        Vector3 pos = EFTPlayerUtil.GetPosition(candidate);
+                        if (pos.sqrMagnitude > 0.01f)
                         {
-                            _cache.RegisterHeardSound(position);
+                            _cache.RegisterHeardSound(pos);
                         }
                     }
                 }
@@ -115,8 +114,7 @@ namespace AIRefactored.AI.Perception
         {
             return _bot != null &&
                    !_bot.IsDead &&
-                   _bot.GetPlayer != null &&
-                   _bot.GetPlayer.IsAI &&
+                   EFTPlayerUtil.IsValid(_bot.GetPlayer) &&
                    !_cache.PanicHandler.IsPanicking;
         }
 
@@ -150,6 +148,11 @@ namespace AIRefactored.AI.Perception
 
         private static bool IsSameGroup(Player a, Player b)
         {
+            if (a == null || b == null || a.Profile == null || b.Profile == null || a.Profile.Info == null || b.Profile.Info == null)
+            {
+                return false;
+            }
+
             string aGroup = a.Profile.Info.GroupId;
             string bGroup = b.Profile.Info.GroupId;
 

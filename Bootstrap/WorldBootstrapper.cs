@@ -33,6 +33,7 @@ namespace AIRefactored.Bootstrap
 
         private static readonly List<IAIWorldSystemBootstrapper> Systems = new List<IAIWorldSystemBootstrapper>(16);
         private static ManualLogSource _loggerInstance = Plugin.LoggerInstance;
+
         private static bool _hasInitialized;
         private static float _lastSweep;
         private const float SweepInterval = 20f;
@@ -43,17 +44,13 @@ namespace AIRefactored.Bootstrap
 
         #region Lifecycle
 
-        /// <summary>
-        /// Begins full AIRefactored world initialization sequence.
-        /// </summary>
-        /// <param name="logger">Log source for system reporting.</param>
         public static void Begin(ManualLogSource logger)
         {
             _loggerInstance = logger ?? Plugin.LoggerInstance;
 
             if (_hasInitialized)
             {
-                Logger.LogInfo("[WorldBootstrapper] Already initialized — skipping.");
+                Logger.LogDebug("[WorldBootstrapper] Already initialized — skipping.");
                 return;
             }
 
@@ -70,14 +67,21 @@ namespace AIRefactored.Bootstrap
                 for (int i = 0; i < Systems.Count; i++)
                 {
                     IAIWorldSystemBootstrapper system = Systems[i];
-                    if (system.RequiredPhase() == WorldPhase.WorldReady)
+                    if (system != null)
                     {
-                        system.Initialize();
+                        try
+                        {
+                            system.Initialize();
+                        }
+                        catch (Exception ex)
+                        {
+                            Logger.LogError("[WorldBootstrapper] Failed to initialize system: " + ex);
+                        }
                     }
                 }
 
                 _hasInitialized = true;
-                Logger.LogInfo("[WorldBootstrapper] ✅ World systems initialized.");
+                Logger.LogDebug("[WorldBootstrapper] ✅ World systems initialized.");
             }
             catch (Exception ex)
             {
@@ -85,9 +89,6 @@ namespace AIRefactored.Bootstrap
             }
         }
 
-        /// <summary>
-        /// Stops and resets all AIRefactored world systems.
-        /// </summary>
         public static void Stop()
         {
             if (!_hasInitialized)
@@ -99,13 +100,13 @@ namespace AIRefactored.Bootstrap
             {
                 for (int i = 0; i < Systems.Count; i++)
                 {
-                    Systems[i].OnRaidEnd();
+                    Systems[i]?.OnRaidEnd();
                 }
 
                 Systems.Clear();
                 _hasInitialized = false;
 
-                Logger.LogInfo("[WorldBootstrapper] 🔻 AIRefactored systems shut down.");
+                Logger.LogDebug("[WorldBootstrapper] 🔻 AIRefactored systems shut down.");
             }
             catch (Exception ex)
             {
@@ -117,10 +118,6 @@ namespace AIRefactored.Bootstrap
 
         #region Tick
 
-        /// <summary>
-        /// Ticks all world systems after initialization.
-        /// </summary>
-        /// <param name="deltaTime">Delta time since last frame.</param>
         public static void Tick(float deltaTime)
         {
             if (!_hasInitialized)
@@ -134,7 +131,38 @@ namespace AIRefactored.Bootstrap
 
                 for (int i = 0; i < Systems.Count; i++)
                 {
-                    Systems[i].Tick(deltaTime);
+                    try
+                    {
+                        Systems[i]?.Tick(deltaTime);
+                    }
+                    catch (Exception ex)
+                    {
+                        Logger.LogError("[WorldBootstrapper] System Tick() error: " + ex);
+                    }
+                }
+
+                // PATCH: Tick all active bot brains
+                List<Player> players = GameWorldHandler.GetAllAlivePlayers();
+                for (int i = 0; i < players.Count; i++)
+                {
+                    Player player = players[i];
+                    if (player == null || !player.IsAI || player.gameObject == null)
+                    {
+                        continue;
+                    }
+
+                    BotBrain brain = player.gameObject.GetComponent<BotBrain>();
+                    if (brain != null && brain.enabled)
+                    {
+                        try
+                        {
+                            brain.Tick(deltaTime);
+                        }
+                        catch (Exception ex)
+                        {
+                            Logger.LogError("[WorldBootstrapper] BotBrain.Tick() error: " + ex);
+                        }
+                    }
                 }
 
                 if (now - _lastSweep >= SweepInterval)
@@ -154,14 +182,11 @@ namespace AIRefactored.Bootstrap
 
         #region Utility
 
-        /// <summary>
-        /// Builds all visible NavMesh surfaces for the current scene (if applicable).
-        /// </summary>
         public static void PrewarmAllNavMeshes()
         {
             if (Application.isBatchMode || FikaHeadlessDetector.IsHeadless)
             {
-                Logger.LogInfo("[WorldBootstrapper] Skipping NavMesh prewarm in headless.");
+                Logger.LogDebug("[WorldBootstrapper] Skipping NavMesh prewarm in headless.");
                 return;
             }
 
@@ -178,17 +203,19 @@ namespace AIRefactored.Bootstrap
                 NavMeshSurface surface = surfaces[i];
                 if (surface != null && surface.enabled && surface.gameObject.activeInHierarchy)
                 {
-                    surface.BuildNavMesh();
-                    BotCoverRetreatPlanner.RegisterSurface(mapId, surface);
+                    try
+                    {
+                        surface.BuildNavMesh();
+                        BotCoverRetreatPlanner.RegisterSurface(mapId, surface);
+                    }
+                    catch (Exception ex)
+                    {
+                        Logger.LogWarning("[WorldBootstrapper] Failed to build NavMesh on surface: " + ex);
+                    }
                 }
             }
         }
 
-        /// <summary>
-        /// Adds or enforces a BotBrain component on the provided AI player.
-        /// </summary>
-        /// <param name="player">The EFT Player instance.</param>
-        /// <param name="bot">Optional bot owner reference.</param>
         public static void EnforceBotBrain(Player player, BotOwner bot)
         {
             if (player == null || !player.IsAI || player.gameObject == null)
@@ -198,19 +225,29 @@ namespace AIRefactored.Bootstrap
 
             GameObject go = player.gameObject;
 
-            BotBrainGuardian.Enforce(go);
-
-            if (go.GetComponent<BotBrain>() == null && bot != null)
+            try
             {
-                try
+                BotBrainGuardian.Enforce(go);
+
+                BotBrain existing = go.GetComponent<BotBrain>();
+                if (existing == null && bot != null)
                 {
                     BotBrain brain = go.AddComponent<BotBrain>();
+                    brain.enabled = true;
                     brain.Initialize(bot);
                 }
-                catch
+                else if (existing != null)
                 {
-                    Logger.LogWarning("[WorldBootstrapper] Failed to initialize BotBrain for " + player.ProfileId);
+                    if (!existing.enabled)
+                    {
+                        existing.enabled = true;
+                        Logger.LogWarning("[WorldBootstrapper] Re-enabled disabled BotBrain for: " + player.ProfileId);
+                    }
                 }
+            }
+            catch (Exception ex)
+            {
+                Logger.LogWarning("[WorldBootstrapper] Failed to initialize BotBrain for " + player.ProfileId + ": " + ex);
             }
         }
 
@@ -218,10 +255,6 @@ namespace AIRefactored.Bootstrap
 
         #region Registration
 
-        /// <summary>
-        /// Registers a modular world-level system for lifecycle management.
-        /// </summary>
-        /// <param name="system">System to register.</param>
         public static void RegisterSystem(IAIWorldSystemBootstrapper system)
         {
             if (system == null || Systems.Contains(system))

@@ -46,7 +46,6 @@ namespace AIRefactored.AI.Helpers
 
             Vector3 fallback = bot.Position - threatDirection.normalized * distance;
             BotComponentCache cache = BotCacheUtility.GetCache(bot);
-
             if (cache != null && cache.Pathing != null)
             {
                 List<Vector3> path = BotCoverRetreatPlanner.GetCoverRetreatPath(bot, threatDirection, cache.Pathing);

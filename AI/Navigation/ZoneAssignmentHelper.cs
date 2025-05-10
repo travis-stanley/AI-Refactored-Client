@@ -20,9 +20,15 @@ namespace AIRefactored.AI.Navigation
     /// </summary>
     public static class ZoneAssignmentHelper
     {
+        #region Static Fields
+
         private static readonly ManualLogSource Logger = Plugin.LoggerInstance;
         private static readonly IReadOnlyList<string> EmptyZones = Array.Empty<string>();
         private static readonly List<ISpawnPoint> EmptySpawnPoints = new List<ISpawnPoint>(0);
+
+        #endregion
+
+        #region Properties
 
         /// <summary>
         /// Gets a value indicating whether the system is initialized (always false in fallback mode).
@@ -31,6 +37,10 @@ namespace AIRefactored.AI.Navigation
         {
             get { return false; }
         }
+
+        #endregion
+
+        #region Public API
 
         /// <summary>
         /// Clears zone data (no-op in fallback mode).
@@ -105,7 +115,9 @@ namespace AIRefactored.AI.Navigation
         /// <param name="includeSnipingZones">Unused flag.</param>
         public static void Initialize(object zones, bool includeSnipingZones = true)
         {
-            Logger.LogInfo("[ZoneAssignmentHelper] IZones is disabled. Skipping zone assignment.");
+            Logger.LogDebug("[ZoneAssignmentHelper] IZones is disabled. Skipping zone assignment.");
         }
+
+        #endregion
     }
 }

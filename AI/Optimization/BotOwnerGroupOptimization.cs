@@ -83,16 +83,20 @@ namespace AIRefactored.AI.Optimization
 
         private static void ApplyModifiers(BotOwner bot, BotPersonalityProfile profile, BotGlobalsMindSettings mind)
         {
+            // Adjust the distance to found based on cohesion (stronger cohesion => shorter distance)
             mind.DIST_TO_FOUND_SQRT = Mathf.Lerp(300f, 600f, 1f - profile.Cohesion);
 
+            // Aggression level influences the friendly aggression kill factor
             float aggroBonus = profile.AggressionLevel * 0.15f;
             mind.FRIEND_AGR_KILL = Mathf.Clamp(mind.FRIEND_AGR_KILL + aggroBonus, 0f, 1f);
 
+            // Adjust the angle at which the bot perceives the enemy (based on cohesion)
             float lookThreshold = Mathf.Clamp(mind.ENEMY_LOOK_AT_ME_ANG - (profile.Cohesion * 5f), 5f, 30f);
             mind.ENEMY_LOOK_AT_ME_ANG = lookThreshold;
 
-            string name = bot.Profile != null && bot.Profile.Info != null ? bot.Profile.Info.Nickname : "Unknown";
+            string name = bot.Profile?.Info?.Nickname ?? "Unknown";
 
+            // Log the optimization changes for the bot (debug-level logging for detailed tuning)
             Logger.LogDebug(
                 $"[GroupOpt] {name} → Cohesion={profile.Cohesion:F2}, FRIEND_AGR_KILL={mind.FRIEND_AGR_KILL:F2}, ENEMY_ANG={mind.ENEMY_LOOK_AT_ME_ANG:F1}°");
         }

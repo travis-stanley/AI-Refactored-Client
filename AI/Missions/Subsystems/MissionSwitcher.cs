@@ -48,9 +48,14 @@ namespace AIRefactored.AI.Missions.Subsystems
 
         public MissionSwitcher(BotOwner bot, BotComponentCache cache)
         {
-            if (bot == null || cache == null)
+            if (bot == null)
             {
-                throw new ArgumentException("MissionSwitcher: bot or cache is null.");
+                throw new ArgumentNullException(nameof(bot));
+            }
+
+            if (cache == null)
+            {
+                throw new ArgumentNullException(nameof(cache));
             }
 
             _bot = bot;
@@ -65,6 +70,14 @@ namespace AIRefactored.AI.Missions.Subsystems
 
         #region Public Methods
 
+        /// <summary>
+        /// Evaluates the bot's current state and switches mission if appropriate.
+        /// </summary>
+        /// <param name="currentMission">The current mission type of the bot.</param>
+        /// <param name="time">Current game time.</param>
+        /// <param name="switchToFight">Callback to invoke when switching to Fight.</param>
+        /// <param name="resumeQuesting">Callback to invoke when switching to Quest.</param>
+        /// <param name="isGroupAligned">Callback to check squad cohesion.</param>
         public void Evaluate(
             ref MissionType currentMission,
             float time,
@@ -77,12 +90,18 @@ namespace AIRefactored.AI.Missions.Subsystems
                 return;
             }
 
-            if (_bot.IsDead || _bot.GetPlayer == null || !_bot.GetPlayer.IsAI)
+            Player player = _bot.GetPlayer;
+            if (_bot.IsDead || player == null || !player.IsAI)
             {
                 return;
             }
 
-            string nickname = _bot.Profile?.Info?.Nickname ?? "Unknown";
+            string nickname = "Unknown";
+            Profile profile = _bot.Profile;
+            if (profile != null && profile.Info != null)
+            {
+                nickname = profile.Info.Nickname;
+            }
 
             if (_bot.Memory.IsUnderFire &&
                 _profile.AggressionLevel > 0.6f &&
@@ -91,20 +110,23 @@ namespace AIRefactored.AI.Missions.Subsystems
                 _lastSwitchTime = time;
                 currentMission = MissionType.Fight;
                 switchToFight();
-                _log.LogInfo("[MissionSwitcher] " + nickname + " escalating → Fight (under fire + aggressive)");
+                _log.LogDebug("[MissionSwitcher] " + nickname + " escalating → Fight (under fire + aggressive)");
                 return;
             }
 
             if (currentMission == MissionType.Quest &&
                 _profile.PreferredMission == MissionBias.Loot &&
                 _lootDecision != null &&
-                _lootDecision.ShouldLootNow() &&
-                _lootDecision.GetLootDestination() != Vector3.zero)
+                _lootDecision.ShouldLootNow())
             {
-                _lastSwitchTime = time;
-                currentMission = MissionType.Loot;
-                _log.LogInfo("[MissionSwitcher] " + nickname + " switching → Loot (loot opportunity nearby)");
-                return;
+                Vector3 lootPos = _lootDecision.GetLootDestination();
+                if (lootPos != Vector3.zero)
+                {
+                    _lastSwitchTime = time;
+                    currentMission = MissionType.Loot;
+                    _log.LogDebug("[MissionSwitcher] " + nickname + " switching → Loot (loot opportunity nearby)");
+                    return;
+                }
             }
 
             if (currentMission == MissionType.Fight && !isGroupAligned())
@@ -112,7 +134,7 @@ namespace AIRefactored.AI.Missions.Subsystems
                 _lastSwitchTime = time;
                 currentMission = MissionType.Quest;
                 resumeQuesting();
-                _log.LogInfo("[MissionSwitcher] " + nickname + " falling back → Quest (squad separation)");
+                _log.LogDebug("[MissionSwitcher] " + nickname + " falling back → Quest (squad separation)");
             }
         }
 

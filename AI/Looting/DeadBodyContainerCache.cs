@@ -26,17 +26,26 @@ namespace AIRefactored.AI.Looting
 
         #region Public API
 
+        /// <summary>
+        /// Clears all dead body container associations.
+        /// </summary>
         public static void Clear()
         {
             Containers.Clear();
         }
 
+        /// <summary>
+        /// Checks if a container is cached for the given player profile ID.
+        /// </summary>
         public static bool Contains(string profileId)
         {
             string key;
             return TryGetValidKey(profileId, out key) && Containers.ContainsKey(key);
         }
 
+        /// <summary>
+        /// Gets the cached LootableContainer for a player, or null if missing.
+        /// </summary>
         public static LootableContainer Get(string profileId)
         {
             string key;
@@ -44,6 +53,9 @@ namespace AIRefactored.AI.Looting
             return TryGetValidKey(profileId, out key) && Containers.TryGetValue(key, out result) ? result : null;
         }
 
+        /// <summary>
+        /// Registers a LootableContainer for a dead player body.
+        /// </summary>
         public static void Register(Player player, LootableContainer container)
         {
             if (player == null || container == null)

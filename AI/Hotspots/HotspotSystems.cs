@@ -62,7 +62,8 @@ namespace AIRefactored.AI.Hotspots
                     continue;
                 }
 
-                if (!_sessions.TryGetValue(bot, out HotspotSession session))
+                HotspotSession session;
+                if (!_sessions.TryGetValue(bot, out session))
                 {
                     session = AssignHotspotRoute(bot);
                     if (session != null)
@@ -139,73 +140,74 @@ namespace AIRefactored.AI.Hotspots
                     throw new ArgumentException("Invalid HotspotSession initialization.");
                 }
 
-                _bot = bot;
-                _route = route;
-                _isDefender = isDefender;
-                _cache = BotCacheUtility.GetCache(bot);
-                _index = 0;
-                _lastHitTime = -999f;
-                _nextSwitchTime = Time.time + GetSwitchInterval();
+                this._bot = bot;
+                this._route = route;
+                this._isDefender = isDefender;
+                this._cache = BotCacheUtility.GetCache(bot);
+                this._index = 0;
+                this._lastHitTime = -999f;
+                this._nextSwitchTime = Time.time + this.GetSwitchInterval();
 
-                if (bot.GetPlayer.HealthController is HealthControllerClass real)
+                HealthControllerClass health = bot.GetPlayer?.HealthController as HealthControllerClass;
+                if (health != null)
                 {
-                    real.ApplyDamageEvent += OnDamaged;
+                    health.ApplyDamageEvent += this.OnDamaged;
                 }
             }
 
             public void Tick()
             {
-                if (_bot.IsDead || _route.Count == 0 || _bot.GetPlayer == null || _bot.GetPlayer.IsYourPlayer)
+                if (this._bot.IsDead || this._route.Count == 0 || this._bot.GetPlayer == null || this._bot.GetPlayer.IsYourPlayer)
                 {
                     return;
                 }
 
-                if (_bot.Memory?.GoalEnemy != null)
+                if (this._bot.Memory?.GoalEnemy != null)
                 {
-                    _bot.Sprint(true);
+                    this._bot.Sprint(true);
                     return;
                 }
 
-                if (Time.time - _lastHitTime < DamageCooldown)
+                if (Time.time - this._lastHitTime < DamageCooldown)
                 {
                     return;
                 }
 
-                Vector3 target = _route[_index].Position;
+                Vector3 target = this._route[this._index].Position;
 
-                if (_isDefender)
+                if (this._isDefender)
                 {
-                    float dist = Vector3.Distance(_bot.Position, target);
-                    float composure = _cache.PanicHandler != null ? _cache.PanicHandler.GetComposureLevel() : 1f;
+                    float dist = Vector3.Distance(this._bot.Position, target);
+                    float composure = this._cache.PanicHandler != null ? this._cache.PanicHandler.GetComposureLevel() : 1f;
                     float radius = BaseDefendRadius * Mathf.Clamp(1f + (1f - composure), 1f, 2f);
 
                     if (dist > radius)
                     {
-                        BotMovementHelper.SmoothMoveTo(_bot, target);
+                        BotMovementHelper.SmoothMoveTo(this._bot, target);
                     }
                 }
                 else
                 {
-                    float dist = Vector3.Distance(_bot.Position, target);
-                    if (Time.time >= _nextSwitchTime || dist < 2f)
+                    float dist = Vector3.Distance(this._bot.Position, target);
+                    if (Time.time >= this._nextSwitchTime || dist < 2f)
                     {
-                        _index = (_index + 1) % _route.Count;
-                        _nextSwitchTime = Time.time + GetSwitchInterval();
+                        this._index = (this._index + 1) % this._route.Count;
+                        this._nextSwitchTime = Time.time + this.GetSwitchInterval();
                     }
 
-                    BotMovementHelper.SmoothMoveTo(_bot, AddJitterTo(target));
+                    BotMovementHelper.SmoothMoveTo(this._bot, this.AddJitterTo(target));
                 }
             }
 
             private Vector3 AddJitterTo(Vector3 target)
             {
-                BotPersonalityProfile profile = _cache.AIRefactoredBotOwner?.PersonalityProfile;
+                BotPersonalityProfile profile = this._cache.AIRefactoredBotOwner?.PersonalityProfile;
                 if (profile == null)
                 {
                     return target;
                 }
 
-                Vector3 jitter;
+                Vector3 jitter = Vector3.zero;
                 float chaos = profile.ChaosFactor;
 
                 if (profile.IsFrenzied)
@@ -220,10 +222,6 @@ namespace AIRefactored.AI.Hotspots
                 {
                     jitter = new Vector3(Mathf.Sin(Time.time), 0f, Mathf.Cos(Time.time)) * chaos;
                 }
-                else
-                {
-                    jitter = Vector3.zero;
-                }
 
                 jitter.y = 0f;
                 return target + jitter;
@@ -231,34 +229,85 @@ namespace AIRefactored.AI.Hotspots
 
             private float GetSwitchInterval()
             {
-                BotPersonalityProfile profile = BotRegistry.Get(_bot.ProfileId);
+                BotPersonalityProfile profile = BotRegistry.Get(this._bot.ProfileId);
                 float baseTime;
 
                 switch (profile.Personality)
                 {
-                    case PersonalityType.Camper: baseTime = 200f; break;
-                    case PersonalityType.Cautious: baseTime = 160f; break;
-                    case PersonalityType.Strategic: baseTime = 90f; break;
-                    case PersonalityType.Explorer: baseTime = 75f; break;
-                    case PersonalityType.Dumb: baseTime = 45f; break;
-                    case PersonalityType.Aggressive: baseTime = 50f; break;
+                    // Long hold or strategic
+                    case PersonalityType.Camper:
+                    case PersonalityType.Stoic:
+                    case PersonalityType.Sentinel:
+                    case PersonalityType.Sniper:
+                    case PersonalityType.Patient:
+                    case PersonalityType.Defensive:
+                    case PersonalityType.Stubborn:
+                    case PersonalityType.ColdBlooded:
+                        baseTime = 200f;
+                        break;
+
+                    // Methodical slow movers
+                    case PersonalityType.Methodical:
+                    case PersonalityType.Tactical:
+                    case PersonalityType.Strategic:
+                    case PersonalityType.Vigilant:
+                    case PersonalityType.Calculating:
+                    case PersonalityType.Supportive:
+                    case PersonalityType.TeamPlayer:
+                        baseTime = 160f;
+                        break;
+
+                    // Average move patterns
+                    case PersonalityType.Balanced:
+                    case PersonalityType.Explorer:
+                    case PersonalityType.Adaptive:
+                    case PersonalityType.Heroic:
+                    case PersonalityType.Vigilante:
+                        baseTime = 100f;
+                        break;
+
+                    // Reactive or aggressive movers
+                    case PersonalityType.Aggressive:
+                    case PersonalityType.Bulldozer:
+                    case PersonalityType.Cowboy:
+                    case PersonalityType.Hunter:
+                    case PersonalityType.Stalker:
+                    case PersonalityType.Vengeful:
+                    case PersonalityType.Saboteur:
+                        baseTime = 60f;
+                        break;
+
+                    // Cautious/defensive with random variance
+                    case PersonalityType.Cautious:
+                    case PersonalityType.Paranoid:
+                    case PersonalityType.Loner:
+                    case PersonalityType.Covert:
+                    case PersonalityType.SilentHunter:
+                        baseTime = UnityEngine.Random.Range(120f, 180f);
+                        break;
+
+                    // Erratic or chaotic personalities
                     case PersonalityType.Unpredictable:
                     case PersonalityType.Disruptor:
                     case PersonalityType.Erratic:
-                        baseTime = UnityEngine.Random.Range(60f, 120f); break;
+                    case PersonalityType.Reckless:
+                    case PersonalityType.RiskTaker:
                     case PersonalityType.Frenzied:
+                    case PersonalityType.Greedy:
                     case PersonalityType.Panicked:
-                    case PersonalityType.Hunter:
-                    case PersonalityType.Bulldozer:
-                    case PersonalityType.Cowboy:
-                        baseTime = 50f; break;
-                    case PersonalityType.Methodical:
-                    case PersonalityType.Sniper:
-                    case PersonalityType.Sentinel:
-                    case PersonalityType.Stoic:
-                        baseTime = 180f; break;
+                        baseTime = UnityEngine.Random.Range(45f, 90f);
+                        break;
+
+                    // Passive or fearful
+                    case PersonalityType.Dumb:
+                    case PersonalityType.Fearful:
+                    case PersonalityType.Cowardly:
+                        baseTime = 45f;
+                        break;
+
                     default:
-                        baseTime = 100f; break;
+                        baseTime = 100f;
+                        break;
                 }
 
                 return baseTime * Mathf.Clamp01(1f + profile.ChaosFactor * 0.6f);
@@ -266,8 +315,8 @@ namespace AIRefactored.AI.Hotspots
 
             private void OnDamaged(EBodyPart part, float damage, DamageInfoStruct info)
             {
-                _lastHitTime = Time.time;
-                _cache.PanicHandler?.TriggerPanic();
+                this._lastHitTime = Time.time;
+                this._cache.PanicHandler?.TriggerPanic();
             }
         }
     }

@@ -22,8 +22,14 @@ namespace AIRefactored.AI.Groups
     /// </summary>
     public sealed class BotGroupSyncCoordinator
     {
+        #region Constants
+
         private const float BaseSyncInterval = 0.5f;
         private const float PositionEpsilon = 0.15f;
+
+        #endregion
+
+        #region Fields
 
         private readonly Dictionary<BotOwner, BotComponentCache> _teammateCaches = new Dictionary<BotOwner, BotComponentCache>(8);
 
@@ -42,19 +48,23 @@ namespace AIRefactored.AI.Groups
         private float _nextSyncTime;
 
         public float LastDangerBroadcastTime { get; private set; }
-
         public Vector3 LastDangerPosition { get; private set; }
 
-        /// <summary>
-        /// Gets whether the squad sync system is active and initialized.
-        /// </summary>
+        #endregion
+
+        #region Properties
+
         public bool IsActive => _bot != null && !_bot.IsDead && _group != null && _cache != null;
+
+        #endregion
+
+        #region Initialization
 
         public void Initialize(BotOwner botOwner)
         {
             if (botOwner == null || botOwner.GetPlayer == null || !botOwner.GetPlayer.IsAI)
             {
-                throw new ArgumentException("BotOwner is null or invalid AI player.");
+                throw new ArgumentException("BotOwner is null or not AI.");
             }
 
             _bot = botOwner;
@@ -81,6 +91,10 @@ namespace AIRefactored.AI.Groups
             _cache = localCache;
         }
 
+        #endregion
+
+        #region Broadcasts
+
         public void BroadcastFallbackPoint(Vector3 point)
         {
             _fallbackPoint = point;
@@ -89,10 +103,10 @@ namespace AIRefactored.AI.Groups
             foreach (KeyValuePair<BotOwner, BotComponentCache> kvp in _teammateCaches)
             {
                 BotComponentCache teammate = kvp.Value;
-                if (!teammate.Bot.IsDead)
+                if (teammate.Bot != null && !teammate.Bot.IsDead)
                 {
                     teammate.Combat.TriggerFallback(point);
-                    if (!teammate.PanicHandler.IsPanicking)
+                    if (teammate.PanicHandler != null && !teammate.PanicHandler.IsPanicking)
                     {
                         teammate.PanicHandler.TriggerPanic();
                     }
@@ -120,13 +134,17 @@ namespace AIRefactored.AI.Groups
             foreach (KeyValuePair<BotOwner, BotComponentCache> kvp in _teammateCaches)
             {
                 BotComponentCache teammate = kvp.Value;
-                if (!teammate.Bot.IsDead && !teammate.PanicHandler.IsPanicking)
+                if (teammate.Bot != null && !teammate.Bot.IsDead && teammate.PanicHandler != null && !teammate.PanicHandler.IsPanicking)
                 {
                     float delay = UnityEngine.Random.Range(0.1f, 0.35f);
                     TriggerDelayedPanic(teammate, delay);
                 }
             }
         }
+
+        #endregion
+
+        #region Runtime Tick
 
         public void Tick(float time)
         {
@@ -142,7 +160,7 @@ namespace AIRefactored.AI.Groups
 
             _nextSyncTime = time + BaseSyncInterval * UnityEngine.Random.Range(0.8f, 1.2f);
 
-            if (!_cache.PanicHandler.IsPanicking)
+            if (_cache.PanicHandler == null || !_cache.PanicHandler.IsPanicking)
             {
                 return;
             }
@@ -159,6 +177,10 @@ namespace AIRefactored.AI.Groups
                 BroadcastDanger(myPos);
             }
         }
+
+        #endregion
+
+        #region Queries
 
         public Vector3? GetSharedFallbackTarget()
         {
@@ -193,13 +215,13 @@ namespace AIRefactored.AI.Groups
 
         public IReadOnlyList<BotOwner> GetTeammates()
         {
-            List<BotOwner> list = new List<BotOwner>(8);
+            List<BotOwner> list = new List<BotOwner>(_teammateCaches.Count);
             foreach (KeyValuePair<BotOwner, BotComponentCache> kvp in _teammateCaches)
             {
                 BotOwner mate = kvp.Key;
-                Player player = mate.GetPlayer;
+                Player player = mate != null ? mate.GetPlayer : null;
 
-                if (!mate.IsDead && player != null && player.IsAI)
+                if (mate != null && !mate.IsDead && player != null && player.IsAI)
                 {
                     list.Add(mate);
                 }
@@ -207,6 +229,10 @@ namespace AIRefactored.AI.Groups
 
             return list;
         }
+
+        #endregion
+
+        #region Internal Handlers
 
         private void OnMemberAdded(BotOwner teammate)
         {
@@ -250,11 +276,15 @@ namespace AIRefactored.AI.Groups
             Task.Run(async () =>
             {
                 await Task.Delay((int)(delay * 1000f));
-                if (!cache.Bot.IsDead && !cache.PanicHandler.IsPanicking)
+
+                if (cache != null && cache.Bot != null && cache.PanicHandler != null &&
+                    !cache.Bot.IsDead && !cache.PanicHandler.IsPanicking)
                 {
                     cache.PanicHandler.TriggerPanic();
                 }
             });
         }
+
+        #endregion
     }
 }

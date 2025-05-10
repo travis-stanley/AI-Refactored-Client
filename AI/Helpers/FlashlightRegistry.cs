@@ -51,8 +51,12 @@ namespace AIRefactored.AI.Helpers
                 Light light = lights[i];
                 if (IsValidTacticalLight(light))
                 {
-                    ActiveLights.Add(light);
-                    LastKnownFlashPositions.Add(light.transform.position);
+                    Transform t = light.transform;
+                    if (t != null)
+                    {
+                        ActiveLights.Add(light);
+                        LastKnownFlashPositions.Add(t.position);
+                    }
                 }
             }
 
@@ -78,31 +82,36 @@ namespace AIRefactored.AI.Helpers
                 return false;
             }
 
-            Vector3 eyePos = botHead.position + Vector3.up * EyeRayBias;
+            Vector3 eyePos = botHead.position + (Vector3.up * EyeRayBias);
 
             for (int i = 0; i < ActiveLights.Count; i++)
             {
                 Light light = ActiveLights[i];
-                if (light == null || !light.enabled || !light.gameObject.activeInHierarchy)
+                if (!IsValidTacticalLight(light))
                 {
                     continue;
                 }
 
-                Vector3 toBot = eyePos - light.transform.position;
-                float distance = toBot.magnitude;
+                Transform lightTransform = light.transform;
+                if (lightTransform == null)
+                {
+                    continue;
+                }
 
+                Vector3 toBot = eyePos - lightTransform.position;
+                float distance = toBot.magnitude;
                 if (distance > customMaxDist)
                 {
                     continue;
                 }
 
-                float angle = Vector3.Angle(light.transform.forward, toBot);
+                float angle = Vector3.Angle(lightTransform.forward, toBot);
                 if (angle > ExposureConeAngle)
                 {
                     continue;
                 }
 
-                Vector3 origin = light.transform.position;
+                Vector3 origin = lightTransform.position;
                 Vector3 dir = toBot.normalized;
                 float rayLen = distance + 0.1f;
 

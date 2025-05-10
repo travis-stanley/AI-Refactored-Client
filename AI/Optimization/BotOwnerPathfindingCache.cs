@@ -70,8 +70,7 @@ namespace AIRefactored.AI.Optimization
         public float GetCoverWeight(string mapId, Vector3 pos)
         {
             string key = mapId + "_" + RoundVector3ToKey(pos);
-            float value;
-            return _coverWeights.TryGetValue(key, out value) ? value : 1f;
+            return _coverWeights.TryGetValue(key, out float value) ? value : 1f;
         }
 
         public void RegisterCoverNode(string mapId, Vector3 pos, float score)
@@ -97,7 +96,7 @@ namespace AIRefactored.AI.Optimization
                 return solo;
             }
 
-            string id = bot.Profile != null ? bot.Profile.Id : string.Empty;
+            string id = bot.Profile?.Id ?? string.Empty;
             if (id.Length == 0)
             {
                 var fallback = TempListPool.Rent<Vector3>();
@@ -107,8 +106,7 @@ namespace AIRefactored.AI.Optimization
 
             string key = id + "_" + destination.ToString("F2");
 
-            List<Vector3> cached;
-            if (_pathCache.TryGetValue(key, out cached) && !IsPathBlocked(cached))
+            if (_pathCache.TryGetValue(key, out List<Vector3> cached) && !IsPathBlocked(cached))
             {
                 return cached;
             }
@@ -126,7 +124,7 @@ namespace AIRefactored.AI.Optimization
 
         public List<Vector3> GetFallbackPath(BotOwner bot, Vector3 threatDirection)
         {
-            string id = bot.Profile != null ? bot.Profile.Id : string.Empty;
+            string id = bot.Profile?.Id ?? string.Empty;
             if (id.Length == 0)
             {
                 return TempListPool.Rent<Vector3>();

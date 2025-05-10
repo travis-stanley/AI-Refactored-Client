@@ -6,6 +6,7 @@
 //   Please follow strict StyleCop, ReSharper, and AI-Refactored code standards for all modifications.
 // </auto-generated>
 
+
 namespace AIRefactored.Runtime
 {
     using System;
@@ -30,11 +31,7 @@ namespace AIRefactored.Runtime
         {
             if (_hasStarted)
             {
-                if (logger != null)
-                {
-                    logger.LogWarning("[InitPhaseRunner] Begin() called after initialization already occurred.");
-                }
-
+                logger.LogWarning("[InitPhaseRunner] Begin() called after initialization already occurred.");
                 return;
             }
 
@@ -42,39 +39,29 @@ namespace AIRefactored.Runtime
 
             try
             {
-                if (logger != null)
-                {
-                    logger.LogInfo("[InitPhaseRunner] 🚀 Beginning AIRefactored world initialization.");
-                }
+                logger.LogDebug("[InitPhaseRunner] 🚀 Beginning AIRefactored world initialization.");
 
                 if (!GameWorldHandler.IsReady())
                 {
                     if (FikaHeadlessDetector.IsHeadless)
                     {
-                        logger?.LogWarning("[InitPhaseRunner] GameWorld not fully ready, but FIKA headless is active — forcing initialization.");
+                        logger.LogWarning("[InitPhaseRunner] GameWorld not fully ready, but FIKA headless is active — forcing initialization.");
                     }
                     else
                     {
-                        logger?.LogWarning("[InitPhaseRunner] GameWorldHandler not ready — trying fallback init.");
+                        logger.LogWarning("[InitPhaseRunner] GameWorldHandler not ready — trying fallback init.");
                     }
                 }
 
                 GameWorldHandler.Initialize();
                 WorldBootstrapper.Begin(logger);
 
-                if (logger != null)
-                {
-                    logger.LogInfo("[InitPhaseRunner] ✅ AIRefactored world systems initialized.");
-                }
+                logger.LogDebug("[InitPhaseRunner] ✅ AIRefactored world systems initialized.");
             }
             catch (Exception ex)
             {
                 _hasStarted = false;
-
-                if (logger != null)
-                {
-                    logger.LogError("[InitPhaseRunner] ❌ Critical initialization failure:\n" + ex);
-                }
+                logger.LogError("[InitPhaseRunner] ❌ Critical initialization failure:\n" + ex);
             }
         }
 
@@ -89,7 +76,7 @@ namespace AIRefactored.Runtime
             {
                 WorldTickDispatcher.Reset();
                 WorldBootstrapper.Stop();
-                Plugin.LoggerInstance.LogInfo("[InitPhaseRunner] 🧹 Initialization state reset.");
+                Plugin.LoggerInstance.LogDebug("[InitPhaseRunner] 🧹 Initialization state reset.");
             }
             catch (Exception ex)
             {

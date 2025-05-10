@@ -11,6 +11,7 @@ namespace AIRefactored.AI.Groups
     using System;
     using AIRefactored.AI.Core;
     using AIRefactored.AI.Helpers;
+    using AIRefactored.Core;
     using EFT;
     using UnityEngine;
 
@@ -56,34 +57,23 @@ namespace AIRefactored.AI.Groups
 
         public void Initialize(BotComponentCache componentCache)
         {
-            if (componentCache == null)
+            if (componentCache == null || componentCache.Bot == null)
             {
-                throw new ArgumentNullException("componentCache");
-            }
-
-            BotOwner bot = componentCache.Bot;
-            if (bot == null)
-            {
-                throw new ArgumentException("[BotGroupBehavior] Bot reference is null.");
+                throw new ArgumentException("[BotGroupBehavior] Invalid component cache.");
             }
 
             this._cache = componentCache;
-            this._bot = bot;
-            this._group = bot.BotsGroup;
+            this._bot = componentCache.Bot;
+            this._group = this._bot.BotsGroup;
 
             this.GroupSync = new BotGroupSyncCoordinator();
-            this.GroupSync.Initialize(bot);
+            this.GroupSync.Initialize(this._bot);
             this.GroupSync.InjectLocalCache(componentCache);
         }
 
         public void Tick(float deltaTime)
         {
-            if (!IsEligible())
-            {
-                return;
-            }
-
-            if (this._bot.Memory.GoalEnemy != null)
+            if (!IsEligible() || this._bot.Memory.GoalEnemy != null)
             {
                 return;
             }
@@ -131,8 +121,7 @@ namespace AIRefactored.AI.Groups
                 Vector3 direction = furthest - myPos;
                 if (direction.sqrMagnitude > 0.001f)
                 {
-                    Vector3 normalized = direction.normalized;
-                    Vector3 followTarget = myPos + normalized * MaxSpacing;
+                    Vector3 followTarget = myPos + direction.normalized * MaxSpacing;
                     IssueMove(followTarget);
                 }
             }
@@ -144,18 +133,9 @@ namespace AIRefactored.AI.Groups
 
         private bool IsEligible()
         {
-            if (this._bot == null || this._group == null || this._bot.IsDead)
-            {
-                return false;
-            }
-
-            Player player = this._bot.GetPlayer;
-            if (player == null || !player.IsAI)
-            {
-                return false;
-            }
-
-            return true;
+            return EFTPlayerUtil.IsValidBotOwner(this._bot)
+                && this._group != null
+                && !this._bot.IsDead;
         }
 
         private void IssueMove(Vector3 rawTarget)
@@ -171,8 +151,7 @@ namespace AIRefactored.AI.Groups
                 return;
             }
 
-            float distance = Vector3.Distance(this._lastMoveTarget, jittered);
-            if (distance > SpacingTolerance)
+            if (Vector3.Distance(this._lastMoveTarget, jittered) > SpacingTolerance)
             {
                 this._lastMoveTarget = jittered;
                 BotMovementHelper.SmoothMoveTo(this._bot, jittered, false);

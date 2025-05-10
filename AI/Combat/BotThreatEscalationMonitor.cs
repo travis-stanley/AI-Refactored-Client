@@ -9,6 +9,7 @@
 namespace AIRefactored.AI.Combat
 {
     using System;
+    using System.Collections.Generic;
     using AIRefactored.AI.Core;
     using AIRefactored.AI.Optimization;
     using AIRefactored.Core;
@@ -36,9 +37,9 @@ namespace AIRefactored.AI.Combat
         private static readonly ManualLogSource Logger = Plugin.LoggerInstance;
 
         private BotOwner _bot;
-        private bool _hasEscalated;
-        private float _nextCheckTime;
         private float _panicStartTime;
+        private float _nextCheckTime;
+        private bool _hasEscalated;
 
         #endregion
 
@@ -103,26 +104,33 @@ namespace AIRefactored.AI.Combat
                    _bot.GetPlayer.IsAI;
         }
 
-        private bool PanicDurationExceeded(float now)
+        private bool PanicDurationExceeded(float time)
         {
-            return _panicStartTime >= 0f && (now - _panicStartTime) > PanicDurationThreshold;
+            return _panicStartTime >= 0f && (time - _panicStartTime) > PanicDurationThreshold;
         }
 
         private bool MultipleEnemiesVisible()
         {
             BotEnemiesController controller = _bot.EnemiesController;
-            if (controller == null || controller.EnemyInfos == null)
+            if (controller == null)
             {
                 return false;
             }
 
-            int visibleCount = 0;
-            foreach (var pair in controller.EnemyInfos)
+            int count = 0;
+            Dictionary<IPlayer, EnemyInfo> map = controller.EnemyInfos;
+            if (map == null)
             {
-                if (pair.Value != null && pair.Value.IsVisible)
+                return false;
+            }
+
+            foreach (KeyValuePair<IPlayer, EnemyInfo> pair in map)
+            {
+                EnemyInfo info = pair.Value;
+                if (info != null && info.IsVisible)
                 {
-                    visibleCount++;
-                    if (visibleCount >= 2)
+                    count++;
+                    if (count >= 2)
                     {
                         return true;
                     }
@@ -159,9 +167,9 @@ namespace AIRefactored.AI.Combat
             return dead >= Mathf.CeilToInt(total * SquadCasualtyThreshold);
         }
 
-        private bool ShouldEscalate(float now)
+        private bool ShouldEscalate(float time)
         {
-            return PanicDurationExceeded(now) ||
+            return PanicDurationExceeded(time) ||
                    MultipleEnemiesVisible() ||
                    SquadHasLostTeammates();
         }
@@ -170,11 +178,11 @@ namespace AIRefactored.AI.Combat
         {
             _hasEscalated = true;
 
-            string nickname = _bot.Profile != null && _bot.Profile.Info != null
+            string nickname = (_bot.Profile != null && _bot.Profile.Info != null)
                 ? _bot.Profile.Info.Nickname
                 : "Unknown";
 
-            Logger.LogInfo($"[AIRefactored-Escalation] Escalating behavior for bot '{nickname}'.");
+            Logger.LogDebug("[AIRefactored-Escalation] Escalating behavior for bot '" + nickname + "'.");
 
             AIOptimizationManager.Reset(_bot);
             AIOptimizationManager.Apply(_bot);
@@ -188,38 +196,40 @@ namespace AIRefactored.AI.Combat
             }
         }
 
-        private void ApplyEscalationTuning(BotOwner botRef)
+        private void ApplyEscalationTuning(BotOwner bot)
         {
-            BotSettingsComponents settings = botRef.Settings != null ? botRef.Settings.FileSettings : null;
-            if (settings == null)
+            if (bot == null || bot.Settings == null || bot.Settings.FileSettings == null)
             {
                 return;
             }
 
-            if (settings.Shoot != null)
+            BotSettingsComponents file = bot.Settings.FileSettings;
+
+            if (file.Shoot != null)
             {
-                settings.Shoot.RECOIL_PER_METER = Mathf.Clamp(settings.Shoot.RECOIL_PER_METER * 0.85f, 0.1f, 2.0f);
+                file.Shoot.RECOIL_PER_METER = Mathf.Clamp(file.Shoot.RECOIL_PER_METER * 0.85f, 0.1f, 2.0f);
             }
 
-            if (settings.Mind != null)
+            if (file.Mind != null)
             {
-                settings.Mind.DIST_TO_FOUND_SQRT = Mathf.Clamp(settings.Mind.DIST_TO_FOUND_SQRT * 1.2f, 200.0f, 800.0f);
-                settings.Mind.ENEMY_LOOK_AT_ME_ANG = Mathf.Clamp(settings.Mind.ENEMY_LOOK_AT_ME_ANG * 0.75f, 5.0f, 45.0f);
-                settings.Mind.CHANCE_TO_RUN_CAUSE_DAMAGE_0_100 = Mathf.Clamp(
-                    settings.Mind.CHANCE_TO_RUN_CAUSE_DAMAGE_0_100 + 20.0f, 0.0f, 100.0f);
+                file.Mind.DIST_TO_FOUND_SQRT = Mathf.Clamp(file.Mind.DIST_TO_FOUND_SQRT * 1.2f, 200f, 800f);
+                file.Mind.ENEMY_LOOK_AT_ME_ANG = Mathf.Clamp(file.Mind.ENEMY_LOOK_AT_ME_ANG * 0.75f, 5f, 45f);
+                file.Mind.CHANCE_TO_RUN_CAUSE_DAMAGE_0_100 = Mathf.Clamp(
+                    file.Mind.CHANCE_TO_RUN_CAUSE_DAMAGE_0_100 + 20f, 0f, 100f);
             }
 
-            if (settings.Look != null)
+            if (file.Look != null)
             {
-                settings.Look.MAX_VISION_GRASS_METERS = Mathf.Clamp(settings.Look.MAX_VISION_GRASS_METERS + 5.0f, 5.0f, 40.0f);
+                file.Look.MAX_VISION_GRASS_METERS = Mathf.Clamp(file.Look.MAX_VISION_GRASS_METERS + 5f, 5f, 40f);
             }
 
-            Logger.LogInfo($"[AIRefactored-Tuning] Escalation tuning applied to '{botRef.Profile?.Info?.Nickname ?? "Unknown"}'.");
+            string nickname = bot.Profile != null && bot.Profile.Info != null ? bot.Profile.Info.Nickname : "Unknown";
+            Logger.LogDebug("[AIRefactored-Tuning] Escalation tuning applied to '" + nickname + "'.");
         }
 
-        private void ApplyPersonalityTuning(BotOwner botRef)
+        private void ApplyPersonalityTuning(BotOwner bot)
         {
-            string profileId = botRef.ProfileId;
+            string profileId = bot.ProfileId;
             if (profileId.Length == 0)
             {
                 return;
@@ -237,10 +247,14 @@ namespace AIRefactored.AI.Combat
             profile.AccuracyUnderFire = Mathf.Clamp01(profile.AccuracyUnderFire + 0.2f);
             profile.CommunicationLevel = Mathf.Clamp01(profile.CommunicationLevel + 0.2f);
 
-            Logger.LogInfo(
-                $"[AIRefactored-Tuning] Personality tuned for '{botRef.Profile?.Info?.Nickname ?? "Unknown"}': " +
-                $"Agg={profile.AggressionLevel:F2}, Caution={profile.Caution:F2}, " +
-                $"Supp={profile.SuppressionSensitivity:F2}, AccUF={profile.AccuracyUnderFire:F2}");
+            string nickname = bot.Profile != null && bot.Profile.Info != null ? bot.Profile.Info.Nickname : "Unknown";
+
+            Logger.LogDebug(
+                "[AIRefactored-Tuning] Personality tuned for '" + nickname + "': " +
+                "Agg=" + profile.AggressionLevel.ToString("F2") + ", " +
+                "Caution=" + profile.Caution.ToString("F2") + ", " +
+                "Supp=" + profile.SuppressionSensitivity.ToString("F2") + ", " +
+                "AccUF=" + profile.AccuracyUnderFire.ToString("F2"));
         }
 
         #endregion

@@ -59,12 +59,7 @@ namespace AIRefactored.AI.Optimization
         /// <param name="cache">Bot component cache.</param>
         public void Initialize(BotOwner botOwner, BotComponentCache cache)
         {
-            if (!GameWorldHandler.IsLocalHost())
-            {
-                return;
-            }
-
-            if (botOwner == null || cache == null)
+            if (!GameWorldHandler.IsLocalHost() || botOwner == null || cache == null)
             {
                 return;
             }
@@ -96,12 +91,7 @@ namespace AIRefactored.AI.Optimization
         /// <param name="time">Current game time.</param>
         public void Tick(float time)
         {
-            if (!GameWorldHandler.IsLocalHost())
-            {
-                return;
-            }
-
-            if (!_hasInitialized || _bot == null || _bot.IsDead)
+            if (!GameWorldHandler.IsLocalHost() || !_hasInitialized || _bot == null || _bot.IsDead)
             {
                 return;
             }
@@ -170,12 +160,17 @@ namespace AIRefactored.AI.Optimization
             }
 
             BotPersonalityProfile personality = BotRegistry.Get(profileId);
+            if (personality == null)
+            {
+                return;
+            }
+
             mind.PANIC_RUN_WEIGHT = Mathf.Lerp(0.5f, 2.0f, personality.RiskTolerance);
             mind.PANIC_SIT_WEIGHT = Mathf.Lerp(10.0f, 80.0f, 1f - personality.RiskTolerance);
             mind.DIST_TO_FOUND_SQRT = Mathf.Lerp(200f, 600f, 1f - personality.Cohesion);
             mind.FRIEND_AGR_KILL = Mathf.Lerp(0f, 0.4f, personality.AggressionLevel);
 
-            Logger.LogInfo("[BotAsyncProcessor] Personality initialized for bot: " + bot.Profile.Info.Nickname);
+            Logger.LogDebug("[BotAsyncProcessor] Personality initialized for bot: " + bot.Profile.Info?.Nickname);
             _hasInitialized = true;
         }
 
@@ -192,9 +187,10 @@ namespace AIRefactored.AI.Optimization
                 {
                     try
                     {
-                        if (_bot.GetPlayer != null)
+                        EFT.Player p = _bot.GetPlayer;
+                        if (p != null)
                         {
-                            _bot.GetPlayer.Say(EPhraseTrigger.MumblePhrase);
+                            p.Say(EPhraseTrigger.MumblePhrase);
                         }
                     }
                     catch (Exception ex)
@@ -207,7 +203,7 @@ namespace AIRefactored.AI.Optimization
 
         private void TryOptimizeGroup()
         {
-            if (_bot == null || _bot.Profile == null || _bot.Profile.Info == null)
+            if (_bot?.Profile?.Info == null)
             {
                 return;
             }

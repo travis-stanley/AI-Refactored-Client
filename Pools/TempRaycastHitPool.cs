@@ -6,6 +6,7 @@
 //   Please follow strict StyleCop, ReSharper, and AI-Refactored code standards for all modifications.
 // </auto-generated>
 
+
 namespace AIRefactored.Pools
 {
     using System;
@@ -28,8 +29,8 @@ namespace AIRefactored.Pools
         /// <summary>
         /// Rents a reusable <see cref="RaycastHit"/> array of the given size.
         /// </summary>
-        /// <param name="size">Minimum length.</param>
-        /// <returns>Clean <see cref="RaycastHit"/> array.</returns>
+        /// <param name="size">Minimum array length.</param>
+        /// <returns>Reusable array of RaycastHit.</returns>
         public static RaycastHit[] Rent(int size)
         {
             if (size <= 0)
@@ -37,9 +38,9 @@ namespace AIRefactored.Pools
                 size = 1;
             }
 
-            Stack<RaycastHit[]> stack;
             lock (SyncRoot)
             {
+                Stack<RaycastHit[]> stack;
                 if (PoolBySize.TryGetValue(size, out stack) && stack.Count > 0)
                 {
                     return stack.Pop();
@@ -50,7 +51,7 @@ namespace AIRefactored.Pools
         }
 
         /// <summary>
-        /// Returns an array to the pool for reuse.
+        /// Returns a <see cref="RaycastHit"/> array to the pool.
         /// </summary>
         /// <param name="array">Array to return.</param>
         public static void Return(RaycastHit[] array)
@@ -60,9 +61,9 @@ namespace AIRefactored.Pools
                 return;
             }
 
-            Stack<RaycastHit[]> stack;
             lock (SyncRoot)
             {
+                Stack<RaycastHit[]> stack;
                 if (!PoolBySize.TryGetValue(array.Length, out stack))
                 {
                     stack = new Stack<RaycastHit[]>(8);
@@ -74,10 +75,10 @@ namespace AIRefactored.Pools
         }
 
         /// <summary>
-        /// Pre-warms the pool with empty arrays of the given size.
+        /// Pre-warms the pool with reusable <see cref="RaycastHit"/> arrays.
         /// </summary>
-        /// <param name="size">Array size.</param>
-        /// <param name="count">Number to add.</param>
+        /// <param name="size">Length of each array.</param>
+        /// <param name="count">Number of arrays to allocate.</param>
         public static void Prewarm(int size, int count)
         {
             if (size <= 0 || count <= 0)
@@ -85,9 +86,9 @@ namespace AIRefactored.Pools
                 return;
             }
 
-            Stack<RaycastHit[]> stack;
             lock (SyncRoot)
             {
+                Stack<RaycastHit[]> stack;
                 if (!PoolBySize.TryGetValue(size, out stack))
                 {
                     stack = new Stack<RaycastHit[]>(count);

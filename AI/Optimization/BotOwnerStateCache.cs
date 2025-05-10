@@ -11,6 +11,7 @@ namespace AIRefactored.AI.Optimization
     using System.Collections.Generic;
     using AIRefactored.AI.Core;
     using AIRefactored.AI.Helpers;
+    using AIRefactored.AI.Memory;
     using EFT;
     using UnityEngine;
 

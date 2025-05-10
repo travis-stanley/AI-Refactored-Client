@@ -80,11 +80,10 @@ namespace AIRefactored.AI.Core
                     }
                 }
             }
-            catch (Exception ex)
+            catch
             {
                 _isHeadless = false;
                 _raidLocation = string.Empty;
-                Debug.LogWarning("[FikaHeadlessDetector] Static init failed: " + ex.Message);
             }
         }
 
@@ -114,7 +113,7 @@ namespace AIRefactored.AI.Core
             }
             catch
             {
-                // Intentionally silent
+                // Silent failure (safe in headless context)
             }
 
             return string.Empty;

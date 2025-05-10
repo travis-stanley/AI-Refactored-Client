@@ -6,6 +6,7 @@
 //   Please follow strict StyleCop, ReSharper, and AI-Refactored code standards for all modifications.
 // </auto-generated>
 
+
 namespace AIRefactored.Core
 {
     using System;
@@ -59,7 +60,7 @@ namespace AIRefactored.Core
         /// </summary>
         public static void PrewarmAll()
         {
-            // Generic collections
+            // Generic pooled collections
             TempListPool.Prewarm<int>(16);
             TempListPool.Prewarm<Vector3>(16);
             TempListPool.Prewarm<RaycastHit>(16);
@@ -71,21 +72,18 @@ namespace AIRefactored.Core
             TempQueuePool.Prewarm<float>(8);
             TempStackPool.Prewarm<Vector3>(8);
 
-            // Fixed-size arrays
+            // Fixed-size pooled arrays
             TempIntArrayPool.Prewarm(32, 8);
             TempVector3Pool.Prewarm(16, 8);
             TempNavPathCornerPool.Prewarm(16, 8);
 
-            // Unity structs
+            // Unity struct pools
             TempBoundsPool.Prewarm(8, 4);
             TempRaycastHitPool.Prewarm(16, 4);
             TempRaycastHitListPool.Prewarm(8);
             TempNavMeshHitPool.Prewarm(8, 4);
             TempRaycastCommandPool.Prewarm(8, 4);
             TempNavMeshPathPool.Prewarm(4);
-
-            // Unity objects
-
         }
 
         /// <summary>
@@ -100,7 +98,6 @@ namespace AIRefactored.Core
             TempStackPool.ClearAll();
 
             TempIntArrayPool.ClearAll();
-
             TempVector3Pool.ClearAll();
             TempNavPathCornerPool.ClearAll();
 
@@ -110,7 +107,6 @@ namespace AIRefactored.Core
             TempNavMeshHitPool.ClearAll();
             TempRaycastCommandPool.ClearAll();
             TempNavMeshPathPool.ClearAll();
-
 
             for (int i = 0; i < _registeredCustomClearers.Count; i++)
             {

@@ -73,22 +73,25 @@ namespace AIRefactored.AI.Movement
 
         public void Initialize(BotOwner bot, BotComponentCache cache)
         {
-            if (bot == null || cache == null || bot.Transform == null || cache.AIRefactoredBotOwner == null)
+            if (bot == null || cache == null || bot.Transform == null)
             {
-                Log.LogWarning("[BotCornerScanner] Skipped initialization — missing bot, transform, or personality.");
+                Log.LogWarning("[BotCornerScanner] Skipped initialization — missing bot or transform.");
                 return;
             }
 
-            _bot = bot;
-            _cache = cache;
-            _profile = cache.AIRefactoredBotOwner.PersonalityProfile;
+            BotPersonalityProfile profile = cache.AIRefactoredBotOwner != null
+                ? cache.AIRefactoredBotOwner.PersonalityProfile
+                : null;
 
-            if (_profile == null)
+            if (profile == null)
             {
                 Log.LogWarning("[BotCornerScanner] Personality profile missing for bot " + bot.ProfileId);
                 return;
             }
 
+            _bot = bot;
+            _cache = cache;
+            _profile = profile;
             _isInitialized = true;
         }
 
@@ -163,9 +166,12 @@ namespace AIRefactored.AI.Movement
                 Vector3 rayOrigin = origin + (right * offset) + (forward * EdgeCheckDistance);
                 Vector3 rayDown = rayOrigin + Vector3.down * MinFallHeight;
 
-                if (!Physics.Raycast(rayOrigin, Vector3.down, MinFallHeight, AIRefactoredLayerMasks.NavObstacleMask))
+                bool hasObstacle = Physics.Raycast(rayOrigin, Vector3.down, MinFallHeight, AIRefactoredLayerMasks.NavObstacleMask);
+                if (!hasObstacle)
                 {
-                    if (!NavMesh.SamplePosition(rayDown, out NavMeshHit hit, 1.0f, NavMesh.AllAreas) || hit.distance > NavSampleTolerance)
+                    NavMeshHit hit;
+                    bool navHit = NavMesh.SamplePosition(rayDown, out hit, 1.0f, NavMesh.AllAreas);
+                    if (!navHit || hit.distance > NavSampleTolerance)
                     {
                         return true;
                     }
@@ -197,8 +203,9 @@ namespace AIRefactored.AI.Movement
 
         private bool CheckWall(Vector3 origin, Vector3 direction, float distance)
         {
-            return Physics.Raycast(origin, direction, out RaycastHit hit, distance, AIRefactoredLayerMasks.CoverRayMask) &&
-                   Vector3.Dot(hit.normal, direction) < WallAngleThreshold;
+            RaycastHit hit;
+            bool success = Physics.Raycast(origin, direction, out hit, distance, AIRefactoredLayerMasks.CoverRayMask);
+            return success && Vector3.Dot(hit.normal, direction) < WallAngleThreshold;
         }
 
         private bool TriggerLeanOrCrouch(BotTiltType side, float time)

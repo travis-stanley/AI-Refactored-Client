@@ -18,6 +18,9 @@ namespace AIRefactored.AI
     /// </summary>
     public static class BotPersonalityPresets
     {
+        /// <summary>
+        /// Static preset dictionary mapped by personality type.
+        /// </summary>
         public static readonly Dictionary<PersonalityType, BotPersonalityProfile> Presets;
 
         static BotPersonalityPresets()
@@ -32,37 +35,40 @@ namespace AIRefactored.AI
         }
 
         /// <summary>
-        /// Generates a randomized personality profile for a given type.
+        /// Generates a deterministic, personality-aligned profile.
+        /// Values may be adjusted per type to represent distinct bot behaviors.
         /// </summary>
+        /// <param name="type">The bot personality type to configure.</param>
+        /// <returns>A configured bot personality profile.</returns>
         public static BotPersonalityProfile GenerateProfile(PersonalityType type)
         {
             BotPersonalityProfile p = new BotPersonalityProfile
             {
                 Personality = type,
-                Accuracy = 0.6f,
-                AccuracyUnderFire = 0.5f,
+                Accuracy = 0.5f,
+                AccuracyUnderFire = 0.45f,
                 AggressionLevel = 0.5f,
-                ReactionSpeed = 0.6f,
-                ReactionTime = 0.35f,
+                ReactionSpeed = 0.5f,
+                ReactionTime = 0.4f,
                 CommunicationLevel = 0.5f,
                 Caution = 0.5f,
                 FlinchThreshold = 0.5f,
-                RetreatThreshold = 0.3f,
+                RetreatThreshold = 0.35f,
                 SuppressionSensitivity = 0.5f,
                 RepositionPriority = 0.5f,
                 RiskTolerance = 0.5f,
                 SideStepBias = 0.5f,
                 FlankBias = 0.5f,
                 Cohesion = 0.5f,
-                SuppressiveFireBias = 0.2f,
+                SuppressiveFireBias = 0.3f,
                 Greed = 0.5f,
-                MovementJitter = 0.2f,
+                MovementJitter = 0.25f,
                 CornerCheckPauseTime = 0.35f,
                 LeanPeekFrequency = 0.5f,
                 LeaningStyle = LeanPreference.Conservative,
                 PreferredMission = MissionBias.Random,
                 ChaosFactor = 0f,
-                EngagementRange = 60f,
+                EngagementRange = 55f,
                 StuckTolerance = 0.5f,
                 IsFearful = false,
                 IsFrenzied = false,
@@ -474,10 +480,15 @@ namespace AIRefactored.AI
             return p;
         }
 
+        /// <summary>
+        /// Applies randomized trait blending to add variance within safe bounds.
+        /// Used after base personality profile generation to simulate organic differences.
+        /// </summary>
+        /// <param name="p">The personality profile to modify.</param>
         private static void ApplyRandomBlend(BotPersonalityProfile p)
         {
-            const float Min01 = 0f;
-            const float Max01 = 1f;
+            const float Min = 0f;
+            const float Max = 1f;
 
             p.Accuracy += UnityEngine.Random.Range(-0.1f, 0.15f);
             p.AggressionLevel += UnityEngine.Random.Range(-0.1f, 0.15f);
@@ -499,25 +510,27 @@ namespace AIRefactored.AI
             p.Greed += UnityEngine.Random.Range(-0.1f, 0.15f);
             p.StuckTolerance += UnityEngine.Random.Range(-0.1f, 0.15f);
 
-            p.Accuracy = Mathf.Clamp(p.Accuracy, Min01, Max01);
-            p.AggressionLevel = Mathf.Clamp(p.AggressionLevel, Min01, Max01);
-            p.CommunicationLevel = Mathf.Clamp(p.CommunicationLevel, Min01, Max01);
-            p.Cohesion = Mathf.Clamp(p.Cohesion, Min01, Max01);
+            p.Accuracy = Mathf.Clamp(p.Accuracy, Min, Max);
+            p.AggressionLevel = Mathf.Clamp(p.AggressionLevel, Min, Max);
+            p.Cohesion = Mathf.Clamp(p.Cohesion, Min, Max);
+            p.CommunicationLevel = Mathf.Clamp(p.CommunicationLevel, Min, Max);
             p.MovementJitter = Mathf.Clamp(p.MovementJitter, 0f, 0.5f);
-            p.ReactionSpeed = Mathf.Clamp(p.ReactionSpeed, Min01, Max01);
+            p.LeanPeekFrequency = Mathf.Clamp(p.LeanPeekFrequency, Min, Max);
+            p.CornerCheckPauseTime = Mathf.Clamp(p.CornerCheckPauseTime, 0.1f, 0.6f);
+            p.SideStepBias = Mathf.Clamp(p.SideStepBias, Min, Max);
+            p.ReactionSpeed = Mathf.Clamp(p.ReactionSpeed, Min, Max);
             p.ReactionTime = Mathf.Clamp(p.ReactionTime, 0.1f, 0.5f);
-            p.SideStepBias = Mathf.Clamp(p.SideStepBias, Min01, Max01);
-            p.LeanPeekFrequency = Mathf.Clamp(p.LeanPeekFrequency, Min01, Max01);
-            p.FlankBias = Mathf.Clamp(p.FlankBias, Min01, Max01);
-            p.SuppressionSensitivity = Mathf.Clamp(p.SuppressionSensitivity, Min01, Max01);
-            p.FlinchThreshold = Mathf.Clamp(p.FlinchThreshold, Min01, Max01);
-            p.RetreatThreshold = Mathf.Clamp(p.RetreatThreshold, Min01, Max01);
-            p.RepositionPriority = Mathf.Clamp(p.RepositionPriority, Min01, Max01);
-            p.RiskTolerance = Mathf.Clamp(p.RiskTolerance, Min01, Max01);
-            p.SuppressiveFireBias = Mathf.Clamp(p.SuppressiveFireBias, Min01, Max01);
-            p.Greed = Mathf.Clamp(p.Greed, Min01, Max01);
-            p.StuckTolerance = Mathf.Clamp(p.StuckTolerance, Min01, Max01);
+            p.FlankBias = Mathf.Clamp(p.FlankBias, Min, Max);
+            p.SuppressionSensitivity = Mathf.Clamp(p.SuppressionSensitivity, Min, Max);
+            p.FlinchThreshold = Mathf.Clamp(p.FlinchThreshold, Min, Max);
+            p.RetreatThreshold = Mathf.Clamp(p.RetreatThreshold, Min, Max);
+            p.RepositionPriority = Mathf.Clamp(p.RepositionPriority, Min, Max);
+            p.RiskTolerance = Mathf.Clamp(p.RiskTolerance, Min, Max);
+            p.SuppressiveFireBias = Mathf.Clamp(p.SuppressiveFireBias, Min, Max);
+            p.Greed = Mathf.Clamp(p.Greed, Min, Max);
+            p.StuckTolerance = Mathf.Clamp(p.StuckTolerance, Min, Max);
         }
+
     }
 }
 

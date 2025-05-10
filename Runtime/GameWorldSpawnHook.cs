@@ -6,6 +6,7 @@
 //   Please follow strict StyleCop, ReSharper, and AI-Refactored code standards for all modifications.
 // </auto-generated>
 
+
 namespace AIRefactored.Runtime
 {
     using System;
@@ -33,13 +34,13 @@ namespace AIRefactored.Runtime
             {
                 if (_hooked)
                 {
-                    Logger.LogInfo("[GameWorldSpawnHook] Already hooked — skipping.");
+                    Logger.LogDebug("[GameWorldSpawnHook] Already hooked — skipping.");
                     UnityEngine.Object.Destroy(this);
                     return;
                 }
 
                 _hooked = true;
-                Logger.LogInfo("[GameWorldSpawnHook] Hooking into GameWorld.OnGameStarted...");
+                Logger.LogDebug("[GameWorldSpawnHook] Hooking into GameWorld.OnGameStarted...");
 
                 MethodInfo method = AccessTools.Method(typeof(GameWorld), "OnGameStarted");
                 if (method == null)
@@ -48,8 +49,10 @@ namespace AIRefactored.Runtime
                     return;
                 }
 
-                Harmony.CreateAndPatchAll(typeof(GameWorldSpawnPatch), "ai.refactored.spawnhook");
-                Logger.LogInfo("[GameWorldSpawnHook] Harmony patch successfully installed.");
+                Harmony harmony = new Harmony("ai.refactored.spawnhook");
+                harmony.Patch(method, postfix: new HarmonyMethod(typeof(GameWorldSpawnPatch), nameof(GameWorldSpawnPatch.Postfix)));
+
+                Logger.LogDebug("[GameWorldSpawnHook] Harmony patch successfully installed.");
             }
             catch (Exception ex)
             {
@@ -65,16 +68,13 @@ namespace AIRefactored.Runtime
         /// <summary>
         /// Harmony patch for GameWorld.OnGameStarted to trigger InitPhaseRunner.
         /// </summary>
-        [HarmonyPatch(typeof(GameWorld), "OnGameStarted")]
         private static class GameWorldSpawnPatch
         {
-            private static void Postfix()
+            public static void Postfix()
             {
                 try
                 {
-                    Logger.LogInfo("[GameWorldSpawnHook] GameWorld initialized. Triggering InitPhaseRunner...");
-
-                    // Always invoke — internal guards will decide if it's safe
+                    Logger.LogDebug("[GameWorldSpawnHook] GameWorld initialized. Triggering InitPhaseRunner...");
                     InitPhaseRunner.Begin(Logger);
                 }
                 catch (Exception ex)

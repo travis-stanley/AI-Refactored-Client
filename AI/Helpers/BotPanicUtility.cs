@@ -25,23 +25,15 @@ namespace AIRefactored.AI.Helpers
         /// </summary>
         public static void Trigger(BotComponentCache cache)
         {
-            if (cache == null)
+            if (cache == null || cache.Bot == null || cache.Bot.IsDead)
             {
                 return;
             }
 
-            BotOwner bot = cache.Bot;
-            if (bot != null && !bot.IsDead)
+            BotPanicHandler panic = cache.PanicHandler;
+            if (panic != null)
             {
-                Player player = bot.GetPlayer;
-                if (player != null && player.IsAI)
-                {
-                    BotPanicHandler panic = cache.PanicHandler;
-                    if (panic != null)
-                    {
-                        panic.TriggerPanic();
-                    }
-                }
+                panic.TriggerPanic();
             }
         }
 
@@ -50,7 +42,7 @@ namespace AIRefactored.AI.Helpers
         /// </summary>
         public static void TriggerGroup(List<BotComponentCache> group)
         {
-            if (group == null || group.Count == 0)
+            if (group == null)
             {
                 return;
             }
@@ -58,23 +50,15 @@ namespace AIRefactored.AI.Helpers
             for (int i = 0; i < group.Count; i++)
             {
                 BotComponentCache cache = group[i];
-                if (cache == null)
+                if (cache == null || cache.Bot == null || cache.Bot.IsDead)
                 {
                     continue;
                 }
 
-                BotOwner bot = cache.Bot;
-                if (bot != null && !bot.IsDead)
+                BotPanicHandler panic = cache.PanicHandler;
+                if (panic != null)
                 {
-                    Player player = bot.GetPlayer;
-                    if (player != null && player.IsAI)
-                    {
-                        BotPanicHandler panic = cache.PanicHandler;
-                        if (panic != null)
-                        {
-                            panic.TriggerPanic();
-                        }
-                    }
+                    panic.TriggerPanic();
                 }
             }
         }
@@ -92,13 +76,14 @@ namespace AIRefactored.AI.Helpers
         /// </summary>
         public static bool TryGetPanicComponent(BotComponentCache cache, out BotPanicHandler panic)
         {
-            panic = null;
-            if (cache != null)
+            if (cache != null && cache.PanicHandler != null)
             {
                 panic = cache.PanicHandler;
+                return true;
             }
 
-            return panic != null;
+            panic = null;
+            return false;
         }
 
         /// <summary>
@@ -115,31 +100,23 @@ namespace AIRefactored.AI.Helpers
 
             foreach (BotComponentCache cache in BotCacheUtility.AllActiveBots())
             {
-                if (cache == null)
+                if (cache == null || cache.Bot == null || cache.Bot.IsDead)
                 {
                     continue;
                 }
 
-                BotOwner bot = cache.Bot;
-                if (bot != null && !bot.IsDead)
-                {
-                    Player player = bot.GetPlayer;
-                    if (player != null && player.IsAI)
-                    {
-                        Vector3 pos = bot.Position;
-                        float dx = pos.x - origin.x;
-                        float dy = pos.y - origin.y;
-                        float dz = pos.z - origin.z;
-                        float distSq = (dx * dx) + (dy * dy) + (dz * dz);
+                Vector3 pos = cache.Bot.Position;
+                float dx = pos.x - origin.x;
+                float dy = pos.y - origin.y;
+                float dz = pos.z - origin.z;
+                float distSq = (dx * dx) + (dy * dy) + (dz * dz);
 
-                        if (distSq <= radiusSq)
-                        {
-                            BotPanicHandler panic = cache.PanicHandler;
-                            if (panic != null)
-                            {
-                                panic.TriggerPanic();
-                            }
-                        }
+                if (distSq <= radiusSq)
+                {
+                    BotPanicHandler panic = cache.PanicHandler;
+                    if (panic != null)
+                    {
+                        panic.TriggerPanic();
                     }
                 }
             }

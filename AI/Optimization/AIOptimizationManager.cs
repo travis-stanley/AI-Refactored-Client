@@ -15,6 +15,7 @@ namespace AIRefactored.AI.Optimization
     using BepInEx.Logging;
     using EFT;
     using UnityEngine;
+    using static HBAO_Core;
 
     /// <summary>
     /// Manages runtime optimization routines for AI bots.
@@ -27,31 +28,30 @@ namespace AIRefactored.AI.Optimization
         #region Fields
 
         private static readonly BotAIOptimization Optimizer = new BotAIOptimization();
+
         private static readonly Dictionary<int, bool> BotOptimizationState = new Dictionary<int, bool>(128);
         private static readonly Dictionary<int, float> LastEscalationTimes = new Dictionary<int, float>(128);
 
         private const float EscalationCooldownTime = 10f;
+
         private static readonly ManualLogSource Logger = Plugin.LoggerInstance;
 
         #endregion
 
         #region Public API
 
+        /// <summary>
+        /// Applies optimization logic to a bot if eligible.
+        /// </summary>
         public static void Apply(BotOwner bot)
         {
-            if (!GameWorldHandler.IsLocalHost())
-            {
-                return;
-            }
-
-            if (!IsValid(bot))
+            if (!GameWorldHandler.IsLocalHost() || !IsValid(bot))
             {
                 return;
             }
 
             int id = bot.GetInstanceID();
-            bool alreadyOptimized;
-            if (BotOptimizationState.TryGetValue(id, out alreadyOptimized) && alreadyOptimized)
+            if (BotOptimizationState.TryGetValue(id, out bool alreadyOptimized) && alreadyOptimized)
             {
                 Logger.LogDebug("[AIRefactored] Optimization already applied to bot: " + GetName(bot));
                 return;
@@ -60,24 +60,21 @@ namespace AIRefactored.AI.Optimization
             Optimizer.Optimize(bot);
             BotOptimizationState[id] = true;
 
-            Logger.LogInfo("[AIRefactored] Optimization applied to bot: " + GetName(bot));
+            Logger.LogDebug("[AIRefactored] Optimization applied to bot: " + GetName(bot));
         }
 
+        /// <summary>
+        /// Resets a bot's optimizations if previously applied.
+        /// </summary>
         public static void Reset(BotOwner bot)
         {
-            if (!GameWorldHandler.IsLocalHost())
-            {
-                return;
-            }
-
-            if (!IsValid(bot))
+            if (!GameWorldHandler.IsLocalHost() || !IsValid(bot))
             {
                 return;
             }
 
             int id = bot.GetInstanceID();
-            bool wasOptimized;
-            if (!BotOptimizationState.TryGetValue(id, out wasOptimized) || !wasOptimized)
+            if (!BotOptimizationState.TryGetValue(id, out bool wasOptimized) || !wasOptimized)
             {
                 Logger.LogDebug("[AIRefactored] Bot not optimized, skipping reset: " + GetName(bot));
                 return;
@@ -86,26 +83,23 @@ namespace AIRefactored.AI.Optimization
             Optimizer.ResetOptimization(bot);
             BotOptimizationState[id] = false;
 
-            Logger.LogInfo("[AIRefactored] Optimization reset for bot: " + GetName(bot));
+            Logger.LogDebug("[AIRefactored] Optimization reset for bot: " + GetName(bot));
         }
 
+        /// <summary>
+        /// Escalates bot threat perception and responsiveness, subject to cooldown.
+        /// </summary>
         public static void TriggerEscalation(BotOwner bot)
         {
-            if (!GameWorldHandler.IsLocalHost())
-            {
-                return;
-            }
-
-            if (!IsValid(bot))
+            if (!GameWorldHandler.IsLocalHost() || !IsValid(bot))
             {
                 return;
             }
 
             int id = bot.GetInstanceID();
             float now = Time.time;
-            float lastTime;
 
-            if (LastEscalationTimes.TryGetValue(id, out lastTime) && now - lastTime < EscalationCooldownTime)
+            if (LastEscalationTimes.TryGetValue(id, out float lastTime) && (now - lastTime) < EscalationCooldownTime)
             {
                 Logger.LogDebug("[AIRefactored] Escalation skipped (cooldown) for bot: " + GetName(bot));
                 return;
@@ -124,7 +118,7 @@ namespace AIRefactored.AI.Optimization
 
             LastEscalationTimes[id] = now;
 
-            Logger.LogInfo("[AIRefactored] Escalation triggered for bot: " + GetName(bot));
+            Logger.LogDebug("[AIRefactored] Escalation triggered for bot: " + GetName(bot));
         }
 
         #endregion
@@ -148,11 +142,11 @@ namespace AIRefactored.AI.Optimization
 
         private static BotGlobalsMindSettings GetMindSettings(BotOwner bot)
         {
-            return bot.Settings != null &&
-                   bot.Settings.FileSettings != null &&
-                   bot.Settings.FileSettings.Mind != null
-                ? bot.Settings.FileSettings.Mind
-                : null;
+            return bot != null &&
+                   bot.Settings != null &&
+                   bot.Settings.FileSettings != null
+                       ? bot.Settings.FileSettings.Mind
+                       : null;
         }
 
         #endregion

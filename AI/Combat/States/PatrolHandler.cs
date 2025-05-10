@@ -47,12 +47,6 @@ namespace AIRefactored.AI.Combat.States
 
         #region Constructor
 
-        /// <summary>
-        /// Initializes a new instance of the <see cref="PatrolHandler"/> class.
-        /// </summary>
-        /// <param name="cache">Component cache containing bot subsystems.</param>
-        /// <param name="minStateDuration">Minimum duration before switching states.</param>
-        /// <param name="switchCooldownBase">Base interval before picking a new patrol target.</param>
         public PatrolHandler(BotComponentCache cache, float minStateDuration, float switchCooldownBase)
         {
             if (cache == null || cache.Bot == null)
@@ -109,13 +103,18 @@ namespace AIRefactored.AI.Combat.States
             }
 
             HotspotRegistry.Hotspot hotspot = HotspotRegistry.GetRandomHotspot();
-            Vector3 target = hotspot.Position;
+            if (hotspot == null || !IsVectorValid(hotspot.Position))
+            {
+                Plugin.LoggerInstance.LogWarning("[PatrolHandler] Skipped patrol: hotspot was invalid or missing.");
+                return;
+            }
 
+            Vector3 target = hotspot.Position;
             Vector3 destination = _cache.SquadPath != null
                 ? _cache.SquadPath.ApplyOffsetTo(target)
                 : target;
 
-            if (float.IsNaN(destination.x) || float.IsNaN(destination.y) || float.IsNaN(destination.z))
+            if (!IsVectorValid(destination))
             {
                 Plugin.LoggerInstance.LogWarning("[PatrolHandler] Skipped patrol move: destination contains NaN.");
                 return;
@@ -183,14 +182,19 @@ namespace AIRefactored.AI.Combat.States
             }
 
             Vector3 direction = _bot.LookDirection.normalized;
-
             List<Vector3> path = BotCoverRetreatPlanner.GetCoverRetreatPath(_bot, direction, _cache.Pathing);
+
             if (path != null && path.Count >= FallbackPathMinLength)
             {
                 return path[path.Count - 1];
             }
 
             return _bot.Position;
+        }
+
+        private static bool IsVectorValid(Vector3 v)
+        {
+            return !float.IsNaN(v.x) && !float.IsNaN(v.y) && !float.IsNaN(v.z);
         }
 
         #endregion

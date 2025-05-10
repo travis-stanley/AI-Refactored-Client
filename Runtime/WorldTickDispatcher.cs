@@ -22,11 +22,14 @@ namespace AIRefactored.Runtime
     {
         #region Fields
 
-        private static GameObject _host = null;
-        private static TickHost _monoHost = null;
+        private static GameObject _host;
+        private static TickHost _monoHost;
         private static bool _isActive;
 
-        private static ManualLogSource Logger => Plugin.LoggerInstance;
+        private static ManualLogSource Logger
+        {
+            get { return Plugin.LoggerInstance; }
+        }
 
         #endregion
 
@@ -37,7 +40,7 @@ namespace AIRefactored.Runtime
         /// </summary>
         public static void Initialize()
         {
-            if (_isActive)
+            if (_isActive && _host != null && _monoHost != null)
             {
                 return;
             }
@@ -50,7 +53,7 @@ namespace AIRefactored.Runtime
                 _monoHost = _host.AddComponent<TickHost>();
                 _isActive = true;
 
-                Logger.LogInfo("[WorldTickDispatcher] Host attached and ticking.");
+                Logger.LogDebug("[WorldTickDispatcher] Host attached and ticking.");
             }
             catch (Exception ex)
             {
@@ -72,6 +75,11 @@ namespace AIRefactored.Runtime
 
             try
             {
+                if (_monoHost != null)
+                {
+                    UnityEngine.Object.Destroy(_monoHost);
+                }
+
                 if (_host != null)
                 {
                     UnityEngine.Object.Destroy(_host);
@@ -85,7 +93,7 @@ namespace AIRefactored.Runtime
             _host = null;
             _monoHost = null;
 
-            Logger.LogInfo("[WorldTickDispatcher] Shutdown complete.");
+            Logger.LogDebug("[WorldTickDispatcher] Shutdown complete.");
         }
 
         #endregion
@@ -98,12 +106,19 @@ namespace AIRefactored.Runtime
         /// <param name="deltaTime">The time delta since the last frame.</param>
         public static void Tick(float deltaTime)
         {
-            if (!GameWorldHandler.IsInitialized)
+            if (!_isActive || !GameWorldHandler.IsInitialized)
             {
                 return;
             }
 
-            WorldBootstrapper.Tick(deltaTime);
+            try
+            {
+                WorldBootstrapper.Tick(deltaTime);
+            }
+            catch (Exception ex)
+            {
+                Logger.LogError("[WorldTickDispatcher] Tick() error: " + ex);
+            }
         }
 
         #endregion
@@ -117,21 +132,14 @@ namespace AIRefactored.Runtime
         {
             private void Update()
             {
-                try
-                {
-                    WorldTickDispatcher.Tick(Time.deltaTime);
-                }
-                catch (Exception ex)
-                {
-                    Logger.LogError("[WorldTickDispatcher] Tick error: " + ex);
-                }
+                WorldTickDispatcher.Tick(Time.deltaTime);
             }
 
             private void OnDestroy()
             {
                 try
                 {
-                    Reset();
+                    WorldTickDispatcher.Reset();
                 }
                 catch (Exception ex)
                 {

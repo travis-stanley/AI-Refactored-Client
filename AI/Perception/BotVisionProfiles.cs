@@ -11,6 +11,7 @@ namespace AIRefactored.AI.Perception
     using System.Collections.Generic;
     using AIRefactored.AI.Core;
     using AIRefactored.AI.Helpers;
+    using AIRefactored.Core;
     using EFT;
     using UnityEngine;
 
@@ -37,7 +38,7 @@ namespace AIRefactored.AI.Perception
         /// <returns>A tuned <see cref="BotVisionProfile"/> instance.</returns>
         public static BotVisionProfile Get(Player bot)
         {
-            if (bot == null || bot.Profile == null || bot.Profile.Info == null || bot.Profile.Info.Settings == null)
+            if (!EFTPlayerUtil.IsValid(bot))
             {
                 return DefaultProfile;
             }
@@ -51,12 +52,16 @@ namespace AIRefactored.AI.Perception
             }
 
             BotComponentCache cache = BotCacheUtility.GetCache(bot);
-            if (cache == null || cache.AIRefactoredBotOwner == null || cache.AIRefactoredBotOwner.PersonalityProfile == null)
+            if (cache == null || cache.AIRefactoredBotOwner == null)
             {
                 return baseProfile;
             }
 
             BotPersonalityProfile personality = cache.AIRefactoredBotOwner.PersonalityProfile;
+            if (personality == null)
+            {
+                return baseProfile;
+            }
 
             float adaptationSpeed = Mathf.Clamp(baseProfile.AdaptationSpeed + (1f - personality.Caution) * 0.5f, 0.5f, 3f);
             float maxBlindness = Mathf.Clamp(baseProfile.MaxBlindness + (1f - personality.RiskTolerance) * 0.4f, 0.5f, 2f);

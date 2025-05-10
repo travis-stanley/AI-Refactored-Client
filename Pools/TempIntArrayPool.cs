@@ -6,6 +6,7 @@
 //   Please follow strict StyleCop, ReSharper, and AI-Refactored code standards for all modifications.
 // </auto-generated>
 
+
 namespace AIRefactored.Pools
 {
     using System;
@@ -24,27 +25,44 @@ namespace AIRefactored.Pools
             AppDomain.CurrentDomain.DomainUnload += (_, __) => ClearAll();
         }
 
+        /// <summary>
+        /// Rents a pooled array of integers with the specified size.
+        /// </summary>
+        /// <param name="size">Minimum array length.</param>
+        /// <returns>Reusable int array.</returns>
         public static int[] Rent(int size)
         {
-            if (size <= 0) size = 1;
+            if (size <= 0)
+            {
+                size = 1;
+            }
 
-            Stack<int[]> stack;
             lock (SyncRoot)
             {
+                Stack<int[]> stack;
                 if (PoolBySize.TryGetValue(size, out stack) && stack.Count > 0)
+                {
                     return stack.Pop();
+                }
             }
 
             return new int[size];
         }
 
+        /// <summary>
+        /// Returns an int array to the pool after clearing it.
+        /// </summary>
+        /// <param name="array">Array to return.</param>
         public static void Return(int[] array)
         {
-            if (array == null || array.Length == 0) return;
+            if (array == null || array.Length == 0)
+            {
+                return;
+            }
 
-            Stack<int[]> stack;
             lock (SyncRoot)
             {
+                Stack<int[]> stack;
                 if (!PoolBySize.TryGetValue(array.Length, out stack))
                 {
                     stack = new Stack<int[]>(8);
@@ -55,13 +73,21 @@ namespace AIRefactored.Pools
             }
         }
 
+        /// <summary>
+        /// Pre-warms the pool with reusable int arrays.
+        /// </summary>
+        /// <param name="size">Array length.</param>
+        /// <param name="count">Number of arrays to pre-allocate.</param>
         public static void Prewarm(int size, int count)
         {
-            if (size <= 0 || count <= 0) return;
+            if (size <= 0 || count <= 0)
+            {
+                return;
+            }
 
-            Stack<int[]> stack;
             lock (SyncRoot)
             {
+                Stack<int[]> stack;
                 if (!PoolBySize.TryGetValue(size, out stack))
                 {
                     stack = new Stack<int[]>(count);
@@ -75,12 +101,17 @@ namespace AIRefactored.Pools
             }
         }
 
+        /// <summary>
+        /// Clears all pooled int arrays and resets pool state.
+        /// </summary>
         public static void ClearAll()
         {
             lock (SyncRoot)
             {
-                foreach (var kvp in PoolBySize)
+                foreach (KeyValuePair<int, Stack<int[]>> kvp in PoolBySize)
+                {
                     kvp.Value.Clear();
+                }
 
                 PoolBySize.Clear();
             }

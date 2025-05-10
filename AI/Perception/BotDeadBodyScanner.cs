@@ -11,6 +11,7 @@ namespace AIRefactored.AI.Looting
     using System.Collections.Generic;
     using AIRefactored.AI.Core;
     using AIRefactored.Core;
+    using AIRefactored.Pools;
     using EFT;
     using EFT.Interactive;
     using EFT.InventoryLogic;
@@ -36,10 +37,6 @@ namespace AIRefactored.AI.Looting
         private BotComponentCache _cache;
         private float _nextScanTime;
 
-        /// <summary>
-        /// Scans all dead players and registers corpse-container proximity pairs.
-        /// Should be run during or after world initialization to enable realistic looting behavior.
-        /// </summary>
         public static void ScanAll()
         {
             if (!GameWorldHandler.IsSafeToInitialize)
@@ -53,6 +50,11 @@ namespace AIRefactored.AI.Looting
             for (int i = 0; i < containers.Count; i++)
             {
                 LootableContainer container = containers[i];
+                if (container == null)
+                {
+                    continue;
+                }
+
                 Vector3 containerPos = container.transform.position;
 
                 for (int j = 0; j < players.Count; j++)
@@ -119,8 +121,7 @@ namespace AIRefactored.AI.Looting
         {
             return _bot != null
                 && !_bot.IsDead
-                && _bot.GetPlayer != null
-                && !_bot.GetPlayer.IsYourPlayer
+                && EFTPlayerUtil.IsValid(_bot.GetPlayer)
                 && _cache != null
                 && !_cache.PanicHandler.IsPanicking;
         }
@@ -128,7 +129,7 @@ namespace AIRefactored.AI.Looting
         private void TryLootOnce()
         {
             Player corpse = FindLootableCorpse();
-            if (corpse == null)
+            if (!EFTPlayerUtil.IsValid(corpse))
             {
                 return;
             }
@@ -147,12 +148,11 @@ namespace AIRefactored.AI.Looting
         {
             Vector3 origin = _bot.Transform.position;
             Vector3 forward = _bot.WeaponRoot.forward;
-            List<Player> players = GameWorldHandler.GetAllAlivePlayers();
 
+            List<Player> players = GameWorldHandler.GetAllAlivePlayers();
             for (int i = 0; i < players.Count; i++)
             {
                 Player candidate = players[i];
-
                 if (!IsValidCorpse(candidate))
                 {
                     continue;
@@ -179,7 +179,7 @@ namespace AIRefactored.AI.Looting
 
         private bool IsValidCorpse(Player player)
         {
-            return player != null
+            return EFTPlayerUtil.IsValid(player)
                 && !player.HealthController.IsAlive
                 && player != _bot.GetPlayer
                 && player.ProfileId.Length > 0
@@ -264,7 +264,8 @@ namespace AIRefactored.AI.Looting
         private bool WasLootedRecently(string profileId)
         {
             float lastTime;
-            return LootTimestamps.TryGetValue(profileId, out lastTime) && (Time.time - lastTime < LootMemoryDuration);
+            return LootTimestamps.TryGetValue(profileId, out lastTime)
+                && (Time.time - lastTime < LootMemoryDuration);
         }
     }
 }

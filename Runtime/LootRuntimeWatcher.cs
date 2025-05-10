@@ -6,6 +6,7 @@
 //   Please follow strict StyleCop, ReSharper, and AI-Refactored code standards for all modifications.
 // </auto-generated>
 
+
 namespace AIRefactored.Runtime
 {
     using System;
@@ -30,10 +31,11 @@ namespace AIRefactored.Runtime
 
         #region Static Fields
 
-        private static float _nextAllowedRefreshTime = -1f;
-        private static bool _isQueued = false;
-        private static ManualLogSource _logger = Plugin.LoggerInstance;
+        private static readonly ManualLogSource Logger = Plugin.LoggerInstance;
         private static readonly HashSet<int> RegisteredInstanceIds = new HashSet<int>();
+
+        private static float _nextAllowedRefreshTime = -1f;
+        private static bool _isQueued;
 
         #endregion
 
@@ -52,7 +54,7 @@ namespace AIRefactored.Runtime
         public void Initialize()
         {
             Reset();
-            _logger.LogInfo("[LootRuntimeWatcher] Initialized.");
+            Logger.LogDebug("[LootRuntimeWatcher] Initialized.");
         }
 
         /// <inheritdoc />
@@ -70,7 +72,7 @@ namespace AIRefactored.Runtime
 
             _isQueued = false;
             GameWorldHandler.RefreshLootRegistry();
-            _logger.LogInfo("[LootRuntimeWatcher] ✅ Loot registry refreshed.");
+            Logger.LogDebug("[LootRuntimeWatcher] ✅ Loot registry refreshed.");
         }
 
         /// <inheritdoc />
@@ -126,7 +128,7 @@ namespace AIRefactored.Runtime
 
             _isQueued = false;
             GameWorldHandler.RefreshLootRegistry();
-            _logger.LogInfo("[LootRuntimeWatcher] 🔁 Manual loot registry refresh triggered.");
+            Logger.LogDebug("[LootRuntimeWatcher] 🔁 Manual loot registry refresh triggered.");
         }
 
         /// <summary>
@@ -161,7 +163,7 @@ namespace AIRefactored.Runtime
             int id = go.GetInstanceID();
             if (RegisteredInstanceIds.Remove(id))
             {
-                _logger.LogDebug("[LootRuntimeWatcher] Unregistered loot object: " + go.name);
+                Logger.LogDebug("[LootRuntimeWatcher] Unregistered loot object: " + go.name);
             }
         }
 
@@ -177,11 +179,11 @@ namespace AIRefactored.Runtime
 
             try
             {
-                _logger?.LogInfo("[LootRuntimeWatcher] Reset.");
+                Logger.LogDebug("[LootRuntimeWatcher] Reset.");
             }
             catch
             {
-                // Silent fail
+                // Silent fail — logger might be null during domain reload
             }
         }
 

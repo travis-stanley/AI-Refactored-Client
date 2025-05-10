@@ -74,9 +74,9 @@ namespace AIRefactored.AI.Combat.States
 
         public void SetFallbackTarget(Vector3 target)
         {
-            if (float.IsNaN(target.x) || float.IsNaN(target.y) || float.IsNaN(target.z))
+            if (!IsVectorValid(target))
             {
-                Plugin.LoggerInstance.LogWarning("[FallbackHandler] Ignored fallback target with NaN values.");
+                Plugin.LoggerInstance.LogWarning("[FallbackHandler] Ignored fallback target with NaN or invalid values.");
                 return;
             }
 
@@ -114,7 +114,7 @@ namespace AIRefactored.AI.Combat.States
 
         public void Tick(float time, Action<CombatState, float> forceState)
         {
-            if (float.IsNaN(_fallbackTarget.x) || float.IsNaN(_fallbackTarget.y) || float.IsNaN(_fallbackTarget.z))
+            if (!IsVectorValid(_fallbackTarget))
             {
                 Plugin.LoggerInstance.LogWarning("[FallbackHandler] Skipped Tick: fallback target was invalid.");
                 return;
@@ -146,6 +146,15 @@ namespace AIRefactored.AI.Combat.States
         {
             _fallbackTarget = _bot.Position;
             _currentFallbackPath.Clear();
+        }
+
+        #endregion
+
+        #region Private Methods
+
+        private static bool IsVectorValid(Vector3 v)
+        {
+            return !float.IsNaN(v.x) && !float.IsNaN(v.y) && !float.IsNaN(v.z) && v != Vector3.zero;
         }
 
         #endregion

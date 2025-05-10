@@ -57,15 +57,15 @@ namespace AIRefactored
                 try
                 {
                     _logger = Logger;
-                    _logger.LogInfo("[AIRefactored] Plugin Awake — bootstrapping controller.");
+                    _logger.LogDebug("[AIRefactored] Plugin Awake — bootstrapping controller.");
                     AIRefactoredController.Initialize();
-                    UnityEngine.Debug.Log("[AIRefactored] AIRefactoredController.Initialize() invoked.");
+                    _logger.LogDebug("[AIRefactored] AIRefactoredController.Initialize() invoked.");
                     _initialized = true;
-                    _logger.LogInfo("[AIRefactored] Initialization complete.");
+                    _logger.LogDebug("[AIRefactored] Initialization complete.");
                 }
                 catch (Exception ex)
                 {
-                    UnityEngine.Debug.LogError("[AIRefactored] Plugin Awake failed: " + ex);
+                    Logger.LogError("[AIRefactored] Plugin Awake failed: " + ex);
                 }
             }
         }
@@ -81,14 +81,14 @@ namespace AIRefactored
             {
                 if (_logger != null)
                 {
-                    _logger.LogInfo("[AIRefactored] Plugin OnDestroy — cleaning up.");
+                    _logger.LogDebug("[AIRefactored] Plugin OnDestroy — cleaning up.");
                 }
 
                 GameWorldHandler.UnhookBotSpawns();
             }
             catch (Exception ex)
             {
-                UnityEngine.Debug.LogError("[AIRefactored] Plugin OnDestroy error: " + ex);
+                Logger.LogError("[AIRefactored] Plugin OnDestroy error: " + ex);
             }
         }
     }

@@ -47,7 +47,7 @@ namespace AIRefactored.AI.Movement
         {
             if (bot == null || cache == null)
             {
-                throw new ArgumentException("BotMovementTrajectoryPlanner: bot or cache is null.");
+                throw new ArgumentException("[BotMovementTrajectoryPlanner] bot or cache is null.");
             }
 
             _bot = bot;

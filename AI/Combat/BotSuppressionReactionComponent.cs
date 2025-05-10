@@ -120,8 +120,8 @@ namespace AIRefactored.AI.Combat
                 retreatDir = look.sqrMagnitude > 0.01f ? -look.normalized : Vector3.back;
             }
 
-            Vector3 fallback = GetFallbackPosition(retreatDir);
-            float cohesion = _cache.AIRefactoredBotOwner.PersonalityProfile.Cohesion;
+            Vector3 fallback = ComputeFallbackPosition(retreatDir);
+            float cohesion = _cache.AIRefactoredBotOwner?.PersonalityProfile?.Cohesion ?? 1f;
 
             BotMovementHelper.SmoothMoveTo(_bot, fallback, false, cohesion);
             _bot.Sprint(true);
@@ -143,20 +143,20 @@ namespace AIRefactored.AI.Combat
 
         #region Private Helpers
 
-        private Vector3 GetFallbackPosition(Vector3 retreatDirection)
+        private Vector3 ComputeFallbackPosition(Vector3 retreatDirection)
         {
-            Vector3 basePos = _bot.Position + retreatDirection * MinSuppressionRetreatDistance;
+            Vector3 baseTarget = _bot.Position + retreatDirection * MinSuppressionRetreatDistance;
 
             if (_cache.Pathing != null)
             {
                 var path = BotCoverRetreatPlanner.GetCoverRetreatPath(_bot, retreatDirection, _cache.Pathing);
-                if (path != null && path.Count > 0)
+                if (path.Count > 0)
                 {
-                    return Vector3.Distance(path[0], _bot.Position) < 1.0f && path.Count > 1 ? path[1] : path[0];
+                    return Vector3.Distance(path[0], _bot.Position) < 1f && path.Count > 1 ? path[1] : path[0];
                 }
             }
 
-            return basePos;
+            return baseTarget;
         }
 
         private bool IsValid()

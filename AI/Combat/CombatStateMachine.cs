@@ -64,14 +64,21 @@ namespace AIRefactored.AI.Combat
 
         public void Initialize(BotComponentCache componentCache)
         {
-            if (componentCache == null || componentCache.Bot == null)
+            if (componentCache == null)
             {
-                Plugin.LoggerInstance.LogError("[CombatStateMachine] Initialization failed: componentCache or Bot is null.");
+                Plugin.LoggerInstance.LogError("[CombatStateMachine] Initialization failed: componentCache is null.");
+                return;
+            }
+
+            BotOwner botOwner = componentCache.Bot;
+            if (botOwner == null)
+            {
+                Plugin.LoggerInstance.LogError("[CombatStateMachine] Initialization failed: BotOwner is null.");
                 return;
             }
 
             _cache = componentCache;
-            _bot = componentCache.Bot;
+            _bot = botOwner;
 
             _patrol = new PatrolHandler(componentCache, PatrolMinDuration, PatrolCooldown);
             _investigate = new InvestigateHandler(componentCache);
@@ -89,15 +96,11 @@ namespace AIRefactored.AI.Combat
 
         public bool IsInCombatState()
         {
-            if (!_initialized)
-            {
-                return false;
-            }
-
-            return _fallback.IsActive()
-                || _engage.IsEngaging()
-                || _investigate.IsInvestigating()
-                || _cache.ThreatSelector.CurrentTarget != null;
+            return _initialized &&
+                   (_fallback.IsActive() ||
+                    _engage.IsEngaging() ||
+                    _investigate.IsInvestigating() ||
+                    _cache.ThreatSelector.CurrentTarget != null);
         }
 
         public void NotifyDamaged()
@@ -291,43 +294,41 @@ namespace AIRefactored.AI.Combat
 
         private bool TryReenterCombatState(float time)
         {
-            if (!_fallback.IsActive())
+            if (_fallback.IsActive())
             {
-                return false;
-            }
-
-            if (_cache.ThreatSelector.CurrentTarget != null)
-            {
-                _fallback.Cancel();
-                _bot.BotTalk?.TrySay(EPhraseTrigger.OnEnemyConversation);
-                return true;
-            }
-
-            if (_cache.GroupSync != null && _cache.GroupSync.IsSquadReady())
-            {
-                Vector3 self = _bot.Position;
-                IReadOnlyList<BotOwner> mates = _cache.GroupSync.GetTeammates();
-                for (int i = 0; i < mates.Count; i++)
+                if (_cache.ThreatSelector.CurrentTarget != null)
                 {
-                    BotOwner mate = mates[i];
-                    if (mate != null && mate != _bot && !mate.IsDead)
+                    _fallback.Cancel();
+                    _bot.BotTalk?.TrySay(EPhraseTrigger.OnEnemyConversation);
+                    return true;
+                }
+
+                if (_cache.GroupSync != null && _cache.GroupSync.IsSquadReady())
+                {
+                    Vector3 self = _bot.Position;
+                    IReadOnlyList<BotOwner> mates = _cache.GroupSync.GetTeammates();
+                    for (int i = 0; i < mates.Count; i++)
                     {
-                        float dist = Vector3.Distance(mate.Position, self);
-                        if (dist < 12f)
+                        BotOwner mate = mates[i];
+                        if (mate != null && mate != _bot && !mate.IsDead)
                         {
-                            _fallback.Cancel();
-                            _bot.BotTalk?.TrySay(EPhraseTrigger.Cooperation);
-                            return true;
+                            float dist = Vector3.Distance(mate.Position, self);
+                            if (dist < 12f)
+                            {
+                                _fallback.Cancel();
+                                _bot.BotTalk?.TrySay(EPhraseTrigger.Cooperation);
+                                return true;
+                            }
                         }
                     }
                 }
-            }
 
-            if (time - _lastStateChangeTime > ReentryCooldown)
-            {
-                _fallback.Cancel();
-                _bot.BotTalk?.TrySay(EPhraseTrigger.Ready);
-                return true;
+                if (time - _lastStateChangeTime > ReentryCooldown)
+                {
+                    _fallback.Cancel();
+                    _bot.BotTalk?.TrySay(EPhraseTrigger.Ready);
+                    return true;
+                }
             }
 
             return false;

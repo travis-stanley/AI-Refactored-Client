@@ -23,7 +23,8 @@ namespace AIRefactored.Core
 
         public static Player AsEFTPlayer(IPlayer raw)
         {
-            return raw as Player;
+            Player cast = raw as Player;
+            return cast != null ? cast : null;
         }
 
         public static bool TryGetValidPlayer(IPlayer raw, out Player player)
@@ -40,7 +41,8 @@ namespace AIRefactored.Core
             }
 
             object obj = player;
-            return obj is IPlayer cast ? cast : null;
+            IPlayer cast = obj as IPlayer;
+            return cast != null ? cast : null;
         }
 
         public static Player ResolvePlayer(BotOwner bot)
@@ -56,12 +58,17 @@ namespace AIRefactored.Core
             }
 
             GameWorld world = GameWorldHandler.Get();
-            if (world == null || world.AllAlivePlayersList == null)
+            if (world == null)
             {
                 return null;
             }
 
             List<Player> players = world.AllAlivePlayersList;
+            if (players == null || players.Count == 0)
+            {
+                return null;
+            }
+
             for (int i = 0; i < players.Count; i++)
             {
                 Player p = players[i];
@@ -104,12 +111,18 @@ namespace AIRefactored.Core
 
         public static string GetProfileId(BotOwner bot)
         {
-            if (bot == null || bot.GetPlayer == null)
+            if (bot == null)
             {
                 return string.Empty;
             }
 
-            return bot.GetPlayer.ProfileId;
+            Player player = bot.GetPlayer;
+            if (player == null)
+            {
+                return string.Empty;
+            }
+
+            return player.ProfileId;
         }
 
         public static bool IsValidBotOwner(BotOwner bot)

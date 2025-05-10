@@ -90,7 +90,7 @@ namespace AIRefactored.AI.Hotspots
             }
 
             List<Hotspot> result;
-            return ByZone.TryGetValue(zone, out result) ? result : Array.Empty<Hotspot>();
+            return ByZone.TryGetValue(zone.Trim(), out result) ? result : Array.Empty<Hotspot>();
         }
 
         public static Hotspot GetRandomHotspot()
@@ -101,13 +101,19 @@ namespace AIRefactored.AI.Hotspots
 
         public static void Initialize(string mapId)
         {
-            if (string.IsNullOrEmpty(mapId) || _loadedMap.Equals(mapId, StringComparison.OrdinalIgnoreCase))
+            if (string.IsNullOrEmpty(mapId))
+            {
+                return;
+            }
+
+            string normalizedMapId = mapId.Trim().ToLowerInvariant();
+            if (_loadedMap.Equals(normalizedMapId, StringComparison.OrdinalIgnoreCase))
             {
                 return;
             }
 
             Clear();
-            _loadedMap = mapId.ToLowerInvariant();
+            _loadedMap = normalizedMapId;
             _activeMode = IndexModeMap.TryGetValue(_loadedMap, out SpatialIndexMode mode) ? mode : SpatialIndexMode.None;
 
             HotspotSet set = HardcodedHotspots.GetForMap(_loadedMap);
@@ -120,19 +126,20 @@ namespace AIRefactored.AI.Hotspots
             for (int i = 0; i < set.Points.Count; i++)
             {
                 HotspotData data = set.Points[i];
-                if (string.IsNullOrWhiteSpace(data.Zone))
+                if (data == null || string.IsNullOrWhiteSpace(data.Zone))
                 {
                     continue;
                 }
 
-                Hotspot h = new Hotspot(data.Position, data.Zone);
+                string zone = data.Zone.Trim();
+                Hotspot h = new Hotspot(data.Position, zone);
                 All.Add(h);
 
                 List<Hotspot> zoneList;
-                if (!ByZone.TryGetValue(data.Zone, out zoneList))
+                if (!ByZone.TryGetValue(zone, out zoneList))
                 {
                     zoneList = new List<Hotspot>(8);
-                    ByZone[data.Zone] = zoneList;
+                    ByZone[zone] = zoneList;
                 }
 
                 zoneList.Add(h);
@@ -148,7 +155,7 @@ namespace AIRefactored.AI.Hotspots
                     break;
             }
 
-            Logger.LogInfo("[HotspotRegistry] ✅ Registered " + All.Count + " hotspots for map '" + _loadedMap + "' using " + _activeMode);
+            Logger.LogDebug("[HotspotRegistry] ✅ Registered " + All.Count + " hotspots for map '" + _loadedMap + "' using " + _activeMode);
         }
 
         public static List<Hotspot> QueryNearby(Vector3 position, float radius, Predicate<Hotspot> filter)
@@ -248,12 +255,15 @@ namespace AIRefactored.AI.Hotspots
 
         #region Type
 
+        /// <summary>
+        /// Represents a runtime hotspot: a tactical point on the map with a zone label.
+        /// </summary>
         public sealed class Hotspot
         {
             public Hotspot(Vector3 position, string zone)
             {
                 this.Position = position;
-                this.Zone = zone;
+                this.Zone = zone ?? "none";
             }
 
             public Vector3 Position { get; }

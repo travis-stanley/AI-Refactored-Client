@@ -6,6 +6,7 @@
 //   Please follow strict StyleCop, ReSharper, and AI-Refactored code standards for all modifications.
 // </auto-generated>
 
+
 namespace AIRefactored.Bootstrap
 {
     using AIRefactored.AI.Core;
@@ -36,25 +37,26 @@ namespace AIRefactored.Bootstrap
             string mapId = GameWorldHandler.TryGetValidMapName();
             if (string.IsNullOrEmpty(mapId) || mapId == "unknown")
             {
-                Plugin.LoggerInstance.LogWarning("[HotspotRegistry] Skipped initialization — map ID invalid.");
+                Plugin.LoggerInstance.LogWarning("[HotspotRegistry] Initialization skipped — invalid or unknown map ID.");
                 return;
             }
 
             HotspotRegistry.Initialize(mapId);
             _isInitialized = true;
-            Plugin.LoggerInstance.LogInfo("[HotspotRegistry] Initialized for map: " + mapId);
+
+            Plugin.LoggerInstance.LogDebug("[HotspotRegistry] Initialized successfully for map: " + mapId);
         }
 
         /// <summary>
         /// Hotspot systems are static and do not tick.
         /// </summary>
-        /// <param name="deltaTime">Unused.</param>
+        /// <param name="deltaTime">Unused delta time.</param>
         public void Tick(float deltaTime)
         {
         }
 
         /// <summary>
-        /// Clears all hotspot data on raid end.
+        /// Clears all hotspot data when the raid ends.
         /// </summary>
         public void OnRaidEnd()
         {
@@ -63,18 +65,18 @@ namespace AIRefactored.Bootstrap
         }
 
         /// <summary>
-        /// Indicates whether the hotspot registry is active and ready.
+        /// Returns whether the HotspotRegistry is active and ready for queries.
         /// </summary>
-        /// <returns>True if ready for use; otherwise, false.</returns>
+        /// <returns>True if initialized and ready; otherwise, false.</returns>
         public bool IsReady()
         {
             return _isInitialized;
         }
 
         /// <summary>
-        /// Declares the phase at which this system should be initialized.
+        /// Specifies the world phase at which this system should be initialized.
         /// </summary>
-        /// <returns>The required world phase.</returns>
+        /// <returns>The required world phase for initialization.</returns>
         public WorldPhase RequiredPhase()
         {
             return WorldPhase.WorldReady;

@@ -8,6 +8,7 @@
 
 namespace AIRefactored.AI.Helpers
 {
+    using AIRefactored.Core;
     using EFT;
 
     /// <summary>
@@ -21,19 +22,13 @@ namespace AIRefactored.AI.Helpers
         /// </summary>
         public static bool DidFireRecently(BotOwner self, Player source, float recentThreshold = 1.5f, float now = -1f)
         {
-            if (self == null || source == null)
+            if (!EFTPlayerUtil.IsValidBotOwner(self) || !EFTPlayerUtil.IsValid(source))
             {
                 return false;
             }
 
-            Player selfPlayer = self.GetPlayer;
-            if (selfPlayer == null || source.AIData == null)
-            {
-                return false;
-            }
-
-            return IsValidSoundSource(self, source) &&
-                   BotSoundRegistry.FiredRecently(source, recentThreshold, now);
+            return EFTPlayerUtil.IsEnemyOf(self, source)
+                   && BotSoundRegistry.FiredRecently(source, recentThreshold, now);
         }
 
         /// <summary>
@@ -41,51 +36,13 @@ namespace AIRefactored.AI.Helpers
         /// </summary>
         public static bool DidStepRecently(BotOwner self, Player source, float recentThreshold = 1.2f, float now = -1f)
         {
-            if (self == null || source == null)
+            if (!EFTPlayerUtil.IsValidBotOwner(self) || !EFTPlayerUtil.IsValid(source))
             {
                 return false;
             }
 
-            Player selfPlayer = self.GetPlayer;
-            if (selfPlayer == null || source.AIData == null)
-            {
-                return false;
-            }
-
-            return IsValidSoundSource(self, source) &&
-                   BotSoundRegistry.SteppedRecently(source, recentThreshold, now);
-        }
-
-        /// <summary>
-        /// Filters out invalid sound sources: null, self, same group, or invalid profile.
-        /// </summary>
-        private static bool IsValidSoundSource(BotOwner self, Player source)
-        {
-            if (self == null || self.GetPlayer == null || source == null || source.AIData == null)
-            {
-                return false;
-            }
-
-            if (ReferenceEquals(source, self.GetPlayer))
-            {
-                return false;
-            }
-
-            if (self.Profile == null || self.Profile.Info == null ||
-                source.Profile == null || source.Profile.Info == null)
-            {
-                return false;
-            }
-
-            string selfGroup = self.Profile.Info.GroupId;
-            string sourceGroup = source.Profile.Info.GroupId;
-
-            if (string.IsNullOrEmpty(selfGroup) || string.IsNullOrEmpty(sourceGroup))
-            {
-                return true;
-            }
-
-            return !selfGroup.Equals(sourceGroup);
+            return EFTPlayerUtil.IsEnemyOf(self, source)
+                   && BotSoundRegistry.SteppedRecently(source, recentThreshold, now);
         }
     }
 }

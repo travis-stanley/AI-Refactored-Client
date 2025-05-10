@@ -33,6 +33,7 @@ namespace AIRefactored.AI.Perception
         private const float MaxDetectionDistance = 120f;
         private const float SuppressionMissChance = 0.2f;
         private const float MotionBoost = 0.2f;
+
         private static readonly Vector3 EyeOffset = new Vector3(0f, 1.4f, 0f);
 
         private static readonly PlayerBoneType[] BonesToCheck =
@@ -58,10 +59,15 @@ namespace AIRefactored.AI.Perception
 
         public void Initialize(BotComponentCache cache)
         {
+            if (cache == null || cache.Bot == null || cache.TacticalMemory == null || cache.AIRefactoredBotOwner == null)
+            {
+                return;
+            }
+
             _bot = cache.Bot;
             _cache = cache;
-            _profile = cache.AIRefactoredBotOwner.PersonalityProfile;
             _memory = cache.TacticalMemory;
+            _profile = cache.AIRefactoredBotOwner.PersonalityProfile;
             _lastCommitTime = -999f;
         }
 
@@ -130,10 +136,9 @@ namespace AIRefactored.AI.Perception
 
             if (bestTarget != null)
             {
-                Vector3 position = EFTPlayerUtil.GetPosition(bestTarget);
-                _memory.RecordEnemyPosition(position, "Visual", bestTarget.ProfileId);
-
-                ShareMemoryToSquad(position);
+                Vector3 pos = EFTPlayerUtil.GetPosition(bestTarget);
+                _memory.RecordEnemyPosition(pos, "Visual", bestTarget.ProfileId);
+                ShareMemoryToSquad(pos);
                 TrackVisibleBones(eye, bestTarget, fogFactor);
                 EvaluateTargetConfidence(bestTarget, time);
             }
@@ -141,55 +146,18 @@ namespace AIRefactored.AI.Perception
 
         #endregion
 
-        #region Private Helpers
-
-        private void TrackVisibleBones(Vector3 eye, Player target, float fog)
-        {
-            if (_cache.VisibilityTracker == null)
-            {
-                _cache.VisibilityTracker = new TrackedEnemyVisibility(_bot.Transform.Original);
-            }
-
-            TrackedEnemyVisibility tracker = _cache.VisibilityTracker;
-
-            if (target.TryGetComponent<PlayerSpiritBones>(out PlayerSpiritBones bones))
-            {
-                Bounds[] bounds = TempBoundsPool.Rent(BonesToCheck.Length);
-
-                for (int i = 0; i < BonesToCheck.Length; i++)
-                {
-                    Transform bone = bones.GetBone(BonesToCheck[i]).Original;
-                    if (bone != null && !Physics.Linecast(eye, bone.position, out _, AIRefactoredLayerMasks.LineOfSightMask))
-                    {
-                        bounds[i] = new Bounds(bone.position, Vector3.one * 0.2f);
-                        float boost = IsMovingFast(target) ? MotionBoost : 0f;
-                        tracker.UpdateBoneVisibility(BonesToCheck[i].ToString(), bone.position, boost, fog);
-                    }
-                }
-
-                TempBoundsPool.Return(bounds);
-            }
-            else
-            {
-                Transform tf = EFTPlayerUtil.GetTransform(target);
-                if (tf != null && !Physics.Linecast(eye, tf.position, out _, AIRefactoredLayerMasks.LineOfSightMask))
-                {
-                    tracker.UpdateBoneVisibility("Body", tf.position);
-                }
-            }
-
-            tracker.DecayConfidence(BoneConfidenceDecay * Time.deltaTime);
-        }
+        #region Target Evaluation
 
         private void EvaluateTargetConfidence(Player target, float time)
         {
             TrackedEnemyVisibility tracker = _cache.VisibilityTracker;
-            if (!tracker.HasEnoughData)
+            if (tracker == null || !tracker.HasEnoughData)
             {
                 return;
             }
 
             float confidence = tracker.GetOverallConfidence();
+
             if (_bot.Memory.IsUnderFire && Random.value < SuppressionMissChance)
             {
                 return;
@@ -231,6 +199,52 @@ namespace AIRefactored.AI.Perception
             }
         }
 
+        #endregion
+
+        #region Bone Tracking
+
+        private void TrackVisibleBones(Vector3 eye, Player target, float fog)
+        {
+            if (_cache.VisibilityTracker == null)
+            {
+                _cache.VisibilityTracker = new TrackedEnemyVisibility(_bot.Transform.Original);
+            }
+
+            TrackedEnemyVisibility tracker = _cache.VisibilityTracker;
+
+            if (target.TryGetComponent<PlayerSpiritBones>(out PlayerSpiritBones bones))
+            {
+                Bounds[] bounds = TempBoundsPool.Rent(BonesToCheck.Length);
+
+                for (int i = 0; i < BonesToCheck.Length; i++)
+                {
+                    Transform bone = bones.GetBone(BonesToCheck[i]).Original;
+                    if (bone != null && !Physics.Linecast(eye, bone.position, out _, AIRefactoredLayerMasks.LineOfSightMask))
+                    {
+                        bounds[i] = new Bounds(bone.position, Vector3.one * 0.2f);
+                        float boost = IsMovingFast(target) ? MotionBoost : 0f;
+                        tracker.UpdateBoneVisibility(BonesToCheck[i].ToString(), bone.position, boost, fog);
+                    }
+                }
+
+                TempBoundsPool.Return(bounds);
+            }
+            else
+            {
+                Transform tf = EFTPlayerUtil.GetTransform(target);
+                if (tf != null && !Physics.Linecast(eye, tf.position, out _, AIRefactoredLayerMasks.LineOfSightMask))
+                {
+                    tracker.UpdateBoneVisibility("Body", tf.position);
+                }
+            }
+
+            tracker.DecayConfidence(BoneConfidenceDecay * Time.deltaTime);
+        }
+
+        #endregion
+
+        #region Memory Sharing
+
         private void ShareMemoryToSquad(Vector3 pos)
         {
             if (_cache.GroupSync == null)
@@ -245,7 +259,7 @@ namespace AIRefactored.AI.Perception
                 for (int i = 0; i < squad.Count; i++)
                 {
                     BotOwner mate = squad[i];
-                    if (BotRegistry.TryGetCache(mate.ProfileId, out BotComponentCache comp))
+                    if (mate != null && BotRegistry.TryGetCache(mate.ProfileId, out BotComponentCache comp))
                     {
                         teammates.Add(comp);
                     }
@@ -258,6 +272,10 @@ namespace AIRefactored.AI.Perception
                 TempListPool.Return(teammates);
             }
         }
+
+        #endregion
+
+        #region Utility
 
         private static bool HasLineOfSight(Vector3 from, Player target)
         {
@@ -279,7 +297,7 @@ namespace AIRefactored.AI.Perception
 
         private static bool IsMovingFast(Player p)
         {
-            return p.Velocity.sqrMagnitude > 2.25f;
+            return p != null && p.Velocity.sqrMagnitude > 2.25f;
         }
 
         private bool IsValid()
@@ -288,19 +306,16 @@ namespace AIRefactored.AI.Perception
                    _cache != null &&
                    _profile != null &&
                    _memory != null &&
-                   _bot.GetPlayer != null &&
-                   _bot.GetPlayer.IsAI &&
-                   !_bot.GetPlayer.IsYourPlayer &&
+                   EFTPlayerUtil.IsValid(_bot.GetPlayer) &&
                    !_bot.IsDead &&
                    GameWorldHandler.IsSafeToInitialize;
         }
 
         private bool IsValidTarget(Player t)
         {
-            return t != null &&
+            return EFTPlayerUtil.IsValid(t) &&
                    t.ProfileId != _bot.ProfileId &&
-                   EFTPlayerUtil.IsEnemyOf(_bot, t) &&
-                   EFTPlayerUtil.IsValid(t);
+                   EFTPlayerUtil.IsEnemyOf(_bot, t);
         }
 
         #endregion

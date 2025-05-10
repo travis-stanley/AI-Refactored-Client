@@ -38,9 +38,12 @@ namespace AIRefactored.AI.Combat
         /// <summary>
         /// Returns true if the specified profile was shot at recently by this bot.
         /// </summary>
+        /// <param name="profileId">Target profile ID.</param>
+        /// <param name="now">Optional time override.</param>
+        /// <param name="memoryWindow">Max age in seconds.</param>
         public bool DidRecentlyShoot(string profileId, float now = -1f, float memoryWindow = DefaultMemoryWindow)
         {
-            if (string.IsNullOrEmpty(profileId) || _lastTargetId.Length == 0)
+            if (profileId == null || profileId.Length == 0 || _lastTargetId.Length == 0)
             {
                 return false;
             }
@@ -57,9 +60,12 @@ namespace AIRefactored.AI.Combat
         /// <summary>
         /// Returns true if this bot was recently hit by the specified profile.
         /// </summary>
+        /// <param name="profileId">Attacker profile ID.</param>
+        /// <param name="now">Optional time override.</param>
+        /// <param name="memoryWindow">Max age in seconds.</param>
         public bool WasRecentlyShotBy(string profileId, float now = -1f, float memoryWindow = DefaultMemoryWindow)
         {
-            if (string.IsNullOrEmpty(profileId) || _lastAttackerId.Length == 0)
+            if (profileId == null || profileId.Length == 0 || _lastAttackerId.Length == 0)
             {
                 return false;
             }
@@ -76,9 +82,10 @@ namespace AIRefactored.AI.Combat
         /// <summary>
         /// Registers that this bot was hit by the specified profile ID.
         /// </summary>
+        /// <param name="profileId">Attacker profile ID.</param>
         public void RegisterHit(string profileId)
         {
-            if (string.IsNullOrEmpty(profileId))
+            if (profileId == null || profileId.Length == 0)
             {
                 return;
             }
@@ -90,9 +97,10 @@ namespace AIRefactored.AI.Combat
         /// <summary>
         /// Registers a shot fired by this bot at the specified profile ID.
         /// </summary>
+        /// <param name="profileId">Target profile ID.</param>
         public void RegisterShot(string profileId)
         {
-            if (string.IsNullOrEmpty(profileId))
+            if (profileId == null || profileId.Length == 0)
             {
                 return;
             }

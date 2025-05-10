@@ -32,10 +32,20 @@ namespace AIRefactored.AI.Core
     /// </summary>
     public sealed class BotComponentCache
     {
+        #region Static
+
+        public static readonly BotComponentCache Empty = new BotComponentCache();
+
         private static readonly ManualLogSource Logger = Plugin.LoggerInstance;
-        private static readonly HashSet<string> InitializedBots = new HashSet<string>();
+        private static readonly HashSet<string> InitializedBots = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
+
+        #endregion
+
+        #region Fields
 
         private AIRefactoredBotOwner _owner;
+
+        #endregion
 
         #region Core References
 
@@ -50,9 +60,7 @@ namespace AIRefactored.AI.Core
             get
             {
                 Profile profile = Bot.Profile;
-                return profile != null && profile.Info != null
-                    ? profile.Info.Nickname
-                    : "Unknown";
+                return profile != null && profile.Info != null ? profile.Info.Nickname : "Unknown";
             }
         }
 
@@ -85,58 +93,33 @@ namespace AIRefactored.AI.Core
         #region AI Subsystems
 
         public CombatStateMachine Combat { get; private set; }
-
         public BotMovementController Movement { get; private set; }
-
         public BotPoseController PoseController { get; private set; }
-
         public BotLookController LookController { get; private set; }
-
         public BotTilt Tilt { get; private set; }
-
         public BotTacticalDeviceController Tactical { get; private set; }
-
         public BotGroupBehavior GroupBehavior { get; private set; }
-
         public BotThreatSelector ThreatSelector { get; private set; }
-
         public BotTacticalMemory TacticalMemory { get; private set; }
-
         public BotLastShotTracker LastShotTracker { get; private set; }
-
         public BotGroupComms GroupComms { get; private set; }
-
         public BotSuppressionReactionComponent Suppression { get; private set; }
-
         public BotPanicHandler PanicHandler { get; private set; }
-
         public BotThreatEscalationMonitor Escalation { get; private set; }
-
         public BotInjurySystem InjurySystem { get; private set; }
-
         public BotDeadBodyScanner DeadBodyScanner { get; private set; }
-
         public BotLootScanner LootScanner { get; private set; }
-
         public BotLootDecisionSystem LootDecisionSystem { get; private set; }
-
         public BotOwnerPathfindingCache Pathing { get; private set; }
-
         public SquadPathCoordinator SquadPath { get; private set; }
-
         public BotDoorInteractionSystem DoorInteraction { get; private set; }
-
         public BotHealingBySomebody HealReceiver { get; private set; }
-
         public BotHealAnotherTarget SquadHealer { get; private set; }
-
         public FlashGrenadeComponent FlashGrenade { get; private set; }
-
         public HearingDamageComponent HearingDamage { get; private set; }
-
         public TrackedEnemyVisibility VisibilityTracker { get; set; }
 
-        public BotGroupSyncCoordinator GroupSync => GroupBehavior.GroupSync;
+        public BotGroupSyncCoordinator GroupSync => GroupBehavior != null ? GroupBehavior.GroupSync : null;
 
         public BotPanicHandler Panic => PanicHandler;
 
@@ -164,7 +147,8 @@ namespace AIRefactored.AI.Core
                 throw new ArgumentNullException("bot");
             }
 
-            string id = bot.Profile?.Id ?? "null";
+            Profile profile = bot.Profile;
+            string id = profile != null ? profile.Id : "null";
 
             if (Bot != null || InitializedBots.Contains(id))
             {
@@ -178,9 +162,9 @@ namespace AIRefactored.AI.Core
             try
             {
                 WildSpawnType role = WildSpawnType.assault;
-                if (bot.Profile != null && bot.Profile.Info != null && bot.Profile.Info.Settings != null)
+                if (profile?.Info?.Settings != null)
                 {
-                    role = bot.Profile.Info.Settings.Role;
+                    role = profile.Info.Settings.Role;
                 }
 
                 PersonalityProfile = BotRegistry.GetOrGenerate(id, PersonalityType.Balanced, role);
@@ -271,7 +255,7 @@ namespace AIRefactored.AI.Core
             }
             catch (Exception ex)
             {
-                Logger.LogError("[BotComponentCache] Initialization failed for bot " + Bot.Profile?.Id + ": " + ex);
+                Logger.LogError("[BotComponentCache] Initialization failed for bot " + id + ": " + ex);
                 throw;
             }
         }

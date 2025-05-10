@@ -44,10 +44,6 @@ namespace AIRefactored.AI.Combat.States
 
         #region Constructor
 
-        /// <summary>
-        /// Initializes a new instance of the <see cref="InvestigateHandler"/> class.
-        /// </summary>
-        /// <param name="cache">Bot component cache containing shared systems.</param>
         public InvestigateHandler(BotComponentCache cache)
         {
             if (cache == null || cache.Bot == null || cache.TacticalMemory == null)
@@ -65,16 +61,9 @@ namespace AIRefactored.AI.Combat.States
 
         #region Public Methods
 
-        /// <summary>
-        /// Returns the best candidate position for investigation.
-        /// </summary>
-        /// <param name="visualLastKnown">Visual enemy position if known, or Vector3.zero.</param>
         public Vector3 GetInvestigateTarget(Vector3 visualLastKnown)
         {
-            if (!float.IsNaN(visualLastKnown.x) &&
-                !float.IsNaN(visualLastKnown.y) &&
-                !float.IsNaN(visualLastKnown.z) &&
-                visualLastKnown != Vector3.zero)
+            if (IsVectorValid(visualLastKnown))
             {
                 return visualLastKnown;
             }
@@ -88,17 +77,13 @@ namespace AIRefactored.AI.Combat.States
             return RandomNearbyPosition();
         }
 
-        /// <summary>
-        /// Triggers investigate behavior toward the given position.
-        /// </summary>
-        /// <param name="target">Investigate location.</param>
         public void Investigate(Vector3 target)
         {
             Vector3 destination = _cache.SquadPath != null
                 ? _cache.SquadPath.ApplyOffsetTo(target)
                 : target;
 
-            if (float.IsNaN(destination.x) || float.IsNaN(destination.y) || float.IsNaN(destination.z))
+            if (!IsVectorValid(destination))
             {
                 Plugin.LoggerInstance.LogWarning("[InvestigateHandler] Skipped investigation: invalid destination.");
                 return;
@@ -113,11 +98,6 @@ namespace AIRefactored.AI.Combat.States
             }
         }
 
-        /// <summary>
-        /// Determines whether investigate state should activate.
-        /// </summary>
-        /// <param name="time">Current world time.</param>
-        /// <param name="lastTransition">Last combat state switch time.</param>
         public bool ShallUseNow(float time, float lastTransition)
         {
             if (_cache.AIRefactoredBotOwner == null)
@@ -135,21 +115,12 @@ namespace AIRefactored.AI.Combat.States
             return (heardTime + SoundReactTime) > time && (time - lastTransition) > ExitDelayBuffer;
         }
 
-        /// <summary>
-        /// Returns true if investigate behavior has expired.
-        /// </summary>
-        /// <param name="now">Current time.</param>
-        /// <param name="lastHitTime">Start time of investigation.</param>
-        /// <param name="cooldown">Optional state cooldown.</param>
         public bool ShouldExit(float now, float lastHitTime, float cooldown)
         {
             float elapsed = now - lastHitTime;
             return elapsed > cooldown || elapsed > MaxInvestigateTime;
         }
 
-        /// <summary>
-        /// Returns true if bot is within active investigate window.
-        /// </summary>
         public bool IsInvestigating()
         {
             return (Time.time - _cache.LastHeardTime) <= ActiveWindow;
@@ -165,7 +136,7 @@ namespace AIRefactored.AI.Combat.States
             if (memory.HasValue)
             {
                 Vector3 value = memory.Value;
-                if (!float.IsNaN(value.x) && !float.IsNaN(value.y) && !float.IsNaN(value.z))
+                if (IsVectorValid(value))
                 {
                     result = value;
                     return true;
@@ -182,6 +153,11 @@ namespace AIRefactored.AI.Combat.States
             Vector3 offset = UnityEngine.Random.insideUnitSphere * ScanRadius;
             offset.y = 0f;
             return basePos + offset;
+        }
+
+        private static bool IsVectorValid(Vector3 v)
+        {
+            return !float.IsNaN(v.x) && !float.IsNaN(v.y) && !float.IsNaN(v.z) && v != Vector3.zero;
         }
 
         #endregion

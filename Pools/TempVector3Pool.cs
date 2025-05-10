@@ -6,8 +6,10 @@
 //   Please follow strict StyleCop, ReSharper, and AI-Refactored code standards for all modifications.
 // </auto-generated>
 
+
 namespace AIRefactored.Pools
 {
+    using System;
     using System.Collections.Generic;
     using UnityEngine;
 
@@ -22,7 +24,7 @@ namespace AIRefactored.Pools
 
         static TempVector3Pool()
         {
-            System.AppDomain.CurrentDomain.DomainUnload += (_, __) => ClearAll();
+            AppDomain.CurrentDomain.DomainUnload += (_, __) => ClearAll();
         }
 
         /// <summary>
@@ -37,10 +39,9 @@ namespace AIRefactored.Pools
                 minSize = 1;
             }
 
-            Stack<Vector3[]> stack;
-
             lock (SyncRoot)
             {
+                Stack<Vector3[]> stack;
                 if (PoolBySize.TryGetValue(minSize, out stack) && stack.Count > 0)
                 {
                     return stack.Pop();
@@ -61,10 +62,9 @@ namespace AIRefactored.Pools
                 return;
             }
 
-            Stack<Vector3[]> stack;
-
             lock (SyncRoot)
             {
+                Stack<Vector3[]> stack;
                 if (!PoolBySize.TryGetValue(array.Length, out stack))
                 {
                     stack = new Stack<Vector3[]>(8);
@@ -87,10 +87,9 @@ namespace AIRefactored.Pools
                 return;
             }
 
-            Stack<Vector3[]> stack;
-
             lock (SyncRoot)
             {
+                Stack<Vector3[]> stack;
                 if (!PoolBySize.TryGetValue(size, out stack))
                 {
                     stack = new Stack<Vector3[]>(count);

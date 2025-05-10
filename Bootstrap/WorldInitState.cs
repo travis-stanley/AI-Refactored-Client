@@ -36,10 +36,10 @@ namespace AIRefactored.Bootstrap
         }
 
         /// <summary>
-        /// Returns true if the current world phase is equal to or beyond the given phase.
+        /// Returns true if the current world phase is equal to or beyond the specified phase.
         /// </summary>
         /// <param name="phase">The phase to compare against.</param>
-        /// <returns>True if the current phase is equal or later.</returns>
+        /// <returns>True if current phase is equal or after specified phase.</returns>
         public static bool IsInPhase(WorldPhase phase)
         {
             return _phase >= phase;
@@ -54,7 +54,7 @@ namespace AIRefactored.Bootstrap
         }
 
         /// <summary>
-        /// Resets the phase tracker to its default state.
+        /// Resets the phase tracker to its default uninitialized state.
         /// </summary>
         public static void Reset()
         {
@@ -63,8 +63,8 @@ namespace AIRefactored.Bootstrap
     }
 
     /// <summary>
-    /// Represents the current stage in world initialization lifecycle.
-    /// Used to coordinate system boot timing and safe entry points.
+    /// Represents the current stage in the world initialization lifecycle.
+    /// Used to coordinate system boot timing and enforce safe init entry points.
     /// </summary>
     public enum WorldPhase
     {
@@ -84,12 +84,12 @@ namespace AIRefactored.Bootstrap
         AwaitWorld = 2,
 
         /// <summary>
-        /// GameWorld is ready and systems may begin setup.
+        /// GameWorld is ready and world systems may begin setup.
         /// </summary>
         WorldReady = 3,
 
         /// <summary>
-        /// Full system initialization is complete and game is in active state.
+        /// All systems are fully initialized and the game is in active runtime state.
         /// </summary>
         PostInit = 4
     }

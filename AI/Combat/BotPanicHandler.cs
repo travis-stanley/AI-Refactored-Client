@@ -68,7 +68,7 @@ namespace AIRefactored.AI.Combat
             _cache = componentCache;
             _bot = componentCache.Bot;
 
-            EFT.Player player = _bot.GetPlayer;
+            Player player = _bot.GetPlayer;
             if (player != null && player.HealthController != null)
             {
                 player.HealthController.ApplyDamageEvent += OnDamaged;
@@ -148,13 +148,9 @@ namespace AIRefactored.AI.Combat
             TryStartPanic(Time.time, retreatDir);
 
             Player enemy = _bot.Memory?.GoalEnemy?.Person as Player;
-            if (enemy != null)
+            if (enemy != null && enemy.ProfileId != null)
             {
-                string id = enemy.ProfileId;
-                if (!string.IsNullOrEmpty(id))
-                {
-                    _cache.LastShotTracker?.RegisterHit(id);
-                }
+                _cache.LastShotTracker?.RegisterHit(enemy.ProfileId);
             }
 
             _cache.InjurySystem?.OnHit(part, damage);
@@ -169,7 +165,7 @@ namespace AIRefactored.AI.Combat
                 return false;
             }
 
-            if (_cache.FlashGrenade?.IsFlashed() == true)
+            if (_cache.FlashGrenade != null && _cache.FlashGrenade.IsFlashed())
             {
                 return true;
             }
@@ -217,7 +213,7 @@ namespace AIRefactored.AI.Combat
             BotCoverHelper.TrySetStanceFromNearbyCover(_cache, fallback);
 
             string mapId = GameWorldHandler.TryGetValidMapName();
-            if (!string.IsNullOrEmpty(mapId))
+            if (mapId != null)
             {
                 BotMemoryStore.AddDangerZone(mapId, _bot.Position, DangerTriggerType.Panic, 0.6f);
             }
@@ -246,7 +242,13 @@ namespace AIRefactored.AI.Combat
         {
             retreatDir = Vector3.zero;
 
-            if (_bot.Profile?.Info?.GroupId == null)
+            if (_bot.Profile == null || _bot.Profile.Info == null)
+            {
+                return false;
+            }
+
+            string groupId = _bot.Profile.Info.GroupId;
+            if (string.IsNullOrEmpty(groupId))
             {
                 return false;
             }
@@ -276,7 +278,7 @@ namespace AIRefactored.AI.Combat
             return _bot != null &&
                    _cache != null &&
                    !_bot.IsDead &&
-                   _bot.GetPlayer is EFT.Player player &&
+                   _bot.GetPlayer is Player player &&
                    player.IsAI;
         }
 

@@ -41,7 +41,7 @@ namespace AIRefactored.Runtime
             try
             {
                 Reset();
-                Logger.LogInfo("[BotSpawnWatcher] Initialized.");
+                Logger.LogDebug("[BotSpawnWatcher] Initialized.");
             }
             catch (Exception ex)
             {
@@ -71,7 +71,7 @@ namespace AIRefactored.Runtime
 
                 if (_hasWarnedInvalid)
                 {
-                    Logger.LogInfo("[BotSpawnWatcher] World is now ready. Resuming.");
+                    Logger.LogDebug("[BotSpawnWatcher] World is now ready. Resuming.");
                     _hasWarnedInvalid = false;
                 }
 
@@ -84,12 +84,13 @@ namespace AIRefactored.Runtime
                 _nextPollTime = now + PollInterval;
 
                 List<Player> players = GameWorldHandler.GetAllAlivePlayers();
-                if (players.Count == 0)
+                int count = players.Count;
+                if (count == 0)
                 {
                     return;
                 }
 
-                for (int i = 0; i < players.Count; i++)
+                for (int i = 0; i < count; i++)
                 {
                     Player player = players[i];
                     if (player == null || !player.IsAI || player.gameObject == null)
@@ -104,8 +105,15 @@ namespace AIRefactored.Runtime
                         continue;
                     }
 
-                    if (go.GetComponent<BotBrain>() != null)
+                    BotBrain brain = go.GetComponent<BotBrain>();
+                    if (brain != null)
                     {
+                        if (!brain.enabled)
+                        {
+                            brain.enabled = true;
+                            Logger.LogWarning("[BotSpawnWatcher] Re-enabled disabled brain: " + player.ProfileId);
+                        }
+
                         continue;
                     }
 
@@ -115,30 +123,33 @@ namespace AIRefactored.Runtime
                         continue;
                     }
 
-                    BotOwner owner = player.AIData as BotOwner;
+                    BotOwner owner = player.AIData.BotOwner;
                     if (owner == null)
                     {
-                        Logger.LogWarning("[BotSpawnWatcher] Skipped bot — AIData not a BotOwner: " + player.name);
+                        Logger.LogWarning("[BotSpawnWatcher] Skipped bot — AIData.BotOwner is null: " + player.name);
                         continue;
                     }
 
                     try
                     {
                         string profileId = player.Profile.Id;
-                        WildSpawnType role = player.Profile.Info != null ? player.Profile.Info.Settings.Role : WildSpawnType.assault;
+                        WildSpawnType role = player.Profile.Info != null && player.Profile.Info.Settings != null
+                            ? player.Profile.Info.Settings.Role
+                            : WildSpawnType.assault;
 
-                        BotPersonalityProfile personality = BotRegistry.GetOrGenerate(profileId, PersonalityType.Balanced);
+                        BotPersonalityProfile personality = BotRegistry.GetOrGenerate(profileId, PersonalityType.Balanced, role);
                         BotRegistry.Register(profileId, personality);
 
-                        BotBrain brain = go.AddComponent<BotBrain>();
-                        brain.Initialize(owner);
+                        BotBrain newBrain = go.AddComponent<BotBrain>();
+                        newBrain.Initialize(owner);
 
                         string nickname = player.Profile.Info != null ? player.Profile.Info.Nickname : "Unnamed";
                         Logger.LogDebug("[BotSpawnWatcher] ✅ Brain injected for bot: " + nickname);
                     }
                     catch (Exception ex)
                     {
-                        Logger.LogError("[BotSpawnWatcher] ❌ Brain injection failed for: " + player.Profile?.Info?.Nickname + " — " + ex);
+                        string name = player.Profile != null && player.Profile.Info != null ? player.Profile.Info.Nickname : "Unknown";
+                        Logger.LogError("[BotSpawnWatcher] ❌ Brain injection failed for: " + name + " — " + ex);
                     }
                 }
             }
@@ -168,11 +179,11 @@ namespace AIRefactored.Runtime
 
             try
             {
-                Logger.LogInfo("[BotSpawnWatcher] Reset.");
+                Logger.LogDebug("[BotSpawnWatcher] Reset.");
             }
             catch
             {
-                // Silent fail: logger not ready
+                // Silent fail: logger not ready during shutdown
             }
         }
 

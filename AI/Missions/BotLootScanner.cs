@@ -59,9 +59,14 @@ namespace AIRefactored.AI.Looting
 
         public void Initialize(BotComponentCache cache)
         {
-            if (cache == null || cache.Bot == null)
+            if (cache == null)
             {
-                throw new ArgumentException("[BotLootScanner] Initialization failed: cache or bot is null.");
+                throw new ArgumentNullException(nameof(cache));
+            }
+
+            if (cache.Bot == null)
+            {
+                throw new ArgumentException("[BotLootScanner] Initialization failed: Bot is null.");
             }
 
             _cache = cache;
@@ -87,14 +92,14 @@ namespace AIRefactored.AI.Looting
             }
 
             TryLootNearby();
-
             _cachedValue = CalculateNearbyLootValue();
-            _lastUpdate = time;
 
             if (_cachedValue <= 0f && time - _lastUpdate > StaleResetSeconds)
             {
                 _cachedValue = 0f;
             }
+
+            _lastUpdate = time;
         }
 
         #endregion
@@ -110,8 +115,8 @@ namespace AIRefactored.AI.Looting
 
             Vector3 bestPos = _bot.Position;
             float bestValue = 0f;
-            List<LootableContainer> containers = LootRegistry.GetAllContainers();
 
+            List<LootableContainer> containers = LootRegistry.GetAllContainers();
             for (int i = 0; i < containers.Count; i++)
             {
                 LootableContainer c = containers[i];
@@ -139,6 +144,11 @@ namespace AIRefactored.AI.Looting
 
         public void TryLootNearby()
         {
+            if (_bot == null)
+            {
+                return;
+            }
+
             Vector3 origin = _bot.Position;
 
             LootableContainer corpse = DeadBodyContainerCache.Get(_bot.ProfileId);
@@ -176,7 +186,7 @@ namespace AIRefactored.AI.Looting
                         MarkCooldown(item.name);
                         _cache.Movement.EnterLootingMode();
                         _cache.Movement.ExitLootingMode();
-                        Plugin.LoggerInstance.LogInfo("[BotLootScanner] Picked up item: " + item.name);
+                        Plugin.LoggerInstance.LogDebug("[BotLootScanner] Picked up item: " + item.name);
                         return;
                     }
                 }
@@ -199,8 +209,8 @@ namespace AIRefactored.AI.Looting
         {
             float sum = 0f;
             Vector3 origin = _bot.Position;
-            List<LootableContainer> containers = LootRegistry.GetAllContainers();
 
+            List<LootableContainer> containers = LootRegistry.GetAllContainers();
             for (int i = 0; i < containers.Count; i++)
             {
                 LootableContainer c = containers[i];
@@ -219,30 +229,40 @@ namespace AIRefactored.AI.Looting
             _cache.Movement.EnterLootingMode();
             container.Interact(new InteractionResult(EInteractionType.Open));
             _cache.Movement.ExitLootingMode();
-            Plugin.LoggerInstance.LogInfo("[BotLootScanner] Looted: " + container.name);
+            Plugin.LoggerInstance.LogDebug("[BotLootScanner] Looted: " + container.name);
         }
 
         private float EstimateContainerValue(LootableContainer container)
         {
-            if (container.ItemOwner == null || container.ItemOwner.RootItem == null)
+            if (container.ItemOwner == null)
+            {
+                return 0f;
+            }
+
+            Item root = container.ItemOwner.RootItem;
+            if (root == null)
             {
                 return 0f;
             }
 
             float total = 0f;
-            List<Item> contents = TempListPool.Rent<Item>();
-            contents.AddRange(container.ItemOwner.RootItem.GetAllItems());
+            List<Item> items = TempListPool.Rent<Item>();
+            items.AddRange(root.GetAllItems());
 
-            for (int i = 0; i < contents.Count; i++)
+            for (int i = 0; i < items.Count; i++)
             {
-                Item item = contents[i];
-                if (item != null && item.Template != null && item.Template.CreditsPrice > 0f)
+                Item item = items[i];
+                if (item != null && item.Template != null)
                 {
-                    total += item.Template.CreditsPrice;
+                    float price = item.Template.CreditsPrice;
+                    if (price > 0f)
+                    {
+                        total += price;
+                    }
                 }
             }
 
-            TempListPool.Return(contents);
+            TempListPool.Return(items);
             return total;
         }
 

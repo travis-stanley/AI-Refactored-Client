@@ -47,9 +47,6 @@ namespace AIRefactored.AI.Hotspots
         /// <summary>
         /// Returns 1 if this hotspot was ever visited; otherwise returns 0.
         /// </summary>
-        /// <param name="mapId">Map ID key.</param>
-        /// <param name="position">Hotspot world position.</param>
-        /// <returns>1f if visited; otherwise 0f.</returns>
         public static float GetVisitCount(string mapId, Vector3 position)
         {
             return WasVisitedWithin(mapId, position, DefaultVisitLifetime) ? 1f : 0f;
@@ -58,20 +55,24 @@ namespace AIRefactored.AI.Hotspots
         /// <summary>
         /// Marks a hotspot as visited at current Time.time.
         /// </summary>
-        /// <param name="mapId">Map ID key.</param>
-        /// <param name="position">Hotspot world position.</param>
         public static void MarkVisited(string mapId, Vector3 position)
         {
-            if (mapId.Length == 0)
+            if (string.IsNullOrEmpty(mapId))
+            {
+                return;
+            }
+
+            string key = mapId.Trim().ToLowerInvariant();
+            if (key.Length == 0)
             {
                 return;
             }
 
             Dictionary<Vector3, float> visits;
-            if (!VisitedMap.TryGetValue(mapId, out visits))
+            if (!VisitedMap.TryGetValue(key, out visits))
             {
                 visits = new Dictionary<Vector3, float>(32);
-                VisitedMap.Add(mapId, visits);
+                VisitedMap.Add(key, visits);
             }
 
             visits[position] = Time.time;
@@ -83,13 +84,19 @@ namespace AIRefactored.AI.Hotspots
 
         private static bool WasVisitedWithin(string mapId, Vector3 position, float cooldown)
         {
-            if (mapId.Length == 0)
+            if (string.IsNullOrEmpty(mapId))
+            {
+                return false;
+            }
+
+            string key = mapId.Trim().ToLowerInvariant();
+            if (key.Length == 0)
             {
                 return false;
             }
 
             Dictionary<Vector3, float> visits;
-            if (!VisitedMap.TryGetValue(mapId, out visits))
+            if (!VisitedMap.TryGetValue(key, out visits))
             {
                 return false;
             }

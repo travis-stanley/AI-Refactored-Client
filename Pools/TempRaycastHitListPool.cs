@@ -6,6 +6,7 @@
 //   Please follow strict StyleCop, ReSharper, and AI-Refactored code standards for all modifications.
 // </auto-generated>
 
+
 namespace AIRefactored.Pools
 {
     using System;
@@ -26,6 +27,10 @@ namespace AIRefactored.Pools
             AppDomain.CurrentDomain.DomainUnload += (_, __) => ClearAll();
         }
 
+        /// <summary>
+        /// Retrieves a pooled list of <see cref="RaycastHit"/>, or allocates a new one.
+        /// </summary>
+        /// <returns>A cleared list ready for use.</returns>
         public static List<RaycastHit> Rent()
         {
             lock (SyncRoot)
@@ -39,6 +44,10 @@ namespace AIRefactored.Pools
             return new List<RaycastHit>(8);
         }
 
+        /// <summary>
+        /// Returns a <see cref="List{RaycastHit}"/> to the pool after clearing it.
+        /// </summary>
+        /// <param name="list">List to return.</param>
         public static void Return(List<RaycastHit> list)
         {
             if (list == null)
@@ -54,6 +63,10 @@ namespace AIRefactored.Pools
             }
         }
 
+        /// <summary>
+        /// Prewarms the pool with empty lists of <see cref="RaycastHit"/>.
+        /// </summary>
+        /// <param name="count">Number of lists to allocate.</param>
         public static void Prewarm(int count)
         {
             if (count <= 0)
@@ -70,6 +83,9 @@ namespace AIRefactored.Pools
             }
         }
 
+        /// <summary>
+        /// Clears all pooled <see cref="RaycastHit"/> lists.
+        /// </summary>
         public static void ClearAll()
         {
             lock (SyncRoot)

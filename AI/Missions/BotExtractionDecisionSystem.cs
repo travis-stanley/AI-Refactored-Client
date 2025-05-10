@@ -15,6 +15,7 @@ namespace AIRefactored.AI.Missions
     using AIRefactored.Runtime;
     using BepInEx.Logging;
     using EFT;
+    using EFT.HealthSystem;
     using UnityEngine;
 
     /// <summary>
@@ -23,6 +24,8 @@ namespace AIRefactored.AI.Missions
     /// </summary>
     public sealed class BotExtractionDecisionSystem
     {
+        #region Fields
+
         private readonly BotOwner _bot;
         private readonly BotComponentCache _cache;
         private readonly ManualLogSource _log;
@@ -35,11 +38,25 @@ namespace AIRefactored.AI.Missions
 
         private const int MaxStuckRetries = 3;
 
+        #endregion
+
+        #region Constructor
+
         public BotExtractionDecisionSystem(BotOwner bot, BotComponentCache cache, BotPersonalityProfile profile)
         {
-            if (bot == null || cache == null || profile == null)
+            if (bot == null)
             {
-                throw new ArgumentException("[BotExtractionDecisionSystem] Constructor received null reference.");
+                throw new ArgumentNullException(nameof(bot));
+            }
+
+            if (cache == null)
+            {
+                throw new ArgumentNullException(nameof(cache));
+            }
+
+            if (profile == null)
+            {
+                throw new ArgumentNullException(nameof(profile));
             }
 
             _bot = bot;
@@ -51,6 +68,10 @@ namespace AIRefactored.AI.Missions
             _lastMoveUpdate = Time.time;
             _stuckChecks = 0;
         }
+
+        #endregion
+
+        #region Public Methods
 
         public void Tick(float time)
         {
@@ -68,14 +89,16 @@ namespace AIRefactored.AI.Missions
 
         public bool ShouldExtract(float now)
         {
-            if (_bot.IsDead || _bot.GetPlayer == null || !_bot.GetPlayer.HealthController.IsAlive)
+            Player player = _bot.GetPlayer;
+            IHealthController hc = player != null ? player.HealthController : null;
+
+            if (_bot.IsDead || player == null || hc == null || !hc.IsAlive)
             {
                 return false;
             }
 
             float composure = _cache.PanicHandler.GetComposureLevel();
             float panicThreshold = Mathf.Lerp(0.35f, 0.15f, _profile.Caution);
-
             if (composure < panicThreshold)
             {
                 _log.LogDebug("[ExtractDecision] Panic threshold met: " + _bot.name + " (" + composure.ToString("F2") + ")");
@@ -84,7 +107,6 @@ namespace AIRefactored.AI.Missions
 
             float lootValue = _cache.LootScanner.TotalLootValue;
             float lootThreshold = Mathf.Lerp(85000f, 50000f, _profile.Greed);
-
             if (lootValue >= lootThreshold)
             {
                 _log.LogDebug("[ExtractDecision] Loot threshold met: " + _bot.name + " (" + lootValue.ToString("F0") + ")");
@@ -124,8 +146,9 @@ namespace AIRefactored.AI.Missions
         public void TriggerExtraction()
         {
             Player player = _bot.GetPlayer;
+            IHealthController hc = player != null ? player.HealthController : null;
 
-            if (_bot.IsDead || player == null || !_bot.HealthController.IsAlive || _bot.BotState != EBotState.Active)
+            if (_bot.IsDead || player == null || hc == null || !hc.IsAlive || _bot.BotState != EBotState.Active)
             {
                 _log.LogWarning("[ExtractDecision] Invalid bot state for extraction: " + _bot.name);
                 return;
@@ -133,8 +156,12 @@ namespace AIRefactored.AI.Missions
 
             _cache.TacticalMemory.MarkExtractionStarted();
             BotMovementHelper.SmoothMoveToSafeExit(_bot);
-            _log.LogInfo("[ExtractDecision] ✅ Extraction triggered for: " + _bot.name);
+            _log.LogDebug("[ExtractDecision] ✅ Extraction triggered for: " + _bot.name);
         }
+
+        #endregion
+
+        #region Private Methods
 
         private bool IsBotStuck(float now, float threshold)
         {
@@ -196,5 +223,7 @@ namespace AIRefactored.AI.Missions
 
             return true;
         }
+
+        #endregion
     }
 }

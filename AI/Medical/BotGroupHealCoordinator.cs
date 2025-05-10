@@ -61,6 +61,10 @@ namespace AIRefactored.AI.Medical
 
         #region Public Methods
 
+        /// <summary>
+        /// Ticks healing coordination logic and checks squadmates for aid triggers.
+        /// </summary>
+        /// <param name="time">Current game time.</param>
         public void Tick(float time)
         {
             if (this._bot.IsDead || this._bot.BotsGroup == null || time < this._nextCheckTime)
@@ -69,8 +73,8 @@ namespace AIRefactored.AI.Medical
             }
 
             this._nextCheckTime = time + HealCheckInterval;
-            int count = this._bot.BotsGroup.MembersCount;
 
+            int count = this._bot.BotsGroup.MembersCount;
             for (int i = 0; i < count; i++)
             {
                 BotOwner mate = this._bot.BotsGroup.Member(i);
@@ -116,6 +120,11 @@ namespace AIRefactored.AI.Medical
 
             Player selfPlayer = EFTPlayerUtil.ResolvePlayer(this._bot);
             Player matePlayer = EFTPlayerUtil.ResolvePlayer(mate);
+
+            if (selfPlayer == null || matePlayer == null)
+            {
+                return false;
+            }
 
             Vector3 selfPos = EFTPlayerUtil.GetPosition(selfPlayer);
             Vector3 matePos = EFTPlayerUtil.GetPosition(matePlayer);

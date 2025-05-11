@@ -9,6 +9,8 @@
 namespace AIRefactored.Core
 {
     using System.Collections.Generic;
+    using AIRefactored.Bootstrap;
+    using AIRefactored.Runtime;
     using EFT;
     using EFT.HealthSystem;
     using UnityEngine;
@@ -57,21 +59,20 @@ namespace AIRefactored.Core
                 return null;
             }
 
+            if (!WorldInitState.IsInPhase(WorldPhase.WorldReady))
+            {
+                return null;
+            }
+
             GameWorld world = GameWorldHandler.Get();
-            if (world == null)
+            if (world == null || world.AllAlivePlayersList == null || world.AllAlivePlayersList.Count == 0)
             {
                 return null;
             }
 
-            List<Player> players = world.AllAlivePlayersList;
-            if (players == null || players.Count == 0)
+            for (int i = 0; i < world.AllAlivePlayersList.Count; i++)
             {
-                return null;
-            }
-
-            for (int i = 0; i < players.Count; i++)
-            {
-                Player p = players[i];
+                Player p = world.AllAlivePlayersList[i];
                 if (p != null && p.ProfileId == profileId)
                 {
                     return p;

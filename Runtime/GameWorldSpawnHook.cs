@@ -51,11 +51,11 @@ namespace AIRefactored.Runtime
                 Harmony harmony = new Harmony("ai.refactored.spawnhook");
                 harmony.Patch(method, postfix: new HarmonyMethod(typeof(GameWorldSpawnPatch), nameof(GameWorldSpawnPatch.Postfix)));
 
-                Logger.LogDebug("[GameWorldSpawnHook] Harmony patch successfully installed.");
+                Logger.LogDebug("[GameWorldSpawnHook] ✅ Harmony patch successfully installed.");
             }
             catch (Exception ex)
             {
-                Logger.LogError("[GameWorldSpawnHook] Exception during Awake: " + ex);
+                Logger.LogError("[GameWorldSpawnHook] ❌ Exception during Awake: " + ex);
             }
         }
 
@@ -86,11 +86,12 @@ namespace AIRefactored.Runtime
                     }
 
                     Logger.LogDebug("[GameWorldSpawnHook] GameWorld initialized. Triggering InitPhaseRunner...");
+
                     InitPhaseRunner.Begin(Logger);
                 }
                 catch (Exception ex)
                 {
-                    Logger.LogError("[GameWorldSpawnHook] Error in Postfix: " + ex);
+                    Logger.LogError("[GameWorldSpawnHook] ❌ Error in Postfix: " + ex);
                 }
             }
         }

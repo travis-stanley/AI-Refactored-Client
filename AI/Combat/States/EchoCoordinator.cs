@@ -43,9 +43,6 @@ namespace AIRefactored.AI.Combat.States
 
         #region Constructor
 
-        /// <summary>
-        /// Initializes a new instance of the <see cref="EchoCoordinator"/> class.
-        /// </summary>
         public EchoCoordinator(BotComponentCache cache)
         {
             if (cache == null || cache.Bot == null)
@@ -64,6 +61,11 @@ namespace AIRefactored.AI.Combat.States
 
         public void EchoFallbackToSquad(Vector3 retreatPosition)
         {
+            if (_cache.IsFallbackMode)
+            {
+                return;
+            }
+
             BotsGroup group = _bot.BotsGroup;
             if (group == null)
             {
@@ -88,7 +90,7 @@ namespace AIRefactored.AI.Combat.States
                 }
 
                 BotComponentCache mateCache = BotCacheUtility.GetCache(mate);
-                if (mateCache == null || mateCache.Combat == null || !CanAcceptEcho(mateCache))
+                if (mateCache == null || mateCache.IsFallbackMode || mateCache.Combat == null || !CanAcceptEcho(mateCache))
                 {
                     continue;
                 }
@@ -122,6 +124,11 @@ namespace AIRefactored.AI.Combat.States
 
         public void EchoInvestigateToSquad()
         {
+            if (_cache.IsFallbackMode)
+            {
+                return;
+            }
+
             BotsGroup group = _bot.BotsGroup;
             if (group == null)
             {
@@ -146,7 +153,7 @@ namespace AIRefactored.AI.Combat.States
                 }
 
                 BotComponentCache mateCache = BotCacheUtility.GetCache(mate);
-                if (mateCache == null || mateCache.Combat == null || !CanAcceptEcho(mateCache))
+                if (mateCache == null || mateCache.IsFallbackMode || mateCache.Combat == null || !CanAcceptEcho(mateCache))
                 {
                     continue;
                 }
@@ -164,6 +171,11 @@ namespace AIRefactored.AI.Combat.States
 
         public void EchoSpottedEnemyToSquad(Vector3 enemyPosition)
         {
+            if (_cache.IsFallbackMode)
+            {
+                return;
+            }
+
             BotsGroup group = _bot.BotsGroup;
             if (group == null)
             {
@@ -190,10 +202,12 @@ namespace AIRefactored.AI.Combat.States
                 }
 
                 BotComponentCache mateCache = BotCacheUtility.GetCache(mate);
-                if (mateCache != null && mateCache.TacticalMemory != null)
+                if (mateCache == null || mateCache.IsFallbackMode || mateCache.TacticalMemory == null)
                 {
-                    mateCache.TacticalMemory.RecordEnemyPosition(enemyPosition, "SquadEcho", enemyId);
+                    continue;
                 }
+
+                mateCache.TacticalMemory.RecordEnemyPosition(enemyPosition, "SquadEcho", enemyId);
             }
         }
 
@@ -203,7 +217,7 @@ namespace AIRefactored.AI.Combat.States
 
         private static bool CanAcceptEcho(BotComponentCache cache)
         {
-            if (cache.IsBlinded)
+            if (cache.IsFallbackMode || cache.IsBlinded)
             {
                 return false;
             }

@@ -36,9 +36,6 @@ namespace AIRefactored.AI.Combat.States
 
         #region Constructor
 
-        /// <summary>
-        /// Initializes a new instance of the <see cref="EngageHandler"/> class.
-        /// </summary>
         public EngageHandler(BotComponentCache cache)
         {
             if (cache == null || cache.Bot == null)
@@ -59,6 +56,11 @@ namespace AIRefactored.AI.Combat.States
 
         public bool ShallUseNow()
         {
+            if (_cache.IsFallbackMode || _bot == null)
+            {
+                return false;
+            }
+
             CombatStateMachine combat = _cache.Combat;
             Vector3 enemyPos;
 
@@ -69,6 +71,11 @@ namespace AIRefactored.AI.Combat.States
 
         public bool CanAttack()
         {
+            if (_cache.IsFallbackMode || _bot == null)
+            {
+                return false;
+            }
+
             CombatStateMachine combat = _cache.Combat;
             Vector3 enemyPos;
 
@@ -79,6 +86,11 @@ namespace AIRefactored.AI.Combat.States
 
         public void Tick()
         {
+            if (_cache.IsFallbackMode || _bot == null)
+            {
+                return;
+            }
+
             CombatStateMachine combat = _cache.Combat;
             Vector3 enemyPos;
 
@@ -91,7 +103,7 @@ namespace AIRefactored.AI.Combat.States
                 ? _cache.SquadPath.ApplyOffsetTo(enemyPos)
                 : enemyPos;
 
-            if (float.IsNaN(destination.x) || float.IsNaN(destination.y) || float.IsNaN(destination.z))
+            if (!IsValid(destination))
             {
                 return;
             }
@@ -102,6 +114,11 @@ namespace AIRefactored.AI.Combat.States
 
         public bool IsEngaging()
         {
+            if (_cache.IsFallbackMode || _bot == null)
+            {
+                return false;
+            }
+
             CombatStateMachine combat = _cache.Combat;
             Vector3 enemyPos;
 
@@ -117,6 +134,7 @@ namespace AIRefactored.AI.Combat.States
         private bool TryGetLastKnownEnemy(CombatStateMachine combat, out Vector3 result)
         {
             result = combat.LastKnownEnemyPos;
+
             return result != Vector3.zero &&
                    !float.IsNaN(result.x) &&
                    !float.IsNaN(result.y) &&
@@ -126,6 +144,11 @@ namespace AIRefactored.AI.Combat.States
         private bool IsWithinRange(Vector3 enemyPos)
         {
             return Vector3.Distance(_bot.Position, enemyPos) < _fallbackRange;
+        }
+
+        private bool IsValid(Vector3 pos)
+        {
+            return !float.IsNaN(pos.x) && !float.IsNaN(pos.y) && !float.IsNaN(pos.z);
         }
 
         #endregion

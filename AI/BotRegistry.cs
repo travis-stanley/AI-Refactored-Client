@@ -3,7 +3,7 @@
 //   Licensed under the MIT License. See LICENSE in the repository root for more information.
 //
 //   THIS FILE IS SYSTEMATICALLY MANAGED.
-//   Please follow strict StyleCop, ReSharper, and AI-Refactored code standards for all modifications.
+//   Failures in AIRefactored logic must always trigger safe fallback to EFT base AI.
 // </auto-generated>
 
 namespace AIRefactored
@@ -12,13 +12,14 @@ namespace AIRefactored
     using System.Collections.Generic;
     using AIRefactored.AI;
     using AIRefactored.AI.Core;
+    using AIRefactored.Core;
     using AIRefactored.Runtime;
     using BepInEx.Logging;
     using EFT;
 
     /// <summary>
-    /// Global personality registry that maps bot profile IDs or roles to their assigned AIRefactored profiles.
-    /// Supports registration, lookup, fallback generation, and debug diagnostics.
+    /// Global personality and owner registry for AI-Refactored bots.
+    /// Boot-safe and fallback-secure.
     /// </summary>
     public static class BotRegistry
     {
@@ -108,10 +109,11 @@ namespace AIRefactored
         {
             if (bot == null || bot.Profile == null || bot.Profile.Info == null)
             {
+                BotFallbackUtility.FallbackToEFTLogic(bot);
                 return _nullProfileFallback;
             }
 
-            var profileId = bot.Profile.Id;
+            string profileId = bot.Profile.Id;
             if (_profileRegistry.TryGetValue(profileId, out var existing))
             {
                 return existing;
@@ -221,7 +223,13 @@ namespace AIRefactored
 
         public static bool TryGetRefactoredOwner(string profileId, out AIRefactoredBotOwner owner)
         {
-            if (string.IsNullOrEmpty(profileId) || !_ownerRegistry.TryGetValue(profileId, out owner))
+            if (string.IsNullOrEmpty(profileId))
+            {
+                owner = _nullOwnerFallback;
+                return false;
+            }
+
+            if (!_ownerRegistry.TryGetValue(profileId, out owner) || owner == null)
             {
                 owner = _nullOwnerFallback;
                 return false;

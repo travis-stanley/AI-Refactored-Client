@@ -23,31 +23,14 @@ namespace AIRefactored.Runtime
     /// </summary>
     public sealed class AIRefactoredController : MonoBehaviour
     {
-        #region Static Fields
-
-        private static readonly Lazy<GameObject> _host = new Lazy<GameObject>(() =>
-        {
-            GameObject obj = new GameObject("AIRefactoredHost");
-            UnityEngine.Object.DontDestroyOnLoad(obj);
-            return obj;
-        });
-
-        private static readonly Lazy<AIRefactoredController> _instance = new Lazy<AIRefactoredController>(() =>
-        {
-            GameObject go = _host.Value;
-            AIRefactoredController controller = go.AddComponent<AIRefactoredController>();
-            go.AddComponent<GameWorldSpawnHook>();
-            Logger.LogDebug("[AIRefactoredController] Host object created and spawn hook attached.");
-            return controller;
-        });
-
+        private static GameObject _host;
+        private static AIRefactoredController _instance;
         private static bool _initialized;
         private static bool _raidActive;
 
-        #endregion
-
-        #region Properties
-
+        /// <summary>
+        /// Gets the global log source for AI-Refactored.
+        /// </summary>
         public static ManualLogSource Logger
         {
             get
@@ -62,26 +45,29 @@ namespace AIRefactored.Runtime
             }
         }
 
-        #endregion
-
-        #region Initialization
-
+        /// <summary>
+        /// Initializes the AIRefactoredController and host object once.
+        /// </summary>
         public static void Initialize()
         {
+            if (_initialized)
+            {
+                Logger.LogDebug("[AIRefactoredController] Already initialized — skipping.");
+                return;
+            }
+
             try
             {
-                if (_initialized)
-                {
-                    Logger.LogDebug("[AIRefactoredController] Already initialized — skipping.");
-                    return;
-                }
+                _host = new GameObject("AIRefactoredHost");
+                UnityEngine.Object.DontDestroyOnLoad(_host);
 
-                _ = _instance.Value;
+                _instance = _host.AddComponent<AIRefactoredController>();
+                _host.AddComponent<GameWorldSpawnHook>();
 
                 WorldTickDispatcher.Initialize();
                 _initialized = true;
 
-                Logger.LogDebug("[AIRefactoredController] Initialization complete. Waiting for GameWorldSpawnHook...");
+                Logger.LogDebug("[AIRefactoredController] ✅ Initialization complete. Waiting for GameWorldSpawnHook...");
             }
             catch (Exception ex)
             {
@@ -89,10 +75,9 @@ namespace AIRefactored.Runtime
             }
         }
 
-        #endregion
-
-        #region Lifecycle Hooks
-
+        /// <summary>
+        /// Called when a raid begins and GameWorld is fully available.
+        /// </summary>
         public static void OnRaidStarted(GameWorld world)
         {
             if (!_initialized || _raidActive || world == null)
@@ -142,6 +127,9 @@ namespace AIRefactored.Runtime
             }
         }
 
+        /// <summary>
+        /// Called when raid ends or server shuts down.
+        /// </summary>
         public static void OnRaidEnded()
         {
             if (!_raidActive)
@@ -163,10 +151,6 @@ namespace AIRefactored.Runtime
             }
         }
 
-        #endregion
-
-        #region Unity Events
-
         private void Update()
         {
             if (WorldInitState.IsInitialized)
@@ -179,24 +163,19 @@ namespace AIRefactored.Runtime
         {
             try
             {
-                if (_instance.IsValueCreated && ReferenceEquals(_instance.Value, this))
-                {
-                    Logger.LogDebug("[AIRefactoredController] OnDestroy — stopping InitPhaseRunner and cleaning up...");
-                    InitPhaseRunner.Stop();
-                    WorldBootstrapper.Stop();
-                    GameWorldHandler.Cleanup();
-                    BotRecoveryService.Reset();
+                Logger.LogDebug("[AIRefactoredController] OnDestroy — stopping systems and cleaning up...");
+                InitPhaseRunner.Stop();
+                WorldBootstrapper.Stop();
+                GameWorldHandler.Cleanup();
+                BotRecoveryService.Reset();
 
-                    _initialized = false;
-                    _raidActive = false;
-                }
+                _initialized = false;
+                _raidActive = false;
             }
             catch (Exception ex)
             {
                 Logger.LogError("[AIRefactoredController] OnDestroy error: " + ex);
             }
         }
-
-        #endregion
     }
 }

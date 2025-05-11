@@ -88,6 +88,8 @@ namespace AIRefactored.AI.Core
 
         public bool HasHeardDirection { get; private set; }
 
+        public bool IsFallbackMode { get; private set; }
+
         #endregion
 
         #region AI Subsystems
@@ -278,6 +280,16 @@ namespace AIRefactored.AI.Core
                 Logger.LogError("[BotComponentCache] ❌ Init failed (" + name + "): " + ex);
                 throw;
             }
+        }
+
+        #endregion
+
+        #region Fallback Entry
+
+        public void EnterFallback()
+        {
+            IsFallbackMode = true;
+            Logger.LogWarning("[BotComponentCache] Entered fallback mode for bot: " + Nickname);
         }
 
         #endregion

@@ -68,17 +68,13 @@ namespace AIRefactored.Bootstrap
 
                 for (int i = 0; i < Systems.Count; i++)
                 {
-                    var system = Systems[i];
-                    if (system != null)
+                    try
                     {
-                        try
-                        {
-                            system.Initialize();
-                        }
-                        catch (Exception ex)
-                        {
-                            Logger.LogError("[WorldBootstrapper] Failed to initialize system: " + ex);
-                        }
+                        Systems[i]?.Initialize();
+                    }
+                    catch (Exception ex)
+                    {
+                        Logger.LogError("[WorldBootstrapper] Failed to initialize system: " + ex);
                     }
                 }
 

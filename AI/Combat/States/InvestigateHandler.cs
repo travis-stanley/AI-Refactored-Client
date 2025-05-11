@@ -79,6 +79,11 @@ namespace AIRefactored.AI.Combat.States
 
         public void Investigate(Vector3 target)
         {
+            if (_bot == null || _cache == null)
+            {
+                return;
+            }
+
             Vector3 destination = _cache.SquadPath != null
                 ? _cache.SquadPath.ApplyOffsetTo(target)
                 : target;
@@ -100,7 +105,7 @@ namespace AIRefactored.AI.Combat.States
 
         public bool ShallUseNow(float time, float lastTransition)
         {
-            if (_cache.AIRefactoredBotOwner == null)
+            if (_cache == null || _cache.AIRefactoredBotOwner == null)
             {
                 return false;
             }
@@ -132,24 +137,26 @@ namespace AIRefactored.AI.Combat.States
 
         private bool TryGetMemoryEnemyPosition(out Vector3 result)
         {
-            Vector3? memory = _memory.GetRecentEnemyMemory();
-            if (memory.HasValue)
+            result = Vector3.zero;
+
+            if (_memory == null)
             {
-                Vector3 value = memory.Value;
-                if (IsVectorValid(value))
-                {
-                    result = value;
-                    return true;
-                }
+                return false;
             }
 
-            result = Vector3.zero;
+            Vector3? memory = _memory.GetRecentEnemyMemory();
+            if (memory.HasValue && IsVectorValid(memory.Value))
+            {
+                result = memory.Value;
+                return true;
+            }
+
             return false;
         }
 
         private Vector3 RandomNearbyPosition()
         {
-            Vector3 basePos = _bot.Position;
+            Vector3 basePos = _bot != null ? _bot.Position : Vector3.zero;
             Vector3 offset = UnityEngine.Random.insideUnitSphere * ScanRadius;
             offset.y = 0f;
             return basePos + offset;

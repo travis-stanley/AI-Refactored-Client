@@ -15,7 +15,7 @@ namespace AIRefactored
     using BepInEx.Logging;
 
     /// <summary>
-    /// Entry point for AI-Refactored mod. Initializes the global AIRefactoredController once.
+    /// Entry point for AI-Refactored mod. Safe for both client and headless bootup.
     /// </summary>
     [BepInPlugin("com.spock.airefactored", "AI-Refactored (Host Only)", "1.0.0")]
     public sealed class Plugin : BaseUnityPlugin
@@ -46,11 +46,7 @@ namespace AIRefactored
             {
                 if (_initialized)
                 {
-                    if (_logger != null)
-                    {
-                        _logger.LogWarning("[AIRefactored] Plugin already initialized — skipping.");
-                    }
-
+                    Logger?.LogWarning("[AIRefactored] Plugin already initialized — skipping.");
                     return;
                 }
 
@@ -58,10 +54,12 @@ namespace AIRefactored
                 {
                     _logger = Logger;
                     LoggerInstance.LogDebug("[AIRefactored] Plugin Awake — bootstrapping controller.");
+
+                    // Initializes host object and hooks GameWorldSpawnHook internally
                     AIRefactoredController.Initialize();
-                    LoggerInstance.LogDebug("[AIRefactored] AIRefactoredController.Initialize() invoked.");
                     _initialized = true;
-                    LoggerInstance.LogDebug("[AIRefactored] Initialization complete.");
+
+                    LoggerInstance.LogDebug("[AIRefactored] ✅ AIRefactoredController.Initialize() complete.");
                 }
                 catch (Exception ex)
                 {

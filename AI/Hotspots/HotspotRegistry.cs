@@ -10,6 +10,7 @@ namespace AIRefactored.AI.Hotspots
 {
     using System;
     using System.Collections.Generic;
+    using AIRefactored.Bootstrap;
     using AIRefactored.Pools;
     using AIRefactored.Runtime;
     using BepInEx.Logging;
@@ -42,17 +43,17 @@ namespace AIRefactored.AI.Hotspots
             { "rezervbase", SpatialIndexMode.Grid }
         };
 
-        private static SpatialIndexMode _activeMode = SpatialIndexMode.None;
-        private static string _loadedMap = "none";
-        private static HotspotQuadtree _quadtree;
-        private static HotspotSpatialGrid _grid;
-
         private enum SpatialIndexMode
         {
             None,
             Quadtree,
             Grid
         }
+
+        private static SpatialIndexMode _activeMode = SpatialIndexMode.None;
+        private static string _loadedMap = "none";
+        private static HotspotQuadtree _quadtree;
+        private static HotspotSpatialGrid _grid;
 
         public static void Clear()
         {
@@ -88,8 +89,15 @@ namespace AIRefactored.AI.Hotspots
 
         public static void Initialize(string mapId)
         {
+            if (!WorldInitState.IsInPhase(WorldPhase.WorldReady))
+            {
+                Logger.LogWarning("[HotspotRegistry] ⚠ Initialization attempted outside of WorldReady phase. Skipping.");
+                return;
+            }
+
             if (string.IsNullOrEmpty(mapId))
             {
+                Logger.LogWarning("[HotspotRegistry] ⚠ Null mapId passed to Initialize.");
                 return;
             }
 
@@ -218,14 +226,13 @@ namespace AIRefactored.AI.Hotspots
 
         private static List<Hotspot> FallbackQuery(Vector3 position, float radius, Predicate<Hotspot> filter)
         {
-            var result = TempListPool.Rent<Hotspot>();
+            List<Hotspot> result = TempListPool.Rent<Hotspot>();
             float radiusSq = radius * radius;
 
             for (int i = 0; i < All.Count; i++)
             {
                 Hotspot h = All[i];
-                if ((h.Position - position).sqrMagnitude <= radiusSq &&
-                    (filter == null || filter(h)))
+                if ((h.Position - position).sqrMagnitude <= radiusSq && (filter == null || filter(h)))
                 {
                     result.Add(h);
                 }

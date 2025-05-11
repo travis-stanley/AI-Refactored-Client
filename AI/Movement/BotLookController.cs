@@ -11,6 +11,7 @@ namespace AIRefactored.AI.Movement
     using System;
     using AIRefactored.AI.Core;
     using AIRefactored.Core;
+    using BepInEx.Logging;
     using EFT;
     using UnityEngine;
 
@@ -32,6 +33,8 @@ namespace AIRefactored.AI.Movement
 
         #region Fields
 
+        private static readonly ManualLogSource Logger = Plugin.LoggerInstance;
+
         private readonly BotOwner _bot;
         private readonly BotComponentCache _cache;
         private Vector3 _fallbackLookTarget;
@@ -45,7 +48,8 @@ namespace AIRefactored.AI.Movement
         {
             if (bot == null || cache == null)
             {
-                throw new ArgumentException("[BotLookController] Invalid bot or cache.");
+                Logger.LogError("[BotLookController] Constructor failed — null bot or cache.");
+                throw new ArgumentException("Invalid BotLookController parameters.");
             }
 
             _bot = bot;
@@ -57,73 +61,69 @@ namespace AIRefactored.AI.Movement
 
         #region Public Methods
 
-        /// <summary>
-        /// Updates the look direction every frame unless frozen or blocked.
-        /// </summary>
         public void Tick(float deltaTime)
         {
-            if (_frozen || _bot == null || _cache == null || _bot.IsDead || !GameWorldHandler.IsSafeToInitialize)
+            try
             {
-                return;
-            }
+                if (_frozen || _bot == null || _bot.IsDead || _cache == null || !GameWorldHandler.IsSafeToInitialize)
+                {
+                    return;
+                }
 
-            Player player = EFTPlayerUtil.ResolvePlayer(_bot);
-            if (!EFTPlayerUtil.IsValid(player))
+                Player player = EFTPlayerUtil.ResolvePlayer(_bot);
+                if (!EFTPlayerUtil.IsValid(player))
+                {
+                    return;
+                }
+
+                Transform body = EFTPlayerUtil.GetTransform(player);
+                if (body == null)
+                {
+                    return;
+                }
+
+                Vector3 origin = body.position;
+                Vector3 target = ResolveLookTarget(origin);
+                Vector3 dir = target - origin;
+                dir.y = 0f;
+
+                if (dir.sqrMagnitude < MinLookDistanceSqr)
+                {
+                    return;
+                }
+
+                Quaternion from = body.rotation;
+                Quaternion to = Quaternion.LookRotation(dir);
+                body.rotation = Quaternion.Slerp(from, to, Mathf.Clamp01(MaxTurnSpeed * deltaTime));
+            }
+            catch (Exception ex)
             {
-                return;
+                Logger.LogError("[BotLookController] Tick failed: " + ex);
+                BotFallbackUtility.FallbackToEFTLogic(_bot);
             }
-
-            Transform bodyTransform = EFTPlayerUtil.GetTransform(player);
-            if (bodyTransform == null)
-            {
-                return;
-            }
-
-            Vector3 origin = bodyTransform.position;
-            Vector3 lookTarget = ResolveLookTarget(origin);
-            Vector3 direction = lookTarget - origin;
-            direction.y = 0f;
-
-            if (direction.sqrMagnitude < MinLookDistanceSqr)
-            {
-                return;
-            }
-
-            Quaternion current = bodyTransform.rotation;
-            Quaternion target = Quaternion.LookRotation(direction);
-            bodyTransform.rotation = Quaternion.Slerp(current, target, Mathf.Clamp01(MaxTurnSpeed * deltaTime));
         }
 
-        /// <summary>
-        /// Sets a fallback target to look toward when no threats or distractions are present.
-        /// </summary>
         public void SetLookTarget(Vector3 worldPos)
         {
-            _fallbackLookTarget = worldPos;
+            if (!float.IsNaN(worldPos.x) && !float.IsNaN(worldPos.y) && !float.IsNaN(worldPos.z))
+            {
+                _fallbackLookTarget = worldPos;
+            }
         }
 
-        /// <summary>
-        /// Disables all look control (used during animations or forced behavior).
-        /// </summary>
         public void FreezeLook()
         {
             _frozen = true;
         }
 
-        /// <summary>
-        /// Re-enables look control if previously frozen.
-        /// </summary>
         public void ResumeLook()
         {
             _frozen = false;
         }
 
-        /// <summary>
-        /// Gets the bot's current look direction vector.
-        /// </summary>
         public Vector3 GetLookDirection()
         {
-            return _bot.LookDirection;
+            return _bot != null ? _bot.LookDirection : Vector3.forward;
         }
 
         #endregion
@@ -153,10 +153,10 @@ namespace AIRefactored.AI.Movement
 
             if (_cache.ThreatSelector != null)
             {
-                string profileId = _cache.ThreatSelector.GetTargetProfileId();
-                if (profileId.Length != 0)
+                string id = _cache.ThreatSelector.GetTargetProfileId();
+                if (!string.IsNullOrEmpty(id))
                 {
-                    Player player = EFTPlayerUtil.ResolvePlayerById(profileId);
+                    Player player = EFTPlayerUtil.ResolvePlayerById(id);
                     if (EFTPlayerUtil.IsValid(player))
                     {
                         Vector3 pos = EFTPlayerUtil.GetPosition(player);
@@ -168,7 +168,7 @@ namespace AIRefactored.AI.Movement
                 }
             }
 
-            if (_cache.HasHeardDirection && (now - _cache.LastHeardTime) < SoundMemoryDuration)
+            if (_cache.HasHeardDirection && now - _cache.LastHeardTime < SoundMemoryDuration)
             {
                 return origin + _cache.LastHeardDirection.normalized * HeardDirectionWeight;
             }

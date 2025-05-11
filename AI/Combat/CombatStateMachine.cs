@@ -8,6 +8,7 @@
 
 namespace AIRefactored.AI.Combat
 {
+    using System;
     using System.Collections.Generic;
     using AIRefactored.AI.Combat.States;
     using AIRefactored.AI.Core;
@@ -25,16 +26,10 @@ namespace AIRefactored.AI.Combat
     /// </summary>
     public sealed class CombatStateMachine
     {
-        #region Constants
-
         private const float MinTransitionDelay = 0.4f;
         private const float PatrolMinDuration = 1.25f;
         private const float PatrolCooldown = 12.0f;
         private const float ReentryCooldown = 3.0f;
-
-        #endregion
-
-        #region Fields
 
         private BotComponentCache _cache;
         private BotOwner _bot;
@@ -50,17 +45,9 @@ namespace AIRefactored.AI.Combat
         private float _lastStateChangeTime;
         private bool _initialized;
 
-        #endregion
-
-        #region Properties
-
         public Vector3 LastKnownEnemyPos => _lastKnownEnemyPos;
 
         public float LastStateChangeTime => _lastStateChangeTime;
-
-        #endregion
-
-        #region Initialization
 
         public void Initialize(BotComponentCache componentCache)
         {
@@ -90,22 +77,18 @@ namespace AIRefactored.AI.Combat
             _initialized = true;
         }
 
-        #endregion
-
-        #region Public Methods
-
         public bool IsInCombatState()
         {
             return _initialized &&
-                   (_fallback.IsActive() ||
-                    _engage.IsEngaging() ||
-                    _investigate.IsInvestigating() ||
-                    _cache.ThreatSelector.CurrentTarget != null);
+                   (_fallback != null && _fallback.IsActive() ||
+                    _engage != null && _engage.IsEngaging() ||
+                    _investigate != null && _investigate.IsInvestigating() ||
+                    _cache?.ThreatSelector?.CurrentTarget != null);
         }
 
         public void NotifyDamaged()
         {
-            if (!_initialized)
+            if (!_initialized || _fallback == null)
             {
                 return;
             }
@@ -121,7 +104,7 @@ namespace AIRefactored.AI.Combat
 
         public void NotifyEchoInvestigate()
         {
-            if (!_initialized)
+            if (!_initialized || _investigate == null)
             {
                 return;
             }
@@ -136,96 +119,113 @@ namespace AIRefactored.AI.Combat
 
         public void Tick(float time)
         {
-            if (!_initialized || _bot.IsDead || !EFTPlayerUtil.IsValid(_bot.GetPlayer))
+            try
             {
-                return;
-            }
-
-            if (time - _lastStateChangeTime < MinTransitionDelay)
-            {
-                return;
-            }
-
-            if (TryReenterCombatState(time))
-            {
-                _lastStateChangeTime = time;
-                return;
-            }
-
-            if (ShouldTriggerSuppressedFallback(time))
-            {
-                AssignFallbackIfNeeded();
-                _bot.BotTalk?.TrySay(EPhraseTrigger.OnBeingHurt);
-
-                Vector3 fallback = _fallback.HasValidFallbackPath()
-                    ? _fallback.GetFallbackPosition()
-                    : _bot.Position;
-
-                _echo.EchoFallbackToSquad(fallback);
-                _lastStateChangeTime = time;
-                return;
-            }
-
-            if (_fallback.ShallUseNow(time))
-            {
-                AssignFallbackIfNeeded();
-                _fallback.Tick(time, SetLastStateChangeTime);
-                return;
-            }
-
-            Player enemy = _cache.ThreatSelector.CurrentTarget;
-            if (EFTPlayerUtil.IsValid(enemy))
-            {
-                _lastKnownEnemyPos = EFTPlayerUtil.GetPosition(enemy);
-                _hasKnownEnemy = true;
-
-                string id = enemy.ProfileId;
-                if (id.Length > 0)
+                if (!_initialized || _bot == null || _bot.IsDead || !EFTPlayerUtil.IsValid(_bot.GetPlayer))
                 {
-                    _cache.TacticalMemory.RecordEnemyPosition(_lastKnownEnemyPos, "Combat", id);
+                    return;
                 }
 
-                if (_bot.Mover != null && !_bot.Mover.Sprinting)
+                if (_attack == null || _engage == null || _investigate == null || _fallback == null || _patrol == null || _echo == null || _cache == null)
                 {
-                    _bot.Sprint(true);
+                    BotFallbackUtility.FallbackToEFTLogic(_bot);
+                    return;
                 }
 
-                _echo.EchoSpottedEnemyToSquad(_lastKnownEnemyPos);
-            }
-
-            if (_engage.ShallUseNow())
-            {
-                if (_engage.CanAttack())
+                if (time - _lastStateChangeTime < MinTransitionDelay)
                 {
-                    _attack.Tick(time);
-                }
-                else
-                {
-                    _engage.Tick();
+                    return;
                 }
 
-                _lastStateChangeTime = time;
-                return;
-            }
-
-            if (_investigate.ShallUseNow(time, _lastStateChangeTime))
-            {
-                Vector3 target = _investigate.GetInvestigateTarget(_hasKnownEnemy ? _lastKnownEnemyPos : Vector3.zero);
-                if (target != Vector3.zero)
+                if (TryReenterCombatState(time))
                 {
-                    _investigate.Investigate(target);
                     _lastStateChangeTime = time;
+                    return;
                 }
 
-                return;
-            }
+                if (ShouldTriggerSuppressedFallback(time))
+                {
+                    AssignFallbackIfNeeded();
+                    _bot.BotTalk?.TrySay(EPhraseTrigger.OnBeingHurt);
 
-            _patrol.Tick(time);
+                    Vector3 fallback = _fallback.HasValidFallbackPath()
+                        ? _fallback.GetFallbackPosition()
+                        : _bot.Position;
+
+                    _echo.EchoFallbackToSquad(fallback);
+                    _lastStateChangeTime = time;
+                    return;
+                }
+
+                if (_fallback.ShallUseNow(time))
+                {
+                    AssignFallbackIfNeeded();
+                    _fallback.Tick(time, SetLastStateChangeTime);
+                    return;
+                }
+
+                Player enemy = _cache.ThreatSelector.CurrentTarget;
+                if (EFTPlayerUtil.IsValid(enemy))
+                {
+                    _lastKnownEnemyPos = EFTPlayerUtil.GetPosition(enemy);
+                    _hasKnownEnemy = true;
+
+                    string id = enemy.ProfileId;
+                    if (id.Length > 0)
+                    {
+                        _cache.TacticalMemory.RecordEnemyPosition(_lastKnownEnemyPos, "Combat", id);
+                    }
+
+                    if (_bot.Mover != null && !_bot.Mover.Sprinting)
+                    {
+                        _bot.Sprint(true);
+                    }
+
+                    _echo.EchoSpottedEnemyToSquad(_lastKnownEnemyPos);
+                }
+
+                if (_engage.ShallUseNow())
+                {
+                    if (_engage.CanAttack())
+                    {
+                        _attack.Tick(time);
+                    }
+                    else
+                    {
+                        _engage.Tick();
+                    }
+
+                    _lastStateChangeTime = time;
+                    return;
+                }
+
+                if (_investigate.ShallUseNow(time, _lastStateChangeTime))
+                {
+                    Vector3 target = _investigate.GetInvestigateTarget(_hasKnownEnemy ? _lastKnownEnemyPos : Vector3.zero);
+                    if (target != Vector3.zero)
+                    {
+                        _investigate.Investigate(target);
+                        _lastStateChangeTime = time;
+                    }
+
+                    return;
+                }
+
+                _patrol.Tick(time);
+            }
+            catch (Exception ex)
+            {
+                Plugin.LoggerInstance.LogError("[CombatStateMachine] Tick failed: " + ex);
+                if (_bot != null)
+                {
+                    BotFallbackUtility.FallbackToEFTLogic(_bot);
+                }
+            }
         }
 
         public void TriggerFallback(Vector3 fallbackPos)
         {
-            if (!_initialized)
+            if (!_initialized || _fallback == null)
             {
                 return;
             }
@@ -237,15 +237,11 @@ namespace AIRefactored.AI.Combat
 
         public void TrySetStanceFromNearbyCover(Vector3 pos)
         {
-            if (_initialized)
+            if (_initialized && _cache?.PoseController != null)
             {
                 _cache.PoseController.TrySetStanceFromNearbyCover(pos);
             }
         }
-
-        #endregion
-
-        #region Private Methods
 
         private void AssignFallbackIfNeeded()
         {
@@ -338,7 +334,5 @@ namespace AIRefactored.AI.Combat
         {
             _lastStateChangeTime = time;
         }
-
-        #endregion
     }
 }

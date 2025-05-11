@@ -11,6 +11,7 @@ namespace AIRefactored.AI.Navigation
     using System;
     using System.Collections.Generic;
     using AIRefactored.AI.Core;
+    using AIRefactored.Bootstrap;
     using AIRefactored.Core;
     using AIRefactored.Pools;
     using AIRefactored.Runtime;
@@ -58,6 +59,12 @@ namespace AIRefactored.AI.Navigation
         {
             Initialize();
 
+            if (!WorldInitState.IsInPhase(WorldPhase.WorldReady))
+            {
+                Logger.LogWarning("[NavPointRegistry] RegisterAll() skipped — world not ready.");
+                return;
+            }
+
             if (!GameWorldHandler.IsLocalHost() && !FikaHeadlessDetector.IsHeadless)
             {
                 Logger.LogDebug("[NavPointRegistry] Skipped RegisterAll — not host.");
@@ -66,10 +73,18 @@ namespace AIRefactored.AI.Navigation
 
             Logger.LogDebug("[NavPointRegistry] Registering nav points for map: " + mapId);
 
-            NavMeshSurface surface = GameObject.FindObjectOfType<NavMeshSurface>();
-            if (surface == null)
+            try
             {
-                Logger.LogWarning("[NavPointRegistry] No NavMeshSurface found.");
+                NavMeshSurface surface = UnityEngine.Object.FindObjectOfType<NavMeshSurface>();
+                if (surface == null)
+                {
+                    Logger.LogWarning("[NavPointRegistry] No NavMeshSurface found.");
+                    return;
+                }
+            }
+            catch (Exception ex)
+            {
+                Logger.LogError("[NavPointRegistry] Error checking NavMeshSurface: " + ex);
                 return;
             }
 
@@ -112,7 +127,16 @@ namespace AIRefactored.AI.Navigation
                     continue;
                 }
 
-                bool isIndoor = Physics.Raycast(point.WorldPos + Vector3.up * 1.4f, Vector3.up, 12f);
+                bool isIndoor = false;
+                try
+                {
+                    isIndoor = Physics.Raycast(point.WorldPos + Vector3.up * 1.4f, Vector3.up, 12f);
+                }
+                catch
+                {
+                    // Ignore scene load issues
+                }
+
                 Points[i] = new NavPoint(
                     point.WorldPos,
                     point.IsCover,

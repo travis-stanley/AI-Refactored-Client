@@ -69,7 +69,7 @@ namespace AIRefactored.AI.Combat.States
 
         public bool HasValidFallbackPath()
         {
-            return _currentFallbackPath.Count >= 2;
+            return _currentFallbackPath.Count >= 2 && IsVectorValid(_fallbackTarget);
         }
 
         public void SetFallbackTarget(Vector3 target)
@@ -94,26 +94,53 @@ namespace AIRefactored.AI.Combat.States
             _currentFallbackPath.Clear();
             for (int i = 0, count = path.Count; i < count; i++)
             {
+                if (!IsVectorValid(path[i]))
+                {
+                    continue;
+                }
+
                 _currentFallbackPath.Add(path[i]);
             }
 
-            _fallbackTarget = path[path.Count - 1];
+            if (_currentFallbackPath.Count >= 2)
+            {
+                _fallbackTarget = _currentFallbackPath[_currentFallbackPath.Count - 1];
+            }
+            else
+            {
+                Plugin.LoggerInstance.LogWarning("[FallbackHandler] Final fallback path was invalid or corrupted.");
+            }
         }
 
         public bool ShallUseNow(float time)
         {
+            if (_cache.IsFallbackMode || _bot == null)
+            {
+                return false;
+            }
+
             return Vector3.Distance(_bot.Position, _fallbackTarget) > MinArrivalDistance;
         }
 
         public bool ShouldTriggerSuppressedFallback(float now, float lastStateChangeTime, float minStateDuration)
         {
-            return _cache.Suppression != null &&
-                   _cache.Suppression.IsSuppressed() &&
+            if (_cache == null || _cache.Suppression == null)
+            {
+                return false;
+            }
+
+            return _cache.Suppression.IsSuppressed() &&
                    (now - lastStateChangeTime) >= minStateDuration;
         }
 
         public void Tick(float time, Action<CombatState, float> forceState)
         {
+            if (_cache.IsFallbackMode || _bot == null ||
+                _bot.GetPlayer == null || _bot.GetPlayer.HealthController == null || !_bot.GetPlayer.HealthController.IsAlive)
+            {
+                return;
+            }
+
             if (!IsVectorValid(_fallbackTarget))
             {
                 Plugin.LoggerInstance.LogWarning("[FallbackHandler] Skipped Tick: fallback target was invalid.");
@@ -128,7 +155,7 @@ namespace AIRefactored.AI.Combat.States
 
             if (dist < MinArrivalDistance)
             {
-                forceState(CombatState.Patrol, time);
+                forceState?.Invoke(CombatState.Patrol, time);
 
                 if (!FikaHeadlessDetector.IsHeadless && _bot.BotTalk != null)
                 {
@@ -139,12 +166,16 @@ namespace AIRefactored.AI.Combat.States
 
         public bool IsActive()
         {
-            return Vector3.Distance(_bot.Position, _fallbackTarget) > MinArrivalDistance;
+            return _bot != null &&
+                   _bot.GetPlayer != null &&
+                   _bot.GetPlayer.HealthController != null &&
+                   _bot.GetPlayer.HealthController.IsAlive &&
+                   Vector3.Distance(_bot.Position, _fallbackTarget) > MinArrivalDistance;
         }
 
         public void Cancel()
         {
-            _fallbackTarget = _bot.Position;
+            _fallbackTarget = _bot != null ? _bot.Position : Vector3.zero;
             _currentFallbackPath.Clear();
         }
 

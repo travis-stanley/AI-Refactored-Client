@@ -11,6 +11,7 @@ namespace AIRefactored.AI.Core
     using System;
     using AIRefactored.AI;
     using AIRefactored.AI.Missions;
+    using AIRefactored.Core;
     using AIRefactored.Runtime;
     using BepInEx.Logging;
     using EFT;
@@ -42,9 +43,11 @@ namespace AIRefactored.AI.Core
         {
             get
             {
-                if (!_isInitialized)
+                if (!_isInitialized || _bot == null)
                 {
-                    throw new InvalidOperationException("AIRefactoredBotOwner accessed before initialization.");
+                    Logger.LogError("[AIRefactoredBotOwner] Bot accessed before initialization — falling back.");
+                    BotFallbackUtility.FallbackToEFTLogic(_bot);
+                    return null;
                 }
 
                 return _bot;
@@ -55,9 +58,11 @@ namespace AIRefactored.AI.Core
         {
             get
             {
-                if (!_isInitialized)
+                if (!_isInitialized || _cache == null)
                 {
-                    throw new InvalidOperationException("Component cache accessed before initialization.");
+                    Logger.LogError("[AIRefactoredBotOwner] Cache accessed before initialization — falling back.");
+                    BotFallbackUtility.FallbackToEFTLogic(_bot);
+                    return BotComponentCache.Empty;
                 }
 
                 return _cache;
@@ -70,7 +75,8 @@ namespace AIRefactored.AI.Core
             {
                 if (_missionController == null)
                 {
-                    throw new InvalidOperationException("MissionController not assigned.");
+                    Logger.LogError("[AIRefactoredBotOwner] MissionController is null — falling back.");
+                    BotFallbackUtility.FallbackToEFTLogic(_bot);
                 }
 
                 return _missionController;
@@ -102,7 +108,8 @@ namespace AIRefactored.AI.Core
         {
             if (bot == null)
             {
-                throw new ArgumentNullException("bot");
+                Logger.LogError("[AIRefactoredBotOwner] Initialization failed: bot is null.");
+                return;
             }
 
             if (_isInitialized)
@@ -112,19 +119,15 @@ namespace AIRefactored.AI.Core
             }
 
             _bot = bot;
-            _cache = BotComponentCacheRegistry.GetOrCreate(bot);
-            _cache.SetOwner(this);
-            _isInitialized = true;
 
             try
             {
-                string profileId = bot.Profile?.Id ?? "null-profile";
-                WildSpawnType role = WildSpawnType.assault;
+                _cache = BotComponentCacheRegistry.GetOrCreate(bot);
+                _cache.SetOwner(this);
+                _isInitialized = true;
 
-                if (bot.Profile?.Info?.Settings != null)
-                {
-                    role = bot.Profile.Info.Settings.Role;
-                }
+                string profileId = bot.Profile?.Id ?? "null-profile";
+                WildSpawnType role = bot.Profile?.Info?.Settings?.Role ?? WildSpawnType.assault;
 
                 BotPersonalityProfile profile = BotRegistry.GetOrGenerate(profileId, PersonalityType.Balanced, role);
                 InitProfile(profile, profile.Personality.ToString());
@@ -138,7 +141,7 @@ namespace AIRefactored.AI.Core
             catch (Exception ex)
             {
                 Logger.LogError("[AIRefactoredBotOwner] Initialization failed: " + ex);
-                throw;
+                BotFallbackUtility.FallbackToEFTLogic(bot);
             }
         }
 
@@ -148,23 +151,30 @@ namespace AIRefactored.AI.Core
 
         public void InitProfile(PersonalityType type)
         {
-            BotPersonalityProfile preset;
-            if (!BotPersonalityPresets.Presets.TryGetValue(type, out preset) || preset == null)
+            try
             {
-                preset = BotPersonalityPresets.Presets[PersonalityType.Adaptive];
-                PersonalityName = "Adaptive";
-                Logger.LogWarning("[AIRefactoredBotOwner] Invalid personality preset for '" + type + "' — using Adaptive.");
-            }
-            else
-            {
-                PersonalityName = type.ToString();
-            }
+                if (!BotPersonalityPresets.Presets.TryGetValue(type, out var preset) || preset == null)
+                {
+                    preset = BotPersonalityPresets.Presets[PersonalityType.Adaptive];
+                    PersonalityName = "Adaptive";
+                    Logger.LogWarning("[AIRefactoredBotOwner] Invalid personality type '" + type + "' — using Adaptive.");
+                }
+                else
+                {
+                    PersonalityName = type.ToString();
+                }
 
-            PersonalityProfile = preset;
+                PersonalityProfile = preset;
 
-            if (!FikaHeadlessDetector.IsHeadless)
+                if (!FikaHeadlessDetector.IsHeadless)
+                {
+                    Logger.LogDebug("[AIRefactoredBotOwner] Personality assigned: " + PersonalityName);
+                }
+            }
+            catch (Exception ex)
             {
-                Logger.LogDebug("[AIRefactoredBotOwner] Personality assigned: " + PersonalityName);
+                Logger.LogError("[AIRefactoredBotOwner] InitProfile failed: " + ex);
+                BotFallbackUtility.FallbackToEFTLogic(_bot);
             }
         }
 
@@ -172,7 +182,9 @@ namespace AIRefactored.AI.Core
         {
             if (profile == null)
             {
-                throw new ArgumentNullException("profile");
+                Logger.LogError("[AIRefactoredBotOwner] InitProfile failed: profile is null.");
+                BotFallbackUtility.FallbackToEFTLogic(_bot);
+                return;
             }
 
             PersonalityProfile = profile;
@@ -224,7 +236,9 @@ namespace AIRefactored.AI.Core
         {
             if (controller == null)
             {
-                throw new ArgumentNullException("controller");
+                Logger.LogError("[AIRefactoredBotOwner] SetMissionController failed: controller is null.");
+                BotFallbackUtility.FallbackToEFTLogic(_bot);
+                return;
             }
 
             _missionController = controller;

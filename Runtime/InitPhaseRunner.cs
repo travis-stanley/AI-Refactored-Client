@@ -32,7 +32,7 @@ namespace AIRefactored.Runtime
         {
             if (_hasStarted)
             {
-                logger.LogWarning("[InitPhaseRunner] Begin() called after initialization already occurred.");
+                logger?.LogWarning("[InitPhaseRunner] Begin() called after initialization already occurred.");
                 return;
             }
 
@@ -41,11 +41,11 @@ namespace AIRefactored.Runtime
             try
             {
                 WorldInitState.SetPhase(WorldPhase.PreInit);
-                logger.LogDebug("[InitPhaseRunner] 🚀 Beginning AIRefactored world initialization.");
+                logger?.LogDebug("[InitPhaseRunner] 🚀 Beginning AIRefactored world initialization.");
 
                 if (!IsWorldSafe())
                 {
-                    logger.LogWarning("[InitPhaseRunner] World not fully ready. Delaying init to avoid FIKA stall.");
+                    logger?.LogWarning("[InitPhaseRunner] World not ready. Aborting init to avoid FIKA hang.");
                     _hasStarted = false;
                     return;
                 }
@@ -56,14 +56,14 @@ namespace AIRefactored.Runtime
                 WorldBootstrapper.Begin(logger);
 
                 WorldInitState.SetPhase(WorldPhase.WorldReady);
-                logger.LogDebug("[InitPhaseRunner] ✅ AIRefactored world systems initialized.");
+                logger?.LogDebug("[InitPhaseRunner] ✅ World systems initialized.");
 
                 WorldInitState.SetPhase(WorldPhase.PostInit);
             }
             catch (Exception ex)
             {
                 _hasStarted = false;
-                logger.LogError("[InitPhaseRunner] ❌ Critical initialization failure:\n" + ex);
+                logger?.LogError("[InitPhaseRunner] ❌ Fatal error during Begin:\n" + ex);
             }
         }
 
@@ -80,22 +80,23 @@ namespace AIRefactored.Runtime
                 }
 
                 _hasStarted = false;
+
                 WorldInitState.Reset();
                 WorldTickDispatcher.Reset();
                 WorldBootstrapper.Stop();
                 GameWorldHandler.Cleanup();
 
-                Plugin.LoggerInstance.LogDebug("[InitPhaseRunner] 🧹 Initialization state reset and memory cleaned.");
+                Plugin.LoggerInstance.LogDebug("[InitPhaseRunner] 🧹 Cleanup complete — init state reset.");
             }
             catch (Exception ex)
             {
-                Plugin.LoggerInstance.LogError("[InitPhaseRunner] Stop() encountered error: " + ex);
+                Plugin.LoggerInstance.LogError("[InitPhaseRunner] Stop() error: " + ex);
             }
         }
 
         private static bool IsWorldSafe()
         {
-            var world = Singleton<GameWorld>.Instance;
+            GameWorld world = Singleton<GameWorld>.Instance;
             if (world == null || world.RegisteredPlayers == null || world.RegisteredPlayers.Count == 0)
             {
                 return false;

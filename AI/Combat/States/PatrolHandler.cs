@@ -71,6 +71,11 @@ namespace AIRefactored.AI.Combat.States
 
         public bool ShouldTransitionToInvestigate(float time)
         {
+            if (_cache == null)
+            {
+                return false;
+            }
+
             CombatStateMachine combat = _cache.Combat;
             BotPersonalityProfile profile = _cache.AIRefactoredBotOwner?.PersonalityProfile;
 
@@ -85,6 +90,11 @@ namespace AIRefactored.AI.Combat.States
 
         public void Tick(float time)
         {
+            if (_cache == null || _bot == null)
+            {
+                return;
+            }
+
             if (ShouldTriggerFallback())
             {
                 CombatStateMachine combat = _cache.Combat;
@@ -93,7 +103,6 @@ namespace AIRefactored.AI.Combat.States
                     Vector3 fallback = TryGetFallbackPosition();
                     combat.TriggerFallback(fallback);
                 }
-
                 return;
             }
 
@@ -137,6 +146,11 @@ namespace AIRefactored.AI.Combat.States
 
         private bool ShouldTriggerFallback()
         {
+            if (_cache == null || _bot == null)
+            {
+                return false;
+            }
+
             if (_cache.PanicHandler != null && _cache.PanicHandler.GetComposureLevel() < PanicThreshold)
             {
                 return true;
@@ -176,9 +190,9 @@ namespace AIRefactored.AI.Combat.States
 
         private Vector3 TryGetFallbackPosition()
         {
-            if (_cache.Pathing == null)
+            if (_cache == null || _bot == null || _cache.Pathing == null)
             {
-                return _bot.Position;
+                return _bot != null ? _bot.Position : Vector3.zero;
             }
 
             Vector3 direction = _bot.LookDirection.normalized;

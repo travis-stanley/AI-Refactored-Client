@@ -85,36 +85,44 @@ namespace AIRefactored.AI.Combat.States
         /// </summary>
         public void Tick(float time)
         {
-            Player enemy;
-            if (!TryResolveEnemy(out enemy))
+            try
             {
-                return;
-            }
+                Player enemy;
+                if (!TryResolveEnemy(out enemy))
+                {
+                    return;
+                }
 
-            Transform transform = EFTPlayerUtil.GetTransform(enemy);
-            if (transform == null)
+                Transform transform = EFTPlayerUtil.GetTransform(enemy);
+                if (transform == null)
+                {
+                    return;
+                }
+
+                Vector3 currentPos = transform.position;
+                Vector3[] deltaArray = TempVector3Pool.Rent(1);
+                deltaArray[0] = currentPos - _lastTargetPosition;
+
+                if (!_hasLastTarget || deltaArray[0].sqrMagnitude > PositionUpdateThresholdSqr)
+                {
+                    _lastTargetPosition = currentPos;
+                    _hasLastTarget = true;
+
+                    Vector3 moveTarget = (_cache.SquadPath != null)
+                        ? _cache.SquadPath.ApplyOffsetTo(currentPos)
+                        : currentPos;
+
+                    BotMovementHelper.SmoothMoveTo(_bot, moveTarget);
+                    BotCoverHelper.TrySetStanceFromNearbyCover(_cache, moveTarget);
+                }
+
+                TempVector3Pool.Return(deltaArray);
+            }
+            catch (Exception ex)
             {
-                return;
+                Plugin.LoggerInstance.LogError("[AttackHandler] Tick error: " + ex);
+                BotFallbackUtility.FallbackToEFTLogic(_bot);
             }
-
-            Vector3 currentPos = transform.position;
-            Vector3[] deltaArray = TempVector3Pool.Rent(1);
-            deltaArray[0] = currentPos - _lastTargetPosition;
-
-            if (!_hasLastTarget || deltaArray[0].sqrMagnitude > PositionUpdateThresholdSqr)
-            {
-                _lastTargetPosition = currentPos;
-                _hasLastTarget = true;
-
-                Vector3 moveTarget = (_cache.SquadPath != null)
-                    ? _cache.SquadPath.ApplyOffsetTo(currentPos)
-                    : currentPos;
-
-                BotMovementHelper.SmoothMoveTo(_bot, moveTarget);
-                BotCoverHelper.TrySetStanceFromNearbyCover(_cache, moveTarget);
-            }
-
-            TempVector3Pool.Return(deltaArray);
         }
 
         #endregion

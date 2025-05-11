@@ -53,14 +53,13 @@ namespace AIRefactored.Runtime
 		{
 			try
 			{
-				if (!GameWorldHandler.IsHost || !GameWorldHandler.IsInitialized || !GameWorldHandler.IsReady())
+				if (!GameWorldHandler.IsHost || !GameWorldHandler.IsInitialized || !GameWorldHandler.IsReady() || !WorldInitState.IsInPhase(WorldPhase.WorldReady))
 				{
 					if (!_hasWarnedInvalid)
 					{
 						Logger.LogWarning("[BotSpawnWatcher] GameWorld not ready or not host — deferring.");
 						_hasWarnedInvalid = true;
 					}
-
 					return;
 				}
 
@@ -75,7 +74,6 @@ namespace AIRefactored.Runtime
 				{
 					return;
 				}
-
 				_nextPollTime = now + PollInterval;
 
 				List<Player> players = GameWorldHandler.GetAllAlivePlayers();
@@ -108,7 +106,6 @@ namespace AIRefactored.Runtime
 							existingBrain.enabled = true;
 							Logger.LogWarning("[BotSpawnWatcher] Re-enabled disabled brain: " + player.ProfileId);
 						}
-
 						continue;
 					}
 
@@ -134,11 +131,9 @@ namespace AIRefactored.Runtime
 							continue;
 						}
 
-						WildSpawnType role = WildSpawnType.assault;
-						if (player.Profile.Info.Settings != null)
-						{
-							role = player.Profile.Info.Settings.Role;
-						}
+						WildSpawnType role = player.Profile.Info.Settings != null
+							? player.Profile.Info.Settings.Role
+							: WildSpawnType.assault;
 
 						BotPersonalityProfile profile = BotRegistry.GetOrGenerate(profileId, PersonalityType.Balanced, role);
 						BotRegistry.Register(profileId, profile);
@@ -192,13 +187,13 @@ namespace AIRefactored.Runtime
 			}
 			catch
 			{
-				// Silent fail: logger not ready during shutdown
+				// Logger may not be ready
 			}
 		}
 
 		public bool IsReady()
 		{
-			return true;
+			return WorldInitState.IsInPhase(WorldPhase.WorldReady);
 		}
 
 		public WorldPhase RequiredPhase()

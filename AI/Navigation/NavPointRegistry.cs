@@ -75,8 +75,7 @@ namespace AIRefactored.AI.Navigation
 
             try
             {
-                NavMeshSurface surface = UnityEngine.Object.FindObjectOfType<NavMeshSurface>();
-                if (surface == null)
+                if (UnityEngine.Object.FindObjectOfType<NavMeshSurface>() == null)
                 {
                     Logger.LogWarning("[NavPointRegistry] No NavMeshSurface found.");
                     return;

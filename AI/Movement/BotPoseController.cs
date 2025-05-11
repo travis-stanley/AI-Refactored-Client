@@ -52,7 +52,7 @@ namespace AIRefactored.AI.Movement
 
         public BotPoseController(BotOwner bot, BotComponentCache cache)
         {
-            if (bot == null || cache == null || bot.GetPlayer == null || bot.GetPlayer.MovementContext == null)
+            if (bot == null || cache == null || bot.GetPlayer == null || bot.GetPlayer.MovementContext == null || cache.PersonalityProfile == null)
             {
                 throw new ArgumentException("[BotPoseController] Invalid initialization.");
             }
@@ -105,7 +105,7 @@ namespace AIRefactored.AI.Movement
 
         public void Tick(float currentTime)
         {
-            if (_bot.IsDead)
+            if (_bot == null || _bot.IsDead || _movement == null)
             {
                 return;
             }

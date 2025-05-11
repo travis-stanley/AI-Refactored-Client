@@ -34,10 +34,7 @@ namespace AIRefactored.AI.Navigation
         /// <summary>
         /// Gets a value indicating whether the system is initialized (always false in fallback mode).
         /// </summary>
-        public static bool IsInitialized
-        {
-            get { return false; }
-        }
+        public static bool IsInitialized => false;
 
         #endregion
 

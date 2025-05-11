@@ -45,9 +45,9 @@ namespace AIRefactored.AI.Movement
 
         public BotMovementTrajectoryPlanner(BotOwner bot, BotComponentCache cache)
         {
-            if (bot == null || cache == null)
+            if (bot == null || cache == null || bot.GetPlayer == null)
             {
-                throw new ArgumentException("[BotMovementTrajectoryPlanner] bot or cache is null.");
+                throw new ArgumentException("[BotMovementTrajectoryPlanner] bot, player, or cache is null.");
             }
 
             _bot = bot;
@@ -71,7 +71,12 @@ namespace AIRefactored.AI.Movement
             }
 
             Vector3 baseDir = targetDir.sqrMagnitude > MinMagnitude ? targetDir.normalized : Vector3.forward;
-            Vector3 adjusted = baseDir + _chaosOffset;
+            Vector3 adjusted = baseDir;
+
+            if (_chaosOffset.sqrMagnitude > MinMagnitude)
+            {
+                adjusted += _chaosOffset;
+            }
 
             if (_cache.SquadPath != null)
             {
@@ -89,7 +94,7 @@ namespace AIRefactored.AI.Movement
             }
 
             Vector3 velocity = _bot.GetPlayer.Velocity;
-            if (velocity.sqrMagnitude > 0.1f)
+            if (velocity.sqrMagnitude > 0.01f)
             {
                 adjusted += velocity.normalized * VelocityFactor;
             }

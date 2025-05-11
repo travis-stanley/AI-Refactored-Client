@@ -121,14 +121,17 @@ namespace AIRefactored.AI.Optimization
 			if (pathCache != null)
 			{
 				List<Vector3> path = BotCoverRetreatPlanner.GetCoverRetreatPath(bot, threatDirection, pathCache);
-				if (path.Count >= 2)
+				try
 				{
-					Vector3 last = path[path.Count - 1];
-					TempListPool.Return(path);
-					return last;
+					if (path.Count >= 2)
+					{
+						return path[path.Count - 1];
+					}
 				}
-
-				TempListPool.Return(path);
+				finally
+				{
+					TempListPool.Return(path);
+				}
 			}
 
 			// === Priority 4: LOS-blocking fallback ===
@@ -138,6 +141,7 @@ namespace AIRefactored.AI.Optimization
 				return losBreak;
 			}
 
+			// Final fallback: let SmoothMoveTo handle default EFT fallback
 			return Vector3.zero;
 		}
 

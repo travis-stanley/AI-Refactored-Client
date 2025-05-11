@@ -150,7 +150,10 @@ namespace AIRefactored.AI.Combat.States
             Vector3 currentPos = _bot.Position;
             float dist = Vector3.Distance(currentPos, _fallbackTarget);
 
+            // Always try move; SmoothMoveTo includes GoToPoint fallback logic now
             BotMovementHelper.SmoothMoveTo(_bot, _fallbackTarget);
+
+            // Optionally trigger crouch/prone from cover at target
             BotCoverHelper.TrySetStanceFromNearbyCover(_cache, _fallbackTarget);
 
             if (dist < MinArrivalDistance)

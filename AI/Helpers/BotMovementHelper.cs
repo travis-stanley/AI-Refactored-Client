@@ -47,6 +47,7 @@ namespace AIRefactored.AI.Helpers
             }
 
             Vector3 fallback = bot.Position - threatDirection.normalized * distance;
+
             BotComponentCache cache = BotCacheUtility.GetCache(bot);
             if (cache != null && cache.Pathing != null)
             {
@@ -140,16 +141,19 @@ namespace AIRefactored.AI.Helpers
             }
 
             BotComponentCache cache = BotCacheUtility.GetCache(bot);
-            if (cache == null || cache.Pathing == null)
+            if (cache != null && cache.Pathing != null)
             {
-                return;
+                Vector3? point = BotCoverRetreatPlanner.GetSafeExtractionPoint(bot, cache.Pathing);
+                if (point.HasValue)
+                {
+                    bot.Mover.GoToPoint(point.Value, true, 1f);
+                    return;
+                }
             }
 
-            Vector3? point = BotCoverRetreatPlanner.GetSafeExtractionPoint(bot, cache.Pathing);
-            if (point.HasValue)
-            {
-                bot.Mover.GoToPoint(point.Value, true, 1f);
-            }
+            // Fallback safety if retreat planner fails
+            Vector3 fallback = bot.Position + bot.LookDirection.normalized * 4f;
+            bot.Mover.GoToPoint(fallback, true, 1f);
         }
 
         public static void SmoothStrafeFrom(BotOwner bot, Vector3 threatDirection, float scale = 1f)
@@ -183,6 +187,11 @@ namespace AIRefactored.AI.Helpers
             if (point.HasValue)
             {
                 bot.Mover.GoToPoint(point.Value, true, 1f);
+            }
+            else
+            {
+                // Hard fallback to vanilla move forward
+                bot.Mover.GoToPoint(bot.Position + dir.normalized * 5f, true, 1f);
             }
         }
 

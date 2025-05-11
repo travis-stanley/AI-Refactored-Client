@@ -38,6 +38,7 @@ namespace AIRefactored.AI.Navigation
 
         public void Insert(NavPointData point)
         {
+            if (point == null) return;
             Insert(_root, point);
         }
 
@@ -76,7 +77,10 @@ namespace AIRefactored.AI.Navigation
         private void Insert(Node node, NavPointData point)
         {
             Vector2 pos2D = new Vector2(point.Position.x, point.Position.z);
-            if (!node.Bounds.Contains(pos2D)) return;
+            if (!node.Bounds.Contains(pos2D))
+            {
+                return;
+            }
 
             if (node.IsLeaf)
             {
@@ -99,7 +103,10 @@ namespace AIRefactored.AI.Navigation
         private void Insert(Node node, Vector3 point)
         {
             Vector2 pos2D = new Vector2(point.x, point.z);
-            if (!node.Bounds.Contains(pos2D)) return;
+            if (!node.Bounds.Contains(pos2D))
+            {
+                return;
+            }
 
             if (node.IsLeaf)
             {
@@ -125,7 +132,10 @@ namespace AIRefactored.AI.Navigation
             float radius = Mathf.Sqrt(radiusSq);
             Rect rect = new Rect(pos2D.x - radius, pos2D.y - radius, radius * 2f, radius * 2f);
 
-            if (!node.Bounds.Overlaps(rect)) return;
+            if (!node.Bounds.Overlaps(rect))
+            {
+                return;
+            }
 
             if (node.IsLeaf)
             {
@@ -153,7 +163,10 @@ namespace AIRefactored.AI.Navigation
             float radius = Mathf.Sqrt(radiusSq);
             Rect rect = new Rect(pos2D.x - radius, pos2D.y - radius, radius * 2f, radius * 2f);
 
-            if (!node.Bounds.Overlaps(rect)) return;
+            if (!node.Bounds.Overlaps(rect))
+            {
+                return;
+            }
 
             if (node.IsLeaf)
             {

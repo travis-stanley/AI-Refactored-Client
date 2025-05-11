@@ -62,7 +62,7 @@ namespace AIRefactored.AI.Navigation
         /// <param name="point">The navigation point to register.</param>
         public void Register(NavPointData point)
         {
-            if (!IsPositionValid(point.Position))
+            if (point == null || !IsPositionValid(point.Position))
             {
                 return;
             }

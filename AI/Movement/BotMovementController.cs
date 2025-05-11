@@ -90,17 +90,7 @@ namespace AIRefactored.AI.Movement
                 _nextScanTime = Time.time + CornerScanInterval;
             }
 
-            Vector3 target;
-            try
-            {
-                target = _bot.Mover != null ? _bot.Mover.LastTargetPoint(1.0f) : _bot.Position;
-            }
-            catch (Exception ex)
-            {
-                Logger.LogError($"[Movement] Exception in LastTargetPoint: {ex}");
-                target = _bot.Position;
-            }
-
+            Vector3 target = SafeGetTargetPoint();
             SmoothLookTo(target, deltaTime);
             ApplyInertia(target, deltaTime);
 
@@ -115,8 +105,25 @@ namespace AIRefactored.AI.Movement
         }
 
         public void EnterLootingMode() => _inLootingMode = true;
-
         public void ExitLootingMode() => _inLootingMode = false;
+
+        private Vector3 SafeGetTargetPoint()
+        {
+            if (_bot?.Mover == null)
+            {
+                return _bot.Position;
+            }
+
+            try
+            {
+                return _bot.Mover.LastTargetPoint(1.0f);
+            }
+            catch (Exception ex)
+            {
+                Logger.LogError($"[Movement] Exception in LastTargetPoint: {ex}");
+                return _bot.Position;
+            }
+        }
 
         private void ApplyInertia(Vector3 target, float deltaTime)
         {
@@ -156,7 +163,7 @@ namespace AIRefactored.AI.Movement
 
         private void ScanAhead()
         {
-            Vector3 origin = _bot.Position + (Vector3.up * 1.5f);
+            Vector3 origin = _bot.Position + Vector3.up * 1.5f;
             Vector3 direction = _bot.LookDirection;
 
             if (Physics.SphereCast(origin, ScanRadius, direction, out _, ScanDistance, AIRefactoredLayerMasks.VisionBlockers))
@@ -218,7 +225,7 @@ namespace AIRefactored.AI.Movement
             Vector3 origin = _bot.Position + Vector3.up * 1.5f;
             bool wallLeft = Physics.Raycast(origin, -_bot.Transform.right, 1.5f, AIRefactoredLayerMasks.VisionBlockers);
             bool wallRight = Physics.Raycast(origin, _bot.Transform.right, 1.5f, AIRefactoredLayerMasks.VisionBlockers);
-            Vector3 coverPos = _bot.Memory.BotCurrentCoverInfo != null ? _bot.Memory.BotCurrentCoverInfo.LastCover?.Position ?? Vector3.zero : Vector3.zero;
+            Vector3 coverPos = _bot.Memory.BotCurrentCoverInfo?.LastCover?.Position ?? Vector3.zero;
 
             if (profile.LeaningStyle == LeanPreference.Conservative && coverPos == Vector3.zero && !wallLeft && !wallRight)
             {
@@ -282,18 +289,13 @@ namespace AIRefactored.AI.Movement
 
         private void DetectStuck(float deltaTime)
         {
-            Vector3 target;
-            try
+            if (_inLootingMode || _bot.Mover == null)
             {
-                target = _bot.Mover != null ? _bot.Mover.LastTargetPoint(1.0f) : _bot.Position;
-            }
-            catch (Exception ex)
-            {
-                Logger.LogError($"[Movement] Exception in DetectStuck LastTargetPoint: {ex}");
-                target = _bot.Position;
+                return;
             }
 
-            if (_inLootingMode || !ValidateNavMeshTarget(target))
+            Vector3 target = SafeGetTargetPoint();
+            if (!ValidateNavMeshTarget(target))
             {
                 return;
             }

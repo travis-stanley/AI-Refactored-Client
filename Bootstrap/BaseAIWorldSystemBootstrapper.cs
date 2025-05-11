@@ -38,7 +38,7 @@ namespace AIRefactored.AI.Core
             }
             catch (Exception ex)
             {
-                Plugin.LoggerInstance.LogError($"[BaseAIWorldSystem] Tick error in {GetType().Name}: {ex}");
+                Plugin.LoggerInstance.LogError("[BaseAIWorldSystem] Tick error in " + GetType().Name + ": " + ex);
             }
         }
 
@@ -62,7 +62,7 @@ namespace AIRefactored.AI.Core
             }
             catch (Exception ex)
             {
-                Plugin.LoggerInstance.LogError($"[BaseAIWorldSystem] OnRaidEnd error in {GetType().Name}: {ex}");
+                Plugin.LoggerInstance.LogError("[BaseAIWorldSystem] OnRaidEnd error in " + GetType().Name + ": " + ex);
             }
         }
 

@@ -21,12 +21,21 @@ namespace AIRefactored.Runtime
     /// </summary>
     public sealed class RaidLifecycleWatcher : IAIWorldSystemBootstrapper
     {
+        #region Fields
+
         private static readonly ManualLogSource Logger = Plugin.LoggerInstance;
 
         private static bool _initialized;
         private static bool _bound;
 
+        /// <summary>
+        /// Global singleton instance.
+        /// </summary>
         public static RaidLifecycleWatcher Instance { get; } = new RaidLifecycleWatcher();
+
+        #endregion
+
+        #region Lifecycle
 
         public void Initialize()
         {
@@ -38,12 +47,7 @@ namespace AIRefactored.Runtime
         {
             try
             {
-                if (_initialized)
-                {
-                    return;
-                }
-
-                if (!GameWorldHandler.IsHost || !GameWorldHandler.IsReady())
+                if (_initialized || !GameWorldHandler.IsHost || !GameWorldHandler.IsReady())
                 {
                     return;
                 }
@@ -74,16 +78,33 @@ namespace AIRefactored.Runtime
         {
             try
             {
-                GameWorld.OnDispose -= OnRaidEnded;
+                if (_bound)
+                {
+                    GameWorld.OnDispose -= OnRaidEnded;
+                    _bound = false;
+                }
+
                 _initialized = false;
-                _bound = false;
                 AIRefactoredController.OnRaidEnded();
             }
             catch (Exception ex)
             {
-                Logger.LogError("[RaidLifecycleWatcher] OnRaidEnded error: " + ex);
+                Logger.LogError("[RaidLifecycleWatcher] OnRaidEnd error: " + ex);
             }
         }
+
+        #endregion
+
+        #region Static Event Handler
+
+        private static void OnRaidEnded()
+        {
+            Instance.OnRaidEnd();
+        }
+
+        #endregion
+
+        #region Phase Control
 
         public bool IsReady()
         {
@@ -95,9 +116,6 @@ namespace AIRefactored.Runtime
             return WorldPhase.AwaitWorld;
         }
 
-        private static void OnRaidEnded()
-        {
-            Instance.OnRaidEnd();
-        }
+        #endregion
     }
 }

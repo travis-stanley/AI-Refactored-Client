@@ -26,8 +26,14 @@ namespace AIRefactored.Runtime
 	/// </summary>
 	public sealed class DeadBodyObserverService : IAIWorldSystemBootstrapper
 	{
+		#region Constants
+
 		private const float ScanIntervalSeconds = 1.0f;
 		private const float AssociationRadius = 1.5f;
+
+		#endregion
+
+		#region Fields
 
 		private static readonly ManualLogSource Logger = Plugin.LoggerInstance;
 
@@ -36,11 +42,22 @@ namespace AIRefactored.Runtime
 		private static bool _containersUpdated;
 		private static bool _hasLoggedReset;
 
+		#endregion
+
+		#region Lifecycle
+
 		public void Initialize()
 		{
-			_hasLoggedReset = false;
-			Reset();
-			Logger.LogDebug("[DeadBodyObserver] Initialized.");
+			try
+			{
+				_hasLoggedReset = false;
+				Reset();
+				Logger.LogDebug("[DeadBodyObserver] Initialized.");
+			}
+			catch (Exception ex)
+			{
+				Logger.LogError("[DeadBodyObserver] Initialize failed: " + ex);
+			}
 		}
 
 		public void Tick(float deltaTime)
@@ -86,7 +103,7 @@ namespace AIRefactored.Runtime
 					return;
 				}
 
-				List<Player> pool = TempListPool.Rent<Player>();
+				List<Player> validPlayers = TempListPool.Rent<Player>();
 
 				try
 				{
@@ -95,13 +112,13 @@ namespace AIRefactored.Runtime
 						Player p = players[i];
 						if (EFTPlayerUtil.IsValid(p))
 						{
-							pool.Add(p);
+							validPlayers.Add(p);
 						}
 					}
 
-					for (int i = 0; i < pool.Count; i++)
+					for (int i = 0; i < validPlayers.Count; i++)
 					{
-						Player player = pool[i];
+						Player player = validPlayers[i];
 						if (player == null || player.HealthController == null || player.HealthController.IsAlive)
 						{
 							continue;
@@ -114,7 +131,7 @@ namespace AIRefactored.Runtime
 						}
 
 						Vector3 corpsePosition = EFTPlayerUtil.GetPosition(player);
-						Transform root = player.Transform?.Original?.root;
+						Transform root = player.Transform != null ? player.Transform.Original?.root : null;
 						if (root == null)
 						{
 							continue;
@@ -134,7 +151,6 @@ namespace AIRefactored.Runtime
 							if (isRootMatch || isNearby)
 							{
 								DeadBodyContainerCache.Register(player, container);
-
 								string nickname = player.Profile?.Info?.Nickname ?? "Unnamed";
 								Logger.LogDebug("[DeadBodyObserver] Associated container with dead bot: " + nickname);
 								break;
@@ -148,7 +164,7 @@ namespace AIRefactored.Runtime
 				}
 				finally
 				{
-					TempListPool.Return(pool);
+					TempListPool.Return(validPlayers);
 					TempListPool.Return(players);
 				}
 			}
@@ -160,7 +176,14 @@ namespace AIRefactored.Runtime
 
 		public void OnRaidEnd()
 		{
-			Reset();
+			try
+			{
+				Reset();
+			}
+			catch (Exception ex)
+			{
+				Logger.LogError("[DeadBodyObserver] OnRaidEnd error: " + ex);
+			}
 		}
 
 		public static void Reset()
@@ -181,7 +204,7 @@ namespace AIRefactored.Runtime
 			}
 			catch
 			{
-				// Silent fallback — logger not available during shutdown
+				// Logger may be null at teardown
 			}
 		}
 
@@ -194,5 +217,7 @@ namespace AIRefactored.Runtime
 		{
 			return WorldPhase.WorldReady;
 		}
+
+		#endregion
 	}
 }

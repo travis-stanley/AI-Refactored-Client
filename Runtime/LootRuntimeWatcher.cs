@@ -43,31 +43,52 @@ namespace AIRefactored.Runtime
 
         public void Initialize()
         {
-            _hasLoggedReset = false;
-            Reset();
-            Logger.LogDebug("[LootRuntimeWatcher] Initialized.");
+            try
+            {
+                _hasLoggedReset = false;
+                Reset();
+                Logger.LogDebug("[LootRuntimeWatcher] Initialized.");
+            }
+            catch (Exception ex)
+            {
+                Logger.LogError("[LootRuntimeWatcher] Initialize error: " + ex);
+            }
         }
 
         public void Tick(float deltaTime)
         {
-            if (!_isQueued || Time.time < _nextAllowedRefreshTime)
+            try
             {
-                return;
-            }
+                if (!_isQueued || Time.time < _nextAllowedRefreshTime)
+                {
+                    return;
+                }
 
-            if (!GameWorldHandler.IsReady() || !GameWorldHandler.IsHost)
+                if (!GameWorldHandler.IsReady() || !GameWorldHandler.IsHost)
+                {
+                    return;
+                }
+
+                _isQueued = false;
+                GameWorldHandler.RefreshLootRegistry();
+                Logger.LogDebug("[LootRuntimeWatcher] ✅ Loot registry refreshed.");
+            }
+            catch (Exception ex)
             {
-                return;
+                Logger.LogError("[LootRuntimeWatcher] Tick error: " + ex);
             }
-
-            _isQueued = false;
-            GameWorldHandler.RefreshLootRegistry();
-            Logger.LogDebug("[LootRuntimeWatcher] ✅ Loot registry refreshed.");
         }
 
         public void OnRaidEnd()
         {
-            Reset();
+            try
+            {
+                Reset();
+            }
+            catch (Exception ex)
+            {
+                Logger.LogError("[LootRuntimeWatcher] OnRaidEnd error: " + ex);
+            }
         }
 
         public bool IsReady()
@@ -86,12 +107,7 @@ namespace AIRefactored.Runtime
 
         public static void TriggerQueuedRefresh()
         {
-            if (_isQueued)
-            {
-                return;
-            }
-
-            if (!GameWorldHandler.IsReady() || !GameWorldHandler.IsHost)
+            if (_isQueued || !GameWorldHandler.IsReady() || !GameWorldHandler.IsHost)
             {
                 return;
             }
@@ -158,7 +174,7 @@ namespace AIRefactored.Runtime
             }
             catch
             {
-                // Silent fail — logger might be null during domain reload
+                // Silent fail — logger may not be valid during teardown
             }
         }
 

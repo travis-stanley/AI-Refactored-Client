@@ -3,7 +3,7 @@
 //   Licensed under the MIT License. See LICENSE in the repository root for more information.
 //
 //   THIS FILE IS SYSTEMATICALLY MANAGED.
-//   Please follow strict StyleCop, ReSharper, and AI-Refactored code standards for all modifications.
+//   Failures in AIRefactored logic must always trigger safe fallback to EFT base AI.
 // </auto-generated>
 
 namespace AIRefactored.AI.Threads
@@ -32,12 +32,7 @@ namespace AIRefactored.AI.Threads
         /// <param name="botGameObject">The bot GameObject to sanitize.</param>
         public static void Enforce(GameObject botGameObject)
         {
-            if (botGameObject == null)
-            {
-                return;
-            }
-
-            if (!GameWorldHandler.IsLocalHost())
+            if (botGameObject == null || !GameWorldHandler.IsLocalHost())
             {
                 return;
             }
@@ -62,17 +57,17 @@ namespace AIRefactored.AI.Threads
                     continue;
                 }
 
-                string typeName = type.Name.ToLowerInvariant();
+                string name = type.Name.ToLowerInvariant();
                 string ns = type.Namespace != null ? type.Namespace.ToLowerInvariant() : string.Empty;
 
                 try
                 {
-                    if (IsUnityOrEftSafe(typeName, ns))
+                    if (IsUnityOrEftSafe(name, ns))
                     {
                         continue;
                     }
 
-                    if (IsConflictingBrain(typeName, ns) || IsHarmonyPatched(type) || HasSuspiciousMethods(type))
+                    if (IsConflictingBrain(name, ns) || IsHarmonyPatched(type) || HasSuspiciousMethods(type))
                     {
                         UnityEngine.Object.Destroy(component);
                         Logger.LogWarning("[BotBrainGuardian] ⚠ Removed unauthorized AI logic: " + type.FullName + " from: " + botGameObject.name);
@@ -120,13 +115,13 @@ namespace AIRefactored.AI.Threads
         {
             try
             {
-                MethodInfo updateMethod = type.GetMethod("Update", BindingFlags.Instance | BindingFlags.Public | BindingFlags.NonPublic);
-                if (updateMethod == null)
+                MethodInfo method = type.GetMethod("Update", BindingFlags.Instance | BindingFlags.Public | BindingFlags.NonPublic);
+                if (method == null)
                 {
                     return false;
                 }
 
-                Patches patch = Harmony.GetPatchInfo(updateMethod);
+                Patches patch = Harmony.GetPatchInfo(method);
                 return patch != null && patch.Owners != null && patch.Owners.Count > 0;
             }
             catch (Exception ex)
@@ -138,13 +133,13 @@ namespace AIRefactored.AI.Threads
 
         private static bool HasSuspiciousMethods(Type type)
         {
-            string[] names = { "Update", "LateUpdate", "FixedUpdate", "Tick" };
+            string[] methods = { "Update", "LateUpdate", "FixedUpdate", "Tick" };
 
-            for (int i = 0; i < names.Length; i++)
+            for (int i = 0; i < methods.Length; i++)
             {
                 try
                 {
-                    MethodInfo method = type.GetMethod(names[i], BindingFlags.Instance | BindingFlags.Public | BindingFlags.NonPublic);
+                    MethodInfo method = type.GetMethod(methods[i], BindingFlags.Instance | BindingFlags.Public | BindingFlags.NonPublic);
                     if (method != null && method.DeclaringType != typeof(MonoBehaviour))
                     {
                         return true;
@@ -152,7 +147,7 @@ namespace AIRefactored.AI.Threads
                 }
                 catch (Exception ex)
                 {
-                    Logger.LogError("[BotBrainGuardian] Reflection error on method '" + names[i] + "': " + ex.Message);
+                    Logger.LogError("[BotBrainGuardian] Reflection error on method '" + methods[i] + "': " + ex.Message);
                 }
             }
 

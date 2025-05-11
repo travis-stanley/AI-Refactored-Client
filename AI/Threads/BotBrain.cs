@@ -3,7 +3,7 @@
 //   Licensed under the MIT License. See LICENSE in the repository root for more information.
 //
 //   THIS FILE IS SYSTEMATICALLY MANAGED.
-//   Please follow strict StyleCop, ReSharper, and AI-Refactored code standards for all modifications.
+//   Failures in AIRefactored logic must always trigger safe fallback to EFT base AI.
 // </auto-generated>
 
 namespace AIRefactored.AI.Threads
@@ -144,7 +144,7 @@ namespace AIRefactored.AI.Threads
 		private static void Try(Action action, string label)
 		{
 			try { action(); }
-			catch (Exception ex) { Logger.LogError($"[BotBrain] {label} Tick failed: {ex}"); }
+			catch (Exception ex) { Logger.LogError("[BotBrain] " + label + " Tick failed: " + ex); }
 		}
 
 		public void Initialize(BotOwner bot)

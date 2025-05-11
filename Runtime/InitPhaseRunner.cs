@@ -22,7 +22,13 @@ namespace AIRefactored.Runtime
     /// </summary>
     public static class InitPhaseRunner
     {
+        #region Fields
+
         private static bool _hasStarted;
+
+        #endregion
+
+        #region Lifecycle
 
         /// <summary>
         /// Starts the full AI-Refactored boot sequence exactly once.
@@ -47,6 +53,7 @@ namespace AIRefactored.Runtime
                 {
                     logger?.LogWarning("[InitPhaseRunner] World not ready. Aborting init to avoid FIKA hang.");
                     _hasStarted = false;
+                    WorldInitState.Reset();
                     return;
                 }
 
@@ -94,9 +101,13 @@ namespace AIRefactored.Runtime
             }
         }
 
+        #endregion
+
+        #region Validation
+
         private static bool IsWorldSafe()
         {
-            GameWorld world = Singleton<GameWorld>.Instance;
+            GameWorld world = Singleton<GameWorld>.Instantiated ? Singleton<GameWorld>.Instance : null;
             if (world == null || world.RegisteredPlayers == null || world.RegisteredPlayers.Count == 0)
             {
                 return false;
@@ -104,8 +115,8 @@ namespace AIRefactored.Runtime
 
             for (int i = 0; i < world.RegisteredPlayers.Count; i++)
             {
-                var raw = world.RegisteredPlayers[i];
-                var player = EFTPlayerUtil.AsEFTPlayer(raw);
+                IPlayer raw = world.RegisteredPlayers[i];
+                Player player = EFTPlayerUtil.AsEFTPlayer(raw);
                 if (player != null && EFTPlayerUtil.IsValid(player))
                 {
                     return true;
@@ -114,5 +125,7 @@ namespace AIRefactored.Runtime
 
             return false;
         }
+
+        #endregion
     }
 }

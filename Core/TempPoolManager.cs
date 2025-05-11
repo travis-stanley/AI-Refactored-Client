@@ -6,7 +6,6 @@
 //   Please follow strict StyleCop, ReSharper, and AI-Refactored code standards for all modifications.
 // </auto-generated>
 
-
 namespace AIRefactored.Core
 {
     using System;
@@ -21,8 +20,14 @@ namespace AIRefactored.Core
     /// </summary>
     public static class TempPoolManager
     {
+        #region Fields
+
         private static readonly List<Action> _registeredCustomClearers = new List<Action>(16);
         private static bool _domainHooked;
+
+        #endregion
+
+        #region Lifecycle
 
         /// <summary>
         /// Initializes the manager and binds cleanup logic to AppDomain unload.
@@ -35,7 +40,15 @@ namespace AIRefactored.Core
             }
 
             _domainHooked = true;
-            AppDomain.CurrentDomain.DomainUnload += (_, __) => ClearAll();
+
+            try
+            {
+                AppDomain.CurrentDomain.DomainUnload += (_, __) => ClearAll();
+            }
+            catch
+            {
+                // Some platforms (IL2CPP) may not support domain unload
+            }
         }
 
         /// <summary>
@@ -54,6 +67,10 @@ namespace AIRefactored.Core
                 _registeredCustomClearers.Add(clearMethod);
             }
         }
+
+        #endregion
+
+        #region Pooling
 
         /// <summary>
         /// Prewarms all known AIRefactored temporary pools to reduce runtime allocation.
@@ -110,8 +127,17 @@ namespace AIRefactored.Core
 
             for (int i = 0; i < _registeredCustomClearers.Count; i++)
             {
-                _registeredCustomClearers[i].Invoke();
+                try
+                {
+                    _registeredCustomClearers[i].Invoke();
+                }
+                catch
+                {
+                    // Silent fallback for custom clear failures
+                }
             }
         }
+
+        #endregion
     }
 }

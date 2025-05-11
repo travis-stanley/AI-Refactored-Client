@@ -26,6 +26,8 @@ namespace AIRefactored.AI.Navigation
 	/// </summary>
 	public static class NavPointBootstrapper
 	{
+		#region Constants
+
 		private const float ForwardCoverCheckDistance = 4.0f;
 		private const float MaxSampleHeight = 30.0f;
 		private const float MinNavPointClearance = 1.6f;
@@ -35,6 +37,10 @@ namespace AIRefactored.AI.Navigation
 		private const float VerticalProbeMax = 24.0f;
 		private const float VerticalStep = 2.0f;
 
+		#endregion
+
+		#region State
+
 		private static readonly List<Vector3> BackgroundPending = new List<Vector3>(1024);
 		private static readonly Queue<Vector3> ScanQueue = new Queue<Vector3>(2048);
 		private static readonly ManualLogSource Logger = Plugin.LoggerInstance;
@@ -43,6 +49,10 @@ namespace AIRefactored.AI.Navigation
 		private static bool _isRunning;
 		private static bool _isTaskRunning;
 		private static int _registered;
+
+		#endregion
+
+		#region API
 
 		public static void RegisterAll(string mapId)
 		{
@@ -97,8 +107,18 @@ namespace AIRefactored.AI.Navigation
 				_isTaskRunning = true;
 				Task.Run(() =>
 				{
-					PrequeueVerticalPoints();
-					_isTaskRunning = false;
+					try
+					{
+						PrequeueVerticalPoints();
+					}
+					catch (Exception ex)
+					{
+						Logger.LogError("[NavPointBootstrapper] Vertical prequeue error: " + ex);
+					}
+					finally
+					{
+						_isTaskRunning = false;
+					}
 				});
 			}
 		}
@@ -179,6 +199,10 @@ namespace AIRefactored.AI.Navigation
 			_isTaskRunning = false;
 		}
 
+		#endregion
+
+		#region Internal
+
 		private static void PrequeueVerticalPoints()
 		{
 			float half = ScanRadius * 0.5f;
@@ -242,5 +266,7 @@ namespace AIRefactored.AI.Navigation
 
 			return isCover ? "fallback" : "flank";
 		}
+
+		#endregion
 	}
 }

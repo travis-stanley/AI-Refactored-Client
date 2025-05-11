@@ -37,20 +37,20 @@ namespace AIRefactored.Runtime
                     return;
                 }
 
-                _hooked = true;
                 Logger.LogDebug("[GameWorldSpawnHook] Hooking into GameWorld.OnGameStarted...");
 
                 MethodInfo method = AccessTools.Method(typeof(GameWorld), "OnGameStarted");
                 if (method == null)
                 {
-                    Logger.LogError("[GameWorldSpawnHook] Failed to locate GameWorld.OnGameStarted method.");
+                    Logger.LogError("[GameWorldSpawnHook] ❌ Failed to locate GameWorld.OnGameStarted.");
                     Destroy(this);
                     return;
                 }
 
-                Harmony harmony = new Harmony("ai.refactored.spawnhook");
+                var harmony = new Harmony("ai.refactored.spawnhook");
                 harmony.Patch(method, postfix: new HarmonyMethod(typeof(GameWorldSpawnPatch), nameof(GameWorldSpawnPatch.Postfix)));
 
+                _hooked = true;
                 Logger.LogDebug("[GameWorldSpawnHook] ✅ Harmony patch successfully installed.");
             }
             catch (Exception ex)
@@ -73,7 +73,9 @@ namespace AIRefactored.Runtime
             {
                 try
                 {
-                    if (!Singleton<GameWorld>.Instantiated || Singleton<GameWorld>.Instance == null)
+                    GameWorld world = Singleton<GameWorld>.Instantiated ? Singleton<GameWorld>.Instance : null;
+
+                    if (world == null)
                     {
                         Logger.LogWarning("[GameWorldSpawnHook] GameWorld.Instance is null — skipping InitPhaseRunner.");
                         return;
@@ -86,7 +88,6 @@ namespace AIRefactored.Runtime
                     }
 
                     Logger.LogDebug("[GameWorldSpawnHook] GameWorld initialized. Triggering InitPhaseRunner...");
-
                     InitPhaseRunner.Begin(Logger);
                 }
                 catch (Exception ex)

@@ -3,7 +3,7 @@
 //   Licensed under the MIT License. See LICENSE in the repository root for more information.
 //
 //   THIS FILE IS SYSTEMATICALLY MANAGED.
-//   Please follow strict StyleCop, ReSharper, and AI-Refactored code standards for all modifications.
+//   Failures in AIRefactored logic must always trigger safe fallback to EFT base AI.
 // </auto-generated>
 
 namespace AIRefactored.Core
@@ -27,19 +27,25 @@ namespace AIRefactored.Core
 
     public static partial class GameWorldHandler
     {
+        #region Constants & Fields
+
         private const float DeadCleanupInterval = 10f;
         private const float LootRefreshCooldown = 4f;
 
-        private static GameObject _bootstrapHost;
-        private static readonly HashSet<int> KnownDeadBotIds = new HashSet<int>();
         private static readonly object GameWorldLock = new object();
+        private static readonly HashSet<int> KnownDeadBotIds = new HashSet<int>();
+        private static readonly ManualLogSource Logger = Plugin.LoggerInstance;
+
+        private static GameObject _bootstrapHost;
 
         private static float _lastCleanupTime = -999f;
         private static float _lastLootRefresh = -999f;
         private static bool _isRecovering;
         private static bool _hasShutdown;
 
-        private static ManualLogSource Logger => Plugin.LoggerInstance;
+        #endregion
+
+        #region State
 
         public static bool IsInitialized { get; private set; }
 
@@ -116,6 +122,10 @@ namespace AIRefactored.Core
             }
         }
 
+        #endregion
+
+        #region World Recovery & Validation
+
         public static void ForceAssign(GameWorld world)
         {
             if (world != null && !Singleton<GameWorld>.Instantiated)
@@ -129,6 +139,24 @@ namespace AIRefactored.Core
         {
             GameWorld[] found = UnityEngine.Object.FindObjectsOfType<GameWorld>();
             return found.Length > 0 ? found[0] : null;
+        }
+
+        public static bool IsReady()
+        {
+            GameWorld world = TryGetGameWorld();
+
+            if (FikaHeadlessDetector.IsHeadless)
+            {
+                return world != null &&
+                       !string.IsNullOrEmpty(world.LocationId) &&
+                       !world.LocationId.Equals("unknown", StringComparison.OrdinalIgnoreCase);
+            }
+
+            return world != null &&
+                   world.RegisteredPlayers != null &&
+                   world.RegisteredPlayers.Count > 0 &&
+                   !string.IsNullOrEmpty(world.LocationId) &&
+                   !world.LocationId.Equals("unknown", StringComparison.OrdinalIgnoreCase);
         }
 
         public static string TryGetValidMapName()
@@ -172,22 +200,82 @@ namespace AIRefactored.Core
 
         public static bool TryForceResolveMapName() => TryGetValidMapName().Length > 0;
 
-        public static bool IsReady()
-        {
-            GameWorld world = TryGetGameWorld();
+        #endregion
 
-            if (FikaHeadlessDetector.IsHeadless)
+        #region Bootstrapping
+
+        public static void Initialize(GameWorld world)
+        {
+            if (IsInitialized || _hasShutdown)
             {
-                return world != null &&
-                       !string.IsNullOrEmpty(world.LocationId) &&
-                       !world.LocationId.Equals("unknown", StringComparison.OrdinalIgnoreCase);
+                LogSafe("[GameWorldHandler] Already initialized or shut down — skipping.");
+                return;
             }
 
-            return world != null &&
-                   world.RegisteredPlayers != null &&
-                   world.RegisteredPlayers.Count > 0 &&
-                   !string.IsNullOrEmpty(world.LocationId) &&
-                   !world.LocationId.Equals("unknown", StringComparison.OrdinalIgnoreCase);
+            if (world == null || world.RegisteredPlayers == null || world.RegisteredPlayers.Count == 0)
+            {
+                LogSafe("[GameWorldHandler] Invalid GameWorld — skipping initialization.");
+                return;
+            }
+
+            bool hasValid = false;
+            for (int i = 0; i < world.RegisteredPlayers.Count; i++)
+            {
+                var p = EFTPlayerUtil.AsEFTPlayer(world.RegisteredPlayers[i]);
+                if (p != null && EFTPlayerUtil.IsValid(p))
+                {
+                    hasValid = true;
+                    break;
+                }
+            }
+
+            if (!hasValid)
+            {
+                LogSafe("[GameWorldHandler] No valid EFT players — aborting init.");
+                return;
+            }
+
+            try
+            {
+                ForceAssign(world);
+
+                LootRegistry.Initialize();
+                NavPointRegistry.Initialize();
+                HotspotRegistry.Clear();
+
+                string mapId = TryGetValidMapName();
+                if (mapId.Length > 0)
+                {
+                    NavPointBootstrapper.RegisterAll(mapId);
+                    HotspotRegistry.Initialize(mapId);
+                }
+                else
+                {
+                    LogSafe("[GameWorldHandler] Invalid mapId during initialization.");
+                }
+
+                HookBotSpawns();
+                IsInitialized = true;
+
+                LogSafe("[GameWorldHandler] ✅ AIRefactored world systems initialized.");
+            }
+            catch (Exception ex)
+            {
+                LogSafe("[GameWorldHandler] Initialization error: " + ex);
+            }
+        }
+
+        public static void Initialize()
+        {
+            GameWorld world = TryGetGameWorld();
+            if (world != null)
+            {
+                Initialize(world);
+            }
+            else
+            {
+                LogSafe("[GameWorldHandler] Initialize() failed — GameWorld was null.");
+            }
         }
 
         public static void HookBotSpawns()
@@ -265,6 +353,28 @@ namespace AIRefactored.Core
             }
         }
 
+        public static void Cleanup()
+        {
+            if (_hasShutdown)
+            {
+                return;
+            }
+
+            try
+            {
+                UnhookBotSpawns();
+                LogSafe("[GameWorldHandler] 🧼 World systems cleaned up.");
+            }
+            catch (Exception ex)
+            {
+                LogSafe("[GameWorldHandler] Cleanup error: " + ex);
+            }
+        }
+
+        #endregion
+
+        #region Bot Sync
+
         public static void TryAttachBotBrain(BotOwner bot)
         {
             if (bot == null || bot.IsDead)
@@ -302,6 +412,10 @@ namespace AIRefactored.Core
                 }
             }
         }
+
+        #endregion
+
+        #region Runtime
 
         public static void CleanupDeadBotsSmoothly()
         {
@@ -373,103 +487,9 @@ namespace AIRefactored.Core
             BotDeadBodyScanner.ScanAll();
         }
 
-        public static void Initialize(GameWorld world)
-        {
-            if (IsInitialized || _hasShutdown)
-            {
-                LogSafe("[GameWorldHandler] Already initialized or shut down — skipping.");
-                return;
-            }
+        #endregion
 
-            if (world == null)
-            {
-                LogSafe("[GameWorldHandler] Null GameWorld received during initialization.");
-                return;
-            }
-
-            if (world.RegisteredPlayers == null || world.RegisteredPlayers.Count == 0)
-            {
-                LogSafe("[GameWorldHandler] Initialization skipped — GameWorld has no players.");
-                return;
-            }
-
-            bool hasValid = false;
-            for (int i = 0; i < world.RegisteredPlayers.Count; i++)
-            {
-                var p = EFTPlayerUtil.AsEFTPlayer(world.RegisteredPlayers[i]);
-                if (p != null && EFTPlayerUtil.IsValid(p))
-                {
-                    hasValid = true;
-                    break;
-                }
-            }
-
-            if (!hasValid)
-            {
-                LogSafe("[GameWorldHandler] Initialization skipped — no valid EFT.Player in GameWorld.");
-                return;
-            }
-
-            try
-            {
-                ForceAssign(world);
-
-                LootRegistry.Initialize();
-                NavPointRegistry.Initialize();
-                HotspotRegistry.Clear();
-
-                string mapId = TryGetValidMapName();
-                if (mapId.Length > 0)
-                {
-                    NavPointBootstrapper.RegisterAll(mapId);
-                    HotspotRegistry.Initialize(mapId);
-                }
-                else
-                {
-                    LogSafe("[GameWorldHandler] Invalid mapId during initialization.");
-                }
-
-                HookBotSpawns();
-                IsInitialized = true;
-
-                LogSafe("[GameWorldHandler] ✅ AIRefactored world systems initialized.");
-            }
-            catch (Exception ex)
-            {
-                LogSafe("[GameWorldHandler] Error during world initialization: " + ex);
-            }
-        }
-
-        public static void Initialize()
-        {
-            GameWorld world = TryGetGameWorld();
-            if (world != null)
-            {
-                Initialize(world);
-            }
-            else
-            {
-                LogSafe("[GameWorldHandler] Initialize() failed — GameWorld was null.");
-            }
-        }
-
-        public static void Cleanup()
-        {
-            if (_hasShutdown)
-            {
-                return;
-            }
-
-            try
-            {
-                UnhookBotSpawns();
-                LogSafe("[GameWorldHandler] 🧼 World systems cleaned up.");
-            }
-            catch (Exception ex)
-            {
-                LogSafe("[GameWorldHandler] Cleanup error: " + ex);
-            }
-        }
+        #region Logging
 
         private static void LogSafe(string message)
         {
@@ -479,8 +499,10 @@ namespace AIRefactored.Core
             }
             catch
             {
-                // Silent fallback
+                // Silent fallback — logger unavailable
             }
         }
+
+        #endregion
     }
 }

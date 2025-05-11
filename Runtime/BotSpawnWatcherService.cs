@@ -26,7 +26,13 @@ namespace AIRefactored.Runtime
 	/// </summary>
 	public sealed class BotSpawnWatcherService : IAIWorldSystemBootstrapper
 	{
+		#region Constants
+
 		private const float PollInterval = 1.5f;
+
+		#endregion
+
+		#region Fields
 
 		private static readonly HashSet<int> SeenBotIds = new HashSet<int>();
 		private static readonly ManualLogSource Logger = Plugin.LoggerInstance;
@@ -35,12 +41,16 @@ namespace AIRefactored.Runtime
 		private static bool _hasWarnedInvalid;
 		private static bool _hasLoggedReset;
 
+		#endregion
+
+		#region Lifecycle
+
 		public void Initialize()
 		{
 			try
 			{
-				_hasLoggedReset = false;
 				Reset();
+				_hasLoggedReset = false;
 				Logger.LogDebug("[BotSpawnWatcher] Initialized.");
 			}
 			catch (Exception ex)
@@ -60,6 +70,7 @@ namespace AIRefactored.Runtime
 						Logger.LogWarning("[BotSpawnWatcher] GameWorld not ready or not host — deferring.");
 						_hasWarnedInvalid = true;
 					}
+
 					return;
 				}
 
@@ -74,6 +85,7 @@ namespace AIRefactored.Runtime
 				{
 					return;
 				}
+
 				_nextPollTime = now + PollInterval;
 
 				List<Player> players = GameWorldHandler.GetAllAlivePlayers();
@@ -93,6 +105,7 @@ namespace AIRefactored.Runtime
 
 					GameObject go = player.gameObject;
 					int id = go.GetInstanceID();
+
 					if (!SeenBotIds.Add(id))
 					{
 						continue;
@@ -106,6 +119,7 @@ namespace AIRefactored.Runtime
 							existingBrain.enabled = true;
 							Logger.LogWarning("[BotSpawnWatcher] Re-enabled disabled brain: " + player.ProfileId);
 						}
+
 						continue;
 					}
 
@@ -142,12 +156,13 @@ namespace AIRefactored.Runtime
 						brain.enabled = true;
 						brain.Initialize(owner);
 
-						Logger.LogDebug("[BotSpawnWatcher] ✅ Brain injected for bot: " + (player.Profile.Info.Nickname ?? "Unnamed"));
+						string nickname = player.Profile.Info.Nickname ?? "Unnamed";
+						Logger.LogDebug("[BotSpawnWatcher] ✅ Brain injected for bot: " + nickname);
 					}
 					catch (Exception ex)
 					{
-						string name = player.Profile?.Info?.Nickname ?? "Unknown";
-						Logger.LogError("[BotSpawnWatcher] ❌ Brain injection failed for: " + name + " — " + ex);
+						string nickname = player.Profile?.Info?.Nickname ?? "Unknown";
+						Logger.LogError("[BotSpawnWatcher] ❌ Brain injection failed for: " + nickname + " — " + ex);
 					}
 				}
 			}
@@ -187,9 +202,13 @@ namespace AIRefactored.Runtime
 			}
 			catch
 			{
-				// Logger may not be ready
+				// Logger might be unavailable
 			}
 		}
+
+		#endregion
+
+		#region Integration
 
 		public bool IsReady()
 		{
@@ -200,5 +219,7 @@ namespace AIRefactored.Runtime
 		{
 			return WorldPhase.WorldReady;
 		}
+
+		#endregion
 	}
 }

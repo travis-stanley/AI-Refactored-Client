@@ -88,8 +88,8 @@ namespace AIRefactored.Runtime
                 Logger.LogError("[WorldTickDispatcher] Error during host destroy: " + ex);
             }
 
-            _host = null;
             _monoHost = null;
+            _host = null;
 
             Logger.LogDebug("[WorldTickDispatcher] Shutdown complete.");
         }

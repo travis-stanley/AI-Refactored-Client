@@ -22,9 +22,9 @@ namespace AIRefactored.Bootstrap
     using AIRefactored.Runtime;
     using BepInEx.Logging;
     using Comfort.Common;
+    using EFT;
     using Unity.AI.Navigation;
     using UnityEngine;
-    using EFT;
 
     public static class WorldBootstrapper
     {
@@ -164,12 +164,12 @@ namespace AIRefactored.Bootstrap
                     }
                 }
 
-                var players = GameWorldHandler.GetAllAlivePlayers();
+                List<Player> players = GameWorldHandler.GetAllAlivePlayers();
                 try
                 {
                     for (int i = 0; i < players.Count; i++)
                     {
-                        var player = players[i];
+                        Player player = players[i];
                         if (!EFTPlayerUtil.IsValid(player) || !player.IsAI)
                         {
                             continue;
@@ -215,7 +215,7 @@ namespace AIRefactored.Bootstrap
 
         #endregion
 
-        #region Utility
+        #region NavMesh Warmup
 
         private static IEnumerator DelayedNavMeshWarmup()
         {
@@ -273,8 +273,8 @@ namespace AIRefactored.Bootstrap
 
             for (int i = 0; i < world.RegisteredPlayers.Count; i++)
             {
-                var iPlayer = world.RegisteredPlayers[i];
-                var player = EFTPlayerUtil.AsEFTPlayer(iPlayer);
+                var raw = world.RegisteredPlayers[i];
+                var player = EFTPlayerUtil.AsEFTPlayer(raw);
                 if (player != null && EFTPlayerUtil.IsValid(player))
                 {
                     return true;
@@ -283,6 +283,10 @@ namespace AIRefactored.Bootstrap
 
             return false;
         }
+
+        #endregion
+
+        #region BotBrain Injection
 
         public static void EnforceBotBrain(Player player, BotOwner bot)
         {
@@ -322,7 +326,7 @@ namespace AIRefactored.Bootstrap
 
         #endregion
 
-        #region Registration
+        #region System Registration
 
         public static void RegisterSystem(IAIWorldSystemBootstrapper system)
         {

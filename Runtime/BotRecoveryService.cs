@@ -44,6 +44,9 @@ namespace AIRefactored.Runtime
 		private static bool _hasRescanned;
 		private static bool _hasInitialized;
 
+		/// <summary>
+		/// Singleton instance of BotRecoveryService.
+		/// </summary>
 		public static BotRecoveryService Instance { get; } = new BotRecoveryService();
 
 		#endregion
@@ -97,7 +100,7 @@ namespace AIRefactored.Runtime
 
 		#endregion
 
-		#region Ticking
+		#region Tick
 
 		public void Tick(float deltaTime)
 		{
@@ -145,7 +148,7 @@ namespace AIRefactored.Runtime
 
 		#endregion
 
-		#region Helpers
+		#region Recovery
 
 		private static void EnsureSpawnHook()
 		{
@@ -168,54 +171,48 @@ namespace AIRefactored.Runtime
 
 		private static void ValidateBotBrains(List<Player> players)
 		{
-			try
+			for (int i = 0; i < players.Count; i++)
 			{
-				for (int i = 0; i < players.Count; i++)
+				Player player = players[i];
+				if (!EFTPlayerUtil.IsValid(player) || !player.IsAI || player.gameObject == null)
 				{
-					Player player = players[i];
-					if (!EFTPlayerUtil.IsValid(player) || !player.IsAI || player.gameObject == null)
+					continue;
+				}
+
+				GameObject go = player.gameObject;
+				BotBrain brain = go.GetComponent<BotBrain>();
+
+				if (brain != null)
+				{
+					if (!brain.enabled)
 					{
-						continue;
+						brain.enabled = true;
+						Logger.LogWarning("[BotRecoveryService] Re-enabled disabled BotBrain for: " + player.ProfileId);
 					}
 
-					GameObject go = player.gameObject;
-					BotBrain brain = go.GetComponent<BotBrain>();
-					if (brain != null)
-					{
-						if (!brain.enabled)
-						{
-							brain.enabled = true;
-							Logger.LogWarning("[BotRecoveryService] Re-enabled disabled BotBrain for: " + player.ProfileId);
-						}
+					continue;
+				}
 
-						continue;
+				Logger.LogWarning("[BotRecoveryService] Bot missing brain — restoring: " + (player.Profile?.Info?.Nickname ?? "Unnamed"));
+				BotBrainGuardian.Enforce(go);
+
+				if (player.AIData != null && player.AIData.BotOwner != null)
+				{
+					try
+					{
+						GameWorldHandler.TryAttachBotBrain(player.AIData.BotOwner);
 					}
-
-					Logger.LogWarning("[BotRecoveryService] Bot missing brain — restoring: " + (player.Profile?.Info?.Nickname ?? "Unnamed"));
-					BotBrainGuardian.Enforce(go);
-
-					if (player.AIData != null && player.AIData.BotOwner != null)
+					catch (Exception ex)
 					{
-						try
-						{
-							GameWorldHandler.TryAttachBotBrain(player.AIData.BotOwner);
-						}
-						catch (Exception ex)
-						{
-							Logger.LogError("[BotRecoveryService] Error attaching BotBrain to BotOwner: " + ex);
-						}
-					}
-
-					if (!_hasRescanned)
-					{
-						_hasRescanned = true;
-						RescanWorld();
+						Logger.LogError("[BotRecoveryService] Error attaching BotBrain to BotOwner: " + ex);
 					}
 				}
-			}
-			catch (Exception ex)
-			{
-				Logger.LogError("[BotRecoveryService] ValidateBotBrains error: " + ex);
+
+				if (!_hasRescanned)
+				{
+					_hasRescanned = true;
+					RescanWorld();
+				}
 			}
 		}
 

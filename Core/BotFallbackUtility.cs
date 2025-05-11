@@ -19,9 +19,15 @@ namespace AIRefactored.Core
     /// </summary>
     public static class BotFallbackUtility
     {
+        #region Fields
+
         private static readonly ManualLogSource Logger = Plugin.LoggerInstance;
 
         private static readonly HashSet<string> FallbackBots = new HashSet<string>();
+
+        #endregion
+
+        #region API
 
         /// <summary>
         /// Fully disables AIRefactored logic and activates base EFT AI for this bot.
@@ -41,30 +47,25 @@ namespace AIRefactored.Core
             }
 
             string profileId = player.Profile.Id;
-            if (string.IsNullOrEmpty(profileId))
+            if (string.IsNullOrEmpty(profileId) || FallbackBots.Contains(profileId))
             {
                 return;
             }
 
-            if (FallbackBots.Contains(profileId))
-            {
-                return;
-            }
-
-            // Mark once per bot
             FallbackBots.Add(profileId);
 
-            // Try enable fallback base logic
-            var brain = player.GetComponent<StandartBotBrain>();
+            StandartBotBrain brain = player.GetComponent<StandartBotBrain>();
             if (brain != null)
             {
                 brain.Activate();
-                Logger.LogWarning($"[Fallback] Bot {profileId} reverted to native EFT AI via StandartBotBrain.Activate().");
+                Logger.LogWarning("[Fallback] Bot " + profileId + " reverted to native EFT AI (StandartBotBrain).");
             }
             else
             {
-                Logger.LogError($"[Fallback] Bot {profileId} has no StandartBotBrain — cannot revert.");
+                Logger.LogError("[Fallback] Bot " + profileId + " has no StandartBotBrain — cannot revert.");
             }
         }
+
+        #endregion
     }
 }

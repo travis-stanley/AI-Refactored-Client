@@ -62,6 +62,7 @@ namespace AIRefactored
         private static readonly BotComponentCache _nullCacheFallback = new BotComponentCache();
 
         private static bool _debug = true;
+
         private static ManualLogSource Logger => Plugin.LoggerInstance;
 
         public static void Clear()
@@ -223,13 +224,7 @@ namespace AIRefactored
 
         public static bool TryGetRefactoredOwner(string profileId, out AIRefactoredBotOwner owner)
         {
-            if (string.IsNullOrEmpty(profileId))
-            {
-                owner = _nullOwnerFallback;
-                return false;
-            }
-
-            if (!_ownerRegistry.TryGetValue(profileId, out owner) || owner == null)
+            if (string.IsNullOrEmpty(profileId) || !_ownerRegistry.TryGetValue(profileId, out owner) || owner == null)
             {
                 owner = _nullOwnerFallback;
                 return false;
@@ -240,13 +235,7 @@ namespace AIRefactored
 
         public static bool TryGetCache(string profileId, out BotComponentCache cache)
         {
-            if (string.IsNullOrEmpty(profileId))
-            {
-                cache = _nullCacheFallback;
-                return false;
-            }
-
-            if (!_ownerRegistry.TryGetValue(profileId, out var owner) || owner.Cache == null)
+            if (string.IsNullOrEmpty(profileId) || !_ownerRegistry.TryGetValue(profileId, out var owner) || owner.Cache == null)
             {
                 cache = _nullCacheFallback;
                 return false;

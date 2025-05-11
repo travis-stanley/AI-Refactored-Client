@@ -23,10 +23,16 @@ namespace AIRefactored.Runtime
     /// </summary>
     public sealed class AIRefactoredController : MonoBehaviour
     {
+        #region Fields
+
         private static GameObject _host;
         private static AIRefactoredController _instance;
         private static bool _initialized;
         private static bool _raidActive;
+
+        #endregion
+
+        #region Properties
 
         /// <summary>
         /// Gets the global log source for AI-Refactored.
@@ -38,12 +44,16 @@ namespace AIRefactored.Runtime
                 ManualLogSource log = Plugin.LoggerInstance;
                 if (log == null)
                 {
-                    throw new InvalidOperationException("[AIRefactoredController] Logger accessed before Plugin initialized.");
+                    throw new InvalidOperationException("[AIRefactoredController] Logger accessed before plugin initialized.");
                 }
 
                 return log;
             }
         }
+
+        #endregion
+
+        #region Public API
 
         /// <summary>
         /// Initializes the AIRefactoredController and host object once.
@@ -59,7 +69,7 @@ namespace AIRefactored.Runtime
             try
             {
                 _host = new GameObject("AIRefactoredHost");
-                UnityEngine.Object.DontDestroyOnLoad(_host);
+                DontDestroyOnLoad(_host);
 
                 _instance = _host.AddComponent<AIRefactoredController>();
                 _host.AddComponent<GameWorldSpawnHook>();
@@ -78,6 +88,7 @@ namespace AIRefactored.Runtime
         /// <summary>
         /// Called when a raid begins and GameWorld is fully available.
         /// </summary>
+        /// <param name="world">GameWorld instance from EFT.</param>
         public static void OnRaidStarted(GameWorld world)
         {
             if (!_initialized || _raidActive || world == null)
@@ -102,8 +113,9 @@ namespace AIRefactored.Runtime
                 bool hasValid = false;
                 for (int i = 0; i < world.RegisteredPlayers.Count; i++)
                 {
-                    var p = EFTPlayerUtil.AsEFTPlayer(world.RegisteredPlayers[i]);
-                    if (p != null && EFTPlayerUtil.IsValid(p))
+                    IPlayer raw = world.RegisteredPlayers[i];
+                    Player player = EFTPlayerUtil.AsEFTPlayer(raw);
+                    if (player != null && EFTPlayerUtil.IsValid(player))
                     {
                         hasValid = true;
                         break;
@@ -151,6 +163,10 @@ namespace AIRefactored.Runtime
             }
         }
 
+        #endregion
+
+        #region Unity Lifecycle
+
         private void Update()
         {
             if (WorldInitState.IsInitialized)
@@ -177,5 +193,7 @@ namespace AIRefactored.Runtime
                 Logger.LogError("[AIRefactoredController] OnDestroy error: " + ex);
             }
         }
+
+        #endregion
     }
 }

@@ -19,8 +19,14 @@ namespace AIRefactored.Bootstrap
     /// </summary>
     public sealed class HotspotRegistryBootstrapper : IAIWorldSystemBootstrapper
     {
+        #region Fields
+
         private static readonly ManualLogSource Logger = Plugin.LoggerInstance;
         private bool _isInitialized;
+
+        #endregion
+
+        #region Lifecycle
 
         /// <inheritdoc />
         public void Initialize()
@@ -58,14 +64,7 @@ namespace AIRefactored.Bootstrap
         /// <inheritdoc />
         public void Tick(float deltaTime)
         {
-            try
-            {
-                // No runtime logic yet; reserved for future validation or dynamic linking.
-            }
-            catch (Exception ex)
-            {
-                Logger.LogError("[HotspotRegistry] Tick() error: " + ex);
-            }
+            // Reserved for future validation or dynamic linking.
         }
 
         /// <inheritdoc />
@@ -94,5 +93,7 @@ namespace AIRefactored.Bootstrap
         {
             return WorldPhase.WorldReady;
         }
+
+        #endregion
     }
 }

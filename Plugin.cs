@@ -15,17 +15,19 @@ namespace AIRefactored
     using BepInEx.Logging;
 
     /// <summary>
-    /// Entry point for AI-Refactored mod. Safe for both client and headless bootup.
+    /// Entry point for AI-Refactored mod. Safe for both FIKA Headless and traditional Client boot.
     /// </summary>
     [BepInPlugin("com.spock.airefactored", "AI-Refactored (Host Only)", "1.0.0")]
     public sealed class Plugin : BaseUnityPlugin
     {
+        #region Static
+
         private static ManualLogSource _logger;
         private static bool _initialized;
-        private static readonly object LockObj = new object();
+        private static readonly object InitLock = new object();
 
         /// <summary>
-        /// Gets the shared logger instance for AIRefactored systems.
+        /// Gets the shared logger instance for all AI-Refactored systems.
         /// </summary>
         public static ManualLogSource LoggerInstance
         {
@@ -33,16 +35,20 @@ namespace AIRefactored
             {
                 if (_logger == null)
                 {
-                    throw new InvalidOperationException("[Plugin] LoggerInstance accessed before initialization.");
+                    throw new InvalidOperationException("[AIRefactored] LoggerInstance accessed before plugin Awake.");
                 }
 
                 return _logger;
             }
         }
 
+        #endregion
+
+        #region Unity Lifecycle
+
         private void Awake()
         {
-            lock (LockObj)
+            lock (InitLock)
             {
                 if (_initialized)
                 {
@@ -52,45 +58,45 @@ namespace AIRefactored
 
                 try
                 {
-                    _logger = Logger;
-                    LoggerInstance.LogDebug("[AIRefactored] Plugin Awake — bootstrapping controller.");
+                    _logger = base.Logger;
+                    _logger.LogDebug("[AIRefactored] Plugin Awake — initializing controller.");
 
-                    // Initializes host object and hooks GameWorldSpawnHook internally
                     AIRefactoredController.Initialize();
-                    _initialized = true;
 
-                    LoggerInstance.LogDebug("[AIRefactored] ✅ AIRefactoredController.Initialize() complete.");
+                    _initialized = true;
+                    _logger.LogInfo("[AIRefactored] ✅ AIRefactoredController.Initialize() complete.");
                 }
                 catch (Exception ex)
                 {
-                    LoggerInstance.LogError("[AIRefactored] Plugin Awake failed: " + ex);
+                    if (_logger != null)
+                    {
+                        _logger.LogError("[AIRefactored] Plugin Awake failed: " + ex);
+                    }
                 }
             }
         }
 
         private void OnDestroy()
         {
-            lock (LockObj)
+            lock (InitLock)
             {
                 _initialized = false;
             }
 
-            try
+            if (_logger != null)
             {
-                if (_logger != null)
+                try
                 {
                     _logger.LogDebug("[AIRefactored] Plugin OnDestroy — cleaning up.");
+                    GameWorldHandler.UnhookBotSpawns();
                 }
-
-                GameWorldHandler.UnhookBotSpawns();
-            }
-            catch (Exception ex)
-            {
-                if (_logger != null)
+                catch (Exception ex)
                 {
                     _logger.LogError("[AIRefactored] Plugin OnDestroy error: " + ex);
                 }
             }
         }
+
+        #endregion
     }
 }

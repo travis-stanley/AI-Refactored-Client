@@ -28,6 +28,7 @@ namespace AIRefactored.Bootstrap
 	public static class LootBootstrapper
 	{
 		private const float MaxCorpseLinkDistance = 1.5f;
+
 		private static readonly ManualLogSource Logger = Plugin.LoggerInstance;
 
 		/// <summary>
@@ -110,13 +111,11 @@ namespace AIRefactored.Bootstrap
 			{
 				for (int i = 0; i < players.Count; i++)
 				{
-					Player player = players[i];
-					if (!EFTPlayerUtil.IsValid(player) || player.HealthController.IsAlive)
+					Player p = players[i];
+					if (EFTPlayerUtil.IsValid(p) && !p.HealthController.IsAlive)
 					{
-						continue;
+						deadPlayers.Add(p);
 					}
-
-					deadPlayers.Add(player);
 				}
 
 				for (int i = 0; i < deadPlayers.Count; i++)
@@ -151,6 +150,7 @@ namespace AIRefactored.Bootstrap
 			finally
 			{
 				TempListPool.Return(deadPlayers);
+				TempListPool.Return(players);
 			}
 		}
 	}

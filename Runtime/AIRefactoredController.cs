@@ -76,8 +76,8 @@ namespace AIRefactored.Runtime
                 s_Host.AddComponent<GameWorldSpawnHook>();
 
                 WorldTickDispatcher.Initialize();
-                s_Initialized = true;
 
+                s_Initialized = true;
                 Logger.LogDebug("[AIRefactoredController] ✅ Initialization complete. Waiting for GameWorldSpawnHook...");
             }
             catch (Exception ex)
@@ -155,6 +155,7 @@ namespace AIRefactored.Runtime
             try
             {
                 Logger.LogDebug("[AIRefactoredController] 🧹 Raid ended. Tearing down world systems...");
+
                 WorldBootstrapper.Stop();
                 GameWorldHandler.Cleanup();
                 BotRecoveryService.Reset();

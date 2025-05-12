@@ -45,92 +45,101 @@ namespace AIRefactored.AI.Optimization
 			Vector3 retreatDirection = -threatDirection.normalized;
 
 			// === Priority 1: NavPoint-based cover ===
-			List<Vector3> navCoverPoints = NavPointRegistry.QueryNearby(
-				origin,
-				NavpointSearchRadius,
-				p =>
-				{
-					Vector3 toCandidate = (p - origin).normalized;
-					return NavPointRegistry.IsCoverPoint(p) &&
-						   Vector3.Dot(toCandidate, retreatDirection) > MinDotCover;
-				},
-				true);
-
-			try
+			if (NavMeshStatus.IsReady)
 			{
-				if (navCoverPoints.Count > 0)
-				{
-					Vector3 best = Vector3.zero;
-					float bestScore = float.MinValue;
-
-					for (int i = 0; i < navCoverPoints.Count; i++)
+				List<Vector3> navCoverPoints = NavPointRegistry.QueryNearby(
+					origin,
+					NavpointSearchRadius,
+					p =>
 					{
-						float score = CoverScorer.ScoreCoverPoint(bot, navCoverPoints[i], threatDirection);
-						if (score > bestScore)
-						{
-							bestScore = score;
-							best = navCoverPoints[i];
-						}
-					}
+						Vector3 toCandidate = (p - origin).normalized;
+						return NavPointRegistry.IsCoverPoint(p) &&
+							   Vector3.Dot(toCandidate, retreatDirection) > MinDotCover;
+					},
+					true);
 
-					return best;
-				}
-			}
-			finally
-			{
-				TempListPool.Return(navCoverPoints);
-			}
-
-			// === Priority 2: Hotspot fallback zones ===
-			List<HotspotRegistry.Hotspot> fallbackHotspots = HotspotRegistry.QueryNearby(
-				origin,
-				HotspotSearchRadius,
-				h =>
-				{
-					Vector3 toHotspot = (h.Position - origin).normalized;
-					return Vector3.Dot(toHotspot, retreatDirection) > MinDotHotspot;
-				});
-
-			try
-			{
-				if (fallbackHotspots.Count > 0)
-				{
-					Vector3 closest = Vector3.zero;
-					float minDist = float.MaxValue;
-
-					for (int i = 0; i < fallbackHotspots.Count; i++)
-					{
-						float dist = Vector3.Distance(origin, fallbackHotspots[i].Position);
-						if (dist < minDist)
-						{
-							minDist = dist;
-							closest = fallbackHotspots[i].Position;
-						}
-					}
-
-					return closest;
-				}
-			}
-			finally
-			{
-				TempListPool.Return(fallbackHotspots);
-			}
-
-			// === Priority 3: Dynamic fallback path ===
-			BotOwnerPathfindingCache pathCache = BotCacheUtility.GetCache(bot)?.Pathing;
-			if (pathCache != null)
-			{
-				List<Vector3> path = BotCoverRetreatPlanner.GetCoverRetreatPath(bot, threatDirection, pathCache);
 				try
 				{
-					if (path.Count >= 2)
+					if (navCoverPoints.Count > 0)
 					{
-						return path[path.Count - 1];
+						Vector3 best = Vector3.zero;
+						float bestScore = float.MinValue;
+
+						for (int i = 0; i < navCoverPoints.Count; i++)
+						{
+							float score = CoverScorer.ScoreCoverPoint(bot, navCoverPoints[i], threatDirection);
+							if (score > bestScore)
+							{
+								bestScore = score;
+								best = navCoverPoints[i];
+							}
+						}
+
+						return best;
 					}
 				}
 				finally
 				{
-					TempListPool.Return(path);
+					TempListPool.Return(navCoverPoints);
+				}
+			}
+
+			// === Priority 2: Hotspot fallback zones ===
+			if (NavMeshStatus.IsReady)
+			{
+				List<HotspotRegistry.Hotspot> fallbackHotspots = HotspotRegistry.QueryNearby(
+					origin,
+					HotspotSearchRadius,
+					h =>
+					{
+						Vector3 toHotspot = (h.Position - origin).normalized;
+						return Vector3.Dot(toHotspot, retreatDirection) > MinDotHotspot;
+					});
+
+				try
+				{
+					if (fallbackHotspots.Count > 0)
+					{
+						Vector3 closest = Vector3.zero;
+						float minDist = float.MaxValue;
+
+						for (int i = 0; i < fallbackHotspots.Count; i++)
+						{
+							float dist = Vector3.Distance(origin, fallbackHotspots[i].Position);
+							if (dist < minDist)
+							{
+								minDist = dist;
+								closest = fallbackHotspots[i].Position;
+							}
+						}
+
+						return closest;
+					}
+				}
+				finally
+				{
+					TempListPool.Return(fallbackHotspots);
+				}
+			}
+
+			// === Priority 3: Dynamic fallback path ===
+			if (NavMeshStatus.IsReady)
+			{
+				BotOwnerPathfindingCache pathCache = BotCacheUtility.GetCache(bot)?.Pathing;
+				if (pathCache != null)
+				{
+					List<Vector3> path = BotCoverRetreatPlanner.GetCoverRetreatPath(bot, threatDirection, pathCache);
+					try
+					{
+						if (path.Count >= 2)
+						{
+							return path[path.Count - 1];
+						}
+					}
+					finally
+					{
+						TempListPool.Return(path);
+					}
 				}
 			}
 
@@ -141,7 +150,7 @@ namespace AIRefactored.AI.Optimization
 				return losBreak;
 			}
 
-			// Final fallback: let SmoothMoveTo handle default EFT fallback
+			// Final fallback: allow vanilla smooth move to handle it
 			return Vector3.zero;
 		}
 

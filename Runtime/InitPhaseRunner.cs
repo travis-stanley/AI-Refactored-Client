@@ -10,11 +10,13 @@ namespace AIRefactored.Runtime
 {
     using System;
     using AIRefactored.AI.Core;
+    using AIRefactored.AI.Navigation;
     using AIRefactored.Bootstrap;
     using AIRefactored.Core;
     using BepInEx.Logging;
     using Comfort.Common;
     using EFT;
+    using UnityEngine;
 
     /// <summary>
     /// Orchestrates the full AI-Refactored initialization lifecycle using staged world boot phases.
@@ -59,6 +61,9 @@ namespace AIRefactored.Runtime
 
                 WorldInitState.SetPhase(WorldPhase.AwaitWorld);
 
+                NavMeshStatus.Reset();
+                NavMeshWarmupManager.TryPrebuildNavMesh();
+
                 GameWorldHandler.Initialize();
                 WorldBootstrapper.Begin(logger);
 
@@ -92,6 +97,7 @@ namespace AIRefactored.Runtime
                 WorldTickDispatcher.Reset();
                 WorldBootstrapper.Stop();
                 GameWorldHandler.Cleanup();
+                NavMeshStatus.Reset();
 
                 Plugin.LoggerInstance.LogDebug("[InitPhaseRunner] 🧹 Cleanup complete — init state reset.");
             }

@@ -260,6 +260,8 @@ namespace AIRefactored.Bootstrap
                 }
             }
 
+            NavMeshStatus.SetReady();
+
             Logger.LogInfo("[WorldBootstrapper] ✅ NavMesh warmup complete.");
         }
 

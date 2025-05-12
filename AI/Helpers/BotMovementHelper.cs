@@ -13,6 +13,8 @@ namespace AIRefactored.AI.Helpers
     using AIRefactored.AI.Core;
     using AIRefactored.AI.Movement;
     using AIRefactored.AI.Optimization;
+    using AIRefactored.AI.Navigation;
+    using AIRefactored.Core;
     using AIRefactored.Pools;
     using EFT;
     using UnityEngine;
@@ -36,7 +38,6 @@ namespace AIRefactored.AI.Helpers
 
         public static void Reset(BotOwner bot)
         {
-            // Reserved for future movement interrupt/clear logic
         }
 
         public static void RetreatToCover(BotOwner bot, Vector3 threatDirection, float distance = RetreatDistance, bool sprint = true)
@@ -48,19 +49,24 @@ namespace AIRefactored.AI.Helpers
 
             Vector3 fallback = bot.Position - threatDirection.normalized * distance;
 
-            BotComponentCache cache = BotCacheUtility.GetCache(bot);
-            if (cache != null && cache.Pathing != null)
+            if (NavMeshStatus.IsReady)
             {
-                List<Vector3> path = BotCoverRetreatPlanner.GetCoverRetreatPath(bot, threatDirection, cache.Pathing);
-                for (int i = path.Count - 1; i >= 0; i--)
+                BotComponentCache cache = BotCacheUtility.GetCache(bot);
+                if (cache != null && cache.Pathing != null)
                 {
-                    Vector3 point = path[i];
-                    if (!BotCoverHelper.WasRecentlyUsed(point))
+                    List<Vector3> path = BotCoverRetreatPlanner.GetCoverRetreatPath(bot, threatDirection, cache.Pathing);
+                    for (int i = path.Count - 1; i >= 0; i--)
                     {
-                        fallback = point;
-                        break;
+                        Vector3 point = path[i];
+                        if (!BotCoverHelper.WasRecentlyUsed(point))
+                        {
+                            fallback = point;
+                            break;
+                        }
                     }
                 }
+
+                BotCoverHelper.MarkUsed(fallback);
             }
 
             float cohesion = 1f;
@@ -76,7 +82,6 @@ namespace AIRefactored.AI.Helpers
                 }
             }
 
-            BotCoverHelper.MarkUsed(fallback);
             bot.Mover.GoToPoint(fallback, true, cohesion);
 
             if (shouldSprint)
@@ -140,18 +145,20 @@ namespace AIRefactored.AI.Helpers
                 return;
             }
 
-            BotComponentCache cache = BotCacheUtility.GetCache(bot);
-            if (cache != null && cache.Pathing != null)
+            if (NavMeshStatus.IsReady)
             {
-                Vector3? point = BotCoverRetreatPlanner.GetSafeExtractionPoint(bot, cache.Pathing);
-                if (point.HasValue)
+                BotComponentCache cache = BotCacheUtility.GetCache(bot);
+                if (cache != null && cache.Pathing != null)
                 {
-                    bot.Mover.GoToPoint(point.Value, true, 1f);
-                    return;
+                    Vector3? point = BotCoverRetreatPlanner.GetSafeExtractionPoint(bot, cache.Pathing);
+                    if (point.HasValue)
+                    {
+                        bot.Mover.GoToPoint(point.Value, true, 1f);
+                        return;
+                    }
                 }
             }
 
-            // Fallback safety if retreat planner fails
             Vector3 fallback = bot.Position + bot.LookDirection.normalized * 4f;
             bot.Mover.GoToPoint(fallback, true, 1f);
         }
@@ -183,16 +190,18 @@ namespace AIRefactored.AI.Helpers
             }
 
             Vector3 dir = bot.LookDirection;
-            Vector3? point = HybridFallbackResolver.GetBestRetreatPoint(bot, dir);
-            if (point.HasValue)
+
+            if (NavMeshStatus.IsReady)
             {
-                bot.Mover.GoToPoint(point.Value, true, 1f);
+                Vector3? point = HybridFallbackResolver.GetBestRetreatPoint(bot, dir);
+                if (point.HasValue)
+                {
+                    bot.Mover.GoToPoint(point.Value, true, 1f);
+                    return;
+                }
             }
-            else
-            {
-                // Hard fallback to vanilla move forward
-                bot.Mover.GoToPoint(bot.Position + dir.normalized * 5f, true, 1f);
-            }
+
+            bot.Mover.GoToPoint(bot.Position + dir.normalized * 5f, true, 1f);
         }
 
         #endregion

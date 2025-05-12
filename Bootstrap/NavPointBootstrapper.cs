@@ -56,16 +56,17 @@ namespace AIRefactored.AI.Navigation
 
 		public static void RegisterAll(string mapId)
 		{
-			if (_isRunning || !GameWorldHandler.IsHost || !GameWorldHandler.IsInitialized)
+			Reset();
+
+			if (!GameWorldHandler.IsHost || !GameWorldHandler.IsInitialized)
 			{
-				Logger.LogWarning("[NavPointBootstrapper] Skipped — already running or not host.");
+				Logger.LogWarning("[NavPointBootstrapper] Skipped — not host or world not initialized.");
 				return;
 			}
 
 			_isRunning = true;
 			_registered = 0;
-			ScanQueue.Clear();
-			BackgroundPending.Clear();
+			NavMeshStatus.Reset();
 
 			NavMeshSurface surface = UnityEngine.Object.FindObjectOfType<NavMeshSurface>();
 			if (surface == null)
@@ -125,68 +126,60 @@ namespace AIRefactored.AI.Navigation
 
 		public static void Tick()
 		{
-			try
+			if (!_isRunning || !GameWorldHandler.IsHost)
 			{
-				if (!_isRunning || !GameWorldHandler.IsHost)
-				{
-					return;
-				}
-
-				int maxPerFrame = FikaHeadlessDetector.IsHeadless ? 80 : 40;
-				int processed = 0;
-
-				while (ScanQueue.Count > 0 && processed++ < maxPerFrame)
-				{
-					Vector3 probe = ScanQueue.Dequeue();
-
-					RaycastHit hit;
-					if (!Physics.Raycast(probe, Vector3.down, out hit, MaxSampleHeight))
-					{
-						continue;
-					}
-
-					Vector3 pos = hit.point;
-					NavMeshHit navHit;
-					if (!NavMesh.SamplePosition(pos, out navHit, 1.0f, NavMesh.AllAreas))
-					{
-						continue;
-					}
-
-					if (Physics.Raycast(pos + Vector3.up * 0.5f, Vector3.up, MinNavPointClearance))
-					{
-						continue;
-					}
-
-					Vector3 final = navHit.position;
-					float elevation = final.y - _center.y;
-					bool isCover = IsCoverPoint(final);
-					bool isIndoor = IsIndoorPoint(final);
-					string tag = ClassifyNavPoint(elevation, isCover, isIndoor);
-
-					NavPointRegistry.Register(final, isCover, tag, elevation, isIndoor);
-					_registered++;
-				}
-
-				if (ScanQueue.Count == 0 && BackgroundPending.Count > 0)
-				{
-					for (int i = 0; i < BackgroundPending.Count; i++)
-					{
-						ScanQueue.Enqueue(BackgroundPending[i]);
-					}
-
-					BackgroundPending.Clear();
-					Logger.LogDebug("[NavPointBootstrapper] Queued vertical fallback points.");
-				}
-
-				if (ScanQueue.Count == 0 && !_isTaskRunning)
-				{
-					_isRunning = false;
-					Logger.LogDebug("[NavPointBootstrapper] ✅ Completed — " + _registered + " nav points registered.");
-				}
+				return;
 			}
-			catch (Exception ex)
+
+			int maxPerFrame = FikaHeadlessDetector.IsHeadless ? 80 : 40;
+			int processed = 0;
+
+			while (ScanQueue.Count > 0 && processed++ < maxPerFrame)
 			{
-				Logger.LogError("[NavPointBootstrapper] Tick exception: " + ex);
+				Vector3 probe = ScanQueue.Dequeue();
+
+				if (!Physics.Raycast(probe, Vector3.down, out RaycastHit hit, MaxSampleHeight))
+				{
+					continue;
+				}
+
+				Vector3 pos = hit.point;
+				if (!NavMesh.SamplePosition(pos, out NavMeshHit navHit, 1.0f, NavMesh.AllAreas))
+				{
+					continue;
+				}
+
+				if (Physics.Raycast(pos + Vector3.up * 0.5f, Vector3.up, MinNavPointClearance))
+				{
+					continue;
+				}
+
+				Vector3 final = navHit.position;
+				float elevation = final.y - _center.y;
+				bool isCover = IsCoverPoint(final);
+				bool isIndoor = IsIndoorPoint(final);
+				string tag = ClassifyNavPoint(elevation, isCover, isIndoor);
+
+				NavPointRegistry.Register(final, isCover, tag, elevation, isIndoor);
+				_registered++;
+			}
+
+			if (ScanQueue.Count == 0 && BackgroundPending.Count > 0)
+			{
+				for (int i = 0; i < BackgroundPending.Count; i++)
+				{
+					ScanQueue.Enqueue(BackgroundPending[i]);
+				}
+
+				BackgroundPending.Clear();
+				Logger.LogDebug("[NavPointBootstrapper] Queued vertical fallback points.");
+			}
+
+			if (ScanQueue.Count == 0 && !_isTaskRunning)
+			{
+				_isRunning = false;
+				NavMeshStatus.SetReady();
+				Logger.LogDebug("[NavPointBootstrapper] ✅ Completed — " + _registered + " nav points registered.");
 			}
 		}
 
@@ -197,6 +190,7 @@ namespace AIRefactored.AI.Navigation
 			_registered = 0;
 			_isRunning = false;
 			_isTaskRunning = false;
+			NavMeshStatus.Reset();
 		}
 
 		#endregion

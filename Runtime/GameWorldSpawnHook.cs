@@ -10,6 +10,7 @@ namespace AIRefactored.Runtime
 {
     using System;
     using System.Reflection;
+    using AIRefactored.AI.Navigation;
     using AIRefactored.Core;
     using BepInEx.Logging;
     using Comfort.Common;
@@ -87,7 +88,21 @@ namespace AIRefactored.Runtime
                         return;
                     }
 
-                    Logger.LogDebug("[GameWorldSpawnHook] GameWorld initialized. Triggering InitPhaseRunner...");
+                    Logger.LogDebug("[GameWorldSpawnHook] GameWorld initialized. Triggering early systems...");
+
+                    NavMeshWarmupManager.TryPrebuildNavMesh();
+
+                    string mapId = GameWorldHandler.TryGetValidMapName();
+                    if (!string.IsNullOrEmpty(mapId))
+                    {
+                        NavPointRegistry.RegisterAll(mapId);
+                    }
+                    else
+                    {
+                        Logger.LogWarning("[GameWorldSpawnHook] Could not determine map ID for NavPoint registration.");
+                    }
+
+                    Logger.LogDebug("[GameWorldSpawnHook] Triggering InitPhaseRunner...");
                     InitPhaseRunner.Begin(Logger);
                 }
                 catch (Exception ex)

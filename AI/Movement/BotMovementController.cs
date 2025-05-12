@@ -11,6 +11,7 @@ namespace AIRefactored.AI.Movement
     using System;
     using AIRefactored.AI.Core;
     using AIRefactored.AI.Helpers;
+    using AIRefactored.AI.Navigation;
     using AIRefactored.Core;
     using AIRefactored.Pools;
     using AIRefactored.Runtime;
@@ -72,6 +73,11 @@ namespace AIRefactored.AI.Movement
                 return;
             }
 
+            if (!NavMeshStatus.IsReady && !_inLootingMode)
+            {
+                return;
+            }
+
             _jump.Tick(deltaTime);
 
             if (_cache.DoorInteraction != null)
@@ -109,20 +115,23 @@ namespace AIRefactored.AI.Movement
 
         private Vector3 SafeGetTargetPoint()
         {
-            if (_bot?.Mover == null)
-            {
-                return _bot.Position;
-            }
-
             try
             {
-                return _bot.Mover.LastTargetPoint(1.0f);
+                if (_bot?.Mover != null)
+                {
+                    Vector3 point = _bot.Mover.LastTargetPoint(1.0f);
+                    if (!float.IsNaN(point.x) && !float.IsNaN(point.y) && !float.IsNaN(point.z))
+                    {
+                        return point;
+                    }
+                }
             }
             catch (Exception ex)
             {
-                Logger.LogError($"[Movement] Exception in LastTargetPoint: {ex}");
-                return _bot.Position;
+                Logger.LogError("[Movement] Exception in LastTargetPoint: " + ex);
             }
+
+            return _bot != null ? _bot.Position : Vector3.zero;
         }
 
         private void ApplyInertia(Vector3 target, float deltaTime)

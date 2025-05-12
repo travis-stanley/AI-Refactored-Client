@@ -10,6 +10,7 @@ namespace AIRefactored.Runtime
 {
     using System;
     using AIRefactored.AI.Core;
+    using AIRefactored.AI.Navigation;
     using AIRefactored.Bootstrap;
     using AIRefactored.Core;
     using BepInEx.Logging;
@@ -34,9 +35,6 @@ namespace AIRefactored.Runtime
 
         #region Properties
 
-        /// <summary>
-        /// Gets the global log source for AI-Refactored.
-        /// </summary>
         public static ManualLogSource Logger
         {
             get
@@ -55,9 +53,6 @@ namespace AIRefactored.Runtime
 
         #region Public API
 
-        /// <summary>
-        /// Initializes the AIRefactoredController and host object once.
-        /// </summary>
         public static void Initialize()
         {
             if (_initialized)
@@ -69,7 +64,7 @@ namespace AIRefactored.Runtime
             try
             {
                 _host = new GameObject("AIRefactoredHost");
-                DontDestroyOnLoad(_host);
+                UnityEngine.Object.DontDestroyOnLoad(_host);
 
                 _instance = _host.AddComponent<AIRefactoredController>();
                 _host.AddComponent<GameWorldSpawnHook>();
@@ -85,10 +80,6 @@ namespace AIRefactored.Runtime
             }
         }
 
-        /// <summary>
-        /// Called when a raid begins and GameWorld is fully available.
-        /// </summary>
-        /// <param name="world">GameWorld instance from EFT.</param>
         public static void OnRaidStarted(GameWorld world)
         {
             if (!_initialized || _raidActive || world == null)
@@ -128,7 +119,20 @@ namespace AIRefactored.Runtime
                     return;
                 }
 
-                Logger.LogDebug("[AIRefactoredController] 🚀 Raid started. Bootstrapping world systems...");
+                Logger.LogDebug("[AIRefactoredController] 🚀 Raid started. Running prewarm systems...");
+
+                NavMeshWarmupManager.TryPrebuildNavMesh();
+
+                string mapId = GameWorldHandler.TryGetValidMapName();
+                if (!string.IsNullOrEmpty(mapId))
+                {
+                    NavPointRegistry.RegisterAll(mapId);
+                }
+                else
+                {
+                    Logger.LogWarning("[AIRefactoredController] Could not resolve map ID — NavPointRegistry skipped.");
+                }
+
                 GameWorldHandler.Initialize(world);
                 WorldBootstrapper.Begin(Logger);
                 _raidActive = true;
@@ -139,9 +143,6 @@ namespace AIRefactored.Runtime
             }
         }
 
-        /// <summary>
-        /// Called when raid ends or server shuts down.
-        /// </summary>
         public static void OnRaidEnded()
         {
             if (!_raidActive)

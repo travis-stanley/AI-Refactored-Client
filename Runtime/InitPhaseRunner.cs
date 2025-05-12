@@ -44,6 +44,12 @@ namespace AIRefactored.Runtime
                 return;
             }
 
+            if (FikaHeadlessDetector.IsHeadless && !FikaHeadlessDetector.HasRaidStarted())
+            {
+                logger?.LogDebug("[InitPhaseRunner] Skipped — FIKA Headless not ready.");
+                return;
+            }
+
             _hasStarted = true;
 
             try
@@ -62,7 +68,17 @@ namespace AIRefactored.Runtime
                 WorldInitState.SetPhase(WorldPhase.AwaitWorld);
 
                 NavMeshStatus.Reset();
-                NavMeshWarmupManager.TryPrebuildNavMesh();
+
+                string mapId = GameWorldHandler.TryGetValidMapName();
+                if (!string.IsNullOrEmpty(mapId))
+                {
+                    NavMeshWarmupManager.TryPrebuildNavMesh();
+                    NavPointRegistry.RegisterAll(mapId);
+                }
+                else
+                {
+                    logger?.LogWarning("[InitPhaseRunner] ❌ No valid map ID — skipping NavMesh and NavPoint prebuild.");
+                }
 
                 GameWorldHandler.Initialize();
                 WorldBootstrapper.Begin(logger);

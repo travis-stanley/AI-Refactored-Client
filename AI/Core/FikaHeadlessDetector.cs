@@ -10,6 +10,7 @@ namespace AIRefactored.AI.Core
 {
     using System;
     using System.Text.RegularExpressions;
+    using Fika.Headless.Classes;
     using UnityEngine;
 
     /// <summary>
@@ -18,38 +19,44 @@ namespace AIRefactored.AI.Core
     /// </summary>
     public static class FikaHeadlessDetector
     {
+        #region Fields
+
         private static readonly bool _isHeadless;
         private static readonly string _raidLocation;
+
+        #endregion
+
+        #region Properties
 
         /// <summary>
         /// Gets a value indicating whether the current client is in headless or batch mode.
         /// </summary>
-        public static bool IsHeadless
-        {
-            get { return _isHeadless; }
-        }
+        public static bool IsHeadless => _isHeadless;
 
         /// <summary>
         /// Gets the map name if parsed from FIKA headless arguments.
         /// Returns string.Empty if not in headless or if parsing failed.
         /// </summary>
-        public static string RaidLocationName
-        {
-            get { return _raidLocation; }
-        }
+        public static string RaidLocationName => _raidLocation;
 
         /// <summary>
         /// Gets a value indicating whether the headless environment has fully parsed its arguments.
         /// Used to delay logic until startup args are loaded.
         /// </summary>
-        public static bool IsReady
-        {
-            get { return _isHeadless && _raidLocation.Length > 0; }
-        }
+        public static bool IsReady => _isHeadless && _raidLocation.Length > 0;
 
         /// <summary>
-        /// Static constructor for environment detection.
+        /// Gets a value indicating whether the raid loading phase has started.
         /// </summary>
+        public static bool HasRaidStarted()
+        {
+            return !_isHeadless || HeadlessRaidControllerExists();
+        }
+
+        #endregion
+
+        #region Static Constructor
+
         static FikaHeadlessDetector()
         {
             _isHeadless = false;
@@ -58,16 +65,7 @@ namespace AIRefactored.AI.Core
             try
             {
                 string cmd = Environment.CommandLine;
-                bool foundHeadless = Application.isBatchMode;
-
-                if (!foundHeadless)
-                {
-                    int index = cmd.IndexOf("-nographics", StringComparison.OrdinalIgnoreCase);
-                    if (index >= 0)
-                    {
-                        foundHeadless = true;
-                    }
-                }
+                bool foundHeadless = Application.isBatchMode || cmd.IndexOf("-nographics", StringComparison.OrdinalIgnoreCase) >= 0;
 
                 _isHeadless = foundHeadless;
 
@@ -87,10 +85,15 @@ namespace AIRefactored.AI.Core
             }
         }
 
-        /// <summary>
-        /// Attempts to parse the raid location from the command line arguments.
-        /// </summary>
-        /// <returns>Returns the raid location if found; otherwise, returns string.Empty.</returns>
+        #endregion
+
+        #region Helpers
+
+        private static bool HeadlessRaidControllerExists()
+        {
+            return GameObject.FindObjectOfType<HeadlessRaidController>() != null;
+        }
+
         private static string TryParseRaidLocationFromArgs()
         {
             try
@@ -98,25 +101,23 @@ namespace AIRefactored.AI.Core
                 string cmd = Environment.CommandLine;
                 Match match = Regex.Match(cmd, "\"location\"\\s*:\\s*\"(.*?)\"", RegexOptions.IgnoreCase);
 
-                if (match.Success)
+                if (match.Success && match.Groups.Count > 1)
                 {
-                    GroupCollection groups = match.Groups;
-                    if (groups != null && groups.Count > 1)
+                    string location = match.Groups[1].Value;
+                    if (!string.IsNullOrEmpty(location))
                     {
-                        string location = groups[1].Value;
-                        if (!string.IsNullOrEmpty(location))
-                        {
-                            return location;
-                        }
+                        return location;
                     }
                 }
             }
             catch
             {
-                // Silent failure (safe in headless context)
+                // Fail-safe
             }
 
             return string.Empty;
         }
+
+        #endregion
     }
 }

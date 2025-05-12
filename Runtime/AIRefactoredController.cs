@@ -119,22 +119,11 @@ namespace AIRefactored.Runtime
                     return;
                 }
 
-                Logger.LogDebug("[AIRefactoredController] 🚀 Raid started. Running prewarm systems...");
-
-                NavMeshWarmupManager.TryPrebuildNavMesh();
-
-                string mapId = GameWorldHandler.TryGetValidMapName();
-                if (!string.IsNullOrEmpty(mapId))
-                {
-                    NavPointRegistry.RegisterAll(mapId);
-                }
-                else
-                {
-                    Logger.LogWarning("[AIRefactoredController] Could not resolve map ID — NavPointRegistry skipped.");
-                }
+                Logger.LogDebug("[AIRefactoredController] 🚀 Raid started. Initializing world systems...");
 
                 GameWorldHandler.Initialize(world);
                 WorldBootstrapper.Begin(Logger);
+
                 _raidActive = true;
             }
             catch (Exception ex)

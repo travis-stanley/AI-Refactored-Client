@@ -222,15 +222,15 @@ namespace AIRefactored.Bootstrap
             const int maxFrames = 300;
             int frame = 0;
 
-            while (!CanWarmupNavMesh() && frame++ < maxFrames)
+            while (!CanWarmupNavMesh() || (FikaHeadlessDetector.IsHeadless && !FikaHeadlessDetector.HasRaidStarted()))
             {
-                yield return null;
-            }
+                if (frame++ >= maxFrames)
+                {
+                    Logger.LogWarning("[WorldBootstrapper] NavMesh warmup timed out — world or FIKA headless not ready.");
+                    yield break;
+                }
 
-            if (!CanWarmupNavMesh())
-            {
-                Logger.LogWarning("[WorldBootstrapper] NavMesh warmup timed out waiting for valid world.");
-                yield break;
+                yield return null;
             }
 
             Logger.LogInfo("[WorldBootstrapper] Starting NavMesh warmup...");
@@ -261,7 +261,6 @@ namespace AIRefactored.Bootstrap
             }
 
             NavMeshStatus.SetReady();
-
             Logger.LogInfo("[WorldBootstrapper] ✅ NavMesh warmup complete.");
         }
 

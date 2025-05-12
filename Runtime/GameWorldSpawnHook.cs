@@ -10,6 +10,7 @@ namespace AIRefactored.Runtime
 {
     using System;
     using System.Reflection;
+    using AIRefactored.AI.Core;
     using AIRefactored.AI.Navigation;
     using AIRefactored.Core;
     using BepInEx.Logging;
@@ -85,6 +86,12 @@ namespace AIRefactored.Runtime
                     if (!GameWorldHandler.IsHost)
                     {
                         Logger.LogDebug("[GameWorldSpawnHook] Skipped InitPhaseRunner — not a valid host.");
+                        return;
+                    }
+
+                    if (FikaHeadlessDetector.IsHeadless && !FikaHeadlessDetector.HasRaidStarted())
+                    {
+                        Logger.LogDebug("[GameWorldSpawnHook] Skipped early systems — FIKA Headless not ready.");
                         return;
                     }
 

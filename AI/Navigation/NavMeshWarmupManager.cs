@@ -22,8 +22,14 @@ namespace AIRefactored.AI.Navigation
     /// </summary>
     public static class NavMeshWarmupManager
     {
+        #region Fields
+
         private static readonly ManualLogSource Logger = Plugin.LoggerInstance;
         private static bool _hasStarted;
+
+        #endregion
+
+        #region Public API
 
         /// <summary>
         /// Attempts to build the NavMesh immediately after GameWorld is ready.
@@ -82,5 +88,7 @@ namespace AIRefactored.AI.Navigation
             _hasStarted = false;
             NavMeshStatus.Reset();
         }
+
+        #endregion
     }
 }

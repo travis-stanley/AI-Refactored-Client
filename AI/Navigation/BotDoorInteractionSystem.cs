@@ -9,7 +9,6 @@
 namespace AIRefactored.AI.Navigation
 {
     using System;
-    using AIRefactored.AI.Core;
     using AIRefactored.Core;
     using BepInEx.Logging;
     using EFT;
@@ -78,7 +77,7 @@ namespace AIRefactored.AI.Navigation
                 return;
             }
 
-            Player player = _bot.GetPlayer;
+            Player player = EFTPlayerUtil.ResolvePlayer(_bot);
             if (!EFTPlayerUtil.IsValid(player) || !player.IsAI || player.CurrentManagedState == null)
             {
                 return;
@@ -101,7 +100,14 @@ namespace AIRefactored.AI.Navigation
                 return;
             }
 
-            Door door = hit.collider?.GetComponentInParent<Door>();
+            Collider col = hit.collider;
+            if (col == null)
+            {
+                ClearDoorState();
+                return;
+            }
+
+            Door door = col.GetComponentInParent<Door>();
             if (door == null || !door.enabled || !door.Operatable)
             {
                 ClearDoorState();

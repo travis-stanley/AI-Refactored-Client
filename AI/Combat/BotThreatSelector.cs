@@ -3,7 +3,7 @@
 //   Licensed under the MIT License. See LICENSE in the repository root for more information.
 //
 //   THIS FILE IS SYSTEMATICALLY MANAGED.
-//   Please follow strict StyleCop, ReSharper, and AI-Refactored code standards for all modifications.
+//   Failures in AIRefactored logic must always trigger safe fallback to EFT base AI.
 // </auto-generated>
 
 namespace AIRefactored.AI.Combat
@@ -11,6 +11,7 @@ namespace AIRefactored.AI.Combat
     using System;
     using AIRefactored.AI.Core;
     using AIRefactored.AI.Memory;
+    using AIRefactored.AI.Navigation;
     using AIRefactored.Core;
     using EFT;
     using UnityEngine;
@@ -52,13 +53,7 @@ namespace AIRefactored.AI.Combat
 
         #region Properties
 
-        /// <summary>
-        /// Gets the currently prioritized target for this bot.
-        /// </summary>
-        public Player CurrentTarget
-        {
-            get { return _currentTarget; }
-        }
+        public Player CurrentTarget => _currentTarget;
 
         #endregion
 
@@ -74,7 +69,6 @@ namespace AIRefactored.AI.Combat
             _cache = cache;
             _bot = cache.Bot;
             _profile = cache.AIRefactoredBotOwner.PersonalityProfile;
-            _currentTarget = null;
         }
 
         #endregion
@@ -168,9 +162,6 @@ namespace AIRefactored.AI.Combat
             return EFTPlayerUtil.IsValid(fallback) ? fallback : null;
         }
 
-        /// <summary>
-        /// Returns the profile ID of the current target safely without referencing IPlayer.
-        /// </summary>
         public string GetTargetProfileId()
         {
             return _currentTarget != null ? _currentTarget.ProfileId : string.Empty;
@@ -255,17 +246,14 @@ namespace AIRefactored.AI.Combat
             {
                 foreach (var kvp in enemyInfos)
                 {
-                    var known = kvp.Key as Player;
-                    if (known != null && known.ProfileId == id)
+                    if (kvp.Key is Player known && known.ProfileId == id)
                     {
                         return kvp.Value;
                     }
                 }
             }
 
-            if (_bot.Memory != null && _bot.Memory.GoalEnemy != null &&
-                _bot.Memory.GoalEnemy.Person != null &&
-                _bot.Memory.GoalEnemy.Person.ProfileId == id)
+            if (_bot.Memory?.GoalEnemy?.Person?.ProfileId == id)
             {
                 return _bot.Memory.GoalEnemy;
             }
@@ -282,7 +270,16 @@ namespace AIRefactored.AI.Combat
             if (!string.IsNullOrEmpty(id))
             {
                 _cache.TacticalMemory.RecordEnemyPosition(EFTPlayerUtil.GetPosition(target), "Target", id);
-                _cache.LastShotTracker.RegisterHit(id);
+                _cache.LastShotTracker?.RegisterHit(id);
+            }
+
+            if (_cache.Movement != null && !_cache.Bot.IsDead && _cache.Bot.Mover != null && !_cache.Bot.Mover.IsMoving)
+            {
+                Vector3 fallback = NavPointRegistry.GetClosestPosition(_cache.Bot.Position);
+                if (fallback != Vector3.zero)
+                {
+                    _cache.Bot.Mover.GoToPoint(fallback, true, 1.0f);
+                }
             }
         }
 

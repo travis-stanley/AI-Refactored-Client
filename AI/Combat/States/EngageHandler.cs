@@ -11,6 +11,7 @@ namespace AIRefactored.AI.Combat.States
     using System;
     using AIRefactored.AI.Core;
     using AIRefactored.AI.Helpers;
+    using AIRefactored.AI.Navigation;
     using EFT;
     using UnityEngine;
 
@@ -103,9 +104,9 @@ namespace AIRefactored.AI.Combat.States
                 ? _cache.SquadPath.ApplyOffsetTo(enemyPos)
                 : enemyPos;
 
-            if (!IsValid(destination))
+            if (!IsValid(destination) || !BotNavValidator.Validate(_bot, "EngageHandlerDestination"))
             {
-                return;
+                destination = FallbackNavPointProvider.GetSafePoint(_bot.Position);
             }
 
             BotMovementHelper.SmoothMoveTo(_bot, destination);

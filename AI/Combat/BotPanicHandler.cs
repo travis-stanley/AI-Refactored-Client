@@ -3,7 +3,7 @@
 //   Licensed under the MIT License. See LICENSE in the repository root for more information.
 //
 //   THIS FILE IS SYSTEMATICALLY MANAGED.
-//   Please follow strict StyleCop, ReSharper, and AI-Refactored code standards for all modifications.
+//   Failures in AIRefactored logic must always trigger safe fallback to EFT base AI.
 // </auto-generated>
 
 namespace AIRefactored.AI.Combat
@@ -38,10 +38,11 @@ namespace AIRefactored.AI.Combat
 
         private BotOwner _bot;
         private BotComponentCache _cache;
+
         private float _composureLevel = 1f;
-        private bool _isPanicking;
         private float _panicStartTime = -1f;
         private float _lastPanicExitTime = -99f;
+        private bool _isPanicking;
 
         #endregion
 
@@ -51,7 +52,7 @@ namespace AIRefactored.AI.Combat
 
         #endregion
 
-        #region Public Methods
+        #region Public API
 
         public float GetComposureLevel()
         {
@@ -129,7 +130,7 @@ namespace AIRefactored.AI.Combat
 
         #endregion
 
-        #region Private Methods
+        #region Private Logic
 
         private void OnDamaged(EBodyPart part, float damage, DamageInfoStruct info)
         {

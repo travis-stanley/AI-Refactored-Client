@@ -146,9 +146,11 @@ namespace AIRefactored.AI.Navigation
 
         private static bool IsPositionValid(Vector3 pos)
         {
-            return !float.IsNaN(pos.x) && !float.IsNaN(pos.y) && !float.IsNaN(pos.z)
-                && pos.x > -10000f && pos.x < 10000f
-                && pos.z > -10000f && pos.z < 10000f;
+            return !float.IsNaN(pos.x) &&
+                   !float.IsNaN(pos.y) &&
+                   !float.IsNaN(pos.z) &&
+                   pos.x > -10000f && pos.x < 10000f &&
+                   pos.z > -10000f && pos.z < 10000f;
         }
 
         #endregion

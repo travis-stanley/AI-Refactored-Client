@@ -22,6 +22,8 @@ namespace AIRefactored.AI.Movement
 
     public sealed class BotMovementController
     {
+        #region Constants
+
         private const float CornerScanInterval = 1.2f;
         private const float InertiaWeight = 8f;
         private const float LeanCooldown = 1.5f;
@@ -32,6 +34,10 @@ namespace AIRefactored.AI.Movement
         private const float ScanRadius = 0.25f;
         private const float StuckThreshold = 0.1f;
         private const float FlankCooldown = 4.5f;
+
+        #endregion
+
+        #region Fields
 
         private static readonly ManualLogSource Logger = Plugin.LoggerInstance;
 
@@ -48,6 +54,10 @@ namespace AIRefactored.AI.Movement
         private float _stuckTimer;
         private bool _isStrafingRight;
         private bool _inLootingMode;
+
+        #endregion
+
+        #region Public API
 
         public void Initialize(BotComponentCache cache)
         {
@@ -112,6 +122,10 @@ namespace AIRefactored.AI.Movement
 
         public void EnterLootingMode() => _inLootingMode = true;
         public void ExitLootingMode() => _inLootingMode = false;
+
+        #endregion
+
+        #region Internal Movement
 
         private Vector3 SafeGetTargetPoint()
         {
@@ -183,6 +197,10 @@ namespace AIRefactored.AI.Movement
                 }
             }
         }
+
+        #endregion
+
+        #region Combat Movement
 
         private void CombatStrafe(float deltaTime)
         {
@@ -296,6 +314,10 @@ namespace AIRefactored.AI.Movement
             }
         }
 
+        #endregion
+
+        #region Recovery
+
         private void DetectStuck(float deltaTime)
         {
             if (_inLootingMode || _bot.Mover == null)
@@ -306,6 +328,9 @@ namespace AIRefactored.AI.Movement
             Vector3 target = SafeGetTargetPoint();
             if (!ValidateNavMeshTarget(target))
             {
+                // Attempt fallback to safe fallback point if invalid target
+                Vector3 safe = FallbackNavPointProvider.GetSafePoint(_bot.Position);
+                BotMovementHelper.SmoothMoveTo(_bot, safe, true);
                 return;
             }
 
@@ -339,6 +364,11 @@ namespace AIRefactored.AI.Movement
 
         private bool ValidateNavMeshTarget(Vector3 pos)
         {
+            if (!BotNavValidator.Validate(_bot, "NavTargetValidation"))
+            {
+                return false;
+            }
+
             if (NavMesh.SamplePosition(pos, out NavMeshHit hit, 1.5f, NavMesh.AllAreas))
             {
                 return (hit.position - pos).sqrMagnitude < 1.0f;
@@ -347,5 +377,7 @@ namespace AIRefactored.AI.Movement
             Logger.LogWarning("[Movement] Invalid NavMesh target: " + pos);
             return false;
         }
+
+        #endregion
     }
 }

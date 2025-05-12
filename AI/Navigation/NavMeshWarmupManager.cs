@@ -60,19 +60,31 @@ namespace AIRefactored.AI.Navigation
                     return;
                 }
 
+                bool builtAny = false;
+
                 for (int i = 0; i < surfaces.Length; i++)
                 {
-                    var surface = surfaces[i];
-                    if (surface != null && surface.enabled && surface.gameObject.activeInHierarchy)
+                    NavMeshSurface surface = surfaces[i];
+                    if (surface == null || !surface.enabled || !surface.gameObject.activeInHierarchy)
                     {
-                        surface.BuildNavMesh();
-                        BotCoverRetreatPlanner.RegisterSurface(mapId, surface);
-                        Logger.LogDebug("[NavMeshWarmupManager] Built NavMeshSurface: " + surface.name);
+                        continue;
                     }
+
+                    surface.BuildNavMesh();
+                    BotCoverRetreatPlanner.RegisterSurface(mapId, surface);
+                    Logger.LogDebug("[NavMeshWarmupManager] Built NavMeshSurface: " + surface.name);
+                    builtAny = true;
                 }
 
-                NavMeshStatus.SetReady();
-                Logger.LogInfo("[NavMeshWarmupManager] ✅ NavMesh warmup complete.");
+                if (builtAny)
+                {
+                    NavMeshStatus.SetReady();
+                    Logger.LogInfo("[NavMeshWarmupManager] ✅ NavMesh warmup complete.");
+                }
+                else
+                {
+                    Logger.LogWarning("[NavMeshWarmupManager] No valid NavMesh surfaces were built.");
+                }
             }
             catch (Exception ex)
             {

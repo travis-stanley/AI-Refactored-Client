@@ -13,6 +13,7 @@ namespace AIRefactored.AI.Combat.States
     using AIRefactored.AI.Core;
     using AIRefactored.AI.Helpers;
     using AIRefactored.AI.Hotspots;
+    using AIRefactored.AI.Navigation;
     using AIRefactored.AI.Optimization;
     using AIRefactored.Pools;
     using AIRefactored.Runtime;
@@ -101,6 +102,11 @@ namespace AIRefactored.AI.Combat.States
                 if (combat != null)
                 {
                     Vector3 fallback = TryGetFallbackPosition();
+                    if (!BotNavValidator.Validate(_bot, "PatrolFallback"))
+                    {
+                        fallback = FallbackNavPointProvider.GetSafePoint(_bot.Position);
+                    }
+
                     combat.TriggerFallback(fallback);
                 }
                 return;
@@ -127,6 +133,11 @@ namespace AIRefactored.AI.Combat.States
             {
                 Plugin.LoggerInstance.LogWarning("[PatrolHandler] Skipped patrol move: destination contains NaN.");
                 return;
+            }
+
+            if (!BotNavValidator.Validate(_bot, "PatrolDestination"))
+            {
+                destination = FallbackNavPointProvider.GetSafePoint(_bot.Position);
             }
 
             BotMovementHelper.SmoothMoveTo(_bot, destination);
@@ -203,7 +214,7 @@ namespace AIRefactored.AI.Combat.States
                 return path[path.Count - 1];
             }
 
-            return _bot.Position;
+            return FallbackNavPointProvider.GetSafePoint(_bot.Position);
         }
 
         private static bool IsVectorValid(Vector3 v)

@@ -43,6 +43,7 @@ namespace AIRefactored.Runtime
 		private static bool _hasWarned;
 		private static bool _hasRescanned;
 		private static bool _hasInitialized;
+		private static bool _hookedSpawner;
 
 		/// <summary>
 		/// Singleton instance of BotRecoveryService.
@@ -96,6 +97,7 @@ namespace AIRefactored.Runtime
 			_nextTickTime = -1f;
 			_hasWarned = false;
 			_hasRescanned = false;
+			_hookedSpawner = false;
 		}
 
 		#endregion
@@ -154,14 +156,14 @@ namespace AIRefactored.Runtime
 		{
 			try
 			{
-				if (!Singleton<BotSpawner>.Instantiated)
+				if (_hookedSpawner || !Singleton<BotSpawner>.Instantiated)
 				{
 					return;
 				}
 
 				BotSpawner spawner = Singleton<BotSpawner>.Instance;
-				spawner.OnBotCreated -= GameWorldHandler.TryAttachBotBrain;
 				spawner.OnBotCreated += GameWorldHandler.TryAttachBotBrain;
+				_hookedSpawner = true;
 			}
 			catch (Exception ex)
 			{
@@ -193,7 +195,13 @@ namespace AIRefactored.Runtime
 					continue;
 				}
 
-				Logger.LogWarning("[BotRecoveryService] Bot missing brain — restoring: " + (player.Profile?.Info?.Nickname ?? "Unnamed"));
+				string botName = "Unnamed";
+				if (player.Profile != null && player.Profile.Info != null && !string.IsNullOrEmpty(player.Profile.Info.Nickname))
+				{
+					botName = player.Profile.Info.Nickname;
+				}
+
+				Logger.LogWarning("[BotRecoveryService] Bot missing brain — restoring: " + botName);
 				BotBrainGuardian.Enforce(go);
 
 				if (player.AIData != null && player.AIData.BotOwner != null)

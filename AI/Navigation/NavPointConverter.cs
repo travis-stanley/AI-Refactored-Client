@@ -51,19 +51,19 @@ namespace AIRefactored.AI.Navigation
             Vector3 toWall = custom.ToWallVector;
             if (toWall.sqrMagnitude > WallVectorMinSqr)
             {
-                coverAngle = Vector3.Angle(toWall.normalized, Vector3.forward);
+                coverAngle = Vector3.Angle(Vector3.forward, toWall.normalized);
             }
 
             return new NavPointData(
-                position,
-                isCover,
-                "eft",
-                elevation,
-                custom.IsGoodInsideBuilding,
-                true,
-                coverAngle,
-                "Unassigned",
-                ResolveElevationBand(elevation));
+                position: position,
+                isCover: isCover,
+                tag: "eft",
+                elevation: elevation,
+                isIndoor: custom.IsGoodInsideBuilding,
+                isJumpable: true,
+                coverAngle: coverAngle,
+                zone: "Unassigned",
+                elevationBand: ResolveElevationBand(elevation));
         }
 
         #endregion

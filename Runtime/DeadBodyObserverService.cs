@@ -98,7 +98,7 @@ namespace AIRefactored.Runtime
 				}
 
 				List<Player> players = GameWorldHandler.GetAllAlivePlayers();
-				if (players.Count == 0)
+				if (players == null || players.Count == 0)
 				{
 					return;
 				}
@@ -151,7 +151,10 @@ namespace AIRefactored.Runtime
 							if (isRootMatch || isNearby)
 							{
 								DeadBodyContainerCache.Register(player, container);
-								string nickname = player.Profile?.Info?.Nickname ?? "Unnamed";
+								string nickname = player.Profile != null && player.Profile.Info != null && !string.IsNullOrEmpty(player.Profile.Info.Nickname)
+									? player.Profile.Info.Nickname
+									: "Unnamed";
+
 								Logger.LogDebug("[DeadBodyObserver] Associated container with dead bot: " + nickname);
 								break;
 							}

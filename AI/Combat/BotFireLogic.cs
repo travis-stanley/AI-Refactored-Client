@@ -12,6 +12,7 @@ namespace AIRefactored.AI.Combat
     using System.Collections.Generic;
     using AIRefactored.AI.Core;
     using AIRefactored.AI.Helpers;
+    using AIRefactored.AI.Navigation;
     using AIRefactored.AI.Optimization;
     using AIRefactored.Core;
     using AIRefactored.Pools;
@@ -326,9 +327,10 @@ namespace AIRefactored.AI.Combat
             }
 
             Vector3 fallback = retreatPath[retreatPath.Count - 1];
-            if (float.IsNaN(fallback.x) || float.IsNaN(fallback.y) || float.IsNaN(fallback.z))
+
+            if (!BotNavValidator.Validate(_bot, "BotFireLogic::TriggerFallback"))
             {
-                return;
+                fallback = FallbackNavPointProvider.GetSafePoint(_bot.Position);
             }
 
             BotMovementHelper.SmoothMoveTo(_bot, fallback, false);

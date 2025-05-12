@@ -204,15 +204,23 @@ namespace AIRefactored.AI.Perception
 
         private void SyncEnemyIfVisible()
         {
-            if (_cache.IsBlinded)
+            if (_cache.IsBlinded || _bot.Memory == null || _bot.Memory.GoalEnemy == null)
             {
                 return;
             }
 
-            IPlayer target = _bot.Memory != null ? _bot.Memory.GoalEnemy?.Person : null;
-            if (target != null)
+            IPlayer raw = _bot.Memory.GoalEnemy.Person;
+            Player target = EFTPlayerUtil.AsEFTPlayer(raw);
+            Player self = EFTPlayerUtil.ResolvePlayer(_bot);
+
+            if (target == null || self == null || !EFTPlayerUtil.IsValid(target))
             {
-                BotTeamLogic.AddEnemy(_bot, target);
+                return;
+            }
+
+            if (EFTPlayerUtil.IsEnemyOf(_bot, target))
+            {
+                BotTeamLogic.AddEnemy(_bot, raw);
             }
         }
 

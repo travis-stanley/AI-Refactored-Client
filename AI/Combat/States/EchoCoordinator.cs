@@ -11,6 +11,7 @@ namespace AIRefactored.AI.Combat.States
     using System;
     using AIRefactored.AI.Core;
     using AIRefactored.AI.Helpers;
+    using AIRefactored.AI.Navigation;
     using AIRefactored.Runtime;
     using EFT;
     using UnityEngine;
@@ -111,6 +112,13 @@ namespace AIRefactored.AI.Combat.States
                 chaos.y = 0f;
 
                 Vector3 finalPos = mate.Position - fallbackDir * BaseFallbackDistance + chaos;
+
+                // Validate final fallback point
+                if (!BotNavValidator.Validate(mate, "EchoFallback"))
+                {
+                    finalPos = FallbackNavPointProvider.GetSafePoint(mate.Position);
+                }
+
                 mateCache.Combat.TriggerFallback(finalPos);
 
                 if (!FikaHeadlessDetector.IsHeadless && mate.BotTalk != null)

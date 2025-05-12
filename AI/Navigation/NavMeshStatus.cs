@@ -9,6 +9,7 @@
 namespace AIRefactored.AI.Navigation
 {
     using System;
+    using System.Threading;
 
     /// <summary>
     /// Tracks global NavMesh readiness for AIRefactored movement systems.
@@ -18,7 +19,7 @@ namespace AIRefactored.AI.Navigation
     {
         #region State
 
-        private static bool _isReady;
+        private static int _isReadyFlag = 0;
 
         #endregion
 
@@ -29,7 +30,7 @@ namespace AIRefactored.AI.Navigation
         /// </summary>
         public static bool IsReady
         {
-            get { return _isReady; }
+            get { return Interlocked.CompareExchange(ref _isReadyFlag, 0, 0) == 1; }
         }
 
         #endregion
@@ -42,7 +43,7 @@ namespace AIRefactored.AI.Navigation
         /// </summary>
         public static void SetReady()
         {
-            _isReady = true;
+            Interlocked.Exchange(ref _isReadyFlag, 1);
         }
 
         /// <summary>
@@ -50,7 +51,7 @@ namespace AIRefactored.AI.Navigation
         /// </summary>
         public static void Reset()
         {
-            _isReady = false;
+            Interlocked.Exchange(ref _isReadyFlag, 0);
         }
 
         #endregion

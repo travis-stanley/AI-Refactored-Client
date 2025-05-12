@@ -26,15 +26,18 @@ namespace AIRefactored.Runtime
     {
         #region Fields
 
-        private static GameObject _host;
-        private static AIRefactoredController _instance;
-        private static bool _initialized;
-        private static bool _raidActive;
+        private static GameObject s_Host;
+        private static AIRefactoredController s_Instance;
+        private static bool s_Initialized;
+        private static bool s_RaidActive;
 
         #endregion
 
         #region Properties
 
+        /// <summary>
+        /// Gets the logger instance from the plugin, or throws if not initialized.
+        /// </summary>
         public static ManualLogSource Logger
         {
             get
@@ -53,9 +56,12 @@ namespace AIRefactored.Runtime
 
         #region Public API
 
+        /// <summary>
+        /// Initializes the AI system by spawning a host GameObject and wiring static systems.
+        /// </summary>
         public static void Initialize()
         {
-            if (_initialized)
+            if (s_Initialized)
             {
                 Logger.LogDebug("[AIRefactoredController] Already initialized — skipping.");
                 return;
@@ -63,14 +69,14 @@ namespace AIRefactored.Runtime
 
             try
             {
-                _host = new GameObject("AIRefactoredHost");
-                UnityEngine.Object.DontDestroyOnLoad(_host);
+                s_Host = new GameObject("AIRefactoredHost");
+                UnityEngine.Object.DontDestroyOnLoad(s_Host);
 
-                _instance = _host.AddComponent<AIRefactoredController>();
-                _host.AddComponent<GameWorldSpawnHook>();
+                s_Instance = s_Host.AddComponent<AIRefactoredController>();
+                s_Host.AddComponent<GameWorldSpawnHook>();
 
                 WorldTickDispatcher.Initialize();
-                _initialized = true;
+                s_Initialized = true;
 
                 Logger.LogDebug("[AIRefactoredController] ✅ Initialization complete. Waiting for GameWorldSpawnHook...");
             }
@@ -80,9 +86,13 @@ namespace AIRefactored.Runtime
             }
         }
 
+        /// <summary>
+        /// Called when a new raid starts. Triggers world system initialization.
+        /// </summary>
+        /// <param name="world">The current GameWorld instance.</param>
         public static void OnRaidStarted(GameWorld world)
         {
-            if (!_initialized || _raidActive || world == null)
+            if (!s_Initialized || s_RaidActive || world == null)
             {
                 return;
             }
@@ -124,7 +134,7 @@ namespace AIRefactored.Runtime
                 GameWorldHandler.Initialize(world);
                 WorldBootstrapper.Begin(Logger);
 
-                _raidActive = true;
+                s_RaidActive = true;
             }
             catch (Exception ex)
             {
@@ -132,9 +142,12 @@ namespace AIRefactored.Runtime
             }
         }
 
+        /// <summary>
+        /// Called when a raid ends. Cleans up world systems and resets static state.
+        /// </summary>
         public static void OnRaidEnded()
         {
-            if (!_raidActive)
+            if (!s_RaidActive)
             {
                 return;
             }
@@ -145,7 +158,8 @@ namespace AIRefactored.Runtime
                 WorldBootstrapper.Stop();
                 GameWorldHandler.Cleanup();
                 BotRecoveryService.Reset();
-                _raidActive = false;
+
+                s_RaidActive = false;
             }
             catch (Exception ex)
             {
@@ -170,13 +184,14 @@ namespace AIRefactored.Runtime
             try
             {
                 Logger.LogDebug("[AIRefactoredController] OnDestroy — stopping systems and cleaning up...");
+
                 InitPhaseRunner.Stop();
                 WorldBootstrapper.Stop();
                 GameWorldHandler.Cleanup();
                 BotRecoveryService.Reset();
 
-                _initialized = false;
-                _raidActive = false;
+                s_Initialized = false;
+                s_RaidActive = false;
             }
             catch (Exception ex)
             {

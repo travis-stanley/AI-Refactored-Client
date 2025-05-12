@@ -18,10 +18,6 @@ namespace AIRefactored.AI.Perception
     using EFT.Animations;
     using UnityEngine;
 
-    /// <summary>
-    /// Simulates realistic bot visual perception using view cone, fog/light occlusion,
-    /// bone confidence, motion detection, suppression, and squad memory sharing.
-    /// </summary>
     public sealed class BotVisionSystem
     {
         #region Constants

@@ -49,7 +49,7 @@ namespace AIRefactored.Runtime
                     return;
                 }
 
-                var harmony = new Harmony("ai.refactored.spawnhook");
+                Harmony harmony = new Harmony("ai.refactored.spawnhook");
                 harmony.Patch(method, postfix: new HarmonyMethod(typeof(GameWorldSpawnPatch), nameof(GameWorldSpawnPatch.Postfix)));
 
                 _hooked = true;

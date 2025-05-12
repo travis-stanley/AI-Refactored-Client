@@ -94,12 +94,10 @@ namespace AIRefactored.AI.Combat.States
             _currentFallbackPath.Clear();
             for (int i = 0, count = path.Count; i < count; i++)
             {
-                if (!IsVectorValid(path[i]))
+                if (IsVectorValid(path[i]))
                 {
-                    continue;
+                    _currentFallbackPath.Add(path[i]);
                 }
-
-                _currentFallbackPath.Add(path[i]);
             }
 
             if (_currentFallbackPath.Count >= 2)
@@ -124,19 +122,21 @@ namespace AIRefactored.AI.Combat.States
 
         public bool ShouldTriggerSuppressedFallback(float now, float lastStateChangeTime, float minStateDuration)
         {
-            if (_cache == null || _cache.Suppression == null)
-            {
-                return false;
-            }
-
-            return _cache.Suppression.IsSuppressed() &&
+            return _cache != null &&
+                   _cache.Suppression != null &&
+                   _cache.Suppression.IsSuppressed() &&
                    (now - lastStateChangeTime) >= minStateDuration;
         }
 
         public void Tick(float time, Action<CombatState, float> forceState)
         {
-            if (_cache.IsFallbackMode || _bot == null ||
-                _bot.GetPlayer == null || _bot.GetPlayer.HealthController == null || !_bot.GetPlayer.HealthController.IsAlive)
+            if (_cache.IsFallbackMode || _bot == null)
+            {
+                return;
+            }
+
+            var player = _bot.GetPlayer;
+            if (player == null || player.HealthController == null || !player.HealthController.IsAlive)
             {
                 return;
             }
@@ -150,10 +150,10 @@ namespace AIRefactored.AI.Combat.States
             Vector3 currentPos = _bot.Position;
             float dist = Vector3.Distance(currentPos, _fallbackTarget);
 
-            // Always try move; SmoothMoveTo includes GoToPoint fallback logic now
+            // Always move toward fallback
             BotMovementHelper.SmoothMoveTo(_bot, _fallbackTarget);
 
-            // Optionally trigger crouch/prone from cover at target
+            // Attempt stance based on cover
             BotCoverHelper.TrySetStanceFromNearbyCover(_cache, _fallbackTarget);
 
             if (dist < MinArrivalDistance)
@@ -188,7 +188,10 @@ namespace AIRefactored.AI.Combat.States
 
         private static bool IsVectorValid(Vector3 v)
         {
-            return !float.IsNaN(v.x) && !float.IsNaN(v.y) && !float.IsNaN(v.z) && v != Vector3.zero;
+            return !float.IsNaN(v.x) &&
+                   !float.IsNaN(v.y) &&
+                   !float.IsNaN(v.z) &&
+                   v != Vector3.zero;
         }
 
         #endregion

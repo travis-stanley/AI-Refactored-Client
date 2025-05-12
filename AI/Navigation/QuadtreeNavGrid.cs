@@ -38,7 +38,11 @@ namespace AIRefactored.AI.Navigation
 
         public void Insert(NavPointData point)
         {
-            if (point == null) return;
+            if (point == null)
+            {
+                return;
+            }
+
             Insert(_root, point);
         }
 
@@ -142,7 +146,8 @@ namespace AIRefactored.AI.Navigation
                 for (int i = 0; i < node.NavPoints.Count; i++)
                 {
                     NavPointData point = node.NavPoints[i];
-                    if ((point.Position - position).sqrMagnitude <= radiusSq && (filter == null || filter(point)))
+                    if ((point.Position - position).sqrMagnitude <= radiusSq &&
+                        (filter == null || filter(point)))
                     {
                         result.Add(point);
                     }
@@ -173,7 +178,8 @@ namespace AIRefactored.AI.Navigation
                 for (int i = 0; i < node.RawPoints.Count; i++)
                 {
                     Vector3 point = node.RawPoints[i];
-                    if ((point - position).sqrMagnitude <= radiusSq && (filter == null || filter(point)))
+                    if ((point - position).sqrMagnitude <= radiusSq &&
+                        (filter == null || filter(point)))
                     {
                         result.Add(point);
                     }
@@ -207,7 +213,7 @@ namespace AIRefactored.AI.Navigation
 
         private void Reinsert(Node node)
         {
-            List<NavPointData> nav = node.NavPoints;
+            var nav = node.NavPoints;
             node.NavPoints = TempListPool.Rent<NavPointData>();
             for (int i = 0; i < nav.Count; i++)
             {
@@ -217,7 +223,7 @@ namespace AIRefactored.AI.Navigation
                 }
             }
 
-            List<Vector3> raw = node.RawPoints;
+            var raw = node.RawPoints;
             node.RawPoints = TempListPool.Rent<Vector3>();
             for (int i = 0; i < raw.Count; i++)
             {

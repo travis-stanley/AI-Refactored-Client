@@ -74,6 +74,9 @@ namespace AIRefactored.AI.Navigation
 
         #region Public Methods
 
+        /// <summary>
+        /// Computes the squared distance from this point to a target world position.
+        /// </summary>
         public float DistanceSqr(Vector3 other)
         {
             float dx = this.Position.x - other.x;
@@ -82,6 +85,9 @@ namespace AIRefactored.AI.Navigation
             return (dx * dx) + (dy * dy) + (dz * dz);
         }
 
+        /// <summary>
+        /// Returns a compact string representation for debugging and diagnostics.
+        /// </summary>
         public override string ToString()
         {
             return string.Concat(

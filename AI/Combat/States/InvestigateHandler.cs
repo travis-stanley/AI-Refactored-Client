@@ -12,6 +12,7 @@ namespace AIRefactored.AI.Combat.States
     using AIRefactored.AI.Core;
     using AIRefactored.AI.Helpers;
     using AIRefactored.AI.Memory;
+    using AIRefactored.AI.Navigation;
     using AIRefactored.Runtime;
     using EFT;
     using UnityEngine;
@@ -74,7 +75,13 @@ namespace AIRefactored.AI.Combat.States
                 return memoryPos;
             }
 
-            return RandomNearbyPosition();
+            Vector3 fallback = RandomNearbyPosition();
+            if (!BotNavValidator.Validate(_bot, "InvestigateRandomFallback"))
+            {
+                fallback = FallbackNavPointProvider.GetSafePoint(_bot.Position);
+            }
+
+            return fallback;
         }
 
         public void Investigate(Vector3 target)
@@ -88,10 +95,9 @@ namespace AIRefactored.AI.Combat.States
                 ? _cache.SquadPath.ApplyOffsetTo(target)
                 : target;
 
-            if (!IsVectorValid(destination))
+            if (!IsVectorValid(destination) || !BotNavValidator.Validate(_bot, "InvestigateDestination"))
             {
-                Plugin.LoggerInstance.LogWarning("[InvestigateHandler] Skipped investigation: invalid destination.");
-                return;
+                destination = FallbackNavPointProvider.GetSafePoint(_bot.Position);
             }
 
             BotMovementHelper.SmoothMoveTo(_bot, destination);

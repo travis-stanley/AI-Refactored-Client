@@ -89,13 +89,12 @@ namespace AIRefactored.Runtime
 				_nextPollTime = now + PollInterval;
 
 				List<Player> players = GameWorldHandler.GetAllAlivePlayers();
-				int count = players.Count;
-				if (count == 0)
+				if (players == null || players.Count == 0)
 				{
 					return;
 				}
 
-				for (int i = 0; i < count; i++)
+				for (int i = 0; i < players.Count; i++)
 				{
 					Player player = players[i];
 					if (!EFTPlayerUtil.IsValid(player) || !player.IsAI || player.gameObject == null)
@@ -156,12 +155,20 @@ namespace AIRefactored.Runtime
 						brain.enabled = true;
 						brain.Initialize(owner);
 
-						string nickname = player.Profile.Info.Nickname ?? "Unnamed";
+						string nickname = "Unnamed";
+						if (player.Profile.Info.Nickname != null)
+						{
+							nickname = player.Profile.Info.Nickname;
+						}
+
 						Logger.LogDebug("[BotSpawnWatcher] ✅ Brain injected for bot: " + nickname);
 					}
 					catch (Exception ex)
 					{
-						string nickname = player.Profile?.Info?.Nickname ?? "Unknown";
+						string nickname = player.Profile != null && player.Profile.Info != null && !string.IsNullOrEmpty(player.Profile.Info.Nickname)
+							? player.Profile.Info.Nickname
+							: "Unknown";
+
 						Logger.LogError("[BotSpawnWatcher] ❌ Brain injection failed for: " + nickname + " — " + ex);
 					}
 				}

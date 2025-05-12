@@ -3,7 +3,7 @@
 //   Licensed under the MIT License. See LICENSE in the repository root for more information.
 //
 //   THIS FILE IS SYSTEMATICALLY MANAGED.
-//   Please follow strict StyleCop, ReSharper, and AI-Refactored code standards for all modifications.
+//   Failures in AIRefactored logic must always trigger safe fallback to EFT base AI.
 // </auto-generated>
 
 namespace AIRefactored.AI.Combat
@@ -11,6 +11,7 @@ namespace AIRefactored.AI.Combat
     using System;
     using System.Collections.Generic;
     using AIRefactored.AI.Core;
+    using AIRefactored.AI.Navigation;
     using AIRefactored.AI.Optimization;
     using AIRefactored.Core;
     using AIRefactored.Runtime;
@@ -194,6 +195,14 @@ namespace AIRefactored.AI.Combat
             {
                 _bot.BotTalk.TrySay(EPhraseTrigger.OnFight);
             }
+
+            // Final fallback: ensure bot is on valid nav and not frozen
+            Vector3 safe = NavPointRegistry.GetClosestPosition(_bot.Position);
+            if (safe != Vector3.zero && (_bot.Mover != null && !_bot.Mover.IsMoving))
+            {
+                _bot.Mover.GoToPoint(safe, true, 1.0f);
+                Logger.LogDebug("[AIRefactored-Escalation] Bot '" + nickname + "' moved to nav fallback after escalation.");
+            }
         }
 
         private void ApplyEscalationTuning(BotOwner bot)
@@ -223,8 +232,7 @@ namespace AIRefactored.AI.Combat
                 file.Look.MAX_VISION_GRASS_METERS = Mathf.Clamp(file.Look.MAX_VISION_GRASS_METERS + 5f, 5f, 40f);
             }
 
-            string nickname = bot.Profile != null && bot.Profile.Info != null ? bot.Profile.Info.Nickname : "Unknown";
-            Logger.LogDebug("[AIRefactored-Tuning] Escalation tuning applied to '" + nickname + "'.");
+            Logger.LogDebug("[AIRefactored-Tuning] Escalation tuning applied to '" + (bot.Profile?.Info?.Nickname ?? "Unknown") + "'.");
         }
 
         private void ApplyPersonalityTuning(BotOwner bot)
@@ -247,10 +255,8 @@ namespace AIRefactored.AI.Combat
             profile.AccuracyUnderFire = Mathf.Clamp01(profile.AccuracyUnderFire + 0.2f);
             profile.CommunicationLevel = Mathf.Clamp01(profile.CommunicationLevel + 0.2f);
 
-            string nickname = bot.Profile != null && bot.Profile.Info != null ? bot.Profile.Info.Nickname : "Unknown";
-
             Logger.LogDebug(
-                "[AIRefactored-Tuning] Personality tuned for '" + nickname + "': " +
+                "[AIRefactored-Tuning] Personality tuned for '" + (bot.Profile?.Info?.Nickname ?? "Unknown") + "': " +
                 "Agg=" + profile.AggressionLevel.ToString("F2") + ", " +
                 "Caution=" + profile.Caution.ToString("F2") + ", " +
                 "Supp=" + profile.SuppressionSensitivity.ToString("F2") + ", " +

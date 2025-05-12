@@ -19,26 +19,63 @@ namespace AIRefactored.AI.Navigation
     using Unity.AI.Navigation;
     using UnityEngine;
 
-    /// <summary>
-    /// Registry and spatial query system for navigation points, supporting zone tags and cover scoring.
-    /// </summary>
+    public enum SpatialIndexMode
+    {
+        None,
+        Grid,
+        Quadtree,
+        GridAndQuadtree
+    }
+
     public static class NavPointRegistry
     {
+        #region Fields
+
         private static readonly List<NavPoint> Points = new List<NavPoint>(512);
         private static readonly HashSet<Vector3> Unique = new HashSet<Vector3>();
+
+        private static readonly Dictionary<string, SpatialIndexMode> IndexModeMap =
+            new Dictionary<string, SpatialIndexMode>(StringComparer.OrdinalIgnoreCase)
+            {
+                { "woods", SpatialIndexMode.Quadtree },
+                { "shoreline", SpatialIndexMode.Quadtree },
+                { "lighthouse", SpatialIndexMode.Quadtree },
+                { "interchange", SpatialIndexMode.Quadtree },
+                { "bigmap", SpatialIndexMode.Quadtree },
+                { "sandbox", SpatialIndexMode.Grid },
+                { "sandbox_high", SpatialIndexMode.Grid },
+                { "factory4_day", SpatialIndexMode.Grid },
+                { "factory4_night", SpatialIndexMode.Grid },
+                { "laboratory", SpatialIndexMode.Grid },
+                { "tarkovstreets", SpatialIndexMode.Grid },
+                { "rezervbase", SpatialIndexMode.Grid }
+            };
+
         private static QuadtreeNavGrid _quadtree;
+        private static SpatialNavGrid _spatialGrid;
         private static bool _useQuadtree;
+        private static bool _useSpatial;
 
         private static ManualLogSource Logger => Plugin.LoggerInstance;
 
+        #endregion
+
+        #region Public API
+
         public static int Count => Points.Count;
+        public static bool IsReady => Points.Count > 0;
 
         public static void Initialize()
         {
             Points.Clear();
             Unique.Clear();
+            _quadtree?.Clear();
+            _spatialGrid?.Clear();
             _quadtree = null;
+            _spatialGrid = null;
             _useQuadtree = false;
+            _useSpatial = false;
+
             Logger.LogDebug("[NavPointRegistry] Initialized.");
         }
 
@@ -46,13 +83,37 @@ namespace AIRefactored.AI.Navigation
         {
             Points.Clear();
             Unique.Clear();
-            _quadtree = null;
+            _quadtree?.Clear();
+            _spatialGrid?.Clear();
         }
 
-        public static void EnableSpatialIndexing(bool enable)
+        public static void AutoEnableIndexMode(string mapId)
         {
-            _useQuadtree = enable;
-            _quadtree = enable ? BuildQuadtree() : null;
+            if (string.IsNullOrEmpty(mapId))
+            {
+                Logger.LogWarning("[NavPointRegistry] AutoEnableIndexMode skipped — mapId null.");
+                return;
+            }
+
+            if (!IndexModeMap.TryGetValue(mapId, out SpatialIndexMode mode))
+            {
+                mode = SpatialIndexMode.Grid;
+            }
+
+            EnableSpatialIndexing(
+                enableQuadtree: mode == SpatialIndexMode.Quadtree || mode == SpatialIndexMode.GridAndQuadtree,
+                enableSpatialGrid: mode == SpatialIndexMode.Grid || mode == SpatialIndexMode.GridAndQuadtree);
+
+            Logger.LogDebug($"[NavPointRegistry] Indexing mode for map '{mapId}' => {mode}");
+        }
+
+        public static void EnableSpatialIndexing(bool enableQuadtree, bool enableSpatialGrid = true)
+        {
+            _useQuadtree = enableQuadtree;
+            _useSpatial = enableSpatialGrid;
+
+            _quadtree = enableQuadtree ? BuildQuadtree() : null;
+            _spatialGrid = enableSpatialGrid ? BuildSpatialGrid() : null;
         }
 
         public static void RegisterAll(string mapId)
@@ -88,30 +149,175 @@ namespace AIRefactored.AI.Navigation
             }
 
             NavPointBootstrapper.RegisterAll(mapId);
+
+            if (Count == 0)
+            {
+                Logger.LogWarning("[NavPointRegistry] RegisterAll completed but point list is still empty.");
+            }
+
+            AutoEnableIndexMode(mapId);
         }
 
         public static void Register(Vector3 pos, bool isCover = false, string tag = "generic", float elevation = 0f, bool isIndoor = false, bool isJumpable = false, float coverAngle = 0f)
         {
-            if (!Unique.Add(pos))
+            if (!IsValid(pos) || !Unique.Add(pos))
             {
                 return;
             }
 
-            Points.Add(new NavPoint(
-                pos,
-                isCover,
-                tag,
-                elevation,
-                isIndoor,
-                isJumpable,
-                coverAngle,
-                "Unknown",
-                GetElevationBand(elevation)));
+            string elevationBand = GetElevationBand(elevation);
+
+            NavPoint point = new NavPoint(pos, isCover, tag, elevation, isIndoor, isJumpable, coverAngle, "Unknown", elevationBand);
+            Points.Add(point);
+
+            _quadtree?.Insert(pos);
+            _spatialGrid?.Register(new NavPointData(pos, isCover, tag, elevation, isIndoor, isJumpable, coverAngle, "Unknown", elevationBand));
+        }
+        public static List<Vector3> QueryNearby(Vector3 origin, float radius, Predicate<Vector3> filter = null, bool coverOnly = false)
+        {
+            var result = TempListPool.Rent<Vector3>();
+            float radiusSq = radius * radius;
 
             if (_useQuadtree && _quadtree != null)
             {
-                _quadtree.Insert(pos);
+                var raw = _quadtree.QueryRaw(origin, radius, filter);
+                for (int i = 0; i < raw.Count; i++)
+                {
+                    if (TryGetPoint(raw[i], out var nav) && (!coverOnly || nav.IsCover))
+                    {
+                        result.Add(raw[i]);
+                    }
+                }
+
+                return result;
             }
+
+            if (_useSpatial && _spatialGrid != null)
+            {
+                var raw = _spatialGrid.Query(origin, radius, null);
+                for (int i = 0; i < raw.Count; i++)
+                {
+                    Vector3 pos = raw[i].Position;
+                    if ((!coverOnly || raw[i].IsCover) && (filter == null || filter(pos)))
+                    {
+                        result.Add(pos);
+                    }
+                }
+
+                return result;
+            }
+
+            for (int i = 0; i < Points.Count; i++)
+            {
+                Vector3 pos = Points[i].WorldPos;
+                if ((pos - origin).sqrMagnitude <= radiusSq && (!coverOnly || Points[i].IsCover))
+                {
+                    if (filter == null || filter(pos))
+                    {
+                        result.Add(pos);
+                    }
+                }
+            }
+
+            return result;
+        }
+
+        public static List<NavPointData> QueryNearby(Vector3 origin, float radius, Predicate<NavPointData> filter = null)
+        {
+            var result = TempListPool.Rent<NavPointData>();
+            float radiusSq = radius * radius;
+
+            if (_useSpatial && _spatialGrid != null)
+            {
+                var candidates = _spatialGrid.Query(origin, radius, filter);
+                result.AddRange(candidates);
+                return result;
+            }
+
+            if (_useQuadtree && _quadtree != null)
+            {
+                var raw = _quadtree.Query(origin, radius, filter);
+                result.AddRange(raw);
+                return result;
+            }
+
+            for (int i = 0; i < Points.Count; i++)
+            {
+                var p = Points[i];
+                if ((p.WorldPos - origin).sqrMagnitude <= radiusSq)
+                {
+                    var data = new NavPointData(
+                        p.WorldPos,
+                        p.IsCover,
+                        p.Tag,
+                        p.Elevation,
+                        p.IsIndoor,
+                        p.IsJumpable,
+                        p.CoverAngle,
+                        p.Zone,
+                        p.ElevationBand);
+
+                    if (filter == null || filter(data))
+                    {
+                        result.Add(data);
+                    }
+                }
+            }
+
+            return result;
+        }
+
+        public static Vector3 GetClosestPosition(Vector3 origin)
+        {
+            if (Points.Count == 0)
+            {
+                return Vector3.zero;
+            }
+
+            Vector3 closest = Vector3.zero;
+            float minDistSq = float.MaxValue;
+
+            if (_useQuadtree && _quadtree != null)
+            {
+                foreach (var pos in _quadtree.QueryRaw(origin, 25f, null))
+                {
+                    float distSq = (origin - pos).sqrMagnitude;
+                    if (distSq < minDistSq)
+                    {
+                        minDistSq = distSq;
+                        closest = pos;
+                    }
+                }
+
+                if (IsValid(closest)) return closest;
+            }
+
+            if (_useSpatial && _spatialGrid != null)
+            {
+                foreach (var p in _spatialGrid.Query(origin, 25f, null))
+                {
+                    float distSq = (origin - p.Position).sqrMagnitude;
+                    if (distSq < minDistSq)
+                    {
+                        minDistSq = distSq;
+                        closest = p.Position;
+                    }
+                }
+
+                if (IsValid(closest)) return closest;
+            }
+
+            foreach (var p in Points)
+            {
+                float distSq = (origin - p.WorldPos).sqrMagnitude;
+                if (distSq < minDistSq)
+                {
+                    minDistSq = distSq;
+                    closest = p.WorldPos;
+                }
+            }
+
+            return closest;
         }
 
         public static void RefreshPointsAround(Vector3 center, float radius)
@@ -120,7 +326,7 @@ namespace AIRefactored.AI.Navigation
 
             for (int i = 0; i < Points.Count; i++)
             {
-                NavPoint point = Points[i];
+                var point = Points[i];
                 if ((point.WorldPos - center).sqrMagnitude > radiusSq)
                 {
                     continue;
@@ -131,10 +337,7 @@ namespace AIRefactored.AI.Navigation
                 {
                     isIndoor = Physics.Raycast(point.WorldPos + Vector3.up * 1.4f, Vector3.up, 12f);
                 }
-                catch
-                {
-                    // Ignore scene load issues
-                }
+                catch { }
 
                 Points[i] = new NavPoint(
                     point.WorldPos,
@@ -144,7 +347,7 @@ namespace AIRefactored.AI.Navigation
                     isIndoor,
                     point.IsJumpable,
                     point.CoverAngle,
-                    "Unknown",
+                    point.Zone,
                     GetElevationBand(point.Elevation));
             }
 
@@ -163,83 +366,17 @@ namespace AIRefactored.AI.Navigation
 
         public static List<Vector3> GetAllPositions()
         {
-            List<Vector3> result = TempListPool.Rent<Vector3>();
+            var result = TempListPool.Rent<Vector3>();
             for (int i = 0; i < Points.Count; i++)
             {
                 result.Add(Points[i].WorldPos);
             }
-
             return result;
         }
 
-        public static List<Vector3> QueryNearby(Vector3 origin, float radius, Predicate<Vector3> filter = null, bool coverOnly = false)
-        {
-            List<Vector3> result = TempListPool.Rent<Vector3>();
-            float radiusSq = radius * radius;
+        #endregion
 
-            if (_useQuadtree && _quadtree != null)
-            {
-                List<Vector3> raw = _quadtree.QueryRaw(origin, radius, filter);
-                for (int i = 0; i < raw.Count; i++)
-                {
-                    if (TryGetPoint(raw[i], out var nav) && (!coverOnly || nav.IsCover))
-                    {
-                        result.Add(raw[i]);
-                    }
-                }
-
-                return result;
-            }
-
-            for (int i = 0; i < Points.Count; i++)
-            {
-                var p = Points[i];
-                if ((p.WorldPos - origin).sqrMagnitude > radiusSq || (coverOnly && !p.IsCover))
-                {
-                    continue;
-                }
-
-                if (filter == null || filter(p.WorldPos))
-                {
-                    result.Add(p.WorldPos);
-                }
-            }
-
-            return result;
-        }
-
-        public static List<NavPointData> QueryNearby(Vector3 origin, float radius, Predicate<NavPointData> filter = null)
-        {
-            List<NavPointData> result = TempListPool.Rent<NavPointData>();
-            float radiusSq = radius * radius;
-
-            for (int i = 0; i < Points.Count; i++)
-            {
-                var p = Points[i];
-                if ((p.WorldPos - origin).sqrMagnitude > radiusSq)
-                {
-                    continue;
-                }
-
-                var data = new NavPointData(
-                    p.WorldPos,
-                    p.IsCover,
-                    p.Tag,
-                    p.Elevation,
-                    p.IsIndoor,
-                    p.IsJumpable,
-                    p.CoverAngle,
-                    p.Zone,
-                    p.ElevationBand);
-
-                if (filter == null || filter(data))
-                {
-                    result.Add(data);
-                }
-            }
-
-            return result;
-        }
+        #region Internals
 
         private static bool TryGetPoint(Vector3 pos, out NavPoint point)
         {
@@ -251,9 +388,16 @@ namespace AIRefactored.AI.Navigation
                     return true;
                 }
             }
-
-            point = default(NavPoint);
+            point = default;
             return false;
+        }
+
+        private static bool IsValid(Vector3 pos)
+        {
+            return pos != Vector3.zero &&
+                !float.IsNaN(pos.x) &&
+                !float.IsNaN(pos.y) &&
+                !float.IsNaN(pos.z);
         }
 
         private static string GetElevationBand(float elevation)
@@ -278,16 +422,16 @@ namespace AIRefactored.AI.Navigation
             for (int i = 0; i < Points.Count; i++)
             {
                 Vector3 pos = Points[i].WorldPos;
-                if (pos.x < minX) minX = pos.x;
-                if (pos.x > maxX) maxX = pos.x;
-                if (pos.z < minZ) minZ = pos.z;
-                if (pos.z > maxZ) maxZ = pos.z;
+                minX = Mathf.Min(minX, pos.x);
+                maxX = Mathf.Max(maxX, pos.x);
+                minZ = Mathf.Min(minZ, pos.z);
+                maxZ = Mathf.Max(maxZ, pos.z);
             }
 
             Vector2 center = new Vector2((minX + maxX) * 0.5f, (minZ + maxZ) * 0.5f);
             float size = Mathf.Max(maxX - minX, maxZ - minZ) + 20f;
 
-            var tree = new QuadtreeNavGrid(center, size);
+            QuadtreeNavGrid tree = new QuadtreeNavGrid(center, size);
             for (int i = 0; i < Points.Count; i++)
             {
                 tree.Insert(Points[i].WorldPos);
@@ -297,19 +441,33 @@ namespace AIRefactored.AI.Navigation
             return tree;
         }
 
+        private static SpatialNavGrid BuildSpatialGrid()
+        {
+            var grid = new SpatialNavGrid(5f);
+            for (int i = 0; i < Points.Count; i++)
+            {
+                var p = Points[i];
+                var data = new NavPointData(p.WorldPos, p.IsCover, p.Tag, p.Elevation, p.IsIndoor, p.IsJumpable, p.CoverAngle, p.Zone, p.ElevationBand);
+                grid.Register(data);
+            }
+
+            Logger.LogDebug("[NavPointRegistry] Spatial grid built for " + Points.Count + " points.");
+            return grid;
+        }
+
         private sealed class NavPoint
         {
             public NavPoint(Vector3 pos, bool isCover, string tag, float elevation, bool isIndoor, bool isJumpable, float coverAngle, string zone, string elevationBand)
             {
-                this.WorldPos = pos;
-                this.IsCover = isCover;
-                this.Tag = tag;
-                this.Elevation = elevation;
-                this.IsIndoor = isIndoor;
-                this.IsJumpable = isJumpable;
-                this.CoverAngle = coverAngle;
-                this.Zone = zone;
-                this.ElevationBand = elevationBand;
+                WorldPos = pos;
+                IsCover = isCover;
+                Tag = tag;
+                Elevation = elevation;
+                IsIndoor = isIndoor;
+                IsJumpable = isJumpable;
+                CoverAngle = coverAngle;
+                Zone = zone;
+                ElevationBand = elevationBand;
             }
 
             public Vector3 WorldPos { get; }
@@ -322,5 +480,7 @@ namespace AIRefactored.AI.Navigation
             public string Zone { get; }
             public string ElevationBand { get; }
         }
+
+        #endregion
     }
 }

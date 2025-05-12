@@ -3,7 +3,7 @@
 //   Licensed under the MIT License. See LICENSE in the repository root for more information.
 //
 //   THIS FILE IS SYSTEMATICALLY MANAGED.
-//   Please follow strict StyleCop, ReSharper, and AI-Refactored code standards for all modifications.
+//   Failures in AIRefactored logic must always trigger safe fallback to EFT base AI.
 // </auto-generated>
 
 namespace AIRefactored.AI.Combat
@@ -14,6 +14,7 @@ namespace AIRefactored.AI.Combat
     using AIRefactored.AI.Core;
     using AIRefactored.AI.Groups;
     using AIRefactored.AI.Memory;
+    using AIRefactored.AI.Navigation;
     using AIRefactored.AI.Optimization;
     using AIRefactored.Core;
     using AIRefactored.Pools;
@@ -46,33 +47,25 @@ namespace AIRefactored.AI.Combat
         private bool _initialized;
 
         public Vector3 LastKnownEnemyPos => _lastKnownEnemyPos;
-
         public float LastStateChangeTime => _lastStateChangeTime;
 
         public void Initialize(BotComponentCache componentCache)
         {
-            if (componentCache == null)
+            if (componentCache == null || componentCache.Bot == null)
             {
-                Plugin.LoggerInstance.LogError("[CombatStateMachine] Initialization failed: componentCache is null.");
-                return;
-            }
-
-            BotOwner botOwner = componentCache.Bot;
-            if (botOwner == null)
-            {
-                Plugin.LoggerInstance.LogError("[CombatStateMachine] Initialization failed: BotOwner is null.");
+                Plugin.LoggerInstance.LogError("[CombatStateMachine] Initialization failed: null references.");
                 return;
             }
 
             _cache = componentCache;
-            _bot = botOwner;
+            _bot = componentCache.Bot;
 
-            _patrol = new PatrolHandler(componentCache, PatrolMinDuration, PatrolCooldown);
-            _investigate = new InvestigateHandler(componentCache);
-            _engage = new EngageHandler(componentCache);
-            _attack = new AttackHandler(componentCache);
-            _fallback = new FallbackHandler(componentCache);
-            _echo = new EchoCoordinator(componentCache);
+            _patrol = new PatrolHandler(_cache, PatrolMinDuration, PatrolCooldown);
+            _investigate = new InvestigateHandler(_cache);
+            _engage = new EngageHandler(_cache);
+            _attack = new AttackHandler(_cache);
+            _fallback = new FallbackHandler(_cache);
+            _echo = new EchoCoordinator(_cache);
 
             _initialized = true;
         }
@@ -126,7 +119,8 @@ namespace AIRefactored.AI.Combat
                     return;
                 }
 
-                if (_attack == null || _engage == null || _investigate == null || _fallback == null || _patrol == null || _echo == null || _cache == null)
+                if (_attack == null || _engage == null || _investigate == null ||
+                    _fallback == null || _patrol == null || _echo == null || _cache == null)
                 {
                     BotFallbackUtility.FallbackToEFTLogic(_bot);
                     return;
@@ -216,10 +210,7 @@ namespace AIRefactored.AI.Combat
             catch (Exception ex)
             {
                 Plugin.LoggerInstance.LogError("[CombatStateMachine] Tick failed: " + ex);
-                if (_bot != null)
-                {
-                    BotFallbackUtility.FallbackToEFTLogic(_bot);
-                }
+                BotFallbackUtility.FallbackToEFTLogic(_bot);
             }
         }
 

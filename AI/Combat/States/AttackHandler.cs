@@ -11,6 +11,7 @@ namespace AIRefactored.AI.Combat.States
     using System;
     using AIRefactored.AI.Core;
     using AIRefactored.AI.Helpers;
+    using AIRefactored.AI.Navigation;
     using AIRefactored.Core;
     using AIRefactored.Pools;
     using AIRefactored.Runtime;
@@ -111,6 +112,11 @@ namespace AIRefactored.AI.Combat.States
                     Vector3 moveTarget = (_cache.SquadPath != null)
                         ? _cache.SquadPath.ApplyOffsetTo(currentPos)
                         : currentPos;
+
+                    if (!BotNavValidator.Validate(_bot, "AttackHandlerTarget"))
+                    {
+                        moveTarget = FallbackNavPointProvider.GetSafePoint(_bot.Position);
+                    }
 
                     BotMovementHelper.SmoothMoveTo(_bot, moveTarget);
                     BotCoverHelper.TrySetStanceFromNearbyCover(_cache, moveTarget);

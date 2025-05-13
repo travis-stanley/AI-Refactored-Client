@@ -25,24 +25,26 @@ namespace AIRefactored.Core
 
         public static Player AsEFTPlayer(IPlayer raw)
         {
-            return raw is Player cast ? cast : null;
+            Player cast = raw as Player;
+            return cast != null ? cast : null;
         }
 
         public static bool TryGetValidPlayer(IPlayer raw, out Player player)
         {
-            if (raw is Player cast && IsValid(cast))
-            {
-                player = cast;
-                return true;
-            }
-
-            player = null;
-            return false;
+            player = raw as Player;
+            return player != null && IsValid(player);
         }
 
         public static IPlayer AsSafeIPlayer(Player player)
         {
-            return player is IPlayer cast ? cast : null;
+            if (player == null)
+            {
+                return null;
+            }
+
+            object obj = player;
+            IPlayer cast = obj as IPlayer;
+            return cast != null ? cast : null;
         }
 
         public static Player ResolvePlayer(BotOwner bot)
@@ -52,26 +54,25 @@ namespace AIRefactored.Core
 
         public static Player ResolvePlayerById(string profileId)
         {
-            if (string.IsNullOrEmpty(profileId) || !WorldInitState.IsInPhase(WorldPhase.WorldReady))
+            if (string.IsNullOrEmpty(profileId))
+            {
+                return null;
+            }
+
+            if (!WorldInitState.IsInPhase(WorldPhase.WorldReady))
             {
                 return null;
             }
 
             GameWorld world = GameWorldHandler.Get();
-            if (world == null)
+            if (world == null || world.AllAlivePlayersList == null || world.AllAlivePlayersList.Count == 0)
             {
                 return null;
             }
 
-            List<Player> players = world.AllAlivePlayersList;
-            if (players == null)
+            for (int i = 0; i < world.AllAlivePlayersList.Count; i++)
             {
-                return null;
-            }
-
-            for (int i = 0; i < players.Count; i++)
-            {
-                Player p = players[i];
+                Player p = world.AllAlivePlayersList[i];
                 if (p != null && p.ProfileId == profileId)
                 {
                     return p;
@@ -111,15 +112,24 @@ namespace AIRefactored.Core
 
         public static string GetProfileId(BotOwner bot)
         {
-            Player player = bot != null ? bot.GetPlayer : null;
-            return player != null ? player.ProfileId : string.Empty;
+            if (bot == null)
+            {
+                return string.Empty;
+            }
+
+            Player player = bot.GetPlayer;
+            if (player == null)
+            {
+                return string.Empty;
+            }
+
+            return player.ProfileId;
         }
 
         public static bool IsValidBotOwner(BotOwner bot)
         {
-            Player player = bot != null ? bot.GetPlayer : null;
-
-            return player != null &&
+            return bot != null &&
+                   bot.GetPlayer != null &&
                    bot.Memory != null &&
                    bot.WeaponManager != null &&
                    bot.BotsGroup != null;
@@ -127,14 +137,14 @@ namespace AIRefactored.Core
 
         public static bool HasValidMovementContext(BotOwner bot)
         {
-            Player player = bot != null ? bot.GetPlayer : null;
-            return player != null && player.MovementContext != null;
+            return bot != null &&
+                   bot.GetPlayer != null &&
+                   bot.GetPlayer.MovementContext != null;
         }
 
         public static bool IsFikaHeadlessSafe(BotOwner bot)
         {
             Player player = bot != null ? bot.GetPlayer : null;
-
             return player != null &&
                    player.IsAI &&
                    player.HealthController != null &&
@@ -147,7 +157,7 @@ namespace AIRefactored.Core
 
         public static Transform GetTransform(Player player)
         {
-            return player != null ? player.Transform?.Original : null;
+            return player != null && player.Transform != null ? player.Transform.Original : null;
         }
 
         public static Vector3 GetPosition(Player player)
@@ -173,16 +183,18 @@ namespace AIRefactored.Core
                 return false;
             }
 
-            IPlayer iTarget = AsSafeIPlayer(target);
-            return iTarget != null && group.IsEnemy(iTarget);
+            IPlayer cast = AsSafeIPlayer(target);
+            return cast != null && group.IsEnemy(cast);
         }
 
         public static bool AreEnemies(Player a, Player b)
         {
-            return a != null &&
-                   b != null &&
-                   a.ProfileId != b.ProfileId &&
-                   a.Side != b.Side;
+            if (a == null || b == null)
+            {
+                return false;
+            }
+
+            return a.Side != b.Side && a.ProfileId != b.ProfileId;
         }
 
         #endregion

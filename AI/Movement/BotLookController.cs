@@ -3,7 +3,7 @@
 //   Licensed under the MIT License. See LICENSE in the repository root for more information.
 //
 //   THIS FILE IS SYSTEMATICALLY MANAGED.
-//   Please follow strict StyleCop, ReSharper, and AI-Refactored code standards for all modifications.
+//   Failures in AIRefactored logic must always trigger safe fallback to EFT base AI.
 // </auto-generated>
 
 namespace AIRefactored.AI.Movement
@@ -65,7 +65,7 @@ namespace AIRefactored.AI.Movement
         {
             try
             {
-                if (_frozen || _bot == null || _bot.IsDead || _cache == null || !GameWorldHandler.IsSafeToInitialize)
+                if (_frozen || _bot == null || _cache == null || _bot.IsDead || !GameWorldHandler.IsSafeToInitialize)
                 {
                     return;
                 }
@@ -93,7 +93,7 @@ namespace AIRefactored.AI.Movement
                 }
 
                 Quaternion from = body.rotation;
-                Quaternion to = Quaternion.LookRotation(dir);
+                Quaternion to = Quaternion.LookRotation(dir.normalized);
                 body.rotation = Quaternion.Slerp(from, to, Mathf.Clamp01(MaxTurnSpeed * deltaTime));
             }
             catch (Exception ex)
@@ -128,7 +128,7 @@ namespace AIRefactored.AI.Movement
 
         #endregion
 
-        #region Internal Logic
+        #region Private Methods
 
         private Vector3 ResolveLookTarget(Vector3 origin)
         {
@@ -156,10 +156,10 @@ namespace AIRefactored.AI.Movement
                 string id = _cache.ThreatSelector.GetTargetProfileId();
                 if (!string.IsNullOrEmpty(id))
                 {
-                    Player player = EFTPlayerUtil.ResolvePlayerById(id);
-                    if (EFTPlayerUtil.IsValid(player))
+                    Player enemy = EFTPlayerUtil.ResolvePlayerById(id);
+                    if (EFTPlayerUtil.IsValid(enemy))
                     {
-                        Vector3 pos = EFTPlayerUtil.GetPosition(player);
+                        Vector3 pos = EFTPlayerUtil.GetPosition(enemy);
                         if (pos.sqrMagnitude > 0.01f)
                         {
                             return pos;

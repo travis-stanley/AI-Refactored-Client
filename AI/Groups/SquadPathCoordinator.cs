@@ -3,7 +3,7 @@
 //   Licensed under the MIT License. See LICENSE in the repository root for more information.
 //
 //   THIS FILE IS SYSTEMATICALLY MANAGED.
-//   Please follow strict StyleCop, ReSharper, and AI-Refactored code standards for all modifications.
+//   Failures in AIRefactored logic must always trigger safe fallback to EFT base AI.
 // </auto-generated>
 
 namespace AIRefactored.AI.Groups
@@ -30,8 +30,8 @@ namespace AIRefactored.AI.Groups
 
         private BotOwner _bot;
         private BotsGroup _group;
-        private Vector3 _cachedOffset = Vector3.zero;
-        private int _lastGroupSize = -1;
+        private Vector3 _cachedOffset;
+        private int _lastGroupSize;
         private bool _offsetInitialized;
 
         #endregion
@@ -45,17 +45,19 @@ namespace AIRefactored.AI.Groups
                 return;
             }
 
-            BotOwner bot = cache.Bot;
-            BotsGroup group = bot.BotsGroup;
+            _bot = cache.Bot;
+            _group = _bot.BotsGroup;
 
-            if (group == null || bot.IsDead)
+            if (_group == null || _bot.IsDead)
             {
+                _bot = null;
+                _group = null;
                 return;
             }
 
-            _bot = bot;
-            _group = group;
+            _cachedOffset = Vector3.zero;
             _offsetInitialized = false;
+            _lastGroupSize = -1;
         }
 
         #endregion
@@ -126,6 +128,11 @@ namespace AIRefactored.AI.Groups
 
         private static int GetBotIndexInGroup(BotOwner bot, BotsGroup group)
         {
+            if (bot == null || group == null)
+            {
+                return -1;
+            }
+
             string profileId = bot.ProfileId;
             if (string.IsNullOrEmpty(profileId))
             {

@@ -10,7 +10,6 @@ namespace AIRefactored.Runtime
 {
 	using System;
 	using System.Collections.Generic;
-	using AIRefactored.AI;
 	using AIRefactored.AI.Core;
 	using AIRefactored.AI.Threads;
 	using AIRefactored.Bootstrap;
@@ -110,67 +109,17 @@ namespace AIRefactored.Runtime
 						continue;
 					}
 
-					BotBrain existingBrain = go.GetComponent<BotBrain>();
-					if (existingBrain != null)
+					if (go.GetComponent<BotBrain>() != null)
 					{
-						if (!existingBrain.enabled)
-						{
-							existingBrain.enabled = true;
-							Logger.LogWarning("[BotSpawnWatcher] Re-enabled disabled brain: " + player.ProfileId);
-						}
-
 						continue;
 					}
 
-					if (player.AIData == null || player.Profile == null || player.Profile.Info == null)
+					if (player.AIData?.BotOwner == null)
 					{
-						Logger.LogWarning("[BotSpawnWatcher] Skipped bot — missing AIData or Profile: " + player.name);
 						continue;
 					}
 
-					BotOwner owner = player.AIData.BotOwner;
-					if (owner == null)
-					{
-						Logger.LogWarning("[BotSpawnWatcher] Skipped bot — AIData.BotOwner is null: " + player.name);
-						continue;
-					}
-
-					try
-					{
-						string profileId = player.Profile.Id;
-						if (string.IsNullOrEmpty(profileId))
-						{
-							Logger.LogWarning("[BotSpawnWatcher] Skipped bot — null ProfileId: " + player.name);
-							continue;
-						}
-
-						WildSpawnType role = player.Profile.Info.Settings != null
-							? player.Profile.Info.Settings.Role
-							: WildSpawnType.assault;
-
-						BotPersonalityProfile profile = BotRegistry.GetOrGenerate(profileId, PersonalityType.Balanced, role);
-						BotRegistry.Register(profileId, profile);
-
-						BotBrain brain = go.AddComponent<BotBrain>();
-						brain.enabled = true;
-						brain.Initialize(owner);
-
-						string nickname = "Unnamed";
-						if (player.Profile.Info.Nickname != null)
-						{
-							nickname = player.Profile.Info.Nickname;
-						}
-
-						Logger.LogDebug("[BotSpawnWatcher] ✅ Brain injected for bot: " + nickname);
-					}
-					catch (Exception ex)
-					{
-						string nickname = player.Profile != null && player.Profile.Info != null && !string.IsNullOrEmpty(player.Profile.Info.Nickname)
-							? player.Profile.Info.Nickname
-							: "Unknown";
-
-						Logger.LogError("[BotSpawnWatcher] ❌ Brain injection failed for: " + nickname + " — " + ex);
-					}
+					GameWorldHandler.TryAttachBotBrain(player.AIData.BotOwner);
 				}
 			}
 			catch (Exception ex)

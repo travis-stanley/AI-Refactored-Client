@@ -3,7 +3,7 @@
 //   Licensed under the MIT License. See LICENSE in the repository root for more information.
 //
 //   THIS FILE IS SYSTEMATICALLY MANAGED.
-//   Please follow strict StyleCop, ReSharper, and AI-Refactored code standards for all modifications.
+//   Failures in AIRefactored logic must always trigger safe fallback to EFT base AI.
 // </auto-generated>
 
 namespace AIRefactored.AI.Combat
@@ -13,7 +13,6 @@ namespace AIRefactored.AI.Combat
     using AIRefactored.AI.Helpers;
     using AIRefactored.AI.Optimization;
     using AIRefactored.Core;
-    using AIRefactored.Pools;
     using EFT;
     using UnityEngine;
 
@@ -39,12 +38,11 @@ namespace AIRefactored.AI.Combat
 
         #endregion
 
-        #region Public API
+        #region Public Methods
 
         /// <summary>
         /// Initializes the suppression reaction component with a bot's component cache.
         /// </summary>
-        /// <param name="componentCache">The component cache containing references.</param>
         public void Initialize(BotComponentCache componentCache)
         {
             if (componentCache == null || componentCache.Bot == null)
@@ -69,13 +67,10 @@ namespace AIRefactored.AI.Combat
         /// <summary>
         /// Updates suppression decay over time.
         /// </summary>
-        /// <param name="time">The current game time.</param>
         public void Tick(float time)
         {
             if (!_isSuppressed)
-            {
                 return;
-            }
 
             if (!IsValid())
             {
@@ -92,33 +87,21 @@ namespace AIRefactored.AI.Combat
         /// <summary>
         /// Triggers suppression effects: sprint, fallback, panic escalation.
         /// </summary>
-        /// <param name="source">Optional suppression origin point.</param>
         public void TriggerSuppression(Vector3? source)
         {
             if (_isSuppressed || !IsValid())
-            {
                 return;
-            }
 
-            BotPanicHandler panic = _cache.PanicHandler;
+            var panic = _cache.PanicHandler;
             if (panic != null && panic.IsPanicking)
-            {
                 return;
-            }
 
             _isSuppressed = true;
             _suppressionStartTime = Time.time;
 
-            Vector3 retreatDir;
-            if (source.HasValue)
-            {
-                retreatDir = (_bot.Position - source.Value).normalized;
-            }
-            else
-            {
-                Vector3 look = _bot.LookDirection;
-                retreatDir = look.sqrMagnitude > 0.01f ? -look.normalized : Vector3.back;
-            }
+            Vector3 retreatDir = source.HasValue
+                ? (_bot.Position - source.Value).normalized
+                : GetDefaultRetreatDirection();
 
             Vector3 fallback = ComputeFallbackPosition(retreatDir);
             float cohesion = _cache.AIRefactoredBotOwner?.PersonalityProfile?.Cohesion ?? 1f;
@@ -126,11 +109,7 @@ namespace AIRefactored.AI.Combat
             BotMovementHelper.SmoothMoveTo(_bot, fallback, false, cohesion);
             _bot.Sprint(true);
 
-            if (panic != null)
-            {
-                panic.TriggerPanic();
-            }
-
+            panic?.TriggerPanic();
             _cache.Escalation?.NotifyPanicTriggered();
 
             if (!FikaHeadlessDetector.IsHeadless && _bot.BotTalk != null)
@@ -141,12 +120,10 @@ namespace AIRefactored.AI.Combat
 
         #endregion
 
-        #region Private Helpers
+        #region Private Methods
 
         private Vector3 ComputeFallbackPosition(Vector3 retreatDirection)
         {
-            Vector3 baseTarget = _bot.Position + retreatDirection * MinSuppressionRetreatDistance;
-
             if (_cache.Pathing != null)
             {
                 var path = BotCoverRetreatPlanner.GetCoverRetreatPath(_bot, retreatDirection, _cache.Pathing);
@@ -156,7 +133,12 @@ namespace AIRefactored.AI.Combat
                 }
             }
 
-            return baseTarget;
+            return _bot.Position + retreatDirection * MinSuppressionRetreatDistance;
+        }
+
+        private static Vector3 GetDefaultRetreatDirection()
+        {
+            return Vector3.back; // used when bot.LookDirection is degenerate
         }
 
         private bool IsValid()
@@ -164,8 +146,8 @@ namespace AIRefactored.AI.Combat
             return _bot != null &&
                    _cache != null &&
                    !_bot.IsDead &&
-                   _bot.GetPlayer != null &&
-                   _bot.GetPlayer.IsAI;
+                   _bot.GetPlayer is Player player &&
+                   player.IsAI;
         }
 
         #endregion

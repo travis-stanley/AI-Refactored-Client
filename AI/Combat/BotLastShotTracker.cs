@@ -51,7 +51,7 @@ namespace AIRefactored.AI.Combat
             }
 
             float currentTime = now >= 0f ? now : Time.time;
-            return currentTime - _lastShotTime <= memoryWindow;
+            return (currentTime - _lastShotTime) <= memoryWindow;
         }
 
         /// <summary>
@@ -70,7 +70,7 @@ namespace AIRefactored.AI.Combat
             }
 
             float currentTime = now >= 0f ? now : Time.time;
-            return currentTime - _lastHitTime <= memoryWindow;
+            return (currentTime - _lastHitTime) <= memoryWindow;
         }
 
         /// <summary>
@@ -78,13 +78,11 @@ namespace AIRefactored.AI.Combat
         /// </summary>
         public void RegisterHit(string profileId)
         {
-            if (string.IsNullOrEmpty(profileId))
+            if (!string.IsNullOrEmpty(profileId))
             {
-                return;
+                _lastAttackerId = profileId;
+                _lastHitTime = Time.time;
             }
-
-            _lastAttackerId = profileId;
-            _lastHitTime = Time.time;
         }
 
         /// <summary>
@@ -92,13 +90,11 @@ namespace AIRefactored.AI.Combat
         /// </summary>
         public void RegisterShot(string profileId)
         {
-            if (string.IsNullOrEmpty(profileId))
+            if (!string.IsNullOrEmpty(profileId))
             {
-                return;
+                _lastTargetId = profileId;
+                _lastShotTime = Time.time;
             }
-
-            _lastTargetId = profileId;
-            _lastShotTime = Time.time;
         }
 
         /// <summary>

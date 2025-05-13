@@ -3,7 +3,7 @@
 //   Licensed under the MIT License. See LICENSE in the repository root for more information.
 //
 //   THIS FILE IS SYSTEMATICALLY MANAGED.
-//   Please follow strict StyleCop, ReSharper, and AI-Refactored code standards for all modifications.
+//   Failures in AIRefactored logic must always trigger safe fallback to EFT base AI.
 // </auto-generated>
 
 namespace AIRefactored.AI.Helpers
@@ -20,20 +20,16 @@ namespace AIRefactored.AI.Helpers
     /// </summary>
     public static class BotPanicUtility
     {
+        #region Public API
+
         /// <summary>
         /// Triggers panic on a single bot if valid and eligible.
         /// </summary>
         public static void Trigger(BotComponentCache cache)
         {
-            if (cache == null || cache.Bot == null || cache.Bot.IsDead)
+            if (IsEligible(cache))
             {
-                return;
-            }
-
-            BotPanicHandler panic = cache.PanicHandler;
-            if (panic != null)
-            {
-                panic.TriggerPanic();
+                cache.PanicHandler.TriggerPanic();
             }
         }
 
@@ -49,16 +45,38 @@ namespace AIRefactored.AI.Helpers
 
             for (int i = 0; i < group.Count; i++)
             {
-                BotComponentCache cache = group[i];
-                if (cache == null || cache.Bot == null || cache.Bot.IsDead)
+                Trigger(group[i]);
+            }
+        }
+
+        /// <summary>
+        /// Triggers panic in all bots within a radius of the given origin.
+        /// </summary>
+        public static void TriggerNearby(Vector3 origin, float radius)
+        {
+            if (radius <= 0f)
+            {
+                return;
+            }
+
+            float radiusSqr = radius * radius;
+
+            foreach (BotComponentCache cache in BotCacheUtility.AllActiveBots())
+            {
+                if (!IsEligible(cache))
                 {
                     continue;
                 }
 
-                BotPanicHandler panic = cache.PanicHandler;
-                if (panic != null)
+                Vector3 pos = cache.Bot.Position;
+                float dx = pos.x - origin.x;
+                float dy = pos.y - origin.y;
+                float dz = pos.z - origin.z;
+                float distSqr = (dx * dx) + (dy * dy) + (dz * dz);
+
+                if (distSqr <= radiusSqr)
                 {
-                    panic.TriggerPanic();
+                    cache.PanicHandler.TriggerPanic();
                 }
             }
         }
@@ -86,40 +104,18 @@ namespace AIRefactored.AI.Helpers
             return false;
         }
 
-        /// <summary>
-        /// Triggers panic in all bots within a radius of the given origin.
-        /// </summary>
-        public static void TriggerNearby(Vector3 origin, float radius)
+        #endregion
+
+        #region Internal Helpers
+
+        private static bool IsEligible(BotComponentCache cache)
         {
-            if (radius <= 0f)
-            {
-                return;
-            }
-
-            float radiusSq = radius * radius;
-
-            foreach (BotComponentCache cache in BotCacheUtility.AllActiveBots())
-            {
-                if (cache == null || cache.Bot == null || cache.Bot.IsDead)
-                {
-                    continue;
-                }
-
-                Vector3 pos = cache.Bot.Position;
-                float dx = pos.x - origin.x;
-                float dy = pos.y - origin.y;
-                float dz = pos.z - origin.z;
-                float distSq = (dx * dx) + (dy * dy) + (dz * dz);
-
-                if (distSq <= radiusSq)
-                {
-                    BotPanicHandler panic = cache.PanicHandler;
-                    if (panic != null)
-                    {
-                        panic.TriggerPanic();
-                    }
-                }
-            }
+            return cache != null &&
+                   cache.Bot != null &&
+                   !cache.Bot.IsDead &&
+                   cache.PanicHandler != null;
         }
+
+        #endregion
     }
 }

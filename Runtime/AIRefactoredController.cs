@@ -132,7 +132,7 @@ namespace AIRefactored.Runtime
                 Logger.LogDebug("[AIRefactoredController] 🚀 Raid started. Initializing world systems...");
 
                 GameWorldHandler.Initialize(world);
-                WorldBootstrapper.Begin(Logger);
+                WorldBootstrapper.Begin(Logger, GameWorldHandler.TryGetValidMapName());
 
                 s_RaidActive = true;
             }

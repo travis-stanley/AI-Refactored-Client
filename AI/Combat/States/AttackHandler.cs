@@ -3,7 +3,7 @@
 //   Licensed under the MIT License. See LICENSE in the repository root for more information.
 //
 //   THIS FILE IS SYSTEMATICALLY MANAGED.
-//   Please follow strict StyleCop, ReSharper, and AI-Refactored code standards for all modifications.
+//   Failures in AIRefactored logic must always trigger safe fallback to EFT base AI.
 // </auto-generated>
 
 namespace AIRefactored.AI.Combat.States
@@ -77,8 +77,8 @@ namespace AIRefactored.AI.Combat.States
         /// </summary>
         public bool ShallUseNow()
         {
-            Player dummy;
-            return TryResolveEnemy(out dummy);
+            Player _;
+            return TryResolveEnemy(out _);
         }
 
         /// <summary>
@@ -90,21 +90,16 @@ namespace AIRefactored.AI.Combat.States
             {
                 Player enemy;
                 if (!TryResolveEnemy(out enemy))
-                {
                     return;
-                }
 
-                Transform transform = EFTPlayerUtil.GetTransform(enemy);
-                if (transform == null)
-                {
+                Transform targetTransform = EFTPlayerUtil.GetTransform(enemy);
+                if (targetTransform == null)
                     return;
-                }
 
-                Vector3 currentPos = transform.position;
-                Vector3[] deltaArray = TempVector3Pool.Rent(1);
-                deltaArray[0] = currentPos - _lastTargetPosition;
+                Vector3 currentPos = targetTransform.position;
 
-                if (!_hasLastTarget || deltaArray[0].sqrMagnitude > PositionUpdateThresholdSqr)
+                float sqrDelta = (currentPos - _lastTargetPosition).sqrMagnitude;
+                if (!_hasLastTarget || sqrDelta > PositionUpdateThresholdSqr)
                 {
                     _lastTargetPosition = currentPos;
                     _hasLastTarget = true;
@@ -121,8 +116,6 @@ namespace AIRefactored.AI.Combat.States
                     BotMovementHelper.SmoothMoveTo(_bot, moveTarget);
                     BotCoverHelper.TrySetStanceFromNearbyCover(_cache, moveTarget);
                 }
-
-                TempVector3Pool.Return(deltaArray);
             }
             catch (Exception ex)
             {
@@ -140,20 +133,16 @@ namespace AIRefactored.AI.Combat.States
             result = null;
 
             BotThreatSelector selector = _cache.ThreatSelector;
-            if (selector != null && selector.CurrentTarget is Player direct && EFTPlayerUtil.IsValid(direct))
+            if (selector != null && EFTPlayerUtil.IsValid(selector.CurrentTarget))
             {
-                result = direct;
+                result = selector.CurrentTarget;
                 return true;
             }
 
-            if (_bot.Memory != null && _bot.Memory.GoalEnemy != null)
+            if (_bot.Memory?.GoalEnemy?.Person is Player fallback && EFTPlayerUtil.IsValid(fallback))
             {
-                Player fallback = _bot.Memory.GoalEnemy.Person as Player;
-                if (fallback != null && EFTPlayerUtil.IsValid(fallback))
-                {
-                    result = fallback;
-                    return true;
-                }
+                result = fallback;
+                return true;
             }
 
             return false;

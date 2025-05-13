@@ -3,7 +3,7 @@
 //   Licensed under the MIT License. See LICENSE in the repository root for more information.
 //
 //   THIS FILE IS SYSTEMATICALLY MANAGED.
-//   Please follow strict StyleCop, ReSharper, and AI-Refactored code standards for all modifications.
+//   Failures in AIRefactored logic must always trigger safe fallback to EFT base AI.
 // </auto-generated>
 
 namespace AIRefactored.AI.Movement
@@ -92,6 +92,7 @@ namespace AIRefactored.AI.Movement
             }
 
             toBot.Normalize();
+
             float sideDot = Vector3.Dot(Vector3.Cross(enemyForward, Vector3.up), toBot);
             Side side = sideDot >= 0f ? Side.Right : Side.Left;
 
@@ -105,17 +106,18 @@ namespace AIRefactored.AI.Movement
         private static bool TrySide(Vector3 origin, Vector3 toEnemy, Side side, out Vector3 result)
         {
             result = Vector3.zero;
-            Vector3 perp = Vector3.Cross(Vector3.up, toEnemy) * (side == Side.Left ? -1f : 1f);
+            Vector3 perpendicular = Vector3.Cross(Vector3.up, toEnemy) * (side == Side.Left ? -1f : 1f);
 
             for (int i = 0; i < MaxAttemptsPerSide; i++)
             {
-                float offset = BaseOffset + UnityEngine.Random.Range(-OffsetVariation, OffsetVariation);
-                float forward = UnityEngine.Random.Range(MinDistance, MaxDistance);
-                Vector3 candidate = origin + (perp * offset) + (toEnemy * forward);
+                float lateralOffset = BaseOffset + UnityEngine.Random.Range(-OffsetVariation, OffsetVariation);
+                float forwardDistance = UnityEngine.Random.Range(MinDistance, MaxDistance);
 
-                if (IsValidFlankPoint(candidate, origin, out Vector3 final))
+                Vector3 candidate = origin + (perpendicular * lateralOffset) + (toEnemy * forwardDistance);
+
+                if (IsValidFlankPoint(candidate, origin, out Vector3 valid))
                 {
-                    result = final;
+                    result = valid;
                     return true;
                 }
             }
@@ -127,21 +129,20 @@ namespace AIRefactored.AI.Movement
         {
             final = Vector3.zero;
 
-            NavMeshHit hit;
-            if (!NavMesh.SamplePosition(candidate, out hit, NavSampleRadius, NavMesh.AllAreas))
+            if (!NavMesh.SamplePosition(candidate, out NavMeshHit hit, NavSampleRadius, NavMesh.AllAreas))
             {
                 return false;
             }
 
-            float yDelta = Mathf.Abs(origin.y - hit.position.y);
-            float distSqr = (origin - hit.position).sqrMagnitude;
+            float verticalDelta = Mathf.Abs(origin.y - hit.position.y);
+            float distanceSqr = (origin - hit.position).sqrMagnitude;
 
-            if (distSqr < MinDistance * MinDistance || distSqr > MaxDistance * MaxDistance)
+            if (distanceSqr < MinDistance * MinDistance || distanceSqr > MaxDistance * MaxDistance)
             {
                 return false;
             }
 
-            if (yDelta > VerticalTolerance)
+            if (verticalDelta > VerticalTolerance)
             {
                 return false;
             }

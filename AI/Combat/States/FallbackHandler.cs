@@ -3,7 +3,7 @@
 //   Licensed under the MIT License. See LICENSE in the repository root for more information.
 //
 //   THIS FILE IS SYSTEMATICALLY MANAGED.
-//   Please follow strict StyleCop, ReSharper, and AI-Refactored code standards for all modifications.
+//   Failures in AIRefactored logic must always trigger safe fallback to EFT base AI.
 // </auto-generated>
 
 namespace AIRefactored.AI.Combat.States
@@ -12,6 +12,7 @@ namespace AIRefactored.AI.Combat.States
     using System.Collections.Generic;
     using AIRefactored.AI.Core;
     using AIRefactored.AI.Helpers;
+    using AIRefactored.Core;
     using AIRefactored.Pools;
     using AIRefactored.Runtime;
     using EFT;
@@ -55,7 +56,7 @@ namespace AIRefactored.AI.Combat.States
 
         #endregion
 
-        #region Public API
+        #region Public Methods
 
         public Vector3 GetFallbackPosition()
         {
@@ -112,18 +113,14 @@ namespace AIRefactored.AI.Combat.States
 
         public bool ShallUseNow(float time)
         {
-            if (_cache.IsFallbackMode || _bot == null)
-            {
-                return false;
-            }
-
-            return Vector3.Distance(_bot.Position, _fallbackTarget) > MinArrivalDistance;
+            return !_cache.IsFallbackMode &&
+                   _bot != null &&
+                   Vector3.Distance(_bot.Position, _fallbackTarget) > MinArrivalDistance;
         }
 
         public bool ShouldTriggerSuppressedFallback(float now, float lastStateChangeTime, float minStateDuration)
         {
-            return _cache != null &&
-                   _cache.Suppression != null &&
+            return _cache?.Suppression != null &&
                    _cache.Suppression.IsSuppressed() &&
                    (now - lastStateChangeTime) >= minStateDuration;
         }
@@ -131,32 +128,19 @@ namespace AIRefactored.AI.Combat.States
         public void Tick(float time, Action<CombatState, float> forceState)
         {
             if (_cache.IsFallbackMode || _bot == null)
-            {
                 return;
-            }
 
             var player = _bot.GetPlayer;
-            if (player == null || player.HealthController == null || !player.HealthController.IsAlive)
+            if (!EFTPlayerUtil.IsValid(player) || !IsVectorValid(_fallbackTarget))
             {
+                Plugin.LoggerInstance.LogWarning("[FallbackHandler] Tick skipped: invalid bot or fallback target.");
                 return;
             }
 
-            if (!IsVectorValid(_fallbackTarget))
-            {
-                Plugin.LoggerInstance.LogWarning("[FallbackHandler] Skipped Tick: fallback target was invalid.");
-                return;
-            }
-
-            Vector3 currentPos = _bot.Position;
-            float dist = Vector3.Distance(currentPos, _fallbackTarget);
-
-            // Always move toward fallback
             BotMovementHelper.SmoothMoveTo(_bot, _fallbackTarget);
-
-            // Attempt stance based on cover
             BotCoverHelper.TrySetStanceFromNearbyCover(_cache, _fallbackTarget);
 
-            if (dist < MinArrivalDistance)
+            if (Vector3.Distance(_bot.Position, _fallbackTarget) < MinArrivalDistance)
             {
                 forceState?.Invoke(CombatState.Patrol, time);
 
@@ -170,15 +154,13 @@ namespace AIRefactored.AI.Combat.States
         public bool IsActive()
         {
             return _bot != null &&
-                   _bot.GetPlayer != null &&
-                   _bot.GetPlayer.HealthController != null &&
-                   _bot.GetPlayer.HealthController.IsAlive &&
+                   EFTPlayerUtil.IsValid(_bot.GetPlayer) &&
                    Vector3.Distance(_bot.Position, _fallbackTarget) > MinArrivalDistance;
         }
 
         public void Cancel()
         {
-            _fallbackTarget = _bot != null ? _bot.Position : Vector3.zero;
+            _fallbackTarget = (_bot != null) ? _bot.Position : Vector3.zero;
             _currentFallbackPath.Clear();
         }
 

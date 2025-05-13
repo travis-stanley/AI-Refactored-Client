@@ -3,7 +3,7 @@
 //   Licensed under the MIT License. See LICENSE in the repository root for more information.
 //
 //   THIS FILE IS SYSTEMATICALLY MANAGED.
-//   Please follow strict StyleCop, ReSharper, and AI-Refactored code standards for all modifications.
+//   Failures in AIRefactored logic must always trigger safe fallback to EFT base AI.
 // </auto-generated>
 
 namespace AIRefactored.AI.Groups
@@ -25,12 +25,11 @@ namespace AIRefactored.AI.Groups
     {
         #region Constants
 
-        private const float CohesionWeight = 1.0f;
-        private const float JitterAmount = 0.1f;
         private const float MaxSpacing = 7.5f;
         private const float MinSpacing = 2.25f;
-        private const float RepulseStrength = 1.25f;
         private const float SpacingTolerance = 0.3f;
+        private const float RepulseStrength = 1.25f;
+        private const float JitterAmount = 0.1f;
 
         private static readonly float MinSpacingSqr = MinSpacing * MinSpacing;
         private static readonly float MaxSpacingSqr = MaxSpacing * MaxSpacing;
@@ -42,6 +41,7 @@ namespace AIRefactored.AI.Groups
         private BotOwner _bot;
         private BotComponentCache _cache;
         private BotsGroup _group;
+
         private Vector3 _lastMoveTarget;
         private bool _hasLastTarget;
 
@@ -49,12 +49,19 @@ namespace AIRefactored.AI.Groups
 
         #region Properties
 
+        /// <summary>
+        /// Gets the active group sync coordinator for squad behavior.
+        /// </summary>
         public BotGroupSyncCoordinator GroupSync { get; private set; }
 
         #endregion
 
         #region Public Methods
 
+        /// <summary>
+        /// Initializes the group behavior system with the specified bot.
+        /// </summary>
+        /// <param name="componentCache">Bot component cache.</param>
         public void Initialize(BotComponentCache componentCache)
         {
             if (componentCache == null || componentCache.Bot == null)
@@ -62,33 +69,37 @@ namespace AIRefactored.AI.Groups
                 throw new ArgumentException("[BotGroupBehavior] Invalid component cache.");
             }
 
-            this._cache = componentCache;
-            this._bot = componentCache.Bot;
-            this._group = this._bot.BotsGroup;
+            _cache = componentCache;
+            _bot = componentCache.Bot;
+            _group = _bot.BotsGroup;
 
-            this.GroupSync = new BotGroupSyncCoordinator();
-            this.GroupSync.Initialize(this._bot);
-            this.GroupSync.InjectLocalCache(componentCache);
+            GroupSync = new BotGroupSyncCoordinator();
+            GroupSync.Initialize(_bot);
+            GroupSync.InjectLocalCache(componentCache);
         }
 
+        /// <summary>
+        /// Executes squad cohesion and repulsion logic.
+        /// </summary>
+        /// <param name="deltaTime">Unused timestep input.</param>
         public void Tick(float deltaTime)
         {
-            if (!IsEligible() || this._bot.Memory.GoalEnemy != null)
+            if (!IsEligible() || _bot.Memory.GoalEnemy != null)
             {
                 return;
             }
 
-            Vector3 myPos = this._bot.Position;
+            Vector3 myPos = _bot.Position;
             Vector3 repulsion = Vector3.zero;
             Vector3 furthest = Vector3.zero;
             float maxDistSqr = MinSpacingSqr;
             bool hasFurthest = false;
 
-            int count = this._group.MembersCount;
+            int count = _group.MembersCount;
             for (int i = 0; i < count; i++)
             {
-                BotOwner mate = this._group.Member(i);
-                if (mate == null || mate == this._bot || mate.IsDead || mate.Memory == null)
+                BotOwner mate = _group.Member(i);
+                if (mate == null || mate == _bot || mate.IsDead || mate.Memory == null)
                 {
                     continue;
                 }
@@ -111,18 +122,16 @@ namespace AIRefactored.AI.Groups
 
             if (repulsion.sqrMagnitude > 0.01f)
             {
-                Vector3 repelTarget = myPos + repulsion.normalized * RepulseStrength;
-                IssueMove(repelTarget);
+                IssueMove(myPos + repulsion.normalized * RepulseStrength);
                 return;
             }
 
             if (hasFurthest)
             {
-                Vector3 direction = furthest - myPos;
-                if (direction.sqrMagnitude > 0.001f)
+                Vector3 dir = furthest - myPos;
+                if (dir.sqrMagnitude > 0.001f)
                 {
-                    Vector3 followTarget = myPos + direction.normalized * MaxSpacing;
-                    IssueMove(followTarget);
+                    IssueMove(myPos + dir.normalized * MaxSpacing);
                 }
             }
         }
@@ -133,28 +142,19 @@ namespace AIRefactored.AI.Groups
 
         private bool IsEligible()
         {
-            return EFTPlayerUtil.IsValidBotOwner(this._bot)
-                && this._group != null
-                && !this._bot.IsDead;
+            return EFTPlayerUtil.IsValidBotOwner(_bot) && _group != null && !_bot.IsDead;
         }
 
-        private void IssueMove(Vector3 rawTarget)
+        private void IssueMove(Vector3 target)
         {
-            Vector3 jittered = rawTarget + UnityEngine.Random.insideUnitSphere * JitterAmount;
-            jittered.y = rawTarget.y;
+            Vector3 jittered = target + UnityEngine.Random.insideUnitSphere * JitterAmount;
+            jittered.y = target.y;
 
-            if (!this._hasLastTarget)
+            if (!_hasLastTarget || Vector3.Distance(_lastMoveTarget, jittered) > SpacingTolerance)
             {
-                this._lastMoveTarget = jittered;
-                this._hasLastTarget = true;
-                BotMovementHelper.SmoothMoveTo(this._bot, jittered, false);
-                return;
-            }
-
-            if (Vector3.Distance(this._lastMoveTarget, jittered) > SpacingTolerance)
-            {
-                this._lastMoveTarget = jittered;
-                BotMovementHelper.SmoothMoveTo(this._bot, jittered, false);
+                _lastMoveTarget = jittered;
+                _hasLastTarget = true;
+                BotMovementHelper.SmoothMoveTo(_bot, jittered, false);
             }
         }
 

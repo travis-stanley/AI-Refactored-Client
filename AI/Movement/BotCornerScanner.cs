@@ -3,7 +3,7 @@
 //   Licensed under the MIT License. See LICENSE in the repository root for more information.
 //
 //   THIS FILE IS SYSTEMATICALLY MANAGED.
-//   Please follow strict StyleCop, ReSharper, and AI-Refactored code standards for all modifications.
+//   Failures in AIRefactored logic must always trigger safe fallback to EFT base AI.
 // </auto-generated>
 
 namespace AIRefactored.AI.Movement
@@ -53,7 +53,7 @@ namespace AIRefactored.AI.Movement
 
         #endregion
 
-        #region Initialization
+        #region Constructors
 
         public BotCornerScanner()
         {
@@ -71,21 +71,22 @@ namespace AIRefactored.AI.Movement
             }
         }
 
+        #endregion
+
+        #region Initialization
+
         public void Initialize(BotOwner bot, BotComponentCache cache)
         {
             if (bot == null || cache == null || bot.Transform == null)
             {
-                Log.LogWarning("[BotCornerScanner] Skipped initialization — missing bot or transform.");
+                Log.LogWarning("[BotCornerScanner] Initialization skipped — missing bot or transform.");
                 return;
             }
 
-            BotPersonalityProfile profile = cache.AIRefactoredBotOwner != null
-                ? cache.AIRefactoredBotOwner.PersonalityProfile
-                : null;
-
+            BotPersonalityProfile profile = cache.AIRefactoredBotOwner?.PersonalityProfile;
             if (profile == null)
             {
-                Log.LogWarning("[BotCornerScanner] Personality profile missing for bot " + bot.ProfileId);
+                Log.LogWarning("[BotCornerScanner] Initialization failed — missing personality for bot " + bot.ProfileId);
                 return;
             }
 
@@ -97,7 +98,7 @@ namespace AIRefactored.AI.Movement
 
         #endregion
 
-        #region Public Methods
+        #region Public API
 
         public void Tick(float time)
         {

@@ -3,7 +3,7 @@
 //   Licensed under the MIT License. See LICENSE in the repository root for more information.
 //
 //   THIS FILE IS SYSTEMATICALLY MANAGED.
-//   Please follow strict StyleCop, ReSharper, and AI-Refactored code standards for all modifications.
+//   Failures in AIRefactored logic must always trigger safe fallback to EFT base AI.
 // </auto-generated>
 
 namespace AIRefactored.AI.Groups
@@ -29,7 +29,7 @@ namespace AIRefactored.AI.Groups
         #region Constants
 
         private const float RegroupJitterRadius = 1.5f;
-        private const float RegroupThreshold = 2.5f;
+        private const float RegroupThresholdSqr = 6.25f;
 
         #endregion
 
@@ -47,7 +47,7 @@ namespace AIRefactored.AI.Groups
         {
             if (!EFTPlayerUtil.IsValidBotOwner(bot))
             {
-                throw new ArgumentException("Invalid or non-AI bot owner.");
+                throw new ArgumentException("[BotTeamLogic] Invalid or non-AI bot owner.");
             }
 
             _bot = bot;
@@ -85,21 +85,15 @@ namespace AIRefactored.AI.Groups
 
         public static void BroadcastMissionType(BotOwner bot, MissionType mission)
         {
-            if (bot == null || bot.IsDead )
+            if (bot == null || bot.IsDead || bot.BotsGroup == null)
             {
                 return;
             }
 
-            BotsGroup group = bot.BotsGroup;
-            if (group == null)
-            {
-                return;
-            }
-
-            int count = group.MembersCount;
+            int count = bot.BotsGroup.MembersCount;
             for (int i = 0; i < count; i++)
             {
-                BotOwner mate = group.Member(i);
+                BotOwner mate = bot.BotsGroup.Member(i);
                 if (mate != null && mate != bot && !mate.IsDead && mate.BotTalk != null)
                 {
                     mate.BotTalk.TrySay(EPhraseTrigger.Cooperation);
@@ -109,7 +103,7 @@ namespace AIRefactored.AI.Groups
 
         public void BroadcastFallback(Vector3 retreatPoint)
         {
-            foreach (KeyValuePair<BotOwner, CombatStateMachine> pair in _combatMap)
+            foreach (var pair in _combatMap)
             {
                 BotOwner mate = pair.Key;
                 CombatStateMachine fsm = pair.Value;
@@ -151,9 +145,7 @@ namespace AIRefactored.AI.Groups
             jitter.y = 0f;
 
             Vector3 target = center + jitter;
-            float distSqr = (_bot.Position - target).sqrMagnitude;
-
-            if (distSqr > RegroupThreshold * RegroupThreshold)
+            if ((_bot.Position - target).sqrMagnitude > RegroupThresholdSqr)
             {
                 BotMovementHelper.SmoothMoveTo(_bot, target, false);
             }
@@ -171,13 +163,13 @@ namespace AIRefactored.AI.Groups
         {
             _teammates.Clear();
 
-            Player player = _bot.GetPlayer;
-            if (player == null || player.Profile == null || player.Profile.Info == null)
+            Player self = _bot.GetPlayer;
+            if (self == null || self.Profile?.Info == null)
             {
                 return;
             }
 
-            string groupId = player.Profile.Info.GroupId;
+            string groupId = self.Profile.Info.GroupId;
             if (string.IsNullOrEmpty(groupId))
             {
                 return;
@@ -189,10 +181,7 @@ namespace AIRefactored.AI.Groups
                 if (other != null && other != _bot && !other.IsDead)
                 {
                     Player otherPlayer = other.GetPlayer;
-                    if (otherPlayer != null &&
-                        otherPlayer.Profile != null &&
-                        otherPlayer.Profile.Info != null &&
-                        otherPlayer.Profile.Info.GroupId == groupId)
+                    if (otherPlayer?.Profile?.Info?.GroupId == groupId)
                     {
                         _teammates.Add(other);
                     }
@@ -245,7 +234,7 @@ namespace AIRefactored.AI.Groups
             if (!receiver.EnemiesController.EnemyInfos.ContainsKey(enemy))
             {
                 var settings = new BotSettingsClass((Player)enemy, receiver.BotsGroup, EBotEnemyCause.zryachiyLogic);
-                receiver.Memory.AddEnemy(enemy, settings, false);
+                receiver.Memory?.AddEnemy(enemy, settings, false);
             }
         }
 
@@ -260,7 +249,7 @@ namespace AIRefactored.AI.Groups
                 }
                 catch (Exception ex)
                 {
-                    Plugin.LoggerInstance.LogError("[BotTeamLogic] Error in fallback delay: " + ex.Message);
+                    Plugin.LoggerInstance.LogError("[BotTeamLogic] Error in fallback delay: " + ex);
                 }
             });
         }

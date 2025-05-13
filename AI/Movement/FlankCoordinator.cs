@@ -3,13 +3,14 @@
 //   Licensed under the MIT License. See LICENSE in the repository root for more information.
 //
 //   THIS FILE IS SYSTEMATICALLY MANAGED.
-//   Please follow strict StyleCop, ReSharper, and AI-Refactored code standards for all modifications.
+//   Failures in AIRefactored logic must always trigger safe fallback to EFT base AI.
 // </auto-generated>
 
 namespace AIRefactored.AI.Movement
 {
     using System;
     using AIRefactored.AI.Core;
+    using AIRefactored.AI.Helpers;
     using EFT;
     using UnityEngine;
 
@@ -28,7 +29,7 @@ namespace AIRefactored.AI.Movement
 
         #endregion
 
-        #region Internal State
+        #region State
 
         private static float _lastLeftUseTime = -999f;
         private static float _lastRightUseTime = -999f;
@@ -51,10 +52,7 @@ namespace AIRefactored.AI.Movement
             Vector3 botPos = bot.Position;
             Vector3 enemyPos = bot.Memory.GoalEnemy.CurrPosition;
 
-            BifacialTransform bifacial = bot.Memory.GoalEnemy.Person != null
-                ? bot.Memory.GoalEnemy.Person.Transform
-                : null;
-
+            BifacialTransform bifacial = bot.Memory.GoalEnemy.Person?.Transform;
             if (bifacial == null)
             {
                 return FlankPositionPlanner.Side.Left;
@@ -62,7 +60,8 @@ namespace AIRefactored.AI.Movement
 
             float now = Time.time;
             Vector3 enemyForward = bifacial.forward;
-            float angle = Vector3.SignedAngle(enemyForward, botPos - enemyPos, Vector3.up);
+            Vector3 toBot = botPos - enemyPos;
+            float angle = Vector3.SignedAngle(enemyForward, toBot, Vector3.up);
 
             float squadBias = GetSquadBias(bot, enemyPos);
             float suppressionBias = GetSuppressionBias(cache);
@@ -107,7 +106,7 @@ namespace AIRefactored.AI.Movement
 
         #endregion
 
-        #region Internal Helpers
+        #region Helpers
 
         private static float GetSuppressionBias(BotComponentCache cache)
         {
@@ -124,8 +123,8 @@ namespace AIRefactored.AI.Movement
                 return 0f;
             }
 
-            Vector3 botVector = bot.Position - enemyPosition;
-            Vector3 normSelf = botVector.sqrMagnitude > 0.001f ? botVector.normalized : Vector3.forward;
+            Vector3 selfVector = bot.Position - enemyPosition;
+            Vector3 normSelf = selfVector.sqrMagnitude > 0.001f ? selfVector.normalized : Vector3.forward;
 
             float dotSum = 0f;
             int contributors = 0;

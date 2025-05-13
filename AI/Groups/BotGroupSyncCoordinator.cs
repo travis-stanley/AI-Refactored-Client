@@ -3,7 +3,7 @@
 //   Licensed under the MIT License. See LICENSE in the repository root for more information.
 //
 //   THIS FILE IS SYSTEMATICALLY MANAGED.
-//   Please follow strict StyleCop, ReSharper, and AI-Refactored code standards for all modifications.
+//   Failures in AIRefactored logic must always trigger safe fallback to EFT base AI.
 // </auto-generated>
 
 namespace AIRefactored.AI.Groups
@@ -12,7 +12,7 @@ namespace AIRefactored.AI.Groups
     using System.Collections.Generic;
     using System.Threading.Tasks;
     using AIRefactored.AI.Core;
-    using AIRefactored.Pools;
+    using AIRefactored.Core;
     using EFT;
     using UnityEngine;
 
@@ -25,7 +25,7 @@ namespace AIRefactored.AI.Groups
         #region Constants
 
         private const float BaseSyncInterval = 0.5f;
-        private const float PositionEpsilon = 0.15f;
+        private const float PositionEpsilonSqr = 0.0225f;
 
         #endregion
 
@@ -37,15 +37,14 @@ namespace AIRefactored.AI.Groups
         private BotComponentCache _cache;
         private BotsGroup _group;
 
-        private Vector3 _extractPoint;
         private Vector3 _fallbackPoint;
         private Vector3 _lootPoint;
-
-        private bool _hasExtract;
-        private bool _hasFallback;
-        private bool _hasLoot;
+        private Vector3 _extractPoint;
 
         private float _nextSyncTime;
+        private bool _hasFallback;
+        private bool _hasLoot;
+        private bool _hasExtract;
 
         public float LastDangerBroadcastTime { get; private set; }
         public Vector3 LastDangerPosition { get; private set; }
@@ -64,7 +63,7 @@ namespace AIRefactored.AI.Groups
         {
             if (botOwner == null || botOwner.GetPlayer == null || !botOwner.GetPlayer.IsAI)
             {
-                throw new ArgumentException("BotOwner is null or not AI.");
+                throw new ArgumentException("[BotGroupSyncCoordinator] BotOwner is null or not AI.");
             }
 
             _bot = botOwner;
@@ -72,7 +71,7 @@ namespace AIRefactored.AI.Groups
 
             if (_group == null)
             {
-                throw new ArgumentException("BotsGroup is null.");
+                throw new ArgumentException("[BotGroupSyncCoordinator] BotsGroup is null.");
             }
 
             _group.OnMemberAdd += OnMemberAdded;
@@ -85,7 +84,7 @@ namespace AIRefactored.AI.Groups
         {
             if (localCache == null)
             {
-                throw new ArgumentNullException("localCache");
+                throw new ArgumentNullException(nameof(localCache));
             }
 
             _cache = localCache;
@@ -100,24 +99,35 @@ namespace AIRefactored.AI.Groups
             _fallbackPoint = point;
             _hasFallback = true;
 
-            foreach (KeyValuePair<BotOwner, BotComponentCache> kvp in _teammateCaches)
+            foreach (var kv in _teammateCaches)
             {
-                BotComponentCache teammate = kvp.Value;
-                if (teammate.Bot != null && !teammate.Bot.IsDead)
+                BotComponentCache mate = kv.Value;
+                if (mate.Bot != null && !mate.Bot.IsDead)
                 {
-                    teammate.Combat.TriggerFallback(point);
-                    if (teammate.PanicHandler != null && !teammate.PanicHandler.IsPanicking)
+                    mate.Combat?.TriggerFallback(point);
+
+                    if (mate.PanicHandler != null && !mate.PanicHandler.IsPanicking)
                     {
-                        teammate.PanicHandler.TriggerPanic();
+                        mate.PanicHandler.TriggerPanic();
                     }
                 }
             }
         }
 
-        public void BroadcastExtractPoint(Vector3 point)
+        public void BroadcastDanger(Vector3 position)
         {
-            _extractPoint = point;
-            _hasExtract = true;
+            LastDangerPosition = position;
+            LastDangerBroadcastTime = Time.time;
+
+            foreach (var kv in _teammateCaches)
+            {
+                BotComponentCache mate = kv.Value;
+                if (mate.Bot != null && !mate.Bot.IsDead && mate.PanicHandler != null && !mate.PanicHandler.IsPanicking)
+                {
+                    float delay = UnityEngine.Random.Range(0.1f, 0.35f);
+                    TriggerDelayedPanic(mate, delay);
+                }
+            }
         }
 
         public void BroadcastLootPoint(Vector3 point)
@@ -126,53 +136,73 @@ namespace AIRefactored.AI.Groups
             _hasLoot = true;
         }
 
-        public void BroadcastDanger(Vector3 position)
+        public void BroadcastExtractPoint(Vector3 point)
         {
-            LastDangerBroadcastTime = Time.time;
-            LastDangerPosition = position;
-
-            foreach (KeyValuePair<BotOwner, BotComponentCache> kvp in _teammateCaches)
-            {
-                BotComponentCache teammate = kvp.Value;
-                if (teammate.Bot != null && !teammate.Bot.IsDead && teammate.PanicHandler != null && !teammate.PanicHandler.IsPanicking)
-                {
-                    float delay = UnityEngine.Random.Range(0.1f, 0.35f);
-                    TriggerDelayedPanic(teammate, delay);
-                }
-            }
+            _extractPoint = point;
+            _hasExtract = true;
         }
 
         #endregion
 
-        #region Runtime Tick
+        #region Queries
+
+        public Vector3? GetSharedFallbackTarget() => _hasFallback ? (Vector3?)_fallbackPoint : null;
+        public Vector3? GetSharedLootTarget() => _hasLoot ? (Vector3?)_lootPoint : null;
+        public Vector3? GetSharedExtractTarget() => _hasExtract ? (Vector3?)_extractPoint : null;
+
+        public bool IsSquadReady() => _teammateCaches.Count > 0;
+
+        public IReadOnlyList<BotOwner> GetTeammates()
+        {
+            List<BotOwner> result = new List<BotOwner>(_teammateCaches.Count);
+            foreach (var kv in _teammateCaches)
+            {
+                BotOwner bot = kv.Key;
+                if (bot != null && !bot.IsDead && bot.GetPlayer?.IsAI == true)
+                {
+                    result.Add(bot);
+                }
+            }
+
+            return result;
+        }
+
+        public BotComponentCache GetCache(BotOwner teammate)
+        {
+            if (_teammateCaches.TryGetValue(teammate, out BotComponentCache cache))
+            {
+                return cache;
+            }
+
+            throw new KeyNotFoundException("[BotGroupSyncCoordinator] No teammate cache found for: " + (teammate?.ProfileId ?? "null"));
+        }
+
+        #endregion
+
+        #region Tick
 
         public void Tick(float time)
         {
-            if (!IsActive || _teammateCaches.Count == 0)
+            if (!IsActive || _teammateCaches.Count == 0 || time < _nextSyncTime)
             {
                 return;
             }
 
-            if (time < _nextSyncTime)
-            {
-                return;
-            }
+            _nextSyncTime = time + BaseSyncInterval * UnityEngine.Random.Range(0.85f, 1.15f);
 
-            _nextSyncTime = time + BaseSyncInterval * UnityEngine.Random.Range(0.8f, 1.2f);
-
-            if (_cache.PanicHandler == null || !_cache.PanicHandler.IsPanicking)
+            if (_cache?.PanicHandler == null || !_cache.PanicHandler.IsPanicking)
             {
                 return;
             }
 
             Vector3 myPos = _bot.Position;
 
-            if (!_hasFallback || (myPos - _fallbackPoint).sqrMagnitude > PositionEpsilon * PositionEpsilon)
+            if (!_hasFallback || (myPos - _fallbackPoint).sqrMagnitude > PositionEpsilonSqr)
             {
                 BroadcastFallbackPoint(myPos);
             }
 
-            if ((myPos - LastDangerPosition).sqrMagnitude > PositionEpsilon * PositionEpsilon)
+            if ((myPos - LastDangerPosition).sqrMagnitude > PositionEpsilonSqr)
             {
                 BroadcastDanger(myPos);
             }
@@ -180,59 +210,7 @@ namespace AIRefactored.AI.Groups
 
         #endregion
 
-        #region Queries
-
-        public Vector3? GetSharedFallbackTarget()
-        {
-            return _hasFallback ? (Vector3?)_fallbackPoint : null;
-        }
-
-        public Vector3? GetSharedLootTarget()
-        {
-            return _hasLoot ? (Vector3?)_lootPoint : null;
-        }
-
-        public Vector3? GetSharedExtractTarget()
-        {
-            return _hasExtract ? (Vector3?)_extractPoint : null;
-        }
-
-        public bool IsSquadReady()
-        {
-            return _teammateCaches.Count > 0;
-        }
-
-        public BotComponentCache GetCache(BotOwner teammate)
-        {
-            BotComponentCache result;
-            if (_teammateCaches.TryGetValue(teammate, out result))
-            {
-                return result;
-            }
-
-            throw new KeyNotFoundException("No teammate cache found for: " + (teammate != null ? teammate.ProfileId : "null"));
-        }
-
-        public IReadOnlyList<BotOwner> GetTeammates()
-        {
-            List<BotOwner> list = new List<BotOwner>(_teammateCaches.Count);
-            foreach (KeyValuePair<BotOwner, BotComponentCache> kvp in _teammateCaches)
-            {
-                BotOwner mate = kvp.Key;
-                Player player = mate != null ? mate.GetPlayer : null;
-
-                if (mate != null && !mate.IsDead && player != null && player.IsAI)
-                {
-                    list.Add(mate);
-                }
-            }
-
-            return list;
-        }
-
-        #endregion
-
-        #region Internal Handlers
+        #region Internal Logic
 
         private void OnMemberAdded(BotOwner teammate)
         {
@@ -241,8 +219,7 @@ namespace AIRefactored.AI.Groups
                 return;
             }
 
-            Player player = teammate.GetPlayer;
-            if (player == null || !player.IsAI || teammate.IsDead)
+            if (teammate.IsDead || teammate.GetPlayer?.IsAI != true)
             {
                 return;
             }
@@ -253,8 +230,7 @@ namespace AIRefactored.AI.Groups
                 return;
             }
 
-            AIRefactoredBotOwner owner;
-            if (!BotRegistry.TryGetRefactoredOwner(profileId, out owner))
+            if (!BotRegistry.TryGetRefactoredOwner(profileId, out AIRefactoredBotOwner owner))
             {
                 return;
             }
@@ -277,8 +253,8 @@ namespace AIRefactored.AI.Groups
             {
                 await Task.Delay((int)(delay * 1000f));
 
-                if (cache != null && cache.Bot != null && cache.PanicHandler != null &&
-                    !cache.Bot.IsDead && !cache.PanicHandler.IsPanicking)
+                if (cache != null && cache.Bot != null && !cache.Bot.IsDead &&
+                    cache.PanicHandler != null && !cache.PanicHandler.IsPanicking)
                 {
                     cache.PanicHandler.TriggerPanic();
                 }

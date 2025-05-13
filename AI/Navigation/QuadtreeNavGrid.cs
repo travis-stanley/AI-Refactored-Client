@@ -38,24 +38,134 @@ namespace AIRefactored.AI.Navigation
 
         public void Insert(NavPointData point)
         {
-            if (point == null)
+            if (point == null) return;
+
+            Vector2 pos2D = new Vector2(point.Position.x, point.Position.z);
+            Stack<Node> stack = TempStackPool.Rent<Node>();
+            stack.Push(_root);
+
+            while (stack.Count > 0)
             {
-                return;
+                Node node = stack.Pop();
+
+                if (!node.Bounds.Contains(pos2D))
+                {
+                    continue;
+                }
+
+                if (node.IsLeaf)
+                {
+                    node.NavPoints.Add(point);
+
+                    if (node.NavPoints.Count > MaxPointsPerNode && node.Depth < MaxDepth)
+                    {
+                        Subdivide(node);
+                        for (int i = 0; i < node.NavPoints.Count; i++)
+                        {
+                            for (int j = 0; j < node.Children.Length; j++)
+                            {
+                                stack.Push(node.Children[j]);
+                            }
+                            stack.Push(node);
+                        }
+
+                        node.NavPoints.Clear();
+                    }
+
+                    break;
+                }
+
+                for (int i = 0; i < node.Children.Length; i++)
+                {
+                    stack.Push(node.Children[i]);
+                }
             }
 
-            Insert(_root, point);
+            TempStackPool.Return(stack);
         }
 
         public void Insert(Vector3 point)
         {
-            Insert(_root, point);
+            Vector2 pos2D = new Vector2(point.x, point.z);
+            Stack<Node> stack = TempStackPool.Rent<Node>();
+            stack.Push(_root);
+
+            while (stack.Count > 0)
+            {
+                Node node = stack.Pop();
+
+                if (!node.Bounds.Contains(pos2D))
+                {
+                    continue;
+                }
+
+                if (node.IsLeaf)
+                {
+                    node.RawPoints.Add(point);
+
+                    if (node.RawPoints.Count > MaxPointsPerNode && node.Depth < MaxDepth)
+                    {
+                        Subdivide(node);
+                        for (int i = 0; i < node.RawPoints.Count; i++)
+                        {
+                            for (int j = 0; j < node.Children.Length; j++)
+                            {
+                                stack.Push(node.Children[j]);
+                            }
+                            stack.Push(node);
+                        }
+
+                        node.RawPoints.Clear();
+                    }
+
+                    break;
+                }
+
+                for (int i = 0; i < node.Children.Length; i++)
+                {
+                    stack.Push(node.Children[i]);
+                }
+            }
+
+            TempStackPool.Return(stack);
         }
 
         public List<NavPointData> Query(Vector3 position, float radius, Predicate<NavPointData> filter)
         {
             List<NavPointData> result = TempListPool.Rent<NavPointData>();
             float radiusSq = radius * radius;
-            Query(_root, position, radiusSq, result, filter);
+            Vector2 pos2D = new Vector2(position.x, position.z);
+            Rect queryBounds = new Rect(pos2D.x - radius, pos2D.y - radius, radius * 2f, radius * 2f);
+
+            Stack<Node> stack = TempStackPool.Rent<Node>();
+            stack.Push(_root);
+
+            while (stack.Count > 0)
+            {
+                Node node = stack.Pop();
+                if (!node.Bounds.Overlaps(queryBounds)) continue;
+
+                if (node.IsLeaf)
+                {
+                    for (int i = 0; i < node.NavPoints.Count; i++)
+                    {
+                        NavPointData point = node.NavPoints[i];
+                        if ((point.Position - position).sqrMagnitude <= radiusSq && (filter == null || filter(point)))
+                        {
+                            result.Add(point);
+                        }
+                    }
+
+                    continue;
+                }
+
+                for (int i = 0; i < node.Children.Length; i++)
+                {
+                    stack.Push(node.Children[i]);
+                }
+            }
+
+            TempStackPool.Return(stack);
             return result;
         }
 
@@ -74,124 +184,39 @@ namespace AIRefactored.AI.Navigation
         {
             List<Vector3> result = TempListPool.Rent<Vector3>();
             float radiusSq = radius * radius;
-            QueryRaw(_root, position, radiusSq, result, filter);
+            Vector2 pos2D = new Vector2(position.x, position.z);
+            Rect queryBounds = new Rect(pos2D.x - radius, pos2D.y - radius, radius * 2f, radius * 2f);
+
+            Stack<Node> stack = TempStackPool.Rent<Node>();
+            stack.Push(_root);
+
+            while (stack.Count > 0)
+            {
+                Node node = stack.Pop();
+                if (!node.Bounds.Overlaps(queryBounds)) continue;
+
+                if (node.IsLeaf)
+                {
+                    for (int i = 0; i < node.RawPoints.Count; i++)
+                    {
+                        Vector3 p = node.RawPoints[i];
+                        if ((p - position).sqrMagnitude <= radiusSq && (filter == null || filter(p)))
+                        {
+                            result.Add(p);
+                        }
+                    }
+
+                    continue;
+                }
+
+                for (int i = 0; i < node.Children.Length; i++)
+                {
+                    stack.Push(node.Children[i]);
+                }
+            }
+
+            TempStackPool.Return(stack);
             return result;
-        }
-
-        private void Insert(Node node, NavPointData point)
-        {
-            Vector2 pos2D = new Vector2(point.Position.x, point.Position.z);
-            if (!node.Bounds.Contains(pos2D))
-            {
-                return;
-            }
-
-            if (node.IsLeaf)
-            {
-                node.NavPoints.Add(point);
-                if (node.NavPoints.Count > MaxPointsPerNode && node.Depth < MaxDepth)
-                {
-                    Subdivide(node);
-                    Reinsert(node);
-                }
-            }
-            else
-            {
-                for (int i = 0; i < node.Children.Length; i++)
-                {
-                    Insert(node.Children[i], point);
-                }
-            }
-        }
-
-        private void Insert(Node node, Vector3 point)
-        {
-            Vector2 pos2D = new Vector2(point.x, point.z);
-            if (!node.Bounds.Contains(pos2D))
-            {
-                return;
-            }
-
-            if (node.IsLeaf)
-            {
-                node.RawPoints.Add(point);
-                if (node.RawPoints.Count > MaxPointsPerNode && node.Depth < MaxDepth)
-                {
-                    Subdivide(node);
-                    Reinsert(node);
-                }
-            }
-            else
-            {
-                for (int i = 0; i < node.Children.Length; i++)
-                {
-                    Insert(node.Children[i], point);
-                }
-            }
-        }
-
-        private void Query(Node node, Vector3 position, float radiusSq, List<NavPointData> result, Predicate<NavPointData> filter)
-        {
-            Vector2 pos2D = new Vector2(position.x, position.z);
-            float radius = Mathf.Sqrt(radiusSq);
-            Rect rect = new Rect(pos2D.x - radius, pos2D.y - radius, radius * 2f, radius * 2f);
-
-            if (!node.Bounds.Overlaps(rect))
-            {
-                return;
-            }
-
-            if (node.IsLeaf)
-            {
-                for (int i = 0; i < node.NavPoints.Count; i++)
-                {
-                    NavPointData point = node.NavPoints[i];
-                    if ((point.Position - position).sqrMagnitude <= radiusSq &&
-                        (filter == null || filter(point)))
-                    {
-                        result.Add(point);
-                    }
-                }
-            }
-            else
-            {
-                for (int i = 0; i < node.Children.Length; i++)
-                {
-                    Query(node.Children[i], position, radiusSq, result, filter);
-                }
-            }
-        }
-
-        private void QueryRaw(Node node, Vector3 position, float radiusSq, List<Vector3> result, Predicate<Vector3> filter)
-        {
-            Vector2 pos2D = new Vector2(position.x, position.z);
-            float radius = Mathf.Sqrt(radiusSq);
-            Rect rect = new Rect(pos2D.x - radius, pos2D.y - radius, radius * 2f, radius * 2f);
-
-            if (!node.Bounds.Overlaps(rect))
-            {
-                return;
-            }
-
-            if (node.IsLeaf)
-            {
-                for (int i = 0; i < node.RawPoints.Count; i++)
-                {
-                    Vector3 point = node.RawPoints[i];
-                    if ((point - position).sqrMagnitude <= radiusSq &&
-                        (filter == null || filter(point)))
-                    {
-                        result.Add(point);
-                    }
-                }
-            }
-            else
-            {
-                for (int i = 0; i < node.Children.Length; i++)
-                {
-                    QueryRaw(node.Children[i], position, radiusSq, result, filter);
-                }
-            }
         }
 
         private void Subdivide(Node node)
@@ -209,29 +234,6 @@ namespace AIRefactored.AI.Navigation
                 new Node(new Rect(x, y + halfH, halfW, halfH), d),
                 new Node(new Rect(x + halfW, y + halfH, halfW, halfH), d)
             };
-        }
-
-        private void Reinsert(Node node)
-        {
-            var nav = node.NavPoints;
-            node.NavPoints = TempListPool.Rent<NavPointData>();
-            for (int i = 0; i < nav.Count; i++)
-            {
-                for (int j = 0; j < node.Children.Length; j++)
-                {
-                    Insert(node.Children[j], nav[i]);
-                }
-            }
-
-            var raw = node.RawPoints;
-            node.RawPoints = TempListPool.Rent<Vector3>();
-            for (int i = 0; i < raw.Count; i++)
-            {
-                for (int j = 0; j < node.Children.Length; j++)
-                {
-                    Insert(node.Children[j], raw[i]);
-                }
-            }
         }
 
         private sealed class Node

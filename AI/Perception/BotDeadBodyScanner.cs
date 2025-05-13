@@ -45,7 +45,24 @@ namespace AIRefactored.AI.Looting
             }
 
             List<LootableContainer> containers = LootRegistry.GetAllContainers();
-            List<Player> players = GameWorldHandler.GetAllAlivePlayers();
+
+            GameWorld world = GameWorldHandler.Get();
+            if (world == null || world.RegisteredPlayers == null)
+            {
+                return;
+            }
+
+            List<IPlayer> rawPlayers = world.RegisteredPlayers;
+            List<Player> deadPlayers = TempListPool.Rent<Player>();
+
+            for (int i = 0; i < rawPlayers.Count; i++)
+            {
+                Player p = EFTPlayerUtil.AsEFTPlayer(rawPlayers[i]);
+                if (p != null && !p.HealthController.IsAlive)
+                {
+                    deadPlayers.Add(p);
+                }
+            }
 
             for (int i = 0; i < containers.Count; i++)
             {
@@ -57,28 +74,29 @@ namespace AIRefactored.AI.Looting
 
                 Vector3 containerPos = container.transform.position;
 
-                for (int j = 0; j < players.Count; j++)
+                for (int j = 0; j < deadPlayers.Count; j++)
                 {
-                    Player player = players[j];
-                    if (player == null || player.HealthController == null || player.HealthController.IsAlive)
+                    Player player = deadPlayers[j];
+                    if (string.IsNullOrEmpty(player.ProfileId))
                     {
                         continue;
                     }
 
-                    string profileId = player.ProfileId;
-                    if (string.IsNullOrEmpty(profileId))
+                    if (DeadBodyContainerCache.Contains(player.ProfileId))
                     {
                         continue;
                     }
 
                     float dist = Vector3.Distance(player.Transform.position, containerPos);
-                    if (dist < MaxContainerDistance)
+                    if (dist <= MaxContainerDistance)
                     {
                         DeadBodyContainerCache.Register(player, container);
                         break;
                     }
                 }
             }
+
+            TempListPool.Return(deadPlayers);
         }
 
         public void Initialize(BotComponentCache cache)

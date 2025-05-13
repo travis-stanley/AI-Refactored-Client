@@ -3,7 +3,7 @@
 //   Licensed under the MIT License. See LICENSE in the repository root for more information.
 //
 //   THIS FILE IS SYSTEMATICALLY MANAGED.
-//   Please follow strict StyleCop, ReSharper, and AI-Refactored code standards for all modifications.
+//   Failures in AIRefactored logic must always trigger safe fallback to EFT base AI.
 // </auto-generated>
 
 namespace AIRefactored.AI.Combat
@@ -79,9 +79,7 @@ namespace AIRefactored.AI.Combat
         public void Tick(float time)
         {
             if (_bot.IsDead || !_bot.IsAI || _bot.Memory == null)
-            {
                 return;
-            }
 
             BotWeaponManager weaponManager = _bot.WeaponManager;
             ShootData shootData = _bot.ShootData;
@@ -91,23 +89,16 @@ namespace AIRefactored.AI.Combat
             BotPersonalityProfile profile = _cache.AIRefactoredBotOwner?.PersonalityProfile;
 
             if (weaponManager == null || shootData == null || weaponInfo == null || weapon == null || settings == null || profile == null)
-            {
                 return;
-            }
 
-            Player target;
-            if (!TryResolveEnemy(out target))
-            {
+            if (!TryResolveEnemy(out Player target))
                 return;
-            }
 
             Vector3 aimPosition = GetValidatedAimPosition(target, time);
             UpdateBotAiming(aimPosition);
 
             if (!EFTPlayerUtil.IsValid(target))
-            {
                 return;
-            }
 
             float distance = Vector3.Distance(_bot.Position, aimPosition);
             float weaponRange = EstimateWeaponRange(weapon);
@@ -130,9 +121,7 @@ namespace AIRefactored.AI.Combat
             }
 
             if (time < _nextDecisionTime)
-            {
                 return;
-            }
 
             _nextDecisionTime = time + GetBurstCadence(profile);
 
@@ -149,13 +138,9 @@ namespace AIRefactored.AI.Combat
             {
                 shootData.Shoot();
 
-                if (_cache.LastShotTracker != null && target != null)
+                if (_cache.LastShotTracker != null && !string.IsNullOrEmpty(target.ProfileId))
                 {
-                    string id = target.ProfileId;
-                    if (!string.IsNullOrEmpty(id))
-                    {
-                        _cache.LastShotTracker.RegisterShot(id);
-                    }
+                    _cache.LastShotTracker.RegisterShot(target.ProfileId);
                 }
             }
         }
@@ -168,9 +153,7 @@ namespace AIRefactored.AI.Combat
         {
             Vector3 dir = aimPosition - _bot.Position;
             if (dir.sqrMagnitude < 0.01f)
-            {
                 return;
-            }
 
             Quaternion rot = Quaternion.LookRotation(dir);
             float pitch = rot.eulerAngles.x > 180f ? rot.eulerAngles.x - 360f : rot.eulerAngles.x;
@@ -182,16 +165,12 @@ namespace AIRefactored.AI.Combat
 
         private Vector3 GetValidatedAimPosition(Player target, float time)
         {
-            if (target != null && target.HealthController != null && target.HealthController.IsAlive)
-            {
+            if (EFTPlayerUtil.IsValid(target))
                 return EFTPlayerUtil.GetPosition(target);
-            }
 
             Vector3 memory = _bot.Memory.LastEnemy?.CurrPosition ?? Vector3.zero;
             if (memory != Vector3.zero)
-            {
                 return memory;
-            }
 
             if (time - _lastLookAroundTime > 1.5f)
             {
@@ -239,9 +218,7 @@ namespace AIRefactored.AI.Combat
             for (int i = 0; i < modes.Length; i++)
             {
                 if (modes[i] == mode)
-                {
                     return true;
-                }
             }
 
             return false;
@@ -265,16 +242,12 @@ namespace AIRefactored.AI.Combat
         {
             ItemTemplate template = weapon.Template;
             if (template == null || string.IsNullOrEmpty(template.Name))
-            {
                 return 90f;
-            }
 
-            foreach (KeyValuePair<string, float> kv in WeaponTypeRanges)
+            foreach (var kv in WeaponTypeRanges)
             {
                 if (template.Name.IndexOf(kv.Key, StringComparison.OrdinalIgnoreCase) >= 0)
-                {
                     return kv.Value;
-                }
             }
 
             return 90f;
@@ -293,41 +266,33 @@ namespace AIRefactored.AI.Combat
         {
             HealthControllerClass hc = _bot.HealthController as HealthControllerClass;
             if (hc == null || hc.Dictionary_0 == null)
-            {
                 return 1f;
-            }
 
             float current = 0f;
-            float maximum = 0f;
+            float max = 0f;
 
             foreach (EBodyPart part in AllBodyParts)
             {
-                GClass2814<HealthControllerClass.GClass2819>.BodyPartState state;
-                if (hc.Dictionary_0.TryGetValue(part, out state) && state.Health != null)
+                if (hc.Dictionary_0.TryGetValue(part, out var state) && state.Health != null)
                 {
                     current += state.Health.Current;
-                    maximum += state.Health.Maximum;
+                    max += state.Health.Maximum;
                 }
             }
 
-            return maximum > 0f ? current / maximum : 1f;
+            return max > 0f ? current / max : 1f;
         }
 
         private void TriggerFallback()
         {
             if (_cache.Pathing == null)
-            {
                 return;
-            }
 
             List<Vector3> retreatPath = BotCoverRetreatPlanner.GetCoverRetreatPath(_bot, _bot.LookDirection.normalized, _cache.Pathing);
             if (retreatPath == null || retreatPath.Count < 2)
-            {
                 return;
-            }
 
             Vector3 fallback = retreatPath[retreatPath.Count - 1];
-
             if (!BotNavValidator.Validate(_bot, "BotFireLogic::TriggerFallback"))
             {
                 fallback = FallbackNavPointProvider.GetSafePoint(_bot.Position);
@@ -346,21 +311,16 @@ namespace AIRefactored.AI.Combat
         {
             result = null;
 
-            BotThreatSelector selector = _cache.ThreatSelector;
-            if (selector != null && selector.CurrentTarget is Player resolved && EFTPlayerUtil.IsValid(resolved))
+            if (_cache.ThreatSelector?.CurrentTarget is Player direct && EFTPlayerUtil.IsValid(direct))
             {
-                result = resolved;
+                result = direct;
                 return true;
             }
 
-            if (_bot.Memory != null && _bot.Memory.GoalEnemy != null)
+            if (_bot.Memory?.GoalEnemy?.Person is Player fallback && EFTPlayerUtil.IsValid(fallback))
             {
-                Player fallback = _bot.Memory.GoalEnemy.Person as Player;
-                if (fallback != null && EFTPlayerUtil.IsValid(fallback))
-                {
-                    result = fallback;
-                    return true;
-                }
+                result = fallback;
+                return true;
             }
 
             return false;

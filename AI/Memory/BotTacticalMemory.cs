@@ -3,7 +3,7 @@
 //   Licensed under the MIT License. See LICENSE in the repository root for more information.
 //
 //   THIS FILE IS SYSTEMATICALLY MANAGED.
-//   Please follow strict StyleCop, ReSharper, and AI-Refactored code standards for all modifications.
+//   Failures in AIRefactored logic must always trigger safe fallback to EFT base AI.
 // </auto-generated>
 
 namespace AIRefactored.AI.Memory
@@ -22,10 +22,16 @@ namespace AIRefactored.AI.Memory
     /// </summary>
     public sealed class BotTacticalMemory
     {
+        #region Constants
+
         private const float ClearedMemoryDuration = 10f;
         private const float GridSnapSize = 0.5f;
         private const float MaxMemoryTime = 14f;
         private const float PositionToleranceSqr = 0.25f;
+
+        #endregion
+
+        #region Fields
 
         private readonly Dictionary<Vector3, float> _clearedSpots = new Dictionary<Vector3, float>(32, new Vector3EqualityComparer());
         private readonly Dictionary<string, SeenEnemyRecord> _enemyMemoryById = new Dictionary<string, SeenEnemyRecord>(4, StringComparer.OrdinalIgnoreCase);
@@ -34,6 +40,10 @@ namespace AIRefactored.AI.Memory
         private BotComponentCache _cache;
         private bool _extractionStarted;
 
+        #endregion
+
+        #region Initialization
+
         public void Initialize(BotComponentCache cache)
         {
             if (cache != null)
@@ -41,6 +51,10 @@ namespace AIRefactored.AI.Memory
                 _cache = cache;
             }
         }
+
+        #endregion
+
+        #region Public Methods
 
         public void CullExpired()
         {
@@ -81,12 +95,7 @@ namespace AIRefactored.AI.Memory
 
         public void RecordEnemyPosition(Vector3 position, string tag, string enemyId)
         {
-            if (_cache == null || _cache.IsBlinded)
-            {
-                return;
-            }
-
-            if (_cache.PanicHandler != null && _cache.PanicHandler.IsPanicking)
+            if (_cache == null || _cache.IsBlinded || (_cache.PanicHandler != null && _cache.PanicHandler.IsPanicking))
             {
                 return;
             }
@@ -179,10 +188,7 @@ namespace AIRefactored.AI.Memory
                     if (mate != null && mate.Bot != null && mate.Bot != _cache.Bot)
                     {
                         BotTacticalMemory memory = mate.TacticalMemory;
-                        if (memory != null)
-                        {
-                            memory.SyncMemory(record.Position);
-                        }
+                        memory?.SyncMemory(record.Position);
                     }
                 }
             }
@@ -240,6 +246,10 @@ namespace AIRefactored.AI.Memory
             return _extractionStarted;
         }
 
+        #endregion
+
+        #region Internal Helpers
+
         private static Vector3 SnapToGrid(Vector3 pos)
         {
             return new Vector3(
@@ -248,9 +258,10 @@ namespace AIRefactored.AI.Memory
                 Mathf.Round(pos.z / GridSnapSize) * GridSnapSize);
         }
 
-        /// <summary>
-        /// Enemy record containing position, timestamp, and tactical tag.
-        /// </summary>
+        #endregion
+
+        #region Nested Types
+
         public struct SeenEnemyRecord
         {
             public Vector3 Position;
@@ -265,9 +276,6 @@ namespace AIRefactored.AI.Memory
             }
         }
 
-        /// <summary>
-        /// Equality comparer for grid-snapped Vector3 keys in dictionaries.
-        /// </summary>
         private sealed class Vector3EqualityComparer : IEqualityComparer<Vector3>
         {
             public bool Equals(Vector3 a, Vector3 b)
@@ -287,5 +295,7 @@ namespace AIRefactored.AI.Memory
                 }
             }
         }
+
+        #endregion
     }
 }

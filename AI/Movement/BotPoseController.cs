@@ -3,7 +3,7 @@
 //   Licensed under the MIT License. See LICENSE in the repository root for more information.
 //
 //   THIS FILE IS SYSTEMATICALLY MANAGED.
-//   Please follow strict StyleCop, ReSharper, and AI-Refactored code standards for all modifications.
+//   Failures in AIRefactored logic must always trigger safe fallback to EFT base AI.
 // </auto-generated>
 
 namespace AIRefactored.AI.Movement
@@ -168,8 +168,8 @@ namespace AIRefactored.AI.Movement
                 return;
             }
 
-            float panic = _cache.PanicHandler.IsPanicking ? 0.6f : 1f;
-            float combat = _cache.Combat.IsInCombatState() ? 1f : 0.4f;
+            float panic = _cache.PanicHandler != null && _cache.PanicHandler.IsPanicking ? 0.6f : 1f;
+            float combat = _cache.Combat != null && _cache.Combat.IsInCombatState() ? 1f : 0.4f;
             float speed = PoseBlendSpeedBase * panic * combat;
 
             _currentPoseLevel = Mathf.MoveTowards(_currentPoseLevel, _targetPoseLevel, speed * deltaTime);
@@ -178,13 +178,13 @@ namespace AIRefactored.AI.Movement
 
         private void EvaluatePoseIntent(float currentTime)
         {
-            if (_cache.PanicHandler.IsPanicking)
+            if (_cache.PanicHandler != null && _cache.PanicHandler.IsPanicking)
             {
                 _targetPoseLevel = 0f;
                 return;
             }
 
-            if (_cache.Suppression.IsSuppressed())
+            if (_cache.Suppression != null && _cache.Suppression.IsSuppressed())
             {
                 _suppressedUntil = currentTime + SuppressionCrouchDuration;
             }
@@ -235,7 +235,7 @@ namespace AIRefactored.AI.Movement
                 }
             }
 
-            bool inCombat = _cache.Combat.IsInCombatState();
+            bool inCombat = _cache.Combat != null && _cache.Combat.IsInCombatState();
             bool prefersCrouch = _personality.Caution > 0.6f || _personality.IsCamper;
 
             _targetPoseLevel = inCombat && prefersCrouch ? 50f : 100f;

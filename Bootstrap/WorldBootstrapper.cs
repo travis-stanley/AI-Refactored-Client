@@ -44,7 +44,7 @@ namespace AIRefactored.Bootstrap
 
         #region Lifecycle
 
-        public static void Begin(ManualLogSource logger)
+        public static void Begin(ManualLogSource logger, string mapId)
         {
             _loggerInstance = logger ?? Plugin.LoggerInstance;
 
@@ -58,6 +58,26 @@ namespace AIRefactored.Bootstrap
             {
                 _hasShutdownLogged = false;
                 Systems.Clear();
+
+                // Global resets (clean all registries)
+                BotRecoveryService.Reset();
+                BotSpawnWatcherService.Reset();
+                LootRuntimeWatcher.Reset();
+                DeadBodyObserverService.Reset();
+                DeadBodyContainerCache.Clear();
+                LootRegistry.Clear();
+                HotspotRegistry.Clear();
+                NavPointRegistry.Clear();
+
+                if (!string.IsNullOrEmpty(mapId))
+                {
+                    NavPointBootstrapper.RegisterAll(mapId);
+                    HotspotRegistry.Initialize(mapId);
+                }
+                else
+                {
+                    Logger.LogWarning("[WorldBootstrapper] Cannot initialize registries — mapId is invalid.");
+                }
 
                 RegisterSystem(new RaidLifecycleWatcher());
                 RegisterSystem(new BotRecoveryService());

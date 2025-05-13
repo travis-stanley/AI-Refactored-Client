@@ -100,19 +100,22 @@ namespace AIRefactored.Bootstrap
 			}
 
 			Vector3 containerPosition = container.transform.position;
-			List<Player> players = GameWorldHandler.GetAllAlivePlayers();
-			if (players.Count == 0)
+
+			GameWorld world = GameWorldHandler.Get();
+			if (world == null || world.RegisteredPlayers == null || world.RegisteredPlayers.Count == 0)
 			{
 				return;
 			}
 
 			List<Player> deadPlayers = TempListPool.Rent<Player>();
+			List<IPlayer> all = world.RegisteredPlayers;
+
 			try
 			{
-				for (int i = 0; i < players.Count; i++)
+				for (int i = 0; i < all.Count; i++)
 				{
-					Player p = players[i];
-					if (EFTPlayerUtil.IsValid(p) && !p.HealthController.IsAlive)
+					Player p = EFTPlayerUtil.AsEFTPlayer(all[i]);
+					if (p != null && !p.HealthController.IsAlive)
 					{
 						deadPlayers.Add(p);
 					}
@@ -121,11 +124,6 @@ namespace AIRefactored.Bootstrap
 				for (int i = 0; i < deadPlayers.Count; i++)
 				{
 					Player p = deadPlayers[i];
-					if (!EFTPlayerUtil.IsValid(p) || p.HealthController.IsAlive)
-					{
-						continue;
-					}
-
 					string profileId = p.Profile?.Id;
 					if (string.IsNullOrEmpty(profileId) || DeadBodyContainerCache.Contains(profileId))
 					{
@@ -150,7 +148,6 @@ namespace AIRefactored.Bootstrap
 			finally
 			{
 				TempListPool.Return(deadPlayers);
-				TempListPool.Return(players);
 			}
 		}
 	}

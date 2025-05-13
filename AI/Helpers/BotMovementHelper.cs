@@ -3,7 +3,7 @@
 //   Licensed under the MIT License. See LICENSE in the repository root for more information.
 //
 //   THIS FILE IS SYSTEMATICALLY MANAGED.
-//   Please follow strict StyleCop, ReSharper, and AI-Refactored code standards for all modifications.
+//   Failures in AIRefactored logic must always trigger safe fallback to EFT base AI.
 // </auto-generated>
 
 namespace AIRefactored.AI.Helpers
@@ -38,31 +38,25 @@ namespace AIRefactored.AI.Helpers
 
         public static void Reset(BotOwner bot)
         {
+            // Reserved for future velocity/mover override reset if needed
         }
 
         public static void RetreatToCover(BotOwner bot, Vector3 threatDirection, float distance = RetreatDistance, bool sprint = true)
         {
-            if (!IsEligible(bot))
-            {
-                return;
-            }
+            if (!IsEligible(bot)) return;
 
             Vector3 fallback = bot.Position - threatDirection.normalized * distance;
 
-            if (NavMeshStatus.IsReady)
+            BotComponentCache cache = BotCacheUtility.GetCache(bot);
+            if (NavMeshStatus.IsReady && cache?.Pathing != null)
             {
-                BotComponentCache cache = BotCacheUtility.GetCache(bot);
-                if (cache != null && cache.Pathing != null)
+                List<Vector3> path = BotCoverRetreatPlanner.GetCoverRetreatPath(bot, threatDirection, cache.Pathing);
+                for (int i = path.Count - 1; i >= 0; i--)
                 {
-                    List<Vector3> path = BotCoverRetreatPlanner.GetCoverRetreatPath(bot, threatDirection, cache.Pathing);
-                    for (int i = path.Count - 1; i >= 0; i--)
+                    if (!BotCoverHelper.WasRecentlyUsed(path[i]))
                     {
-                        Vector3 point = path[i];
-                        if (!BotCoverHelper.WasRecentlyUsed(point))
-                        {
-                            fallback = point;
-                            break;
-                        }
+                        fallback = path[i];
+                        break;
                     }
                 }
 
@@ -75,46 +69,27 @@ namespace AIRefactored.AI.Helpers
             }
 
             float cohesion = 1f;
-            bool shouldSprint = sprint;
-
             BotPersonalityProfile profile;
             if (BotRegistry.TryGet(bot.ProfileId, out profile))
             {
                 cohesion = Mathf.Clamp(profile.Cohesion, 0.7f, 1.3f);
-                if (profile.IsFrenzied || profile.IsFearful)
-                {
-                    shouldSprint = true;
-                }
+                if (profile.IsFrenzied || profile.IsFearful) sprint = true;
             }
 
             bot.Mover.GoToPoint(fallback, true, cohesion);
-
-            if (shouldSprint)
-            {
-                bot.Sprint(true);
-            }
+            if (sprint) bot.Sprint(true);
         }
 
         public static void SmoothLookTo(BotOwner bot, Vector3 lookTarget, float speed = DefaultLookSpeed)
         {
-            if (!IsEligible(bot))
-            {
-                return;
-            }
+            if (!IsEligible(bot)) return;
 
-            Transform transform = bot.Transform != null ? bot.Transform.Original : null;
-            if (transform == null)
-            {
-                return;
-            }
+            Transform transform = bot.Transform?.Original;
+            if (transform == null) return;
 
             Vector3 direction = lookTarget - bot.Position;
             direction.y = 0f;
-
-            if (direction.sqrMagnitude < 0.01f)
-            {
-                return;
-            }
+            if (direction.sqrMagnitude < 0.01f) return;
 
             Quaternion targetRotation = Quaternion.LookRotation(direction.normalized, Vector3.up);
             float t = Time.deltaTime * Mathf.Clamp(speed, 1f, 8f);
@@ -123,10 +98,7 @@ namespace AIRefactored.AI.Helpers
 
         public static void SmoothMoveTo(BotOwner bot, Vector3 target, bool slow = true, float cohesionScale = 1f)
         {
-            if (!IsEligible(bot))
-            {
-                return;
-            }
+            if (!IsEligible(bot)) return;
 
             if (!BotNavValidator.Validate(bot, "SmoothMoveTo"))
             {
@@ -138,36 +110,22 @@ namespace AIRefactored.AI.Helpers
 
             float dx = position.x - target.x;
             float dz = position.z - target.z;
-            float distSqr = (dx * dx) + (dz * dz);
-
-            if (distSqr < radius * radius)
-            {
-                return;
-            }
+            if ((dx * dx + dz * dz) < radius * radius) return;
 
             bot.Mover.GoToPoint(target, slow, cohesionScale);
         }
 
         public static void SmoothMoveToSafeExit(BotOwner bot)
         {
-            if (!IsEligible(bot))
-            {
-                return;
-            }
+            if (!IsEligible(bot)) return;
 
             Vector3 fallback = bot.Position + bot.LookDirection.normalized * 4f;
 
-            if (NavMeshStatus.IsReady)
+            BotComponentCache cache = BotCacheUtility.GetCache(bot);
+            if (NavMeshStatus.IsReady && cache?.Pathing != null)
             {
-                BotComponentCache cache = BotCacheUtility.GetCache(bot);
-                if (cache != null && cache.Pathing != null)
-                {
-                    Vector3? point = BotCoverRetreatPlanner.GetSafeExtractionPoint(bot, cache.Pathing);
-                    if (point.HasValue)
-                    {
-                        fallback = point.Value;
-                    }
-                }
+                Vector3? point = BotCoverRetreatPlanner.GetSafeExtractionPoint(bot, cache.Pathing);
+                if (point.HasValue) fallback = point.Value;
             }
 
             if (!BotNavValidator.Validate(bot, "SmoothMoveToSafeExit"))
@@ -180,16 +138,10 @@ namespace AIRefactored.AI.Helpers
 
         public static void SmoothStrafeFrom(BotOwner bot, Vector3 threatDirection, float scale = 1f)
         {
-            if (!IsEligible(bot))
-            {
-                return;
-            }
+            if (!IsEligible(bot)) return;
 
             Vector3 right = Vector3.Cross(Vector3.up, threatDirection.normalized);
-            if (right.sqrMagnitude < 0.01f)
-            {
-                right = Vector3.right;
-            }
+            if (right.sqrMagnitude < 0.01f) right = Vector3.right;
 
             Vector3 offset = right.normalized * DefaultStrafeDistance * Mathf.Clamp(scale, 0.75f, 1.25f);
             Vector3 target = bot.Position + offset;
@@ -204,22 +156,15 @@ namespace AIRefactored.AI.Helpers
 
         public static void ForceFallbackMove(BotOwner bot)
         {
-            if (!IsEligible(bot))
-            {
-                return;
-            }
+            if (!IsEligible(bot)) return;
 
             Vector3 dir = bot.LookDirection;
-
             Vector3 target = bot.Position + dir.normalized * 5f;
 
             if (NavMeshStatus.IsReady)
             {
                 Vector3? point = HybridFallbackResolver.GetBestRetreatPoint(bot, dir);
-                if (point.HasValue)
-                {
-                    target = point.Value;
-                }
+                if (point.HasValue) target = point.Value;
             }
 
             if (!BotNavValidator.Validate(bot, "ForceFallbackMove"))
@@ -232,7 +177,7 @@ namespace AIRefactored.AI.Helpers
 
         #endregion
 
-        #region Private Methods
+        #region Internal Helpers
 
         private static bool IsEligible(BotOwner bot)
         {

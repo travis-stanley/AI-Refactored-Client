@@ -14,15 +14,12 @@ namespace AIRefactored.Core
     using AIRefactored.AI.Hotspots;
     using AIRefactored.AI.Looting;
     using AIRefactored.AI.Navigation;
-    using AIRefactored.AI.Optimization;
-    using AIRefactored.AI.Threads;
     using AIRefactored.Bootstrap;
     using AIRefactored.Pools;
     using AIRefactored.Runtime;
     using BepInEx.Logging;
     using Comfort.Common;
     using EFT;
-    using EFT.Game.Spawning;
     using UnityEngine;
 
     public static partial class GameWorldHandler
@@ -239,22 +236,16 @@ namespace AIRefactored.Core
             {
                 ForceAssign(world);
 
-                LootRegistry.Initialize();
-                NavPointRegistry.Initialize();
-                HotspotRegistry.Clear();
-
                 string mapId = TryGetValidMapName();
-                if (mapId.Length > 0)
-                {
-                    NavPointBootstrapper.RegisterAll(mapId);
-                    HotspotRegistry.Initialize(mapId);
-                }
-                else
+                if (mapId.Length == 0)
                 {
                     LogSafe("[GameWorldHandler] Invalid mapId during initialization.");
                 }
 
-                HookBotSpawns();
+                _bootstrapHost = new GameObject("AIRefactored.BootstrapHost");
+                UnityEngine.Object.DontDestroyOnLoad(_bootstrapHost);
+
+                WorldBootstrapper.Begin(Logger, mapId);
                 IsInitialized = true;
 
                 LogSafe("[GameWorldHandler] ✅ AIRefactored world systems initialized.");
@@ -278,40 +269,6 @@ namespace AIRefactored.Core
             }
         }
 
-        public static void HookBotSpawns()
-        {
-            lock (GameWorldLock)
-            {
-                if (_bootstrapHost != null || _hasShutdown)
-                {
-                    return;
-                }
-
-                try
-                {
-                    _bootstrapHost = new GameObject("AIRefactored.BootstrapHost");
-                    UnityEngine.Object.DontDestroyOnLoad(_bootstrapHost);
-
-                    BotRecoveryService.Reset();
-                    BotSpawnWatcherService.Reset();
-                    LootRuntimeWatcher.Reset();
-                    DeadBodyObserverService.Reset();
-
-                    WorldBootstrapper.RegisterSystem(new BotRecoveryService());
-                    WorldBootstrapper.RegisterSystem(new BotSpawnWatcherService());
-                    WorldBootstrapper.RegisterSystem(new LootRuntimeWatcher());
-                    WorldBootstrapper.RegisterSystem(new DeadBodyObserverService());
-                    WorldBootstrapper.RegisterSystem(new HotspotRegistryBootstrapper());
-
-                    LogSafe("[GameWorldHandler] Spawn systems attached and registered.");
-                }
-                catch (Exception ex)
-                {
-                    LogSafe("[GameWorldHandler] ❌ Failed to attach spawn systems: " + ex);
-                }
-            }
-        }
-
         public static void UnhookBotSpawns()
         {
             lock (GameWorldLock)
@@ -332,14 +289,10 @@ namespace AIRefactored.Core
                     }
 
                     KnownDeadBotIds.Clear();
+                    DeadBodyContainerCache.Clear();
                     HotspotRegistry.Clear();
                     LootRegistry.Clear();
                     NavPointRegistry.Clear();
-
-                    BotRecoveryService.Reset();
-                    BotSpawnWatcherService.Reset();
-                    LootRuntimeWatcher.Reset();
-                    DeadBodyObserverService.Reset();
 
                     _isRecovering = false;
                     IsInitialized = false;

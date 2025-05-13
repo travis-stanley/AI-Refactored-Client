@@ -59,7 +59,6 @@ namespace AIRefactored.AI.Navigation
         /// <summary>
         /// Adds a navigation point into the appropriate spatial cell.
         /// </summary>
-        /// <param name="point">The navigation point to register.</param>
         public void Register(NavPointData point)
         {
             if (point == null || !IsPositionValid(point.Position))
@@ -68,11 +67,12 @@ namespace AIRefactored.AI.Navigation
             }
 
             Vector2Int cell = WorldToCell(point.Position);
+
             List<NavPointData> list;
             if (!_grid.TryGetValue(cell, out list))
             {
                 list = TempListPool.Rent<NavPointData>();
-                _grid.Add(cell, list);
+                _grid[cell] = list;
             }
 
             for (int i = 0; i < list.Count; i++)
@@ -90,10 +90,6 @@ namespace AIRefactored.AI.Navigation
         /// Returns all navigation points within the given radius of a position.
         /// Optionally filter by predicate.
         /// </summary>
-        /// <param name="position">World-space origin position.</param>
-        /// <param name="radius">Search radius in world units.</param>
-        /// <param name="filter">Optional predicate filter.</param>
-        /// <returns>List of nearby matching points.</returns>
         public List<NavPointData> Query(Vector3 position, float radius, Predicate<NavPointData> filter)
         {
             List<NavPointData> result = TempListPool.Rent<NavPointData>();
@@ -112,6 +108,7 @@ namespace AIRefactored.AI.Navigation
                 for (int z = minCell.y; z <= maxCell.y; z++)
                 {
                     Vector2Int cell = new Vector2Int(x, z);
+
                     List<NavPointData> bucket;
                     if (!_grid.TryGetValue(cell, out bucket))
                     {

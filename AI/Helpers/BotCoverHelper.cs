@@ -3,7 +3,7 @@
 //   Licensed under the MIT License. See LICENSE in the repository root for more information.
 //
 //   THIS FILE IS SYSTEMATICALLY MANAGED.
-//   Please follow strict StyleCop, ReSharper, and AI-Refactored code standards for all modifications.
+//   Failures in AIRefactored logic must always trigger safe fallback to EFT base AI.
 // </auto-generated>
 
 namespace AIRefactored.AI.Helpers
@@ -38,35 +38,17 @@ namespace AIRefactored.AI.Helpers
 
         #region Cover Type Checks
 
-        public static bool IsLowCover(CustomNavigationPoint point)
-        {
-            return point != null && point.CoverLevel == CoverLevel.Sit;
-        }
+        public static bool IsLowCover(CustomNavigationPoint point) => point != null && point.CoverLevel == CoverLevel.Sit;
 
-        public static bool IsProneCover(CustomNavigationPoint point)
-        {
-            return point != null && point.CoverLevel == CoverLevel.Lay;
-        }
+        public static bool IsProneCover(CustomNavigationPoint point) => point != null && point.CoverLevel == CoverLevel.Lay;
 
-        public static bool IsStandingCover(CustomNavigationPoint point)
-        {
-            return point != null && point.CoverLevel == CoverLevel.Stay;
-        }
+        public static bool IsStandingCover(CustomNavigationPoint point) => point != null && point.CoverLevel == CoverLevel.Stay;
 
-        public static bool IsLowCover(NavPointData point)
-        {
-            return point.IsCover && point.ElevationBand == "Mid";
-        }
+        public static bool IsLowCover(NavPointData point) => point.IsCover && point.ElevationBand == "Mid";
 
-        public static bool IsProneCover(NavPointData point)
-        {
-            return point.IsCover && point.ElevationBand == "Low";
-        }
+        public static bool IsProneCover(NavPointData point) => point.IsCover && point.ElevationBand == "Low";
 
-        public static bool IsStandingCover(NavPointData point)
-        {
-            return point.IsCover && point.ElevationBand == "High";
-        }
+        public static bool IsStandingCover(NavPointData point) => point.IsCover && point.ElevationBand == "High";
 
         #endregion
 
@@ -74,29 +56,16 @@ namespace AIRefactored.AI.Helpers
 
         public static void MarkUsed(CustomNavigationPoint point)
         {
-            if (point != null)
-            {
-                CoverMemory[GetKey(point.Position)] = Time.time;
-            }
+            if (point != null) CoverMemory[GetKey(point.Position)] = Time.time;
         }
 
-        public static void MarkUsed(NavPointData point)
-        {
-            CoverMemory[GetKey(point.Position)] = Time.time;
-        }
+        public static void MarkUsed(NavPointData point) => CoverMemory[GetKey(point.Position)] = Time.time;
 
-        public static void MarkUsed(Vector3 position)
-        {
-            CoverMemory[GetKey(position)] = Time.time;
-        }
+        public static void MarkUsed(Vector3 position) => CoverMemory[GetKey(position)] = Time.time;
 
         public static bool WasRecentlyUsed(CustomNavigationPoint point)
         {
-            if (point == null)
-            {
-                return false;
-            }
-
+            if (point == null) return false;
             float last;
             return CoverMemory.TryGetValue(GetKey(point.Position), out last) && (Time.time - last) < MemoryDuration;
         }
@@ -119,10 +88,7 @@ namespace AIRefactored.AI.Helpers
 
         public static void TrySetStanceFromNearbyCover(BotComponentCache cache, Vector3 position)
         {
-            if (cache == null || cache.PoseController == null)
-            {
-                return;
-            }
+            if (cache == null || cache.PoseController == null) return;
 
             BotPoseController controller = cache.PoseController;
             List<NavPointData> points = NavPointRegistry.QueryNearby(position, 4f, null);
@@ -130,20 +96,14 @@ namespace AIRefactored.AI.Helpers
             for (int i = 0; i < points.Count; i++)
             {
                 NavPointData point = points[i];
-                if (!point.IsCover)
-                {
-                    continue;
-                }
+                if (!point.IsCover) continue;
 
                 float dx = point.Position.x - position.x;
                 float dy = point.Position.y - position.y;
                 float dz = point.Position.z - position.z;
                 float distSqr = (dx * dx) + (dy * dy) + (dz * dz);
 
-                if (distSqr > MaxValidDistanceSqr)
-                {
-                    continue;
-                }
+                if (distSqr > MaxValidDistanceSqr) continue;
 
                 if (IsProneCover(point))
                 {

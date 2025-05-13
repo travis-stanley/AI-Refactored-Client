@@ -37,9 +37,7 @@ namespace AIRefactored.Runtime
 
 		private static readonly ManualLogSource Logger = Plugin.LoggerInstance;
 
-		private static LootableContainer[] _containers = Array.Empty<LootableContainer>();
 		private static float _nextScanTime = -1f;
-		private static bool _containersUpdated;
 		private static bool _hasLoggedReset;
 
 		#endregion
@@ -50,8 +48,8 @@ namespace AIRefactored.Runtime
 		{
 			try
 			{
-				_hasLoggedReset = false;
 				Reset();
+				_hasLoggedReset = false;
 				Logger.LogDebug("[DeadBodyObserver] Initialized.");
 			}
 			catch (Exception ex)
@@ -77,103 +75,86 @@ namespace AIRefactored.Runtime
 
 				_nextScanTime = now + ScanIntervalSeconds;
 
-				if (!_containersUpdated)
-				{
-					try
-					{
-						_containers = UnityEngine.Object.FindObjectsOfType<LootableContainer>();
-						_containersUpdated = true;
-						Logger.LogDebug("[DeadBodyObserver] Found " + _containers.Length + " lootable containers.");
-					}
-					catch (Exception ex)
-					{
-						Logger.LogError("[DeadBodyObserver] Failed to find containers: " + ex);
-						return;
-					}
-				}
-
-				if (_containers.Length == 0)
-				{
-					return;
-				}
-
-				List<Player> players = GameWorldHandler.GetAllAlivePlayers();
-				if (players == null || players.Count == 0)
-				{
-					return;
-				}
-
-				List<Player> validPlayers = TempListPool.Rent<Player>();
-
+				LootableContainer[] containers;
 				try
 				{
-					for (int i = 0; i < players.Count; i++)
-					{
-						Player p = players[i];
-						if (EFTPlayerUtil.IsValid(p))
-						{
-							validPlayers.Add(p);
-						}
-					}
-
-					for (int i = 0; i < validPlayers.Count; i++)
-					{
-						Player player = validPlayers[i];
-						if (player == null || player.HealthController == null || player.HealthController.IsAlive)
-						{
-							continue;
-						}
-
-						string profileId = player.ProfileId;
-						if (string.IsNullOrEmpty(profileId) || DeadBodyContainerCache.Contains(profileId))
-						{
-							continue;
-						}
-
-						Vector3 corpsePosition = EFTPlayerUtil.GetPosition(player);
-						Transform root = player.Transform != null ? player.Transform.Original?.root : null;
-						if (root == null)
-						{
-							continue;
-						}
-
-						for (int j = 0; j < _containers.Length; j++)
-						{
-							LootableContainer container = _containers[j];
-							if (container == null || !container.enabled || container.transform == null)
-							{
-								continue;
-							}
-
-							bool isRootMatch = container.transform.root == root;
-							bool isNearby = Vector3.Distance(container.transform.position, corpsePosition) <= AssociationRadius;
-
-							if (isRootMatch || isNearby)
-							{
-								DeadBodyContainerCache.Register(player, container);
-								string nickname = player.Profile != null && player.Profile.Info != null && !string.IsNullOrEmpty(player.Profile.Info.Nickname)
-									? player.Profile.Info.Nickname
-									: "Unnamed";
-
-								Logger.LogDebug("[DeadBodyObserver] Associated container with dead bot: " + nickname);
-								break;
-							}
-						}
-					}
+					containers = UnityEngine.Object.FindObjectsOfType<LootableContainer>();
 				}
 				catch (Exception ex)
 				{
-					Logger.LogError("[DeadBodyObserver] Tick scan error: " + ex);
+					Logger.LogError("[DeadBodyObserver] Failed to find containers: " + ex);
+					return;
 				}
-				finally
+
+				if (containers.Length == 0)
 				{
-					TempListPool.Return(validPlayers);
-					TempListPool.Return(players);
+					return;
 				}
+
+				GameWorld world = GameWorldHandler.Get();
+				if (world == null || world.RegisteredPlayers == null || world.RegisteredPlayers.Count == 0)
+				{
+					return;
+				}
+
+				List<IPlayer> rawPlayers = world.RegisteredPlayers;
+				List<Player> validDeadPlayers = TempListPool.Rent<Player>();
+
+				for (int i = 0; i < rawPlayers.Count; i++)
+				{
+					Player player = EFTPlayerUtil.AsEFTPlayer(rawPlayers[i]);
+					if (player != null && !player.HealthController.IsAlive)
+					{
+						validDeadPlayers.Add(player);
+					}
+				}
+
+				for (int i = 0; i < validDeadPlayers.Count; i++)
+				{
+					Player player = validDeadPlayers[i];
+					string profileId = player.ProfileId;
+
+					if (string.IsNullOrEmpty(profileId) || DeadBodyContainerCache.Contains(profileId))
+					{
+						continue;
+					}
+
+					Vector3 corpsePosition = EFTPlayerUtil.GetPosition(player);
+					Transform root = player.Transform?.Original?.root;
+
+					if (root == null)
+					{
+						continue;
+					}
+
+					for (int j = 0; j < containers.Length; j++)
+					{
+						LootableContainer container = containers[j];
+						if (container == null || !container.enabled || container.transform == null)
+						{
+							continue;
+						}
+
+						bool isRootMatch = container.transform.root == root;
+						bool isNearby = Vector3.Distance(container.transform.position, corpsePosition) <= AssociationRadius;
+
+						if (isRootMatch || isNearby)
+						{
+							DeadBodyContainerCache.Register(player, container);
+							LootRuntimeWatcher.Register(container.gameObject);
+
+							string nickname = player.Profile?.Info?.Nickname ?? "Unnamed";
+							Logger.LogDebug("[DeadBodyObserver] Associated container with dead bot: " + nickname);
+							break;
+						}
+					}
+				}
+
+				TempListPool.Return(validDeadPlayers);
 			}
 			catch (Exception ex)
 			{
-				Logger.LogError("[DeadBodyObserver] Tick outer error: " + ex);
+				Logger.LogError("[DeadBodyObserver] Tick error: " + ex);
 			}
 		}
 
@@ -197,8 +178,6 @@ namespace AIRefactored.Runtime
 			}
 
 			_nextScanTime = -1f;
-			_containers = Array.Empty<LootableContainer>();
-			_containersUpdated = false;
 			_hasLoggedReset = true;
 
 			try
@@ -207,7 +186,7 @@ namespace AIRefactored.Runtime
 			}
 			catch
 			{
-				// Logger may be null at teardown
+				// Silent on teardown
 			}
 		}
 

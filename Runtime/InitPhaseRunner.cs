@@ -16,7 +16,6 @@ namespace AIRefactored.Runtime
     using BepInEx.Logging;
     using Comfort.Common;
     using EFT;
-    using UnityEngine;
 
     /// <summary>
     /// Orchestrates the full AI-Refactored initialization lifecycle using staged world boot phases.
@@ -70,18 +69,13 @@ namespace AIRefactored.Runtime
                 NavMeshStatus.Reset();
 
                 string mapId = GameWorldHandler.TryGetValidMapName();
-                if (!string.IsNullOrEmpty(mapId))
+                if (string.IsNullOrEmpty(mapId))
                 {
-                    NavMeshWarmupManager.TryPrebuildNavMesh();
-                    NavPointRegistry.RegisterAll(mapId);
-                }
-                else
-                {
-                    logger?.LogWarning("[InitPhaseRunner] ❌ No valid map ID — skipping NavMesh and NavPoint prebuild.");
+                    logger?.LogWarning("[InitPhaseRunner] ❌ No valid map ID — skipping NavMesh warmup.");
                 }
 
                 GameWorldHandler.Initialize();
-                WorldBootstrapper.Begin(logger);
+                WorldBootstrapper.Begin(logger, mapId);
 
                 WorldInitState.SetPhase(WorldPhase.WorldReady);
                 logger?.LogDebug("[InitPhaseRunner] ✅ World systems initialized.");

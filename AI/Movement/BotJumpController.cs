@@ -3,7 +3,7 @@
 //   Licensed under the MIT License. See LICENSE in the repository root for more information.
 //
 //   THIS FILE IS SYSTEMATICALLY MANAGED.
-//   Please follow strict StyleCop, ReSharper, and AI-Refactored code standards for all modifications.
+//   Failures in AIRefactored logic must always trigger safe fallback to EFT base AI.
 // </auto-generated>
 
 namespace AIRefactored.AI.Movement
@@ -143,38 +143,43 @@ namespace AIRefactored.AI.Movement
                 }
 
                 Bounds[] boundsArray = TempBoundsPool.Rent(1);
-                boundsArray[0] = hits[0].collider.bounds;
-                float height = boundsArray[0].max.y - _context.TransformPosition.y;
-
-                if (height < MinJumpHeight || height > MaxJumpHeight)
-                {
-                    TempBoundsPool.Return(boundsArray);
-                    return false;
-                }
-
-                Vector3 vaultPoint = boundsArray[0].max + (forward * VaultForwardOffset);
-                TempBoundsPool.Return(boundsArray);
-
-                RaycastHit[] landHits = TempRaycastHitPool.Rent(1);
                 try
                 {
-                    if (!Physics.Raycast(vaultPoint, Vector3.down, out landHits[0], 2.5f, AIRefactoredLayerMasks.JumpRayMask))
+                    boundsArray[0] = hits[0].collider.bounds;
+                    float height = boundsArray[0].max.y - _context.TransformPosition.y;
+
+                    if (height < MinJumpHeight || height > MaxJumpHeight)
                     {
                         return false;
                     }
 
-                    float fallHeight = _context.TransformPosition.y - landHits[0].point.y;
-                    if (fallHeight > SafeFallHeight)
-                    {
-                        return false;
-                    }
+                    Vector3 vaultPoint = boundsArray[0].max + (forward * VaultForwardOffset);
 
-                    target = landHits[0].point;
-                    return true;
+                    RaycastHit[] landHits = TempRaycastHitPool.Rent(1);
+                    try
+                    {
+                        if (!Physics.Raycast(vaultPoint, Vector3.down, out landHits[0], 2.5f, AIRefactoredLayerMasks.JumpRayMask))
+                        {
+                            return false;
+                        }
+
+                        float fallHeight = _context.TransformPosition.y - landHits[0].point.y;
+                        if (fallHeight > SafeFallHeight)
+                        {
+                            return false;
+                        }
+
+                        target = landHits[0].point;
+                        return true;
+                    }
+                    finally
+                    {
+                        TempRaycastHitPool.Return(landHits);
+                    }
                 }
                 finally
                 {
-                    TempRaycastHitPool.Return(landHits);
+                    TempBoundsPool.Return(boundsArray);
                 }
             }
             finally

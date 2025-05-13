@@ -3,7 +3,7 @@
 //   Licensed under the MIT License. See LICENSE in the repository root for more information.
 //
 //   THIS FILE IS SYSTEMATICALLY MANAGED.
-//   Please follow strict StyleCop, ReSharper, and AI-Refactored code standards for all modifications.
+//   Failures in AIRefactored logic must always trigger safe fallback to EFT base AI.
 // </auto-generated>
 
 namespace AIRefactored.AI.Combat.States
@@ -62,39 +62,25 @@ namespace AIRefactored.AI.Combat.States
 
         public void EchoFallbackToSquad(Vector3 retreatPosition)
         {
-            if (_cache.IsFallbackMode)
-            {
+            if (_cache.IsFallbackMode || _bot.BotsGroup == null)
                 return;
-            }
-
-            BotsGroup group = _bot.BotsGroup;
-            if (group == null)
-            {
-                return;
-            }
 
             float now = Time.time;
             if (now - _lastEchoFallbackTime < EchoCooldown)
-            {
                 return;
-            }
 
             Vector3 selfPos = _bot.Position;
-            int memberCount = group.MembersCount;
+            int memberCount = _bot.BotsGroup.MembersCount;
 
             for (int i = 0; i < memberCount; i++)
             {
-                BotOwner mate = group.Member(i);
+                BotOwner mate = _bot.BotsGroup.Member(i);
                 if (!IsValidSquadmate(mate, selfPos))
-                {
                     continue;
-                }
 
                 BotComponentCache mateCache = BotCacheUtility.GetCache(mate);
                 if (mateCache == null || mateCache.IsFallbackMode || mateCache.Combat == null || !CanAcceptEcho(mateCache))
-                {
                     continue;
-                }
 
                 Vector3 fallbackDir = selfPos - mate.Position;
                 if (fallbackDir.sqrMagnitude < MinDirectionSqr)
@@ -112,8 +98,6 @@ namespace AIRefactored.AI.Combat.States
                 chaos.y = 0f;
 
                 Vector3 finalPos = mate.Position - fallbackDir * BaseFallbackDistance + chaos;
-
-                // Validate final fallback point
                 if (!BotNavValidator.Validate(mate, "EchoFallback"))
                 {
                     finalPos = FallbackNavPointProvider.GetSafePoint(mate.Position);
@@ -132,39 +116,25 @@ namespace AIRefactored.AI.Combat.States
 
         public void EchoInvestigateToSquad()
         {
-            if (_cache.IsFallbackMode)
-            {
+            if (_cache.IsFallbackMode || _bot.BotsGroup == null)
                 return;
-            }
-
-            BotsGroup group = _bot.BotsGroup;
-            if (group == null)
-            {
-                return;
-            }
 
             float now = Time.time;
             if (now - _lastEchoInvestigateTime < EchoCooldown)
-            {
                 return;
-            }
 
             Vector3 selfPos = _bot.Position;
-            int memberCount = group.MembersCount;
+            int memberCount = _bot.BotsGroup.MembersCount;
 
             for (int i = 0; i < memberCount; i++)
             {
-                BotOwner mate = group.Member(i);
+                BotOwner mate = _bot.BotsGroup.Member(i);
                 if (!IsValidSquadmate(mate, selfPos))
-                {
                     continue;
-                }
 
                 BotComponentCache mateCache = BotCacheUtility.GetCache(mate);
                 if (mateCache == null || mateCache.IsFallbackMode || mateCache.Combat == null || !CanAcceptEcho(mateCache))
-                {
                     continue;
-                }
 
                 mateCache.Combat.NotifyEchoInvestigate();
 
@@ -179,19 +149,11 @@ namespace AIRefactored.AI.Combat.States
 
         public void EchoSpottedEnemyToSquad(Vector3 enemyPosition)
         {
-            if (_cache.IsFallbackMode)
-            {
+            if (_cache.IsFallbackMode || _bot.BotsGroup == null)
                 return;
-            }
-
-            BotsGroup group = _bot.BotsGroup;
-            if (group == null)
-            {
-                return;
-            }
 
             string enemyId = string.Empty;
-            if (_cache.ThreatSelector != null && _cache.ThreatSelector.CurrentTarget != null)
+            if (_cache.ThreatSelector?.CurrentTarget != null)
             {
                 string pid = _cache.ThreatSelector.CurrentTarget.ProfileId;
                 if (!string.IsNullOrEmpty(pid))
@@ -200,20 +162,16 @@ namespace AIRefactored.AI.Combat.States
                 }
             }
 
-            int memberCount = group.MembersCount;
+            int memberCount = _bot.BotsGroup.MembersCount;
             for (int i = 0; i < memberCount; i++)
             {
-                BotOwner mate = group.Member(i);
+                BotOwner mate = _bot.BotsGroup.Member(i);
                 if (mate == null || mate == _bot || mate.IsDead)
-                {
                     continue;
-                }
 
                 BotComponentCache mateCache = BotCacheUtility.GetCache(mate);
                 if (mateCache == null || mateCache.IsFallbackMode || mateCache.TacticalMemory == null)
-                {
                     continue;
-                }
 
                 mateCache.TacticalMemory.RecordEnemyPosition(enemyPosition, "SquadEcho", enemyId);
             }
@@ -226,30 +184,20 @@ namespace AIRefactored.AI.Combat.States
         private static bool CanAcceptEcho(BotComponentCache cache)
         {
             if (cache.IsFallbackMode || cache.IsBlinded)
-            {
                 return false;
-            }
 
-            if (cache.PanicHandler != null && cache.PanicHandler.IsPanicking)
-            {
+            if (cache.PanicHandler?.IsPanicking ?? false)
                 return false;
-            }
 
-            AIRefactoredBotOwner owner = cache.AIRefactoredBotOwner;
-            return owner != null &&
-                   owner.PersonalityProfile != null &&
-                   owner.PersonalityProfile.Caution >= 0.15f;
+            return cache.AIRefactoredBotOwner?.PersonalityProfile?.Caution >= 0.15f;
         }
 
         private bool IsValidSquadmate(BotOwner mate, Vector3 origin)
         {
             if (mate == null || mate == _bot || mate.IsDead)
-            {
                 return false;
-            }
 
-            float distSqr = (mate.Position - origin).sqrMagnitude;
-            return distSqr <= MaxEchoRangeSqr;
+            return (mate.Position - origin).sqrMagnitude <= MaxEchoRangeSqr;
         }
 
         #endregion

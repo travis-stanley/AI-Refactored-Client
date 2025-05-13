@@ -3,7 +3,7 @@
 //   Licensed under the MIT License. See LICENSE in the repository root for more information.
 //
 //   THIS FILE IS SYSTEMATICALLY MANAGED.
-//   Please follow strict StyleCop, ReSharper, and AI-Refactored code standards for all modifications.
+//   Failures in AIRefactored logic must always trigger safe fallback to EFT base AI.
 // </auto-generated>
 
 namespace AIRefactored.AI.Movement
@@ -20,6 +20,10 @@ namespace AIRefactored.AI.Movement
     using UnityEngine;
     using UnityEngine.AI;
 
+    /// <summary>
+    /// Controls bot movement, leaning, path inertia, and flanking during combat.
+    /// Includes stuck recovery, fallback pathing, and door blocking detection.
+    /// </summary>
     public sealed class BotMovementController
     {
         #region Constants
@@ -78,7 +82,7 @@ namespace AIRefactored.AI.Movement
 
         public void Tick(float deltaTime)
         {
-            if (_bot == null || _cache == null || _bot.GetPlayer == null || !_bot.GetPlayer.IsAI || _bot.IsDead || !_bot.GetPlayer.HealthController.IsAlive || _cache.PanicHandler.IsPanicking)
+            if (_bot == null || _cache == null || _bot.IsDead || _bot.GetPlayer == null || !_bot.GetPlayer.IsAI)
             {
                 return;
             }
@@ -328,7 +332,6 @@ namespace AIRefactored.AI.Movement
             Vector3 target = SafeGetTargetPoint();
             if (!ValidateNavMeshTarget(target))
             {
-                // Attempt fallback to safe fallback point if invalid target
                 Vector3 safe = FallbackNavPointProvider.GetSafePoint(_bot.Position);
                 BotMovementHelper.SmoothMoveTo(_bot, safe, true);
                 return;

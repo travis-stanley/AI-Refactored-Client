@@ -3,7 +3,7 @@
 //   Licensed under the MIT License. See LICENSE in the repository root for more information.
 //
 //   THIS FILE IS SYSTEMATICALLY MANAGED.
-//   Please follow strict StyleCop, ReSharper, and AI-Refactored code standards for all modifications.
+//   Failures in AIRefactored logic must always trigger safe fallback to EFT base AI.
 // </auto-generated>
 
 namespace AIRefactored.AI.Combat.States
@@ -47,8 +47,8 @@ namespace AIRefactored.AI.Combat.States
             _cache = cache;
             _bot = cache.Bot;
 
-            float range = cache.PersonalityProfile != null ? cache.PersonalityProfile.EngagementRange : 0f;
-            _fallbackRange = range > 0f ? range : DefaultEngagementRange;
+            float profileRange = cache.PersonalityProfile?.EngagementRange ?? 0f;
+            _fallbackRange = profileRange > 0f ? profileRange : DefaultEngagementRange;
         }
 
         #endregion
@@ -57,48 +57,30 @@ namespace AIRefactored.AI.Combat.States
 
         public bool ShallUseNow()
         {
-            if (_cache.IsFallbackMode || _bot == null)
-            {
+            if (_cache.IsFallbackMode || _bot == null || _cache.Combat == null)
                 return false;
-            }
 
-            CombatStateMachine combat = _cache.Combat;
             Vector3 enemyPos;
-
-            return combat != null &&
-                   TryGetLastKnownEnemy(combat, out enemyPos) &&
-                   !IsWithinRange(enemyPos);
+            return TryGetLastKnownEnemy(_cache.Combat, out enemyPos) && !IsWithinRange(enemyPos);
         }
 
         public bool CanAttack()
         {
-            if (_cache.IsFallbackMode || _bot == null)
-            {
+            if (_cache.IsFallbackMode || _bot == null || _cache.Combat == null)
                 return false;
-            }
 
-            CombatStateMachine combat = _cache.Combat;
             Vector3 enemyPos;
-
-            return combat != null &&
-                   TryGetLastKnownEnemy(combat, out enemyPos) &&
-                   IsWithinRange(enemyPos);
+            return TryGetLastKnownEnemy(_cache.Combat, out enemyPos) && IsWithinRange(enemyPos);
         }
 
         public void Tick()
         {
-            if (_cache.IsFallbackMode || _bot == null)
-            {
+            if (_cache.IsFallbackMode || _bot == null || _cache.Combat == null)
                 return;
-            }
 
-            CombatStateMachine combat = _cache.Combat;
             Vector3 enemyPos;
-
-            if (combat == null || !TryGetLastKnownEnemy(combat, out enemyPos))
-            {
+            if (!TryGetLastKnownEnemy(_cache.Combat, out enemyPos))
                 return;
-            }
 
             Vector3 destination = _cache.SquadPath != null
                 ? _cache.SquadPath.ApplyOffsetTo(enemyPos)
@@ -110,22 +92,16 @@ namespace AIRefactored.AI.Combat.States
             }
 
             BotMovementHelper.SmoothMoveTo(_bot, destination);
-            combat.TrySetStanceFromNearbyCover(destination);
+            _cache.Combat.TrySetStanceFromNearbyCover(destination);
         }
 
         public bool IsEngaging()
         {
-            if (_cache.IsFallbackMode || _bot == null)
-            {
+            if (_cache.IsFallbackMode || _bot == null || _cache.Combat == null)
                 return false;
-            }
 
-            CombatStateMachine combat = _cache.Combat;
             Vector3 enemyPos;
-
-            return combat != null &&
-                   TryGetLastKnownEnemy(combat, out enemyPos) &&
-                   !IsWithinRange(enemyPos);
+            return TryGetLastKnownEnemy(_cache.Combat, out enemyPos) && !IsWithinRange(enemyPos);
         }
 
         #endregion
@@ -135,7 +111,6 @@ namespace AIRefactored.AI.Combat.States
         private bool TryGetLastKnownEnemy(CombatStateMachine combat, out Vector3 result)
         {
             result = combat.LastKnownEnemyPos;
-
             return result != Vector3.zero &&
                    !float.IsNaN(result.x) &&
                    !float.IsNaN(result.y) &&

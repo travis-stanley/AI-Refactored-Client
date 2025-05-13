@@ -27,13 +27,20 @@ namespace AIRefactored.AI.Combat
     /// </summary>
     public sealed class CombatStateMachine
     {
+        #region Constants
+
         private const float MinTransitionDelay = 0.4f;
         private const float PatrolMinDuration = 1.25f;
         private const float PatrolCooldown = 12.0f;
         private const float ReentryCooldown = 3.0f;
 
+        #endregion
+
+        #region Fields
+
         private BotComponentCache _cache;
         private BotOwner _bot;
+
         private AttackHandler _attack;
         private EngageHandler _engage;
         private FallbackHandler _fallback;
@@ -46,8 +53,16 @@ namespace AIRefactored.AI.Combat
         private float _lastStateChangeTime;
         private bool _initialized;
 
+        #endregion
+
+        #region Properties
+
         public Vector3 LastKnownEnemyPos => _lastKnownEnemyPos;
         public float LastStateChangeTime => _lastStateChangeTime;
+
+        #endregion
+
+        #region Public Methods
 
         public void Initialize(BotComponentCache componentCache)
         {
@@ -73,18 +88,16 @@ namespace AIRefactored.AI.Combat
         public bool IsInCombatState()
         {
             return _initialized &&
-                   (_fallback != null && _fallback.IsActive() ||
-                    _engage != null && _engage.IsEngaging() ||
-                    _investigate != null && _investigate.IsInvestigating() ||
-                    _cache?.ThreatSelector?.CurrentTarget != null);
+                   (_fallback.IsActive() ||
+                    _engage.IsEngaging() ||
+                    _investigate.IsInvestigating() ||
+                    _cache.ThreatSelector.CurrentTarget != null);
         }
 
         public void NotifyDamaged()
         {
-            if (!_initialized || _fallback == null)
-            {
+            if (!_initialized)
                 return;
-            }
 
             float time = Time.time;
             if (_fallback.ShallUseNow(time))
@@ -97,13 +110,11 @@ namespace AIRefactored.AI.Combat
 
         public void NotifyEchoInvestigate()
         {
-            if (!_initialized || _investigate == null)
-            {
+            if (!_initialized)
                 return;
-            }
 
             float time = Time.time;
-            if (!_investigate.ShallUseNow(time, _lastStateChangeTime))
+            if (_investigate.ShallUseNow(time, _lastStateChangeTime))
             {
                 _lastStateChangeTime = time;
                 _bot.BotTalk?.TrySay(EPhraseTrigger.Cooperation);
@@ -115,21 +126,10 @@ namespace AIRefactored.AI.Combat
             try
             {
                 if (!_initialized || _bot == null || _bot.IsDead || !EFTPlayerUtil.IsValid(_bot.GetPlayer))
-                {
                     return;
-                }
-
-                if (_attack == null || _engage == null || _investigate == null ||
-                    _fallback == null || _patrol == null || _echo == null || _cache == null)
-                {
-                    BotFallbackUtility.FallbackToEFTLogic(_bot);
-                    return;
-                }
 
                 if (time - _lastStateChangeTime < MinTransitionDelay)
-                {
                     return;
-                }
 
                 if (TryReenterCombatState(time))
                 {
@@ -166,14 +166,10 @@ namespace AIRefactored.AI.Combat
 
                     string id = enemy.ProfileId;
                     if (id.Length > 0)
-                    {
                         _cache.TacticalMemory.RecordEnemyPosition(_lastKnownEnemyPos, "Combat", id);
-                    }
 
                     if (_bot.Mover != null && !_bot.Mover.Sprinting)
-                    {
                         _bot.Sprint(true);
-                    }
 
                     _echo.EchoSpottedEnemyToSquad(_lastKnownEnemyPos);
                 }
@@ -181,13 +177,9 @@ namespace AIRefactored.AI.Combat
                 if (_engage.ShallUseNow())
                 {
                     if (_engage.CanAttack())
-                    {
                         _attack.Tick(time);
-                    }
                     else
-                    {
                         _engage.Tick();
-                    }
 
                     _lastStateChangeTime = time;
                     return;
@@ -216,10 +208,8 @@ namespace AIRefactored.AI.Combat
 
         public void TriggerFallback(Vector3 fallbackPos)
         {
-            if (!_initialized || _fallback == null)
-            {
+            if (!_initialized)
                 return;
-            }
 
             _fallback.SetFallbackTarget(fallbackPos);
             _bot.BotTalk?.TrySay(EPhraseTrigger.OnLostVisual);
@@ -228,18 +218,17 @@ namespace AIRefactored.AI.Combat
 
         public void TrySetStanceFromNearbyCover(Vector3 pos)
         {
-            if (_initialized && _cache?.PoseController != null)
-            {
-                _cache.PoseController.TrySetStanceFromNearbyCover(pos);
-            }
+            _cache?.PoseController?.TrySetStanceFromNearbyCover(pos);
         }
+
+        #endregion
+
+        #region Private Methods
 
         private void AssignFallbackIfNeeded()
         {
             if (_fallback.HasValidFallbackPath() || _cache.Pathing == null)
-            {
                 return;
-            }
 
             Vector3 lookDir = _bot.LookDirection;
             Vector3 retreatDir = lookDir.sqrMagnitude > 0.01f ? -lookDir.normalized : Vector3.back;
@@ -250,9 +239,7 @@ namespace AIRefactored.AI.Combat
                 path.Clear();
                 List<Vector3> generated = BotCoverRetreatPlanner.GetCoverRetreatPath(_bot, retreatDir, _cache.Pathing);
                 for (int i = 0; i < generated.Count; i++)
-                {
                     path.Add(generated[i]);
-                }
 
                 if (path.Count > 0)
                 {
@@ -281,41 +268,41 @@ namespace AIRefactored.AI.Combat
 
         private bool TryReenterCombatState(float time)
         {
-            if (_fallback.IsActive())
-            {
-                if (_cache.ThreatSelector.CurrentTarget != null)
-                {
-                    _fallback.Cancel();
-                    _bot.BotTalk?.TrySay(EPhraseTrigger.OnEnemyConversation);
-                    return true;
-                }
+            if (!_fallback.IsActive())
+                return false;
 
-                if (_cache.GroupSync != null && _cache.GroupSync.IsSquadReady())
+            if (_cache.ThreatSelector.CurrentTarget != null)
+            {
+                _fallback.Cancel();
+                _bot.BotTalk?.TrySay(EPhraseTrigger.OnEnemyConversation);
+                return true;
+            }
+
+            if (_cache.GroupSync != null && _cache.GroupSync.IsSquadReady())
+            {
+                Vector3 self = _bot.Position;
+                IReadOnlyList<BotOwner> mates = _cache.GroupSync.GetTeammates();
+                for (int i = 0; i < mates.Count; i++)
                 {
-                    Vector3 self = _bot.Position;
-                    IReadOnlyList<BotOwner> mates = _cache.GroupSync.GetTeammates();
-                    for (int i = 0; i < mates.Count; i++)
+                    BotOwner mate = mates[i];
+                    if (mate != null && mate != _bot && !mate.IsDead)
                     {
-                        BotOwner mate = mates[i];
-                        if (mate != null && mate != _bot && !mate.IsDead)
+                        float dist = Vector3.Distance(mate.Position, self);
+                        if (dist < 12f)
                         {
-                            float dist = Vector3.Distance(mate.Position, self);
-                            if (dist < 12f)
-                            {
-                                _fallback.Cancel();
-                                _bot.BotTalk?.TrySay(EPhraseTrigger.Cooperation);
-                                return true;
-                            }
+                            _fallback.Cancel();
+                            _bot.BotTalk?.TrySay(EPhraseTrigger.Cooperation);
+                            return true;
                         }
                     }
                 }
+            }
 
-                if (time - _lastStateChangeTime > ReentryCooldown)
-                {
-                    _fallback.Cancel();
-                    _bot.BotTalk?.TrySay(EPhraseTrigger.Ready);
-                    return true;
-                }
+            if (time - _lastStateChangeTime > ReentryCooldown)
+            {
+                _fallback.Cancel();
+                _bot.BotTalk?.TrySay(EPhraseTrigger.Ready);
+                return true;
             }
 
             return false;
@@ -325,5 +312,7 @@ namespace AIRefactored.AI.Combat
         {
             _lastStateChangeTime = time;
         }
+
+        #endregion
     }
 }

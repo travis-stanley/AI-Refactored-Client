@@ -45,9 +45,6 @@ namespace AIRefactored.AI.Hotspots
 
         #region Public API
 
-        /// <summary>
-        /// Inserts a hotspot into the quadtree.
-        /// </summary>
         public void Insert(HotspotRegistry.Hotspot hotspot)
         {
             if (hotspot == null)
@@ -55,97 +52,102 @@ namespace AIRefactored.AI.Hotspots
                 return;
             }
 
-            Insert(_root, hotspot);
+            Vector2 pos2D = new Vector2(hotspot.Position.x, hotspot.Position.z);
+            Stack<Node> stack = TempStackPool.Rent<Node>();
+
+            stack.Push(_root);
+
+            while (stack.Count > 0)
+            {
+                Node node = stack.Pop();
+                if (!node.Bounds.Contains(pos2D))
+                {
+                    continue;
+                }
+
+                if (node.IsLeaf)
+                {
+                    node.Points.Add(hotspot);
+
+                    if (node.Points.Count > MaxPerNode && node.Depth < MaxDepth)
+                    {
+                        Subdivide(node);
+
+                        for (int i = 0; i < node.Points.Count; i++)
+                        {
+                            HotspotRegistry.Hotspot existing = node.Points[i];
+                            for (int j = 0; j < 4; j++)
+                            {
+                                stack.Push(node.Children[j]);
+                            }
+
+                            stack.Push(node); // Re-push node to reprocess cleared Points
+                        }
+
+                        node.Points.Clear();
+                    }
+
+                    break;
+                }
+
+                for (int i = 0; i < node.Children.Length; i++)
+                {
+                    stack.Push(node.Children[i]);
+                }
+            }
+
+            TempStackPool.Return(stack);
         }
 
-        /// <summary>
-        /// Queries all hotspots within the radius of a 3D world position.
-        /// Uses pooled result list which must be returned by caller.
-        /// </summary>
         public List<HotspotRegistry.Hotspot> Query(Vector3 position, float radius, Predicate<HotspotRegistry.Hotspot> filter)
         {
-            // Rent a list of HotspotRegistry.Hotspot using the pool.
             List<HotspotRegistry.Hotspot> results = TempListPool.Rent<HotspotRegistry.Hotspot>();
-
+            Vector2 pos2D = new Vector2(position.x, position.z);
             float radiusSq = radius * radius;
-            Query(_root, position, radiusSq, results, filter);
+            float size = radius * 2f;
+            Rect queryBounds = new Rect(pos2D.x - radius, pos2D.y - radius, size, size);
 
+            Stack<Node> stack = TempStackPool.Rent<Node>();
+            stack.Push(_root);
+
+            while (stack.Count > 0)
+            {
+                Node node = stack.Pop();
+
+                if (!node.Bounds.Overlaps(queryBounds))
+                {
+                    continue;
+                }
+
+                if (node.IsLeaf)
+                {
+                    for (int i = 0; i < node.Points.Count; i++)
+                    {
+                        HotspotRegistry.Hotspot h = node.Points[i];
+                        Vector3 delta = h.Position - position;
+
+                        if (delta.sqrMagnitude <= radiusSq && (filter == null || filter(h)))
+                        {
+                            results.Add(h);
+                        }
+                    }
+
+                    continue;
+                }
+
+                for (int i = 0; i < node.Children.Length; i++)
+                {
+                    stack.Push(node.Children[i]);
+                }
+            }
+
+            TempStackPool.Return(stack);
             return results;
         }
 
         #endregion
 
         #region Internal Logic
-
-        private void Insert(Node node, HotspotRegistry.Hotspot hotspot)
-        {
-            Vector2 pos2D = new Vector2(hotspot.Position.x, hotspot.Position.z);
-            if (!node.Bounds.Contains(pos2D))
-            {
-                return;
-            }
-
-            if (node.IsLeaf)
-            {
-                node.Points.Add(hotspot);
-
-                if (node.Points.Count > MaxPerNode && node.Depth < MaxDepth)
-                {
-                    Subdivide(node);
-
-                    List<HotspotRegistry.Hotspot> existing = node.Points;
-                    for (int i = 0; i < existing.Count; i++)
-                    {
-                        HotspotRegistry.Hotspot h = existing[i];
-                        for (int j = 0; j < 4; j++)
-                        {
-                            Insert(node.Children[j], h);
-                        }
-                    }
-
-                    node.Points.Clear();
-                }
-
-                return;
-            }
-
-            for (int i = 0; i < node.Children.Length; i++)
-            {
-                Insert(node.Children[i], hotspot);
-            }
-        }
-
-        private void Query(Node node, Vector3 position, float radiusSq, List<HotspotRegistry.Hotspot> results, Predicate<HotspotRegistry.Hotspot> filter)
-        {
-            Vector2 pos2D = new Vector2(position.x, position.z);
-            float radius = Mathf.Sqrt(radiusSq);
-            Rect queryBounds = new Rect(pos2D.x - radius, pos2D.y - radius, radius * 2f, radius * 2f);
-
-            if (!node.Bounds.Overlaps(queryBounds))
-            {
-                return;
-            }
-
-            if (node.IsLeaf)
-            {
-                for (int i = 0; i < node.Points.Count; i++)
-                {
-                    HotspotRegistry.Hotspot h = node.Points[i];
-                    Vector3 delta = h.Position - position;
-                    if (delta.sqrMagnitude <= radiusSq && (filter == null || filter(h)))
-                    {
-                        results.Add(h);
-                    }
-                }
-
-                return;
-            }
-
-            for (int i = 0; i < node.Children.Length; i++)
-            {
-                Query(node.Children[i], position, radiusSq, results, filter);
-            }
-        }
 
         private void Subdivide(Node node)
         {
@@ -189,7 +191,7 @@ namespace AIRefactored.AI.Hotspots
 
             public void SetChildren(Node[] children)
             {
-                Children = children != null ? children : EmptyArray;
+                Children = children ?? EmptyArray;
             }
         }
 

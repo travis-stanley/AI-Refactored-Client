@@ -27,11 +27,13 @@ namespace AIRefactored.AI.Combat
         private const float EvaluationCooldown = 0.35f;
         private const float MaxScanDistance = 120f;
         private const float SwitchCooldown = 2.0f;
+
         private const float VisibilityBonus = 25f;
         private const float RecentSeenBonus = 10f;
         private const float BlindPenalty = 20f;
         private const float HiddenPenalty = 5f;
         private const float UnknownPenalty = 10f;
+
         private const float AggressionPersistenceWindow = 6f;
         private const float AggressionMaxBonus = 15f;
         private const float TargetSwitchThreshold = 10f;
@@ -46,7 +48,6 @@ namespace AIRefactored.AI.Combat
 
         private float _lastTargetSwitchTime = -999f;
         private float _nextEvaluateTime;
-
         private Player _currentTarget;
 
         #endregion
@@ -78,17 +79,13 @@ namespace AIRefactored.AI.Combat
         public void Tick(float time)
         {
             if (time < _nextEvaluateTime || _bot == null || _bot.IsDead || !_bot.IsAI)
-            {
                 return;
-            }
 
             _nextEvaluateTime = time + EvaluationCooldown;
 
             var players = GameWorldHandler.GetAllAlivePlayers();
             if (players == null || players.Count == 0)
-            {
                 return;
-            }
 
             Player bestTarget = null;
             float bestScore = float.MinValue;
@@ -97,20 +94,14 @@ namespace AIRefactored.AI.Combat
             {
                 Player candidate = players[i];
                 if (!EFTPlayerUtil.IsValid(candidate))
-                {
                     continue;
-                }
 
                 string profileId = candidate.ProfileId;
                 if (string.IsNullOrEmpty(profileId) || profileId == _bot.ProfileId)
-                {
                     continue;
-                }
 
                 if (!EFTPlayerUtil.IsEnemyOf(_bot, candidate))
-                {
                     continue;
-                }
 
                 float score = ScoreTarget(candidate, time);
                 if (score > bestScore)
@@ -121,9 +112,7 @@ namespace AIRefactored.AI.Combat
             }
 
             if (bestTarget == null)
-            {
                 return;
-            }
 
             if (_currentTarget == null)
             {
@@ -147,16 +136,12 @@ namespace AIRefactored.AI.Combat
 
         public Player GetPriorityTarget()
         {
-            if (_currentTarget != null && EFTPlayerUtil.IsValid(_currentTarget))
-            {
+            if (EFTPlayerUtil.IsValid(_currentTarget))
                 return _currentTarget;
-            }
 
             string id = _cache.TacticalMemory.GetMostRecentEnemyId();
             if (string.IsNullOrEmpty(id))
-            {
                 return null;
-            }
 
             Player fallback = EFTPlayerUtil.ResolvePlayerById(id);
             return EFTPlayerUtil.IsValid(fallback) ? fallback : null;
@@ -178,13 +163,11 @@ namespace AIRefactored.AI.Combat
             float distance = Vector3.Distance(botPos, targetPos);
 
             if (distance > MaxScanDistance)
-            {
                 return float.MinValue;
-            }
 
             float score = MaxScanDistance - distance;
-            EnemyInfo info = GetEnemyInfo(candidate);
 
+            EnemyInfo info = GetEnemyInfo(candidate);
             if (info != null)
             {
                 if (info.IsVisible)
@@ -192,19 +175,13 @@ namespace AIRefactored.AI.Combat
                     score += VisibilityBonus;
 
                     if (info.PersonalLastSeenTime + 2f > time)
-                    {
                         score += RecentSeenBonus;
-                    }
 
                     if (_profile.Caution > 0.6f)
-                    {
                         score += 5f;
-                    }
 
                     if (_cache.IsBlinded && _cache.BlindUntilTime > time)
-                    {
                         score -= BlindPenalty;
-                    }
                 }
                 else
                 {
@@ -215,7 +192,8 @@ namespace AIRefactored.AI.Combat
                         float unseen = time - info.PersonalLastSeenTime;
                         if (unseen < AggressionPersistenceWindow)
                         {
-                            score += Mathf.Lerp(0f, AggressionMaxBonus, 1f - (unseen / AggressionPersistenceWindow));
+                            float bonus = Mathf.Lerp(0f, AggressionMaxBonus, 1f - (unseen / AggressionPersistenceWindow));
+                            score += bonus;
                         }
                     }
                 }
@@ -230,16 +208,12 @@ namespace AIRefactored.AI.Combat
 
         private EnemyInfo GetEnemyInfo(Player candidate)
         {
-            if (candidate == null || _bot == null || _bot.EnemiesController == null)
-            {
+            if (candidate == null || _bot.EnemiesController == null)
                 return null;
-            }
 
             string id = candidate.ProfileId;
             if (string.IsNullOrEmpty(id))
-            {
                 return null;
-            }
 
             var enemyInfos = _bot.EnemiesController.EnemyInfos;
             if (enemyInfos != null)
@@ -247,16 +221,12 @@ namespace AIRefactored.AI.Combat
                 foreach (var kvp in enemyInfos)
                 {
                     if (kvp.Key is Player known && known.ProfileId == id)
-                    {
                         return kvp.Value;
-                    }
                 }
             }
 
             if (_bot.Memory?.GoalEnemy?.Person?.ProfileId == id)
-            {
                 return _bot.Memory.GoalEnemy;
-            }
 
             return null;
         }

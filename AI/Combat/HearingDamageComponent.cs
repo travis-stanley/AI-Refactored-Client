@@ -3,7 +3,7 @@
 //   Licensed under the MIT License. See LICENSE in the repository root for more information.
 //
 //   THIS FILE IS SYSTEMATICALLY MANAGED.
-//   Please follow strict StyleCop, ReSharper, and AI-Refactored code standards for all modifications.
+//   Failures in AIRefactored logic must always trigger safe fallback to EFT base AI.
 // </auto-generated>
 
 namespace AIRefactored.AI.Combat
@@ -30,18 +30,12 @@ namespace AIRefactored.AI.Combat
         /// <summary>
         /// Gets the current deafness intensity (0.0 to 1.0).
         /// </summary>
-        public float Deafness
-        {
-            get { return _deafnessLevel; }
-        }
+        public float Deafness => _deafnessLevel;
 
         /// <summary>
         /// Gets a value indicating whether the bot is currently affected by deafness.
         /// </summary>
-        public bool IsDeafened
-        {
-            get { return _deafnessLevel > 0.1f; }
-        }
+        public bool IsDeafened => _deafnessLevel > 0.1f;
 
         /// <summary>
         /// Gets the remaining deafness duration in seconds.
@@ -60,27 +54,27 @@ namespace AIRefactored.AI.Combat
         #region Public Methods
 
         /// <summary>
-        /// Applies new deafness with specified intensity and duration.
-        /// Ignores weaker overlapping effects.
+        /// Applies a new deafness effect with the specified intensity and duration.
+        /// Only overrides if intensity is stronger than current.
         /// </summary>
-        /// <param name="intensity">Clamped from 0.0 to 1.0.</param>
-        /// <param name="duration">Duration in seconds (minimum 0.1s).</param>
+        /// <param name="intensity">Intensity from 0.0 to 1.0 (clamped).</param>
+        /// <param name="duration">Duration in seconds (min 0.1s).</param>
         public void ApplyDeafness(float intensity, float duration)
         {
-            float clampedIntensity = intensity < 0f ? 0f : (intensity > 1f ? 1f : intensity);
-            float clampedDuration = duration < 0.1f ? 0.1f : duration;
+            float newIntensity = Mathf.Clamp01(intensity);
+            float newDuration = duration < 0.1f ? 0.1f : duration;
 
-            if (clampedIntensity > _targetDeafness)
+            if (newIntensity > _targetDeafness)
             {
-                _targetDeafness = clampedIntensity;
-                _deafDuration = clampedDuration;
+                _targetDeafness = newIntensity;
+                _deafDuration = newDuration;
                 _elapsedTime = 0f;
-                _deafnessLevel = clampedIntensity;
+                _deafnessLevel = newIntensity;
             }
         }
 
         /// <summary>
-        /// Clears all deafness effects immediately.
+        /// Immediately clears all deafness effects.
         /// </summary>
         public void Clear()
         {
@@ -91,10 +85,9 @@ namespace AIRefactored.AI.Combat
         }
 
         /// <summary>
-        /// Updates the fading of deafness over time.
-        /// Call once per frame with delta time.
+        /// Updates the deafness level over time. Call every frame.
         /// </summary>
-        /// <param name="deltaTime">Frame time in seconds.</param>
+        /// <param name="deltaTime">Delta time in seconds.</param>
         public void Tick(float deltaTime)
         {
             if (_targetDeafness <= 0.01f)
@@ -109,8 +102,8 @@ namespace AIRefactored.AI.Combat
                 return;
             }
 
-            float ratio = 1f - (_elapsedTime / _deafDuration);
-            _deafnessLevel = _targetDeafness * Mathf.Clamp01(ratio);
+            float ratio = Mathf.Clamp01(1f - (_elapsedTime / _deafDuration));
+            _deafnessLevel = _targetDeafness * ratio;
         }
 
         #endregion

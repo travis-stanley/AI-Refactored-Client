@@ -3,7 +3,7 @@
 //   Licensed under the MIT License. See LICENSE in the repository root for more information.
 //
 //   THIS FILE IS SYSTEMATICALLY MANAGED.
-//   Please follow strict StyleCop, ReSharper, and AI-Refactored code standards for all modifications.
+//   Failures in AIRefactored logic must always trigger safe fallback to EFT base AI.
 // </auto-generated>
 
 namespace AIRefactored.AI.Combat.States
@@ -65,31 +65,21 @@ namespace AIRefactored.AI.Combat.States
         public Vector3 GetInvestigateTarget(Vector3 visualLastKnown)
         {
             if (IsVectorValid(visualLastKnown))
-            {
                 return visualLastKnown;
-            }
 
-            Vector3 memoryPos;
-            if (TryGetMemoryEnemyPosition(out memoryPos))
-            {
+            if (TryGetMemoryEnemyPosition(out Vector3 memoryPos))
                 return memoryPos;
-            }
 
             Vector3 fallback = RandomNearbyPosition();
-            if (!BotNavValidator.Validate(_bot, "InvestigateRandomFallback"))
-            {
-                fallback = FallbackNavPointProvider.GetSafePoint(_bot.Position);
-            }
-
-            return fallback;
+            return BotNavValidator.Validate(_bot, "InvestigateRandomFallback")
+                ? fallback
+                : FallbackNavPointProvider.GetSafePoint(_bot.Position);
         }
 
         public void Investigate(Vector3 target)
         {
-            if (_bot == null || _cache == null)
-            {
+            if (_cache == null || _bot == null)
                 return;
-            }
 
             Vector3 destination = _cache.SquadPath != null
                 ? _cache.SquadPath.ApplyOffsetTo(target)
@@ -102,25 +92,16 @@ namespace AIRefactored.AI.Combat.States
 
             BotMovementHelper.SmoothMoveTo(_bot, destination);
             _memory.MarkCleared(destination);
-
-            if (_cache.Combat != null)
-            {
-                _cache.Combat.TrySetStanceFromNearbyCover(destination);
-            }
+            _cache.Combat?.TrySetStanceFromNearbyCover(destination);
         }
 
         public bool ShallUseNow(float time, float lastTransition)
         {
-            if (_cache == null || _cache.AIRefactoredBotOwner == null)
-            {
+            if (_cache?.AIRefactoredBotOwner?.PersonalityProfile == null)
                 return false;
-            }
 
-            BotPersonalityProfile profile = _cache.AIRefactoredBotOwner.PersonalityProfile;
-            if (profile == null || profile.Caution < MinCaution)
-            {
+            if (_cache.AIRefactoredBotOwner.PersonalityProfile.Caution < MinCaution)
                 return false;
-            }
 
             float heardTime = _cache.LastHeardTime;
             return (heardTime + SoundReactTime) > time && (time - lastTransition) > ExitDelayBuffer;
@@ -146,9 +127,7 @@ namespace AIRefactored.AI.Combat.States
             result = Vector3.zero;
 
             if (_memory == null)
-            {
                 return false;
-            }
 
             Vector3? memory = _memory.GetRecentEnemyMemory();
             if (memory.HasValue && IsVectorValid(memory.Value))

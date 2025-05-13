@@ -46,10 +46,6 @@ namespace AIRefactored.AI.Combat
 
         #region Public Methods
 
-        /// <summary>
-        /// Initializes the escalation monitor for the specified bot.
-        /// </summary>
-        /// <param name="botOwner">Bot owner reference.</param>
         public void Initialize(BotOwner botOwner)
         {
             if (botOwner == null)
@@ -63,9 +59,6 @@ namespace AIRefactored.AI.Combat
             _hasEscalated = false;
         }
 
-        /// <summary>
-        /// Records the panic start time.
-        /// </summary>
         public void NotifyPanicTriggered()
         {
             if (_panicStartTime < 0f)
@@ -74,16 +67,10 @@ namespace AIRefactored.AI.Combat
             }
         }
 
-        /// <summary>
-        /// Updates escalation check at defined intervals.
-        /// </summary>
-        /// <param name="time">Current game time.</param>
         public void Tick(float time)
         {
             if (_hasEscalated || !IsValid() || time < _nextCheckTime)
-            {
                 return;
-            }
 
             _nextCheckTime = time + CheckInterval;
 
@@ -101,8 +88,8 @@ namespace AIRefactored.AI.Combat
         {
             return _bot != null &&
                    !_bot.IsDead &&
-                   _bot.GetPlayer != null &&
-                   _bot.GetPlayer.IsAI;
+                   _bot.GetPlayer is Player player &&
+                   player.IsAI;
         }
 
         private bool PanicDurationExceeded(float time)
@@ -113,28 +100,16 @@ namespace AIRefactored.AI.Combat
         private bool MultipleEnemiesVisible()
         {
             BotEnemiesController controller = _bot.EnemiesController;
-            if (controller == null)
-            {
+            if (controller?.EnemyInfos == null)
                 return false;
-            }
 
-            int count = 0;
-            Dictionary<IPlayer, EnemyInfo> map = controller.EnemyInfos;
-            if (map == null)
+            int visibleCount = 0;
+            foreach (var kv in controller.EnemyInfos)
             {
-                return false;
-            }
-
-            foreach (KeyValuePair<IPlayer, EnemyInfo> pair in map)
-            {
-                EnemyInfo info = pair.Value;
-                if (info != null && info.IsVisible)
+                if (kv.Value != null && kv.Value.IsVisible)
                 {
-                    count++;
-                    if (count >= 2)
-                    {
+                    if (++visibleCount >= 2)
                         return true;
-                    }
                 }
             }
 
@@ -144,19 +119,11 @@ namespace AIRefactored.AI.Combat
         private bool SquadHasLostTeammates()
         {
             BotsGroup group = _bot.BotsGroup;
-            if (group == null)
-            {
+            if (group == null || group.MembersCount <= 1)
                 return false;
-            }
-
-            int total = group.MembersCount;
-            if (total <= 1)
-            {
-                return false;
-            }
 
             int dead = 0;
-            for (int i = 0; i < total; i++)
+            for (int i = 0; i < group.MembersCount; i++)
             {
                 BotOwner member = group.Member(i);
                 if (member == null || member.IsDead)
@@ -165,7 +132,7 @@ namespace AIRefactored.AI.Combat
                 }
             }
 
-            return dead >= Mathf.CeilToInt(total * SquadCasualtyThreshold);
+            return dead >= Mathf.CeilToInt(group.MembersCount * SquadCasualtyThreshold);
         }
 
         private bool ShouldEscalate(float time)
@@ -179,11 +146,8 @@ namespace AIRefactored.AI.Combat
         {
             _hasEscalated = true;
 
-            string nickname = (_bot.Profile != null && _bot.Profile.Info != null)
-                ? _bot.Profile.Info.Nickname
-                : "Unknown";
-
-            Logger.LogDebug("[AIRefactored-Escalation] Escalating behavior for bot '" + nickname + "'.");
+            string nickname = _bot.Profile?.Info?.Nickname ?? "Unknown";
+            Logger.LogDebug($"[AIRefactored-Escalation] Escalating behavior for bot '{nickname}'.");
 
             AIOptimizationManager.Reset(_bot);
             AIOptimizationManager.Apply(_bot);
@@ -196,23 +160,20 @@ namespace AIRefactored.AI.Combat
                 _bot.BotTalk.TrySay(EPhraseTrigger.OnFight);
             }
 
-            // Final fallback: ensure bot is on valid nav and not frozen
             Vector3 safe = NavPointRegistry.GetClosestPosition(_bot.Position);
-            if (safe != Vector3.zero && (_bot.Mover != null && !_bot.Mover.IsMoving))
+            if (safe != Vector3.zero && _bot.Mover != null && !_bot.Mover.IsMoving)
             {
                 _bot.Mover.GoToPoint(safe, true, 1.0f);
-                Logger.LogDebug("[AIRefactored-Escalation] Bot '" + nickname + "' moved to nav fallback after escalation.");
+                Logger.LogDebug($"[AIRefactored-Escalation] Bot '{nickname}' moved to nav fallback after escalation.");
             }
         }
 
         private void ApplyEscalationTuning(BotOwner bot)
         {
-            if (bot == null || bot.Settings == null || bot.Settings.FileSettings == null)
-            {
+            if (bot?.Settings?.FileSettings == null)
                 return;
-            }
 
-            BotSettingsComponents file = bot.Settings.FileSettings;
+            var file = bot.Settings.FileSettings;
 
             if (file.Shoot != null)
             {
@@ -223,8 +184,7 @@ namespace AIRefactored.AI.Combat
             {
                 file.Mind.DIST_TO_FOUND_SQRT = Mathf.Clamp(file.Mind.DIST_TO_FOUND_SQRT * 1.2f, 200f, 800f);
                 file.Mind.ENEMY_LOOK_AT_ME_ANG = Mathf.Clamp(file.Mind.ENEMY_LOOK_AT_ME_ANG * 0.75f, 5f, 45f);
-                file.Mind.CHANCE_TO_RUN_CAUSE_DAMAGE_0_100 = Mathf.Clamp(
-                    file.Mind.CHANCE_TO_RUN_CAUSE_DAMAGE_0_100 + 20f, 0f, 100f);
+                file.Mind.CHANCE_TO_RUN_CAUSE_DAMAGE_0_100 = Mathf.Clamp(file.Mind.CHANCE_TO_RUN_CAUSE_DAMAGE_0_100 + 20f, 0f, 100f);
             }
 
             if (file.Look != null)
@@ -232,22 +192,18 @@ namespace AIRefactored.AI.Combat
                 file.Look.MAX_VISION_GRASS_METERS = Mathf.Clamp(file.Look.MAX_VISION_GRASS_METERS + 5f, 5f, 40f);
             }
 
-            Logger.LogDebug("[AIRefactored-Tuning] Escalation tuning applied to '" + (bot.Profile?.Info?.Nickname ?? "Unknown") + "'.");
+            Logger.LogDebug($"[AIRefactored-Tuning] Escalation tuning applied to '{bot.Profile?.Info?.Nickname ?? "Unknown"}'.");
         }
 
         private void ApplyPersonalityTuning(BotOwner bot)
         {
             string profileId = bot.ProfileId;
-            if (profileId.Length == 0)
-            {
+            if (string.IsNullOrEmpty(profileId))
                 return;
-            }
 
             BotPersonalityProfile profile = BotRegistry.Get(profileId);
             if (profile == null)
-            {
                 return;
-            }
 
             profile.AggressionLevel = Mathf.Clamp01(profile.AggressionLevel + 0.25f);
             profile.Caution = Mathf.Clamp01(profile.Caution - 0.25f);
@@ -256,11 +212,11 @@ namespace AIRefactored.AI.Combat
             profile.CommunicationLevel = Mathf.Clamp01(profile.CommunicationLevel + 0.2f);
 
             Logger.LogDebug(
-                "[AIRefactored-Tuning] Personality tuned for '" + (bot.Profile?.Info?.Nickname ?? "Unknown") + "': " +
-                "Agg=" + profile.AggressionLevel.ToString("F2") + ", " +
-                "Caution=" + profile.Caution.ToString("F2") + ", " +
-                "Supp=" + profile.SuppressionSensitivity.ToString("F2") + ", " +
-                "AccUF=" + profile.AccuracyUnderFire.ToString("F2"));
+                $"[AIRefactored-Tuning] Personality tuned for '{bot.Profile?.Info?.Nickname ?? "Unknown"}': " +
+                $"Agg={profile.AggressionLevel:F2}, " +
+                $"Caution={profile.Caution:F2}, " +
+                $"Supp={profile.SuppressionSensitivity:F2}, " +
+                $"AccUF={profile.AccuracyUnderFire:F2}");
         }
 
         #endregion

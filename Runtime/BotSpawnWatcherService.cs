@@ -3,7 +3,7 @@
 //   Licensed under the MIT License. See LICENSE in the repository root for more information.
 //
 //   THIS FILE IS SYSTEMATICALLY MANAGED.
-//   Please follow strict StyleCop, ReSharper, and AI-Refactored code standards for all modifications.
+//   Failures in AIRefactored logic must always trigger safe fallback to EFT base AI.
 // </auto-generated>
 
 namespace AIRefactored.Runtime
@@ -38,7 +38,6 @@ namespace AIRefactored.Runtime
 
 		private static float _nextPollTime = -1f;
 		private static bool _hasWarnedInvalid;
-		private static bool _hasLoggedReset;
 
 		#endregion
 
@@ -49,7 +48,6 @@ namespace AIRefactored.Runtime
 			try
 			{
 				Reset();
-				_hasLoggedReset = false;
 				Logger.LogDebug("[BotSpawnWatcher] ✅ Initialized.");
 			}
 			catch (Exception ex)
@@ -69,7 +67,6 @@ namespace AIRefactored.Runtime
 						Logger.LogWarning("[BotSpawnWatcher] ⚠ World not ready or not host — deferring.");
 						_hasWarnedInvalid = true;
 					}
-
 					return;
 				}
 
@@ -123,7 +120,7 @@ namespace AIRefactored.Runtime
 					{
 						BotBrainGuardian.Enforce(go);
 						GameWorldHandler.TryAttachBotBrain(player.AIData.BotOwner);
-						Logger.LogDebug("[BotSpawnWatcher] ✅ Brain injected for bot: " + player.Profile?.Info?.Nickname ?? player.ProfileId);
+						Logger.LogDebug("[BotSpawnWatcher] ✅ Brain injected for bot: " + (player.Profile?.Info?.Nickname ?? player.ProfileId));
 					}
 					catch (Exception ex)
 					{
@@ -155,7 +152,6 @@ namespace AIRefactored.Runtime
 			SeenBotIds.Clear();
 			_nextPollTime = -1f;
 			_hasWarnedInvalid = false;
-			_hasLoggedReset = true;
 
 			try
 			{
@@ -163,7 +159,7 @@ namespace AIRefactored.Runtime
 			}
 			catch
 			{
-				// Logger might not be available during teardown.
+				// Logger may be null during shutdown
 			}
 		}
 

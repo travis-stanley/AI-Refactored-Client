@@ -47,11 +47,7 @@ namespace AIRefactored.AI.Navigation
             while (stack.Count > 0)
             {
                 Node node = stack.Pop();
-
-                if (!node.Bounds.Contains(pos2D))
-                {
-                    continue;
-                }
+                if (!node.Bounds.Contains(pos2D)) continue;
 
                 if (node.IsLeaf)
                 {
@@ -59,19 +55,15 @@ namespace AIRefactored.AI.Navigation
 
                     if (node.NavPoints.Count > MaxPointsPerNode && node.Depth < MaxDepth)
                     {
+                        List<NavPointData> tempPoints = node.NavPoints;
                         Subdivide(node);
-                        for (int i = 0; i < node.NavPoints.Count; i++)
+                        for (int i = 0; i < tempPoints.Count; i++)
                         {
-                            for (int j = 0; j < node.Children.Length; j++)
-                            {
-                                stack.Push(node.Children[j]);
-                            }
-                            stack.Push(node);
+                            Insert(tempPoints[i]); // Re-insert into new tree
                         }
-
-                        node.NavPoints.Clear();
+                        TempListPool.Return(tempPoints);
+                        node.NavPoints = TempListPool.Rent<NavPointData>();
                     }
-
                     break;
                 }
 
@@ -93,11 +85,7 @@ namespace AIRefactored.AI.Navigation
             while (stack.Count > 0)
             {
                 Node node = stack.Pop();
-
-                if (!node.Bounds.Contains(pos2D))
-                {
-                    continue;
-                }
+                if (!node.Bounds.Contains(pos2D)) continue;
 
                 if (node.IsLeaf)
                 {
@@ -105,19 +93,15 @@ namespace AIRefactored.AI.Navigation
 
                     if (node.RawPoints.Count > MaxPointsPerNode && node.Depth < MaxDepth)
                     {
+                        List<Vector3> tempRaw = node.RawPoints;
                         Subdivide(node);
-                        for (int i = 0; i < node.RawPoints.Count; i++)
+                        for (int i = 0; i < tempRaw.Count; i++)
                         {
-                            for (int j = 0; j < node.Children.Length; j++)
-                            {
-                                stack.Push(node.Children[j]);
-                            }
-                            stack.Push(node);
+                            Insert(tempRaw[i]); // Re-insert
                         }
-
-                        node.RawPoints.Clear();
+                        TempListPool.Return(tempRaw);
+                        node.RawPoints = TempListPool.Rent<Vector3>();
                     }
-
                     break;
                 }
 
@@ -149,13 +133,12 @@ namespace AIRefactored.AI.Navigation
                 {
                     for (int i = 0; i < node.NavPoints.Count; i++)
                     {
-                        NavPointData point = node.NavPoints[i];
-                        if ((point.Position - position).sqrMagnitude <= radiusSq && (filter == null || filter(point)))
+                        NavPointData p = node.NavPoints[i];
+                        if ((p.Position - position).sqrMagnitude <= radiusSq && (filter == null || filter(p)))
                         {
-                            result.Add(point);
+                            result.Add(p);
                         }
                     }
-
                     continue;
                 }
 
@@ -205,7 +188,6 @@ namespace AIRefactored.AI.Navigation
                             result.Add(p);
                         }
                     }
-
                     continue;
                 }
 

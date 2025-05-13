@@ -11,7 +11,6 @@ namespace AIRefactored.AI.Navigation
     using AIRefactored.Core;
     using AIRefactored.Runtime;
     using BepInEx.Logging;
-    using Comfort.Common;
     using EFT;
     using UnityEngine;
 
@@ -57,7 +56,7 @@ namespace AIRefactored.AI.Navigation
                 return false;
             }
 
-            // If registry isn't ready, still try to assign nearest fallback point
+            // === Registry not ready fallback ===
             if (!NavPointRegistry.IsReady)
             {
                 Logger.LogWarning("[BotNavValidator] ⚠ NavPointRegistry not ready — bot: " + GetBotName(botOwner) + ", context: " + context);
@@ -81,7 +80,7 @@ namespace AIRefactored.AI.Navigation
                 return false;
             }
 
-            // Registry is ready — use normal nav point logic
+            // === Registry ready: use fallback to nearest valid nav point ===
             Vector3 closest = NavPointRegistry.GetClosestPosition(position);
             if (!IsValidPosition(closest))
             {

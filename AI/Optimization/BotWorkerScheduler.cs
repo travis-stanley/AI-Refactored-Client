@@ -50,35 +50,26 @@ namespace AIRefactored.AI.Optimization
         /// <summary>
         /// Schedules a Unity-safe action to run on the next main thread tick.
         /// </summary>
+        /// <param name="action">Action to invoke from the Unity thread.</param>
         public static void EnqueueToMainThread(Action action)
         {
-            if (action == null)
-            {
-                return;
-            }
-
-            if (!GameWorldHandler.IsLocalHost())
+            if (action == null || !GameWorldHandler.IsLocalHost())
             {
                 return;
             }
 
             MainThreadQueue.Enqueue(action);
             Interlocked.Increment(ref _queuedCount);
-
             EnsureLogger().LogDebug("[BotWorkScheduler] Main thread task queued.");
         }
 
         /// <summary>
         /// Enqueues spawn logic for deferred throttling.
         /// </summary>
+        /// <param name="action">Spawn or allocation action to invoke.</param>
         public static void EnqueueSpawnSmoothed(Action action)
         {
-            if (action == null)
-            {
-                return;
-            }
-
-            if (!GameWorldHandler.IsLocalHost())
+            if (action == null || !GameWorldHandler.IsLocalHost())
             {
                 return;
             }
@@ -147,6 +138,7 @@ namespace AIRefactored.AI.Optimization
         /// <summary>
         /// Returns internal scheduler stats for diagnostics.
         /// </summary>
+        /// <returns>Formatted scheduler state.</returns>
         public static string GetStats()
         {
             return "[BotWorkScheduler] Queued=" + _queuedCount +
@@ -157,7 +149,7 @@ namespace AIRefactored.AI.Optimization
 
         #endregion
 
-        #region Internal
+        #region Internals
 
         private static ManualLogSource EnsureLogger()
         {

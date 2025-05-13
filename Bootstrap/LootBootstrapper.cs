@@ -115,7 +115,7 @@ namespace AIRefactored.Bootstrap
 				for (int i = 0; i < all.Count; i++)
 				{
 					Player p = EFTPlayerUtil.AsEFTPlayer(all[i]);
-					if (p != null && !p.HealthController.IsAlive)
+					if (p != null && p.HealthController != null && !p.HealthController.IsAlive)
 					{
 						deadPlayers.Add(p);
 					}

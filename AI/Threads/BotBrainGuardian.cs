@@ -108,7 +108,7 @@ namespace AIRefactored.AI.Threads
                 || ns.Contains("mod")
                 || ns.Contains("spt")
                 || ns.Contains("lua")
-                || (!ns.Contains("tarkov") && !ns.Contains("ai-refactored"));
+                || (!ns.Contains("ai-refactored") && !ns.Contains("tarkov"));
         }
 
         private static bool IsHarmonyPatched(Type type)

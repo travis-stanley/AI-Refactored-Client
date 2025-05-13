@@ -171,7 +171,8 @@ namespace AIRefactored.AI.Movement
             }
 
             _lastVelocity = Vector3.Lerp(_lastVelocity, velocity, InertiaWeight * deltaTime);
-            _bot.GetPlayer.CharacterController.Move(Vector3.MoveTowards(_bot.Position, target, _lastVelocity.magnitude * deltaTime), deltaTime);
+            Vector3 moveTo = Vector3.MoveTowards(_bot.Position, target, _lastVelocity.magnitude * deltaTime);
+            _bot.GetPlayer.CharacterController.Move(moveTo, deltaTime);
         }
 
         private void SmoothLookTo(Vector3 target, float deltaTime)
@@ -179,7 +180,7 @@ namespace AIRefactored.AI.Movement
             Vector3 direction = target - _bot.Transform.position;
             direction.y = 0f;
 
-            if (direction.sqrMagnitude < 0.01f || (_cache.Tilt._coreTilt && Vector3.Angle(_bot.Transform.forward, direction) > 80f))
+            if (direction.sqrMagnitude < 0.01f || (_cache.Tilt != null && _cache.Tilt._coreTilt && Vector3.Angle(_bot.Transform.forward, direction) > 80f))
             {
                 return;
             }

@@ -57,11 +57,11 @@ namespace AIRefactored.Runtime
 			{
 				Reset();
 				_hasInitialized = true;
-				Logger.LogDebug("[BotRecoveryService] Initialized.");
+				Logger.LogDebug("[BotRecoveryService] ✅ Initialized.");
 			}
 			catch (Exception ex)
 			{
-				Logger.LogError("[BotRecoveryService] Initialize failed: " + ex);
+				Logger.LogError("[BotRecoveryService] ❌ Initialize failed: " + ex);
 			}
 		}
 
@@ -72,16 +72,17 @@ namespace AIRefactored.Runtime
 				if (_hookedSpawner && Singleton<BotSpawner>.Instantiated)
 				{
 					Singleton<BotSpawner>.Instance.OnBotCreated -= GameWorldHandler.TryAttachBotBrain;
+					_hookedSpawner = false;
 				}
 
 				Reset();
 				_hasInitialized = false;
 
-				Logger.LogDebug("[BotRecoveryService] Reset on raid end.");
+				Logger.LogDebug("[BotRecoveryService] 🧹 Reset on raid end.");
 			}
 			catch (Exception ex)
 			{
-				Logger.LogError("[BotRecoveryService] OnRaidEnd error: " + ex);
+				Logger.LogError("[BotRecoveryService] ❌ OnRaidEnd error: " + ex);
 			}
 		}
 
@@ -105,7 +106,7 @@ namespace AIRefactored.Runtime
 
 		#endregion
 
-		#region Tick
+		#region Tick Loop
 
 		public void Tick(float deltaTime)
 		{
@@ -129,7 +130,7 @@ namespace AIRefactored.Runtime
 				{
 					if (!_hasWarned)
 					{
-						Logger.LogWarning("[BotRecoveryService] GameWorld not ready.");
+						Logger.LogWarning("[BotRecoveryService] ⚠ GameWorld not ready.");
 						_hasWarned = true;
 					}
 
@@ -138,7 +139,7 @@ namespace AIRefactored.Runtime
 
 				if (_hasWarned)
 				{
-					Logger.LogDebug("[BotRecoveryService] GameWorld recovered.");
+					Logger.LogDebug("[BotRecoveryService] ✅ GameWorld recovered.");
 					_hasWarned = false;
 				}
 
@@ -147,13 +148,13 @@ namespace AIRefactored.Runtime
 			}
 			catch (Exception ex)
 			{
-				Logger.LogError("[BotRecoveryService] Tick error: " + ex);
+				Logger.LogError("[BotRecoveryService] ❌ Tick error: " + ex);
 			}
 		}
 
 		#endregion
 
-		#region Recovery
+		#region Spawn Hook and Bot Validation
 
 		private static void EnsureSpawnHook()
 		{
@@ -166,10 +167,11 @@ namespace AIRefactored.Runtime
 
 				Singleton<BotSpawner>.Instance.OnBotCreated += GameWorldHandler.TryAttachBotBrain;
 				_hookedSpawner = true;
+				Logger.LogDebug("[BotRecoveryService] ✅ BotSpawner hook attached.");
 			}
 			catch (Exception ex)
 			{
-				Logger.LogError("[BotRecoveryService] EnsureSpawnHook error: " + ex);
+				Logger.LogError("[BotRecoveryService] ❌ EnsureSpawnHook error: " + ex);
 			}
 		}
 
@@ -178,6 +180,7 @@ namespace AIRefactored.Runtime
 			for (int i = 0; i < players.Count; i++)
 			{
 				Player player = players[i];
+
 				if (!EFTPlayerUtil.IsValid(player) || !player.IsAI || player.gameObject == null)
 				{
 					continue;
@@ -191,21 +194,17 @@ namespace AIRefactored.Runtime
 					if (!brain.enabled)
 					{
 						brain.enabled = true;
-						Logger.LogWarning("[BotRecoveryService] Re-enabled disabled BotBrain for: " + player.ProfileId);
+						Logger.LogWarning("[BotRecoveryService] Re-enabled disabled BotBrain: " + player.ProfileId);
 					}
 
 					continue;
 				}
 
-				string botName = "Unnamed";
-				if (player.Profile?.Info?.Nickname != null)
-				{
-					botName = player.Profile.Info.Nickname;
-				}
+				string botName = player.Profile?.Info?.Nickname ?? "Unknown";
 
-				Logger.LogWarning("[BotRecoveryService] Bot missing brain — restoring: " + botName);
+				Logger.LogWarning("[BotRecoveryService] ⚠ Bot missing brain — restoring: " + botName);
 
-				if (player.AIData?.BotOwner != null)
+				if (player.AIData != null && player.AIData.BotOwner != null)
 				{
 					try
 					{
@@ -213,7 +212,7 @@ namespace AIRefactored.Runtime
 					}
 					catch (Exception ex)
 					{
-						Logger.LogError("[BotRecoveryService] Error attaching BotBrain to BotOwner: " + ex);
+						Logger.LogError("[BotRecoveryService] ❌ Failed to attach BotBrain to BotOwner: " + ex);
 					}
 				}
 
@@ -225,6 +224,10 @@ namespace AIRefactored.Runtime
 			}
 		}
 
+		#endregion
+
+		#region World Refresh
+
 		private static void RescanWorld()
 		{
 			try
@@ -232,11 +235,11 @@ namespace AIRefactored.Runtime
 				string mapId = GameWorldHandler.TryGetValidMapName();
 				if (string.IsNullOrEmpty(mapId))
 				{
-					Logger.LogWarning("[BotRecoveryService] Rescan aborted — invalid mapId.");
+					Logger.LogWarning("[BotRecoveryService] ❌ Rescan aborted — invalid or missing mapId.");
 					return;
 				}
 
-				Logger.LogDebug("[BotRecoveryService] Rescanning world: " + mapId);
+				Logger.LogDebug("[BotRecoveryService] 🔄 Rescanning world systems for map: " + mapId);
 
 				HotspotRegistry.Clear();
 				HotspotRegistry.Initialize(mapId);
@@ -248,11 +251,11 @@ namespace AIRefactored.Runtime
 				NavPointRegistry.Clear();
 				NavPointRegistry.RegisterAll(mapId);
 
-				Logger.LogDebug("[BotRecoveryService] Rescan complete.");
+				Logger.LogDebug("[BotRecoveryService] ✅ World rescan complete.");
 			}
 			catch (Exception ex)
 			{
-				Logger.LogError("[BotRecoveryService] RescanWorld error: " + ex);
+				Logger.LogError("[BotRecoveryService] ❌ RescanWorld error: " + ex);
 			}
 		}
 

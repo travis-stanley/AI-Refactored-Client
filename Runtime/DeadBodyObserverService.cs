@@ -50,11 +50,11 @@ namespace AIRefactored.Runtime
 			{
 				Reset();
 				_hasLoggedReset = false;
-				Logger.LogDebug("[DeadBodyObserver] Initialized.");
+				Logger.LogDebug("[DeadBodyObserver] ✅ Initialized.");
 			}
 			catch (Exception ex)
 			{
-				Logger.LogError("[DeadBodyObserver] Initialize failed: " + ex);
+				Logger.LogError("[DeadBodyObserver] ❌ Initialize failed: " + ex);
 			}
 		}
 
@@ -75,6 +75,12 @@ namespace AIRefactored.Runtime
 
 				_nextScanTime = now + ScanIntervalSeconds;
 
+				GameWorld world = GameWorldHandler.Get();
+				if (world == null || world.RegisteredPlayers == null || world.RegisteredPlayers.Count == 0)
+				{
+					return;
+				}
+
 				LootableContainer[] containers;
 				try
 				{
@@ -82,36 +88,30 @@ namespace AIRefactored.Runtime
 				}
 				catch (Exception ex)
 				{
-					Logger.LogError("[DeadBodyObserver] Failed to find containers: " + ex);
+					Logger.LogError("[DeadBodyObserver] ❌ Failed to find containers: " + ex);
 					return;
 				}
 
-				if (containers.Length == 0)
-				{
-					return;
-				}
-
-				GameWorld world = GameWorldHandler.Get();
-				if (world == null || world.RegisteredPlayers == null || world.RegisteredPlayers.Count == 0)
+				if (containers == null || containers.Length == 0)
 				{
 					return;
 				}
 
 				List<IPlayer> rawPlayers = world.RegisteredPlayers;
-				List<Player> validDeadPlayers = TempListPool.Rent<Player>();
+				List<Player> deadPlayers = TempListPool.Rent<Player>();
 
 				for (int i = 0; i < rawPlayers.Count; i++)
 				{
 					Player player = EFTPlayerUtil.AsEFTPlayer(rawPlayers[i]);
 					if (player != null && !player.HealthController.IsAlive)
 					{
-						validDeadPlayers.Add(player);
+						deadPlayers.Add(player);
 					}
 				}
 
-				for (int i = 0; i < validDeadPlayers.Count; i++)
+				for (int i = 0; i < deadPlayers.Count; i++)
 				{
-					Player player = validDeadPlayers[i];
+					Player player = deadPlayers[i];
 					string profileId = player.ProfileId;
 
 					if (string.IsNullOrEmpty(profileId) || DeadBodyContainerCache.Contains(profileId))
@@ -119,13 +119,13 @@ namespace AIRefactored.Runtime
 						continue;
 					}
 
-					Vector3 corpsePosition = EFTPlayerUtil.GetPosition(player);
 					Transform root = player.Transform?.Original?.root;
-
 					if (root == null)
 					{
 						continue;
 					}
+
+					Vector3 corpsePos = EFTPlayerUtil.GetPosition(player);
 
 					for (int j = 0; j < containers.Length; j++)
 					{
@@ -135,26 +135,26 @@ namespace AIRefactored.Runtime
 							continue;
 						}
 
-						bool isRootMatch = container.transform.root == root;
-						bool isNearby = Vector3.Distance(container.transform.position, corpsePosition) <= AssociationRadius;
+						bool rootMatch = container.transform.root == root;
+						bool nearby = Vector3.Distance(container.transform.position, corpsePos) <= AssociationRadius;
 
-						if (isRootMatch || isNearby)
+						if (rootMatch || nearby)
 						{
 							DeadBodyContainerCache.Register(player, container);
 							LootRuntimeWatcher.Register(container.gameObject);
 
 							string nickname = player.Profile?.Info?.Nickname ?? "Unnamed";
-							Logger.LogDebug("[DeadBodyObserver] Associated container with dead bot: " + nickname);
+							Logger.LogDebug("[DeadBodyObserver] ✅ Associated container with dead bot: " + nickname);
 							break;
 						}
 					}
 				}
 
-				TempListPool.Return(validDeadPlayers);
+				TempListPool.Return(deadPlayers);
 			}
 			catch (Exception ex)
 			{
-				Logger.LogError("[DeadBodyObserver] Tick error: " + ex);
+				Logger.LogError("[DeadBodyObserver] ❌ Tick error: " + ex);
 			}
 		}
 
@@ -163,10 +163,11 @@ namespace AIRefactored.Runtime
 			try
 			{
 				Reset();
+				Logger.LogDebug("[DeadBodyObserver] 🧹 Reset after raid.");
 			}
 			catch (Exception ex)
 			{
-				Logger.LogError("[DeadBodyObserver] OnRaidEnd error: " + ex);
+				Logger.LogError("[DeadBodyObserver] ❌ OnRaidEnd error: " + ex);
 			}
 		}
 
@@ -182,11 +183,11 @@ namespace AIRefactored.Runtime
 
 			try
 			{
-				Logger.LogDebug("[DeadBodyObserver] Reset.");
+				Logger.LogDebug("[DeadBodyObserver] Reset complete.");
 			}
 			catch
 			{
-				// Silent on teardown
+				// Silent during teardown
 			}
 		}
 

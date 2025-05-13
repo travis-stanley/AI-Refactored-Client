@@ -23,6 +23,10 @@ namespace AIRefactored.AI.Threads
 	using EFT;
 	using UnityEngine;
 
+	/// <summary>
+	/// Real-time execution engine for AIRefactored bot logic.
+	/// Controls subsystem tick order, validity checks, and tick-rate segmentation.
+	/// </summary>
 	public sealed class BotBrain : MonoBehaviour
 	{
 		private static readonly ManualLogSource Logger = Plugin.LoggerInstance;
@@ -30,9 +34,6 @@ namespace AIRefactored.AI.Threads
 		private BotOwner _bot;
 		private Player _player;
 		private BotComponentCache _cache;
-
-		private bool _isValid;
-		private float _lastWarningTime;
 
 		private CombatStateMachine _combat;
 		private BotMovementController _movement;
@@ -55,6 +56,8 @@ namespace AIRefactored.AI.Threads
 		private BotAsyncProcessor _asyncProcessor;
 		private BotThreatEscalationMonitor _threatEscalationMonitor;
 
+		private bool _isValid;
+		private float _lastWarningTime;
 		private float _nextPerceptionTick;
 		private float _nextCombatTick;
 		private float _nextLogicTick;
@@ -63,6 +66,9 @@ namespace AIRefactored.AI.Threads
 		private float CombatTickRate => FikaHeadlessDetector.IsHeadless ? 1f / 60f : 1f / 30f;
 		private float LogicTickRate => FikaHeadlessDetector.IsHeadless ? 1f / 30f : 1f / 15f;
 
+		/// <summary>
+		/// Core runtime tick. Dispatches all subsystems in real-time with tiered segmentation.
+		/// </summary>
 		public void Tick(float deltaTime)
 		{
 			try
@@ -72,7 +78,7 @@ namespace AIRefactored.AI.Threads
 					return;
 				}
 
-				var current = _bot.GetPlayer;
+				Player current = _bot.GetPlayer;
 				if (current == null || current.HealthController == null || !current.HealthController.IsAlive)
 				{
 					_isValid = false;
@@ -147,6 +153,9 @@ namespace AIRefactored.AI.Threads
 			catch (Exception ex) { Logger.LogError("[BotBrain] " + label + " Tick failed: " + ex); }
 		}
 
+		/// <summary>
+		/// Initializes the bot brain and all subsystems. Requires authoritative host (client-host or headless).
+		/// </summary>
 		public void Initialize(BotOwner bot)
 		{
 			if (!GameWorldHandler.IsLocalHost())
@@ -161,7 +170,7 @@ namespace AIRefactored.AI.Threads
 				return;
 			}
 
-			var player = bot.GetPlayer;
+			Player player = bot.GetPlayer;
 			if (player == null || !player.IsAI || player.IsYourPlayer || bot.IsDead || player.Profile?.Info == null)
 			{
 				Logger.LogWarning("[BotBrain] Initialization rejected: invalid or non-AI player.");
@@ -190,6 +199,7 @@ namespace AIRefactored.AI.Threads
 				_look = _cache.LookController;
 				_tilt = _cache.Tilt;
 				_groupBehavior = _cache.GroupBehavior;
+
 				_corner = new BotCornerScanner(bot, _cache);
 				_jump = new BotJumpController(bot, _cache);
 
@@ -198,7 +208,6 @@ namespace AIRefactored.AI.Threads
 				_perception = new BotPerceptionSystem(); _perception.Initialize(_cache);
 				_flashReaction = new BotFlashReactionComponent(); _flashReaction.Initialize(_cache);
 				_flashDetector = new FlashGrenadeComponent(); _flashDetector.Initialize(_cache);
-
 				_hearingDamage = new HearingDamageComponent();
 				_tactical = _cache.Tactical;
 				_mission = new BotMissionController(bot, _cache);

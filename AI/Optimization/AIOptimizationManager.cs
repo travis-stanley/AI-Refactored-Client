@@ -15,7 +15,6 @@ namespace AIRefactored.AI.Optimization
     using BepInEx.Logging;
     using EFT;
     using UnityEngine;
-    using static HBAO_Core;
 
     /// <summary>
     /// Manages runtime optimization routines for AI bots.
@@ -25,14 +24,17 @@ namespace AIRefactored.AI.Optimization
     /// </summary>
     public static class AIOptimizationManager
     {
+        #region Constants
+
+        private const float EscalationCooldownTime = 10f;
+
+        #endregion
+
         #region Fields
 
         private static readonly BotAIOptimization Optimizer = new BotAIOptimization();
-
         private static readonly Dictionary<int, bool> BotOptimizationState = new Dictionary<int, bool>(128);
         private static readonly Dictionary<int, float> LastEscalationTimes = new Dictionary<int, float>(128);
-
-        private const float EscalationCooldownTime = 10f;
 
         private static readonly ManualLogSource Logger = Plugin.LoggerInstance;
 
@@ -53,14 +55,14 @@ namespace AIRefactored.AI.Optimization
             int id = bot.GetInstanceID();
             if (BotOptimizationState.TryGetValue(id, out bool alreadyOptimized) && alreadyOptimized)
             {
-                Logger.LogDebug("[AIRefactored] Optimization already applied to bot: " + GetName(bot));
+                Logger.LogDebug("[AIOptimizationManager] Optimization already applied to bot: " + GetName(bot));
                 return;
             }
 
             Optimizer.Optimize(bot);
             BotOptimizationState[id] = true;
 
-            Logger.LogDebug("[AIRefactored] Optimization applied to bot: " + GetName(bot));
+            Logger.LogDebug("[AIOptimizationManager] Optimization applied to bot: " + GetName(bot));
         }
 
         /// <summary>
@@ -76,14 +78,14 @@ namespace AIRefactored.AI.Optimization
             int id = bot.GetInstanceID();
             if (!BotOptimizationState.TryGetValue(id, out bool wasOptimized) || !wasOptimized)
             {
-                Logger.LogDebug("[AIRefactored] Bot not optimized, skipping reset: " + GetName(bot));
+                Logger.LogDebug("[AIOptimizationManager] Bot not optimized, skipping reset: " + GetName(bot));
                 return;
             }
 
             Optimizer.ResetOptimization(bot);
             BotOptimizationState[id] = false;
 
-            Logger.LogDebug("[AIRefactored] Optimization reset for bot: " + GetName(bot));
+            Logger.LogDebug("[AIOptimizationManager] Optimization reset for bot: " + GetName(bot));
         }
 
         /// <summary>
@@ -101,14 +103,14 @@ namespace AIRefactored.AI.Optimization
 
             if (LastEscalationTimes.TryGetValue(id, out float lastTime) && (now - lastTime) < EscalationCooldownTime)
             {
-                Logger.LogDebug("[AIRefactored] Escalation skipped (cooldown) for bot: " + GetName(bot));
+                Logger.LogDebug("[AIOptimizationManager] Escalation skipped (cooldown) for bot: " + GetName(bot));
                 return;
             }
 
             BotGlobalsMindSettings mind = GetMindSettings(bot);
             if (mind == null)
             {
-                Logger.LogWarning("[AIRefactored] Escalation aborted: missing mind settings for bot: " + GetName(bot));
+                Logger.LogWarning("[AIOptimizationManager] Escalation aborted: missing mind settings for bot: " + GetName(bot));
                 return;
             }
 
@@ -118,7 +120,7 @@ namespace AIRefactored.AI.Optimization
 
             LastEscalationTimes[id] = now;
 
-            Logger.LogDebug("[AIRefactored] Escalation triggered for bot: " + GetName(bot));
+            Logger.LogDebug("[AIOptimizationManager] Escalation triggered for bot: " + GetName(bot));
         }
 
         #endregion
@@ -135,18 +137,12 @@ namespace AIRefactored.AI.Optimization
 
         private static string GetName(BotOwner bot)
         {
-            return bot != null && bot.Profile != null && bot.Profile.Info != null
-                ? bot.Profile.Info.Nickname
-                : "Unknown";
+            return bot?.Profile?.Info?.Nickname ?? "Unknown";
         }
 
         private static BotGlobalsMindSettings GetMindSettings(BotOwner bot)
         {
-            return bot != null &&
-                   bot.Settings != null &&
-                   bot.Settings.FileSettings != null
-                       ? bot.Settings.FileSettings.Mind
-                       : null;
+            return bot?.Settings?.FileSettings?.Mind;
         }
 
         #endregion

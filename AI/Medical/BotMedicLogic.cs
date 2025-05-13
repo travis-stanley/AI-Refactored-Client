@@ -24,6 +24,7 @@ namespace AIRefactored.AI.Medical
 
         private const float HealCheckInterval = 1.5f;
         private const float HealSquadRange = 4f;
+        private static readonly float HealSquadRangeSqr = HealSquadRange * HealSquadRange;
 
         #endregion
 
@@ -41,94 +42,70 @@ namespace AIRefactored.AI.Medical
 
         #region Constructor
 
-        /// <summary>
-        /// Constructs the bot medic logic system.
-        /// </summary>
         public BotMedicLogic(BotComponentCache cache, BotInjurySystem injurySystem)
         {
-            if (cache == null)
+            if (cache == null || injurySystem == null || cache.Bot == null)
             {
-                throw new ArgumentNullException(nameof(cache));
+                throw new ArgumentException("[BotMedicLogic] Invalid arguments.");
             }
 
-            if (injurySystem == null)
+            _cache = cache;
+            _injurySystem = injurySystem;
+            _bot = cache.Bot;
+            _nextHealCheck = Time.time;
+
+            if (_bot.HealAnotherTarget == null)
             {
-                throw new ArgumentNullException(nameof(injurySystem));
+                _bot.HealAnotherTarget = new BotHealAnotherTarget(_bot);
+                _bot.HealAnotherTarget.OnHealAsked += OnHealAsked;
             }
 
-            if (cache.Bot == null)
+            if (_bot.HealingBySomebody == null)
             {
-                throw new ArgumentException("Bot reference is null", nameof(cache));
+                _bot.HealingBySomebody = new BotHealingBySomebody(_bot);
             }
 
-            this._cache = cache;
-            this._injurySystem = injurySystem;
-            this._bot = cache.Bot;
-            this._nextHealCheck = Time.time;
-
-            if (this._bot.HealAnotherTarget == null)
-            {
-                this._bot.HealAnotherTarget = new BotHealAnotherTarget(this._bot);
-                this._bot.HealAnotherTarget.OnHealAsked += this.OnHealAsked;
-            }
-
-            if (this._bot.HealingBySomebody == null)
-            {
-                this._bot.HealingBySomebody = new BotHealingBySomebody(this._bot);
-            }
-
-            this._med = this._bot.Medecine ?? new BotMedecine(this._bot);
+            _med = _bot.Medecine ?? new BotMedecine(_bot);
         }
 
         #endregion
 
         #region Public API
 
-        /// <summary>
-        /// Resets medic and injury state.
-        /// </summary>
         public void Reset()
         {
-            this._isHealing = false;
-            this._injurySystem.Reset();
-            this.UnsubscribeFromFirstAid();
+            _isHealing = false;
+            _injurySystem.Reset();
+            UnsubscribeFromFirstAid();
         }
 
-        /// <summary>
-        /// Ticks healing logic, including squad and self checks.
-        /// </summary>
         public void Tick(float time)
         {
-            if (this._isHealing || time < this._nextHealCheck)
+            if (_isHealing || time < _nextHealCheck)
             {
                 return;
             }
 
-            if (this._bot.IsDead || this._bot.GetPlayer == null || !this._bot.GetPlayer.IsAI)
+            if (!EFTPlayerUtil.IsValidBotOwner(_bot) || _cache.PanicHandler?.IsPanicking == true)
             {
                 return;
             }
 
-            if (this._cache.PanicHandler != null && this._cache.PanicHandler.IsPanicking)
+            if (_bot.HealAnotherTarget?.IsInProcess == true)
             {
                 return;
             }
 
-            if (this._bot.HealAnotherTarget != null && this._bot.HealAnotherTarget.IsInProcess)
+            _nextHealCheck = time + HealCheckInterval;
+
+            _injurySystem.Tick(time);
+
+            if (TryHealSquadmate())
             {
                 return;
             }
 
-            this._nextHealCheck = time + HealCheckInterval;
-
-            this._injurySystem.Tick(time);
-
-            if (this.TryHealSquadmate())
-            {
-                return;
-            }
-
-            this.TrySelfHeal();
+            TrySelfHeal();
         }
 
         #endregion
@@ -137,24 +114,24 @@ namespace AIRefactored.AI.Medical
 
         private bool TryHealSquadmate()
         {
-            if (this._bot.BotsGroup == null)
+            if (_bot.BotsGroup == null)
             {
                 return false;
             }
 
-            Player self = EFTPlayerUtil.ResolvePlayer(this._bot);
+            Player self = EFTPlayerUtil.ResolvePlayer(_bot);
             if (!EFTPlayerUtil.IsValidGroupPlayer(self))
             {
                 return false;
             }
 
             Vector3 selfPos = EFTPlayerUtil.GetPosition(self);
-            int count = this._bot.BotsGroup.MembersCount;
+            int count = _bot.BotsGroup.MembersCount;
 
             for (int i = 0; i < count; i++)
             {
-                BotOwner mate = this._bot.BotsGroup.Member(i);
-                if (mate == null || mate == this._bot || mate.IsDead)
+                BotOwner mate = _bot.BotsGroup.Member(i);
+                if (!EFTPlayerUtil.IsValidBotOwner(mate) || mate == _bot)
                 {
                     continue;
                 }
@@ -166,7 +143,7 @@ namespace AIRefactored.AI.Medical
                 }
 
                 Vector3 targetPos = EFTPlayerUtil.GetPosition(target);
-                if ((targetPos - selfPos).sqrMagnitude > HealSquadRange * HealSquadRange)
+                if ((targetPos - selfPos).sqrMagnitude > HealSquadRangeSqr)
                 {
                     continue;
                 }
@@ -174,7 +151,7 @@ namespace AIRefactored.AI.Medical
                 IPlayer iTarget = EFTPlayerUtil.AsSafeIPlayer(target);
                 if (iTarget != null)
                 {
-                    this._bot.HealAnotherTarget.HealAsk(iTarget);
+                    _bot.HealAnotherTarget.HealAsk(iTarget);
                     return true;
                 }
             }
@@ -184,31 +161,31 @@ namespace AIRefactored.AI.Medical
 
         private void TrySelfHeal()
         {
-            BotFirstAidClass firstAid = this._med.FirstAid as BotFirstAidClass;
-            GClass473 surgery = this._med.SurgicalKit as GClass473;
-            GClass475 stim = this._med.Stimulators as GClass475;
+            var firstAid = _med.FirstAid as BotFirstAidClass;
+            var surgery = _med.SurgicalKit as GClass473;
+            var stim = _med.Stimulators as GClass475;
 
             if (firstAid != null && firstAid.ShallStartUse())
             {
-                this._isHealing = true;
-                this.TrySay(EPhraseTrigger.StartHeal);
-                firstAid.OnEndApply += this.OnHealComplete;
+                _isHealing = true;
+                TrySay(EPhraseTrigger.StartHeal);
+                firstAid.OnEndApply += OnHealComplete;
                 firstAid.TryApplyToCurrentPart();
                 return;
             }
 
             if (surgery != null && surgery.ShallStartUse())
             {
-                this._isHealing = true;
-                this.TrySay(EPhraseTrigger.StartHeal);
+                _isHealing = true;
+                TrySay(EPhraseTrigger.StartHeal);
                 surgery.ApplyToCurrentPart();
                 return;
             }
 
             if (stim != null && stim.CanUseNow())
             {
-                this._isHealing = true;
-                stim.StartApplyToTarget(this.OnStimComplete);
+                _isHealing = true;
+                stim.StartApplyToTarget(OnStimComplete);
             }
         }
 
@@ -218,46 +195,40 @@ namespace AIRefactored.AI.Medical
 
         private void OnHealAsked(IPlayer target)
         {
-            this._isHealing = true;
-            this.TrySay(EPhraseTrigger.StartHeal);
+            _isHealing = true;
+            TrySay(EPhraseTrigger.StartHeal);
         }
 
         private void OnHealComplete(BotOwner _)
         {
-            this._isHealing = false;
-            this._injurySystem.Reset();
-            this.UnsubscribeFromFirstAid();
-        }
-
-        private void OnSurgeryComplete(bool success)
-        {
-            this._isHealing = false;
-            BotFirstAidClass fa = this._med.FirstAid as BotFirstAidClass;
-            if (fa != null)
-            {
-                fa.CheckParts();
-            }
+            _isHealing = false;
+            _injurySystem.Reset();
+            UnsubscribeFromFirstAid();
         }
 
         private void OnStimComplete(bool success)
         {
-            this._isHealing = false;
+            _isHealing = false;
         }
+
+        #endregion
+
+        #region Utilities
 
         private void TrySay(EPhraseTrigger trigger)
         {
-            if (!FikaHeadlessDetector.IsHeadless && this._bot.BotTalk != null)
+            if (!FikaHeadlessDetector.IsHeadless && _bot.BotTalk != null)
             {
-                this._bot.BotTalk.TrySay(trigger);
+                _bot.BotTalk.TrySay(trigger);
             }
         }
 
         private void UnsubscribeFromFirstAid()
         {
-            BotFirstAidClass fa = this._med.FirstAid as BotFirstAidClass;
+            var fa = _med.FirstAid as BotFirstAidClass;
             if (fa != null)
             {
-                fa.OnEndApply -= this.OnHealComplete;
+                fa.OnEndApply -= OnHealComplete;
             }
         }
 

@@ -38,6 +38,9 @@ namespace AIRefactored.AI.Groups
 
         #region Properties
 
+        /// <summary>
+        /// Gets or sets whether this bot is muted (cannot issue group VO lines).
+        /// </summary>
         public bool IsMuted { get; set; }
 
         #endregion
@@ -51,8 +54,8 @@ namespace AIRefactored.AI.Groups
                 throw new ArgumentException("[BotGroupComms] Invalid cache or bot.");
             }
 
-            this._cache = cache;
-            this._bot = cache.Bot;
+            _cache = cache;
+            _bot = cache.Bot;
         }
 
         #endregion
@@ -61,33 +64,31 @@ namespace AIRefactored.AI.Groups
 
         public void Say(EPhraseTrigger phrase)
         {
-            if (this.IsMuted || !this.IsEligible())
+            if (!IsMuted && IsEligible())
             {
-                return;
+                _bot.BotTalk.TrySay(phrase);
             }
-
-            this._bot.BotTalk.TrySay(phrase);
         }
 
         public void SayFallback()
         {
-            this.TryTriggerVoice(EPhraseTrigger.GetBack, 0.5f);
+            TryTriggerVoice(EPhraseTrigger.GetBack, 0.5f);
         }
 
         public void SayFragOut()
         {
-            float chance = this.HasNearbyAlly() ? 0.8f : 0.0f;
-            this.TryTriggerVoice(EPhraseTrigger.OnEnemyGrenade, chance);
+            float chance = HasNearbyAlly() ? 0.8f : 0.0f;
+            TryTriggerVoice(EPhraseTrigger.OnEnemyGrenade, chance);
         }
 
         public void SayHit()
         {
-            this.TryTriggerVoice(EPhraseTrigger.OnBeingHurt, 0.7f);
+            TryTriggerVoice(EPhraseTrigger.OnBeingHurt, 0.7f);
         }
 
         public void SaySuppression()
         {
-            this.TryTriggerVoice(EPhraseTrigger.Suppress, 0.6f);
+            TryTriggerVoice(EPhraseTrigger.Suppress, 0.6f);
         }
 
         #endregion
@@ -96,21 +97,22 @@ namespace AIRefactored.AI.Groups
 
         private bool IsEligible()
         {
-            return !this._bot.IsDead &&
-                   this._bot.GetPlayer != null &&
-                   this._bot.GetPlayer.IsAI &&
-                   this._bot.BotTalk != null;
+            return _bot != null &&
+                   !_bot.IsDead &&
+                   _bot.GetPlayer != null &&
+                   _bot.GetPlayer.IsAI &&
+                   _bot.BotTalk != null;
         }
 
         private void TryTriggerVoice(EPhraseTrigger phrase, float chance)
         {
-            if (this.IsMuted)
+            if (IsMuted || _bot.BotTalk == null)
             {
                 return;
             }
 
             float now = Time.time;
-            if (now < this._nextVoiceTime)
+            if (now < _nextVoiceTime)
             {
                 return;
             }
@@ -120,46 +122,39 @@ namespace AIRefactored.AI.Groups
                 return;
             }
 
-            float randomizedCooldown = VoiceCooldown * UnityEngine.Random.Range(0.8f, 1.2f);
-            this._nextVoiceTime = now + randomizedCooldown;
-
-            if (this._bot.BotTalk != null)
-            {
-                this._bot.BotTalk.TrySay(phrase);
-            }
+            _nextVoiceTime = now + (VoiceCooldown * UnityEngine.Random.Range(0.8f, 1.2f));
+            _bot.BotTalk.TrySay(phrase);
         }
 
         private bool HasNearbyAlly()
         {
-            Profile profile = this._bot.Profile;
-            if (profile == null || profile.Info == null)
+            if (_bot == null || _bot.Profile?.Info == null)
             {
                 return false;
             }
 
-            string groupId = profile.Info.GroupId;
+            string groupId = _bot.Profile.Info.GroupId;
             if (string.IsNullOrEmpty(groupId))
             {
                 return false;
             }
 
-            Vector3 myPos = this._bot.Position;
+            Vector3 myPos = _bot.Position;
 
             foreach (BotComponentCache other in BotCacheUtility.AllActiveBots())
             {
-                if (ReferenceEquals(other, this._cache) || other.Bot == null || other.Bot.IsDead)
+                if (ReferenceEquals(other, _cache) || other.Bot == null || other.Bot.IsDead)
                 {
                     continue;
                 }
 
                 Profile otherProfile = other.Bot.Profile;
-                if (otherProfile == null || otherProfile.Info == null)
+                if (otherProfile?.Info == null)
                 {
                     continue;
                 }
 
-                string otherGroupId = otherProfile.Info.GroupId;
-                if (string.IsNullOrEmpty(otherGroupId) || !groupId.Equals(otherGroupId, StringComparison.Ordinal))
+                if (!groupId.Equals(otherProfile.Info.GroupId, StringComparison.Ordinal))
                 {
                     continue;
                 }

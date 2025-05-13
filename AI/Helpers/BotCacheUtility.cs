@@ -77,8 +77,12 @@ namespace AIRefactored.AI.Helpers
 
         public static BotComponentCache GetCache(BotOwner bot)
         {
-            BotComponentCache cache;
-            return bot != null && CacheRegistry.TryGetValue(bot, out cache) ? cache : null;
+            if (bot != null && CacheRegistry.TryGetValue(bot, out BotComponentCache cache))
+            {
+                return cache;
+            }
+
+            return null;
         }
 
         public static BotComponentCache GetCache(Player player)
@@ -97,13 +101,9 @@ namespace AIRefactored.AI.Helpers
 
         public static BotComponentCache GetCache(string profileId)
         {
-            if (!string.IsNullOrEmpty(profileId))
+            if (!string.IsNullOrEmpty(profileId) && ProfileIdLookup.TryGetValue(profileId, out BotComponentCache cache))
             {
-                BotComponentCache cache;
-                if (ProfileIdLookup.TryGetValue(profileId, out cache))
-                {
-                    return cache;
-                }
+                return cache;
             }
 
             return null;
@@ -125,12 +125,12 @@ namespace AIRefactored.AI.Helpers
 
         public static BotGroupSyncCoordinator GetGroupSync(BotComponentCache cache)
         {
-            if (cache != null)
+            if (cache == null)
             {
-                return cache.GroupSync ?? (cache.GroupBehavior != null ? cache.GroupBehavior.GroupSync : null);
+                return null;
             }
 
-            return null;
+            return cache.GroupSync ?? (cache.GroupBehavior != null ? cache.GroupBehavior.GroupSync : null);
         }
 
         public static BotComponentCache GetClosestBot(Vector3 origin, float maxDistance)
@@ -167,8 +167,7 @@ namespace AIRefactored.AI.Helpers
         {
             if (cache != null && cache.Bot != null && cache.Bot.MainParts != null)
             {
-                EnemyPart part;
-                if (cache.Bot.MainParts.TryGetValue(BodyPartType.head, out part))
+                if (cache.Bot.MainParts.TryGetValue(BodyPartType.head, out EnemyPart part))
                 {
                     if (part != null && part._transform != null)
                     {

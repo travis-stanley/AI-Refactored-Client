@@ -42,6 +42,8 @@ namespace AIRefactored.AI.Looting
         private static readonly HashSet<int> WatchedInstanceIds = new HashSet<int>();
         private static readonly ManualLogSource Logger = Plugin.LoggerInstance;
 
+        #region Lifecycle
+
         public static void Initialize()
         {
             Clear();
@@ -56,6 +58,10 @@ namespace AIRefactored.AI.Looting
             WatchedInstanceIds.Clear();
         }
 
+        #endregion
+
+        #region Container Access
+
         public static List<LootableContainer> GetAllContainers()
         {
             var list = TempListPool.Rent<LootableContainer>();
@@ -66,7 +72,6 @@ namespace AIRefactored.AI.Looting
                     list.Add(kv.Key);
                 }
             }
-
             return list;
         }
 
@@ -80,7 +85,6 @@ namespace AIRefactored.AI.Looting
                     list.Add(kv.Key);
                 }
             }
-
             return list;
         }
 
@@ -97,8 +101,7 @@ namespace AIRefactored.AI.Looting
                     continue;
                 }
 
-                Vector3 pos = tf.position;
-                if ((pos - origin).sqrMagnitude <= radiusSqr)
+                if ((tf.position - origin).sqrMagnitude <= radiusSqr)
                 {
                     result.Add(kv.Value.Container);
                 }
@@ -120,8 +123,7 @@ namespace AIRefactored.AI.Looting
                     continue;
                 }
 
-                Vector3 pos = tf.position;
-                if ((pos - origin).sqrMagnitude <= radiusSqr)
+                if ((tf.position - origin).sqrMagnitude <= radiusSqr)
                 {
                     result.Add(kv.Value.Item);
                 }
@@ -129,6 +131,10 @@ namespace AIRefactored.AI.Looting
 
             return result;
         }
+
+        #endregion
+
+        #region Registration
 
         public static void RegisterContainer(LootableContainer container)
         {
@@ -163,6 +169,10 @@ namespace AIRefactored.AI.Looting
 
             InjectWatcherIfNeeded(item.gameObject);
         }
+
+        #endregion
+
+        #region Lookup API
 
         public static bool TryGetContainerByName(string name, out LootableContainer found)
         {
@@ -206,8 +216,7 @@ namespace AIRefactored.AI.Looting
 
         public static bool TryGetLastSeenTime(LootableContainer container, out float time)
         {
-            TrackedContainer tracked;
-            if (container != null && Containers.TryGetValue(container, out tracked))
+            if (container != null && Containers.TryGetValue(container, out var tracked))
             {
                 time = tracked.LastSeenTime;
                 return true;
@@ -219,8 +228,7 @@ namespace AIRefactored.AI.Looting
 
         public static bool TryGetLastSeenTime(LootItem item, out float time)
         {
-            TrackedItem tracked;
-            if (item != null && Items.TryGetValue(item, out tracked))
+            if (item != null && Items.TryGetValue(item, out var tracked))
             {
                 time = tracked.LastSeenTime;
                 return true;
@@ -230,10 +238,13 @@ namespace AIRefactored.AI.Looting
             return false;
         }
 
+        #endregion
+
+        #region Maintenance
+
         public static void PruneStale(float olderThanSeconds)
         {
             float cutoff = Time.time - olderThanSeconds;
-
             RemoveWhere(Containers, kv => kv.Value.LastSeenTime < cutoff);
             RemoveWhere(Items, kv => kv.Value.LastSeenTime < cutoff);
         }
@@ -278,5 +289,7 @@ namespace AIRefactored.AI.Looting
                 TempListPool.Return(toRemove);
             }
         }
+
+        #endregion
     }
 }

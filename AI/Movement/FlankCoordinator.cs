@@ -65,12 +65,14 @@ namespace AIRefactored.AI.Movement
 
             float squadBias = GetSquadBias(bot, enemyPos);
             float suppressionBias = GetSuppressionBias(cache);
+
             float leftCooldown = now - _lastLeftUseTime;
             float rightCooldown = now - _lastRightUseTime;
 
             float leftScore = 0f;
             float rightScore = 0f;
 
+            // Angular flank preference
             if (angle > FlankAngleThreshold)
             {
                 leftScore += 1f;
@@ -80,10 +82,12 @@ namespace AIRefactored.AI.Movement
                 rightScore += 1f;
             }
 
+            // Bias terms
             leftScore += squadBias + suppressionBias;
             rightScore -= squadBias;
             rightScore += suppressionBias;
 
+            // Cooldown penalties
             if (leftCooldown < RecentlyUsedFlankCooldown)
             {
                 leftScore -= 0.75f;
@@ -94,6 +98,7 @@ namespace AIRefactored.AI.Movement
                 rightScore -= 0.75f;
             }
 
+            // Decision
             if (leftScore >= rightScore)
             {
                 _lastLeftUseTime = now;
@@ -123,8 +128,8 @@ namespace AIRefactored.AI.Movement
                 return 0f;
             }
 
-            Vector3 selfVector = bot.Position - enemyPosition;
-            Vector3 normSelf = selfVector.sqrMagnitude > 0.001f ? selfVector.normalized : Vector3.forward;
+            Vector3 self = bot.Position - enemyPosition;
+            Vector3 normSelf = self.sqrMagnitude > 0.001f ? self.normalized : Vector3.forward;
 
             float dotSum = 0f;
             int contributors = 0;
@@ -137,10 +142,10 @@ namespace AIRefactored.AI.Movement
                     continue;
                 }
 
-                Vector3 mateVector = mate.Position - enemyPosition;
-                if (mateVector.sqrMagnitude > 0.001f)
+                Vector3 toMate = mate.Position - enemyPosition;
+                if (toMate.sqrMagnitude > 0.001f)
                 {
-                    dotSum += Vector3.Dot(normSelf, mateVector.normalized);
+                    dotSum += Vector3.Dot(normSelf, toMate.normalized);
                     contributors++;
                 }
             }

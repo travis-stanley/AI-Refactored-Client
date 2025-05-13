@@ -25,6 +25,7 @@ namespace AIRefactored.AI.Missions.Subsystems
         #region Fields
 
         private static readonly ManualLogSource Logger = Plugin.LoggerInstance;
+
         private readonly BotOwner _bot;
 
         #endregion
@@ -37,9 +38,9 @@ namespace AIRefactored.AI.Missions.Subsystems
         /// <param name="bot">The owning bot.</param>
         public MissionVoiceCoordinator(BotOwner bot)
         {
-            if (bot == null)
+            if (!EFTPlayerUtil.IsValidBotOwner(bot))
             {
-                throw new ArgumentNullException(nameof(bot));
+                throw new ArgumentException("[MissionVoiceCoordinator] Invalid bot reference.");
             }
 
             _bot = bot;
@@ -87,24 +88,14 @@ namespace AIRefactored.AI.Missions.Subsystems
             try
             {
                 Player player = _bot.GetPlayer;
-                if (player != null)
+                if (player != null && player.HealthController?.IsAlive == true)
                 {
-                    IHealthController hc = player.HealthController;
-                    if (hc != null && hc.IsAlive)
-                    {
-                        player.Say(trigger);
-                    }
+                    player.Say(trigger);
                 }
             }
             catch (Exception ex)
             {
-                string name = "Unknown";
-                Profile profile = _bot.Profile;
-                if (profile != null && profile.Info != null)
-                {
-                    name = profile.Info.Nickname;
-                }
-
+                string name = _bot.Profile?.Info?.Nickname ?? "Unknown";
                 Logger.LogWarning("[MissionVoiceCoordinator] VO failed for '" + name + "': " + ex.Message);
             }
         }

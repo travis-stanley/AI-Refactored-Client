@@ -46,14 +46,15 @@ namespace AIRefactored.AI.Groups
         private bool _hasLoot;
         private bool _hasExtract;
 
-        public float LastDangerBroadcastTime { get; private set; }
-        public Vector3 LastDangerPosition { get; private set; }
-
         #endregion
 
         #region Properties
 
-        public bool IsActive => _bot != null && !_bot.IsDead && _group != null && _cache != null;
+        public float LastDangerBroadcastTime { get; private set; }
+        public Vector3 LastDangerPosition { get; private set; }
+
+        public bool IsActive =>
+            _bot != null && !_bot.IsDead && _group != null && _cache != null;
 
         #endregion
 
@@ -102,7 +103,7 @@ namespace AIRefactored.AI.Groups
             foreach (var kv in _teammateCaches)
             {
                 BotComponentCache mate = kv.Value;
-                if (mate.Bot != null && !mate.Bot.IsDead)
+                if (mate?.Bot != null && !mate.Bot.IsDead)
                 {
                     mate.Combat?.TriggerFallback(point);
 
@@ -122,7 +123,7 @@ namespace AIRefactored.AI.Groups
             foreach (var kv in _teammateCaches)
             {
                 BotComponentCache mate = kv.Value;
-                if (mate.Bot != null && !mate.Bot.IsDead && mate.PanicHandler != null && !mate.PanicHandler.IsPanicking)
+                if (mate?.Bot != null && !mate.Bot.IsDead && mate.PanicHandler != null && !mate.PanicHandler.IsPanicking)
                 {
                     float delay = UnityEngine.Random.Range(0.1f, 0.35f);
                     TriggerDelayedPanic(mate, delay);
@@ -253,8 +254,7 @@ namespace AIRefactored.AI.Groups
             {
                 await Task.Delay((int)(delay * 1000f));
 
-                if (cache != null && cache.Bot != null && !cache.Bot.IsDead &&
-                    cache.PanicHandler != null && !cache.PanicHandler.IsPanicking)
+                if (cache?.Bot != null && !cache.Bot.IsDead && cache.PanicHandler != null && !cache.PanicHandler.IsPanicking)
                 {
                     cache.PanicHandler.TriggerPanic();
                 }

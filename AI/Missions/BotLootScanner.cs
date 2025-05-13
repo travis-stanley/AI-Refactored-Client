@@ -59,14 +59,9 @@ namespace AIRefactored.AI.Looting
 
         public void Initialize(BotComponentCache cache)
         {
-            if (cache == null)
+            if (cache == null || cache.Bot == null)
             {
-                throw new ArgumentNullException(nameof(cache));
-            }
-
-            if (cache.Bot == null)
-            {
-                throw new ArgumentException("[BotLootScanner] Initialization failed: Bot is null.");
+                throw new ArgumentException("[BotLootScanner] Invalid initialization.");
             }
 
             _cache = cache;
@@ -79,7 +74,7 @@ namespace AIRefactored.AI.Looting
 
         public void Tick(float time)
         {
-            if (_bot == null || _bot.IsDead || time < _nextScanTime )
+            if (_bot == null || _bot.IsDead || time < _nextScanTime)
             {
                 return;
             }
@@ -92,8 +87,8 @@ namespace AIRefactored.AI.Looting
             }
 
             TryLootNearby();
-            _cachedValue = CalculateNearbyLootValue();
 
+            _cachedValue = CalculateNearbyLootValue();
             if (_cachedValue <= 0f && time - _lastUpdate > StaleResetSeconds)
             {
                 _cachedValue = 0f;
@@ -108,12 +103,13 @@ namespace AIRefactored.AI.Looting
 
         public Vector3 GetBestLootPosition()
         {
-            if (_bot == null )
+            if (_bot == null)
             {
                 return Vector3.zero;
             }
 
-            Vector3 bestPos = _bot.Position;
+            Vector3 origin = _bot.Position;
+            Vector3 bestPos = origin;
             float bestValue = 0f;
 
             List<LootableContainer> containers = LootRegistry.GetAllContainers();
@@ -125,7 +121,7 @@ namespace AIRefactored.AI.Looting
                     continue;
                 }
 
-                float dist = Vector3.Distance(_bot.Position, c.transform.position);
+                float dist = Vector3.Distance(origin, c.transform.position);
                 if (dist > HighValueRadius || !HasLineOfSight(c.transform.position))
                 {
                     continue;
@@ -154,7 +150,8 @@ namespace AIRefactored.AI.Looting
             LootableContainer corpse = DeadBodyContainerCache.Get(_bot.ProfileId);
             if (corpse != null && corpse.enabled && !IsOnCooldown(corpse.name))
             {
-                if (Vector3.Distance(origin, corpse.transform.position) <= LootRadius && HasLineOfSight(corpse.transform.position))
+                if (Vector3.Distance(origin, corpse.transform.position) <= LootRadius &&
+                    HasLineOfSight(corpse.transform.position))
                 {
                     Loot(corpse);
                     return;
@@ -167,7 +164,8 @@ namespace AIRefactored.AI.Looting
                 LootableContainer c = containers[i];
                 if (c != null && c.enabled && !IsOnCooldown(c.name))
                 {
-                    if (Vector3.Distance(origin, c.transform.position) <= LootRadius && HasLineOfSight(c.transform.position))
+                    if (Vector3.Distance(origin, c.transform.position) <= LootRadius &&
+                        HasLineOfSight(c.transform.position))
                     {
                         Loot(c);
                         return;
@@ -181,7 +179,8 @@ namespace AIRefactored.AI.Looting
                 LootItem item = items[i];
                 if (item != null && item.enabled && !IsOnCooldown(item.name))
                 {
-                    if (Vector3.Distance(origin, item.transform.position) <= LootRadius && HasLineOfSight(item.transform.position))
+                    if (Vector3.Distance(origin, item.transform.position) <= LootRadius &&
+                        HasLineOfSight(item.transform.position))
                     {
                         MarkCooldown(item.name);
                         _cache.Movement.EnterLootingMode();
@@ -209,8 +208,8 @@ namespace AIRefactored.AI.Looting
         {
             float sum = 0f;
             Vector3 origin = _bot.Position;
-
             List<LootableContainer> containers = LootRegistry.GetAllContainers();
+
             for (int i = 0; i < containers.Count; i++)
             {
                 LootableContainer c = containers[i];
@@ -229,7 +228,7 @@ namespace AIRefactored.AI.Looting
             _cache.Movement.EnterLootingMode();
             container.Interact(new InteractionResult(EInteractionType.Open));
             _cache.Movement.ExitLootingMode();
-            Plugin.LoggerInstance.LogDebug("[BotLootScanner] Looted: " + container.name);
+            Plugin.LoggerInstance.LogDebug("[BotLootScanner] Looted container: " + container.name);
         }
 
         private float EstimateContainerValue(LootableContainer container)

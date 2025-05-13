@@ -69,11 +69,10 @@ namespace AIRefactored.AI.Optimization
 
             float score = 1.0f;
 
-            // Use pooled raycast hits to avoid unnecessary heap allocations.
             RaycastHit[] hits = TempRaycastHitPool.Rent(5);
             try
             {
-                // Wall behind bonus
+                // Back wall bonus
                 if (Physics.Raycast(eyePos, fromThreat, out hits[0], BackWallDistance) && IsSolid(hits[0].collider))
                 {
                     score += 3.0f;
@@ -85,7 +84,7 @@ namespace AIRefactored.AI.Optimization
                     score -= 2.0f;
                 }
 
-                // Flank protection bonuses
+                // Flank coverage bonuses
                 for (int i = 0; i < FlankAngles.Length; i++)
                 {
                     Vector3 flankDir = Quaternion.Euler(0f, FlankAngles[i].x, 0f) * toThreat;
@@ -99,7 +98,6 @@ namespace AIRefactored.AI.Optimization
             }
             finally
             {
-                // Return raycast hits to the pool to avoid heap allocations.
                 TempRaycastHitPool.Return(hits);
             }
 
@@ -111,10 +109,8 @@ namespace AIRefactored.AI.Optimization
                 score -= Mathf.Min(excess * 0.25f, 3.0f);
             }
 
-            // Log score for debugging purposes
             Logger.LogDebug($"[CoverScorer] Score={score:F2} @ {candidate} | From={bot.Position} | Dir={toThreat}");
 
-            // Ensure score is within valid range
             return Mathf.Clamp(score, MinScore, MaxScore);
         }
 
@@ -140,8 +136,8 @@ namespace AIRefactored.AI.Optimization
                 return false;
             }
 
-            string tag = collider.tag != null ? collider.tag.ToLowerInvariant() : string.Empty;
-            string mat = collider.sharedMaterial != null ? collider.sharedMaterial.name.ToLowerInvariant() : string.Empty;
+            string tag = collider.tag?.ToLowerInvariant() ?? string.Empty;
+            string mat = collider.sharedMaterial?.name.ToLowerInvariant() ?? string.Empty;
 
             if (tag.Contains("glass") || tag.Contains("foliage") || tag.Contains("banner") || tag.Contains("transparent"))
             {

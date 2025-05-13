@@ -41,9 +41,9 @@ namespace AIRefactored.AI.Missions.Subsystems
 
         public ObjectiveController(BotOwner bot, BotComponentCache cache)
         {
-            if (bot == null)
+            if (!EFTPlayerUtil.IsValidBotOwner(bot))
             {
-                throw new ArgumentNullException(nameof(bot));
+                throw new ArgumentException("[ObjectiveController] Invalid BotOwner.");
             }
 
             if (cache == null)
@@ -128,7 +128,7 @@ namespace AIRefactored.AI.Missions.Subsystems
         private Vector3 GetFightZone()
         {
             BotZone[] zones = GameObject.FindObjectsOfType<BotZone>();
-            if (zones.Length == 0)
+            if (zones == null || zones.Length == 0)
             {
                 return _bot.Position;
             }
@@ -155,17 +155,14 @@ namespace AIRefactored.AI.Missions.Subsystems
         private void PopulateQuestRoute()
         {
             _questRoute.Clear();
+
             Vector3 origin = _bot.Position;
+            Vector3 forward = _bot.LookDirection.normalized;
 
             Predicate<HotspotRegistry.Hotspot> directionFilter = delegate (HotspotRegistry.Hotspot h)
             {
                 Vector3 dir = h.Position - origin;
-                if (dir.sqrMagnitude < 0.01f)
-                {
-                    return false;
-                }
-
-                return Vector3.Dot(dir.normalized, _bot.LookDirection.normalized) > 0.25f;
+                return dir.sqrMagnitude > 1f && Vector3.Dot(dir.normalized, forward) > 0.25f;
             };
 
             List<HotspotRegistry.Hotspot> candidates = TempListPool.Rent<HotspotRegistry.Hotspot>();

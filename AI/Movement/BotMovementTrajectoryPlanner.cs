@@ -94,7 +94,7 @@ namespace AIRefactored.AI.Movement
             }
 
             Vector3 velocity = _bot.GetPlayer.Velocity;
-            if (velocity.sqrMagnitude > 0.01f)
+            if (velocity.sqrMagnitude > MinMagnitude)
             {
                 adjusted += velocity.normalized * VelocityFactor;
             }
@@ -153,7 +153,7 @@ namespace AIRefactored.AI.Movement
             float chaosRange = ChaosRadius * (1f - caution);
 
             float x = UnityEngine.Random.Range(-chaosRange * 0.5f, chaosRange * 0.5f);
-            float z = UnityEngine.Random.Range(0f, chaosRange);
+            float z = UnityEngine.Random.Range(0.05f, chaosRange); // forward-biased
 
             _chaosOffset = new Vector3(x, 0f, z);
             _nextChaosUpdate = now + ChaosInterval;

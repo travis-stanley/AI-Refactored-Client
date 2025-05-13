@@ -3,7 +3,7 @@
 //   Licensed under the MIT License. See LICENSE in the repository root for more information.
 //
 //   THIS FILE IS SYSTEMATICALLY MANAGED.
-//   Please follow strict StyleCop, ReSharper, and AI-Refactored code standards for all modifications.
+//   Failures in AIRefactored logic must always trigger safe fallback to EFT base AI.
 // </auto-generated>
 
 namespace AIRefactored.AI.Medical
@@ -44,91 +44,71 @@ namespace AIRefactored.AI.Medical
 
         #region Constructor
 
-        /// <summary>
-        /// Constructs the injury system from a component cache.
-        /// </summary>
-        /// <param name="cache">Bot component cache.</param>
         public BotInjurySystem(BotComponentCache cache)
         {
-            if (cache == null)
+            if (cache == null || cache.Bot == null)
             {
-                throw new ArgumentNullException(nameof(cache));
+                throw new ArgumentException("[BotInjurySystem] Invalid cache or missing bot.");
             }
 
-            this._cache = cache;
-            this.Reset();
+            _cache = cache;
+            Reset();
         }
 
         #endregion
 
         #region Public API
 
-        /// <summary>
-        /// Called when the bot is hit, to record damage and start healing logic.
-        /// </summary>
         public void OnHit(EBodyPart part, float damage)
         {
-            BotOwner bot = this._cache.Bot;
-            if (bot == null || bot.IsDead || bot.GetPlayer == null)
+            BotOwner bot = _cache.Bot;
+            if (!EFTPlayerUtil.IsValidBotOwner(bot))
             {
                 return;
             }
 
             Player player = bot.GetPlayer;
-            IHealthController health = player.HealthController;
-            if (health == null)
+            if (player == null || player.HealthController == null)
             {
                 return;
             }
 
-            this._lastHitTime = Time.time;
-            this._nextHealTime = this._lastHitTime + HealCooldown;
-            this._injuredLimb = part;
-            this._hasInjury = true;
-            this._hasBlackLimb = health.IsBodyPartDestroyed(part);
+            IHealthController health = player.HealthController;
+
+            _lastHitTime = Time.time;
+            _nextHealTime = _lastHitTime + HealCooldown;
+            _injuredLimb = part;
+            _hasInjury = true;
+            _hasBlackLimb = health.IsBodyPartDestroyed(part);
         }
 
-        /// <summary>
-        /// Resets all injury memory.
-        /// </summary>
         public void Reset()
         {
-            this._injuredLimb = EBodyPart.Common;
-            this._lastHitTime = -1f;
-            this._nextHealTime = -1f;
-            this._hasInjury = false;
-            this._hasBlackLimb = false;
+            _injuredLimb = EBodyPart.Common;
+            _lastHitTime = -1f;
+            _nextHealTime = -1f;
+            _hasInjury = false;
+            _hasBlackLimb = false;
         }
 
-        /// <summary>
-        /// Determines if the bot is eligible to start healing.
-        /// </summary>
         public bool ShouldHeal()
         {
-            return this.ShouldHeal(Time.time);
+            return ShouldHeal(Time.time);
         }
 
-        /// <summary>
-        /// Determines if the bot is eligible to start healing at a given time.
-        /// </summary>
         public bool ShouldHeal(float time)
         {
-            if (!this._hasInjury || !this._hasBlackLimb)
+            if (!_hasInjury || !_hasBlackLimb || time < _nextHealTime)
             {
                 return false;
             }
 
-            if (time < this._nextHealTime)
+            if (_cache.PanicHandler != null && _cache.PanicHandler.IsPanicking)
             {
                 return false;
             }
 
-            if (this._cache.PanicHandler != null && this._cache.PanicHandler.IsPanicking)
-            {
-                return false;
-            }
-
-            if (this._cache.Combat != null && this._cache.Combat.IsInCombatState())
+            if (_cache.Combat != null && _cache.Combat.IsInCombatState())
             {
                 return false;
             }
@@ -136,14 +116,11 @@ namespace AIRefactored.AI.Medical
             return true;
         }
 
-        /// <summary>
-        /// Tick update; initiates healing if eligible.
-        /// </summary>
         public void Tick(float time)
         {
-            if (this.ShouldHeal(time))
+            if (ShouldHeal(time))
             {
-                this.TryUseMedicine();
+                TryUseMedicine();
             }
         }
 
@@ -153,25 +130,20 @@ namespace AIRefactored.AI.Medical
 
         private void TryUseMedicine()
         {
-            BotOwner bot = this._cache.Bot;
-            if (bot == null || bot.IsDead || !this._hasInjury)
+            BotOwner bot = _cache.Bot;
+            if (!EFTPlayerUtil.IsValidBotOwner(bot) || !_hasInjury)
             {
                 return;
             }
 
             Player player = bot.GetPlayer;
-            if (player == null)
+            IHealthController health = player?.HealthController;
+            if (health == null || !health.IsBodyPartDestroyed(_injuredLimb))
             {
                 return;
             }
 
-            IHealthController health = player.HealthController;
-            if (health == null || !health.IsBodyPartDestroyed(this._injuredLimb))
-            {
-                return;
-            }
-
-            GClass473 surgery = bot.Medecine.SurgicalKit as GClass473;
+            GClass473 surgery = bot.Medecine?.SurgicalKit as GClass473;
             if (surgery == null || !surgery.HaveWork || !surgery.ShallStartUse())
             {
                 return;
@@ -186,10 +158,10 @@ namespace AIRefactored.AI.Medical
             }
 
             surgery.ApplyToCurrentPart();
-            this.Reset();
+            Reset();
 
-            string nick = (bot.Profile != null && bot.Profile.Info != null) ? bot.Profile.Info.Nickname : "Unknown";
-            Logger.LogDebug("[BotInjurySystem] 🛠 " + nick + " applied surgery to " + this._injuredLimb);
+            string nickname = bot.Profile?.Info?.Nickname ?? "Unknown";
+            Logger.LogDebug("[BotInjurySystem] 🛠 " + nickname + " applied surgery to " + _injuredLimb);
         }
 
         #endregion

@@ -72,9 +72,9 @@ namespace AIRefactored.AI.Navigation
         private static bool IsValid(Vector3 pos)
         {
             return pos != Vector3.zero &&
-                !float.IsNaN(pos.x) &&
-                !float.IsNaN(pos.y) &&
-                !float.IsNaN(pos.z);
+                   !float.IsNaN(pos.x) &&
+                   !float.IsNaN(pos.y) &&
+                   !float.IsNaN(pos.z);
         }
 
         #endregion

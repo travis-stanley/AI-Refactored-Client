@@ -59,6 +59,7 @@ namespace AIRefactored.AI.Navigation
         /// <summary>
         /// Adds a navigation point into the appropriate spatial cell.
         /// </summary>
+        /// <param name="point">The point to register.</param>
         public void Register(NavPointData point)
         {
             if (point == null || !IsPositionValid(point.Position))
@@ -68,8 +69,7 @@ namespace AIRefactored.AI.Navigation
 
             Vector2Int cell = WorldToCell(point.Position);
 
-            List<NavPointData> list;
-            if (!_grid.TryGetValue(cell, out list))
+            if (!_grid.TryGetValue(cell, out List<NavPointData> list))
             {
                 list = TempListPool.Rent<NavPointData>();
                 _grid[cell] = list;
@@ -77,9 +77,9 @@ namespace AIRefactored.AI.Navigation
 
             for (int i = 0; i < list.Count; i++)
             {
-                if (list[i].Position == point.Position)
+                if (list[i].DistanceSqr(point.Position) < 0.01f)
                 {
-                    return;
+                    return; // prevent near-duplicates
                 }
             }
 
@@ -90,10 +90,12 @@ namespace AIRefactored.AI.Navigation
         /// Returns all navigation points within the given radius of a position.
         /// Optionally filter by predicate.
         /// </summary>
+        /// <param name="position">Search origin.</param>
+        /// <param name="radius">Search radius.</param>
+        /// <param name="filter">Optional predicate filter.</param>
         public List<NavPointData> Query(Vector3 position, float radius, Predicate<NavPointData> filter)
         {
             List<NavPointData> result = TempListPool.Rent<NavPointData>();
-
             if (!IsPositionValid(position))
             {
                 return result;
@@ -109,8 +111,7 @@ namespace AIRefactored.AI.Navigation
                 {
                     Vector2Int cell = new Vector2Int(x, z);
 
-                    List<NavPointData> bucket;
-                    if (!_grid.TryGetValue(cell, out bucket))
+                    if (!_grid.TryGetValue(cell, out List<NavPointData> bucket))
                     {
                         continue;
                     }

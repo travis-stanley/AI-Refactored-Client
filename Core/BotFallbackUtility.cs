@@ -58,11 +58,11 @@ namespace AIRefactored.Core
             if (brain != null)
             {
                 brain.Activate();
-                Logger.LogWarning("[Fallback] Bot " + profileId + " reverted to native EFT AI (StandartBotBrain).");
+                Logger.LogWarning("[BotFallback] ✅ Bot " + profileId + " reverted to native EFT AI (StandartBotBrain).");
             }
             else
             {
-                Logger.LogError("[Fallback] Bot " + profileId + " has no StandartBotBrain — cannot revert.");
+                Logger.LogError("[BotFallback] ❌ Bot " + profileId + " has no StandartBotBrain — fallback failed.");
             }
         }
 

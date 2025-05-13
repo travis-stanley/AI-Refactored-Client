@@ -105,7 +105,7 @@ namespace AIRefactored.AI.Movement
 
         public void SetLookTarget(Vector3 worldPos)
         {
-            if (!float.IsNaN(worldPos.x) && !float.IsNaN(worldPos.y) && !float.IsNaN(worldPos.z))
+            if (IsValid(worldPos))
             {
                 _fallbackLookTarget = worldPos;
             }
@@ -174,6 +174,11 @@ namespace AIRefactored.AI.Movement
             }
 
             return _fallbackLookTarget;
+        }
+
+        private static bool IsValid(Vector3 pos)
+        {
+            return !float.IsNaN(pos.x) && !float.IsNaN(pos.y) && !float.IsNaN(pos.z);
         }
 
         #endregion

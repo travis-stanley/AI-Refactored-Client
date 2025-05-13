@@ -15,16 +15,16 @@ namespace AIRefactored
     using BepInEx.Logging;
 
     /// <summary>
-    /// Entry point for AI-Refactored mod. Safe for both FIKA Headless and traditional Client boot.
+    /// Entry point for AI-Refactored mod. Supports traditional client, client-host, and FIKA headless boot modes.
     /// </summary>
     [BepInPlugin("com.spock.airefactored", "AI-Refactored (Host Only)", "1.0.0")]
     public sealed class Plugin : BaseUnityPlugin
     {
-        #region Static
+        #region Static Fields
 
+        private static readonly object InitLock = new object();
         private static ManualLogSource _logger;
         private static bool _initialized;
-        private static readonly object InitLock = new object();
 
         /// <summary>
         /// Gets the shared logger instance for all AI-Refactored systems.
@@ -52,26 +52,21 @@ namespace AIRefactored
             {
                 if (_initialized)
                 {
-                    Logger?.LogWarning("[AIRefactored] Plugin already initialized — skipping.");
+                    _logger?.LogWarning("[AIRefactored] Plugin already initialized — skipping duplicate Awake.");
                     return;
                 }
 
                 try
                 {
                     _logger = base.Logger;
-                    _logger.LogDebug("[AIRefactored] Plugin Awake — initializing controller.");
-
+                    _logger.LogDebug("[AIRefactored] Plugin Awake — initializing AIRefactoredController.");
                     AIRefactoredController.Initialize();
-
                     _initialized = true;
                     _logger.LogInfo("[AIRefactored] ✅ AIRefactoredController.Initialize() complete.");
                 }
                 catch (Exception ex)
                 {
-                    if (_logger != null)
-                    {
-                        _logger.LogError("[AIRefactored] Plugin Awake failed: " + ex);
-                    }
+                    _logger?.LogError("[AIRefactored] ❌ Plugin Awake exception: " + ex);
                 }
             }
         }
@@ -80,19 +75,25 @@ namespace AIRefactored
         {
             lock (InitLock)
             {
-                _initialized = false;
-            }
-
-            if (_logger != null)
-            {
-                try
+                if (!_initialized)
                 {
-                    _logger.LogDebug("[AIRefactored] Plugin OnDestroy — cleaning up.");
-                    GameWorldHandler.UnhookBotSpawns();
+                    return;
                 }
-                catch (Exception ex)
+
+                _initialized = false;
+
+                if (_logger != null)
                 {
-                    _logger.LogError("[AIRefactored] Plugin OnDestroy error: " + ex);
+                    try
+                    {
+                        _logger.LogDebug("[AIRefactored] Plugin OnDestroy — invoking cleanup.");
+                        GameWorldHandler.UnhookBotSpawns();
+                        _logger.LogInfo("[AIRefactored] ✅ Cleanup complete — Plugin shutting down cleanly.");
+                    }
+                    catch (Exception ex)
+                    {
+                        _logger.LogError("[AIRefactored] ❌ Plugin OnDestroy exception: " + ex);
+                    }
                 }
             }
         }

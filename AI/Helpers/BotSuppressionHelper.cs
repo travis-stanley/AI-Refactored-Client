@@ -64,7 +64,7 @@ namespace AIRefactored.AI.Helpers
             }
             catch
             {
-                // fallback used
+                // fallback lighting default
             }
 
             return visibleDist < visibleDistThreshold || ambientLight < ambientThreshold;

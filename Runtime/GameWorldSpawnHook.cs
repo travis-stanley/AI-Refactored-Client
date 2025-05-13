@@ -25,8 +25,8 @@ namespace AIRefactored.Runtime
     /// </summary>
     public sealed class GameWorldSpawnHook : MonoBehaviour
     {
-        private static bool _hooked;
         private static readonly ManualLogSource Logger = Plugin.LoggerInstance;
+        private static bool _hooked;
 
         private void Awake()
         {
@@ -34,12 +34,12 @@ namespace AIRefactored.Runtime
             {
                 if (_hooked)
                 {
-                    Logger.LogDebug("[GameWorldSpawnHook] Already hooked — skipping.");
+                    Logger.LogDebug("[GameWorldSpawnHook] Already hooked — skipping duplicate patch.");
                     Destroy(this);
                     return;
                 }
 
-                Logger.LogDebug("[GameWorldSpawnHook] Hooking into GameWorld.OnGameStarted...");
+                Logger.LogDebug("[GameWorldSpawnHook] Hooking GameWorld.OnGameStarted...");
 
                 MethodInfo method = AccessTools.Method(typeof(GameWorld), "OnGameStarted");
                 if (method == null)
@@ -53,7 +53,7 @@ namespace AIRefactored.Runtime
                 harmony.Patch(method, postfix: new HarmonyMethod(typeof(GameWorldSpawnPatch), nameof(GameWorldSpawnPatch.Postfix)));
 
                 _hooked = true;
-                Logger.LogDebug("[GameWorldSpawnHook] ✅ Harmony patch successfully installed.");
+                Logger.LogDebug("[GameWorldSpawnHook] ✅ Harmony patch installed.");
             }
             catch (Exception ex)
             {
@@ -79,23 +79,23 @@ namespace AIRefactored.Runtime
 
                     if (world == null)
                     {
-                        Logger.LogWarning("[GameWorldSpawnHook] GameWorld.Instance is null — skipping InitPhaseRunner.");
+                        Logger.LogWarning("[GameWorldSpawnHook] GameWorld.Instance is null — skipping init.");
                         return;
                     }
 
                     if (!GameWorldHandler.IsHost)
                     {
-                        Logger.LogDebug("[GameWorldSpawnHook] Skipped InitPhaseRunner — not a valid host.");
+                        Logger.LogDebug("[GameWorldSpawnHook] Skipped init — not a valid host.");
                         return;
                     }
 
                     if (FikaHeadlessDetector.IsHeadless && !FikaHeadlessDetector.HasRaidStarted())
                     {
-                        Logger.LogDebug("[GameWorldSpawnHook] Skipped early systems — FIKA Headless not ready.");
+                        Logger.LogDebug("[GameWorldSpawnHook] FIKA Headless not ready — skipping early init.");
                         return;
                     }
 
-                    Logger.LogDebug("[GameWorldSpawnHook] GameWorld initialized. Triggering early systems...");
+                    Logger.LogDebug("[GameWorldSpawnHook] GameWorld active. Triggering early systems...");
 
                     NavMeshWarmupManager.TryPrebuildNavMesh();
 
@@ -114,7 +114,7 @@ namespace AIRefactored.Runtime
                 }
                 catch (Exception ex)
                 {
-                    Logger.LogError("[GameWorldSpawnHook] ❌ Error in Postfix: " + ex);
+                    Logger.LogError("[GameWorldSpawnHook] ❌ Postfix error: " + ex);
                 }
             }
         }

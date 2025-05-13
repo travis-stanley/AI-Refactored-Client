@@ -46,10 +46,7 @@ namespace AIRefactored.AI.Memory
 
         public void Initialize(BotComponentCache cache)
         {
-            if (cache != null)
-            {
-                _cache = cache;
-            }
+            _cache = cache;
         }
 
         #endregion
@@ -68,8 +65,8 @@ namespace AIRefactored.AI.Memory
                 }
             }
 
-            List<string> expired = TempListPool.Rent<string>();
-            foreach (KeyValuePair<string, SeenEnemyRecord> pair in _enemyMemoryById)
+            var expired = TempListPool.Rent<string>();
+            foreach (var pair in _enemyMemoryById)
             {
                 if (now - pair.Value.TimeSeen > MaxMemoryTime)
                 {
@@ -95,7 +92,7 @@ namespace AIRefactored.AI.Memory
 
         public void RecordEnemyPosition(Vector3 position, string tag, string enemyId)
         {
-            if (_cache == null || _cache.IsBlinded || (_cache.PanicHandler != null && _cache.PanicHandler.IsPanicking))
+            if (_cache == null || _cache.IsBlinded || (_cache.PanicHandler?.IsPanicking == true))
             {
                 return;
             }
@@ -150,7 +147,7 @@ namespace AIRefactored.AI.Memory
             float latest = -1f;
             string result = string.Empty;
 
-            foreach (KeyValuePair<string, SeenEnemyRecord> pair in _enemyMemoryById)
+            foreach (var pair in _enemyMemoryById)
             {
                 if (now - pair.Value.TimeSeen <= MaxMemoryTime && pair.Value.TimeSeen > latest)
                 {
@@ -174,7 +171,7 @@ namespace AIRefactored.AI.Memory
 
         public void ShareMemoryWith(List<BotComponentCache> teammates)
         {
-            if (teammates == null || teammates.Count == 0 || _cache == null || _cache.Bot == null)
+            if (teammates == null || teammates.Count == 0 || _cache?.Bot == null)
             {
                 return;
             }
@@ -185,10 +182,9 @@ namespace AIRefactored.AI.Memory
                 for (int j = 0; j < teammates.Count; j++)
                 {
                     BotComponentCache mate = teammates[j];
-                    if (mate != null && mate.Bot != null && mate.Bot != _cache.Bot)
+                    if (mate?.Bot != null && mate.Bot != _cache.Bot)
                     {
-                        BotTacticalMemory memory = mate.TacticalMemory;
-                        memory?.SyncMemory(record.Position);
+                        mate.TacticalMemory?.SyncMemory(record.Position);
                     }
                 }
             }
@@ -202,13 +198,13 @@ namespace AIRefactored.AI.Memory
         public bool WasRecentlyCleared(Vector3 position)
         {
             Vector3 grid = SnapToGrid(position);
-            float lastTime;
-            return _clearedSpots.TryGetValue(grid, out lastTime) && (Time.time - lastTime < ClearedMemoryDuration);
+            return _clearedSpots.TryGetValue(grid, out float lastTime)
+                && (Time.time - lastTime < ClearedMemoryDuration);
         }
 
         public bool IsZoneUnsafe(Vector3 position)
         {
-            if (_cache == null || _cache.Bot == null || _cache.Bot.Profile == null)
+            if (_cache?.Bot?.Profile == null)
             {
                 return false;
             }
@@ -224,7 +220,7 @@ namespace AIRefactored.AI.Memory
                 }
             }
 
-            foreach (KeyValuePair<Vector3, float> kv in _clearedSpots)
+            foreach (var kv in _clearedSpots)
             {
                 if ((kv.Key - grid).sqrMagnitude < PositionToleranceSqr && (now - kv.Value) < ClearedMemoryDuration)
                 {

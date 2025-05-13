@@ -47,7 +47,7 @@ namespace AIRefactored.Core
             }
             catch
             {
-                // Some platforms (IL2CPP) may not support domain unload
+                // IL2CPP or AOT environments may not support AppDomain events.
             }
         }
 
@@ -133,7 +133,7 @@ namespace AIRefactored.Core
                 }
                 catch
                 {
-                    // Silent fallback for custom clear failures
+                    // Silent fallback — custom clearer failed, ignored.
                 }
             }
         }

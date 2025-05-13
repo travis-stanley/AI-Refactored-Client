@@ -47,8 +47,7 @@ namespace AIRefactored.AI.Optimization
             string id = botOwner.Profile.Id;
             BotStateSnapshot current = CaptureSnapshot(botOwner);
 
-            BotStateSnapshot previous;
-            if (_cache.TryGetValue(id, out previous))
+            if (_cache.TryGetValue(id, out BotStateSnapshot previous))
             {
                 if (!previous.Equals(current))
                 {

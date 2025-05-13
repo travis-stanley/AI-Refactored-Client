@@ -45,7 +45,6 @@ namespace AIRefactored.AI.Looting
             }
 
             List<LootableContainer> containers = LootRegistry.GetAllContainers();
-
             GameWorld world = GameWorldHandler.Get();
             if (world == null || world.RegisteredPlayers == null)
             {
@@ -77,12 +76,7 @@ namespace AIRefactored.AI.Looting
                 for (int j = 0; j < deadPlayers.Count; j++)
                 {
                     Player player = deadPlayers[j];
-                    if (string.IsNullOrEmpty(player.ProfileId))
-                    {
-                        continue;
-                    }
-
-                    if (DeadBodyContainerCache.Contains(player.ProfileId))
+                    if (string.IsNullOrEmpty(player.ProfileId) || DeadBodyContainerCache.Contains(player.ProfileId))
                     {
                         continue;
                     }
@@ -264,10 +258,8 @@ namespace AIRefactored.AI.Looting
                     continue;
                 }
 
-                var result = InteractionsHandlerClass.Move(item, destination, target, true);
-                if (result.Succeeded)
+                if (InteractionsHandlerClass.Move(item, destination, target, true).Succeeded)
                 {
-                    target.TryRunNetworkTransaction(result);
                     return;
                 }
             }

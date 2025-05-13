@@ -106,14 +106,15 @@ namespace AIRefactored.AI.Movement
         private static bool TrySide(Vector3 origin, Vector3 toEnemy, Side side, out Vector3 result)
         {
             result = Vector3.zero;
+
             Vector3 perpendicular = Vector3.Cross(Vector3.up, toEnemy) * (side == Side.Left ? -1f : 1f);
 
             for (int i = 0; i < MaxAttemptsPerSide; i++)
             {
                 float lateralOffset = BaseOffset + UnityEngine.Random.Range(-OffsetVariation, OffsetVariation);
-                float forwardDistance = UnityEngine.Random.Range(MinDistance, MaxDistance);
+                float forwardOffset = UnityEngine.Random.Range(MinDistance, MaxDistance);
 
-                Vector3 candidate = origin + (perpendicular * lateralOffset) + (toEnemy * forwardDistance);
+                Vector3 candidate = origin + (perpendicular * lateralOffset) + (toEnemy * forwardOffset);
 
                 if (IsValidFlankPoint(candidate, origin, out Vector3 valid))
                 {

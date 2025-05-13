@@ -18,6 +18,9 @@ namespace AIRefactored.AI.Perception
     using EFT.Animations;
     using UnityEngine;
 
+    /// <summary>
+    /// Handles bot visual cone scanning, visibility tracking, and confidence-based enemy commitment.
+    /// </summary>
     public sealed class BotVisionSystem
     {
         #region Constants
@@ -153,7 +156,6 @@ namespace AIRefactored.AI.Perception
             }
 
             float confidence = tracker.GetOverallConfidence();
-
             if (_bot.Memory.IsUnderFire && Random.value < SuppressionMissChance)
             {
                 return;

@@ -3,7 +3,7 @@
 //   Licensed under the MIT License. See LICENSE in the repository root for more information.
 //
 //   THIS FILE IS SYSTEMATICALLY MANAGED.
-//   Please follow strict StyleCop, ReSharper, and AI-Refactored code standards for all modifications.
+//   Failures in AIRefactored logic must always trigger safe fallback to EFT base AI.
 // </auto-generated>
 
 namespace AIRefactored.AI.Memory
@@ -34,8 +34,7 @@ namespace AIRefactored.AI.Memory
 
         public static void AddDangerZone(string mapId, Vector3 position, DangerTriggerType type, float radius)
         {
-            string key;
-            if (!TryGetSafeKey(mapId, out key))
+            if (!TryGetSafeKey(mapId, out string key))
             {
                 key = "unknown";
             }
@@ -50,16 +49,14 @@ namespace AIRefactored.AI.Memory
 
         public static List<DangerZone> GetZonesForMap(string mapId)
         {
-            var result = TempListPool.Rent<DangerZone>();
+            List<DangerZone> result = TempListPool.Rent<DangerZone>();
 
-            string key;
-            if (!TryGetSafeKey(mapId, out key))
+            if (!TryGetSafeKey(mapId, out string key))
             {
                 return result;
             }
 
-            List<DangerZone> cache;
-            if (!ZoneCaches.TryGetValue(key, out cache))
+            if (!ZoneCaches.TryGetValue(key, out List<DangerZone> cache))
             {
                 cache = TempListPool.Rent<DangerZone>();
                 ZoneCaches[key] = cache;
@@ -85,8 +82,7 @@ namespace AIRefactored.AI.Memory
 
         public static bool IsPositionInDangerZone(string mapId, Vector3 position)
         {
-            string key;
-            if (!TryGetSafeKey(mapId, out key))
+            if (!TryGetSafeKey(mapId, out string key))
             {
                 return false;
             }
@@ -121,14 +117,12 @@ namespace AIRefactored.AI.Memory
 
         public static void AddHeardSound(string profileId, Vector3 position, float time)
         {
-            string key;
-            if (!TryGetSafeKey(profileId, out key))
+            if (!TryGetSafeKey(profileId, out string key))
             {
                 return;
             }
 
-            List<HeardSound> list;
-            if (!ShortTermHeardSounds.TryGetValue(key, out list))
+            if (!ShortTermHeardSounds.TryGetValue(key, out List<HeardSound> list))
             {
                 list = TempListPool.Rent<HeardSound>();
                 ShortTermHeardSounds[key] = list;
@@ -140,22 +134,19 @@ namespace AIRefactored.AI.Memory
         public static bool TryGetHeardSound(string profileId, out HeardSound sound)
         {
             sound = default(HeardSound);
-            string key;
-            return TryGetSafeKey(profileId, out key) && HeardSounds.TryGetValue(key, out sound);
+            return TryGetSafeKey(profileId, out string key) && HeardSounds.TryGetValue(key, out sound);
         }
 
         public static void ClearHeardSound(string profileId)
         {
-            string key;
-            if (!TryGetSafeKey(profileId, out key))
+            if (!TryGetSafeKey(profileId, out string key))
             {
                 return;
             }
 
             HeardSounds.Remove(key);
 
-            List<HeardSound> list;
-            if (ShortTermHeardSounds.TryGetValue(key, out list))
+            if (ShortTermHeardSounds.TryGetValue(key, out List<HeardSound> list))
             {
                 list.Clear();
             }
@@ -164,6 +155,7 @@ namespace AIRefactored.AI.Memory
         public static void ClearAllHeardSounds()
         {
             HeardSounds.Clear();
+
             foreach (var entry in ShortTermHeardSounds)
             {
                 entry.Value.Clear();
@@ -176,27 +168,24 @@ namespace AIRefactored.AI.Memory
 
         public static void RegisterLastHitSource(string victimProfileId, string attackerProfileId)
         {
-            string victim;
-            string attacker;
-            if (!TryGetSafeKey(victimProfileId, out victim) || !TryGetSafeKey(attackerProfileId, out attacker))
+            if (TryGetSafeKey(victimProfileId, out string victim) &&
+                TryGetSafeKey(attackerProfileId, out string attacker))
             {
-                return;
+                LastHitSources[victim] = new LastHitInfo(attacker, Time.time);
             }
-
-            LastHitSources[victim] = new LastHitInfo(attacker, Time.time);
         }
 
         public static bool WasRecentlyHitBy(string victimProfileId, string attackerProfileId)
         {
-            string victim;
-            string attacker;
-            if (!TryGetSafeKey(victimProfileId, out victim) || !TryGetSafeKey(attackerProfileId, out attacker))
+            if (!TryGetSafeKey(victimProfileId, out string victim) ||
+                !TryGetSafeKey(attackerProfileId, out string attacker))
             {
                 return false;
             }
 
-            LastHitInfo hit;
-            return LastHitSources.TryGetValue(victim, out hit) && hit.AttackerId == attacker && (Time.time - hit.Time <= HitMemoryDuration);
+            return LastHitSources.TryGetValue(victim, out LastHitInfo hit)
+                && hit.AttackerId == attacker
+                && Time.time - hit.Time <= HitMemoryDuration;
         }
 
         public static void ClearHitSources()
@@ -210,8 +199,7 @@ namespace AIRefactored.AI.Memory
 
         public static void SetLastFlankTime(string profileId)
         {
-            string key;
-            if (TryGetSafeKey(profileId, out key))
+            if (TryGetSafeKey(profileId, out string key))
             {
                 LastFlankTimes[key] = Time.time;
             }
@@ -219,14 +207,12 @@ namespace AIRefactored.AI.Memory
 
         public static bool CanFlankNow(string profileId, float cooldown)
         {
-            string key;
-            if (!TryGetSafeKey(profileId, out key))
+            if (!TryGetSafeKey(profileId, out string key))
             {
                 return false;
             }
 
-            float last;
-            return !LastFlankTimes.TryGetValue(key, out last) || (Time.time - last >= cooldown);
+            return !LastFlankTimes.TryGetValue(key, out float last) || (Time.time - last >= cooldown);
         }
 
         public static void ClearFlankCooldowns()
@@ -240,7 +226,7 @@ namespace AIRefactored.AI.Memory
 
         public static List<Player> GetNearbyPlayers(Vector3 origin, float radius)
         {
-            var result = TempListPool.Rent<Player>();
+            List<Player> result = TempListPool.Rent<Player>();
             List<Player> players = GameWorldHandler.GetAllAlivePlayers();
             float rangeSqr = radius * radius;
 

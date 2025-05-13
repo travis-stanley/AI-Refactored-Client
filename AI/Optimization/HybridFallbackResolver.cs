@@ -34,6 +34,11 @@ namespace AIRefactored.AI.Optimization
 
 		#region Public API
 
+		/// <summary>
+		/// Returns the best fallback retreat point for the bot based on tactical cover, hotspots, and fallback planning.
+		/// </summary>
+		/// <param name="bot">The bot seeking retreat.</param>
+		/// <param name="threatDirection">Direction of threat or enemy fire.</param>
 		public static Vector3 GetBestRetreatPoint(BotOwner bot, Vector3 threatDirection)
 		{
 			if (bot == null || bot.Transform == null || !GameWorldHandler.IsLocalHost())
@@ -44,7 +49,7 @@ namespace AIRefactored.AI.Optimization
 			Vector3 origin = bot.Position;
 			Vector3 retreatDirection = -threatDirection.normalized;
 
-			// === Priority 1: NavPoint-based cover ===
+			// === Priority 1: NavPoint-based fallback cover ===
 			if (NavMeshStatus.IsReady)
 			{
 				List<Vector3> navCoverPoints = NavPointRegistry.QueryNearby(
@@ -84,7 +89,7 @@ namespace AIRefactored.AI.Optimization
 				}
 			}
 
-			// === Priority 2: Hotspot fallback zones ===
+			// === Priority 2: Tactical fallback hotspots ===
 			if (NavMeshStatus.IsReady)
 			{
 				List<HotspotRegistry.Hotspot> fallbackHotspots = HotspotRegistry.QueryNearby(
@@ -122,7 +127,7 @@ namespace AIRefactored.AI.Optimization
 				}
 			}
 
-			// === Priority 3: Dynamic fallback path ===
+			// === Priority 3: Dynamic fallback via pathing ===
 			if (NavMeshStatus.IsReady)
 			{
 				BotOwnerPathfindingCache pathCache = BotCacheUtility.GetCache(bot)?.Pathing;
@@ -143,14 +148,14 @@ namespace AIRefactored.AI.Optimization
 				}
 			}
 
-			// === Priority 4: LOS-blocking fallback ===
+			// === Priority 4: LOS-based fallback blocking probe ===
 			Vector3 losBreak;
 			if (TryLOSBlocker(origin, threatDirection, out losBreak))
 			{
 				return losBreak;
 			}
 
-			// Final fallback: allow vanilla smooth move to handle it
+			// Final fallback
 			return Vector3.zero;
 		}
 

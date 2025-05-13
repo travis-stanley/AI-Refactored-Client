@@ -13,6 +13,7 @@ namespace AIRefactored.AI.Movement
     using AIRefactored.AI.Helpers;
     using AIRefactored.AI.Memory;
     using AIRefactored.AI.Navigation;
+    using AIRefactored.Pools;
     using EFT;
     using UnityEngine;
 
@@ -29,6 +30,9 @@ namespace AIRefactored.AI.Movement
         private const float PoseBlendSpeedBase = 140f;
         private const float PoseCheckInterval = 0.3f;
         private const float SuppressionCrouchDuration = 2.5f;
+        private const float CrouchPose = 50f;
+        private const float PronePose = 0f;
+        private const float StandPose = 100f;
 
         #endregion
 
@@ -79,7 +83,7 @@ namespace AIRefactored.AI.Movement
 
         public void LockCrouchPose()
         {
-            _targetPoseLevel = 50f;
+            _targetPoseLevel = CrouchPose;
             _isLocked = true;
         }
 
@@ -90,17 +94,17 @@ namespace AIRefactored.AI.Movement
 
         public void SetCrouch(bool anticipate = false)
         {
-            _targetPoseLevel = anticipate ? 60f : 50f;
+            _targetPoseLevel = anticipate ? 60f : CrouchPose;
         }
 
         public void SetProne(bool anticipate = false)
         {
-            _targetPoseLevel = anticipate ? 20f : 0f;
+            _targetPoseLevel = anticipate ? 20f : PronePose;
         }
 
         public void SetStand()
         {
-            _targetPoseLevel = 100f;
+            _targetPoseLevel = StandPose;
         }
 
         public void Tick(float currentTime)
@@ -155,6 +159,8 @@ namespace AIRefactored.AI.Movement
                     break;
                 }
             }
+
+            TempListPool.Return(points);
         }
 
         #endregion
@@ -168,9 +174,9 @@ namespace AIRefactored.AI.Movement
                 return;
             }
 
-            float panic = _cache.PanicHandler != null && _cache.PanicHandler.IsPanicking ? 0.6f : 1f;
-            float combat = _cache.Combat != null && _cache.Combat.IsInCombatState() ? 1f : 0.4f;
-            float speed = PoseBlendSpeedBase * panic * combat;
+            float panicFactor = _cache.PanicHandler != null && _cache.PanicHandler.IsPanicking ? 0.6f : 1f;
+            float combatFactor = _cache.Combat != null && _cache.Combat.IsInCombatState() ? 1f : 0.4f;
+            float speed = PoseBlendSpeedBase * panicFactor * combatFactor;
 
             _currentPoseLevel = Mathf.MoveTowards(_currentPoseLevel, _targetPoseLevel, speed * deltaTime);
             _movement.SetPoseLevel(_currentPoseLevel);
@@ -180,7 +186,7 @@ namespace AIRefactored.AI.Movement
         {
             if (_cache.PanicHandler != null && _cache.PanicHandler.IsPanicking)
             {
-                _targetPoseLevel = 0f;
+                _targetPoseLevel = PronePose;
                 return;
             }
 
@@ -191,7 +197,7 @@ namespace AIRefactored.AI.Movement
 
             if (currentTime < _suppressedUntil)
             {
-                _targetPoseLevel = 50f;
+                _targetPoseLevel = CrouchPose;
                 return;
             }
 
@@ -204,7 +210,7 @@ namespace AIRefactored.AI.Movement
                     float angle = Vector3.Angle(_bot.LookDirection, flankDir.normalized);
                     if (angle > FlankAngleThreshold)
                     {
-                        _targetPoseLevel = 0f;
+                        _targetPoseLevel = PronePose;
                         return;
                     }
                 }
@@ -222,13 +228,13 @@ namespace AIRefactored.AI.Movement
                     {
                         if (BotCoverHelper.IsProneCover(point))
                         {
-                            _targetPoseLevel = 0f;
+                            _targetPoseLevel = PronePose;
                             return;
                         }
 
                         if (BotCoverHelper.IsLowCover(point))
                         {
-                            _targetPoseLevel = 50f;
+                            _targetPoseLevel = CrouchPose;
                             return;
                         }
                     }
@@ -238,7 +244,7 @@ namespace AIRefactored.AI.Movement
             bool inCombat = _cache.Combat != null && _cache.Combat.IsInCombatState();
             bool prefersCrouch = _personality.Caution > 0.6f || _personality.IsCamper;
 
-            _targetPoseLevel = inCombat && prefersCrouch ? 50f : 100f;
+            _targetPoseLevel = inCombat && prefersCrouch ? CrouchPose : StandPose;
         }
 
         #endregion

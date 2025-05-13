@@ -30,7 +30,7 @@ namespace AIRefactored.AI.Optimization
 
 		#endregion
 
-		#region Static Fields
+		#region Fields
 
 		private static readonly object Sync = new object();
 		private static readonly ManualLogSource Log = Plugin.LoggerInstance;
@@ -44,6 +44,7 @@ namespace AIRefactored.AI.Optimization
 		/// <summary>
 		/// Queues a bot workload for background execution.
 		/// </summary>
+		/// <param name="workload">The workload to execute.</param>
 		public static void Schedule(IBotWorkload workload)
 		{
 			if (workload == null)
@@ -118,16 +119,21 @@ namespace AIRefactored.AI.Optimization
 			int threads = Mathf.Clamp(ThreadCount, 1, total);
 			int blockSize = Mathf.CeilToInt(total / (float)threads);
 
-			for (int i = 0; i < total; i += blockSize)
+			for (int t = 0; t < threads; t++)
 			{
-				int start = i;
-				int end = Mathf.Min(i + blockSize, total);
+				int start = t * blockSize;
+				if (start >= total)
+				{
+					break;
+				}
+
+				int end = Mathf.Min(start + blockSize, total);
 
 				Task.Run(() =>
 				{
-					for (int j = start; j < end; j++)
+					for (int i = start; i < end; i++)
 					{
-						IBotWorkload job = batch[j];
+						IBotWorkload job = batch[i];
 						if (job == null)
 						{
 							continue;

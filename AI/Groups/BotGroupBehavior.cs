@@ -81,10 +81,10 @@ namespace AIRefactored.AI.Groups
         /// <summary>
         /// Executes squad cohesion and repulsion logic.
         /// </summary>
-        /// <param name="deltaTime">Unused timestep input.</param>
+        /// <param name="deltaTime">Frame delta time.</param>
         public void Tick(float deltaTime)
         {
-            if (!IsEligible() || _bot.Memory.GoalEnemy != null)
+            if (!IsEligible() || _bot.Memory == null || _bot.Memory.GoalEnemy != null)
             {
                 return;
             }
@@ -95,8 +95,8 @@ namespace AIRefactored.AI.Groups
             float maxDistSqr = MinSpacingSqr;
             bool hasFurthest = false;
 
-            int count = _group.MembersCount;
-            for (int i = 0; i < count; i++)
+            int memberCount = _group.MembersCount;
+            for (int i = 0; i < memberCount; i++)
             {
                 BotOwner mate = _group.Member(i);
                 if (mate == null || mate == _bot || mate.IsDead || mate.Memory == null)
@@ -142,7 +142,7 @@ namespace AIRefactored.AI.Groups
 
         private bool IsEligible()
         {
-            return EFTPlayerUtil.IsValidBotOwner(_bot) && _group != null && !_bot.IsDead;
+            return _bot != null && _group != null && !_bot.IsDead && EFTPlayerUtil.IsValidBotOwner(_bot);
         }
 
         private void IssueMove(Vector3 target)

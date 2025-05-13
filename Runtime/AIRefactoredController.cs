@@ -78,7 +78,7 @@ namespace AIRefactored.Runtime
                 WorldTickDispatcher.Initialize();
 
                 s_Initialized = true;
-                Logger.LogDebug("[AIRefactoredController] ✅ Initialization complete. Waiting for GameWorldSpawnHook...");
+                Logger.LogDebug("[AIRefactoredController] ✅ Initialization complete. Awaiting GameWorld...");
             }
             catch (Exception ex)
             {
@@ -111,21 +111,20 @@ namespace AIRefactored.Runtime
                     return;
                 }
 
-                bool hasValid = false;
+                bool foundValid = false;
                 for (int i = 0; i < world.RegisteredPlayers.Count; i++)
                 {
-                    IPlayer raw = world.RegisteredPlayers[i];
-                    Player player = EFTPlayerUtil.AsEFTPlayer(raw);
+                    Player player = EFTPlayerUtil.AsEFTPlayer(world.RegisteredPlayers[i]);
                     if (player != null && EFTPlayerUtil.IsValid(player))
                     {
-                        hasValid = true;
+                        foundValid = true;
                         break;
                     }
                 }
 
-                if (!hasValid)
+                if (!foundValid)
                 {
-                    Logger.LogWarning("[AIRefactoredController] OnRaidStarted skipped — no valid players in world.");
+                    Logger.LogWarning("[AIRefactoredController] OnRaidStarted skipped — no valid players found.");
                     return;
                 }
 
@@ -184,7 +183,7 @@ namespace AIRefactored.Runtime
         {
             try
             {
-                Logger.LogDebug("[AIRefactoredController] OnDestroy — stopping systems and cleaning up...");
+                Logger.LogDebug("[AIRefactoredController] OnDestroy — performing full teardown.");
 
                 InitPhaseRunner.Stop();
                 WorldBootstrapper.Stop();
@@ -193,6 +192,8 @@ namespace AIRefactored.Runtime
 
                 s_Initialized = false;
                 s_RaidActive = false;
+
+                Logger.LogInfo("[AIRefactoredController] ✅ AIRefactoredController teardown complete.");
             }
             catch (Exception ex)
             {

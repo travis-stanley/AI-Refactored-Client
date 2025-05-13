@@ -149,15 +149,15 @@ namespace AIRefactored.AI.Perception
 
         private static bool IsSameGroup(Player a, Player b)
         {
-            if (a == null || b == null || a.Profile == null || b.Profile == null || a.Profile.Info == null || b.Profile.Info == null)
+            if (a == null || b == null)
             {
                 return false;
             }
 
-            string aGroup = a.Profile.Info.GroupId;
-            string bGroup = b.Profile.Info.GroupId;
+            string ag = a.Profile?.Info?.GroupId;
+            string bg = b.Profile?.Info?.GroupId;
 
-            return !string.IsNullOrEmpty(aGroup) && aGroup == bGroup;
+            return !string.IsNullOrEmpty(ag) && ag == bg;
         }
 
         #endregion

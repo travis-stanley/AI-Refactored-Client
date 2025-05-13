@@ -23,14 +23,16 @@ namespace AIRefactored.AI.Optimization
     /// </summary>
     public sealed class BotAIOptimization
     {
-        #region Fields
-
-        private readonly Dictionary<string, bool> _optimizationApplied = new Dictionary<string, bool>(64);
-
-        private static readonly Dictionary<int, float> LastOptimizationLogs = new Dictionary<int, float>(64);
+        #region Constants
 
         private const float OptimizationLogCooldown = 5f;
 
+        #endregion
+
+        #region Fields
+
+        private readonly Dictionary<string, bool> _optimizationApplied = new Dictionary<string, bool>(64);
+        private static readonly Dictionary<int, float> LastOptimizationLogs = new Dictionary<int, float>(64);
         private static readonly ManualLogSource Logger = Plugin.LoggerInstance;
 
         #endregion
@@ -40,7 +42,6 @@ namespace AIRefactored.AI.Optimization
         /// <summary>
         /// Logs current optimization-relevant settings for the bot (once per bot ID).
         /// </summary>
-        /// <param name="botOwner">Target bot to log.</param>
         public void Optimize(BotOwner botOwner)
         {
             if (!GameWorldHandler.IsLocalHost() || !IsValid(botOwner))
@@ -65,14 +66,12 @@ namespace AIRefactored.AI.Optimization
             LogRole(botOwner);
 
             _optimizationApplied[profileId] = true;
-
             Logger.LogDebug("[BotAIOptimization] Applied optimization for bot: " + profileId);
         }
 
         /// <summary>
         /// Allows re-logging this bot by clearing its logged flag.
         /// </summary>
-        /// <param name="botOwner">Bot to reset.</param>
         public void ResetOptimization(BotOwner botOwner)
         {
             if (!GameWorldHandler.IsLocalHost() || !IsValid(botOwner))
@@ -95,10 +94,9 @@ namespace AIRefactored.AI.Optimization
             return bot != null &&
                    bot.GetPlayer != null &&
                    bot.GetPlayer.IsAI &&
+                   !bot.IsDead &&
                    bot.Profile != null &&
-                   bot.Settings != null &&
-                   bot.Settings.FileSettings != null &&
-                   !bot.IsDead;
+                   bot.Settings?.FileSettings != null;
         }
 
         private static bool ShouldLogOptimization(BotOwner bot)
@@ -117,8 +115,8 @@ namespace AIRefactored.AI.Optimization
 
         private static void LogCognition(BotOwner bot)
         {
-            string name = bot.Profile.Info != null ? bot.Profile.Info.Nickname : "Unknown";
-            BotGlobalLookData look = bot.Settings.FileSettings.Look;
+            string name = bot.Profile?.Info?.Nickname ?? "Unknown";
+            BotGlobalLookData look = bot.Settings?.FileSettings?.Look;
 
             if (look == null)
             {
@@ -126,16 +124,15 @@ namespace AIRefactored.AI.Optimization
                 return;
             }
 
-            Logger.LogDebug(
-                "[BotDiagnostics][Cognition] " + name +
-                " → MAX_VISION_GRASS_METERS=" + look.MAX_VISION_GRASS_METERS.ToString("F1") +
-                ", ENEMY_LIGHT_ADD=" + look.ENEMY_LIGHT_ADD.ToString("F1"));
+            Logger.LogDebug("[BotDiagnostics][Cognition] " + name +
+                            " → MAX_VISION_GRASS_METERS=" + look.MAX_VISION_GRASS_METERS.ToString("F1") +
+                            ", ENEMY_LIGHT_ADD=" + look.ENEMY_LIGHT_ADD.ToString("F1"));
         }
 
         private static void LogMind(BotOwner bot)
         {
-            string name = bot.Profile.Info != null ? bot.Profile.Info.Nickname : "Unknown";
-            BotGlobalsMindSettings mind = bot.Settings.FileSettings.Mind;
+            string name = bot.Profile?.Info?.Nickname ?? "Unknown";
+            BotGlobalsMindSettings mind = bot.Settings?.FileSettings?.Mind;
 
             if (mind == null)
             {
@@ -143,16 +140,15 @@ namespace AIRefactored.AI.Optimization
                 return;
             }
 
-            Logger.LogDebug(
-                "[BotDiagnostics][Mind] " + name +
-                " → MIN_DAMAGE_SCARE=" + mind.MIN_DAMAGE_SCARE.ToString("F1") +
-                ", CHANCE_TO_RUN_CAUSE_DAMAGE_0_100=" + mind.CHANCE_TO_RUN_CAUSE_DAMAGE_0_100.ToString("F0") + "%");
+            Logger.LogDebug("[BotDiagnostics][Mind] " + name +
+                            " → MIN_DAMAGE_SCARE=" + mind.MIN_DAMAGE_SCARE.ToString("F1") +
+                            ", CHANCE_TO_RUN_CAUSE_DAMAGE_0_100=" + mind.CHANCE_TO_RUN_CAUSE_DAMAGE_0_100.ToString("F0") + "%");
         }
 
         private static void LogRole(BotOwner bot)
         {
-            string name = bot.Profile.Info != null ? bot.Profile.Info.Nickname : "Unknown";
-            WildSpawnType role = bot.Profile.Info?.Settings?.Role ?? WildSpawnType.assault;
+            string name = bot.Profile?.Info?.Nickname ?? "Unknown";
+            WildSpawnType role = bot.Profile?.Info?.Settings?.Role ?? WildSpawnType.assault;
 
             Logger.LogDebug("[BotDiagnostics][Role] " + name + " → ProfileRole=" + role);
         }

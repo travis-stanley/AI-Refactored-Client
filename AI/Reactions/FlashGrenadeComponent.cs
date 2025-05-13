@@ -88,7 +88,7 @@ namespace AIRefactored.AI.Reactions
         /// </summary>
         public void Tick(float time)
         {
-            if (_bot.IsDead || _cache == null)
+            if (_cache == null || _bot == null || _bot.IsDead)
             {
                 return;
             }
@@ -122,8 +122,7 @@ namespace AIRefactored.AI.Reactions
             IReadOnlyList<Vector3> sources = FlashlightRegistry.GetLastKnownFlashlightPositions();
             for (int i = 0; i < sources.Count; i++)
             {
-                Light light;
-                if (FlashlightRegistry.IsExposingBot(head, out light) && light != null)
+                if (FlashlightRegistry.IsExposingBot(head, out Light light) && light != null)
                 {
                     float score = FlashLightUtils.CalculateFlashScore(light.transform, head, 20f);
                     if (score >= TriggerScoreThreshold)

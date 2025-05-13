@@ -23,6 +23,8 @@ namespace AIRefactored
     /// </summary>
     public static class BotRegistry
     {
+        #region Fields
+
         private static readonly ConcurrentDictionary<string, BotPersonalityProfile> _profileRegistry = new ConcurrentDictionary<string, BotPersonalityProfile>();
         private static readonly ConcurrentDictionary<string, AIRefactoredBotOwner> _ownerRegistry = new ConcurrentDictionary<string, AIRefactoredBotOwner>();
         private static readonly Dictionary<PersonalityType, BotPersonalityProfile> _fallbackProfiles = new Dictionary<PersonalityType, BotPersonalityProfile>();
@@ -65,19 +67,31 @@ namespace AIRefactored
 
         private static ManualLogSource Logger => Plugin.LoggerInstance;
 
+        #endregion
+
+        #region Public API
+
         public static void Clear()
         {
             _profileRegistry.Clear();
             _ownerRegistry.Clear();
             _missingLogged.Clear();
             _fallbackProfiles.Clear();
-            Logger.LogDebug("[BotRegistry] Cleared all personality and owner data.");
+
+            if (_debug)
+            {
+                Logger.LogDebug("[BotRegistry] Cleared all personality and owner data.");
+            }
         }
 
         public static void EnableDebug(bool enable)
         {
             _debug = enable && !FikaHeadlessDetector.IsHeadless;
-            Logger.LogDebug("[BotRegistry] Debug logging " + (enable ? "enabled." : "disabled."));
+
+            if (_debug)
+            {
+                Logger.LogDebug("[BotRegistry] Debug logging enabled.");
+            }
         }
 
         public static bool Exists(string profileId)
@@ -89,7 +103,11 @@ namespace AIRefactored
         {
             if (string.IsNullOrEmpty(profileId))
             {
-                Logger.LogWarning("[BotRegistry] Requested null or empty profileId. Returning fallback.");
+                if (_debug)
+                {
+                    Logger.LogWarning("[BotRegistry] Requested null or empty profileId. Returning fallback.");
+                }
+
                 return GetFallbackProfile(fallback);
             }
 
@@ -129,7 +147,11 @@ namespace AIRefactored
             var generated = BotPersonalityPresets.GenerateProfile(type);
             _profileRegistry[profileId] = generated;
 
-            Logger.LogDebug("[BotRegistry] Registered profile '" + type + "' for bot role '" + role + "' (" + profileId + ")");
+            if (_debug)
+            {
+                Logger.LogDebug("[BotRegistry] Registered profile '" + type + "' for bot role '" + role + "' (" + profileId + ")");
+            }
+
             return generated;
         }
 
@@ -137,7 +159,11 @@ namespace AIRefactored
         {
             if (string.IsNullOrEmpty(profileId))
             {
-                Logger.LogWarning("[BotRegistry] GetOrGenerate failed — null or empty profileId.");
+                if (_debug)
+                {
+                    Logger.LogWarning("[BotRegistry] GetOrGenerate failed — null or empty profileId.");
+                }
+
                 return GetFallbackProfile(defaultType);
             }
 
@@ -149,7 +175,11 @@ namespace AIRefactored
             profile = BotPersonalityPresets.GenerateProfile(defaultType);
             _profileRegistry[profileId] = profile;
 
-            Logger.LogDebug("[BotRegistry] Auto-generated profile for '" + profileId + "' with type: " + defaultType);
+            if (_debug)
+            {
+                Logger.LogDebug("[BotRegistry] Auto-generated profile for '" + profileId + "' with type: " + defaultType);
+            }
+
             return profile;
         }
 
@@ -157,12 +187,13 @@ namespace AIRefactored
         {
             if (string.IsNullOrEmpty(profileId))
             {
-                if (!_roleMap.TryGetValue(role, out var resolved))
+                var resolved = _roleMap.TryGetValue(role, out var alt) ? alt : defaultType;
+
+                if (_debug)
                 {
-                    resolved = defaultType;
+                    Logger.LogWarning("[BotRegistry] Null profileId. Fallback resolved to: " + resolved);
                 }
 
-                Logger.LogWarning("[BotRegistry] Null profileId. Fallback resolved to: " + resolved);
                 return GetFallbackProfile(resolved);
             }
 
@@ -171,33 +202,31 @@ namespace AIRefactored
                 return profile;
             }
 
-            if (!_roleMap.TryGetValue(role, out var type))
-            {
-                type = defaultType;
-            }
-
+            var type = _roleMap.TryGetValue(role, out var mapped) ? mapped : defaultType;
             profile = BotPersonalityPresets.GenerateProfile(type);
             _profileRegistry[profileId] = profile;
 
-            Logger.LogDebug("[BotRegistry] Auto-generated profile for '" + profileId + "' with type: " + type + " (role: " + role + ")");
+            if (_debug)
+            {
+                Logger.LogDebug("[BotRegistry] Auto-generated profile for '" + profileId + "' with type: " + type + " (role: " + role + ")");
+            }
+
             return profile;
         }
 
         public static void Register(string profileId, BotPersonalityProfile profile)
         {
-            if (string.IsNullOrEmpty(profileId) || profile == null)
+            if (string.IsNullOrEmpty(profileId) || profile == null || _profileRegistry.ContainsKey(profileId))
             {
-                return;
-            }
-
-            if (_profileRegistry.ContainsKey(profileId))
-            {
-                Logger.LogDebug("[BotRegistry] Profile already exists for '" + profileId + "'. Skipping.");
                 return;
             }
 
             _profileRegistry[profileId] = profile;
-            Logger.LogDebug("[BotRegistry] Registered profile for '" + profileId + "': " + profile.Personality);
+
+            if (_debug)
+            {
+                Logger.LogDebug("[BotRegistry] Registered profile for '" + profileId + "': " + profile.Personality);
+            }
         }
 
         public static void RegisterOwner(string profileId, AIRefactoredBotOwner owner)
@@ -208,7 +237,11 @@ namespace AIRefactored
             }
 
             _ownerRegistry[profileId] = owner;
-            Logger.LogDebug("[BotRegistry] Registered owner for '" + profileId + "'.");
+
+            if (_debug)
+            {
+                Logger.LogDebug("[BotRegistry] Registered owner for '" + profileId + "'.");
+            }
         }
 
         public static bool TryGet(string profileId, out BotPersonalityProfile profile)
@@ -245,6 +278,10 @@ namespace AIRefactored
             return true;
         }
 
+        #endregion
+
+        #region Internals
+
         private static BotPersonalityProfile GetFallbackProfile(PersonalityType fallback)
         {
             if (_fallbackProfiles.TryGetValue(fallback, out var cached))
@@ -255,8 +292,14 @@ namespace AIRefactored
             var profile = BotPersonalityPresets.GenerateProfile(fallback);
             _fallbackProfiles[fallback] = profile;
 
-            Logger.LogDebug("[BotRegistry] Created fallback profile: " + profile.Personality);
+            if (_debug)
+            {
+                Logger.LogDebug("[BotRegistry] Created fallback profile: " + profile.Personality);
+            }
+
             return profile;
         }
+
+        #endregion
     }
 }

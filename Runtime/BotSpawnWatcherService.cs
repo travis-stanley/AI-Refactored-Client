@@ -50,11 +50,11 @@ namespace AIRefactored.Runtime
 			{
 				Reset();
 				_hasLoggedReset = false;
-				Logger.LogDebug("[BotSpawnWatcher] Initialized.");
+				Logger.LogDebug("[BotSpawnWatcher] ✅ Initialized.");
 			}
 			catch (Exception ex)
 			{
-				Logger.LogError("[BotSpawnWatcher] Initialize failed: " + ex);
+				Logger.LogError("[BotSpawnWatcher] ❌ Initialize failed: " + ex);
 			}
 		}
 
@@ -66,7 +66,7 @@ namespace AIRefactored.Runtime
 				{
 					if (!_hasWarnedInvalid)
 					{
-						Logger.LogWarning("[BotSpawnWatcher] GameWorld not ready or not host — deferring.");
+						Logger.LogWarning("[BotSpawnWatcher] ⚠ World not ready or not host — deferring.");
 						_hasWarnedInvalid = true;
 					}
 
@@ -75,7 +75,7 @@ namespace AIRefactored.Runtime
 
 				if (_hasWarnedInvalid)
 				{
-					Logger.LogDebug("[BotSpawnWatcher] World is now ready. Resuming.");
+					Logger.LogDebug("[BotSpawnWatcher] ✅ World ready. Resuming bot tracking.");
 					_hasWarnedInvalid = false;
 				}
 
@@ -114,17 +114,26 @@ namespace AIRefactored.Runtime
 						continue;
 					}
 
-					if (player.AIData?.BotOwner == null)
+					if (player.AIData == null || player.AIData.BotOwner == null)
 					{
 						continue;
 					}
 
-					GameWorldHandler.TryAttachBotBrain(player.AIData.BotOwner);
+					try
+					{
+						BotBrainGuardian.Enforce(go);
+						GameWorldHandler.TryAttachBotBrain(player.AIData.BotOwner);
+						Logger.LogDebug("[BotSpawnWatcher] ✅ Brain injected for bot: " + player.Profile?.Info?.Nickname ?? player.ProfileId);
+					}
+					catch (Exception ex)
+					{
+						Logger.LogError("[BotSpawnWatcher] ❌ Brain injection failed for bot: " + ex);
+					}
 				}
 			}
 			catch (Exception ex)
 			{
-				Logger.LogError("[BotSpawnWatcher] Tick error: " + ex);
+				Logger.LogError("[BotSpawnWatcher] ❌ Tick error: " + ex);
 			}
 		}
 
@@ -133,20 +142,16 @@ namespace AIRefactored.Runtime
 			try
 			{
 				Reset();
+				Logger.LogDebug("[BotSpawnWatcher] 🧹 Reset after raid.");
 			}
 			catch (Exception ex)
 			{
-				Logger.LogError("[BotSpawnWatcher] OnRaidEnd error: " + ex);
+				Logger.LogError("[BotSpawnWatcher] ❌ OnRaidEnd error: " + ex);
 			}
 		}
 
 		public static void Reset()
 		{
-			if (_hasLoggedReset)
-			{
-				return;
-			}
-
 			SeenBotIds.Clear();
 			_nextPollTime = -1f;
 			_hasWarnedInvalid = false;
@@ -154,11 +159,11 @@ namespace AIRefactored.Runtime
 
 			try
 			{
-				Logger.LogDebug("[BotSpawnWatcher] Reset.");
+				Logger.LogDebug("[BotSpawnWatcher] Reset complete.");
 			}
 			catch
 			{
-				// Logger might be unavailable
+				// Logger might not be available during teardown.
 			}
 		}
 

@@ -21,10 +21,7 @@ namespace AIRefactored.Bootstrap
         /// <summary>
         /// Gets the current world initialization phase.
         /// </summary>
-        public static WorldPhase Current
-        {
-            get { return _phase; }
-        }
+        public static WorldPhase Current => _phase;
 
         /// <summary>
         /// Sets the current initialization phase.
@@ -54,10 +51,7 @@ namespace AIRefactored.Bootstrap
         /// <summary>
         /// Returns true if the world has completed all initialization phases.
         /// </summary>
-        public static bool IsInitialized
-        {
-            get { return _phase == WorldPhase.PostInit; }
-        }
+        public static bool IsInitialized => _phase == WorldPhase.PostInit;
 
         /// <summary>
         /// Resets the phase tracker to its default uninitialized state.

@@ -27,7 +27,7 @@ namespace AIRefactored.AI.Core
 
         /// <summary>
         /// Called every frame or tick when active.
-        /// Override to implement tick-driven logic.
+        /// Wraps the <see cref="OnTick"/> method in a guarded try-catch.
         /// </summary>
         /// <param name="deltaTime">Elapsed time since last tick.</param>
         public virtual void Tick(float deltaTime)
@@ -43,16 +43,15 @@ namespace AIRefactored.AI.Core
         }
 
         /// <summary>
-        /// Hook for derived class tick logic.
+        /// Called every update cycle. Override to provide custom tick logic.
         /// </summary>
-        /// <param name="deltaTime">Time delta.</param>
+        /// <param name="deltaTime">Time since last tick.</param>
         protected virtual void OnTick(float deltaTime)
         {
         }
 
         /// <summary>
-        /// Called when the raid ends.
-        /// Override to perform cleanup or teardown logic.
+        /// Called when the raid ends. Wraps <see cref="Cleanup"/> in try-catch.
         /// </summary>
         public virtual void OnRaidEnd()
         {
@@ -67,25 +66,27 @@ namespace AIRefactored.AI.Core
         }
 
         /// <summary>
-        /// Called to cleanup static references or world-specific memory.
+        /// Cleans up system data and memory. Override for per-system logic.
         /// </summary>
         protected virtual void Cleanup()
         {
         }
 
         /// <summary>
-        /// Determines if the system is ready to be used.
-        /// Override to gate logic on world conditions.
+        /// Whether the system is currently valid and active.
+        /// Override to gate tick logic during runtime.
         /// </summary>
+        /// <returns>True if system is ready to tick.</returns>
         public virtual bool IsReady()
         {
             return true;
         }
 
         /// <summary>
-        /// Defines the required phase during which this system must be initialized.
-        /// Override to control registration timing.
+        /// Specifies when the system should be initialized during phase progression.
+        /// Override to require earlier phases like <see cref="WorldPhase.WorldReady"/>.
         /// </summary>
+        /// <returns>The required initialization phase.</returns>
         public virtual WorldPhase RequiredPhase()
         {
             return WorldPhase.PostInit;

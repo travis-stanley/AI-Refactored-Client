@@ -123,7 +123,13 @@ namespace AIRefactored.AI.Movement
             _lastJumpTime = Time.time;
             _hasRecentlyJumped = true;
 
-            Vector3 velocity = (target - _context.TransformPosition).normalized * JumpVelocityMultiplier;
+            Vector3 direction = (target - _context.TransformPosition).normalized;
+            if (direction.sqrMagnitude < 0.01f)
+            {
+                return;
+            }
+
+            Vector3 velocity = direction * JumpVelocityMultiplier;
             _context.ApplyMotion(velocity, deltaTime);
         }
 
@@ -163,7 +169,7 @@ namespace AIRefactored.AI.Movement
                             return false;
                         }
 
-                        float fallHeight = _context.TransformPosition.y - landHits[0].point.y;
+                        float fallHeight = Mathf.Abs(_context.TransformPosition.y - landHits[0].point.y);
                         if (fallHeight > SafeFallHeight)
                         {
                             return false;

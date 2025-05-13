@@ -129,7 +129,6 @@ namespace AIRefactored.AI.Movement
 
             if (IsApproachingEdge())
             {
-                _cache.Tilt.Stop();
                 PauseMovement(time);
                 return;
             }
@@ -240,11 +239,12 @@ namespace AIRefactored.AI.Movement
 
         private void ResetLean(float time)
         {
-            if (_cache.Tilt._coreTilt)
+            if (_cache.Tilt != null && _cache.Tilt._coreTilt)
             {
                 _cache.Tilt.tiltOff = time - 1f;
                 _cache.Tilt.ManualUpdate();
                 _isLeaning = false;
+                _isCrouching = false;
             }
         }
 

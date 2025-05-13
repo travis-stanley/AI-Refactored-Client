@@ -40,8 +40,12 @@ namespace AIRefactored.AI.Looting
         /// </summary>
         public static bool Contains(string profileId)
         {
-            string key;
-            return TryGetValidKey(profileId, out key) && Containers.ContainsKey(key);
+            if (!TryGetValidKey(profileId, out string key))
+            {
+                return false;
+            }
+
+            return Containers.ContainsKey(key);
         }
 
         /// <summary>
@@ -49,9 +53,13 @@ namespace AIRefactored.AI.Looting
         /// </summary>
         public static LootableContainer Get(string profileId)
         {
-            string key;
+            if (!TryGetValidKey(profileId, out string key))
+            {
+                return null;
+            }
+
             LootableContainer result;
-            return TryGetValidKey(profileId, out key) && Containers.TryGetValue(key, out result) ? result : null;
+            return Containers.TryGetValue(key, out result) ? result : null;
         }
 
         /// <summary>
@@ -64,8 +72,7 @@ namespace AIRefactored.AI.Looting
                 return;
             }
 
-            string key;
-            if (!TryGetValidKey(player.ProfileId, out key))
+            if (!TryGetValidKey(player.ProfileId, out string key))
             {
                 return;
             }

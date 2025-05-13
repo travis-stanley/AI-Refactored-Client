@@ -55,8 +55,6 @@ namespace AIRefactored.AI.Optimization
         /// <summary>
         /// Initializes the async processor for the specified bot.
         /// </summary>
-        /// <param name="botOwner">The bot owner.</param>
-        /// <param name="cache">Bot component cache.</param>
         public void Initialize(BotOwner botOwner, BotComponentCache cache)
         {
             if (!GameWorldHandler.IsLocalHost() || botOwner == null || cache == null)
@@ -75,7 +73,7 @@ namespace AIRefactored.AI.Optimization
                     await Task.Delay(TimeSpan.FromSeconds(InitDelaySeconds));
                     if (!_hasInitialized)
                     {
-                        await ApplyInitialPersonalityAsync(_bot);
+                        await ApplyInitialPersonalityAsync(botOwner);
                     }
                 }
                 catch (Exception ex)
@@ -88,7 +86,6 @@ namespace AIRefactored.AI.Optimization
         /// <summary>
         /// Updates bot async logic based on timing and environment.
         /// </summary>
-        /// <param name="time">Current game time.</param>
         public void Tick(float time)
         {
             if (!GameWorldHandler.IsLocalHost() || !_hasInitialized || _bot == null || _bot.IsDead)
@@ -111,26 +108,14 @@ namespace AIRefactored.AI.Optimization
             {
                 ThreadPool.QueueUserWorkItem(_ =>
                 {
-                    try
-                    {
-                        Think();
-                    }
-                    catch (Exception ex)
-                    {
-                        Logger.LogWarning("[BotAsyncProcessor] Async headless think failed: " + ex.Message);
-                    }
+                    try { Think(); }
+                    catch (Exception ex) { Logger.LogWarning("[BotAsyncProcessor] Async headless think failed: " + ex.Message); }
                 });
             }
             else
             {
-                try
-                {
-                    Think();
-                }
-                catch (Exception ex)
-                {
-                    Logger.LogWarning("[BotAsyncProcessor] Think execution failed: " + ex.Message);
-                }
+                try { Think(); }
+                catch (Exception ex) { Logger.LogWarning("[BotAsyncProcessor] Think execution failed: " + ex.Message); }
             }
         }
 
@@ -140,7 +125,7 @@ namespace AIRefactored.AI.Optimization
 
         private async Task ApplyInitialPersonalityAsync(BotOwner bot)
         {
-            if (_hasInitialized || bot == null || bot.Profile == null || bot.Settings == null || bot.Settings.FileSettings == null)
+            if (_hasInitialized || bot == null || bot.Profile == null || bot.Settings?.FileSettings == null)
             {
                 return;
             }
@@ -170,7 +155,7 @@ namespace AIRefactored.AI.Optimization
             mind.DIST_TO_FOUND_SQRT = Mathf.Lerp(200f, 600f, 1f - personality.Cohesion);
             mind.FRIEND_AGR_KILL = Mathf.Lerp(0f, 0.4f, personality.AggressionLevel);
 
-            Logger.LogDebug("[BotAsyncProcessor] Personality initialized for bot: " + bot.Profile.Info?.Nickname);
+            Logger.LogDebug("[BotAsyncProcessor] ✅ Personality initialized for bot: " + bot.Profile.Info?.Nickname);
             _hasInitialized = true;
         }
 

@@ -56,30 +56,42 @@ namespace AIRefactored.AI.Helpers
 
         public static void MarkUsed(CustomNavigationPoint point)
         {
-            if (point != null) CoverMemory[GetKey(point.Position)] = Time.time;
+            if (point != null)
+            {
+                CoverMemory[GetKey(point.Position)] = Time.time;
+            }
         }
 
-        public static void MarkUsed(NavPointData point) => CoverMemory[GetKey(point.Position)] = Time.time;
+        public static void MarkUsed(NavPointData point)
+        {
+            CoverMemory[GetKey(point.Position)] = Time.time;
+        }
 
-        public static void MarkUsed(Vector3 position) => CoverMemory[GetKey(position)] = Time.time;
+        public static void MarkUsed(Vector3 position)
+        {
+            CoverMemory[GetKey(position)] = Time.time;
+        }
 
         public static bool WasRecentlyUsed(CustomNavigationPoint point)
         {
             if (point == null) return false;
-            float last;
-            return CoverMemory.TryGetValue(GetKey(point.Position), out last) && (Time.time - last) < MemoryDuration;
+            return WasRecentlyUsed(point.Position);
         }
 
         public static bool WasRecentlyUsed(NavPointData point)
         {
-            float last;
-            return CoverMemory.TryGetValue(GetKey(point.Position), out last) && (Time.time - last) < MemoryDuration;
+            return WasRecentlyUsed(point.Position);
         }
 
         public static bool WasRecentlyUsed(Vector3 position)
         {
-            float last;
-            return CoverMemory.TryGetValue(GetKey(position), out last) && (Time.time - last) < MemoryDuration;
+            string key = GetKey(position);
+            if (CoverMemory.TryGetValue(key, out float last))
+            {
+                return (Time.time - last) < MemoryDuration;
+            }
+
+            return false;
         }
 
         #endregion
@@ -88,7 +100,10 @@ namespace AIRefactored.AI.Helpers
 
         public static void TrySetStanceFromNearbyCover(BotComponentCache cache, Vector3 position)
         {
-            if (cache == null || cache.PoseController == null) return;
+            if (cache == null || cache.PoseController == null)
+            {
+                return;
+            }
 
             BotPoseController controller = cache.PoseController;
             List<NavPointData> points = NavPointRegistry.QueryNearby(position, 4f, null);
@@ -96,14 +111,16 @@ namespace AIRefactored.AI.Helpers
             for (int i = 0; i < points.Count; i++)
             {
                 NavPointData point = points[i];
-                if (!point.IsCover) continue;
+                if (!point.IsCover)
+                {
+                    continue;
+                }
 
-                float dx = point.Position.x - position.x;
-                float dy = point.Position.y - position.y;
-                float dz = point.Position.z - position.z;
-                float distSqr = (dx * dx) + (dy * dy) + (dz * dz);
-
-                if (distSqr > MaxValidDistanceSqr) continue;
+                Vector3 offset = point.Position - position;
+                if (offset.sqrMagnitude > MaxValidDistanceSqr)
+                {
+                    continue;
+                }
 
                 if (IsProneCover(point))
                 {

@@ -91,13 +91,13 @@ namespace AIRefactored.AI.Optimization
         {
             if (!IsAIBot(bot))
             {
-                var solo = TempListPool.Rent<Vector3>();
-                solo.Add(destination);
-                return solo;
+                var direct = TempListPool.Rent<Vector3>();
+                direct.Add(destination);
+                return direct;
             }
 
-            string id = bot.Profile?.Id ?? string.Empty;
-            if (id.Length == 0)
+            string id = bot.Profile?.Id;
+            if (string.IsNullOrEmpty(id))
             {
                 var fallback = TempListPool.Rent<Vector3>();
                 fallback.Add(destination);
@@ -105,7 +105,6 @@ namespace AIRefactored.AI.Optimization
             }
 
             string key = id + "_" + destination.ToString("F2");
-
             if (_pathCache.TryGetValue(key, out List<Vector3> cached) && !IsPathBlocked(cached))
             {
                 return cached;
@@ -124,8 +123,8 @@ namespace AIRefactored.AI.Optimization
 
         public List<Vector3> GetFallbackPath(BotOwner bot, Vector3 threatDirection)
         {
-            string id = bot.Profile?.Id ?? string.Empty;
-            if (id.Length == 0)
+            string id = bot.Profile?.Id;
+            if (string.IsNullOrEmpty(id))
             {
                 return TempListPool.Rent<Vector3>();
             }
@@ -134,7 +133,7 @@ namespace AIRefactored.AI.Optimization
             Vector3 fallbackTarget = origin - threatDirection.normalized * 8f;
             string key = id + "_fb_" + HashVecDir(origin, threatDirection);
 
-            if (_fallbackCache.TryGetValue(key, out var cached) && cached.Count > 1 && !IsPathBlocked(cached))
+            if (_fallbackCache.TryGetValue(key, out List<Vector3> cached) && cached.Count > 1 && !IsPathBlocked(cached))
             {
                 return cached;
             }
@@ -205,18 +204,18 @@ namespace AIRefactored.AI.Optimization
 
         private List<Vector3> BuildNavPath(Vector3 origin, Vector3 target)
         {
-            var navPath = TempNavMeshPathPool.Rent();
+            NavMeshPath navPath = TempNavMeshPathPool.Rent();
             bool valid = NavMesh.CalculatePath(origin, target, NavMesh.AllAreas, navPath);
 
             if (valid && navPath.status == NavMeshPathStatus.PathComplete)
             {
-                var result = TempListPool.Rent<Vector3>();
+                List<Vector3> result = TempListPool.Rent<Vector3>();
                 result.AddRange(navPath.corners);
                 TempNavMeshPathPool.Return(navPath);
                 return result;
             }
 
-            var fallback = TempListPool.Rent<Vector3>();
+            List<Vector3> fallback = TempListPool.Rent<Vector3>();
             fallback.Add(origin);
             fallback.Add(target);
             TempNavMeshPathPool.Return(navPath);

@@ -3,7 +3,7 @@
 //   Licensed under the MIT License. See LICENSE in the repository root for more information.
 //
 //   THIS FILE IS SYSTEMATICALLY MANAGED.
-//   Please follow strict StyleCop, ReSharper, and AI-Refactored code standards for all modifications.
+//   Failures in AIRefactored logic must always trigger safe fallback to EFT base AI.
 // </auto-generated>
 
 namespace AIRefactored.AI.Medical
@@ -26,6 +26,7 @@ namespace AIRefactored.AI.Medical
         private const float HealCheckInterval = 3.5f;
         private const float HealthThreshold = 0.6f;
         private const float HealTriggerRange = 10f;
+        private static readonly float HealTriggerRangeSqr = HealTriggerRange * HealTriggerRange;
 
         #endregion
 
@@ -43,18 +44,13 @@ namespace AIRefactored.AI.Medical
 
         public BotGroupHealCoordinator(BotComponentCache cache)
         {
-            if (cache == null)
+            if (cache == null || cache.Bot == null)
             {
-                throw new ArgumentNullException(nameof(cache));
+                throw new ArgumentException("[BotGroupHealCoordinator] Invalid bot cache.");
             }
 
-            if (cache.Bot == null)
-            {
-                throw new ArgumentException("Bot reference in cache cannot be null.", nameof(cache));
-            }
-
-            this._cache = cache;
-            this._bot = cache.Bot;
+            _cache = cache;
+            _bot = cache.Bot;
         }
 
         #endregion
@@ -67,18 +63,18 @@ namespace AIRefactored.AI.Medical
         /// <param name="time">Current game time.</param>
         public void Tick(float time)
         {
-            if (this._bot.IsDead || this._bot.BotsGroup == null || time < this._nextCheckTime)
+            if (_bot == null || _bot.IsDead || _bot.BotsGroup == null || time < _nextCheckTime)
             {
                 return;
             }
 
-            this._nextCheckTime = time + HealCheckInterval;
+            _nextCheckTime = time + HealCheckInterval;
 
-            int count = this._bot.BotsGroup.MembersCount;
+            int count = _bot.BotsGroup.MembersCount;
             for (int i = 0; i < count; i++)
             {
-                BotOwner mate = this._bot.BotsGroup.Member(i);
-                if (!this.IsValidMate(mate))
+                BotOwner mate = _bot.BotsGroup.Member(i);
+                if (!IsValidMate(mate))
                 {
                     continue;
                 }
@@ -95,15 +91,15 @@ namespace AIRefactored.AI.Medical
                     continue;
                 }
 
-                if (this._cache.SquadHealer != null && !this._cache.SquadHealer.IsInProcess)
+                if (_cache.SquadHealer != null && !_cache.SquadHealer.IsInProcess)
                 {
                     IPlayer safeTarget = EFTPlayerUtil.AsSafeIPlayer(matePlayer);
-                    this._cache.SquadHealer.HealAsk(safeTarget);
-                    this.TrySaySupport(EPhraseTrigger.Cooperation);
+                    _cache.SquadHealer.HealAsk(safeTarget);
+                    TrySaySupport(EPhraseTrigger.Cooperation);
                     return;
                 }
 
-                this.TrySaySupport(EPhraseTrigger.NeedHelp);
+                TrySaySupport(EPhraseTrigger.NeedHelp);
             }
         }
 
@@ -113,12 +109,12 @@ namespace AIRefactored.AI.Medical
 
         private bool IsValidMate(BotOwner mate)
         {
-            if (mate == null || mate.IsDead || ReferenceEquals(mate, this._bot))
+            if (mate == null || mate.IsDead || ReferenceEquals(mate, _bot))
             {
                 return false;
             }
 
-            Player selfPlayer = EFTPlayerUtil.ResolvePlayer(this._bot);
+            Player selfPlayer = EFTPlayerUtil.ResolvePlayer(_bot);
             Player matePlayer = EFTPlayerUtil.ResolvePlayer(mate);
 
             if (selfPlayer == null || matePlayer == null)
@@ -128,12 +124,11 @@ namespace AIRefactored.AI.Medical
 
             Vector3 selfPos = EFTPlayerUtil.GetPosition(selfPlayer);
             Vector3 matePos = EFTPlayerUtil.GetPosition(matePlayer);
-
             float dx = matePos.x - selfPos.x;
             float dz = matePos.z - selfPos.z;
             float distSqr = (dx * dx) + (dz * dz);
 
-            return distSqr <= HealTriggerRange * HealTriggerRange;
+            return distSqr <= HealTriggerRangeSqr;
         }
 
         private static bool NeedsHealing(IHealthController health)
@@ -153,9 +148,9 @@ namespace AIRefactored.AI.Medical
 
         private void TrySaySupport(EPhraseTrigger phrase)
         {
-            if (!FikaHeadlessDetector.IsHeadless && this._bot.BotTalk != null)
+            if (!FikaHeadlessDetector.IsHeadless && _bot.BotTalk != null)
             {
-                this._bot.BotTalk.TrySay(phrase);
+                _bot.BotTalk.TrySay(phrase);
             }
         }
 

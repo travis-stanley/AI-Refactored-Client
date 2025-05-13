@@ -3,7 +3,7 @@
 //   Licensed under the MIT License. See LICENSE in the repository root for more information.
 //
 //   THIS FILE IS SYSTEMATICALLY MANAGED.
-//   Please follow strict StyleCop, ReSharper, and AI-Refactored code standards for all modifications.
+//   Failures in AIRefactored logic must always trigger safe fallback to EFT base AI.
 // </auto-generated>
 
 namespace AIRefactored.AI.Helpers
@@ -45,16 +45,12 @@ namespace AIRefactored.AI.Helpers
 
         public static bool FiredRecently(Player player, float withinSeconds = 1.5f, float now = -1f)
         {
-            float time;
-            return TryGetLastShot(player, out time)
-                && ((now >= 0f ? now : Time.time) - time <= withinSeconds);
+            return TryGetLastShot(player, out float time) && ((now >= 0f ? now : Time.time) - time <= withinSeconds);
         }
 
         public static bool SteppedRecently(Player player, float withinSeconds = 1.2f, float now = -1f)
         {
-            float time;
-            return TryGetLastStep(player, out time)
-                && ((now >= 0f ? now : Time.time) - time <= withinSeconds);
+            return TryGetLastStep(player, out float time) && ((now >= 0f ? now : Time.time) - time <= withinSeconds);
         }
 
         public static void NotifyShot(Player player)
@@ -72,7 +68,7 @@ namespace AIRefactored.AI.Helpers
 
             ShotTimestamps[id] = Time.time;
 
-            Transform transform = player.Transform != null ? player.Transform.Original : null;
+            Transform transform = player.Transform?.Original;
             if (transform == null)
             {
                 return;
@@ -98,7 +94,7 @@ namespace AIRefactored.AI.Helpers
 
             FootstepTimestamps[id] = Time.time;
 
-            Transform transform = player.Transform != null ? player.Transform.Original : null;
+            Transform transform = player.Transform?.Original;
             if (transform == null)
             {
                 return;
@@ -164,7 +160,7 @@ namespace AIRefactored.AI.Helpers
                 }
 
                 string id = cache.Bot.ProfileId;
-                if (id == sourceId)
+                if (string.Equals(id, sourceId))
                 {
                     continue;
                 }

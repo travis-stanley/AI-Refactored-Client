@@ -8,6 +8,7 @@
 
 namespace AIRefactored.AI.Optimization
 {
+	using System;
 	using System.Collections.Generic;
 	using AIRefactored.AI.Core;
 	using AIRefactored.AI.Helpers;
@@ -27,6 +28,8 @@ namespace AIRefactored.AI.Optimization
 	/// </summary>
 	public static class BotCoverRetreatPlanner
 	{
+		// FULLY upgraded, multiplayer + headless-safe fallback system with NavPointRegistry integration.
+
 		private const float RetreatDistance = 12f;
 		private const float MinSpacing = 3f;
 		private const float SquadSpacingThreshold = 4.25f;
@@ -185,7 +188,7 @@ namespace AIRefactored.AI.Optimization
 			if (candidates.Count == 0)
 			{
 				TempDictionaryPool.Return(candidates);
-				Vector3 fallback = origin + away * RetreatDistance + Random.insideUnitSphere * ChaosOffsetRadius;
+				Vector3 fallback = origin + away * RetreatDistance + UnityEngine.Random.insideUnitSphere * ChaosOffsetRadius;
 				result.Add(origin);
 				result.Add(fallback);
 				return result;
@@ -206,6 +209,8 @@ namespace AIRefactored.AI.Optimization
 			result.Add(best);
 			return result;
 		}
+
+		#region Internal Helpers
 
 		private static void ClearExpiredCache()
 		{
@@ -385,5 +390,7 @@ namespace AIRefactored.AI.Optimization
 			Player player = bot.GetPlayer;
 			return player != null && player.IsAI && !player.IsYourPlayer;
 		}
+
+		#endregion
 	}
 }

@@ -58,7 +58,7 @@ namespace AIRefactored.Runtime
 
                 if (!IsWorldSafe())
                 {
-                    logger?.LogWarning("[InitPhaseRunner] World not ready. Aborting init to avoid FIKA hang.");
+                    logger?.LogWarning("[InitPhaseRunner] ❌ World not safe — aborting init to avoid hang.");
                     _hasStarted = false;
                     WorldInitState.Reset();
                     return;
@@ -71,7 +71,7 @@ namespace AIRefactored.Runtime
                 string mapId = GameWorldHandler.TryGetValidMapName();
                 if (string.IsNullOrEmpty(mapId))
                 {
-                    logger?.LogWarning("[InitPhaseRunner] ❌ No valid map ID — skipping NavMesh warmup.");
+                    logger?.LogWarning("[InitPhaseRunner] ⚠ No valid map ID — skipping NavMesh warmup.");
                 }
 
                 GameWorldHandler.Initialize();
@@ -85,6 +85,7 @@ namespace AIRefactored.Runtime
             catch (Exception ex)
             {
                 _hasStarted = false;
+                WorldInitState.Reset();
                 logger?.LogError("[InitPhaseRunner] ❌ Fatal error during Begin:\n" + ex);
             }
         }
@@ -113,7 +114,7 @@ namespace AIRefactored.Runtime
             }
             catch (Exception ex)
             {
-                Plugin.LoggerInstance.LogError("[InitPhaseRunner] Stop() error: " + ex);
+                Plugin.LoggerInstance.LogError("[InitPhaseRunner] ❌ Stop() error: " + ex);
             }
         }
 
@@ -131,8 +132,7 @@ namespace AIRefactored.Runtime
 
             for (int i = 0; i < world.RegisteredPlayers.Count; i++)
             {
-                IPlayer raw = world.RegisteredPlayers[i];
-                Player player = EFTPlayerUtil.AsEFTPlayer(raw);
+                Player player = EFTPlayerUtil.AsEFTPlayer(world.RegisteredPlayers[i]);
                 if (player != null && EFTPlayerUtil.IsValid(player))
                 {
                     return true;

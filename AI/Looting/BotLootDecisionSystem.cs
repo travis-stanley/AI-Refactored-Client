@@ -3,7 +3,7 @@
 //   Licensed under the MIT License. See LICENSE in the repository root for more information.
 //
 //   THIS FILE IS SYSTEMATICALLY MANAGED.
-//   Please follow strict StyleCop, ReSharper, and AI-Refactored code standards for all modifications.
+//   Failures in AIRefactored logic must always trigger safe fallback to EFT base AI.
 // </auto-generated>
 
 namespace AIRefactored.AI.Looting
@@ -11,12 +11,12 @@ namespace AIRefactored.AI.Looting
     using System;
     using System.Collections.Generic;
     using AIRefactored.AI.Core;
+    using AIRefactored.Pools;
     using AIRefactored.Runtime;
     using EFT;
     using EFT.Interactive;
     using EFT.InventoryLogic;
     using UnityEngine;
-    using AIRefactored.Pools;
 
     /// <summary>
     /// Makes dynamic decisions about whether a bot should loot.
@@ -112,7 +112,8 @@ namespace AIRefactored.AI.Looting
                     continue;
                 }
 
-                float dist = Vector3.Distance(_bot.Position, container.transform.position);
+                Vector3 pos = container.transform.position;
+                float dist = Vector3.Distance(_bot.Position, pos);
                 if (dist > MaxLootDistance)
                 {
                     continue;
@@ -122,7 +123,7 @@ namespace AIRefactored.AI.Looting
                 if (value > bestValue)
                 {
                     bestValue = value;
-                    bestPoint = container.transform.position;
+                    bestPoint = pos;
                 }
             }
 

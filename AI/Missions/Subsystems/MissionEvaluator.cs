@@ -3,7 +3,7 @@
 //   Licensed under the MIT License. See LICENSE in the repository root for more information.
 //
 //   THIS FILE IS SYSTEMATICALLY MANAGED.
-//   Please follow strict StyleCop, ReSharper, and AI-Refactored code standards for all modifications.
+//   Failures in AIRefactored logic must always trigger safe fallback to EFT base AI.
 // </auto-generated>
 
 namespace AIRefactored.AI.Missions.Subsystems
@@ -34,6 +34,7 @@ namespace AIRefactored.AI.Missions.Subsystems
         private const float SquadCohesionRange = 10f;
         private const float StuckCooldown = 30f;
         private const float StuckDuration = 25f;
+        private const float MinMoveThreshold = 0.3f;
 
         #endregion
 
@@ -58,14 +59,9 @@ namespace AIRefactored.AI.Missions.Subsystems
 
         public MissionEvaluator(BotOwner bot, BotComponentCache cache)
         {
-            if (bot == null)
+            if (!EFTPlayerUtil.IsValidBotOwner(bot) || cache == null)
             {
-                throw new ArgumentNullException(nameof(bot));
-            }
-
-            if (cache == null)
-            {
-                throw new ArgumentNullException(nameof(cache));
+                throw new ArgumentException("[MissionEvaluator] Invalid bot or cache.");
             }
 
             _bot = bot;
@@ -87,42 +83,27 @@ namespace AIRefactored.AI.Missions.Subsystems
                 return true;
             }
 
-            List<BotOwner> teammates = TempListPool.Rent<BotOwner>();
-            try
+            IReadOnlyList<BotOwner> squad = _group.GetTeammates();
+            if (squad == null || squad.Count == 0)
             {
-                IReadOnlyList<BotOwner> groupMembers = _group.GetTeammates();
-                for (int i = 0; i < groupMembers.Count; i++)
-                {
-                    BotOwner member = groupMembers[i];
-                    if (member != null)
-                    {
-                        teammates.Add(member);
-                    }
-                }
-
-                int nearby = 0;
-                Vector3 selfPos = _bot.Position;
-
-                for (int i = 0; i < teammates.Count; i++)
-                {
-                    BotOwner mate = teammates[i];
-                    if (mate != null)
-                    {
-                        float dist = Vector3.Distance(mate.Position, selfPos);
-                        if (dist < SquadCohesionRange)
-                        {
-                            nearby++;
-                        }
-                    }
-                }
-
-                int required = Mathf.CeilToInt(teammates.Count * 0.6f);
-                return nearby >= required;
+                return true;
             }
-            finally
+
+            int nearby = 0;
+            Vector3 selfPos = _bot.Position;
+            float sqrRange = SquadCohesionRange * SquadCohesionRange;
+
+            for (int i = 0; i < squad.Count; i++)
             {
-                TempListPool.Return(teammates);
+                BotOwner mate = squad[i];
+                if (mate != null && !mate.IsDead && (mate.Position - selfPos).sqrMagnitude <= sqrRange)
+                {
+                    nearby++;
+                }
             }
+
+            int required = Mathf.CeilToInt(squad.Count * 0.6f);
+            return nearby >= required;
         }
 
         public bool ShouldExtractEarly()
@@ -133,25 +114,13 @@ namespace AIRefactored.AI.Missions.Subsystems
             }
 
             Player player = _bot.GetPlayer;
-            if (player == null)
+            if (player?.Inventory?.Equipment == null)
             {
                 return false;
             }
 
-            Inventory inventory = player.Inventory;
-            if (inventory == null)
-            {
-                return false;
-            }
-
-            Slot backpackSlot = inventory.Equipment?.GetSlot(EquipmentSlot.Backpack);
-            if (backpackSlot == null)
-            {
-                return false;
-            }
-
-            Item backpack = backpackSlot.ContainedItem;
-            if (backpack == null)
+            Slot backpackSlot = player.Inventory.Equipment.GetSlot(EquipmentSlot.Backpack);
+            if (backpackSlot?.ContainedItem == null)
             {
                 return false;
             }
@@ -159,7 +128,7 @@ namespace AIRefactored.AI.Missions.Subsystems
             List<Item> items = TempListPool.Rent<Item>();
             try
             {
-                items.AddRange(backpack.GetAllItems());
+                items.AddRange(backpackSlot.ContainedItem.GetAllItems());
                 float fullness = (float)items.Count / LootItemCountThreshold;
                 return fullness >= _profile.RetreatThreshold;
             }
@@ -173,16 +142,22 @@ namespace AIRefactored.AI.Missions.Subsystems
         {
             try
             {
+                ExfiltrationPoint[] allPoints = GameObject.FindObjectsOfType<ExfiltrationPoint>();
+                if (allPoints == null || allPoints.Length == 0)
+                {
+                    return;
+                }
+
                 ExfiltrationPoint closest = null;
                 float minDist = float.MaxValue;
-                ExfiltrationPoint[] all = GameObject.FindObjectsOfType<ExfiltrationPoint>();
+                Vector3 myPos = _bot.Position;
 
-                for (int i = 0; i < all.Length; i++)
+                for (int i = 0; i < allPoints.Length; i++)
                 {
-                    ExfiltrationPoint point = all[i];
+                    ExfiltrationPoint point = allPoints[i];
                     if (point != null && point.Status == EExfiltrationStatus.RegularMode)
                     {
-                        float dist = Vector3.Distance(_bot.Position, point.transform.position);
+                        float dist = (point.transform.position - myPos).sqrMagnitude;
                         if (dist < minDist)
                         {
                             minDist = dist;
@@ -207,7 +182,7 @@ namespace AIRefactored.AI.Missions.Subsystems
         {
             float moved = Vector3.Distance(_bot.Position, _lastPos);
 
-            if (moved > 0.3f)
+            if (moved > MinMoveThreshold)
             {
                 _lastPos = _bot.Position;
                 _lastMoveTime = time;
@@ -225,11 +200,11 @@ namespace AIRefactored.AI.Missions.Subsystems
                 _lastStuckFallbackTime = time;
                 _fallbackAttempts++;
 
-                Vector3 direction = _bot.LookDirection;
-                Vector3? fallback = HybridFallbackResolver.GetBestRetreatPoint(_bot, direction);
+                Vector3 dir = _bot.LookDirection;
+                Vector3? fallback = HybridFallbackResolver.GetBestRetreatPoint(_bot, dir);
                 if (fallback.HasValue)
                 {
-                    string name = _bot.Profile != null && _bot.Profile.Info != null ? _bot.Profile.Info.Nickname : "Unknown";
+                    string name = _bot.Profile?.Info?.Nickname ?? "Unknown";
                     Logger.LogDebug("[MissionEvaluator] " + name + " fallback #" + _fallbackAttempts + " → " + fallback.Value);
                     BotMovementHelper.SmoothMoveTo(_bot, fallback.Value);
                 }
@@ -244,13 +219,9 @@ namespace AIRefactored.AI.Missions.Subsystems
         {
             try
             {
-                if (!FikaHeadlessDetector.IsHeadless)
+                if (!FikaHeadlessDetector.IsHeadless && _bot?.GetPlayer != null)
                 {
-                    Player player = _bot.GetPlayer;
-                    if (player != null)
-                    {
-                        player.Say(phrase);
-                    }
+                    _bot.GetPlayer.Say(phrase);
                 }
             }
             catch (Exception ex)

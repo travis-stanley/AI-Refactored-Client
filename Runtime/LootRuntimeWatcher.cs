@@ -35,7 +35,6 @@ namespace AIRefactored.Runtime
 
         private static float _nextAllowedRefreshTime = -1f;
         private static bool _isQueued;
-        private static bool _hasLoggedReset;
 
         #endregion
 
@@ -45,13 +44,12 @@ namespace AIRefactored.Runtime
         {
             try
             {
-                _hasLoggedReset = false;
                 Reset();
-                Logger.LogDebug("[LootRuntimeWatcher] Initialized.");
+                Logger.LogDebug("[LootRuntimeWatcher] ✅ Initialized.");
             }
             catch (Exception ex)
             {
-                Logger.LogError("[LootRuntimeWatcher] Initialize error: " + ex);
+                Logger.LogError("[LootRuntimeWatcher] ❌ Initialize error: " + ex);
             }
         }
 
@@ -75,7 +73,7 @@ namespace AIRefactored.Runtime
             }
             catch (Exception ex)
             {
-                Logger.LogError("[LootRuntimeWatcher] Tick error: " + ex);
+                Logger.LogError("[LootRuntimeWatcher] ❌ Tick error: " + ex);
             }
         }
 
@@ -84,10 +82,11 @@ namespace AIRefactored.Runtime
             try
             {
                 Reset();
+                Logger.LogDebug("[LootRuntimeWatcher] 🧹 Reset after raid.");
             }
             catch (Exception ex)
             {
-                Logger.LogError("[LootRuntimeWatcher] OnRaidEnd error: " + ex);
+                Logger.LogError("[LootRuntimeWatcher] ❌ OnRaidEnd error: " + ex);
             }
         }
 
@@ -152,29 +151,30 @@ namespace AIRefactored.Runtime
             int id = go.GetInstanceID();
             if (RegisteredInstanceIds.Remove(id))
             {
-                Logger.LogDebug("[LootRuntimeWatcher] Unregistered loot object: " + go.name);
+                try
+                {
+                    Logger.LogDebug("[LootRuntimeWatcher] Unregistered loot object: " + go.name);
+                }
+                catch
+                {
+                    // Silent in teardown
+                }
             }
         }
 
         public static void Reset()
         {
-            if (_hasLoggedReset)
-            {
-                return;
-            }
-
             RegisteredInstanceIds.Clear();
             _isQueued = false;
             _nextAllowedRefreshTime = -1f;
-            _hasLoggedReset = true;
 
             try
             {
-                Logger.LogDebug("[LootRuntimeWatcher] Reset.");
+                Logger.LogDebug("[LootRuntimeWatcher] Reset complete.");
             }
             catch
             {
-                // Silent fail — logger may not be valid during teardown
+                // Logger may be unavailable during shutdown
             }
         }
 

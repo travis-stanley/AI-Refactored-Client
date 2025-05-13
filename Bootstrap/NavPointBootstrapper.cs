@@ -106,6 +106,7 @@ namespace AIRefactored.AI.Navigation
 			if (!_isTaskRunning)
 			{
 				_isTaskRunning = true;
+
 				Task.Run(() =>
 				{
 					try
@@ -166,12 +167,15 @@ namespace AIRefactored.AI.Navigation
 
 			if (ScanQueue.Count == 0 && BackgroundPending.Count > 0)
 			{
-				for (int i = 0; i < BackgroundPending.Count; i++)
+				lock (BackgroundPending)
 				{
-					ScanQueue.Enqueue(BackgroundPending[i]);
+					for (int i = 0; i < BackgroundPending.Count; i++)
+					{
+						ScanQueue.Enqueue(BackgroundPending[i]);
+					}
+					BackgroundPending.Clear();
 				}
 
-				BackgroundPending.Clear();
 				Logger.LogDebug("[NavPointBootstrapper] Queued vertical fallback points.");
 			}
 
@@ -229,9 +233,11 @@ namespace AIRefactored.AI.Navigation
 		private static bool IsCoverPoint(Vector3 pos)
 		{
 			Vector3 eye = pos + Vector3.up * 1.4f;
+
 			for (float angle = -45f; angle <= 45f; angle += 15f)
 			{
 				Vector3 dir = Quaternion.Euler(0f, angle, 0f) * Vector3.forward;
+
 				if (Physics.Raycast(eye, dir, ForwardCoverCheckDistance, AIRefactoredLayerMasks.HighPolyCollider))
 				{
 					return true;

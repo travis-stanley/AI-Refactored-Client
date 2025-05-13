@@ -95,7 +95,7 @@ namespace AIRefactored.AI.Perception
         /// <param name="source">Source profile to copy from.</param>
         public void SetFrom(BotVisionProfile source)
         {
-            if (source == null)
+            if (source == null || ReferenceEquals(this, source))
             {
                 return;
             }

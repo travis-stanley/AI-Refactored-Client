@@ -84,12 +84,10 @@ namespace AIRefactored.AI.Reactions
                 return;
             }
 
-            // Get last known flashlight positions to detect flashbangs or flashlight exposure.
             var lights = FlashlightRegistry.GetLastKnownFlashlightPositions();
             for (int i = 0; i < lights.Count; i++)
             {
-                Light light;
-                if (FlashlightRegistry.IsExposingBot(head, out light) && light != null)
+                if (FlashlightRegistry.IsExposingBot(head, out Light light) && light != null)
                 {
                     float score = FlashLightUtils.CalculateFlashScore(light.transform, head, 20f);
                     if (score >= TriggerIntensityThreshold)
@@ -137,7 +135,7 @@ namespace AIRefactored.AI.Reactions
                 composure = _cache.PanicHandler.GetComposureLevel();
             }
 
-            float scaled = Mathf.Clamp01(strength * composure);
+            float scaled = Mathf.Clamp01(strength) * composure;
             float duration = Mathf.Lerp(MinSuppressionDuration, MaxSuppressionDuration, scaled);
             _suppressedUntil = now + duration;
 
@@ -160,9 +158,8 @@ namespace AIRefactored.AI.Reactions
                 return;
             }
 
-            // Lateral fallback in case of no retreat path found
             Vector3 lateral = new Vector3(-dir.x, 0f, -dir.z).normalized;
-            Vector3 fallback = bot.Position + lateral * FallbackDistance + UnityEngine.Random.insideUnitSphere * FallbackJitter;
+            Vector3 fallback = bot.Position + lateral * FallbackDistance + Random.insideUnitSphere * FallbackJitter;
             fallback.y = bot.Position.y;
 
             BotMovementHelper.SmoothMoveTo(bot, fallback);
@@ -170,8 +167,7 @@ namespace AIRefactored.AI.Reactions
 
         private static void TriggerPanic(BotComponentCache cache)
         {
-            BotPanicHandler panic;
-            if (BotPanicUtility.TryGetPanicComponent(cache, out panic))
+            if (BotPanicUtility.TryGetPanicComponent(cache, out BotPanicHandler panic))
             {
                 panic.TriggerPanic();
             }

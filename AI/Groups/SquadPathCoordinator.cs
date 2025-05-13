@@ -40,7 +40,7 @@ namespace AIRefactored.AI.Groups
 
         public void Initialize(BotComponentCache cache)
         {
-            if (cache == null || cache.Bot == null)
+            if (cache == null || cache.Bot == null || cache.Bot.IsDead)
             {
                 return;
             }
@@ -48,10 +48,9 @@ namespace AIRefactored.AI.Groups
             _bot = cache.Bot;
             _group = _bot.BotsGroup;
 
-            if (_group == null || _bot.IsDead)
+            if (_group == null)
             {
                 _bot = null;
-                _group = null;
                 return;
             }
 
@@ -64,11 +63,17 @@ namespace AIRefactored.AI.Groups
 
         #region Public Methods
 
+        /// <summary>
+        /// Returns an offset-adjusted destination to reduce clumping.
+        /// </summary>
         public Vector3 ApplyOffsetTo(Vector3 sharedDestination)
         {
             return sharedDestination + GetCurrentOffset();
         }
 
+        /// <summary>
+        /// Gets the current assigned formation offset.
+        /// </summary>
         public Vector3 GetCurrentOffset()
         {
             if (_bot == null || _group == null)
@@ -128,13 +133,7 @@ namespace AIRefactored.AI.Groups
 
         private static int GetBotIndexInGroup(BotOwner bot, BotsGroup group)
         {
-            if (bot == null || group == null)
-            {
-                return -1;
-            }
-
-            string profileId = bot.ProfileId;
-            if (string.IsNullOrEmpty(profileId))
+            if (bot == null || group == null || string.IsNullOrEmpty(bot.ProfileId))
             {
                 return -1;
             }
@@ -143,7 +142,7 @@ namespace AIRefactored.AI.Groups
             for (int i = 0; i < count; i++)
             {
                 BotOwner member = group.Member(i);
-                if (member != null && !member.IsDead && member.ProfileId == profileId)
+                if (member != null && !member.IsDead && member.ProfileId == bot.ProfileId)
                 {
                     return i;
                 }

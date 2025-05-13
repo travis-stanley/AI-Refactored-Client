@@ -50,13 +50,13 @@ namespace AIRefactored.AI.Perception
 
         public void Initialize(BotComponentCache cache)
         {
-            if (cache == null || cache.Bot == null)
+            if (cache == null)
             {
                 return;
             }
 
             BotOwner owner = cache.Bot;
-            if (owner.IsDead || owner.GetPlayer == null || !owner.GetPlayer.IsAI)
+            if (owner == null || owner.IsDead || owner.GetPlayer == null || !owner.GetPlayer.IsAI)
             {
                 return;
             }
@@ -119,7 +119,7 @@ namespace AIRefactored.AI.Perception
                 return;
             }
 
-            float added = intensity * _profile.MaxBlindness;
+            float added = Mathf.Clamp01(intensity * _profile.MaxBlindness);
             _flashBlindness = Mathf.Clamp01(_flashBlindness + added);
             _blindStartTime = Time.time;
 
@@ -153,12 +153,12 @@ namespace AIRefactored.AI.Perception
 
         private bool IsActive()
         {
-            return _bot != null &&
+            return _cache != null &&
+                   _bot != null &&
+                   _profile != null &&
                    !_bot.IsDead &&
                    _bot.GetPlayer != null &&
-                   _bot.GetPlayer.IsAI &&
-                   _cache != null &&
-                   _profile != null;
+                   _bot.GetPlayer.IsAI;
         }
 
         private void UpdateFlashlightExposure()
@@ -204,16 +204,21 @@ namespace AIRefactored.AI.Perception
 
         private void SyncEnemyIfVisible()
         {
-            if (_cache.IsBlinded || _bot.Memory == null || _bot.Memory.GoalEnemy == null)
+            if (_cache.IsBlinded || _bot == null || _bot.Memory == null)
             {
                 return;
             }
 
-            IPlayer raw = _bot.Memory.GoalEnemy.Person;
+            IPlayer raw = _bot.Memory.GoalEnemy?.Person;
+            if (raw == null)
+            {
+                return;
+            }
+
             Player target = EFTPlayerUtil.AsEFTPlayer(raw);
             Player self = EFTPlayerUtil.ResolvePlayer(_bot);
 
-            if (target == null || self == null || !EFTPlayerUtil.IsValid(target))
+            if (!EFTPlayerUtil.IsValid(target) || !EFTPlayerUtil.IsValid(self))
             {
                 return;
             }

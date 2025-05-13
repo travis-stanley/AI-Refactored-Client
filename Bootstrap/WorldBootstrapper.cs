@@ -26,6 +26,9 @@ namespace AIRefactored.Bootstrap
     using Unity.AI.Navigation;
     using UnityEngine;
 
+    /// <summary>
+    /// Main coordinator for AIRefactored world systems. Handles initialization, updates, NavMesh warmup, and teardown.
+    /// </summary>
     public static class WorldBootstrapper
     {
         #region Fields
@@ -59,7 +62,7 @@ namespace AIRefactored.Bootstrap
                 _hasShutdownLogged = false;
                 Systems.Clear();
 
-                // Global resets (clean all registries)
+                // Global reset of memory-safe systems
                 BotRecoveryService.Reset();
                 BotSpawnWatcherService.Reset();
                 LootRuntimeWatcher.Reset();
@@ -165,7 +168,7 @@ namespace AIRefactored.Bootstrap
 
                 for (int i = 0; i < Systems.Count; i++)
                 {
-                    var system = Systems[i];
+                    IAIWorldSystemBootstrapper system = Systems[i];
                     if (system == null)
                     {
                         continue;
@@ -286,7 +289,7 @@ namespace AIRefactored.Bootstrap
 
         private static bool CanWarmupNavMesh()
         {
-            var world = Singleton<GameWorld>.Instance;
+            GameWorld world = Singleton<GameWorld>.Instance;
             if (world == null || world.RegisteredPlayers == null || world.RegisteredPlayers.Count == 0)
             {
                 return false;

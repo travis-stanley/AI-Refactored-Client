@@ -9,6 +9,7 @@
 namespace AIRefactored.AI.Perception
 {
     using System.Collections.Generic;
+    using AIRefactored.Core;
     using AIRefactored.Pools;
     using UnityEngine;
 
@@ -22,6 +23,8 @@ namespace AIRefactored.AI.Perception
 
         private const float BoneVisibilityDuration = 0.5f;
         private const float LinecastSlack = 0.15f;
+
+        private static readonly Vector3 EyeOffset = new Vector3(0f, 1.4f, 0f);
 
         #endregion
 
@@ -74,10 +77,11 @@ namespace AIRefactored.AI.Perception
                 return false;
             }
 
-            Vector3 eye = _botOrigin.position + new Vector3(0f, 1.4f, 0f);
+            Vector3 eye = _botOrigin.position + EyeOffset;
             float dist = Vector3.Distance(eye, info.Position);
 
-            return !Physics.Linecast(eye, info.Position, out RaycastHit hit) || hit.distance >= dist - LinecastSlack;
+            return !Physics.Linecast(eye, info.Position, out RaycastHit hit, AIRefactoredLayerMasks.LineOfSightMask)
+                   || hit.distance >= dist - LinecastSlack;
         }
 
         public void UpdateBoneVisibility(string boneName, Vector3 worldPosition)
@@ -109,7 +113,8 @@ namespace AIRefactored.AI.Perception
             {
                 string key = keys[i];
                 BoneInfo info = _visibleBones[key];
-                _visibleBones[key] = new BoneInfo(info.Position, Mathf.Max(0f, info.Timestamp - decayAmount));
+                float decayed = Mathf.Max(0f, info.Timestamp - decayAmount);
+                _visibleBones[key] = new BoneInfo(info.Position, decayed);
             }
 
             TempListPool.Return(keys);

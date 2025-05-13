@@ -3,7 +3,7 @@
 //   Licensed under the MIT License. See LICENSE in the repository root for more information.
 //
 //   THIS FILE IS SYSTEMATICALLY MANAGED.
-//   Please follow strict StyleCop, ReSharper, and AI-Refactored code standards for all modifications.
+//   Failures in AIRefactored logic must always trigger safe fallback to EFT base AI.
 // </auto-generated>
 
 namespace AIRefactored.AI.Memory
@@ -44,13 +44,13 @@ namespace AIRefactored.AI.Memory
 
         public static void FallbackTo(this BotOwner bot, Vector3 fallbackPosition)
         {
-            if (bot == null || fallbackPosition.sqrMagnitude < MinMoveThreshold)
+            if (!EFTPlayerUtil.IsValidBotOwner(bot) || fallbackPosition.sqrMagnitude < MinMoveThreshold)
             {
                 return;
             }
 
             BotComponentCache cache = BotCacheUtility.GetCache(bot);
-            if (cache != null && cache.PanicHandler != null && cache.PanicHandler.IsPanicking)
+            if (cache?.PanicHandler?.IsPanicking == true)
             {
                 return;
             }
@@ -60,7 +60,7 @@ namespace AIRefactored.AI.Memory
 
         public static void ForceMoveTo(this BotOwner bot, Vector3 position)
         {
-            if (bot != null && position.sqrMagnitude >= MinMoveThreshold)
+            if (EFTPlayerUtil.IsValidBotOwner(bot) && position.sqrMagnitude >= MinMoveThreshold)
             {
                 BotMovementHelper.SmoothMoveTo(bot, position);
             }
@@ -72,7 +72,7 @@ namespace AIRefactored.AI.Memory
 
         public static void ReevaluateCurrentCover(this BotOwner bot)
         {
-            if (bot == null)
+            if (!EFTPlayerUtil.IsValidBotOwner(bot))
             {
                 return;
             }
@@ -101,7 +101,7 @@ namespace AIRefactored.AI.Memory
             Vector3 destination = new Vector3(fallback.x, bot.Position.y, fallback.z);
 
             BotComponentCache cache = BotCacheUtility.GetCache(bot);
-            if (cache != null && cache.Pathing != null)
+            if (cache?.Pathing != null)
             {
                 List<Vector3> path = BotCoverRetreatPlanner.GetCoverRetreatPath(bot, toEnemy, cache.Pathing);
                 if (path != null && path.Count > 0)
@@ -157,15 +157,12 @@ namespace AIRefactored.AI.Memory
 
         public static void SetLastHeardSound(this BotOwner bot, Player source)
         {
-            if (bot == null || source == null)
+            if (!EFTPlayerUtil.IsValidBotOwner(bot) || !EFTPlayerUtil.IsValid(source))
             {
                 return;
             }
 
-            string botId = bot.ProfileId;
-            string sourceId = source.ProfileId;
-
-            if (string.Equals(botId, sourceId) || !EFTPlayerUtil.IsValid(source))
+            if (bot.ProfileId == source.ProfileId)
             {
                 return;
             }
@@ -176,7 +173,7 @@ namespace AIRefactored.AI.Memory
                 return;
             }
 
-            BotMemoryStore.AddHeardSound(botId, sourcePos, Time.time);
+            BotMemoryStore.AddHeardSound(bot.ProfileId, sourcePos, Time.time);
 
             Vector3 cautiousAdvance = sourcePos + ((bot.Position - sourcePos).normalized * 3f);
             BotMovementHelper.SmoothMoveTo(bot, cautiousAdvance);
@@ -195,7 +192,7 @@ namespace AIRefactored.AI.Memory
         {
             success = false;
 
-            if (bot == null)
+            if (!EFTPlayerUtil.IsValidBotOwner(bot))
             {
                 return Vector3.zero;
             }

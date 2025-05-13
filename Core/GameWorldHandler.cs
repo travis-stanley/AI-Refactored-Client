@@ -24,7 +24,7 @@ namespace AIRefactored.Core
 
     public static partial class GameWorldHandler
     {
-        #region Constants & Fields
+        #region Fields
 
         private const float DeadCleanupInterval = 10f;
         private const float LootRefreshCooldown = 4f;
@@ -42,7 +42,7 @@ namespace AIRefactored.Core
 
         #endregion
 
-        #region State
+        #region State Accessors
 
         public static bool IsInitialized { get; private set; }
 
@@ -71,8 +71,9 @@ namespace AIRefactored.Core
                 return true;
             }
 
-            GameWorld world = TryGetGameWorld();
-            return world is ClientGameWorld client && client.MainPlayer != null && client.MainPlayer.IsYourPlayer;
+            return Singleton<ClientGameWorld>.Instantiated &&
+                   Singleton<ClientGameWorld>.Instance.MainPlayer != null &&
+                   Singleton<ClientGameWorld>.Instance.MainPlayer.IsYourPlayer;
         }
 
         public static GameWorld Get() => CachedWorld;
@@ -121,7 +122,138 @@ namespace AIRefactored.Core
 
         #endregion
 
-        #region World Recovery & Validation
+        #region Initialization
+
+        public static void Initialize(GameWorld world)
+        {
+            if (IsInitialized || _hasShutdown)
+            {
+                LogSafe("[GameWorldHandler] Already initialized or shut down — skipping.");
+                return;
+            }
+
+            if (world == null || world.RegisteredPlayers == null || world.RegisteredPlayers.Count == 0)
+            {
+                LogSafe("[GameWorldHandler] Invalid GameWorld — skipping initialization.");
+                return;
+            }
+
+            bool hasValidPlayer = false;
+            for (int i = 0; i < world.RegisteredPlayers.Count; i++)
+            {
+                Player p = EFTPlayerUtil.AsEFTPlayer(world.RegisteredPlayers[i]);
+                if (EFTPlayerUtil.IsValid(p))
+                {
+                    hasValidPlayer = true;
+                    break;
+                }
+            }
+
+            if (!hasValidPlayer)
+            {
+                LogSafe("[GameWorldHandler] No valid EFT players — aborting init.");
+                return;
+            }
+
+            try
+            {
+                ForceAssign(world);
+
+                string mapId = TryGetValidMapName();
+                if (mapId.Length == 0)
+                {
+                    LogSafe("[GameWorldHandler] Invalid mapId during initialization.");
+                }
+
+                _bootstrapHost = new GameObject("AIRefactored.BootstrapHost");
+                UnityEngine.Object.DontDestroyOnLoad(_bootstrapHost);
+
+                WorldBootstrapper.Begin(Logger, mapId);
+                IsInitialized = true;
+
+                LogSafe("[GameWorldHandler] ✅ AIRefactored world systems initialized.");
+            }
+            catch (Exception ex)
+            {
+                LogSafe("[GameWorldHandler] Initialization error: " + ex);
+            }
+        }
+
+        public static void Initialize()
+        {
+            GameWorld world = TryGetGameWorld();
+            if (world != null)
+            {
+                Initialize(world);
+            }
+            else
+            {
+                LogSafe("[GameWorldHandler] Initialize() failed — GameWorld was null.");
+            }
+        }
+
+        #endregion
+
+        #region Teardown
+
+        public static void UnhookBotSpawns()
+        {
+            lock (GameWorldLock)
+            {
+                if (_hasShutdown)
+                {
+                    return;
+                }
+
+                _hasShutdown = true;
+
+                try
+                {
+                    if (_bootstrapHost != null)
+                    {
+                        UnityEngine.Object.Destroy(_bootstrapHost);
+                        _bootstrapHost = null;
+                    }
+
+                    KnownDeadBotIds.Clear();
+                    DeadBodyContainerCache.Clear();
+                    HotspotRegistry.Clear();
+                    LootRegistry.Clear();
+                    NavPointRegistry.Clear();
+
+                    _isRecovering = false;
+                    IsInitialized = false;
+
+                    LogSafe("[GameWorldHandler] 🔻 All runtime systems cleaned up.");
+                }
+                catch (Exception ex)
+                {
+                    LogSafe("[GameWorldHandler] Unhook error: " + ex);
+                }
+            }
+        }
+
+        public static void Cleanup()
+        {
+            if (_hasShutdown)
+            {
+                return;
+            }
+
+            try
+            {
+                UnhookBotSpawns();
+                LogSafe("[GameWorldHandler] 🧼 World systems cleaned up.");
+            }
+            catch (Exception ex)
+            {
+                LogSafe("[GameWorldHandler] Cleanup error: " + ex);
+            }
+        }
+
+        #endregion
+
+        #region World Fallbacks
 
         public static void ForceAssign(GameWorld world)
         {
@@ -199,134 +331,7 @@ namespace AIRefactored.Core
 
         #endregion
 
-        #region Bootstrapping
-
-        public static void Initialize(GameWorld world)
-        {
-            if (IsInitialized || _hasShutdown)
-            {
-                LogSafe("[GameWorldHandler] Already initialized or shut down — skipping.");
-                return;
-            }
-
-            if (world == null || world.RegisteredPlayers == null || world.RegisteredPlayers.Count == 0)
-            {
-                LogSafe("[GameWorldHandler] Invalid GameWorld — skipping initialization.");
-                return;
-            }
-
-            bool hasValid = false;
-            for (int i = 0; i < world.RegisteredPlayers.Count; i++)
-            {
-                var p = EFTPlayerUtil.AsEFTPlayer(world.RegisteredPlayers[i]);
-                if (p != null && EFTPlayerUtil.IsValid(p))
-                {
-                    hasValid = true;
-                    break;
-                }
-            }
-
-            if (!hasValid)
-            {
-                LogSafe("[GameWorldHandler] No valid EFT players — aborting init.");
-                return;
-            }
-
-            try
-            {
-                ForceAssign(world);
-
-                string mapId = TryGetValidMapName();
-                if (mapId.Length == 0)
-                {
-                    LogSafe("[GameWorldHandler] Invalid mapId during initialization.");
-                }
-
-                _bootstrapHost = new GameObject("AIRefactored.BootstrapHost");
-                UnityEngine.Object.DontDestroyOnLoad(_bootstrapHost);
-
-                WorldBootstrapper.Begin(Logger, mapId);
-                IsInitialized = true;
-
-                LogSafe("[GameWorldHandler] ✅ AIRefactored world systems initialized.");
-            }
-            catch (Exception ex)
-            {
-                LogSafe("[GameWorldHandler] Initialization error: " + ex);
-            }
-        }
-
-        public static void Initialize()
-        {
-            GameWorld world = TryGetGameWorld();
-            if (world != null)
-            {
-                Initialize(world);
-            }
-            else
-            {
-                LogSafe("[GameWorldHandler] Initialize() failed — GameWorld was null.");
-            }
-        }
-
-        public static void UnhookBotSpawns()
-        {
-            lock (GameWorldLock)
-            {
-                if (_hasShutdown)
-                {
-                    return;
-                }
-
-                _hasShutdown = true;
-
-                try
-                {
-                    if (_bootstrapHost != null)
-                    {
-                        UnityEngine.Object.Destroy(_bootstrapHost);
-                        _bootstrapHost = null;
-                    }
-
-                    KnownDeadBotIds.Clear();
-                    DeadBodyContainerCache.Clear();
-                    HotspotRegistry.Clear();
-                    LootRegistry.Clear();
-                    NavPointRegistry.Clear();
-
-                    _isRecovering = false;
-                    IsInitialized = false;
-
-                    LogSafe("[GameWorldHandler] 🔻 All runtime systems cleaned up.");
-                }
-                catch (Exception ex)
-                {
-                    LogSafe("[GameWorldHandler] Unhook error: " + ex);
-                }
-            }
-        }
-
-        public static void Cleanup()
-        {
-            if (_hasShutdown)
-            {
-                return;
-            }
-
-            try
-            {
-                UnhookBotSpawns();
-                LogSafe("[GameWorldHandler] 🧼 World systems cleaned up.");
-            }
-            catch (Exception ex)
-            {
-                LogSafe("[GameWorldHandler] Cleanup error: " + ex);
-            }
-        }
-
-        #endregion
-
-        #region Bot Sync
+        #region Bot Logic
 
         public static void TryAttachBotBrain(BotOwner bot)
         {
@@ -352,8 +357,9 @@ namespace AIRefactored.Core
 
             lock (GameWorldLock)
             {
-                foreach (Player player in world.AllAlivePlayersList)
+                for (int i = 0; i < world.AllAlivePlayersList.Count; i++)
                 {
+                    Player player = world.AllAlivePlayersList[i];
                     if (EFTPlayerUtil.IsValid(player) && player.HealthController.IsAlive)
                     {
                         BotOwner owner = player.GetComponent<BotOwner>();
@@ -368,7 +374,7 @@ namespace AIRefactored.Core
 
         #endregion
 
-        #region Runtime
+        #region Runtime Systems
 
         public static void CleanupDeadBotsSmoothly()
         {
@@ -386,8 +392,9 @@ namespace AIRefactored.Core
                 return;
             }
 
-            foreach (Player player in world.AllAlivePlayersList)
+            for (int i = 0; i < world.AllAlivePlayersList.Count; i++)
             {
+                Player player = world.AllAlivePlayersList[i];
                 if (!EFTPlayerUtil.IsValid(player) || !player.IsAI || player.HealthController.IsAlive)
                 {
                     continue;
@@ -452,7 +459,7 @@ namespace AIRefactored.Core
             }
             catch
             {
-                // Silent fallback — logger unavailable
+                // Fail silently in release mode
             }
         }
 

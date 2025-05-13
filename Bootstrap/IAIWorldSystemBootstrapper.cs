@@ -17,32 +17,35 @@ namespace AIRefactored.AI.Core
     public interface IAIWorldSystemBootstrapper
     {
         /// <summary>
-        /// Called once when the system is ready to initialize.
+        /// Called once when the system is permitted to initialize during the appropriate world phase.
+        /// Implementers must perform one-time setup logic and avoid runtime dependencies unless IsReady() will succeed.
         /// </summary>
         void Initialize();
 
         /// <summary>
-        /// Called every frame after initialization for system logic updates.
-        /// Implementers must wrap logic in try/catch and validate state for null-safety.
+        /// Called every frame after initialization for system updates.
+        /// Implementers must wrap logic in try/catch and verify internal readiness.
         /// </summary>
-        /// <param name="deltaTime">The time delta (in seconds) since the last tick.</param>
+        /// <param name="deltaTime">The elapsed time in seconds since the last tick.</param>
         void Tick(float deltaTime);
 
         /// <summary>
-        /// Called once at the end of a raid. Used for system teardown or state reset.
+        /// Called once when the raid ends.
+        /// Systems should use this to clear memory, detach handlers, or reset static state.
         /// </summary>
         void OnRaidEnd();
 
         /// <summary>
-        /// Indicates whether the system is fully initialized and safe to tick.
+        /// Returns whether the system is fully initialized and safe to receive Tick() calls.
         /// </summary>
-        /// <returns>True if the system is active and ready; otherwise, false.</returns>
+        /// <returns>True if the system is active and internally valid; otherwise, false.</returns>
         bool IsReady();
 
         /// <summary>
-        /// Specifies which world phase is required before this system can initialize.
+        /// Specifies the required world phase before this system can initialize.
+        /// Used to defer bootstrap until the world is fully prepared.
         /// </summary>
-        /// <returns>The required <see cref="WorldPhase"/>.</returns>
+        /// <returns>The minimum <see cref="WorldPhase"/> required for initialization.</returns>
         WorldPhase RequiredPhase();
     }
 }

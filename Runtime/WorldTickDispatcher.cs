@@ -51,11 +51,11 @@ namespace AIRefactored.Runtime
                 _monoHost = _host.AddComponent<TickHost>();
                 _isActive = true;
 
-                Logger.LogDebug("[WorldTickDispatcher] Host attached and ticking.");
+                Logger.LogDebug("[WorldTickDispatcher] ✅ Host attached and ticking.");
             }
             catch (Exception ex)
             {
-                Logger.LogError("[WorldTickDispatcher] Initialization failed: " + ex);
+                Logger.LogError("[WorldTickDispatcher] ❌ Initialization failed: " + ex);
             }
         }
 
@@ -82,16 +82,16 @@ namespace AIRefactored.Runtime
                 {
                     UnityEngine.Object.Destroy(_host);
                 }
+
+                Logger.LogDebug("[WorldTickDispatcher] 🧹 Shutdown complete.");
             }
             catch (Exception ex)
             {
-                Logger.LogError("[WorldTickDispatcher] Error during host destroy: " + ex);
+                Logger.LogError("[WorldTickDispatcher] ❌ Error during host destroy: " + ex);
             }
 
             _monoHost = null;
             _host = null;
-
-            Logger.LogDebug("[WorldTickDispatcher] Shutdown complete.");
         }
 
         #endregion
@@ -115,7 +115,7 @@ namespace AIRefactored.Runtime
             }
             catch (Exception ex)
             {
-                Logger.LogError("[WorldTickDispatcher] Tick() error: " + ex);
+                Logger.LogError("[WorldTickDispatcher] ❌ Tick error: " + ex);
             }
         }
 
@@ -137,7 +137,7 @@ namespace AIRefactored.Runtime
                 }
                 catch (Exception ex)
                 {
-                    Logger.LogError("[WorldTickDispatcher] Update() exception: " + ex);
+                    Logger.LogError("[WorldTickDispatcher] ❌ Update exception: " + ex);
                 }
             }
 
@@ -149,7 +149,7 @@ namespace AIRefactored.Runtime
                 }
                 catch (Exception ex)
                 {
-                    Logger.LogError("[WorldTickDispatcher] OnDestroy failed: " + ex);
+                    Logger.LogError("[WorldTickDispatcher] ❌ OnDestroy failed: " + ex);
                 }
             }
         }

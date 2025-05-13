@@ -15,6 +15,7 @@ namespace AIRefactored.AI.Missions.Subsystems
     using AIRefactored.AI.Groups;
     using AIRefactored.AI.Helpers;
     using AIRefactored.AI.Looting;
+    using AIRefactored.Core;
     using AIRefactored.Runtime;
     using BepInEx.Logging;
     using EFT;
@@ -48,14 +49,9 @@ namespace AIRefactored.AI.Missions.Subsystems
 
         public MissionSwitcher(BotOwner bot, BotComponentCache cache)
         {
-            if (bot == null)
+            if (!EFTPlayerUtil.IsValidBotOwner(bot) || cache == null)
             {
-                throw new ArgumentNullException(nameof(bot));
-            }
-
-            if (cache == null)
-            {
-                throw new ArgumentNullException(nameof(cache));
+                throw new ArgumentException("[MissionSwitcher] Invalid bot or component cache.");
             }
 
             _bot = bot;
@@ -85,25 +81,20 @@ namespace AIRefactored.AI.Missions.Subsystems
             Action resumeQuesting,
             Func<bool> isGroupAligned)
         {
+            if (_bot.IsDead || _bot.GetPlayer == null || !_bot.GetPlayer.IsAI)
+            {
+                return;
+            }
+
             if (time - _lastSwitchTime < SwitchCooldown)
             {
                 return;
             }
 
-            Player player = _bot.GetPlayer;
-            if (_bot.IsDead || player == null || !player.IsAI)
-            {
-                return;
-            }
+            string nickname = _bot.Profile?.Info?.Nickname ?? "Unknown";
 
-            string nickname = "Unknown";
-            Profile profile = _bot.Profile;
-            if (profile != null && profile.Info != null)
-            {
-                nickname = profile.Info.Nickname;
-            }
-
-            if (_bot.Memory.IsUnderFire &&
+            if (_bot.Memory != null &&
+                _bot.Memory.IsUnderFire &&
                 _profile.AggressionLevel > 0.6f &&
                 currentMission != MissionType.Fight)
             {

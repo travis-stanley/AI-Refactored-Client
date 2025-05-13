@@ -67,10 +67,11 @@ namespace AIRefactored.Runtime
 
                 AIRefactoredController.OnRaidStarted(world);
                 _initialized = true;
+                Logger.LogDebug("[RaidLifecycleWatcher] ✅ Raid start detected and initialization complete.");
             }
             catch (Exception ex)
             {
-                Logger.LogError("[RaidLifecycleWatcher] Tick error: " + ex);
+                Logger.LogError("[RaidLifecycleWatcher] ❌ Tick error: " + ex);
             }
         }
 
@@ -84,12 +85,16 @@ namespace AIRefactored.Runtime
                     _bound = false;
                 }
 
-                _initialized = false;
-                AIRefactoredController.OnRaidEnded();
+                if (_initialized)
+                {
+                    _initialized = false;
+                    AIRefactoredController.OnRaidEnded();
+                    Logger.LogDebug("[RaidLifecycleWatcher] 🧹 Raid end detected and cleanup triggered.");
+                }
             }
             catch (Exception ex)
             {
-                Logger.LogError("[RaidLifecycleWatcher] OnRaidEnd error: " + ex);
+                Logger.LogError("[RaidLifecycleWatcher] ❌ OnRaidEnd error: " + ex);
             }
         }
 

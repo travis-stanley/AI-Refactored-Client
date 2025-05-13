@@ -20,8 +20,14 @@ namespace AIRefactored.AI.Groups
     /// </summary>
     public static class GroupMissionCoordinator
     {
+        #region Static State
+
         private static readonly Dictionary<string, BotMissionController.MissionType> AssignedMissions =
             new Dictionary<string, BotMissionController.MissionType>(32);
+
+        #endregion
+
+        #region Public API
 
         public static void ForceMissionForGroup(string groupId, BotMissionController.MissionType mission)
         {
@@ -39,20 +45,15 @@ namespace AIRefactored.AI.Groups
             }
 
             Player player = bot.GetPlayer;
-            Profile profile = player.Profile;
-            if (profile == null || profile.Info == null)
-            {
-                return BotMissionController.MissionType.Loot;
-            }
+            Profile profile = player?.Profile;
+            string groupId = profile?.Info?.GroupId;
 
-            string groupId = profile.Info.GroupId;
             if (string.IsNullOrEmpty(groupId))
             {
                 return PickMission(bot);
             }
 
-            BotMissionController.MissionType result;
-            if (!AssignedMissions.TryGetValue(groupId, out result))
+            if (!AssignedMissions.TryGetValue(groupId, out BotMissionController.MissionType result))
             {
                 result = PickMission(bot);
                 AssignedMissions[groupId] = result;
@@ -69,13 +70,9 @@ namespace AIRefactored.AI.Groups
             }
 
             Player player = bot.GetPlayer;
-            Profile profile = player.Profile;
-            if (profile == null || profile.Info == null)
-            {
-                return;
-            }
+            Profile profile = player?.Profile;
+            string groupId = profile?.Info?.GroupId;
 
-            string groupId = profile.Info.GroupId;
             if (!string.IsNullOrEmpty(groupId) && !AssignedMissions.ContainsKey(groupId))
             {
                 AssignedMissions[groupId] = PickMission(bot);
@@ -86,6 +83,10 @@ namespace AIRefactored.AI.Groups
         {
             AssignedMissions.Clear();
         }
+
+        #endregion
+
+        #region Mission Picker
 
         private static BotMissionController.MissionType PickMission(BotOwner bot)
         {
@@ -139,8 +140,7 @@ namespace AIRefactored.AI.Groups
                     break;
             }
 
-            BotPersonalityProfile personality;
-            if (BotRegistry.TryGet(bot.ProfileId, out personality))
+            if (BotRegistry.TryGet(bot.ProfileId, out BotPersonalityProfile personality))
             {
                 loot += personality.Caution;
                 quest += personality.Caution * 0.5f;
@@ -177,5 +177,7 @@ namespace AIRefactored.AI.Groups
 
             return BotMissionController.MissionType.Quest;
         }
+
+        #endregion
     }
 }

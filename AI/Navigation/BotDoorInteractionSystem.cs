@@ -70,6 +70,7 @@ namespace AIRefactored.AI.Navigation
         /// <summary>
         /// Updates door interaction logic.
         /// </summary>
+        /// <param name="time">Current time (Time.time).</param>
         public void Tick(float time)
         {
             if (_bot == null || _bot.IsDead)
@@ -154,6 +155,7 @@ namespace AIRefactored.AI.Navigation
         /// <summary>
         /// Checks if a door is currently blocking the specified position.
         /// </summary>
+        /// <param name="position">The bot's current position.</param>
         public bool IsDoorBlocking(Vector3 position)
         {
             if (_currentDoor == null || !_currentDoor.enabled)

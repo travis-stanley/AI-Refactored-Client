@@ -50,7 +50,7 @@ namespace AIRefactored.AI.Perception
 
         #endregion
 
-        #region Public Methods
+        #region Tick
 
         /// <summary>
         /// Ticks the logic once per frame for toggling tactical devices.
@@ -64,7 +64,7 @@ namespace AIRefactored.AI.Perception
 
             _nextDecisionTime = Time.time + TacticalConfig.CheckInterval;
 
-            Weapon weapon = _bot.WeaponManager.CurrentWeapon;
+            Weapon weapon = _bot.WeaponManager?.CurrentWeapon;
             if (weapon == null)
             {
                 return;
@@ -109,7 +109,7 @@ namespace AIRefactored.AI.Perception
 
         #endregion
 
-        #region Private Methods
+        #region Internal Logic
 
         private bool CanThink()
         {
@@ -123,10 +123,12 @@ namespace AIRefactored.AI.Perception
 
         private float GetChaosBaitChance()
         {
-            BotPersonalityProfile profile = _cache.AIRefactoredBotOwner != null
-                ? _cache.AIRefactoredBotOwner.PersonalityProfile
-                : null;
+            if (_cache.AIRefactoredBotOwner == null)
+            {
+                return 0f;
+            }
 
+            BotPersonalityProfile profile = _cache.AIRefactoredBotOwner.PersonalityProfile;
             return profile != null ? profile.ChaosFactor * 0.25f : 0f;
         }
 
@@ -153,13 +155,13 @@ namespace AIRefactored.AI.Perception
                 }
 
                 Item mod = slot.ContainedItem;
-                if (mod == null || mod.Template == null || string.IsNullOrEmpty(mod.Template.Name))
+                if (mod == null || mod.Template == null)
                 {
                     continue;
                 }
 
-                string name = mod.Template.Name.ToLowerInvariant();
-                if (!IsTacticalName(name))
+                string name = mod.Template.Name?.ToLowerInvariant();
+                if (string.IsNullOrEmpty(name) || !IsTacticalName(name))
                 {
                     continue;
                 }
@@ -169,11 +171,9 @@ namespace AIRefactored.AI.Perception
                     case FlashlightItemClass f when f.Light != null:
                         result.Add(f.Light);
                         break;
-
                     case TacticalComboItemClass c when c.Light != null:
                         result.Add(c.Light);
                         break;
-
                     case LightLaserItemClass l when l.Light != null:
                         result.Add(l.Light);
                         break;
@@ -196,7 +196,7 @@ namespace AIRefactored.AI.Perception
 
         #endregion
 
-        #region Configuration
+        #region Tactical Settings
 
         private static class TacticalConfig
         {

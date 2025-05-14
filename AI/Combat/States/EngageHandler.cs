@@ -41,7 +41,8 @@ namespace AIRefactored.AI.Combat.States
         {
             if (cache == null || cache.Bot == null)
             {
-                throw new ArgumentException("[EngageHandler] Invalid bot cache.");
+                Plugin.LoggerInstance.LogError("[EngageHandler] Invalid bot cache provided.");
+                throw new ArgumentException("EngageHandler requires a non-null cache with BotOwner.");
             }
 
             _cache = cache;
@@ -55,32 +56,49 @@ namespace AIRefactored.AI.Combat.States
 
         #region Public Methods
 
+        /// <summary>
+        /// Determines if the bot should begin advancing toward the enemy.
+        /// </summary>
         public bool ShallUseNow()
         {
-            if (_cache.IsFallbackMode || _bot == null || _cache.Combat == null)
+            if (!IsCombatCapable())
+            {
                 return false;
+            }
 
             Vector3 enemyPos;
-            return TryGetLastKnownEnemy(_cache.Combat, out enemyPos) && !IsWithinRange(enemyPos);
+            return TryGetLastKnownEnemy(out enemyPos) && !IsWithinRange(enemyPos);
         }
 
+        /// <summary>
+        /// Determines if the bot is close enough to start direct attack behavior.
+        /// </summary>
         public bool CanAttack()
         {
-            if (_cache.IsFallbackMode || _bot == null || _cache.Combat == null)
+            if (!IsCombatCapable())
+            {
                 return false;
+            }
 
             Vector3 enemyPos;
-            return TryGetLastKnownEnemy(_cache.Combat, out enemyPos) && IsWithinRange(enemyPos);
+            return TryGetLastKnownEnemy(out enemyPos) && IsWithinRange(enemyPos);
         }
 
+        /// <summary>
+        /// Advances the bot toward last known enemy position with squad offset and cover-aware stance.
+        /// </summary>
         public void Tick()
         {
-            if (_cache.IsFallbackMode || _bot == null || _cache.Combat == null)
+            if (!IsCombatCapable())
+            {
                 return;
+            }
 
             Vector3 enemyPos;
-            if (!TryGetLastKnownEnemy(_cache.Combat, out enemyPos))
+            if (!TryGetLastKnownEnemy(out enemyPos))
+            {
                 return;
+            }
 
             Vector3 destination = _cache.SquadPath != null
                 ? _cache.SquadPath.ApplyOffsetTo(enemyPos)
@@ -95,34 +113,56 @@ namespace AIRefactored.AI.Combat.States
             _cache.Combat.TrySetStanceFromNearbyCover(destination);
         }
 
+        /// <summary>
+        /// Returns whether the bot is currently engaging based on distance to last known enemy.
+        /// </summary>
         public bool IsEngaging()
         {
-            if (_cache.IsFallbackMode || _bot == null || _cache.Combat == null)
+            if (!IsCombatCapable())
+            {
                 return false;
+            }
 
             Vector3 enemyPos;
-            return TryGetLastKnownEnemy(_cache.Combat, out enemyPos) && !IsWithinRange(enemyPos);
+            return TryGetLastKnownEnemy(out enemyPos) && !IsWithinRange(enemyPos);
         }
 
         #endregion
 
         #region Private Methods
 
-        private bool TryGetLastKnownEnemy(CombatStateMachine combat, out Vector3 result)
+        /// <summary>
+        /// Checks whether bot is in valid state to perform combat operations.
+        /// </summary>
+        private bool IsCombatCapable()
         {
-            result = combat.LastKnownEnemyPos;
+            return !_cache.IsFallbackMode && _bot != null && _cache.Combat != null;
+        }
+
+        /// <summary>
+        /// Attempts to retrieve a valid last known enemy position.
+        /// </summary>
+        private bool TryGetLastKnownEnemy(out Vector3 result)
+        {
+            result = _cache.Combat.LastKnownEnemyPos;
             return result != Vector3.zero &&
                    !float.IsNaN(result.x) &&
                    !float.IsNaN(result.y) &&
                    !float.IsNaN(result.z);
         }
 
+        /// <summary>
+        /// Returns true if the enemy position is within range to attack.
+        /// </summary>
         private bool IsWithinRange(Vector3 enemyPos)
         {
-            return Vector3.Distance(_bot.Position, enemyPos) < _fallbackRange;
+            return Vector3.SqrMagnitude(_bot.Position - enemyPos) < (_fallbackRange * _fallbackRange);
         }
 
-        private bool IsValid(Vector3 pos)
+        /// <summary>
+        /// Validates that a position contains finite and usable coordinates.
+        /// </summary>
+        private static bool IsValid(Vector3 pos)
         {
             return !float.IsNaN(pos.x) && !float.IsNaN(pos.y) && !float.IsNaN(pos.z);
         }

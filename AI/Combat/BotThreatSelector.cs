@@ -79,13 +79,17 @@ namespace AIRefactored.AI.Combat
         public void Tick(float time)
         {
             if (time < _nextEvaluateTime || _bot == null || _bot.IsDead || !_bot.IsAI)
+            {
                 return;
+            }
 
             _nextEvaluateTime = time + EvaluationCooldown;
 
             var players = GameWorldHandler.GetAllAlivePlayers();
             if (players == null || players.Count == 0)
+            {
                 return;
+            }
 
             Player bestTarget = null;
             float bestScore = float.MinValue;
@@ -94,14 +98,20 @@ namespace AIRefactored.AI.Combat
             {
                 Player candidate = players[i];
                 if (!EFTPlayerUtil.IsValid(candidate))
+                {
                     continue;
+                }
 
                 string profileId = candidate.ProfileId;
                 if (string.IsNullOrEmpty(profileId) || profileId == _bot.ProfileId)
+                {
                     continue;
+                }
 
                 if (!EFTPlayerUtil.IsEnemyOf(_bot, candidate))
+                {
                     continue;
+                }
 
                 float score = ScoreTarget(candidate, time);
                 if (score > bestScore)
@@ -112,7 +122,9 @@ namespace AIRefactored.AI.Combat
             }
 
             if (bestTarget == null)
+            {
                 return;
+            }
 
             if (_currentTarget == null)
             {
@@ -123,7 +135,8 @@ namespace AIRefactored.AI.Combat
             float currentScore = ScoreTarget(_currentTarget, time);
             float cooldown = SwitchCooldown * (1f - (_profile.AggressionLevel * 0.5f));
 
-            if (bestScore > currentScore + TargetSwitchThreshold && time > _lastTargetSwitchTime + cooldown)
+            if (bestScore > currentScore + TargetSwitchThreshold &&
+                time > _lastTargetSwitchTime + cooldown)
             {
                 SetTarget(bestTarget, time);
             }
@@ -137,11 +150,15 @@ namespace AIRefactored.AI.Combat
         public Player GetPriorityTarget()
         {
             if (EFTPlayerUtil.IsValid(_currentTarget))
+            {
                 return _currentTarget;
+            }
 
             string id = _cache.TacticalMemory.GetMostRecentEnemyId();
             if (string.IsNullOrEmpty(id))
+            {
                 return null;
+            }
 
             Player fallback = EFTPlayerUtil.ResolvePlayerById(id);
             return EFTPlayerUtil.IsValid(fallback) ? fallback : null;
@@ -163,7 +180,9 @@ namespace AIRefactored.AI.Combat
             float distance = Vector3.Distance(botPos, targetPos);
 
             if (distance > MaxScanDistance)
+            {
                 return float.MinValue;
+            }
 
             float score = MaxScanDistance - distance;
 
@@ -175,13 +194,19 @@ namespace AIRefactored.AI.Combat
                     score += VisibilityBonus;
 
                     if (info.PersonalLastSeenTime + 2f > time)
+                    {
                         score += RecentSeenBonus;
+                    }
 
                     if (_profile.Caution > 0.6f)
+                    {
                         score += 5f;
+                    }
 
                     if (_cache.IsBlinded && _cache.BlindUntilTime > time)
+                    {
                         score -= BlindPenalty;
+                    }
                 }
                 else
                 {
@@ -209,11 +234,15 @@ namespace AIRefactored.AI.Combat
         private EnemyInfo GetEnemyInfo(Player candidate)
         {
             if (candidate == null || _bot.EnemiesController == null)
+            {
                 return null;
+            }
 
             string id = candidate.ProfileId;
             if (string.IsNullOrEmpty(id))
+            {
                 return null;
+            }
 
             var enemyInfos = _bot.EnemiesController.EnemyInfos;
             if (enemyInfos != null)
@@ -221,12 +250,16 @@ namespace AIRefactored.AI.Combat
                 foreach (var kvp in enemyInfos)
                 {
                     if (kvp.Key is Player known && known.ProfileId == id)
+                    {
                         return kvp.Value;
+                    }
                 }
             }
 
             if (_bot.Memory?.GoalEnemy?.Person?.ProfileId == id)
+            {
                 return _bot.Memory.GoalEnemy;
+            }
 
             return null;
         }

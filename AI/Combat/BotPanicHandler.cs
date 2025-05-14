@@ -78,7 +78,9 @@ namespace AIRefactored.AI.Combat
         public void Tick(float time)
         {
             if (!IsValid())
+            {
                 return;
+            }
 
             if (_isPanicking)
             {
@@ -93,7 +95,9 @@ namespace AIRefactored.AI.Combat
             RecoverComposure(Time.deltaTime);
 
             if (time <= _lastPanicExitTime + PanicCooldown)
+            {
                 return;
+            }
 
             if (ShouldPanicFromThreat())
             {
@@ -111,11 +115,15 @@ namespace AIRefactored.AI.Combat
         public void TriggerPanic()
         {
             if (!IsValid() || _isPanicking || Time.time < _lastPanicExitTime + PanicCooldown)
+            {
                 return;
+            }
 
             var profile = _cache.AIRefactoredBotOwner?.PersonalityProfile;
             if (profile == null || profile.IsFrenzied || profile.IsStubborn)
+            {
                 return;
+            }
 
             Vector3 retreatDir = -_bot.LookDirection.normalized;
             TryStartPanic(Time.time, retreatDir);
@@ -128,11 +136,15 @@ namespace AIRefactored.AI.Combat
         private void OnDamaged(EBodyPart part, float damage, DamageInfoStruct info)
         {
             if (!IsValid() || _isPanicking || Time.time < _lastPanicExitTime + PanicCooldown)
+            {
                 return;
+            }
 
             var profile = _cache.AIRefactoredBotOwner?.PersonalityProfile;
             if (profile == null || profile.IsFrenzied || profile.IsStubborn || profile.AggressionLevel > 0.8f)
+            {
                 return;
+            }
 
             Vector3 retreatDir = (_bot.Position - info.HitPoint).normalized;
             TryStartPanic(Time.time, retreatDir);
@@ -150,13 +162,19 @@ namespace AIRefactored.AI.Combat
         {
             var profile = _cache.AIRefactoredBotOwner?.PersonalityProfile;
             if (profile == null || profile.IsFrenzied || profile.IsStubborn)
+            {
                 return false;
+            }
 
             if (_cache.FlashGrenade?.IsFlashed() == true)
+            {
                 return true;
+            }
 
             if (_bot.HealthController == null)
+            {
                 return false;
+            }
 
             ValueStruct health = _bot.HealthController.GetBodyPartHealth(EBodyPart.Common);
             return health.Current < LowHealthThreshold;
@@ -170,7 +188,9 @@ namespace AIRefactored.AI.Combat
         private void TryStartPanic(float now, Vector3 retreatDir)
         {
             if (!IsValid())
+            {
                 return;
+            }
 
             _isPanicking = true;
             _panicStartTime = now;
@@ -223,11 +243,15 @@ namespace AIRefactored.AI.Combat
             retreatDir = Vector3.zero;
 
             if (_bot.Profile?.Info?.GroupId == null)
+            {
                 return false;
+            }
 
             string mapId = GameWorldHandler.TryGetValidMapName();
             if (string.IsNullOrEmpty(mapId))
+            {
                 return false;
+            }
 
             Vector3 myPos = _bot.Position;
             var zones = BotMemoryStore.GetZonesForMap(mapId);

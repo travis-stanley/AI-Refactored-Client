@@ -69,8 +69,8 @@ namespace AIRefactored.AI.Medical
             }
 
             _nextCheckTime = time + HealCheckInterval;
-
             int count = _bot.BotsGroup.MembersCount;
+
             for (int i = 0; i < count; i++)
             {
                 BotOwner mate = _bot.BotsGroup.Member(i);
@@ -116,7 +116,6 @@ namespace AIRefactored.AI.Medical
 
             Player selfPlayer = EFTPlayerUtil.ResolvePlayer(_bot);
             Player matePlayer = EFTPlayerUtil.ResolvePlayer(mate);
-
             if (selfPlayer == null || matePlayer == null)
             {
                 return false;

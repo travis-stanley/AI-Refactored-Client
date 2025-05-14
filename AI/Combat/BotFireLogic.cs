@@ -65,7 +65,8 @@ namespace AIRefactored.AI.Combat
         {
             if (bot == null || cache == null)
             {
-                throw new ArgumentNullException("[BotFireLogic] Missing bot or cache.");
+                Plugin.LoggerInstance.LogError("[BotFireLogic] Null bot or cache during construction.");
+                throw new ArgumentNullException("BotFireLogic requires a valid BotOwner and BotComponentCache.");
             }
 
             _bot = bot;
@@ -79,7 +80,9 @@ namespace AIRefactored.AI.Combat
         public void Tick(float time)
         {
             if (_bot.IsDead || !_bot.IsAI || _bot.Memory == null)
+            {
                 return;
+            }
 
             BotWeaponManager weaponManager = _bot.WeaponManager;
             ShootData shootData = _bot.ShootData;
@@ -89,16 +92,22 @@ namespace AIRefactored.AI.Combat
             BotPersonalityProfile profile = _cache.AIRefactoredBotOwner?.PersonalityProfile;
 
             if (weaponManager == null || shootData == null || weaponInfo == null || weapon == null || settings == null || profile == null)
+            {
                 return;
+            }
 
             if (!TryResolveEnemy(out Player target))
+            {
                 return;
+            }
 
             Vector3 aimPosition = GetValidatedAimPosition(target, time);
             UpdateBotAiming(aimPosition);
 
             if (!EFTPlayerUtil.IsValid(target))
+            {
                 return;
+            }
 
             float distance = Vector3.Distance(_bot.Position, aimPosition);
             float weaponRange = EstimateWeaponRange(weapon);
@@ -121,7 +130,9 @@ namespace AIRefactored.AI.Combat
             }
 
             if (time < _nextDecisionTime)
+            {
                 return;
+            }
 
             _nextDecisionTime = time + GetBurstCadence(profile);
 
@@ -153,7 +164,9 @@ namespace AIRefactored.AI.Combat
         {
             Vector3 dir = aimPosition - _bot.Position;
             if (dir.sqrMagnitude < 0.01f)
+            {
                 return;
+            }
 
             Quaternion rot = Quaternion.LookRotation(dir);
             float pitch = rot.eulerAngles.x > 180f ? rot.eulerAngles.x - 360f : rot.eulerAngles.x;
@@ -166,11 +179,15 @@ namespace AIRefactored.AI.Combat
         private Vector3 GetValidatedAimPosition(Player target, float time)
         {
             if (EFTPlayerUtil.IsValid(target))
+            {
                 return EFTPlayerUtil.GetPosition(target);
+            }
 
             Vector3 memory = _bot.Memory.LastEnemy?.CurrPosition ?? Vector3.zero;
             if (memory != Vector3.zero)
+            {
                 return memory;
+            }
 
             if (time - _lastLookAroundTime > 1.5f)
             {
@@ -218,7 +235,9 @@ namespace AIRefactored.AI.Combat
             for (int i = 0; i < modes.Length; i++)
             {
                 if (modes[i] == mode)
+                {
                     return true;
+                }
             }
 
             return false;
@@ -242,12 +261,16 @@ namespace AIRefactored.AI.Combat
         {
             ItemTemplate template = weapon.Template;
             if (template == null || string.IsNullOrEmpty(template.Name))
+            {
                 return 90f;
+            }
 
             foreach (var kv in WeaponTypeRanges)
             {
                 if (template.Name.IndexOf(kv.Key, StringComparison.OrdinalIgnoreCase) >= 0)
+                {
                     return kv.Value;
+                }
             }
 
             return 90f;
@@ -266,13 +289,16 @@ namespace AIRefactored.AI.Combat
         {
             HealthControllerClass hc = _bot.HealthController as HealthControllerClass;
             if (hc == null || hc.Dictionary_0 == null)
+            {
                 return 1f;
+            }
 
             float current = 0f;
             float max = 0f;
 
-            foreach (EBodyPart part in AllBodyParts)
+            for (int i = 0; i < AllBodyParts.Length; i++)
             {
+                EBodyPart part = AllBodyParts[i];
                 if (hc.Dictionary_0.TryGetValue(part, out var state) && state.Health != null)
                 {
                     current += state.Health.Current;
@@ -286,11 +312,15 @@ namespace AIRefactored.AI.Combat
         private void TriggerFallback()
         {
             if (_cache.Pathing == null)
+            {
                 return;
+            }
 
             List<Vector3> retreatPath = BotCoverRetreatPlanner.GetCoverRetreatPath(_bot, _bot.LookDirection.normalized, _cache.Pathing);
             if (retreatPath == null || retreatPath.Count < 2)
+            {
                 return;
+            }
 
             Vector3 fallback = retreatPath[retreatPath.Count - 1];
             if (!BotNavValidator.Validate(_bot, "BotFireLogic::TriggerFallback"))

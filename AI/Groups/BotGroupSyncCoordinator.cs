@@ -51,6 +51,7 @@ namespace AIRefactored.AI.Groups
         #region Properties
 
         public float LastDangerBroadcastTime { get; private set; }
+
         public Vector3 LastDangerPosition { get; private set; }
 
         public bool IsActive =>
@@ -148,7 +149,9 @@ namespace AIRefactored.AI.Groups
         #region Queries
 
         public Vector3? GetSharedFallbackTarget() => _hasFallback ? (Vector3?)_fallbackPoint : null;
+
         public Vector3? GetSharedLootTarget() => _hasLoot ? (Vector3?)_lootPoint : null;
+
         public Vector3? GetSharedExtractTarget() => _hasExtract ? (Vector3?)_extractPoint : null;
 
         public bool IsSquadReady() => _teammateCaches.Count > 0;
@@ -170,12 +173,12 @@ namespace AIRefactored.AI.Groups
 
         public BotComponentCache GetCache(BotOwner teammate)
         {
-            if (_teammateCaches.TryGetValue(teammate, out BotComponentCache cache))
+            if (teammate == null || !_teammateCaches.TryGetValue(teammate, out BotComponentCache cache) || cache == null)
             {
-                return cache;
+                throw new KeyNotFoundException($"[BotGroupSyncCoordinator] No teammate cache found for: {teammate?.ProfileId ?? "null"}");
             }
 
-            throw new KeyNotFoundException("[BotGroupSyncCoordinator] No teammate cache found for: " + (teammate?.ProfileId ?? "null"));
+            return cache;
         }
 
         #endregion
@@ -250,13 +253,25 @@ namespace AIRefactored.AI.Groups
 
         private static void TriggerDelayedPanic(BotComponentCache cache, float delay)
         {
+            if (cache == null)
+            {
+                return;
+            }
+
             Task.Run(async () =>
             {
-                await Task.Delay((int)(delay * 1000f));
-
-                if (cache?.Bot != null && !cache.Bot.IsDead && cache.PanicHandler != null && !cache.PanicHandler.IsPanicking)
+                try
                 {
-                    cache.PanicHandler.TriggerPanic();
+                    await Task.Delay((int)(delay * 1000f));
+
+                    if (cache.Bot != null && !cache.Bot.IsDead && cache.PanicHandler != null && !cache.PanicHandler.IsPanicking)
+                    {
+                        cache.PanicHandler.TriggerPanic();
+                    }
+                }
+                catch (Exception)
+                {
+                    // Fail silently; async fire-and-forget is best effort only
                 }
             });
         }

@@ -10,6 +10,7 @@ namespace AIRefactored.AI.Movement
 {
     using System;
     using AIRefactored.AI.Core;
+    using AIRefactored.Core;
     using EFT;
     using UnityEngine;
 
@@ -45,7 +46,7 @@ namespace AIRefactored.AI.Movement
 
         public BotMovementTrajectoryPlanner(BotOwner bot, BotComponentCache cache)
         {
-            if (bot == null || cache == null || bot.GetPlayer == null)
+            if (!EFTPlayerUtil.IsValidBotOwner(bot) || cache == null || bot.GetPlayer == null)
             {
                 throw new ArgumentException("[BotMovementTrajectoryPlanner] bot, player, or cache is null.");
             }

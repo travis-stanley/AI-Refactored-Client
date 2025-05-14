@@ -66,7 +66,7 @@ namespace AIRefactored.AI.Missions.Subsystems
 
             _bot = bot;
             _cache = cache;
-            _profile = BotRegistry.Get(bot.Profile.Id);
+            _profile = BotRegistry.Get(bot.ProfileId);
             _group = BotCacheUtility.GetGroupSync(cache);
             _lastPos = bot.Position;
             _lastMoveTime = Time.time;
@@ -74,20 +74,14 @@ namespace AIRefactored.AI.Missions.Subsystems
 
         #endregion
 
-        #region Public Methods
+        #region Mission Checks
 
         public bool IsGroupAligned()
         {
-            if (_group == null)
-            {
-                return true;
-            }
+            if (_group == null) return true;
 
             IReadOnlyList<BotOwner> squad = _group.GetTeammates();
-            if (squad == null || squad.Count == 0)
-            {
-                return true;
-            }
+            if (squad == null || squad.Count == 0) return true;
 
             int nearby = 0;
             Vector3 selfPos = _bot.Position;
@@ -108,22 +102,13 @@ namespace AIRefactored.AI.Missions.Subsystems
 
         public bool ShouldExtractEarly()
         {
-            if (_profile.IsFrenzied || _profile.Caution <= 0.6f)
-            {
-                return false;
-            }
+            if (_profile.IsFrenzied || _profile.Caution <= 0.6f) return false;
 
             Player player = _bot.GetPlayer;
-            if (player?.Inventory?.Equipment == null)
-            {
-                return false;
-            }
+            if (player?.Inventory?.Equipment == null) return false;
 
             Slot backpackSlot = player.Inventory.Equipment.GetSlot(EquipmentSlot.Backpack);
-            if (backpackSlot?.ContainedItem == null)
-            {
-                return false;
-            }
+            if (backpackSlot?.ContainedItem == null) return false;
 
             List<Item> items = TempListPool.Rent<Item>();
             try
@@ -143,10 +128,7 @@ namespace AIRefactored.AI.Missions.Subsystems
             try
             {
                 ExfiltrationPoint[] allPoints = GameObject.FindObjectsOfType<ExfiltrationPoint>();
-                if (allPoints == null || allPoints.Length == 0)
-                {
-                    return;
-                }
+                if (allPoints == null || allPoints.Length == 0) return;
 
                 ExfiltrationPoint closest = null;
                 float minDist = float.MaxValue;
@@ -178,6 +160,10 @@ namespace AIRefactored.AI.Missions.Subsystems
             }
         }
 
+        #endregion
+
+        #region Stuck Detection
+
         public void UpdateStuckCheck(float time)
         {
             float moved = Vector3.Distance(_bot.Position, _lastPos);
@@ -204,8 +190,8 @@ namespace AIRefactored.AI.Missions.Subsystems
                 Vector3? fallback = HybridFallbackResolver.GetBestRetreatPoint(_bot, dir);
                 if (fallback.HasValue)
                 {
-                    string name = _bot.Profile?.Info?.Nickname ?? "Unknown";
-                    Logger.LogDebug("[MissionEvaluator] " + name + " fallback #" + _fallbackAttempts + " → " + fallback.Value);
+                    Logger.LogDebug("[MissionEvaluator] " + (_bot.Profile?.Info?.Nickname ?? "Unknown") +
+                                    " fallback #" + _fallbackAttempts + " → " + fallback.Value);
                     BotMovementHelper.SmoothMoveTo(_bot, fallback.Value);
                 }
             }
@@ -213,7 +199,7 @@ namespace AIRefactored.AI.Missions.Subsystems
 
         #endregion
 
-        #region Private Methods
+        #region Utilities
 
         private void Say(EPhraseTrigger phrase)
         {

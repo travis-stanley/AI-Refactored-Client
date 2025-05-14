@@ -45,12 +45,14 @@ namespace AIRefactored.AI.Helpers
 
         public static bool FiredRecently(Player player, float withinSeconds = 1.5f, float now = -1f)
         {
-            return TryGetLastShot(player, out float time) && ((now >= 0f ? now : Time.time) - time <= withinSeconds);
+            return TryGetLastShot(player, out float time) &&
+                   ((now >= 0f ? now : Time.time) - time <= withinSeconds);
         }
 
         public static bool SteppedRecently(Player player, float withinSeconds = 1.2f, float now = -1f)
         {
-            return TryGetLastStep(player, out float time) && ((now >= 0f ? now : Time.time) - time <= withinSeconds);
+            return TryGetLastStep(player, out float time) &&
+                   ((now >= 0f ? now : Time.time) - time <= withinSeconds);
         }
 
         public static void NotifyShot(Player player)
@@ -76,6 +78,7 @@ namespace AIRefactored.AI.Helpers
 
             Vector3 pos = transform.position;
             SoundZones[id] = pos;
+
             TriggerSquadPing(id, pos, true);
         }
 
@@ -102,6 +105,7 @@ namespace AIRefactored.AI.Helpers
 
             Vector3 pos = transform.position;
             SoundZones[id] = pos;
+
             TriggerSquadPing(id, pos, false);
         }
 
@@ -154,7 +158,7 @@ namespace AIRefactored.AI.Helpers
 
             foreach (BotComponentCache cache in BotCacheUtility.AllActiveBots())
             {
-                if (cache == null || cache.Bot == null || cache.Bot.IsDead)
+                if (cache?.Bot == null || cache.Bot.IsDead)
                 {
                     continue;
                 }

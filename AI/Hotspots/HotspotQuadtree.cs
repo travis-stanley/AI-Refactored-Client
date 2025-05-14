@@ -54,7 +54,6 @@ namespace AIRefactored.AI.Hotspots
 
             Vector2 pos2D = new Vector2(hotspot.Position.x, hotspot.Position.z);
             Stack<Node> stack = TempStackPool.Rent<Node>();
-
             stack.Push(_root);
 
             while (stack.Count > 0)
@@ -76,12 +75,17 @@ namespace AIRefactored.AI.Hotspots
                         for (int i = 0; i < node.Points.Count; i++)
                         {
                             HotspotRegistry.Hotspot existing = node.Points[i];
+                            Vector2 existing2D = new Vector2(existing.Position.x, existing.Position.z);
+
                             for (int j = 0; j < 4; j++)
                             {
-                                stack.Push(node.Children[j]);
+                                Node child = node.Children[j];
+                                if (child.Bounds.Contains(existing2D))
+                                {
+                                    child.Points.Add(existing);
+                                    break;
+                                }
                             }
-
-                            stack.Push(node); // Re-push node to reprocess cleared Points
                         }
 
                         node.Points.Clear();
@@ -183,7 +187,7 @@ namespace AIRefactored.AI.Hotspots
             {
                 Bounds = bounds;
                 Depth = depth;
-                Points = new List<HotspotRegistry.Hotspot>(8);
+                Points = new List<HotspotRegistry.Hotspot>(MaxPerNode);
                 Children = EmptyArray;
             }
 

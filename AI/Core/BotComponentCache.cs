@@ -35,7 +35,6 @@ namespace AIRefactored.AI.Core
         #region Static
 
         public static readonly BotComponentCache Empty = new BotComponentCache();
-
         private static readonly ManualLogSource Logger = Plugin.LoggerInstance;
         private static readonly HashSet<string> InitializedBots = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
 
@@ -70,15 +69,11 @@ namespace AIRefactored.AI.Core
         #region Runtime Flags
 
         public bool IsBlinded { get; set; }
-
         public float BlindUntilTime { get; set; }
-
         public float LastFlashTime { get; set; }
 
         public float LastHeardTime { get; private set; } = -999f;
-
         public Vector3 LastHeardDirection { get; private set; }
-
         public bool HasHeardDirection { get; private set; }
 
         public bool IsFallbackMode { get; private set; }
@@ -156,60 +151,40 @@ namespace AIRefactored.AI.Core
             {
                 WildSpawnType role = bot.Profile?.Info?.Settings?.Role ?? WildSpawnType.assault;
                 PersonalityProfile = BotRegistry.GetOrGenerate(id, PersonalityType.Balanced, role);
-                Logger.LogDebug("[BotComponentCache] Loaded personality for bot " + id + ": " + PersonalityProfile.Personality);
+                Logger.LogDebug($"[BotComponentCache] Loaded personality for bot {id}: {PersonalityProfile.Personality}");
 
                 Pathing = new BotOwnerPathfindingCache();
                 TacticalMemory = new BotTacticalMemory(); TacticalMemory.Initialize(this);
 
-                TryInitSubsystem("CombatStateMachine", () =>
-                {
-                    Combat = new CombatStateMachine(); Combat.Initialize(this);
-                }, TacticalMemory);
+                TryInitSubsystem(nameof(Combat), () => Combat = new CombatStateMachine(), TacticalMemory);
+                Combat.Initialize(this);
 
-                TryInitSubsystem("FlashGrenadeComponent", () =>
-                {
-                    FlashGrenade = new FlashGrenadeComponent(); FlashGrenade.Initialize(this);
-                });
+                TryInitSubsystem(nameof(FlashGrenade), () => FlashGrenade = new FlashGrenadeComponent());
+                FlashGrenade.Initialize(this);
 
-                TryInitSubsystem("BotPanicHandler", () =>
-                {
-                    PanicHandler = new BotPanicHandler(); PanicHandler.Initialize(this);
-                });
+                TryInitSubsystem(nameof(PanicHandler), () => PanicHandler = new BotPanicHandler());
+                PanicHandler.Initialize(this);
 
-                TryInitSubsystem("BotSuppressionReactionComponent", () =>
-                {
-                    Suppression = new BotSuppressionReactionComponent(); Suppression.Initialize(this);
-                });
+                TryInitSubsystem(nameof(Suppression), () => Suppression = new BotSuppressionReactionComponent());
+                Suppression.Initialize(this);
 
-                TryInitSubsystem("BotThreatEscalationMonitor", () =>
-                {
-                    Escalation = new BotThreatEscalationMonitor(); Escalation.Initialize(bot);
-                });
+                TryInitSubsystem(nameof(Escalation), () => Escalation = new BotThreatEscalationMonitor());
+                Escalation.Initialize(bot);
 
-                TryInitSubsystem("BotGroupBehavior", () =>
-                {
-                    GroupBehavior = new BotGroupBehavior(); GroupBehavior.Initialize(this);
-                }, PanicHandler);
+                TryInitSubsystem(nameof(GroupBehavior), () => GroupBehavior = new BotGroupBehavior(), PanicHandler);
+                GroupBehavior.Initialize(this);
 
-                TryInitSubsystem("BotMovementController", () =>
-                {
-                    Movement = new BotMovementController(); Movement.Initialize(this);
-                });
+                TryInitSubsystem(nameof(Movement), () => Movement = new BotMovementController());
+                Movement.Initialize(this);
 
-                TryInitSubsystem("BotLookController", () =>
-                {
-                    LookController = new BotLookController(bot, this);
-                });
+                TryInitSubsystem(nameof(LookController), () => LookController = new BotLookController(bot, this));
 
-                TryInitSubsystem("BotTacticalDeviceController", () =>
-                {
-                    Tactical = new BotTacticalDeviceController(); Tactical.Initialize(this);
-                });
+                TryInitSubsystem(nameof(Tactical), () => Tactical = new BotTacticalDeviceController());
+                Tactical.Initialize(this);
 
                 PoseController = new BotPoseController(bot, this);
                 Tilt = new BotTilt(bot);
                 HearingDamage = new HearingDamageComponent();
-
                 SquadPath = new SquadPathCoordinator(); SquadPath.Initialize(this);
 
                 LootScanner = new BotLootScanner(); LootScanner.Initialize(this);
@@ -224,11 +199,11 @@ namespace AIRefactored.AI.Core
                 SquadHealer = bot.HealAnotherTarget ?? new BotHealAnotherTarget(bot);
                 HealReceiver = bot.HealingBySomebody ?? new BotHealingBySomebody(bot);
 
-                Logger.LogDebug("[BotComponentCache] ✅ Initialized for bot: " + Nickname);
+                Logger.LogDebug($"[BotComponentCache] ✅ Initialized for bot: {Nickname}");
             }
             catch (Exception ex)
             {
-                Logger.LogError("[BotComponentCache] Initialization failed for bot " + id + ": " + ex);
+                Logger.LogError($"[BotComponentCache] Initialization failed for bot {bot.Profile?.Id ?? "null"}: {ex}");
                 throw;
             }
         }
@@ -239,15 +214,18 @@ namespace AIRefactored.AI.Core
             {
                 if (required[i] == null)
                 {
-                    Logger.LogError("[BotComponentCache] ❌ Subsystem '" + name + "' missing required dependency.");
-                    throw new InvalidOperationException("[BotComponentCache] " + name + " initialization failed.");
+                    Logger.LogError($"[BotComponentCache] ❌ Subsystem '{name}' missing required dependency.");
+                    throw new InvalidOperationException($"[BotComponentCache] {name} initialization failed.");
                 }
             }
 
-            try { init.Invoke(); }
+            try
+            {
+                init.Invoke();
+            }
             catch (Exception ex)
             {
-                Logger.LogError("[BotComponentCache] ❌ Init failed (" + name + "): " + ex);
+                Logger.LogError($"[BotComponentCache] ❌ Init failed ({name}): {ex}");
                 throw;
             }
         }
@@ -259,7 +237,7 @@ namespace AIRefactored.AI.Core
         public void EnterFallback()
         {
             IsFallbackMode = true;
-            Logger.LogWarning("[BotComponentCache] Entered fallback mode for bot: " + Nickname);
+            Logger.LogWarning($"[BotComponentCache] Entered fallback mode for bot: {Nickname}");
         }
 
         #endregion
@@ -294,7 +272,7 @@ namespace AIRefactored.AI.Core
             LastHeardDirection = source - Position;
             HasHeardDirection = true;
 
-            Logger.LogDebug("[BotComponentCache] Registered sound from: " + source);
+            Logger.LogDebug($"[BotComponentCache] Registered sound from: {source}");
         }
 
         #endregion

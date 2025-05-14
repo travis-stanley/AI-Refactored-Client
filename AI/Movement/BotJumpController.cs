@@ -49,15 +49,15 @@ namespace AIRefactored.AI.Movement
 
         public BotJumpController(BotOwner bot, BotComponentCache cache)
         {
-            if (bot == null || cache == null || bot.GetPlayer == null)
+            if (!EFTPlayerUtil.IsValidBotOwner(bot) || cache == null)
             {
                 throw new ArgumentException("[BotJumpController] Invalid bot or cache.");
             }
 
-            MovementContext context = bot.GetPlayer.MovementContext;
+            MovementContext context = bot.GetPlayer?.MovementContext;
             if (context == null)
             {
-                throw new InvalidOperationException("[BotJumpController] MovementContext is missing.");
+                throw new InvalidOperationException("[BotJumpController] Missing MovementContext.");
             }
 
             _bot = bot;
@@ -76,17 +76,17 @@ namespace AIRefactored.AI.Movement
                 return;
             }
 
-            Vector3[] buffer = TempVector3Pool.Rent(1);
+            Vector3[] temp = TempVector3Pool.Rent(1);
             try
             {
-                if (TryFindJumpTarget(out buffer[0]))
+                if (TryFindJumpTarget(out temp[0]))
                 {
-                    ExecuteJump(buffer[0], deltaTime);
+                    ExecuteJump(temp[0], deltaTime);
                 }
             }
             finally
             {
-                TempVector3Pool.Return(buffer);
+                TempVector3Pool.Return(temp);
             }
         }
 

@@ -52,7 +52,8 @@ namespace AIRefactored.AI.Combat.States
         {
             if (cache == null || cache.Bot == null)
             {
-                throw new ArgumentException("[PatrolHandler] Initialization failed: cache or Bot is null.");
+                Plugin.LoggerInstance.LogError("[PatrolHandler] Constructor failed: cache or bot is null.");
+                throw new ArgumentException("PatrolHandler requires valid BotComponentCache and BotOwner.");
             }
 
             _cache = cache;
@@ -73,10 +74,14 @@ namespace AIRefactored.AI.Combat.States
         public bool ShouldTransitionToInvestigate(float time)
         {
             if (_cache?.Combat == null || _cache.AIRefactoredBotOwner?.PersonalityProfile == null)
+            {
                 return false;
+            }
 
             if (_cache.AIRefactoredBotOwner.PersonalityProfile.Caution <= 0.35f)
+            {
                 return false;
+            }
 
             return (_cache.LastHeardTime + InvestigateSoundDelay > time) &&
                    (time - _cache.Combat.LastStateChangeTime > _minStateDuration);
@@ -85,11 +90,14 @@ namespace AIRefactored.AI.Combat.States
         public void Tick(float time)
         {
             if (_cache == null || _bot == null)
+            {
                 return;
+            }
 
             if (ShouldTriggerFallback())
             {
                 Vector3 fallback = TryGetFallbackPosition();
+
                 if (!BotNavValidator.Validate(_bot, "PatrolFallback"))
                 {
                     fallback = FallbackNavPointProvider.GetSafePoint(_bot.Position);
@@ -100,12 +108,14 @@ namespace AIRefactored.AI.Combat.States
             }
 
             if (time < _nextSwitchTime)
+            {
                 return;
+            }
 
             HotspotRegistry.Hotspot hotspot = HotspotRegistry.GetRandomHotspot();
             if (hotspot == null || !IsVectorValid(hotspot.Position))
             {
-                Plugin.LoggerInstance.LogWarning("[PatrolHandler] Skipped patrol: hotspot was invalid or missing.");
+                Plugin.LoggerInstance.LogWarning("[PatrolHandler] Skipped patrol: hotspot was null or invalid.");
                 return;
             }
 
@@ -143,29 +153,41 @@ namespace AIRefactored.AI.Combat.States
         private bool ShouldTriggerFallback()
         {
             if (_cache == null || _bot == null)
+            {
                 return false;
+            }
 
             if (_cache.PanicHandler?.GetComposureLevel() < PanicThreshold)
+            {
                 return true;
+            }
 
             if (_cache.InjurySystem?.ShouldHeal() == true)
+            {
                 return true;
+            }
 
             if (_cache.Suppression?.IsSuppressed() == true)
+            {
                 return true;
+            }
 
             BotsGroup group = _bot.BotsGroup;
             if (group == null)
+            {
                 return false;
+            }
 
-            Vector3 myPos = _bot.Position;
+            Vector3 selfPos = _bot.Position;
             for (int i = 0, count = group.MembersCount; i < count; i++)
             {
                 BotOwner member = group.Member(i);
                 if (member != null && member != _bot && member.IsDead)
                 {
-                    if (Vector3.Distance(myPos, member.Position) < DeadAllyRadius)
+                    if (Vector3.Distance(selfPos, member.Position) < DeadAllyRadius)
+                    {
                         return true;
+                    }
                 }
             }
 
@@ -175,13 +197,17 @@ namespace AIRefactored.AI.Combat.States
         private Vector3 TryGetFallbackPosition()
         {
             if (_cache?.Pathing == null || _bot == null)
+            {
                 return _bot != null ? _bot.Position : Vector3.zero;
+            }
 
             Vector3 direction = _bot.LookDirection.normalized;
             List<Vector3> path = BotCoverRetreatPlanner.GetCoverRetreatPath(_bot, direction, _cache.Pathing);
 
             if (path != null && path.Count >= FallbackPathMinLength)
+            {
                 return path[path.Count - 1];
+            }
 
             return FallbackNavPointProvider.GetSafePoint(_bot.Position);
         }

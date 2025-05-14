@@ -76,7 +76,7 @@ namespace AIRefactored.AI.Missions.Subsystems
 
         #endregion
 
-        #region Private Methods
+        #region Internal Logic
 
         private void TrySay(EPhraseTrigger trigger)
         {
@@ -88,7 +88,7 @@ namespace AIRefactored.AI.Missions.Subsystems
             try
             {
                 Player player = _bot.GetPlayer;
-                if (player != null && player.HealthController?.IsAlive == true)
+                if (player != null && player.HealthController != null && player.HealthController.IsAlive)
                 {
                     player.Say(trigger);
                 }

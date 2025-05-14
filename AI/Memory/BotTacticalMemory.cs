@@ -51,7 +51,7 @@ namespace AIRefactored.AI.Memory
 
         #endregion
 
-        #region Public Methods
+        #region Memory Management
 
         public void CullExpired()
         {
@@ -65,7 +65,7 @@ namespace AIRefactored.AI.Memory
                 }
             }
 
-            var expired = TempListPool.Rent<string>();
+            List<string> expired = TempListPool.Rent<string>();
             foreach (var pair in _enemyMemoryById)
             {
                 if (now - pair.Value.TimeSeen > MaxMemoryTime)
@@ -90,12 +90,13 @@ namespace AIRefactored.AI.Memory
             _extractionStarted = false;
         }
 
+        #endregion
+
+        #region Enemy Recording
+
         public void RecordEnemyPosition(Vector3 position, string tag, string enemyId)
         {
-            if (_cache == null || _cache.IsBlinded || (_cache.PanicHandler?.IsPanicking == true))
-            {
-                return;
-            }
+            if (_cache == null || _cache.IsBlinded || (_cache.PanicHandler?.IsPanicking == true)) return;
 
             float now = Time.time;
             Vector3 gridPos = SnapToGrid(position);
@@ -190,6 +191,10 @@ namespace AIRefactored.AI.Memory
             }
         }
 
+        #endregion
+
+        #region Tactical Evaluation
+
         public void MarkCleared(Vector3 position)
         {
             _clearedSpots[SnapToGrid(position)] = Time.time;
@@ -198,16 +203,13 @@ namespace AIRefactored.AI.Memory
         public bool WasRecentlyCleared(Vector3 position)
         {
             Vector3 grid = SnapToGrid(position);
-            return _clearedSpots.TryGetValue(grid, out float lastTime)
-                && (Time.time - lastTime < ClearedMemoryDuration);
+            return _clearedSpots.TryGetValue(grid, out float lastTime) &&
+                   (Time.time - lastTime < ClearedMemoryDuration);
         }
 
         public bool IsZoneUnsafe(Vector3 position)
         {
-            if (_cache?.Bot?.Profile == null)
-            {
-                return false;
-            }
+            if (_cache?.Bot?.Profile == null) return false;
 
             float now = Time.time;
             Vector3 grid = SnapToGrid(position);
@@ -222,7 +224,8 @@ namespace AIRefactored.AI.Memory
 
             foreach (var kv in _clearedSpots)
             {
-                if ((kv.Key - grid).sqrMagnitude < PositionToleranceSqr && (now - kv.Value) < ClearedMemoryDuration)
+                if ((kv.Key - grid).sqrMagnitude < PositionToleranceSqr &&
+                    (now - kv.Value) < ClearedMemoryDuration)
                 {
                     return true;
                 }
@@ -244,7 +247,7 @@ namespace AIRefactored.AI.Memory
 
         #endregion
 
-        #region Internal Helpers
+        #region Utilities
 
         private static Vector3 SnapToGrid(Vector3 pos)
         {

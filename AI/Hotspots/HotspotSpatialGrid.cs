@@ -54,8 +54,7 @@ namespace AIRefactored.AI.Hotspots
 
             Vector2Int cell = WorldToCell(hotspot.Position);
 
-            List<HotspotRegistry.Hotspot> list;
-            if (!_grid.TryGetValue(cell, out list))
+            if (!_grid.TryGetValue(cell, out var list))
             {
                 list = new List<HotspotRegistry.Hotspot>(4);
                 _grid[cell] = list;
@@ -80,9 +79,7 @@ namespace AIRefactored.AI.Hotspots
                 for (int dz = -cellRadius; dz <= cellRadius; dz++)
                 {
                     Vector2Int check = new Vector2Int(center.x + dx, center.y + dz);
-
-                    List<HotspotRegistry.Hotspot> candidates;
-                    if (!_grid.TryGetValue(check, out candidates))
+                    if (!_grid.TryGetValue(check, out var candidates))
                     {
                         continue;
                     }
@@ -111,7 +108,7 @@ namespace AIRefactored.AI.Hotspots
             if (float.IsNaN(worldPos.x) || float.IsNaN(worldPos.z) ||
                 float.IsInfinity(worldPos.x) || float.IsInfinity(worldPos.z))
             {
-                return new Vector2Int(0, 0);
+                return default;
             }
 
             int x = Mathf.FloorToInt(worldPos.x / _cellSize);

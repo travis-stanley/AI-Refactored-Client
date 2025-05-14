@@ -3,7 +3,7 @@
 //   Licensed under the MIT License. See LICENSE in the repository root for more information.
 //
 //   THIS FILE IS SYSTEMATICALLY MANAGED.
-//   Failures in AIRefactored logic must always trigger safe fallback to EFT base AI.
+//   Please follow strict StyleCop, ReSharper, and AI-Refactored code standards for all modifications.
 // </auto-generated>
 
 namespace AIRefactored.AI.Looting
@@ -77,17 +77,18 @@ namespace AIRefactored.AI.Looting
                 return false;
             }
 
-            if (_bot.Memory != null && _bot.Memory.GoalEnemy != null)
+            if (_bot.Memory?.GoalEnemy != null)
             {
                 return false;
             }
 
-            if (_bot.EnemiesController != null && _bot.EnemiesController.EnemyInfos.Count > 0)
+            if (_bot.EnemiesController?.EnemyInfos.Count > 0)
             {
                 return false;
             }
 
-            return _cache.LootScanner != null && _cache.LootScanner.TotalLootValue >= HighValueThreshold;
+            return _cache.LootScanner != null &&
+                   _cache.LootScanner.TotalLootValue >= HighValueThreshold;
         }
 
         /// <summary>
@@ -95,7 +96,7 @@ namespace AIRefactored.AI.Looting
         /// </summary>
         public Vector3 GetLootDestination()
         {
-            if (_cache == null || _cache.LootScanner == null || _bot == null)
+            if (_cache?.LootScanner == null || _bot == null)
             {
                 return Vector3.zero;
             }
@@ -113,8 +114,7 @@ namespace AIRefactored.AI.Looting
                 }
 
                 Vector3 pos = container.transform.position;
-                float dist = Vector3.Distance(_bot.Position, pos);
-                if (dist > MaxLootDistance)
+                if ((pos - _bot.Position).sqrMagnitude > (MaxLootDistance * MaxLootDistance))
                 {
                     continue;
                 }
@@ -135,17 +135,12 @@ namespace AIRefactored.AI.Looting
         /// </summary>
         public void MarkLooted(string lootId)
         {
-            if (string.IsNullOrEmpty(lootId))
+            if (string.IsNullOrWhiteSpace(lootId))
             {
                 return;
             }
 
             string id = lootId.Trim();
-            if (id.Length == 0)
-            {
-                return;
-            }
-
             _recentLooted.Add(id);
             _nextLootTime = Time.time + CooldownTime;
         }
@@ -155,13 +150,12 @@ namespace AIRefactored.AI.Looting
         /// </summary>
         public bool WasRecentlyLooted(string lootId)
         {
-            if (string.IsNullOrEmpty(lootId))
+            if (string.IsNullOrWhiteSpace(lootId))
             {
                 return false;
             }
 
-            string id = lootId.Trim();
-            return id.Length > 0 && _recentLooted.Contains(id);
+            return _recentLooted.Contains(lootId.Trim());
         }
 
         #endregion
@@ -170,7 +164,7 @@ namespace AIRefactored.AI.Looting
 
         private static float EstimateValue(LootableContainer container)
         {
-            if (container == null || container.ItemOwner == null || container.ItemOwner.RootItem == null)
+            if (container?.ItemOwner?.RootItem == null)
             {
                 return 0f;
             }
@@ -182,13 +176,9 @@ namespace AIRefactored.AI.Looting
             for (int i = 0; i < items.Count; i++)
             {
                 Item item = items[i];
-                if (item != null && item.Template != null)
+                if (item?.Template != null && item.Template.CreditsPrice > 0f)
                 {
-                    float price = item.Template.CreditsPrice;
-                    if (price > 0f)
-                    {
-                        total += price;
-                    }
+                    total += item.Template.CreditsPrice;
                 }
             }
 

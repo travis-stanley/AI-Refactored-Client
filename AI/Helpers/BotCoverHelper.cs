@@ -74,8 +74,7 @@ namespace AIRefactored.AI.Helpers
 
         public static bool WasRecentlyUsed(CustomNavigationPoint point)
         {
-            if (point == null) return false;
-            return WasRecentlyUsed(point.Position);
+            return point != null && WasRecentlyUsed(point.Position);
         }
 
         public static bool WasRecentlyUsed(NavPointData point)
@@ -86,12 +85,7 @@ namespace AIRefactored.AI.Helpers
         public static bool WasRecentlyUsed(Vector3 position)
         {
             string key = GetKey(position);
-            if (CoverMemory.TryGetValue(key, out float last))
-            {
-                return (Time.time - last) < MemoryDuration;
-            }
-
-            return false;
+            return CoverMemory.TryGetValue(key, out float last) && (Time.time - last) < MemoryDuration;
         }
 
         #endregion
@@ -100,7 +94,7 @@ namespace AIRefactored.AI.Helpers
 
         public static void TrySetStanceFromNearbyCover(BotComponentCache cache, Vector3 position)
         {
-            if (cache == null || cache.PoseController == null)
+            if (cache?.PoseController == null)
             {
                 return;
             }
@@ -116,8 +110,7 @@ namespace AIRefactored.AI.Helpers
                     continue;
                 }
 
-                Vector3 offset = point.Position - position;
-                if (offset.sqrMagnitude > MaxValidDistanceSqr)
+                if ((point.Position - position).sqrMagnitude > MaxValidDistanceSqr)
                 {
                     continue;
                 }
@@ -212,7 +205,7 @@ namespace AIRefactored.AI.Helpers
             int x = Mathf.RoundToInt(position.x);
             int y = Mathf.RoundToInt(position.y);
             int z = Mathf.RoundToInt(position.z);
-            return x + "_" + y + "_" + z;
+            return $"{x}_{y}_{z}";
         }
 
         #endregion

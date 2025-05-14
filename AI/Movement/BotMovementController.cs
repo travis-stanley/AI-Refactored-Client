@@ -125,6 +125,7 @@ namespace AIRefactored.AI.Movement
         }
 
         public void EnterLootingMode() => _inLootingMode = true;
+
         public void ExitLootingMode() => _inLootingMode = false;
 
         #endregion

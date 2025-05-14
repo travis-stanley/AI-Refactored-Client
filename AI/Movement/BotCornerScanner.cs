@@ -59,8 +59,14 @@ namespace AIRefactored.AI.Movement
 
         public BotCornerScanner(BotOwner bot, BotComponentCache cache)
         {
-            try { Initialize(bot, cache); }
-            catch (Exception ex) { Log.LogError("[BotCornerScanner] Constructor init failed: " + ex); }
+            try
+            {
+                Initialize(bot, cache);
+            }
+            catch (Exception ex)
+            {
+                Log.LogError("[BotCornerScanner] Constructor init failed: " + ex);
+            }
         }
 
         #endregion
@@ -69,9 +75,9 @@ namespace AIRefactored.AI.Movement
 
         public void Initialize(BotOwner bot, BotComponentCache cache)
         {
-            if (bot == null || cache == null || bot.Transform == null)
+            if (!EFTPlayerUtil.IsValidBotOwner(bot) || cache == null || bot.Transform == null)
             {
-                Log.LogWarning("[BotCornerScanner] Initialization skipped — missing bot or transform.");
+                Log.LogWarning("[BotCornerScanner] Initialization skipped — invalid bot or transform.");
                 return;
             }
 
@@ -95,19 +101,29 @@ namespace AIRefactored.AI.Movement
         public void Tick(float time)
         {
             if (!_isInitialized || _bot == null || _cache == null || _profile == null)
+            {
                 return;
+            }
 
             if (_bot.IsDead || _bot.Mover == null || _bot.Transform == null)
+            {
                 return;
+            }
 
             if (_cache.Tilt == null || _cache.PoseController == null)
+            {
                 return;
+            }
 
             if (_bot.Memory != null && _bot.Memory.GoalEnemy != null)
+            {
                 return;
+            }
 
             if (time < _pauseUntil || time < _prepCrouchUntil)
+            {
                 return;
+            }
 
             if (IsApproachingEdge())
             {
@@ -116,7 +132,9 @@ namespace AIRefactored.AI.Movement
             }
 
             if (TryCornerPeekWithCrouch(time))
+            {
                 return;
+            }
 
             ResetLean(time);
         }
@@ -142,7 +160,9 @@ namespace AIRefactored.AI.Movement
                 if (!Physics.Raycast(rayOrigin, Vector3.down, MinFallHeight, AIRefactoredLayerMasks.NavObstacleMask))
                 {
                     if (!NavMesh.SamplePosition(rayDown, out NavMeshHit hit, 1.0f, NavMesh.AllAreas) || hit.distance > NavSampleTolerance)
+                    {
                         return true;
+                    }
                 }
             }
 
@@ -156,8 +176,15 @@ namespace AIRefactored.AI.Movement
             Vector3 left = -right;
             float dist = BaseWallCheckDistance + ((1f - _profile.Caution) * 0.5f);
 
-            if (CheckWall(origin, left, dist)) return TriggerLeanOrCrouch(BotTiltType.left, time);
-            if (CheckWall(origin, right, dist)) return TriggerLeanOrCrouch(BotTiltType.right, time);
+            if (CheckWall(origin, left, dist))
+            {
+                return TriggerLeanOrCrouch(BotTiltType.left, time);
+            }
+
+            if (CheckWall(origin, right, dist))
+            {
+                return TriggerLeanOrCrouch(BotTiltType.right, time);
+            }
 
             return false;
         }
@@ -165,7 +192,9 @@ namespace AIRefactored.AI.Movement
         private bool CheckWall(Vector3 origin, Vector3 dir, float dist)
         {
             if (!Physics.Raycast(origin, dir, out RaycastHit hit, dist, AIRefactoredLayerMasks.CoverRayMask))
+            {
                 return false;
+            }
 
             return Vector3.Dot(hit.normal, dir) < WallAngleThreshold;
         }
@@ -196,6 +225,7 @@ namespace AIRefactored.AI.Movement
                 _prepCrouchUntil = time + PrepCrouchTime;
                 return true;
             }
+
             return false;
         }
 

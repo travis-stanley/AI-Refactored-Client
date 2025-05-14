@@ -13,6 +13,7 @@ namespace AIRefactored.AI.Movement
     using AIRefactored.AI.Helpers;
     using AIRefactored.AI.Memory;
     using AIRefactored.AI.Navigation;
+    using AIRefactored.Core;
     using AIRefactored.Pools;
     using EFT;
     using UnityEngine;
@@ -56,14 +57,20 @@ namespace AIRefactored.AI.Movement
 
         public BotPoseController(BotOwner bot, BotComponentCache cache)
         {
-            if (bot == null || cache == null || bot.GetPlayer == null || bot.GetPlayer.MovementContext == null || cache.PersonalityProfile == null)
+            if (!EFTPlayerUtil.IsValidBotOwner(bot) || cache == null || cache.PersonalityProfile == null)
             {
                 throw new ArgumentException("[BotPoseController] Invalid initialization.");
             }
 
+            MovementContext movement = bot.GetPlayer?.MovementContext;
+            if (movement == null)
+            {
+                throw new ArgumentException("[BotPoseController] Missing MovementContext.");
+            }
+
             _bot = bot;
             _cache = cache;
-            _movement = bot.GetPlayer.MovementContext;
+            _movement = movement;
             _personality = cache.PersonalityProfile;
 
             _currentPoseLevel = _movement.PoseLevel;

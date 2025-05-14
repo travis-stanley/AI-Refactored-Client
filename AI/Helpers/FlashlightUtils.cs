@@ -51,8 +51,8 @@ namespace AIRefactored.AI.Helpers
                 return 0f;
             }
 
-            Vector3 directionToLight = lightTransform.position - botHeadTransform.position;
-            return Mathf.Clamp01(Vector3.Dot(botHeadTransform.forward, directionToLight.normalized));
+            Vector3 toLight = lightTransform.position - botHeadTransform.position;
+            return Mathf.Clamp01(Vector3.Dot(botHeadTransform.forward, toLight.normalized));
         }
 
         /// <summary>
@@ -67,6 +67,7 @@ namespace AIRefactored.AI.Helpers
 
             Vector3 toLight = lightTransform.position - botHeadTransform.position;
             float angle = Vector3.Angle(botHeadTransform.forward, toLight);
+
             return angle <= angleThreshold;
         }
 
@@ -82,6 +83,7 @@ namespace AIRefactored.AI.Helpers
 
             Vector3 toTarget = target.position - source.position;
             float angle = Vector3.Angle(source.forward, toTarget);
+
             return angle <= angleThreshold;
         }
     }

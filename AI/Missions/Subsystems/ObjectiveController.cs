@@ -62,6 +62,9 @@ namespace AIRefactored.AI.Missions.Subsystems
 
         #region Properties
 
+        /// <summary>
+        /// Gets the current movement target.
+        /// </summary>
         public Vector3 CurrentObjective { get; private set; }
 
         #endregion
@@ -108,7 +111,7 @@ namespace AIRefactored.AI.Missions.Subsystems
 
         #endregion
 
-        #region Private Methods
+        #region Internal Logic
 
         private Vector3 GetObjectiveTarget(MissionType type)
         {
@@ -159,18 +162,15 @@ namespace AIRefactored.AI.Missions.Subsystems
             Vector3 origin = _bot.Position;
             Vector3 forward = _bot.LookDirection.normalized;
 
-            Predicate<HotspotRegistry.Hotspot> directionFilter = delegate (HotspotRegistry.Hotspot h)
+            Predicate<HotspotRegistry.Hotspot> directionFilter = h =>
             {
                 Vector3 dir = h.Position - origin;
                 return dir.sqrMagnitude > 1f && Vector3.Dot(dir.normalized, forward) > 0.25f;
             };
 
-            List<HotspotRegistry.Hotspot> candidates = TempListPool.Rent<HotspotRegistry.Hotspot>();
-            candidates.AddRange(HotspotRegistry.QueryNearby(origin, 100f, directionFilter));
-
-            if (candidates.Count == 0)
+            List<HotspotRegistry.Hotspot> candidates = HotspotRegistry.QueryNearby(origin, 100f, directionFilter);
+            if (candidates == null || candidates.Count == 0)
             {
-                TempListPool.Return(candidates);
                 return;
             }
 
@@ -182,13 +182,11 @@ namespace AIRefactored.AI.Missions.Subsystems
                 int index = UnityEngine.Random.Range(0, candidates.Count);
                 if (used.Add(index))
                 {
-                    HotspotRegistry.Hotspot hotspot = candidates[index];
-                    _questRoute.Enqueue(hotspot.Position);
+                    _questRoute.Enqueue(candidates[index].Position);
                 }
             }
 
             TempHashSetPool.Return(used);
-            TempListPool.Return(candidates);
         }
 
         #endregion

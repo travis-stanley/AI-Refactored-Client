@@ -11,6 +11,7 @@ namespace AIRefactored.AI.Movement
     using System;
     using AIRefactored.AI.Core;
     using AIRefactored.AI.Helpers;
+    using AIRefactored.Core;
     using EFT;
     using UnityEngine;
 
@@ -44,7 +45,7 @@ namespace AIRefactored.AI.Movement
         /// </summary>
         public static FlankPositionPlanner.Side GetOptimalFlankSide(BotOwner bot, BotComponentCache cache)
         {
-            if (bot == null || cache == null || bot.Memory == null || bot.Memory.GoalEnemy == null)
+            if (!EFTPlayerUtil.IsValidBotOwner(bot) || cache == null || bot.Memory == null || bot.Memory.GoalEnemy == null)
             {
                 return FlankPositionPlanner.Side.Left;
             }
@@ -52,17 +53,17 @@ namespace AIRefactored.AI.Movement
             Vector3 botPos = bot.Position;
             Vector3 enemyPos = bot.Memory.GoalEnemy.CurrPosition;
 
-            BifacialTransform bifacial = bot.Memory.GoalEnemy.Person?.Transform;
-            if (bifacial == null)
+            BifacialTransform enemyTransform = bot.Memory.GoalEnemy.Person?.Transform;
+            if (enemyTransform == null)
             {
                 return FlankPositionPlanner.Side.Left;
             }
 
             float now = Time.time;
-            Vector3 enemyForward = bifacial.forward;
+            Vector3 enemyForward = enemyTransform.forward;
             Vector3 toBot = botPos - enemyPos;
-            float angle = Vector3.SignedAngle(enemyForward, toBot, Vector3.up);
 
+            float angle = Vector3.SignedAngle(enemyForward, toBot, Vector3.up);
             float squadBias = GetSquadBias(bot, enemyPos);
             float suppressionBias = GetSuppressionBias(cache);
 
@@ -72,7 +73,6 @@ namespace AIRefactored.AI.Movement
             float leftScore = 0f;
             float rightScore = 0f;
 
-            // Angular flank preference
             if (angle > FlankAngleThreshold)
             {
                 leftScore += 1f;
@@ -82,12 +82,10 @@ namespace AIRefactored.AI.Movement
                 rightScore += 1f;
             }
 
-            // Bias terms
             leftScore += squadBias + suppressionBias;
             rightScore -= squadBias;
             rightScore += suppressionBias;
 
-            // Cooldown penalties
             if (leftCooldown < RecentlyUsedFlankCooldown)
             {
                 leftScore -= 0.75f;
@@ -98,7 +96,6 @@ namespace AIRefactored.AI.Movement
                 rightScore -= 0.75f;
             }
 
-            // Decision
             if (leftScore >= rightScore)
             {
                 _lastLeftUseTime = now;
@@ -128,8 +125,8 @@ namespace AIRefactored.AI.Movement
                 return 0f;
             }
 
-            Vector3 self = bot.Position - enemyPosition;
-            Vector3 normSelf = self.sqrMagnitude > 0.001f ? self.normalized : Vector3.forward;
+            Vector3 selfOffset = bot.Position - enemyPosition;
+            Vector3 normSelf = selfOffset.sqrMagnitude > 0.001f ? selfOffset.normalized : Vector3.forward;
 
             float dotSum = 0f;
             int contributors = 0;

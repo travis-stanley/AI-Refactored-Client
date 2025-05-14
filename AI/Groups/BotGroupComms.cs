@@ -128,7 +128,7 @@ namespace AIRefactored.AI.Groups
 
         private bool HasNearbyAlly()
         {
-            if (_bot == null || _bot.Profile?.Info == null)
+            if (_bot?.Profile?.Info == null)
             {
                 return false;
             }
@@ -159,8 +159,8 @@ namespace AIRefactored.AI.Groups
                     continue;
                 }
 
-                float distSqr = (other.Bot.Position - myPos).sqrMagnitude;
-                if (distSqr <= AllyRadiusSqr)
+                Vector3 offset = other.Bot.Position - myPos;
+                if (offset.sqrMagnitude <= AllyRadiusSqr)
                 {
                     return true;
                 }

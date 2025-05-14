@@ -26,12 +26,9 @@ namespace AIRefactored.AI.Helpers
         /// </summary>
         public static BotOwner GetBotOwner(Player player)
         {
-            if (!EFTPlayerUtil.IsValid(player) || !player.IsAI)
-            {
-                return null;
-            }
-
-            return player.AIData != null ? player.AIData.BotOwner : null;
+            return EFTPlayerUtil.IsValid(player) && player.IsAI
+                ? player.AIData?.BotOwner
+                : null;
         }
 
         /// <summary>
@@ -50,21 +47,21 @@ namespace AIRefactored.AI.Helpers
         public static bool ShouldTriggerSuppression(Player player, float visibleDistThreshold = 12f, float ambientThreshold = 0.25f)
         {
             BotOwner owner = GetBotOwner(player);
-            if (owner == null || owner.LookSensor == null)
+            if (owner?.LookSensor == null)
             {
                 return false;
             }
 
             float visibleDist = owner.LookSensor.ClearVisibleDist;
-            float ambientLight = 0.5f;
 
+            float ambientLight = 0.5f;
             try
             {
                 ambientLight = RenderSettings.ambientLight.grayscale;
             }
             catch
             {
-                // fallback lighting default
+                // Fallback to default grayscale
             }
 
             return visibleDist < visibleDistThreshold || ambientLight < ambientThreshold;

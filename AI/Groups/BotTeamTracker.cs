@@ -40,27 +40,29 @@ namespace AIRefactored.AI.Groups
         /// </summary>
         public static Dictionary<string, List<BotOwner>> GetAllGroups()
         {
-            var copy = new Dictionary<string, List<BotOwner>>(Groups.Count);
+            var result = new Dictionary<string, List<BotOwner>>(Groups.Count);
 
             foreach (var pair in Groups)
             {
-                var filtered = new List<BotOwner>(pair.Value.Count);
-                for (int i = 0; i < pair.Value.Count; i++)
+                var source = pair.Value;
+                var validMembers = new List<BotOwner>(source.Count);
+
+                for (int i = 0; i < source.Count; i++)
                 {
-                    BotOwner bot = pair.Value[i];
+                    BotOwner bot = source[i];
                     if (EFTPlayerUtil.IsValidBotOwner(bot))
                     {
-                        filtered.Add(bot);
+                        validMembers.Add(bot);
                     }
                 }
 
-                if (filtered.Count > 0)
+                if (validMembers.Count > 0)
                 {
-                    copy[pair.Key] = filtered;
+                    result[pair.Key] = validMembers;
                 }
             }
 
-            return copy;
+            return result;
         }
 
         /// <summary>
@@ -70,11 +72,11 @@ namespace AIRefactored.AI.Groups
         {
             TempBuffer.Clear();
 
-            if (!string.IsNullOrEmpty(groupId) && Groups.TryGetValue(groupId, out List<BotOwner> members))
+            if (!string.IsNullOrEmpty(groupId) && Groups.TryGetValue(groupId, out List<BotOwner> list))
             {
-                for (int i = 0; i < members.Count; i++)
+                for (int i = 0; i < list.Count; i++)
                 {
-                    BotOwner bot = members[i];
+                    BotOwner bot = list[i];
                     if (EFTPlayerUtil.IsValidBotOwner(bot))
                     {
                         TempBuffer.Add(bot);
@@ -136,12 +138,16 @@ namespace AIRefactored.AI.Groups
 
             string groupToRemove = null;
 
-            foreach (var kvp in Groups)
+            foreach (var pair in Groups)
             {
-                List<BotOwner> list = kvp.Value;
-                if (list.Remove(bot) && list.Count == 0)
+                List<BotOwner> list = pair.Value;
+                if (list.Remove(bot))
                 {
-                    groupToRemove = kvp.Key;
+                    if (list.Count == 0)
+                    {
+                        groupToRemove = pair.Key;
+                    }
+
                     break;
                 }
             }

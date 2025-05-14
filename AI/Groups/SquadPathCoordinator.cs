@@ -38,6 +38,9 @@ namespace AIRefactored.AI.Groups
 
         #region Initialization
 
+        /// <summary>
+        /// Initializes the offset logic for the given bot.
+        /// </summary>
         public void Initialize(BotComponentCache cache)
         {
             if (cache == null || cache.Bot == null || cache.Bot.IsDead)
@@ -121,6 +124,7 @@ namespace AIRefactored.AI.Groups
 
             float baseNoise = Random.Range(-0.4f, 0.4f);
             float spacing = Mathf.Clamp(BaseSpacing + baseNoise, MinSpacing, MaxSpacing);
+
             float angleStep = 360f / squadSize;
             float angle = (index * angleStep) + Random.Range(-8f, 8f);
             float radians = angle * Mathf.Deg2Rad;

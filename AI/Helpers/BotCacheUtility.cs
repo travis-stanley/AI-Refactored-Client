@@ -50,6 +50,7 @@ namespace AIRefactored.AI.Helpers
         public static void DumpCache()
         {
             Logger.LogDebug("[BotCacheUtility] Dumping bot caches:");
+
             foreach (var pair in CacheRegistry)
             {
                 if (pair.Key == null)
@@ -60,7 +61,8 @@ namespace AIRefactored.AI.Helpers
                 string name = GetBotName(pair.Value);
                 Vector3 pos = pair.Key.Position;
                 bool alive = !pair.Key.IsDead;
-                Logger.LogDebug(" → " + name + ", Pos=" + pos + ", Alive=" + alive);
+
+                Logger.LogDebug($" → {name}, Pos={pos}, Alive={alive}");
             }
         }
 
@@ -77,23 +79,14 @@ namespace AIRefactored.AI.Helpers
 
         public static BotComponentCache GetCache(BotOwner bot)
         {
-            if (bot != null && CacheRegistry.TryGetValue(bot, out BotComponentCache cache))
-            {
-                return cache;
-            }
-
-            return null;
+            return bot != null && CacheRegistry.TryGetValue(bot, out var cache) ? cache : null;
         }
 
         public static BotComponentCache GetCache(Player player)
         {
-            if (player != null)
+            if (player?.AIData?.BotOwner != null)
             {
-                BotOwner owner = player.AIData?.BotOwner;
-                if (owner != null)
-                {
-                    return GetCache(owner);
-                }
+                return GetCache(player.AIData.BotOwner);
             }
 
             return null;
@@ -101,23 +94,16 @@ namespace AIRefactored.AI.Helpers
 
         public static BotComponentCache GetCache(string profileId)
         {
-            if (!string.IsNullOrEmpty(profileId) && ProfileIdLookup.TryGetValue(profileId, out BotComponentCache cache))
-            {
-                return cache;
-            }
-
-            return null;
+            return !string.IsNullOrEmpty(profileId) && ProfileIdLookup.TryGetValue(profileId, out var cache)
+                ? cache
+                : null;
         }
 
         public static string GetBotName(BotComponentCache cache)
         {
-            if (cache != null && cache.Bot != null)
+            if (cache?.Bot?.Profile?.Info != null)
             {
-                Profile profile = cache.Bot.Profile;
-                if (profile != null && profile.Info != null)
-                {
-                    return profile.Info.Nickname + " (" + profile.Side + ")";
-                }
+                return $"{cache.Bot.Profile.Info.Nickname} ({cache.Bot.Profile.Side})";
             }
 
             return "Unknown";
@@ -125,12 +111,7 @@ namespace AIRefactored.AI.Helpers
 
         public static BotGroupSyncCoordinator GetGroupSync(BotComponentCache cache)
         {
-            if (cache == null)
-            {
-                return null;
-            }
-
-            return cache.GroupSync ?? (cache.GroupBehavior != null ? cache.GroupBehavior.GroupSync : null);
+            return cache?.GroupSync ?? cache?.GroupBehavior?.GroupSync;
         }
 
         public static BotComponentCache GetClosestBot(Vector3 origin, float maxDistance)
@@ -165,15 +146,15 @@ namespace AIRefactored.AI.Helpers
 
         public static Transform Head(BotComponentCache cache)
         {
-            if (cache != null && cache.Bot != null && cache.Bot.MainParts != null)
+            if (cache?.Bot?.MainParts == null)
             {
-                if (cache.Bot.MainParts.TryGetValue(BodyPartType.head, out EnemyPart part))
-                {
-                    if (part != null && part._transform != null)
-                    {
-                        return part._transform.Original;
-                    }
-                }
+                return null;
+            }
+
+            if (cache.Bot.MainParts.TryGetValue(BodyPartType.head, out EnemyPart part) &&
+                part != null && part._transform != null)
+            {
+                return part._transform.Original;
             }
 
             return null;

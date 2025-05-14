@@ -24,6 +24,7 @@ namespace AIRefactored.AI.Core
         private static readonly Dictionary<string, BotComponentCache> CacheMap =
             new Dictionary<string, BotComponentCache>(128, StringComparer.OrdinalIgnoreCase);
 
+        private static readonly object Lock = new object();
         private static readonly ManualLogSource Logger = Plugin.LoggerInstance;
 
         /// <summary>
@@ -31,7 +32,7 @@ namespace AIRefactored.AI.Core
         /// </summary>
         public static BotComponentCache GetOrCreate(BotOwner bot)
         {
-            if (bot?.Profile?.Info == null)
+            if (bot == null || bot.Profile == null || bot.Profile.Info == null)
             {
                 Logger.LogWarning("[BotComponentCacheRegistry] Invalid bot or profile — triggering fallback.");
                 BotFallbackUtility.FallbackToEFTLogic(bot);
@@ -46,25 +47,28 @@ namespace AIRefactored.AI.Core
                 return GetFallbackOrNew("null");
             }
 
-            if (CacheMap.TryGetValue(id, out var existing))
+            lock (Lock)
             {
-                return existing;
-            }
+                if (CacheMap.TryGetValue(id, out var existing))
+                {
+                    return existing;
+                }
 
-            try
-            {
-                var cache = new BotComponentCache();
-                cache.Initialize(bot);
-                CacheMap[id] = cache;
+                try
+                {
+                    var cache = new BotComponentCache();
+                    cache.Initialize(bot);
+                    CacheMap[id] = cache;
 
-                Logger.LogDebug("[BotComponentCacheRegistry] ✅ Created new cache for: " + id);
-                return cache;
-            }
-            catch (Exception ex)
-            {
-                Logger.LogError("[BotComponentCacheRegistry] Cache init failed for " + id + ": " + ex);
-                BotFallbackUtility.FallbackToEFTLogic(bot);
-                return GetFallbackOrNew(id);
+                    Logger.LogDebug($"[BotComponentCacheRegistry] ✅ Created new cache for: {id}");
+                    return cache;
+                }
+                catch (Exception ex)
+                {
+                    Logger.LogError($"[BotComponentCacheRegistry] Cache init failed for {id}: {ex}");
+                    BotFallbackUtility.FallbackToEFTLogic(bot);
+                    return GetFallbackOrNew(id);
+                }
             }
         }
 
@@ -79,7 +83,10 @@ namespace AIRefactored.AI.Core
                 return false;
             }
 
-            return CacheMap.TryGetValue(profileId, out cache);
+            lock (Lock)
+            {
+                return CacheMap.TryGetValue(profileId, out cache);
+            }
         }
 
         /// <summary>
@@ -93,9 +100,13 @@ namespace AIRefactored.AI.Core
             }
 
             string id = bot.Profile.Id;
-            if (CacheMap.Remove(id))
+
+            lock (Lock)
             {
-                Logger.LogDebug("[BotComponentCacheRegistry] Removed cache for: " + id);
+                if (CacheMap.Remove(id))
+                {
+                    Logger.LogDebug($"[BotComponentCacheRegistry] Removed cache for: {id}");
+                }
             }
         }
 
@@ -104,8 +115,11 @@ namespace AIRefactored.AI.Core
         /// </summary>
         public static void ClearAll()
         {
-            CacheMap.Clear();
-            Logger.LogWarning("[BotComponentCacheRegistry] All caches cleared.");
+            lock (Lock)
+            {
+                CacheMap.Clear();
+                Logger.LogWarning("[BotComponentCacheRegistry] All caches cleared.");
+            }
         }
 
         private static BotComponentCache GetFallbackOrNew(string profileId)

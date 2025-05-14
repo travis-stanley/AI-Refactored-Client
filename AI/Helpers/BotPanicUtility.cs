@@ -113,7 +113,8 @@ namespace AIRefactored.AI.Helpers
             return cache != null &&
                    cache.Bot != null &&
                    !cache.Bot.IsDead &&
-                   cache.PanicHandler != null;
+                   cache.PanicHandler != null &&
+                   !cache.PanicHandler.IsPanicking;
         }
 
         #endregion

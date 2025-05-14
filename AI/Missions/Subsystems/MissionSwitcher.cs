@@ -56,7 +56,7 @@ namespace AIRefactored.AI.Missions.Subsystems
 
             _bot = bot;
             _cache = cache;
-            _profile = BotRegistry.Get(bot.Profile.Id);
+            _profile = BotRegistry.Get(bot.ProfileId);
             _group = BotCacheUtility.GetGroupSync(cache);
             _lootDecision = cache.LootDecisionSystem;
             _log = Plugin.LoggerInstance;
@@ -91,20 +91,22 @@ namespace AIRefactored.AI.Missions.Subsystems
                 return;
             }
 
-            string nickname = _bot.Profile?.Info?.Nickname ?? "Unknown";
+            string name = _bot.Profile?.Info?.Nickname ?? "Unknown";
 
+            // Escalate to Fight if under fire and aggressive
             if (_bot.Memory != null &&
                 _bot.Memory.IsUnderFire &&
                 _profile.AggressionLevel > 0.6f &&
                 currentMission != MissionType.Fight)
             {
-                _lastSwitchTime = time;
                 currentMission = MissionType.Fight;
-                switchToFight();
-                _log.LogDebug("[MissionSwitcher] " + nickname + " escalating → Fight (under fire + aggressive)");
+                _lastSwitchTime = time;
+                switchToFight?.Invoke();
+                _log.LogDebug("[MissionSwitcher] " + name + " escalating → Fight (under fire + aggressive)");
                 return;
             }
 
+            // Opportunistically switch to Loot if mission bias allows it
             if (currentMission == MissionType.Quest &&
                 _profile.PreferredMission == MissionBias.Loot &&
                 _lootDecision != null &&
@@ -113,19 +115,20 @@ namespace AIRefactored.AI.Missions.Subsystems
                 Vector3 lootPos = _lootDecision.GetLootDestination();
                 if (lootPos != Vector3.zero)
                 {
-                    _lastSwitchTime = time;
                     currentMission = MissionType.Loot;
-                    _log.LogDebug("[MissionSwitcher] " + nickname + " switching → Loot (loot opportunity nearby)");
+                    _lastSwitchTime = time;
+                    _log.LogDebug("[MissionSwitcher] " + name + " switching → Loot (loot opportunity nearby)");
                     return;
                 }
             }
 
+            // Fall back to Quest if separated from squad
             if (currentMission == MissionType.Fight && !isGroupAligned())
             {
-                _lastSwitchTime = time;
                 currentMission = MissionType.Quest;
-                resumeQuesting();
-                _log.LogDebug("[MissionSwitcher] " + nickname + " falling back → Quest (squad separation)");
+                _lastSwitchTime = time;
+                resumeQuesting?.Invoke();
+                _log.LogDebug("[MissionSwitcher] " + name + " falling back → Quest (squad separation)");
             }
         }
 

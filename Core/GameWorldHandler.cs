@@ -326,6 +326,18 @@ namespace AIRefactored.Core
 
         public static bool TryForceResolveMapName() => TryGetValidMapName().Length > 0;
 
+        /// <summary>
+        /// Checks whether the current game world is valid and ready.
+        /// Used for safe teardown during plugin unload.
+        /// </summary>
+        public static bool HasValidWorld()
+        {
+            GameWorld world = TryGetGameWorld();
+            return world != null &&
+                   !string.IsNullOrEmpty(world.LocationId) &&
+                   !world.LocationId.Equals("unknown", StringComparison.OrdinalIgnoreCase);
+        }
+
         #endregion
 
         #region Bot Logic

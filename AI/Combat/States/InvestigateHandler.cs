@@ -62,13 +62,20 @@ namespace AIRefactored.AI.Combat.States
 
         #region Public Methods
 
+        /// <summary>
+        /// Resolves a safe target for investigation from visual memory, tactical memory, or randomized fallback.
+        /// </summary>
         public Vector3 GetInvestigateTarget(Vector3 visualLastKnown)
         {
             if (IsVectorValid(visualLastKnown))
+            {
                 return visualLastKnown;
+            }
 
             if (TryGetMemoryEnemyPosition(out Vector3 memoryPos))
+            {
                 return memoryPos;
+            }
 
             Vector3 fallback = RandomNearbyPosition();
             return BotNavValidator.Validate(_bot, "InvestigateRandomFallback")
@@ -76,10 +83,15 @@ namespace AIRefactored.AI.Combat.States
                 : FallbackNavPointProvider.GetSafePoint(_bot.Position);
         }
 
+        /// <summary>
+        /// Moves bot toward the investigation target and clears the tactical memory entry.
+        /// </summary>
         public void Investigate(Vector3 target)
         {
             if (_cache == null || _bot == null)
+            {
                 return;
+            }
 
             Vector3 destination = _cache.SquadPath != null
                 ? _cache.SquadPath.ApplyOffsetTo(target)
@@ -95,24 +107,37 @@ namespace AIRefactored.AI.Combat.States
             _cache.Combat?.TrySetStanceFromNearbyCover(destination);
         }
 
+        /// <summary>
+        /// Determines whether the bot should enter investigation state based on caution and sound memory.
+        /// </summary>
         public bool ShallUseNow(float time, float lastTransition)
         {
             if (_cache?.AIRefactoredBotOwner?.PersonalityProfile == null)
+            {
                 return false;
+            }
 
             if (_cache.AIRefactoredBotOwner.PersonalityProfile.Caution < MinCaution)
+            {
                 return false;
+            }
 
             float heardTime = _cache.LastHeardTime;
             return (heardTime + SoundReactTime) > time && (time - lastTransition) > ExitDelayBuffer;
         }
 
+        /// <summary>
+        /// Determines if bot has exceeded its investigation time or cooldown.
+        /// </summary>
         public bool ShouldExit(float now, float lastHitTime, float cooldown)
         {
             float elapsed = now - lastHitTime;
             return elapsed > cooldown || elapsed > MaxInvestigateTime;
         }
 
+        /// <summary>
+        /// Returns true if the bot is actively investigating a recent stimulus.
+        /// </summary>
         public bool IsInvestigating()
         {
             return (Time.time - _cache.LastHeardTime) <= ActiveWindow;
@@ -122,12 +147,17 @@ namespace AIRefactored.AI.Combat.States
 
         #region Private Methods
 
+        /// <summary>
+        /// Attempts to retrieve a valid enemy position from tactical memory.
+        /// </summary>
         private bool TryGetMemoryEnemyPosition(out Vector3 result)
         {
             result = Vector3.zero;
 
             if (_memory == null)
+            {
                 return false;
+            }
 
             Vector3? memory = _memory.GetRecentEnemyMemory();
             if (memory.HasValue && IsVectorValid(memory.Value))
@@ -139,6 +169,9 @@ namespace AIRefactored.AI.Combat.States
             return false;
         }
 
+        /// <summary>
+        /// Generates a random offset near the bot for fallback investigation.
+        /// </summary>
         private Vector3 RandomNearbyPosition()
         {
             Vector3 basePos = _bot != null ? _bot.Position : Vector3.zero;
@@ -147,6 +180,9 @@ namespace AIRefactored.AI.Combat.States
             return basePos + offset;
         }
 
+        /// <summary>
+        /// Verifies a vector is usable (non-NaN, non-zero).
+        /// </summary>
         private static bool IsVectorValid(Vector3 v)
         {
             return !float.IsNaN(v.x) && !float.IsNaN(v.y) && !float.IsNaN(v.z) && v != Vector3.zero;

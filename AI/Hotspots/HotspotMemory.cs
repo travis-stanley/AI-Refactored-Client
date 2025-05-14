@@ -64,7 +64,7 @@ namespace AIRefactored.AI.Hotspots
         /// </summary>
         public static void MarkVisited(string mapId, Vector3 position)
         {
-            if (mapId == null || mapId.Length == 0)
+            if (string.IsNullOrEmpty(mapId))
             {
                 return;
             }
@@ -85,13 +85,21 @@ namespace AIRefactored.AI.Hotspots
             visits[position] = Time.time;
         }
 
+        /// <summary>
+        /// Returns true if this hotspot was visited recently.
+        /// </summary>
+        public static bool WasVisitedRecently(string mapId, Vector3 position, float cooldownSeconds)
+        {
+            return WasVisitedWithin(mapId, position, cooldownSeconds);
+        }
+
         #endregion
 
         #region Internal Logic
 
         private static bool WasVisitedWithin(string mapId, Vector3 position, float cooldown)
         {
-            if (mapId == null || mapId.Length == 0)
+            if (string.IsNullOrEmpty(mapId))
             {
                 return false;
             }

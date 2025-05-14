@@ -84,42 +84,46 @@ namespace AIRefactored.AI.Combat.States
         /// <summary>
         /// Executes per-frame attack logic: move toward enemy and adjust stance.
         /// </summary>
-        public void Tick(float time)
+        public void Tick(float deltaTime)
         {
             try
             {
                 Player enemy;
                 if (!TryResolveEnemy(out enemy))
-                    return;
-
-                Transform targetTransform = EFTPlayerUtil.GetTransform(enemy);
-                if (targetTransform == null)
-                    return;
-
-                Vector3 currentPos = targetTransform.position;
-
-                float sqrDelta = (currentPos - _lastTargetPosition).sqrMagnitude;
-                if (!_hasLastTarget || sqrDelta > PositionUpdateThresholdSqr)
                 {
-                    _lastTargetPosition = currentPos;
+                    return;
+                }
+
+                Transform enemyTransform = EFTPlayerUtil.GetTransform(enemy);
+                if (enemyTransform == null)
+                {
+                    return;
+                }
+
+                Vector3 currentTargetPos = enemyTransform.position;
+                float deltaSqr = (currentTargetPos - _lastTargetPosition).sqrMagnitude;
+
+                if (!_hasLastTarget || deltaSqr > PositionUpdateThresholdSqr)
+                {
+                    _lastTargetPosition = currentTargetPos;
                     _hasLastTarget = true;
 
-                    Vector3 moveTarget = (_cache.SquadPath != null)
-                        ? _cache.SquadPath.ApplyOffsetTo(currentPos)
-                        : currentPos;
+                    Vector3 destination = (_cache.SquadPath != null)
+                        ? _cache.SquadPath.ApplyOffsetTo(currentTargetPos)
+                        : currentTargetPos;
 
                     if (!BotNavValidator.Validate(_bot, "AttackHandlerTarget"))
                     {
-                        moveTarget = FallbackNavPointProvider.GetSafePoint(_bot.Position);
+                        destination = FallbackNavPointProvider.GetSafePoint(_bot.Position);
                     }
 
-                    BotMovementHelper.SmoothMoveTo(_bot, moveTarget);
-                    BotCoverHelper.TrySetStanceFromNearbyCover(_cache, moveTarget);
+                    BotMovementHelper.SmoothMoveTo(_bot, destination);
+                    BotCoverHelper.TrySetStanceFromNearbyCover(_cache, destination);
                 }
             }
             catch (Exception ex)
             {
-                Plugin.LoggerInstance.LogError("[AttackHandler] Tick error: " + ex);
+                Plugin.LoggerInstance.LogError("[AttackHandler] Exception in Tick: " + ex);
                 BotFallbackUtility.FallbackToEFTLogic(_bot);
             }
         }
@@ -128,6 +132,9 @@ namespace AIRefactored.AI.Combat.States
 
         #region Private Methods
 
+        /// <summary>
+        /// Attempts to resolve the most appropriate enemy target for attack.
+        /// </summary>
         private bool TryResolveEnemy(out Player result)
         {
             result = null;

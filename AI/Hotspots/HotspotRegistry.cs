@@ -22,6 +22,8 @@ namespace AIRefactored.AI.Hotspots
     /// </summary>
     public static class HotspotRegistry
     {
+        #region Static Fields
+
         private static readonly ManualLogSource Logger = Plugin.LoggerInstance;
 
         private static readonly List<Hotspot> All = new List<Hotspot>(256);
@@ -43,17 +45,16 @@ namespace AIRefactored.AI.Hotspots
             { "rezervbase", SpatialIndexMode.Grid }
         };
 
-        private enum SpatialIndexMode
-        {
-            None,
-            Quadtree,
-            Grid
-        }
+        private enum SpatialIndexMode { None, Quadtree, Grid }
 
         private static SpatialIndexMode _activeMode = SpatialIndexMode.None;
         private static string _loadedMap = "none";
         private static HotspotQuadtree _quadtree;
         private static HotspotSpatialGrid _grid;
+
+        #endregion
+
+        #region Lifecycle
 
         public static void Clear()
         {
@@ -63,28 +64,6 @@ namespace AIRefactored.AI.Hotspots
             _grid = null;
             _loadedMap = "none";
             _activeMode = SpatialIndexMode.None;
-        }
-
-        public static IReadOnlyList<Hotspot> GetAll()
-        {
-            return All;
-        }
-
-        public static IReadOnlyList<Hotspot> GetAllInZone(string zone)
-        {
-            if (string.IsNullOrEmpty(zone))
-            {
-                return Array.Empty<Hotspot>();
-            }
-
-            List<Hotspot> result;
-            return ByZone.TryGetValue(zone.Trim(), out result) ? result : Array.Empty<Hotspot>();
-        }
-
-        public static Hotspot GetRandomHotspot()
-        {
-            int count = All.Count;
-            return count == 0 ? new Hotspot(Vector3.zero, "none") : All[UnityEngine.Random.Range(0, count)];
         }
 
         public static void Initialize(string mapId)
@@ -109,12 +88,12 @@ namespace AIRefactored.AI.Hotspots
 
             Clear();
             _loadedMap = normalizedMapId;
-            _activeMode = IndexModeMap.TryGetValue(_loadedMap, out SpatialIndexMode mode) ? mode : SpatialIndexMode.None;
+            _activeMode = IndexModeMap.TryGetValue(_loadedMap, out var mode) ? mode : SpatialIndexMode.None;
 
             HotspotSet set = HardcodedHotspots.GetForMap(_loadedMap);
             if (set == null || set.Points == null || set.Points.Count == 0)
             {
-                Logger.LogWarning("[HotspotRegistry] ⚠ No hotspots found for map '" + _loadedMap + "'");
+                Logger.LogWarning($"[HotspotRegistry] ⚠ No hotspots found for map '{_loadedMap}'");
                 return;
             }
 
@@ -130,14 +109,13 @@ namespace AIRefactored.AI.Hotspots
                 Hotspot h = new Hotspot(data.Position, zone);
                 All.Add(h);
 
-                List<Hotspot> zoneList;
-                if (!ByZone.TryGetValue(zone, out zoneList))
+                if (!ByZone.TryGetValue(zone, out var list))
                 {
-                    zoneList = new List<Hotspot>(8);
-                    ByZone[zone] = zoneList;
+                    list = new List<Hotspot>(8);
+                    ByZone[zone] = list;
                 }
 
-                zoneList.Add(h);
+                list.Add(h);
             }
 
             switch (_activeMode)
@@ -150,7 +128,29 @@ namespace AIRefactored.AI.Hotspots
                     break;
             }
 
-            Logger.LogDebug("[HotspotRegistry] ✅ Registered " + All.Count + " hotspots for map '" + _loadedMap + "' using " + _activeMode);
+            Logger.LogDebug($"[HotspotRegistry] ✅ Registered {All.Count} hotspots for map '{_loadedMap}' using {_activeMode}");
+        }
+
+        #endregion
+
+        #region Query API
+
+        public static IReadOnlyList<Hotspot> GetAll() => All;
+
+        public static IReadOnlyList<Hotspot> GetAllInZone(string zone)
+        {
+            if (string.IsNullOrEmpty(zone))
+            {
+                return Array.Empty<Hotspot>();
+            }
+
+            return ByZone.TryGetValue(zone.Trim(), out var result) ? result : Array.Empty<Hotspot>();
+        }
+
+        public static Hotspot GetRandomHotspot()
+        {
+            int count = All.Count;
+            return count == 0 ? new Hotspot(Vector3.zero, "none") : All[UnityEngine.Random.Range(0, count)];
         }
 
         public static List<Hotspot> QueryNearby(Vector3 position, float radius, Predicate<Hotspot> filter)
@@ -168,12 +168,16 @@ namespace AIRefactored.AI.Hotspots
             return FallbackQuery(position, radius, filter);
         }
 
+        #endregion
+
+        #region Spatial Index Builders
+
         private static void BuildQuadtree()
         {
             Vector2 center = EstimateCenter();
             float size = EstimateBoundsSize(center);
-            _quadtree = new HotspotQuadtree(center, size);
 
+            _quadtree = new HotspotQuadtree(center, size);
             for (int i = 0; i < All.Count; i++)
             {
                 _quadtree.Insert(All[i]);
@@ -191,10 +195,8 @@ namespace AIRefactored.AI.Hotspots
 
         private static Vector2 EstimateCenter()
         {
-            float minX = float.MaxValue;
-            float maxX = float.MinValue;
-            float minZ = float.MaxValue;
-            float maxZ = float.MinValue;
+            float minX = float.MaxValue, maxX = float.MinValue;
+            float minZ = float.MaxValue, maxZ = float.MinValue;
 
             for (int i = 0; i < All.Count; i++)
             {
@@ -241,6 +243,10 @@ namespace AIRefactored.AI.Hotspots
             return result;
         }
 
+        #endregion
+
+        #region Types
+
         /// <summary>
         /// Represents a runtime hotspot: a tactical point on the map with a zone label.
         /// </summary>
@@ -248,13 +254,14 @@ namespace AIRefactored.AI.Hotspots
         {
             public Hotspot(Vector3 position, string zone)
             {
-                this.Position = position;
-                this.Zone = zone ?? "none";
+                Position = position;
+                Zone = string.IsNullOrEmpty(zone) ? "none" : zone;
             }
 
             public Vector3 Position { get; }
-
             public string Zone { get; }
         }
+
+        #endregion
     }
 }

@@ -96,6 +96,7 @@ namespace AIRefactored.AI.Combat
             }
 
             _elapsedTime += deltaTime;
+
             if (_elapsedTime >= _deafDuration)
             {
                 Clear();

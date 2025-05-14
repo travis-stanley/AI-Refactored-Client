@@ -23,6 +23,8 @@ namespace AIRefactored.AI.Looting
     /// </summary>
     public static class LootRegistry
     {
+        #region Structs
+
         private struct TrackedContainer
         {
             public LootableContainer Container;
@@ -37,10 +39,16 @@ namespace AIRefactored.AI.Looting
             public float LastSeenTime;
         }
 
+        #endregion
+
+        #region Static Fields
+
         private static readonly Dictionary<LootableContainer, TrackedContainer> Containers = new Dictionary<LootableContainer, TrackedContainer>(64);
         private static readonly Dictionary<LootItem, TrackedItem> Items = new Dictionary<LootItem, TrackedItem>(128);
         private static readonly HashSet<int> WatchedInstanceIds = new HashSet<int>();
         private static readonly ManualLogSource Logger = Plugin.LoggerInstance;
+
+        #endregion
 
         #region Lifecycle
 
@@ -64,7 +72,7 @@ namespace AIRefactored.AI.Looting
 
         public static List<LootableContainer> GetAllContainers()
         {
-            var list = TempListPool.Rent<LootableContainer>();
+            List<LootableContainer> list = TempListPool.Rent<LootableContainer>();
             foreach (var kv in Containers)
             {
                 if (kv.Key != null)
@@ -77,7 +85,7 @@ namespace AIRefactored.AI.Looting
 
         public static List<LootItem> GetAllItems()
         {
-            var list = TempListPool.Rent<LootItem>();
+            List<LootItem> list = TempListPool.Rent<LootItem>();
             foreach (var kv in Items)
             {
                 if (kv.Key != null)
@@ -90,18 +98,13 @@ namespace AIRefactored.AI.Looting
 
         public static List<LootableContainer> GetNearbyContainers(Vector3 origin, float radius)
         {
-            var result = TempListPool.Rent<LootableContainer>();
+            List<LootableContainer> result = TempListPool.Rent<LootableContainer>();
             float radiusSqr = radius * radius;
 
             foreach (var kv in Containers)
             {
                 Transform tf = kv.Value.Transform;
-                if (tf == null)
-                {
-                    continue;
-                }
-
-                if ((tf.position - origin).sqrMagnitude <= radiusSqr)
+                if (tf != null && (tf.position - origin).sqrMagnitude <= radiusSqr)
                 {
                     result.Add(kv.Value.Container);
                 }
@@ -112,18 +115,13 @@ namespace AIRefactored.AI.Looting
 
         public static List<LootItem> GetNearbyItems(Vector3 origin, float radius)
         {
-            var result = TempListPool.Rent<LootItem>();
+            List<LootItem> result = TempListPool.Rent<LootItem>();
             float radiusSqr = radius * radius;
 
             foreach (var kv in Items)
             {
                 Transform tf = kv.Value.Transform;
-                if (tf == null)
-                {
-                    continue;
-                }
-
-                if ((tf.position - origin).sqrMagnitude <= radiusSqr)
+                if (tf != null && (tf.position - origin).sqrMagnitude <= radiusSqr)
                 {
                     result.Add(kv.Value.Item);
                 }
@@ -177,14 +175,14 @@ namespace AIRefactored.AI.Looting
         public static bool TryGetContainerByName(string name, out LootableContainer found)
         {
             found = null;
-            if (string.IsNullOrEmpty(name))
+            if (string.IsNullOrWhiteSpace(name))
             {
                 return false;
             }
 
             foreach (var kv in Containers)
             {
-                if (kv.Key != null && string.Equals(kv.Key.name, name, StringComparison.OrdinalIgnoreCase))
+                if (kv.Key != null && string.Equals(kv.Key.name, name.Trim(), StringComparison.OrdinalIgnoreCase))
                 {
                     found = kv.Key;
                     return true;
@@ -197,14 +195,14 @@ namespace AIRefactored.AI.Looting
         public static bool TryGetItemByName(string name, out LootItem found)
         {
             found = null;
-            if (string.IsNullOrEmpty(name))
+            if (string.IsNullOrWhiteSpace(name))
             {
                 return false;
             }
 
             foreach (var kv in Items)
             {
-                if (kv.Key != null && string.Equals(kv.Key.name, name, StringComparison.OrdinalIgnoreCase))
+                if (kv.Key != null && string.Equals(kv.Key.name, name.Trim(), StringComparison.OrdinalIgnoreCase))
                 {
                     found = kv.Key;
                     return true;
@@ -245,6 +243,7 @@ namespace AIRefactored.AI.Looting
         public static void PruneStale(float olderThanSeconds)
         {
             float cutoff = Time.time - olderThanSeconds;
+
             RemoveWhere(Containers, kv => kv.Value.LastSeenTime < cutoff);
             RemoveWhere(Items, kv => kv.Value.LastSeenTime < cutoff);
         }
@@ -257,18 +256,15 @@ namespace AIRefactored.AI.Looting
             }
 
             int id = go.GetInstanceID();
-            if (WatchedInstanceIds.Contains(id))
+            if (WatchedInstanceIds.Add(id))
             {
-                return;
+                LootRuntimeWatcher.Register(go);
             }
-
-            WatchedInstanceIds.Add(id);
-            LootRuntimeWatcher.Register(go);
         }
 
         private static void RemoveWhere<TKey, TValue>(Dictionary<TKey, TValue> dict, Func<KeyValuePair<TKey, TValue>, bool> predicate)
         {
-            var toRemove = TempListPool.Rent<TKey>();
+            List<TKey> toRemove = TempListPool.Rent<TKey>();
             try
             {
                 foreach (var kv in dict)

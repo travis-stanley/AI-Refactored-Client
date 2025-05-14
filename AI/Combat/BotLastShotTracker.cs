@@ -26,10 +26,10 @@ namespace AIRefactored.AI.Combat
         #region Fields
 
         private string _lastAttackerId = string.Empty;
-        private float _lastHitTime;
+        private float _lastHitTime = float.NegativeInfinity;
 
         private string _lastTargetId = string.Empty;
-        private float _lastShotTime;
+        private float _lastShotTime = float.NegativeInfinity;
 
         #endregion
 
@@ -104,8 +104,8 @@ namespace AIRefactored.AI.Combat
         {
             _lastAttackerId = string.Empty;
             _lastTargetId = string.Empty;
-            _lastHitTime = 0f;
-            _lastShotTime = 0f;
+            _lastHitTime = float.NegativeInfinity;
+            _lastShotTime = float.NegativeInfinity;
         }
 
         #endregion

@@ -44,24 +44,30 @@ namespace AIRefactored.AI.Looting
         private BotComponentCache _cache;
 
         private float _nextScanTime;
-        private float _lastUpdate;
-        private float _cachedValue;
+        private float _lastUpdateTime;
+        private float _cachedLootValue;
 
         #endregion
 
         #region Properties
 
-        public float TotalLootValue => _cachedValue;
+        /// <summary>
+        /// Gets the estimated total loot value around the bot's scanning radius.
+        /// </summary>
+        public float TotalLootValue => _cachedLootValue;
 
         #endregion
 
         #region Initialization
 
+        /// <summary>
+        /// Initializes the scanner for the given bot cache.
+        /// </summary>
         public void Initialize(BotComponentCache cache)
         {
             if (cache == null || cache.Bot == null)
             {
-                throw new ArgumentException("[BotLootScanner] Invalid initialization.");
+                throw new ArgumentException("[BotLootScanner] Invalid initialization: missing cache or bot.");
             }
 
             _cache = cache;
@@ -70,8 +76,11 @@ namespace AIRefactored.AI.Looting
 
         #endregion
 
-        #region Tick
+        #region Public Methods
 
+        /// <summary>
+        /// Performs loot scanning and interaction logic.
+        /// </summary>
         public void Tick(float time)
         {
             if (_bot == null || _bot.IsDead || time < _nextScanTime)
@@ -88,19 +97,19 @@ namespace AIRefactored.AI.Looting
 
             TryLootNearby();
 
-            _cachedValue = CalculateNearbyLootValue();
-            if (_cachedValue <= 0f && time - _lastUpdate > StaleResetSeconds)
+            _cachedLootValue = CalculateNearbyLootValue();
+
+            if (_cachedLootValue <= 0f && time - _lastUpdateTime > StaleResetSeconds)
             {
-                _cachedValue = 0f;
+                _cachedLootValue = 0f;
             }
 
-            _lastUpdate = time;
+            _lastUpdateTime = time;
         }
 
-        #endregion
-
-        #region Public API
-
+        /// <summary>
+        /// Finds the highest-value loot position nearby the bot.
+        /// </summary>
         public Vector3 GetBestLootPosition()
         {
             if (_bot == null)
@@ -109,35 +118,38 @@ namespace AIRefactored.AI.Looting
             }
 
             Vector3 origin = _bot.Position;
-            Vector3 bestPos = origin;
+            Vector3 best = origin;
             float bestValue = 0f;
 
             List<LootableContainer> containers = LootRegistry.GetAllContainers();
             for (int i = 0; i < containers.Count; i++)
             {
-                LootableContainer c = containers[i];
-                if (c == null || !c.enabled || IsOnCooldown(c.name))
+                LootableContainer container = containers[i];
+                if (container == null || !container.enabled || IsOnCooldown(container.name))
                 {
                     continue;
                 }
 
-                float dist = Vector3.Distance(origin, c.transform.position);
-                if (dist > HighValueRadius || !HasLineOfSight(c.transform.position))
+                Vector3 position = container.transform.position;
+                if (Vector3.Distance(origin, position) > HighValueRadius || !HasLineOfSight(position))
                 {
                     continue;
                 }
 
-                float value = EstimateContainerValue(c);
+                float value = EstimateContainerValue(container);
                 if (value > bestValue)
                 {
                     bestValue = value;
-                    bestPos = c.transform.position;
+                    best = position;
                 }
             }
 
-            return bestPos;
+            return best;
         }
 
+        /// <summary>
+        /// Attempts to loot containers or loose items within range.
+        /// </summary>
         public void TryLootNearby()
         {
             if (_bot == null)
@@ -150,8 +162,8 @@ namespace AIRefactored.AI.Looting
             LootableContainer corpse = DeadBodyContainerCache.Get(_bot.ProfileId);
             if (corpse != null && corpse.enabled && !IsOnCooldown(corpse.name))
             {
-                if (Vector3.Distance(origin, corpse.transform.position) <= LootRadius &&
-                    HasLineOfSight(corpse.transform.position))
+                Vector3 position = corpse.transform.position;
+                if (Vector3.Distance(origin, position) <= LootRadius && HasLineOfSight(position))
                 {
                     Loot(corpse);
                     return;
@@ -161,13 +173,13 @@ namespace AIRefactored.AI.Looting
             List<LootableContainer> containers = LootRegistry.GetAllContainers();
             for (int i = 0; i < containers.Count; i++)
             {
-                LootableContainer c = containers[i];
-                if (c != null && c.enabled && !IsOnCooldown(c.name))
+                LootableContainer container = containers[i];
+                if (container != null && container.enabled && !IsOnCooldown(container.name))
                 {
-                    if (Vector3.Distance(origin, c.transform.position) <= LootRadius &&
-                        HasLineOfSight(c.transform.position))
+                    Vector3 position = container.transform.position;
+                    if (Vector3.Distance(origin, position) <= LootRadius && HasLineOfSight(position))
                     {
-                        Loot(c);
+                        Loot(container);
                         return;
                     }
                 }
@@ -179,8 +191,8 @@ namespace AIRefactored.AI.Looting
                 LootItem item = items[i];
                 if (item != null && item.enabled && !IsOnCooldown(item.name))
                 {
-                    if (Vector3.Distance(origin, item.transform.position) <= LootRadius &&
-                        HasLineOfSight(item.transform.position))
+                    Vector3 position = item.transform.position;
+                    if (Vector3.Distance(origin, position) <= LootRadius && HasLineOfSight(position))
                     {
                         MarkCooldown(item.name);
                         _cache.Movement.EnterLootingMode();
@@ -200,6 +212,7 @@ namespace AIRefactored.AI.Looting
         {
             return _cache != null &&
                    !_cache.PanicHandler.IsPanicking &&
+                   _bot != null &&
                    _bot.Memory.GoalEnemy == null &&
                    (_bot.EnemiesController == null || _bot.EnemiesController.EnemyInfos.Count == 0);
         }
@@ -212,10 +225,10 @@ namespace AIRefactored.AI.Looting
 
             for (int i = 0; i < containers.Count; i++)
             {
-                LootableContainer c = containers[i];
-                if (c != null && c.enabled && Vector3.Distance(origin, c.transform.position) <= LootRadius)
+                LootableContainer container = containers[i];
+                if (container != null && container.enabled && Vector3.Distance(origin, container.transform.position) <= LootRadius)
                 {
-                    sum += EstimateContainerValue(c);
+                    sum += EstimateContainerValue(container);
                 }
             }
 
@@ -233,18 +246,14 @@ namespace AIRefactored.AI.Looting
 
         private float EstimateContainerValue(LootableContainer container)
         {
-            if (container.ItemOwner == null)
+            if (container.ItemOwner == null || container.ItemOwner.RootItem == null)
             {
                 return 0f;
             }
 
             Item root = container.ItemOwner.RootItem;
-            if (root == null)
-            {
-                return 0f;
-            }
-
             float total = 0f;
+
             List<Item> items = TempListPool.Rent<Item>();
             items.AddRange(root.GetAllItems());
 
@@ -268,16 +277,16 @@ namespace AIRefactored.AI.Looting
         private bool HasLineOfSight(Vector3 target)
         {
             Vector3 origin = _bot.WeaponRoot.position;
-            Vector3 dir = target - origin;
+            Vector3 direction = target - origin;
 
-            if (Vector3.Angle(_bot.WeaponRoot.forward, dir) > MaxAngle)
+            if (Vector3.Angle(_bot.WeaponRoot.forward, direction) > MaxAngle)
             {
                 return false;
             }
 
-            float dist = dir.magnitude + 0.3f;
-            return Physics.Raycast(origin, dir.normalized, out RaycastHit hit, dist, AIRefactoredLayerMasks.HighPolyWithTerrainMaskAI)
-                && Vector3.Distance(hit.point, target) < 0.4f;
+            float distance = direction.magnitude + 0.3f;
+            return Physics.Raycast(origin, direction.normalized, out RaycastHit hit, distance, AIRefactoredLayerMasks.HighPolyWithTerrainMaskAI)
+                   && Vector3.Distance(hit.point, target) < 0.4f;
         }
 
         private void MarkCooldown(string id)

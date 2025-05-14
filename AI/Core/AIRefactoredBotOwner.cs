@@ -9,7 +9,6 @@
 namespace AIRefactored.AI.Core
 {
     using System;
-    using AIRefactored.AI;
     using AIRefactored.AI.Missions;
     using AIRefactored.Core;
     using AIRefactored.Runtime;
@@ -124,23 +123,24 @@ namespace AIRefactored.AI.Core
             {
                 _cache = BotComponentCacheRegistry.GetOrCreate(bot);
                 _cache.SetOwner(this);
-                _isInitialized = true;
 
                 string profileId = bot.Profile?.Id ?? "null-profile";
                 WildSpawnType role = bot.Profile?.Info?.Settings?.Role ?? WildSpawnType.assault;
-
                 BotPersonalityProfile profile = BotRegistry.GetOrGenerate(profileId, PersonalityType.Balanced, role);
-                InitProfile(profile, profile.Personality.ToString());
+
+                InitProfile(profile, profile?.Personality.ToString() ?? "Balanced");
+
+                _isInitialized = true;
 
                 if (!FikaHeadlessDetector.IsHeadless)
                 {
                     string nickname = bot.Profile?.Info?.Nickname ?? "Unnamed";
-                    Logger.LogDebug("[AIRefactoredBotOwner] Initialized for bot: " + nickname);
+                    Logger.LogDebug($"[AIRefactoredBotOwner] Initialized for bot: {nickname}");
                 }
             }
             catch (Exception ex)
             {
-                Logger.LogError("[AIRefactoredBotOwner] Initialization failed: " + ex);
+                Logger.LogError($"[AIRefactoredBotOwner] Initialization failed: {ex}");
                 BotFallbackUtility.FallbackToEFTLogic(bot);
             }
         }
@@ -157,7 +157,7 @@ namespace AIRefactored.AI.Core
                 {
                     preset = BotPersonalityPresets.Presets[PersonalityType.Adaptive];
                     PersonalityName = "Adaptive";
-                    Logger.LogWarning("[AIRefactoredBotOwner] Invalid personality type '" + type + "' — using Adaptive.");
+                    Logger.LogWarning($"[AIRefactoredBotOwner] Invalid personality type '{type}' — using Adaptive.");
                 }
                 else
                 {
@@ -168,12 +168,12 @@ namespace AIRefactored.AI.Core
 
                 if (!FikaHeadlessDetector.IsHeadless)
                 {
-                    Logger.LogDebug("[AIRefactoredBotOwner] Personality assigned: " + PersonalityName);
+                    Logger.LogDebug($"[AIRefactoredBotOwner] Personality assigned: {PersonalityName}");
                 }
             }
             catch (Exception ex)
             {
-                Logger.LogError("[AIRefactoredBotOwner] InitProfile failed: " + ex);
+                Logger.LogError($"[AIRefactoredBotOwner] InitProfile failed: {ex}");
                 BotFallbackUtility.FallbackToEFTLogic(_bot);
             }
         }
@@ -192,7 +192,7 @@ namespace AIRefactored.AI.Core
 
             if (!FikaHeadlessDetector.IsHeadless)
             {
-                Logger.LogDebug("[AIRefactoredBotOwner] Custom profile assigned: " + PersonalityName);
+                Logger.LogDebug($"[AIRefactoredBotOwner] Custom profile assigned: {PersonalityName}");
             }
         }
 
@@ -228,7 +228,7 @@ namespace AIRefactored.AI.Core
 
             if (!FikaHeadlessDetector.IsHeadless)
             {
-                Logger.LogDebug("[AIRefactoredBotOwner] Zone assigned: " + zoneName);
+                Logger.LogDebug($"[AIRefactoredBotOwner] Zone assigned: {zoneName}");
             }
         }
 

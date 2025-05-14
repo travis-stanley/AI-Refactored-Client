@@ -39,19 +39,16 @@ namespace AIRefactored.AI.Hotspots
         public void Initialize()
         {
             _sessions.Clear();
-
-            // Dynamically get the valid map name from the GameWorldHandler
             string map = GameWorldHandler.TryGetValidMapName();
 
-            // If the map name is invalid or unavailable, let EFT handle default behavior without setting a map
             if (string.IsNullOrEmpty(map))
             {
                 Logger.LogWarning("[HotspotSystem] No valid map found. Falling back to default EFT behavior.");
-                HotspotRegistry.Initialize(string.Empty); // Pass an empty string to trigger default EFT behavior
+                HotspotRegistry.Initialize(string.Empty);
             }
             else
             {
-                HotspotRegistry.Initialize(map);  // Sync with the actual dynamic map name
+                HotspotRegistry.Initialize(map);
             }
         }
 
@@ -74,8 +71,7 @@ namespace AIRefactored.AI.Hotspots
                     continue;
                 }
 
-                HotspotSession session;
-                if (!_sessions.TryGetValue(bot, out session))
+                if (!_sessions.TryGetValue(bot, out var session))
                 {
                     session = AssignHotspotRoute(bot);
                     if (session != null)
@@ -91,17 +87,15 @@ namespace AIRefactored.AI.Hotspots
         private HotspotSession AssignHotspotRoute(BotOwner bot)
         {
             BotPersonalityProfile profile = BotRegistry.Get(bot.ProfileId);
-
-            // Dynamically retrieve the current map name from GameWorldHandler
             string map = GameWorldHandler.TryGetValidMapName();
+
             if (string.IsNullOrEmpty(map))
             {
                 Logger.LogWarning("[HotspotSystem] ❌ No valid map found. Falling back to default EFT behavior.");
-                return null; // Return null if map name is invalid or not found
+                return null;
             }
 
             IReadOnlyList<HotspotRegistry.Hotspot> all = HotspotRegistry.GetAll();
-
             if (all.Count == 0)
             {
                 Logger.LogWarning("[HotspotSystem] ❌ No hotspots found for " + map);
@@ -160,68 +154,67 @@ namespace AIRefactored.AI.Hotspots
                     throw new ArgumentException("Invalid HotspotSession initialization.");
                 }
 
-                this._bot = bot;
-                this._route = route;
-                this._isDefender = isDefender;
-                this._cache = BotCacheUtility.GetCache(bot);
-                this._index = 0;
-                this._lastHitTime = -999f;
-                this._nextSwitchTime = Time.time + this.GetSwitchInterval();
+                _bot = bot;
+                _route = route;
+                _isDefender = isDefender;
+                _cache = BotCacheUtility.GetCache(bot);
+                _index = 0;
+                _lastHitTime = -999f;
+                _nextSwitchTime = Time.time + GetSwitchInterval();
 
-                HealthControllerClass health = bot.GetPlayer?.HealthController as HealthControllerClass;
-                if (health != null)
+                if (bot.GetPlayer?.HealthController is HealthControllerClass health)
                 {
-                    health.ApplyDamageEvent += this.OnDamaged;
+                    health.ApplyDamageEvent += OnDamaged;
                 }
             }
 
             public void Tick()
             {
-                if (this._bot.IsDead || this._route.Count == 0 || this._bot.GetPlayer == null || this._bot.GetPlayer.IsYourPlayer)
+                if (_bot.IsDead || _route.Count == 0 || _bot.GetPlayer == null || _bot.GetPlayer.IsYourPlayer)
                 {
                     return;
                 }
 
-                if (this._bot.Memory?.GoalEnemy != null)
+                if (_bot.Memory?.GoalEnemy != null)
                 {
-                    this._bot.Sprint(true);
+                    _bot.Sprint(true);
                     return;
                 }
 
-                if (Time.time - this._lastHitTime < DamageCooldown)
+                if (Time.time - _lastHitTime < DamageCooldown)
                 {
                     return;
                 }
 
-                Vector3 target = this._route[this._index].Position;
+                Vector3 target = _route[_index].Position;
 
-                if (this._isDefender)
+                if (_isDefender)
                 {
-                    float dist = Vector3.Distance(this._bot.Position, target);
-                    float composure = this._cache.PanicHandler != null ? this._cache.PanicHandler.GetComposureLevel() : 1f;
+                    float dist = Vector3.Distance(_bot.Position, target);
+                    float composure = _cache.PanicHandler?.GetComposureLevel() ?? 1f;
                     float radius = BaseDefendRadius * Mathf.Clamp(1f + (1f - composure), 1f, 2f);
 
                     if (dist > radius)
                     {
-                        BotMovementHelper.SmoothMoveTo(this._bot, target);
+                        BotMovementHelper.SmoothMoveTo(_bot, target);
                     }
                 }
                 else
                 {
-                    float dist = Vector3.Distance(this._bot.Position, target);
-                    if (Time.time >= this._nextSwitchTime || dist < 2f)
+                    float dist = Vector3.Distance(_bot.Position, target);
+                    if (Time.time >= _nextSwitchTime || dist < 2f)
                     {
-                        this._index = (this._index + 1) % this._route.Count;
-                        this._nextSwitchTime = Time.time + this.GetSwitchInterval();
+                        _index = (_index + 1) % _route.Count;
+                        _nextSwitchTime = Time.time + GetSwitchInterval();
                     }
 
-                    BotMovementHelper.SmoothMoveTo(this._bot, this.AddJitterTo(target));
+                    BotMovementHelper.SmoothMoveTo(_bot, AddJitterTo(target));
                 }
             }
 
             private Vector3 AddJitterTo(Vector3 target)
             {
-                BotPersonalityProfile profile = this._cache.AIRefactoredBotOwner?.PersonalityProfile;
+                BotPersonalityProfile profile = _cache.AIRefactoredBotOwner?.PersonalityProfile;
                 if (profile == null)
                 {
                     return target;
@@ -249,7 +242,7 @@ namespace AIRefactored.AI.Hotspots
 
             private float GetSwitchInterval()
             {
-                BotPersonalityProfile profile = BotRegistry.Get(this._bot.ProfileId);
+                BotPersonalityProfile profile = BotRegistry.Get(_bot.ProfileId);
                 float baseTime;
 
                 switch (profile.Personality)
@@ -328,8 +321,8 @@ namespace AIRefactored.AI.Hotspots
 
             private void OnDamaged(EBodyPart part, float damage, DamageInfoStruct info)
             {
-                this._lastHitTime = Time.time;
-                this._cache.PanicHandler?.TriggerPanic();
+                _lastHitTime = Time.time;
+                _cache.PanicHandler?.TriggerPanic();
             }
         }
     }

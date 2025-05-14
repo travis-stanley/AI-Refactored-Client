@@ -21,7 +21,7 @@ namespace AIRefactored.AI.Combat.States
     /// <summary>
     /// Handles suppression fallback, retreat routing, and cover movement during engagements.
     /// </summary>
-    public sealed class FallbackHandler
+    public sealed class FallbackHandler : IDisposable
     {
         #region Constants
 
@@ -45,7 +45,8 @@ namespace AIRefactored.AI.Combat.States
         {
             if (cache == null || cache.Bot == null)
             {
-                throw new ArgumentException("[FallbackHandler] Cache or Bot is null.");
+                Plugin.LoggerInstance.LogError("[FallbackHandler] Null Bot or cache during initialization.");
+                throw new ArgumentException("FallbackHandler requires a valid cache with BotOwner.");
             }
 
             _cache = cache;
@@ -77,7 +78,7 @@ namespace AIRefactored.AI.Combat.States
         {
             if (!IsVectorValid(target))
             {
-                Plugin.LoggerInstance.LogWarning("[FallbackHandler] Ignored fallback target with NaN or invalid values.");
+                Plugin.LoggerInstance.LogWarning("[FallbackHandler] Ignored fallback target with invalid vector.");
                 return;
             }
 
@@ -88,16 +89,18 @@ namespace AIRefactored.AI.Combat.States
         {
             if (path == null || path.Count < 2)
             {
-                Plugin.LoggerInstance.LogWarning("[FallbackHandler] Rejected fallback path: insufficient length.");
+                Plugin.LoggerInstance.LogWarning("[FallbackHandler] Rejected fallback path: path too short.");
                 return;
             }
 
             _currentFallbackPath.Clear();
-            for (int i = 0, count = path.Count; i < count; i++)
+
+            for (int i = 0; i < path.Count; i++)
             {
-                if (IsVectorValid(path[i]))
+                Vector3 point = path[i];
+                if (IsVectorValid(point))
                 {
-                    _currentFallbackPath.Add(path[i]);
+                    _currentFallbackPath.Add(point);
                 }
             }
 
@@ -107,7 +110,7 @@ namespace AIRefactored.AI.Combat.States
             }
             else
             {
-                Plugin.LoggerInstance.LogWarning("[FallbackHandler] Final fallback path was invalid or corrupted.");
+                Plugin.LoggerInstance.LogWarning("[FallbackHandler] Final fallback path was invalid.");
             }
         }
 
@@ -120,20 +123,22 @@ namespace AIRefactored.AI.Combat.States
 
         public bool ShouldTriggerSuppressedFallback(float now, float lastStateChangeTime, float minStateDuration)
         {
-            return _cache?.Suppression != null &&
+            return _cache.Suppression != null &&
                    _cache.Suppression.IsSuppressed() &&
                    (now - lastStateChangeTime) >= minStateDuration;
         }
 
         public void Tick(float time, Action<CombatState, float> forceState)
         {
-            if (_cache.IsFallbackMode || _bot == null)
-                return;
-
-            var player = _bot.GetPlayer;
-            if (!EFTPlayerUtil.IsValid(player) || !IsVectorValid(_fallbackTarget))
+            if (_cache.IsFallbackMode || _bot == null || !IsVectorValid(_fallbackTarget))
             {
-                Plugin.LoggerInstance.LogWarning("[FallbackHandler] Tick skipped: invalid bot or fallback target.");
+                return;
+            }
+
+            Player player = _bot.GetPlayer;
+            if (!EFTPlayerUtil.IsValid(player))
+            {
+                Plugin.LoggerInstance.LogWarning("[FallbackHandler] Tick skipped: bot player invalid.");
                 return;
             }
 
@@ -162,6 +167,11 @@ namespace AIRefactored.AI.Combat.States
         {
             _fallbackTarget = (_bot != null) ? _bot.Position : Vector3.zero;
             _currentFallbackPath.Clear();
+        }
+
+        public void Dispose()
+        {
+            TempListPool.Return(_currentFallbackPath);
         }
 
         #endregion

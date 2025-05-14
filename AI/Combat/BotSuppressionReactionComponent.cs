@@ -34,7 +34,7 @@ namespace AIRefactored.AI.Combat
         private BotOwner _bot;
         private BotComponentCache _cache;
         private bool _isSuppressed;
-        private float _suppressionStartTime;
+        private float _suppressionStartTime = float.NegativeInfinity;
 
         #endregion
 
@@ -53,7 +53,7 @@ namespace AIRefactored.AI.Combat
             _cache = componentCache;
             _bot = componentCache.Bot;
             _isSuppressed = false;
-            _suppressionStartTime = -100f;
+            _suppressionStartTime = float.NegativeInfinity;
         }
 
         /// <summary>
@@ -70,7 +70,9 @@ namespace AIRefactored.AI.Combat
         public void Tick(float time)
         {
             if (!_isSuppressed)
+            {
                 return;
+            }
 
             if (!IsValid())
             {
@@ -90,11 +92,15 @@ namespace AIRefactored.AI.Combat
         public void TriggerSuppression(Vector3? source)
         {
             if (_isSuppressed || !IsValid())
+            {
                 return;
+            }
 
             var panic = _cache.PanicHandler;
             if (panic != null && panic.IsPanicking)
+            {
                 return;
+            }
 
             _isSuppressed = true;
             _suppressionStartTime = Time.time;
@@ -129,16 +135,18 @@ namespace AIRefactored.AI.Combat
                 var path = BotCoverRetreatPlanner.GetCoverRetreatPath(_bot, retreatDirection, _cache.Pathing);
                 if (path.Count > 0)
                 {
-                    return Vector3.Distance(path[0], _bot.Position) < 1f && path.Count > 1 ? path[1] : path[0];
+                    return (Vector3.Distance(path[0], _bot.Position) < 1f && path.Count > 1)
+                        ? path[1]
+                        : path[0];
                 }
             }
 
-            return _bot.Position + retreatDirection * MinSuppressionRetreatDistance;
+            return _bot.Position + retreatDirection.normalized * MinSuppressionRetreatDistance;
         }
 
         private static Vector3 GetDefaultRetreatDirection()
         {
-            return Vector3.back; // used when bot.LookDirection is degenerate
+            return Vector3.back;
         }
 
         private bool IsValid()

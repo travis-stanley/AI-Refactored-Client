@@ -49,8 +49,8 @@ namespace AIRefactored.AI.Helpers
             }
 
             Vector3 fallback = bot.Position - threatDirection.normalized * distance;
-
             BotComponentCache cache = BotCacheUtility.GetCache(bot);
+
             if (NavMeshStatus.IsReady && cache?.Pathing != null)
             {
                 List<Vector3> path = BotCoverRetreatPlanner.GetCoverRetreatPath(bot, threatDirection, cache.Pathing);
@@ -66,7 +66,7 @@ namespace AIRefactored.AI.Helpers
                 BotCoverHelper.MarkUsed(fallback);
             }
 
-            if (!BotNavValidator.Validate(bot, "RetreatToCover"))
+            if (!BotNavValidator.Validate(bot, nameof(RetreatToCover)))
             {
                 fallback = FallbackNavPointProvider.GetSafePoint(bot.Position);
             }
@@ -82,6 +82,7 @@ namespace AIRefactored.AI.Helpers
             }
 
             bot.Mover.GoToPoint(fallback, true, cohesion);
+
             if (sprint)
             {
                 bot.Sprint(true);
@@ -121,7 +122,7 @@ namespace AIRefactored.AI.Helpers
                 return;
             }
 
-            if (!BotNavValidator.Validate(bot, "SmoothMoveTo"))
+            if (!BotNavValidator.Validate(bot, nameof(SmoothMoveTo)))
             {
                 target = FallbackNavPointProvider.GetSafePoint(bot.Position);
             }
@@ -147,8 +148,8 @@ namespace AIRefactored.AI.Helpers
             }
 
             Vector3 fallback = bot.Position + bot.LookDirection.normalized * 4f;
-
             BotComponentCache cache = BotCacheUtility.GetCache(bot);
+
             if (NavMeshStatus.IsReady && cache?.Pathing != null)
             {
                 Vector3? point = BotCoverRetreatPlanner.GetSafeExtractionPoint(bot, cache.Pathing);
@@ -158,7 +159,7 @@ namespace AIRefactored.AI.Helpers
                 }
             }
 
-            if (!BotNavValidator.Validate(bot, "SmoothMoveToSafeExit"))
+            if (!BotNavValidator.Validate(bot, nameof(SmoothMoveToSafeExit)))
             {
                 fallback = FallbackNavPointProvider.GetSafePoint(bot.Position);
             }
@@ -182,7 +183,7 @@ namespace AIRefactored.AI.Helpers
             Vector3 offset = right.normalized * DefaultStrafeDistance * Mathf.Clamp(scale, 0.75f, 1.25f);
             Vector3 target = bot.Position + offset;
 
-            if (!BotNavValidator.Validate(bot, "SmoothStrafeFrom"))
+            if (!BotNavValidator.Validate(bot, nameof(SmoothStrafeFrom)))
             {
                 target = FallbackNavPointProvider.GetSafePoint(bot.Position);
             }
@@ -209,7 +210,7 @@ namespace AIRefactored.AI.Helpers
                 }
             }
 
-            if (!BotNavValidator.Validate(bot, "ForceFallbackMove"))
+            if (!BotNavValidator.Validate(bot, nameof(ForceFallbackMove)))
             {
                 target = FallbackNavPointProvider.GetSafePoint(bot.Position);
             }

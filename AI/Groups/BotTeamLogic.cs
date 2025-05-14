@@ -108,7 +108,7 @@ namespace AIRefactored.AI.Groups
                 BotOwner mate = pair.Key;
                 CombatStateMachine fsm = pair.Value;
 
-                if (EFTPlayerUtil.IsValidBotOwner(mate) && mate != _bot)
+                if (EFTPlayerUtil.IsValidBotOwner(mate) && mate != _bot && fsm != null)
                 {
                     TriggerDelayedFallback(fsm, retreatPoint);
                 }
@@ -232,6 +232,11 @@ namespace AIRefactored.AI.Groups
 
         private static void TriggerDelayedFallback(CombatStateMachine fsm, Vector3 point)
         {
+            if (fsm == null)
+            {
+                return;
+            }
+
             Task.Run(async () =>
             {
                 try

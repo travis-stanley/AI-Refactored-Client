@@ -52,7 +52,6 @@ namespace AIRefactored
             {
                 if (_initialized)
                 {
-                    _logger?.LogWarning("[AIRefactored] Duplicate Awake() — plugin already initialized.");
                     return;
                 }
 
@@ -84,7 +83,12 @@ namespace AIRefactored
                 try
                 {
                     _logger.LogInfo("[AIRefactored] 🔻 Plugin OnDestroy — performing teardown...");
-                    GameWorldHandler.UnhookBotSpawns();
+
+                    if (GameWorldHandler.HasValidWorld())
+                    {
+                        GameWorldHandler.UnhookBotSpawns();
+                    }
+
                     _logger.LogInfo("[AIRefactored] ✅ Cleanup complete — plugin shutdown successful.");
                 }
                 catch (Exception ex)

@@ -46,7 +46,7 @@ namespace AIRefactored.AI.Movement
 
         public BotLookController(BotOwner bot, BotComponentCache cache)
         {
-            if (bot == null || cache == null)
+            if (!EFTPlayerUtil.IsValidBotOwner(bot) || cache == null)
             {
                 Logger.LogError("[BotLookController] Constructor failed — null bot or cache.");
                 throw new ArgumentException("Invalid BotLookController parameters.");

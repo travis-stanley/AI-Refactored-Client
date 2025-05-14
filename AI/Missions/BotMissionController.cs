@@ -12,6 +12,7 @@ namespace AIRefactored.AI.Missions
     using AIRefactored.AI.Core;
     using AIRefactored.AI.Groups;
     using AIRefactored.AI.Missions.Subsystems;
+    using AIRefactored.Core;
     using AIRefactored.Runtime;
     using BepInEx.Logging;
     using EFT;
@@ -50,7 +51,7 @@ namespace AIRefactored.AI.Missions
         private bool _inCombatPause;
         private float _groupWaitStart = -1f;
         private float _lastCombatTime;
-        private float _lastUpdate;
+        private float _lastUpdateTime;
 
         #endregion
 
@@ -72,9 +73,9 @@ namespace AIRefactored.AI.Missions
 
         public BotMissionController(BotOwner bot, BotComponentCache cache)
         {
-            if (bot == null || cache == null)
+            if (!EFTPlayerUtil.IsValidBotOwner(bot) || cache == null)
             {
-                throw new ArgumentNullException("[BotMissionController] Invalid initialization.");
+                throw new ArgumentException("[BotMissionController] Invalid bot or cache reference.");
             }
 
             _bot = bot;
@@ -114,9 +115,9 @@ namespace AIRefactored.AI.Missions
         public void Tick(float time)
         {
             Player player = _bot.GetPlayer;
-            IHealthController hc = player?.HealthController;
+            IHealthController health = player?.HealthController;
 
-            if (_bot.IsDead || player == null || hc == null || !hc.IsAlive)
+            if (_bot.IsDead || player == null || health == null || !health.IsAlive)
             {
                 return;
             }
@@ -169,10 +170,10 @@ namespace AIRefactored.AI.Missions
                 _groupWaitStart = -1f;
             }
 
-            if (time - _lastUpdate > GetCooldown())
+            if (time - _lastUpdateTime > GetCooldown())
             {
                 _objectives.OnObjectiveReached(_missionType);
-                _lastUpdate = time;
+                _lastUpdateTime = time;
             }
 
             if (!_inCombatPause &&
@@ -190,7 +191,8 @@ namespace AIRefactored.AI.Missions
         {
             if (_missionType == MissionType.Loot &&
                 _cache.LootScanner != null &&
-                _cache.GroupBehavior?.GroupSync != null)
+                _cache.GroupBehavior != null &&
+                _cache.GroupBehavior.GroupSync != null)
             {
                 Vector3 myPos = _bot.Position;
                 _cache.GroupBehavior.GroupSync.BroadcastLootPoint(myPos);

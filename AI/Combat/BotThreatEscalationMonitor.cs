@@ -38,8 +38,8 @@ namespace AIRefactored.AI.Combat
         private static readonly ManualLogSource Logger = Plugin.LoggerInstance;
 
         private BotOwner _bot;
-        private float _panicStartTime;
-        private float _nextCheckTime;
+        private float _panicStartTime = -1f;
+        private float _nextCheckTime = -1f;
         private bool _hasEscalated;
 
         #endregion
@@ -70,7 +70,9 @@ namespace AIRefactored.AI.Combat
         public void Tick(float time)
         {
             if (_hasEscalated || !IsValid() || time < _nextCheckTime)
+            {
                 return;
+            }
 
             _nextCheckTime = time + CheckInterval;
 
@@ -101,7 +103,9 @@ namespace AIRefactored.AI.Combat
         {
             BotEnemiesController controller = _bot.EnemiesController;
             if (controller?.EnemyInfos == null)
+            {
                 return false;
+            }
 
             int visibleCount = 0;
             foreach (var kv in controller.EnemyInfos)
@@ -109,7 +113,9 @@ namespace AIRefactored.AI.Combat
                 if (kv.Value != null && kv.Value.IsVisible)
                 {
                     if (++visibleCount >= 2)
+                    {
                         return true;
+                    }
                 }
             }
 
@@ -120,7 +126,9 @@ namespace AIRefactored.AI.Combat
         {
             BotsGroup group = _bot.BotsGroup;
             if (group == null || group.MembersCount <= 1)
+            {
                 return false;
+            }
 
             int dead = 0;
             for (int i = 0; i < group.MembersCount; i++)
@@ -160,10 +168,10 @@ namespace AIRefactored.AI.Combat
                 _bot.BotTalk.TrySay(EPhraseTrigger.OnFight);
             }
 
-            Vector3 safe = NavPointRegistry.GetClosestPosition(_bot.Position);
-            if (safe != Vector3.zero && _bot.Mover != null && !_bot.Mover.IsMoving)
+            Vector3 fallback = NavPointRegistry.GetClosestPosition(_bot.Position);
+            if (fallback != Vector3.zero && _bot.Mover != null && !_bot.Mover.IsMoving)
             {
-                _bot.Mover.GoToPoint(safe, true, 1.0f);
+                _bot.Mover.GoToPoint(fallback, true, 1.0f);
                 Logger.LogDebug($"[AIRefactored-Escalation] Bot '{nickname}' moved to nav fallback after escalation.");
             }
         }
@@ -171,7 +179,9 @@ namespace AIRefactored.AI.Combat
         private void ApplyEscalationTuning(BotOwner bot)
         {
             if (bot?.Settings?.FileSettings == null)
+            {
                 return;
+            }
 
             var file = bot.Settings.FileSettings;
 
@@ -199,11 +209,15 @@ namespace AIRefactored.AI.Combat
         {
             string profileId = bot.ProfileId;
             if (string.IsNullOrEmpty(profileId))
+            {
                 return;
+            }
 
             BotPersonalityProfile profile = BotRegistry.Get(profileId);
             if (profile == null)
+            {
                 return;
+            }
 
             profile.AggressionLevel = Mathf.Clamp01(profile.AggressionLevel + 0.25f);
             profile.Caution = Mathf.Clamp01(profile.Caution - 0.25f);

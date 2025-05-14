@@ -40,12 +40,7 @@ namespace AIRefactored.AI.Looting
         /// </summary>
         public static bool Contains(string profileId)
         {
-            if (!TryGetValidKey(profileId, out string key))
-            {
-                return false;
-            }
-
-            return Containers.ContainsKey(key);
+            return TryGetValidKey(profileId, out string key) && Containers.ContainsKey(key);
         }
 
         /// <summary>
@@ -58,8 +53,8 @@ namespace AIRefactored.AI.Looting
                 return null;
             }
 
-            LootableContainer result;
-            return Containers.TryGetValue(key, out result) ? result : null;
+            Containers.TryGetValue(key, out var result);
+            return result;
         }
 
         /// <summary>

@@ -56,7 +56,7 @@ namespace AIRefactored.AI.Groups
 
         #endregion
 
-        #region Public Methods
+        #region Initialization
 
         /// <summary>
         /// Initializes the group behavior system with the specified bot.
@@ -77,6 +77,10 @@ namespace AIRefactored.AI.Groups
             GroupSync.Initialize(_bot);
             GroupSync.InjectLocalCache(componentCache);
         }
+
+        #endregion
+
+        #region Tick Logic
 
         /// <summary>
         /// Executes squad cohesion and repulsion logic.
@@ -138,11 +142,14 @@ namespace AIRefactored.AI.Groups
 
         #endregion
 
-        #region Private Methods
+        #region Helpers
 
         private bool IsEligible()
         {
-            return _bot != null && _group != null && !_bot.IsDead && EFTPlayerUtil.IsValidBotOwner(_bot);
+            return _bot != null &&
+                   _group != null &&
+                   !_bot.IsDead &&
+                   EFTPlayerUtil.IsValidBotOwner(_bot);
         }
 
         private void IssueMove(Vector3 target)

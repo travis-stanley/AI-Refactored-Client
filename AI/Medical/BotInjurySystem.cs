@@ -68,12 +68,11 @@ namespace AIRefactored.AI.Medical
             }
 
             Player player = bot.GetPlayer;
-            if (player == null || player.HealthController == null)
+            IHealthController health = player?.HealthController;
+            if (health == null)
             {
                 return;
             }
-
-            IHealthController health = player.HealthController;
 
             _lastHitTime = Time.time;
             _nextHealTime = _lastHitTime + HealCooldown;

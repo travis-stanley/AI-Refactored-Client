@@ -31,7 +31,7 @@ namespace AIRefactored.Bootstrap
         {
             if (phase < WorldPhase.None || phase > WorldPhase.PostInit)
             {
-                Plugin.LoggerInstance.LogWarning("[WorldInitState] Invalid phase value: " + phase);
+                Plugin.LoggerInstance.LogWarning("[WorldInitState] Invalid phase assignment attempt: " + phase);
                 return;
             }
 
@@ -42,7 +42,7 @@ namespace AIRefactored.Bootstrap
         /// Returns true if the current world phase is equal to or beyond the specified phase.
         /// </summary>
         /// <param name="phase">The phase to compare against.</param>
-        /// <returns>True if current phase is equal or after specified phase.</returns>
+        /// <returns>True if the current phase is equal or greater than the specified phase.</returns>
         public static bool IsInPhase(WorldPhase phase)
         {
             return _phase >= phase;

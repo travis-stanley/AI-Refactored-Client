@@ -22,7 +22,6 @@ namespace AIRefactored.Core
         #region Fields
 
         private static readonly ManualLogSource Logger = Plugin.LoggerInstance;
-
         private static readonly HashSet<string> FallbackBots = new HashSet<string>();
 
         #endregion
@@ -62,7 +61,7 @@ namespace AIRefactored.Core
             }
             else
             {
-                Logger.LogError("[BotFallback] ❌ Bot " + profileId + " has no StandartBotBrain — fallback failed.");
+                Logger.LogError("[BotFallback] ❌ Bot " + profileId + " missing StandartBotBrain — fallback failed.");
             }
         }
 

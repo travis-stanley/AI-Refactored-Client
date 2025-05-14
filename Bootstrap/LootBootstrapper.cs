@@ -27,12 +27,22 @@ namespace AIRefactored.Bootstrap
 	/// </summary>
 	public static class LootBootstrapper
 	{
+		#region Constants
+
 		private const float MaxCorpseLinkDistance = 1.5f;
+
+		#endregion
+
+		#region Fields
 
 		private static readonly ManualLogSource Logger = Plugin.LoggerInstance;
 
+		#endregion
+
+		#region Public Methods
+
 		/// <summary>
-		/// Registers all scene lootable containers and items.
+		/// Registers all scene lootable containers and loose items.
 		/// Should be called once after GameWorld is ready.
 		/// </summary>
 		public static void RegisterAllLoot()
@@ -59,9 +69,13 @@ namespace AIRefactored.Bootstrap
 			}
 			catch (Exception ex)
 			{
-				Logger.LogError("[LootBootstrapper] Error during RegisterAllLoot: " + ex);
+				Logger.LogError("[LootBootstrapper] RegisterAllLoot() failed: " + ex);
 			}
 		}
+
+		#endregion
+
+		#region Private Methods
 
 		private static void RegisterContainers(LootableContainer[] containers)
 		{
@@ -100,7 +114,6 @@ namespace AIRefactored.Bootstrap
 			}
 
 			Vector3 containerPosition = container.transform.position;
-
 			GameWorld world = GameWorldHandler.Get();
 			if (world == null || world.RegisteredPlayers == null || world.RegisteredPlayers.Count == 0)
 			{
@@ -114,28 +127,27 @@ namespace AIRefactored.Bootstrap
 			{
 				for (int i = 0; i < all.Count; i++)
 				{
-					Player p = EFTPlayerUtil.AsEFTPlayer(all[i]);
-					if (p != null && p.HealthController != null && !p.HealthController.IsAlive)
+					Player player = EFTPlayerUtil.AsEFTPlayer(all[i]);
+					if (player != null && player.HealthController != null && !player.HealthController.IsAlive)
 					{
-						deadPlayers.Add(p);
+						deadPlayers.Add(player);
 					}
 				}
 
 				for (int i = 0; i < deadPlayers.Count; i++)
 				{
-					Player p = deadPlayers[i];
-					string profileId = p.Profile?.Id;
+					Player corpse = deadPlayers[i];
+					string profileId = corpse.Profile?.Id;
 					if (string.IsNullOrEmpty(profileId) || DeadBodyContainerCache.Contains(profileId))
 					{
 						continue;
 					}
 
-					Vector3 corpsePosition = EFTPlayerUtil.GetPosition(p);
-					float distance = Vector3.Distance(containerPosition, corpsePosition);
-					if (distance <= MaxCorpseLinkDistance)
+					Vector3 corpsePosition = EFTPlayerUtil.GetPosition(corpse);
+					if (Vector3.Distance(containerPosition, corpsePosition) <= MaxCorpseLinkDistance)
 					{
-						DeadBodyContainerCache.Register(p, container);
-						string nickname = p.Profile?.Info?.Nickname ?? "Unnamed";
+						DeadBodyContainerCache.Register(corpse, container);
+						string nickname = corpse.Profile?.Info?.Nickname ?? "Unnamed";
 						Logger.LogDebug("[LootBootstrapper] Linked container to corpse: " + nickname);
 						break;
 					}
@@ -143,12 +155,14 @@ namespace AIRefactored.Bootstrap
 			}
 			catch (Exception ex)
 			{
-				Logger.LogError("[LootBootstrapper] TryLinkToCorpse failed: " + ex);
+				Logger.LogError("[LootBootstrapper] TryLinkToCorpse() failed: " + ex);
 			}
 			finally
 			{
 				TempListPool.Return(deadPlayers);
 			}
 		}
+
+		#endregion
 	}
 }

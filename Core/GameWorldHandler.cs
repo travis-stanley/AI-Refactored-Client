@@ -34,7 +34,6 @@ namespace AIRefactored.Core
         private static readonly ManualLogSource Logger = Plugin.LoggerInstance;
 
         private static GameObject _bootstrapHost;
-
         private static float _lastCleanupTime = -999f;
         private static float _lastLootRefresh = -999f;
         private static bool _isRecovering;
@@ -51,7 +50,7 @@ namespace AIRefactored.Core
             get
             {
                 GameWorld world = TryGetGameWorld();
-                return world != null && world.RegisteredPlayers != null && world.RegisteredPlayers.Count > 0;
+                return world != null && world.RegisteredPlayers?.Count > 0;
             }
         }
 
@@ -72,8 +71,7 @@ namespace AIRefactored.Core
             }
 
             return Singleton<ClientGameWorld>.Instantiated &&
-                   Singleton<ClientGameWorld>.Instance.MainPlayer != null &&
-                   Singleton<ClientGameWorld>.Instance.MainPlayer.IsYourPlayer;
+                   Singleton<ClientGameWorld>.Instance.MainPlayer?.IsYourPlayer == true;
         }
 
         public static GameWorld Get() => CachedWorld;
@@ -132,7 +130,7 @@ namespace AIRefactored.Core
                 return;
             }
 
-            if (world == null || world.RegisteredPlayers == null || world.RegisteredPlayers.Count == 0)
+            if (world?.RegisteredPlayers == null || world.RegisteredPlayers.Count == 0)
             {
                 LogSafe("[GameWorldHandler] Invalid GameWorld — skipping initialization.");
                 return;
@@ -282,8 +280,7 @@ namespace AIRefactored.Core
             }
 
             return world != null &&
-                   world.RegisteredPlayers != null &&
-                   world.RegisteredPlayers.Count > 0 &&
+                   world.RegisteredPlayers?.Count > 0 &&
                    !string.IsNullOrEmpty(world.LocationId) &&
                    !world.LocationId.Equals("unknown", StringComparison.OrdinalIgnoreCase);
         }
@@ -350,7 +347,7 @@ namespace AIRefactored.Core
         public static void EnforceBotBrains()
         {
             GameWorld world = TryGetGameWorld();
-            if (world == null || world.AllAlivePlayersList == null)
+            if (world?.AllAlivePlayersList == null)
             {
                 return;
             }
@@ -387,7 +384,7 @@ namespace AIRefactored.Core
             _lastCleanupTime = now;
 
             GameWorld world = TryGetGameWorld();
-            if (world == null || world.AllAlivePlayersList == null)
+            if (world?.AllAlivePlayersList == null)
             {
                 return;
             }
@@ -417,7 +414,7 @@ namespace AIRefactored.Core
             List<Player> list = TempListPool.Rent<Player>();
             GameWorld world = TryGetGameWorld();
 
-            if (world != null && world.AllAlivePlayersList != null)
+            if (world?.AllAlivePlayersList != null)
             {
                 for (int i = 0; i < world.AllAlivePlayersList.Count; i++)
                 {
@@ -459,7 +456,7 @@ namespace AIRefactored.Core
             }
             catch
             {
-                // Fail silently in release mode
+                // Silent in teardown
             }
         }
 

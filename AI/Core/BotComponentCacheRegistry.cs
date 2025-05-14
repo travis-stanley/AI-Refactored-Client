@@ -31,19 +31,19 @@ namespace AIRefactored.AI.Core
         /// </summary>
         public static BotComponentCache GetOrCreate(BotOwner bot)
         {
-            if (bot == null || bot.Profile == null || bot.Profile.Info == null)
+            if (bot?.Profile?.Info == null)
             {
+                Logger.LogWarning("[BotComponentCacheRegistry] Invalid bot or profile — triggering fallback.");
                 BotFallbackUtility.FallbackToEFTLogic(bot);
-                Logger.LogWarning("[BotComponentCacheRegistry] Invalid bot — fallback triggered.");
-                return BotRegistry.TryGetCache("null", out var fallbackCache) ? fallbackCache : new BotComponentCache();
+                return GetFallbackOrNew("null");
             }
 
             string id = bot.Profile.Id;
             if (string.IsNullOrEmpty(id))
             {
+                Logger.LogWarning("[BotComponentCacheRegistry] Bot profile ID is null or empty — triggering fallback.");
                 BotFallbackUtility.FallbackToEFTLogic(bot);
-                Logger.LogWarning("[BotComponentCacheRegistry] Bot profile ID is null/empty — fallback triggered.");
-                return BotRegistry.TryGetCache("null", out var fallbackCache) ? fallbackCache : new BotComponentCache();
+                return GetFallbackOrNew("null");
             }
 
             if (CacheMap.TryGetValue(id, out var existing))
@@ -56,6 +56,7 @@ namespace AIRefactored.AI.Core
                 var cache = new BotComponentCache();
                 cache.Initialize(bot);
                 CacheMap[id] = cache;
+
                 Logger.LogDebug("[BotComponentCacheRegistry] ✅ Created new cache for: " + id);
                 return cache;
             }
@@ -63,18 +64,18 @@ namespace AIRefactored.AI.Core
             {
                 Logger.LogError("[BotComponentCacheRegistry] Cache init failed for " + id + ": " + ex);
                 BotFallbackUtility.FallbackToEFTLogic(bot);
-                return BotRegistry.TryGetCache(id, out var fallbackCache) ? fallbackCache : new BotComponentCache();
+                return GetFallbackOrNew(id);
             }
         }
 
         /// <summary>
-        /// Gets the cache if it exists.
+        /// Gets the cache for a profile ID if it exists.
         /// </summary>
         public static bool TryGet(string profileId, out BotComponentCache cache)
         {
             if (string.IsNullOrEmpty(profileId))
             {
-                cache = BotRegistry.TryGetCache("null", out var fallbackCache) ? fallbackCache : new BotComponentCache();
+                cache = GetFallbackOrNew("null");
                 return false;
             }
 
@@ -82,7 +83,7 @@ namespace AIRefactored.AI.Core
         }
 
         /// <summary>
-        /// Removes the cache for the specified bot.
+        /// Removes the cache for the specified bot, if present.
         /// </summary>
         public static void Remove(BotOwner bot)
         {
@@ -99,12 +100,17 @@ namespace AIRefactored.AI.Core
         }
 
         /// <summary>
-        /// Clears all caches.
+        /// Clears all bot caches.
         /// </summary>
         public static void ClearAll()
         {
             CacheMap.Clear();
             Logger.LogWarning("[BotComponentCacheRegistry] All caches cleared.");
+        }
+
+        private static BotComponentCache GetFallbackOrNew(string profileId)
+        {
+            return BotRegistry.TryGetCache(profileId, out var fallback) ? fallback : new BotComponentCache();
         }
     }
 }

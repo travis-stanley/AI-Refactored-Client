@@ -49,7 +49,7 @@ namespace AIRefactored.AI.Navigation
 		private static bool _isRunning;
 		private static bool _isTaskRunning;
 		private static int _registered;
-		private static string _mapId;
+		private static string _mapId = string.Empty;
 
 		#endregion
 
@@ -66,7 +66,6 @@ namespace AIRefactored.AI.Navigation
 				return;
 			}
 
-			// Try loading from cache
 			if (NavPointCacheManager.TryLoad(mapId, out var cached))
 			{
 				for (int i = 0; i < cached.Count; i++)
@@ -189,7 +188,7 @@ namespace AIRefactored.AI.Navigation
 				_isRunning = false;
 				NavMeshStatus.SetReady();
 
-				List<NavPointData> snapshot = NavPointRegistry.QueryNearby(_center, 200f, (Predicate<NavPointData>)null);
+				List<NavPointData> snapshot = NavPointRegistry.QueryNearby(_center, 200f, null);
 				NavPointCacheManager.Save(_mapId, snapshot);
 
 				Logger.LogDebug("[NavPointBootstrapper] ✅ Completed scan and cached " + snapshot.Count + " nav points.");

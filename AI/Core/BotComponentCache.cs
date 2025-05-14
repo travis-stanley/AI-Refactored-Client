@@ -3,7 +3,7 @@
 //   Licensed under the MIT License. See LICENSE in the repository root for more information.
 //
 //   THIS FILE IS SYSTEMATICALLY MANAGED.
-//   Please follow strict StyleCop, ReSharper, and AI-Refactored code standards for all modifications.
+//   Failures in AIRefactored logic must always trigger safe fallback to EFT base AI.
 // </auto-generated>
 
 namespace AIRefactored.AI.Core
@@ -53,16 +53,9 @@ namespace AIRefactored.AI.Core
 
         public AIRefactoredBotOwner AIRefactoredBotOwner => _owner;
 
-        public BotMemoryClass Memory => Bot != null ? Bot.Memory : null;
+        public BotMemoryClass Memory => Bot?.Memory;
 
-        public string Nickname
-        {
-            get
-            {
-                Profile profile = Bot?.Profile;
-                return profile != null && profile.Info != null ? profile.Info.Nickname : "Unknown";
-            }
-        }
+        public string Nickname => Bot?.Profile?.Info?.Nickname ?? "Unknown";
 
         public Vector3 Position => Bot != null ? Bot.Position : Vector3.zero;
 
@@ -121,7 +114,7 @@ namespace AIRefactored.AI.Core
         public HearingDamageComponent HearingDamage { get; private set; }
         public TrackedEnemyVisibility VisibilityTracker { get; set; }
 
-        public BotGroupSyncCoordinator GroupSync => GroupBehavior != null ? GroupBehavior.GroupSync : null;
+        public BotGroupSyncCoordinator GroupSync => GroupBehavior?.GroupSync;
         public BotPanicHandler Panic => PanicHandler;
 
         #endregion
@@ -145,7 +138,7 @@ namespace AIRefactored.AI.Core
             if (bot == null)
             {
                 Logger.LogError("[BotComponentCache] Initialize called with null bot.");
-                throw new ArgumentNullException("bot");
+                throw new ArgumentNullException(nameof(bot));
             }
 
             string id = bot.Profile?.Id ?? "null";
@@ -161,60 +154,46 @@ namespace AIRefactored.AI.Core
 
             try
             {
-                WildSpawnType role = WildSpawnType.assault;
-                if (bot.Profile?.Info?.Settings != null)
-                {
-                    role = bot.Profile.Info.Settings.Role;
-                }
-
+                WildSpawnType role = bot.Profile?.Info?.Settings?.Role ?? WildSpawnType.assault;
                 PersonalityProfile = BotRegistry.GetOrGenerate(id, PersonalityType.Balanced, role);
                 Logger.LogDebug("[BotComponentCache] Loaded personality for bot " + id + ": " + PersonalityProfile.Personality);
 
                 Pathing = new BotOwnerPathfindingCache();
-
-                TacticalMemory = new BotTacticalMemory();
-                TacticalMemory.Initialize(this);
+                TacticalMemory = new BotTacticalMemory(); TacticalMemory.Initialize(this);
 
                 TryInitSubsystem("CombatStateMachine", () =>
                 {
-                    Combat = new CombatStateMachine();
-                    Combat.Initialize(this);
+                    Combat = new CombatStateMachine(); Combat.Initialize(this);
                 }, TacticalMemory);
 
                 TryInitSubsystem("FlashGrenadeComponent", () =>
                 {
-                    FlashGrenade = new FlashGrenadeComponent();
-                    FlashGrenade.Initialize(this);
+                    FlashGrenade = new FlashGrenadeComponent(); FlashGrenade.Initialize(this);
                 });
 
                 TryInitSubsystem("BotPanicHandler", () =>
                 {
-                    PanicHandler = new BotPanicHandler();
-                    PanicHandler.Initialize(this);
+                    PanicHandler = new BotPanicHandler(); PanicHandler.Initialize(this);
                 });
 
                 TryInitSubsystem("BotSuppressionReactionComponent", () =>
                 {
-                    Suppression = new BotSuppressionReactionComponent();
-                    Suppression.Initialize(this);
+                    Suppression = new BotSuppressionReactionComponent(); Suppression.Initialize(this);
                 });
 
                 TryInitSubsystem("BotThreatEscalationMonitor", () =>
                 {
-                    Escalation = new BotThreatEscalationMonitor();
-                    Escalation.Initialize(bot);
+                    Escalation = new BotThreatEscalationMonitor(); Escalation.Initialize(bot);
                 });
 
                 TryInitSubsystem("BotGroupBehavior", () =>
                 {
-                    GroupBehavior = new BotGroupBehavior();
-                    GroupBehavior.Initialize(this);
+                    GroupBehavior = new BotGroupBehavior(); GroupBehavior.Initialize(this);
                 }, PanicHandler);
 
                 TryInitSubsystem("BotMovementController", () =>
                 {
-                    Movement = new BotMovementController();
-                    Movement.Initialize(this);
+                    Movement = new BotMovementController(); Movement.Initialize(this);
                 });
 
                 TryInitSubsystem("BotLookController", () =>
@@ -224,30 +203,24 @@ namespace AIRefactored.AI.Core
 
                 TryInitSubsystem("BotTacticalDeviceController", () =>
                 {
-                    Tactical = new BotTacticalDeviceController();
-                    Tactical.Initialize(this);
+                    Tactical = new BotTacticalDeviceController(); Tactical.Initialize(this);
                 });
 
                 PoseController = new BotPoseController(bot, this);
                 Tilt = new BotTilt(bot);
                 HearingDamage = new HearingDamageComponent();
 
-                SquadPath = new SquadPathCoordinator();
-                SquadPath.Initialize(this);
+                SquadPath = new SquadPathCoordinator(); SquadPath.Initialize(this);
 
-                LootScanner = new BotLootScanner();
-                LootScanner.Initialize(this);
-
-                LootDecisionSystem = new BotLootDecisionSystem();
-                LootDecisionSystem.Initialize(this);
-
-                DeadBodyScanner = new BotDeadBodyScanner();
-                DeadBodyScanner.Initialize(this);
+                LootScanner = new BotLootScanner(); LootScanner.Initialize(this);
+                LootDecisionSystem = new BotLootDecisionSystem(); LootDecisionSystem.Initialize(this);
+                DeadBodyScanner = new BotDeadBodyScanner(); DeadBodyScanner.Initialize(this);
 
                 DoorInteraction = new BotDoorInteractionSystem(bot);
                 InjurySystem = new BotInjurySystem(this);
                 LastShotTracker = new BotLastShotTracker();
                 GroupComms = new BotGroupComms(this);
+
                 SquadHealer = bot.HealAnotherTarget ?? new BotHealAnotherTarget(bot);
                 HealReceiver = bot.HealingBySomebody ?? new BotHealingBySomebody(bot);
 
@@ -271,10 +244,7 @@ namespace AIRefactored.AI.Core
                 }
             }
 
-            try
-            {
-                init.Invoke();
-            }
+            try { init.Invoke(); }
             catch (Exception ex)
             {
                 Logger.LogError("[BotComponentCache] ❌ Init failed (" + name + "): " + ex);
@@ -301,7 +271,7 @@ namespace AIRefactored.AI.Core
             if (owner == null)
             {
                 Logger.LogError("[BotComponentCache] SetOwner() called with null.");
-                throw new ArgumentNullException("owner");
+                throw new ArgumentNullException(nameof(owner));
             }
 
             _owner = owner;
@@ -320,10 +290,11 @@ namespace AIRefactored.AI.Core
                 return;
             }
 
-            Logger.LogDebug("[BotComponentCache] Registered sound from: " + source);
             LastHeardTime = Time.time;
             LastHeardDirection = source - Position;
             HasHeardDirection = true;
+
+            Logger.LogDebug("[BotComponentCache] Registered sound from: " + source);
         }
 
         #endregion

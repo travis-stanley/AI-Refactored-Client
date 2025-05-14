@@ -133,7 +133,7 @@ namespace AIRefactored.Runtime
             {
                 try
                 {
-                    WorldTickDispatcher.Tick(Time.deltaTime);
+                    Tick(Time.deltaTime);
                 }
                 catch (Exception ex)
                 {
@@ -145,7 +145,7 @@ namespace AIRefactored.Runtime
             {
                 try
                 {
-                    WorldTickDispatcher.Reset();
+                    Reset();
                 }
                 catch (Exception ex)
                 {

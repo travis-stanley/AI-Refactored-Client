@@ -35,7 +35,7 @@ namespace AIRefactored.Runtime
 
 		#endregion
 
-		#region Fields
+		#region Static State
 
 		private static readonly ManualLogSource Logger = Plugin.LoggerInstance;
 
@@ -49,7 +49,7 @@ namespace AIRefactored.Runtime
 
 		#endregion
 
-		#region Initialization
+		#region Lifecycle
 
 		public void Initialize()
 		{
@@ -77,7 +77,6 @@ namespace AIRefactored.Runtime
 
 				Reset();
 				_hasInitialized = false;
-
 				Logger.LogDebug("[BotRecoveryService] 🧹 Reset on raid end.");
 			}
 			catch (Exception ex)
@@ -106,7 +105,7 @@ namespace AIRefactored.Runtime
 
 		#endregion
 
-		#region Tick Loop
+		#region Tick
 
 		public void Tick(float deltaTime)
 		{
@@ -139,8 +138,8 @@ namespace AIRefactored.Runtime
 
 				if (_hasWarned)
 				{
-					Logger.LogDebug("[BotRecoveryService] ✅ GameWorld recovered.");
 					_hasWarned = false;
+					Logger.LogDebug("[BotRecoveryService] ✅ GameWorld recovered.");
 				}
 
 				EnsureSpawnHook();
@@ -154,7 +153,7 @@ namespace AIRefactored.Runtime
 
 		#endregion
 
-		#region Spawn Hook and Bot Validation
+		#region Spawn Hook
 
 		private static void EnsureSpawnHook()
 		{
@@ -174,6 +173,10 @@ namespace AIRefactored.Runtime
 				Logger.LogError("[BotRecoveryService] ❌ EnsureSpawnHook error: " + ex);
 			}
 		}
+
+		#endregion
+
+		#region Bot Validation
 
 		private static void ValidateBotBrains(List<Player> players)
 		{
@@ -200,11 +203,10 @@ namespace AIRefactored.Runtime
 					continue;
 				}
 
-				string botName = player.Profile?.Info?.Nickname ?? "Unknown";
+				string name = player.Profile?.Info?.Nickname ?? "Unknown";
+				Logger.LogWarning("[BotRecoveryService] ⚠ Missing BotBrain — restoring: " + name);
 
-				Logger.LogWarning("[BotRecoveryService] ⚠ Bot missing brain — restoring: " + botName);
-
-				if (player.AIData != null && player.AIData.BotOwner != null)
+				if (player.AIData?.BotOwner != null)
 				{
 					try
 					{
@@ -212,7 +214,7 @@ namespace AIRefactored.Runtime
 					}
 					catch (Exception ex)
 					{
-						Logger.LogError("[BotRecoveryService] ❌ Failed to attach BotBrain to BotOwner: " + ex);
+						Logger.LogError("[BotRecoveryService] ❌ Failed to attach brain to BotOwner: " + ex);
 					}
 				}
 
@@ -235,7 +237,7 @@ namespace AIRefactored.Runtime
 				string mapId = GameWorldHandler.TryGetValidMapName();
 				if (string.IsNullOrEmpty(mapId))
 				{
-					Logger.LogWarning("[BotRecoveryService] ❌ Rescan aborted — invalid or missing mapId.");
+					Logger.LogWarning("[BotRecoveryService] ❌ Rescan aborted — mapId missing or invalid.");
 					return;
 				}
 

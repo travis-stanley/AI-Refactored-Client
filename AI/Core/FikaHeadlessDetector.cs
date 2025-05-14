@@ -72,7 +72,7 @@ namespace AIRefactored.AI.Core
                 if (_isHeadless)
                 {
                     string result = TryParseRaidLocationFromArgs();
-                    if (result.Length > 0)
+                    if (!string.IsNullOrEmpty(result))
                     {
                         _raidLocation = result;
                     }
@@ -91,7 +91,14 @@ namespace AIRefactored.AI.Core
 
         private static bool HeadlessRaidControllerExists()
         {
-            return GameObject.FindObjectOfType<HeadlessRaidController>() != null;
+            try
+            {
+                return GameObject.FindObjectOfType<HeadlessRaidController>() != null;
+            }
+            catch
+            {
+                return false;
+            }
         }
 
         private static string TryParseRaidLocationFromArgs()
@@ -112,7 +119,7 @@ namespace AIRefactored.AI.Core
             }
             catch
             {
-                // Fail-safe
+                // Silent fail, fallback to string.Empty
             }
 
             return string.Empty;

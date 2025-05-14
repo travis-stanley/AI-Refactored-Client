@@ -39,13 +39,13 @@ namespace AIRefactored.Runtime
         {
             if (_hasStarted)
             {
-                logger?.LogWarning("[InitPhaseRunner] Begin() called after initialization already occurred.");
+                logger?.LogWarning("[InitPhaseRunner] Begin() already called — skipping.");
                 return;
             }
 
             if (FikaHeadlessDetector.IsHeadless && !FikaHeadlessDetector.HasRaidStarted())
             {
-                logger?.LogDebug("[InitPhaseRunner] Skipped — FIKA Headless not ready.");
+                logger?.LogDebug("[InitPhaseRunner] Skipped — FIKA headless raid not started.");
                 return;
             }
 
@@ -54,13 +54,12 @@ namespace AIRefactored.Runtime
             try
             {
                 WorldInitState.SetPhase(WorldPhase.PreInit);
-                logger?.LogDebug("[InitPhaseRunner] 🚀 Beginning AIRefactored world initialization.");
+                logger?.LogDebug("[InitPhaseRunner] 🚀 Beginning AIRefactored world initialization...");
 
                 if (!IsWorldSafe())
                 {
-                    logger?.LogWarning("[InitPhaseRunner] ❌ World not safe — aborting init to avoid hang.");
-                    _hasStarted = false;
-                    WorldInitState.Reset();
+                    logger?.LogWarning("[InitPhaseRunner] ❌ Unsafe world state — aborting.");
+                    ResetInternal(logger);
                     return;
                 }
 
@@ -71,7 +70,7 @@ namespace AIRefactored.Runtime
                 string mapId = GameWorldHandler.TryGetValidMapName();
                 if (string.IsNullOrEmpty(mapId))
                 {
-                    logger?.LogWarning("[InitPhaseRunner] ⚠ No valid map ID — skipping NavMesh warmup.");
+                    logger?.LogWarning("[InitPhaseRunner] ⚠ No valid map ID — NavMesh warmup skipped.");
                 }
 
                 GameWorldHandler.Initialize();
@@ -84,9 +83,8 @@ namespace AIRefactored.Runtime
             }
             catch (Exception ex)
             {
-                _hasStarted = false;
-                WorldInitState.Reset();
-                logger?.LogError("[InitPhaseRunner] ❌ Fatal error during Begin:\n" + ex);
+                logger?.LogError("[InitPhaseRunner] ❌ Fatal error during Begin(): " + ex);
+                ResetInternal(logger);
             }
         }
 
@@ -95,27 +93,36 @@ namespace AIRefactored.Runtime
         /// </summary>
         public static void Stop()
         {
+            if (!_hasStarted)
+            {
+                return;
+            }
+
             try
             {
-                if (!_hasStarted)
-                {
-                    return;
-                }
-
-                _hasStarted = false;
-
-                WorldInitState.Reset();
-                WorldTickDispatcher.Reset();
-                WorldBootstrapper.Stop();
-                GameWorldHandler.Cleanup();
-                NavMeshStatus.Reset();
-
-                Plugin.LoggerInstance.LogDebug("[InitPhaseRunner] 🧹 Cleanup complete — init state reset.");
+                ResetInternal(Plugin.LoggerInstance);
             }
             catch (Exception ex)
             {
                 Plugin.LoggerInstance.LogError("[InitPhaseRunner] ❌ Stop() error: " + ex);
             }
+        }
+
+        #endregion
+
+        #region Internal Reset
+
+        private static void ResetInternal(ManualLogSource logger)
+        {
+            _hasStarted = false;
+
+            WorldInitState.Reset();
+            WorldTickDispatcher.Reset();
+            WorldBootstrapper.Stop();
+            GameWorldHandler.Cleanup();
+            NavMeshStatus.Reset();
+
+            logger?.LogDebug("[InitPhaseRunner] 🧹 Cleanup complete — initialization state reset.");
         }
 
         #endregion

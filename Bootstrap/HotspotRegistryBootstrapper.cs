@@ -15,7 +15,8 @@ namespace AIRefactored.Bootstrap
     using BepInEx.Logging;
 
     /// <summary>
-    /// Bootstraps the HotspotRegistry system and manages its lifecycle per raid.
+    /// Bootstraps and manages the lifecycle of the HotspotRegistry system across raid sessions.
+    /// Ensures the registry is correctly initialized only on valid maps and host authority.
     /// </summary>
     public sealed class HotspotRegistryBootstrapper : IAIWorldSystemBootstrapper
     {
@@ -37,16 +38,22 @@ namespace AIRefactored.Bootstrap
             {
                 HotspotRegistry.Clear();
 
-                if (!GameWorldHandler.IsHost || !GameWorldHandler.IsSafeToInitialize)
+                if (!GameWorldHandler.IsHost)
                 {
-                    Logger.LogWarning("[HotspotRegistry] Skipped init — not host or world not ready.");
+                    Logger.LogWarning("[HotspotRegistry] Initialization skipped — not authoritative host.");
+                    return;
+                }
+
+                if (!GameWorldHandler.IsSafeToInitialize)
+                {
+                    Logger.LogWarning("[HotspotRegistry] Initialization skipped — world not ready.");
                     return;
                 }
 
                 string mapId = GameWorldHandler.TryGetValidMapName();
                 if (string.IsNullOrEmpty(mapId) || mapId == "unknown")
                 {
-                    Logger.LogWarning("[HotspotRegistry] Skipped init — invalid map ID.");
+                    Logger.LogWarning("[HotspotRegistry] Initialization skipped — invalid map ID.");
                     return;
                 }
 
@@ -57,15 +64,14 @@ namespace AIRefactored.Bootstrap
             }
             catch (Exception ex)
             {
-                Logger.LogError("[HotspotRegistry] Initialize failed: " + ex);
+                Logger.LogError("[HotspotRegistry] Initialization failed: " + ex);
             }
         }
 
         /// <inheritdoc />
         public void Tick(float deltaTime)
         {
-            // Reserved for future runtime hotspot adjustments.
-            // Systems like BotMissionSystem may trigger reactive changes here.
+            // Reserved for future runtime hotspot injection or adaptive mission overlays.
         }
 
         /// <inheritdoc />
@@ -79,7 +85,7 @@ namespace AIRefactored.Bootstrap
             }
             catch (Exception ex)
             {
-                Logger.LogError("[HotspotRegistry] OnRaidEnd() error: " + ex);
+                Logger.LogError("[HotspotRegistry] OnRaidEnd failed: " + ex);
             }
         }
 

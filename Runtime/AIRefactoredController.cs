@@ -36,7 +36,7 @@ namespace AIRefactored.Runtime
         #region Properties
 
         /// <summary>
-        /// Gets the logger instance from the plugin, or throws if not initialized.
+        /// Gets the shared logger from Plugin.cs.
         /// </summary>
         public static ManualLogSource Logger
         {
@@ -45,7 +45,7 @@ namespace AIRefactored.Runtime
                 ManualLogSource log = Plugin.LoggerInstance;
                 if (log == null)
                 {
-                    throw new InvalidOperationException("[AIRefactoredController] Logger accessed before plugin initialized.");
+                    throw new InvalidOperationException("[AIRefactoredController] Logger is not available.");
                 }
 
                 return log;
@@ -57,7 +57,7 @@ namespace AIRefactored.Runtime
         #region Public API
 
         /// <summary>
-        /// Initializes the AI system by spawning a host GameObject and wiring static systems.
+        /// Initializes the controller by spawning the persistent host and attaching required components.
         /// </summary>
         public static void Initialize()
         {
@@ -78,18 +78,18 @@ namespace AIRefactored.Runtime
                 WorldTickDispatcher.Initialize();
 
                 s_Initialized = true;
-                Logger.LogDebug("[AIRefactoredController] ✅ Initialization complete. Awaiting GameWorld...");
+                Logger.LogDebug("[AIRefactoredController] ✅ Initialization complete — awaiting GameWorld.");
             }
             catch (Exception ex)
             {
-                Logger.LogError("[AIRefactoredController] Initialization failed: " + ex);
+                Logger.LogError("[AIRefactoredController] ❌ Initialization failed: " + ex);
             }
         }
 
         /// <summary>
-        /// Called when a new raid starts. Triggers world system initialization.
+        /// Triggered when the GameWorld becomes active. Launches phase bootstrapper.
         /// </summary>
-        /// <param name="world">The current GameWorld instance.</param>
+        /// <param name="world">Active GameWorld instance.</param>
         public static void OnRaidStarted(GameWorld world)
         {
             if (!s_Initialized || s_RaidActive || world == null)
@@ -107,29 +107,28 @@ namespace AIRefactored.Runtime
             {
                 if (world.RegisteredPlayers == null || world.RegisteredPlayers.Count == 0)
                 {
-                    Logger.LogWarning("[AIRefactoredController] OnRaidStarted skipped — GameWorld players not ready.");
+                    Logger.LogWarning("[AIRefactoredController] Skipped — RegisteredPlayers not ready.");
                     return;
                 }
 
-                bool foundValid = false;
+                bool hasValidPlayer = false;
                 for (int i = 0; i < world.RegisteredPlayers.Count; i++)
                 {
-                    Player player = EFTPlayerUtil.AsEFTPlayer(world.RegisteredPlayers[i]);
-                    if (player != null && EFTPlayerUtil.IsValid(player))
+                    Player p = EFTPlayerUtil.AsEFTPlayer(world.RegisteredPlayers[i]);
+                    if (p != null && EFTPlayerUtil.IsValid(p))
                     {
-                        foundValid = true;
+                        hasValidPlayer = true;
                         break;
                     }
                 }
 
-                if (!foundValid)
+                if (!hasValidPlayer)
                 {
-                    Logger.LogWarning("[AIRefactoredController] OnRaidStarted skipped — no valid players found.");
+                    Logger.LogWarning("[AIRefactoredController] Skipped — no valid EFT.Player found.");
                     return;
                 }
 
-                Logger.LogDebug("[AIRefactoredController] 🚀 Raid started. Initializing world systems...");
-
+                Logger.LogInfo("[AIRefactoredController] 🚀 GameWorld valid — starting AI systems.");
                 GameWorldHandler.Initialize(world);
                 WorldBootstrapper.Begin(Logger, GameWorldHandler.TryGetValidMapName());
 
@@ -137,12 +136,12 @@ namespace AIRefactored.Runtime
             }
             catch (Exception ex)
             {
-                Logger.LogError("[AIRefactoredController] OnRaidStarted error: " + ex);
+                Logger.LogError("[AIRefactoredController] ❌ OnRaidStarted error: " + ex);
             }
         }
 
         /// <summary>
-        /// Called when a raid ends. Cleans up world systems and resets static state.
+        /// Called at end of raid. Cleans up all state and stops world logic.
         /// </summary>
         public static void OnRaidEnded()
         {
@@ -153,8 +152,7 @@ namespace AIRefactored.Runtime
 
             try
             {
-                Logger.LogDebug("[AIRefactoredController] 🧹 Raid ended. Tearing down world systems...");
-
+                Logger.LogInfo("[AIRefactoredController] 🧹 Raid ended — cleaning up world systems...");
                 WorldBootstrapper.Stop();
                 GameWorldHandler.Cleanup();
                 BotRecoveryService.Reset();
@@ -163,7 +161,7 @@ namespace AIRefactored.Runtime
             }
             catch (Exception ex)
             {
-                Logger.LogError("[AIRefactoredController] OnRaidEnded error: " + ex);
+                Logger.LogError("[AIRefactoredController] ❌ OnRaidEnded error: " + ex);
             }
         }
 
@@ -183,7 +181,7 @@ namespace AIRefactored.Runtime
         {
             try
             {
-                Logger.LogDebug("[AIRefactoredController] OnDestroy — performing full teardown.");
+                Logger.LogInfo("[AIRefactoredController] 🔻 OnDestroy — executing full shutdown.");
 
                 InitPhaseRunner.Stop();
                 WorldBootstrapper.Stop();
@@ -197,7 +195,7 @@ namespace AIRefactored.Runtime
             }
             catch (Exception ex)
             {
-                Logger.LogError("[AIRefactoredController] OnDestroy error: " + ex);
+                Logger.LogError("[AIRefactoredController] ❌ OnDestroy error: " + ex);
             }
         }
 

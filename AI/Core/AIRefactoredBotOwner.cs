@@ -45,7 +45,7 @@ namespace AIRefactored.AI.Core
             {
                 if (!_isInitialized || _bot == null)
                 {
-                    Logger.LogError("[AIRefactoredBotOwner] Bot accessed before initialization — falling back.");
+                    Logger.LogError("[AIRefactoredBotOwner] Bot accessed before initialization — triggering fallback.");
                     BotFallbackUtility.FallbackToEFTLogic(_bot);
                     return null;
                 }
@@ -60,7 +60,7 @@ namespace AIRefactored.AI.Core
             {
                 if (!_isInitialized || _cache == null)
                 {
-                    Logger.LogError("[AIRefactoredBotOwner] Cache accessed before initialization — falling back.");
+                    Logger.LogError("[AIRefactoredBotOwner] Cache accessed before initialization — triggering fallback.");
                     BotFallbackUtility.FallbackToEFTLogic(_bot);
                     return BotComponentCache.Empty;
                 }
@@ -75,7 +75,7 @@ namespace AIRefactored.AI.Core
             {
                 if (_missionController == null)
                 {
-                    Logger.LogError("[AIRefactoredBotOwner] MissionController is null — falling back.");
+                    Logger.LogError("[AIRefactoredBotOwner] MissionController is null — fallback invoked.");
                     BotFallbackUtility.FallbackToEFTLogic(_bot);
                 }
 
@@ -114,7 +114,7 @@ namespace AIRefactored.AI.Core
 
             if (_isInitialized)
             {
-                Logger.LogWarning("[AIRefactoredBotOwner] Duplicate initialization attempt blocked.");
+                Logger.LogWarning("[AIRefactoredBotOwner] Duplicate initialization attempt ignored.");
                 return;
             }
 

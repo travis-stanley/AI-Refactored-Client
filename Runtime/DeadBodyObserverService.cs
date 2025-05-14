@@ -135,16 +135,16 @@ namespace AIRefactored.Runtime
 							continue;
 						}
 
-						bool rootMatch = container.transform.root == root;
-						bool nearby = Vector3.Distance(container.transform.position, corpsePos) <= AssociationRadius;
+						bool sameRoot = container.transform.root == root;
+						bool closeEnough = Vector3.Distance(container.transform.position, corpsePos) <= AssociationRadius;
 
-						if (rootMatch || nearby)
+						if (sameRoot || closeEnough)
 						{
 							DeadBodyContainerCache.Register(player, container);
 							LootRuntimeWatcher.Register(container.gameObject);
 
 							string nickname = player.Profile?.Info?.Nickname ?? "Unnamed";
-							Logger.LogDebug("[DeadBodyObserver] ✅ Associated container with dead bot: " + nickname);
+							Logger.LogDebug("[DeadBodyObserver] ✅ Associated container with corpse: " + nickname);
 							break;
 						}
 					}
@@ -183,11 +183,11 @@ namespace AIRefactored.Runtime
 
 			try
 			{
-				Logger.LogDebug("[DeadBodyObserver] Reset complete.");
+				Logger.LogDebug("[DeadBodyObserver] 🔄 Reset complete.");
 			}
 			catch
 			{
-				// Silent during teardown
+				// Logger may be unavailable during shutdown
 			}
 		}
 

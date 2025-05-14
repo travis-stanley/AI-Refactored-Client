@@ -47,7 +47,7 @@ namespace AIRefactored.Core
             }
             catch
             {
-                // IL2CPP or AOT environments may not support AppDomain events.
+                // IL2CPP or AOT platforms may not support AppDomain events.
             }
         }
 
@@ -133,7 +133,7 @@ namespace AIRefactored.Core
                 }
                 catch
                 {
-                    // Silent fallback — custom clearer failed, ignored.
+                    // Fail silently — custom pool cleanup failed.
                 }
             }
         }

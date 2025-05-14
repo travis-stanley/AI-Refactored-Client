@@ -104,6 +104,9 @@ namespace AIRefactored.Runtime
 
         #region Public API
 
+        /// <summary>
+        /// Queues a delayed refresh of the loot registry.
+        /// </summary>
         public static void TriggerQueuedRefresh()
         {
             if (_isQueued || !GameWorldHandler.IsReady() || !GameWorldHandler.IsHost)
@@ -115,6 +118,9 @@ namespace AIRefactored.Runtime
             _isQueued = true;
         }
 
+        /// <summary>
+        /// Forces an immediate loot registry refresh.
+        /// </summary>
         public static void TriggerManualRefresh()
         {
             if (!GameWorldHandler.IsReady() || !GameWorldHandler.IsHost)
@@ -127,6 +133,10 @@ namespace AIRefactored.Runtime
             Logger.LogDebug("[LootRuntimeWatcher] 🔁 Manual loot registry refresh triggered.");
         }
 
+        /// <summary>
+        /// Registers a GameObject for loot tracking. Triggers a refresh if new.
+        /// </summary>
+        /// <param name="go">GameObject representing loot.</param>
         public static void Register(GameObject go)
         {
             if (go == null)
@@ -141,6 +151,10 @@ namespace AIRefactored.Runtime
             }
         }
 
+        /// <summary>
+        /// Unregisters a GameObject from loot tracking.
+        /// </summary>
+        /// <param name="go">GameObject previously registered as loot.</param>
         public static void Unregister(GameObject go)
         {
             if (go == null)
@@ -157,11 +171,14 @@ namespace AIRefactored.Runtime
                 }
                 catch
                 {
-                    // Silent in teardown
+                    // Safe silent fallback
                 }
             }
         }
 
+        /// <summary>
+        /// Resets internal state for new raids.
+        /// </summary>
         public static void Reset()
         {
             RegisteredInstanceIds.Clear();
@@ -170,11 +187,11 @@ namespace AIRefactored.Runtime
 
             try
             {
-                Logger.LogDebug("[LootRuntimeWatcher] Reset complete.");
+                Logger.LogDebug("[LootRuntimeWatcher] 🔄 Reset complete.");
             }
             catch
             {
-                // Logger may be unavailable during shutdown
+                // Logger may be null during teardown
             }
         }
 

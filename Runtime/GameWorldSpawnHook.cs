@@ -76,7 +76,6 @@ namespace AIRefactored.Runtime
                 try
                 {
                     GameWorld world = Singleton<GameWorld>.Instantiated ? Singleton<GameWorld>.Instance : null;
-
                     if (world == null)
                     {
                         Logger.LogWarning("[GameWorldSpawnHook] GameWorld.Instance is null — skipping init.");
@@ -95,7 +94,7 @@ namespace AIRefactored.Runtime
                         return;
                     }
 
-                    Logger.LogDebug("[GameWorldSpawnHook] GameWorld active. Triggering early systems...");
+                    Logger.LogDebug("[GameWorldSpawnHook] GameWorld active — warming NavMesh and bootstrapping...");
 
                     NavMeshWarmupManager.TryPrebuildNavMesh();
 
@@ -109,7 +108,7 @@ namespace AIRefactored.Runtime
                         Logger.LogWarning("[GameWorldSpawnHook] Could not determine map ID for NavPoint registration.");
                     }
 
-                    Logger.LogDebug("[GameWorldSpawnHook] Triggering InitPhaseRunner...");
+                    Logger.LogDebug("[GameWorldSpawnHook] ✅ Triggering InitPhaseRunner...");
                     InitPhaseRunner.Begin(Logger);
                 }
                 catch (Exception ex)

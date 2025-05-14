@@ -67,7 +67,7 @@ namespace AIRefactored.Runtime
 
                 AIRefactoredController.OnRaidStarted(world);
                 _initialized = true;
-                Logger.LogDebug("[RaidLifecycleWatcher] ✅ Raid start detected and initialization complete.");
+                Logger.LogDebug("[RaidLifecycleWatcher] ✅ Raid start detected — initialization complete.");
             }
             catch (Exception ex)
             {
@@ -89,7 +89,7 @@ namespace AIRefactored.Runtime
                 {
                     _initialized = false;
                     AIRefactoredController.OnRaidEnded();
-                    Logger.LogDebug("[RaidLifecycleWatcher] 🧹 Raid end detected and cleanup triggered.");
+                    Logger.LogDebug("[RaidLifecycleWatcher] 🧹 Raid end detected — cleanup complete.");
                 }
             }
             catch (Exception ex)

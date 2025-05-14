@@ -3,7 +3,7 @@
 //   Licensed under the MIT License. See LICENSE in the repository root for more information.
 //
 //   THIS FILE IS SYSTEMATICALLY MANAGED.
-//   Please follow strict StyleCop, ReSharper, and AI-Refactored code standards for all modifications.
+//   Nav fallback logic must never assume registry is valid.
 // </auto-generated>
 
 namespace AIRefactored.AI.Navigation
@@ -23,6 +23,8 @@ namespace AIRefactored.AI.Navigation
         #region Fields
 
         private static readonly ManualLogSource Logger = Plugin.LoggerInstance;
+        private const float LogCooldown = 2.0f;
+        private static float _lastLogTime;
 
         #endregion
 
@@ -32,74 +34,60 @@ namespace AIRefactored.AI.Navigation
         /// Validates whether the bot has valid nav system backing and positioning.
         /// If not, attempts fallback assignment or returns false.
         /// </summary>
-        /// <param name="botOwner">The BotOwner to validate.</param>
-        /// <param name="context">Calling context for debug logging.</param>
-        /// <returns>True if valid nav state exists and fallback is not required, otherwise false.</returns>
         public static bool Validate(BotOwner botOwner, string context)
         {
             if (botOwner == null)
             {
-                Logger.LogWarning("[BotNavValidator] ❌ Null BotOwner in context: " + context);
+                TryLogOnce("[BotNavValidator] ❌ Null BotOwner in context: " + context);
                 return false;
             }
 
             if (botOwner.Transform == null || botOwner.GetPlayer == null || botOwner.IsDead)
             {
-                Logger.LogWarning("[BotNavValidator] ❌ Invalid bot state — dead or missing transform — context: " + context);
+                TryLogOnce("[BotNavValidator] ❌ Invalid bot state — dead or missing transform — context: " + context);
                 return false;
             }
 
             Vector3 position = botOwner.Position;
             if (!IsValidPosition(position))
             {
-                Logger.LogWarning("[BotNavValidator] ❌ Bot has invalid position (zero or NaN) — context: " + context);
+                TryLogOnce("[BotNavValidator] ❌ Bot has invalid position — context: " + context);
                 return false;
             }
 
-            // === Registry not ready fallback ===
-            if (!NavPointRegistry.IsReady)
-            {
-                Logger.LogWarning("[BotNavValidator] ⚠ NavPointRegistry not ready — bot: " + GetBotName(botOwner) + ", context: " + context);
+            Vector3 target;
 
-                Vector3 fallback = NavPointRegistry.GetClosestPosition(position);
-                if (IsValidPosition(fallback) && botOwner.Mover != null && !botOwner.Mover.IsMoving)
+            if (NavPointRegistry.IsReady)
+            {
+                target = NavPointRegistry.GetClosestPosition(position);
+                if (!IsValidPosition(target))
                 {
-                    botOwner.Mover.GoToPoint(
-                        fallback,
-                        slowAtTheEnd: true,
-                        reachDist: 1.0f,
-                        getUpWithCheck: false,
-                        mustHaveWay: true,
-                        onlyShortTrie: false,
-                        force: true);
-
-                    Logger.LogWarning("[BotNavValidator] ✅ Closest-point fallback assigned due to unready registry — position: " + fallback.ToString("F1"));
-                    return true;
+                    TryLogOnce("[BotNavValidator] ❌ Closest nav point is invalid — context: " + context);
+                    target = FallbackNavPointProvider.GetSafePoint(position);
                 }
-
-                return false;
+            }
+            else
+            {
+                TryLogOnce("[BotNavValidator] ⚠ Registry not ready — using fallback — bot: " + GetBotName(botOwner) + ", context: " + context);
+                target = FallbackNavPointProvider.GetSafePoint(position);
             }
 
-            // === Registry ready: use fallback to nearest valid nav point ===
-            Vector3 closest = NavPointRegistry.GetClosestPosition(position);
-            if (!IsValidPosition(closest))
+            if (!IsValidPosition(target))
             {
-                Logger.LogWarning("[BotNavValidator] ❌ Closest nav point fallback is invalid — bot: " + GetBotName(botOwner) + ", context: " + context);
+                TryLogOnce("[BotNavValidator] ❌ No valid fallback found — context: " + context);
                 return false;
             }
 
             if (botOwner.Mover != null && !botOwner.Mover.IsMoving)
             {
                 botOwner.Mover.GoToPoint(
-                    closest,
+                    target,
                     slowAtTheEnd: true,
                     reachDist: 1.0f,
                     getUpWithCheck: false,
                     mustHaveWay: true,
                     onlyShortTrie: false,
                     force: true);
-
-                Logger.LogDebug("[BotNavValidator] ✅ Assigned closest nav point as fallback for bot: " + GetBotName(botOwner));
             }
 
             return true;
@@ -109,24 +97,28 @@ namespace AIRefactored.AI.Navigation
 
         #region Helpers
 
-        private static bool IsValidPosition(Vector3 position)
+        private static bool IsValidPosition(Vector3 pos)
         {
-            return position != Vector3.zero &&
-                   !float.IsNaN(position.x) &&
-                   !float.IsNaN(position.y) &&
-                   !float.IsNaN(position.z);
+            return pos != Vector3.zero &&
+                   !float.IsNaN(pos.x) &&
+                   !float.IsNaN(pos.y) &&
+                   !float.IsNaN(pos.z);
         }
 
-        private static string GetBotName(BotOwner botOwner)
+        private static string GetBotName(BotOwner bot)
         {
-            if (botOwner.Profile != null &&
-                botOwner.Profile.Info != null &&
-                !string.IsNullOrEmpty(botOwner.Profile.Info.Nickname))
-            {
-                return botOwner.Profile.Info.Nickname;
-            }
+            var info = bot.Profile?.Info;
+            return info != null && !string.IsNullOrEmpty(info.Nickname) ? info.Nickname : "Unnamed";
+        }
 
-            return "Unnamed";
+        private static void TryLogOnce(string msg)
+        {
+            float now = Time.time;
+            if (now - _lastLogTime > LogCooldown)
+            {
+                Logger.LogWarning(msg);
+                _lastLogTime = now;
+            }
         }
 
         #endregion

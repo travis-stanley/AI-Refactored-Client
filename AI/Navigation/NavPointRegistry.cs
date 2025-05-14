@@ -115,6 +115,62 @@ namespace AIRefactored.AI.Navigation
             _quadtree = enableQuadtree ? BuildQuadtree() : null;
             _spatialGrid = enableSpatialGrid ? BuildSpatialGrid() : null;
         }
+        public static void LoadFrom(List<NavPointData> source)
+        {
+            Initialize();
+
+            if (source == null || source.Count == 0)
+            {
+                Logger.LogWarning("[NavPointRegistry] LoadFrom failed — no points provided.");
+                return;
+            }
+
+            for (int i = 0; i < source.Count; i++)
+            {
+                NavPointData data = source[i];
+                if (!IsValid(data.Position) || !Unique.Add(data.Position))
+                {
+                    continue;
+                }
+
+                var point = new NavPoint(
+                    data.Position,
+                    data.IsCover,
+                    data.Tag,
+                    data.Elevation,
+                    data.IsIndoor,
+                    data.IsJumpable,
+                    data.CoverAngle,
+                    data.Zone,
+                    data.ElevationBand);
+
+                Points.Add(point);
+            }
+
+            Logger.LogInfo("[NavPointRegistry] ✅ Loaded " + Points.Count + " points from cache.");
+        }
+
+        public static List<NavPointData> GetAllPoints()
+        {
+            var result = TempListPool.Rent<NavPointData>();
+
+            for (int i = 0; i < Points.Count; i++)
+            {
+                var p = Points[i];
+                result.Add(new NavPointData(
+                    p.WorldPos,
+                    p.IsCover,
+                    p.Tag,
+                    p.Elevation,
+                    p.IsIndoor,
+                    p.IsJumpable,
+                    p.CoverAngle,
+                    p.Zone,
+                    p.ElevationBand));
+            }
+
+            return result;
+        }
 
         public static void RegisterAll(string mapId)
         {

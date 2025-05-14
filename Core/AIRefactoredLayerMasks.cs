@@ -6,7 +6,6 @@
 //   Please follow strict StyleCop, ReSharper, and AI-Refactored code standards for all modifications.
 // </auto-generated>
 
-
 namespace AIRefactored.Core
 {
     using UnityEngine;
@@ -17,7 +16,7 @@ namespace AIRefactored.Core
     /// </summary>
     public static class AIRefactoredLayerMasks
     {
-        #region Individual Layer Indices
+        #region Layer Indices
 
         public static readonly int Default = LayerMask.NameToLayer("Default");
         public static readonly int TransparentFX = LayerMask.NameToLayer("TransparentFX");
@@ -49,27 +48,17 @@ namespace AIRefactored.Core
 
         #endregion
 
-        #region Precomputed Single Masks
+        #region Precomputed LayerMasks
 
-        private static readonly LayerMask _playerMask = 1 << Player;
-        private static readonly LayerMask _defaultMask = 1 << Default;
-        private static readonly LayerMask _hitColliderMask = 1 << HitCollider;
-        private static readonly LayerMask _lootMask = 1 << Loot;
-        private static readonly LayerMask _interactiveMask = 1 << Interactive;
-        private static readonly LayerMask _triggersMask = 1 << Trigger;
-        private static readonly LayerMask _transparentMask = 1 << TransparentFX;
-        private static readonly LayerMask _terrainMask = 1 << Terrain;
-        private static readonly LayerMask _disablerMask = 1 << DisablerCullingObject;
-
-        public static LayerMask PlayerMask => _playerMask;
-        public static LayerMask DefaultMask => _defaultMask;
-        public static LayerMask HitColliderMask => _hitColliderMask;
-        public static LayerMask LootLayerMask => _lootMask;
-        public static LayerMask InteractiveMask => _interactiveMask;
-        public static LayerMask TriggersMask => _triggersMask;
-        public static LayerMask TransparentMask => _transparentMask;
-        public static LayerMask TerrainMask => _terrainMask;
-        public static LayerMask DisablerCullingObjectMask => _disablerMask;
+        public static readonly LayerMask PlayerMask = 1 << Player;
+        public static readonly LayerMask DefaultMask = 1 << Default;
+        public static readonly LayerMask HitColliderMask = 1 << HitCollider;
+        public static readonly LayerMask LootLayerMask = 1 << Loot;
+        public static readonly LayerMask InteractiveMask = 1 << Interactive;
+        public static readonly LayerMask TriggersMask = 1 << Trigger;
+        public static readonly LayerMask TransparentMask = 1 << TransparentFX;
+        public static readonly LayerMask TerrainMask = 1 << Terrain;
+        public static readonly LayerMask DisablerCullingObjectMask = 1 << DisablerCullingObject;
 
         #endregion
 
@@ -85,10 +74,10 @@ namespace AIRefactored.Core
             HighPolyWithTerrainNoGrassMask | (1 << LowPolyCollider);
 
         public static readonly LayerMask TripwireCheckLayerMaskNoPlayer =
-            _terrainMask | (1 << Door) | _lootMask | _defaultMask | HighPolyWithTerrainMask;
+            TerrainMask | (1 << Door) | LootLayerMask | DefaultMask | HighPolyWithTerrainMask;
 
         public static readonly LayerMask TripwireCheckLayerMask =
-            TripwireCheckLayerMaskNoPlayer | _playerMask;
+            TripwireCheckLayerMaskNoPlayer | PlayerMask;
 
         public static readonly LayerMask AllColliders = LayerMask.GetMask(
             "Terrain", "HighPolyCollider", "LowPolyCollider", "DoorHighPolyCollider", "DoorLowPolyCollider");
@@ -142,6 +131,24 @@ namespace AIRefactored.Core
 
         public static readonly LayerMask GrenadeObstaclesColliderMask = LayerMask.GetMask(
             "HighPolyCollider", "Door", "Terrain");
+
+        public static readonly LayerMask TerrainAndObstacles = LayerMask.GetMask(
+            "Terrain", "HighPolyCollider", "LowPolyCollider", "Door", "DoorHighPolyCollider", "DoorLowPolyCollider");
+
+        public static readonly LayerMask JumpSafeMask = LayerMask.GetMask(
+            "Terrain", "HighPolyCollider", "LowPolyCollider");
+
+        public static readonly LayerMask ClimbObstructionMask = LayerMask.GetMask(
+            "Terrain", "HighPolyCollider", "LowPolyCollider", "Door", "InvisibleCollider");
+
+        public static readonly LayerMask NavRaycastMask = LayerMask.GetMask(
+            "Terrain", "HighPolyCollider", "LowPolyCollider", "InvisibleCollider", "Door");
+
+        public static readonly LayerMask MovementBlockerMask = LayerMask.GetMask(
+            "Terrain", "HighPolyCollider", "LowPolyCollider", "Door", "DoorHighPolyCollider", "DoorLowPolyCollider");
+
+        public static readonly LayerMask NavPointScanMask = LayerMask.GetMask(
+            "Terrain", "HighPolyCollider", "LowPolyCollider", "InvisibleCollider", "Door");
 
         #endregion
 

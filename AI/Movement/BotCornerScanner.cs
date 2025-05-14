@@ -55,20 +55,12 @@ namespace AIRefactored.AI.Movement
 
         #region Constructors
 
-        public BotCornerScanner()
-        {
-        }
+        public BotCornerScanner() { }
 
         public BotCornerScanner(BotOwner bot, BotComponentCache cache)
         {
-            try
-            {
-                this.Initialize(bot, cache);
-            }
-            catch (Exception ex)
-            {
-                Log.LogError("[BotCornerScanner] Constructor init failed: " + ex);
-            }
+            try { Initialize(bot, cache); }
+            catch (Exception ex) { Log.LogError("[BotCornerScanner] Constructor init failed: " + ex); }
         }
 
         #endregion
@@ -103,29 +95,19 @@ namespace AIRefactored.AI.Movement
         public void Tick(float time)
         {
             if (!_isInitialized || _bot == null || _cache == null || _profile == null)
-            {
                 return;
-            }
 
             if (_bot.IsDead || _bot.Mover == null || _bot.Transform == null)
-            {
                 return;
-            }
 
             if (_cache.Tilt == null || _cache.PoseController == null)
-            {
                 return;
-            }
 
             if (_bot.Memory != null && _bot.Memory.GoalEnemy != null)
-            {
                 return;
-            }
 
             if (time < _pauseUntil || time < _prepCrouchUntil)
-            {
                 return;
-            }
 
             if (IsApproachingEdge())
             {
@@ -134,23 +116,14 @@ namespace AIRefactored.AI.Movement
             }
 
             if (TryCornerPeekWithCrouch(time))
-            {
                 return;
-            }
 
             ResetLean(time);
         }
 
         #endregion
 
-        #region Internal Logic
-
-        private void PauseMovement(float time)
-        {
-            float duration = BasePauseDuration * Mathf.Clamp(0.5f + _profile.Caution, 0.35f, 2.0f);
-            _bot.Mover.MovementPause(duration);
-            _pauseUntil = time + duration;
-        }
+        #region Edge + Corner Logic
 
         private bool IsApproachingEdge()
         {
@@ -168,12 +141,8 @@ namespace AIRefactored.AI.Movement
 
                 if (!Physics.Raycast(rayOrigin, Vector3.down, MinFallHeight, AIRefactoredLayerMasks.NavObstacleMask))
                 {
-                    NavMeshHit hit;
-                    bool navHit = NavMesh.SamplePosition(rayDown, out hit, 1.0f, NavMesh.AllAreas);
-                    if (!navHit || hit.distance > NavSampleTolerance)
-                    {
+                    if (!NavMesh.SamplePosition(rayDown, out NavMeshHit hit, 1.0f, NavMesh.AllAreas) || hit.distance > NavSampleTolerance)
                         return true;
-                    }
                 }
             }
 
@@ -187,24 +156,18 @@ namespace AIRefactored.AI.Movement
             Vector3 left = -right;
             float dist = BaseWallCheckDistance + ((1f - _profile.Caution) * 0.5f);
 
-            if (CheckWall(origin, left, dist))
-            {
-                return TriggerLeanOrCrouch(BotTiltType.left, time);
-            }
-
-            if (CheckWall(origin, right, dist))
-            {
-                return TriggerLeanOrCrouch(BotTiltType.right, time);
-            }
+            if (CheckWall(origin, left, dist)) return TriggerLeanOrCrouch(BotTiltType.left, time);
+            if (CheckWall(origin, right, dist)) return TriggerLeanOrCrouch(BotTiltType.right, time);
 
             return false;
         }
 
-        private bool CheckWall(Vector3 origin, Vector3 direction, float distance)
+        private bool CheckWall(Vector3 origin, Vector3 dir, float dist)
         {
-            RaycastHit hit;
-            bool success = Physics.Raycast(origin, direction, out hit, distance, AIRefactoredLayerMasks.CoverRayMask);
-            return success && Vector3.Dot(hit.normal, direction) < WallAngleThreshold;
+            if (!Physics.Raycast(origin, dir, out RaycastHit hit, dist, AIRefactoredLayerMasks.CoverRayMask))
+                return false;
+
+            return Vector3.Dot(hit.normal, dir) < WallAngleThreshold;
         }
 
         private bool TriggerLeanOrCrouch(BotTiltType side, float time)
@@ -233,8 +196,18 @@ namespace AIRefactored.AI.Movement
                 _prepCrouchUntil = time + PrepCrouchTime;
                 return true;
             }
-
             return false;
+        }
+
+        #endregion
+
+        #region Helpers
+
+        private void PauseMovement(float time)
+        {
+            float duration = BasePauseDuration * Mathf.Clamp(0.5f + _profile.Caution, 0.35f, 2.0f);
+            _bot.Mover.MovementPause(duration);
+            _pauseUntil = time + duration;
         }
 
         private void ResetLean(float time)
@@ -243,9 +216,10 @@ namespace AIRefactored.AI.Movement
             {
                 _cache.Tilt.tiltOff = time - 1f;
                 _cache.Tilt.ManualUpdate();
-                _isLeaning = false;
-                _isCrouching = false;
             }
+
+            _isLeaning = false;
+            _isCrouching = false;
         }
 
         #endregion

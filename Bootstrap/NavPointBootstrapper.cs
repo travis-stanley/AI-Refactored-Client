@@ -3,7 +3,7 @@
 //   Licensed under the MIT License. See LICENSE in the repository root for more information.
 //
 //   THIS FILE IS SYSTEMATICALLY MANAGED.
-//   Please follow strict StyleCop, ReSharper, and AI-Refactored code standards for all modifications.
+//   Runtime-safe, deferred bootstrap with cache support.
 // </auto-generated>
 
 namespace AIRefactored.AI.Navigation
@@ -22,7 +22,7 @@ namespace AIRefactored.AI.Navigation
 
 	/// <summary>
 	/// Dynamically scans valid AI navigation points including cover, rooftop, flank, and fallback zones.
-	/// Headless-safe, memory-safe, and deferred for runtime performance.
+	/// Headless-safe, memory-safe, and cache-enabled for runtime performance.
 	/// </summary>
 	public static class NavPointBootstrapper
 	{
@@ -49,18 +49,34 @@ namespace AIRefactored.AI.Navigation
 		private static bool _isRunning;
 		private static bool _isTaskRunning;
 		private static int _registered;
+		private static string _mapId;
 
 		#endregion
 
-		#region API
+		#region Public API
 
 		public static void RegisterAll(string mapId)
 		{
 			Reset();
+			_mapId = mapId;
 
 			if (!GameWorldHandler.IsHost || !GameWorldHandler.IsInitialized)
 			{
 				Logger.LogWarning("[NavPointBootstrapper] Skipped — not host or world not initialized.");
+				return;
+			}
+
+			// Try loading from cache
+			if (NavPointCacheManager.TryLoad(mapId, out var cached))
+			{
+				for (int i = 0; i < cached.Count; i++)
+				{
+					var p = cached[i];
+					NavPointRegistry.Register(p.Position, p.IsCover, p.Tag, p.Elevation, p.IsIndoor, p.IsJumpable, p.CoverAngle);
+				}
+
+				NavMeshStatus.SetReady();
+				Logger.LogDebug("[NavPointBootstrapper] ✅ Loaded from cache: " + cached.Count + " points.");
 				return;
 			}
 
@@ -86,8 +102,7 @@ namespace AIRefactored.AI.Navigation
 				{
 					for (float z = -half; z <= half; z += ScanSpacing)
 					{
-						Vector3 basePos = new Vector3(x, MaxSampleHeight, z) + _center;
-						pooled.Add(basePos);
+						pooled.Add(new Vector3(x, MaxSampleHeight, z) + _center);
 					}
 				}
 
@@ -106,21 +121,11 @@ namespace AIRefactored.AI.Navigation
 			if (!_isTaskRunning)
 			{
 				_isTaskRunning = true;
-
 				Task.Run(() =>
 				{
-					try
-					{
-						PrequeueVerticalPoints();
-					}
-					catch (Exception ex)
-					{
-						Logger.LogError("[NavPointBootstrapper] Vertical prequeue error: " + ex);
-					}
-					finally
-					{
-						_isTaskRunning = false;
-					}
+					try { PrequeueVerticalPoints(); }
+					catch (Exception ex) { Logger.LogError("[NavPointBootstrapper] Vertical prequeue error: " + ex); }
+					finally { _isTaskRunning = false; }
 				});
 			}
 		}
@@ -183,7 +188,11 @@ namespace AIRefactored.AI.Navigation
 			{
 				_isRunning = false;
 				NavMeshStatus.SetReady();
-				Logger.LogDebug("[NavPointBootstrapper] ✅ Completed — " + _registered + " nav points registered.");
+
+				List<NavPointData> snapshot = NavPointRegistry.QueryNearby(_center, 200f, (Predicate<NavPointData>)null);
+				NavPointCacheManager.Save(_mapId, snapshot);
+
+				Logger.LogDebug("[NavPointBootstrapper] ✅ Completed scan and cached " + snapshot.Count + " nav points.");
 			}
 		}
 
@@ -195,11 +204,12 @@ namespace AIRefactored.AI.Navigation
 			_isRunning = false;
 			_isTaskRunning = false;
 			NavMeshStatus.Reset();
+			_mapId = string.Empty;
 		}
 
 		#endregion
 
-		#region Internal
+		#region Internals
 
 		private static void PrequeueVerticalPoints()
 		{
@@ -233,17 +243,14 @@ namespace AIRefactored.AI.Navigation
 		private static bool IsCoverPoint(Vector3 pos)
 		{
 			Vector3 eye = pos + Vector3.up * 1.4f;
-
 			for (float angle = -45f; angle <= 45f; angle += 15f)
 			{
 				Vector3 dir = Quaternion.Euler(0f, angle, 0f) * Vector3.forward;
-
 				if (Physics.Raycast(eye, dir, ForwardCoverCheckDistance, AIRefactoredLayerMasks.HighPolyCollider))
 				{
 					return true;
 				}
 			}
-
 			return false;
 		}
 
@@ -254,16 +261,8 @@ namespace AIRefactored.AI.Navigation
 
 		private static string ClassifyNavPoint(float elevation, bool isCover, bool isIndoor)
 		{
-			if (isIndoor)
-			{
-				return "indoor";
-			}
-
-			if (elevation > 6.0f)
-			{
-				return "roof";
-			}
-
+			if (isIndoor) return "indoor";
+			if (elevation > 6.0f) return "roof";
 			return isCover ? "fallback" : "flank";
 		}
 

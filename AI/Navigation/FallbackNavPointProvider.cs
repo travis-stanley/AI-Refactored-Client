@@ -3,14 +3,18 @@
 //   Licensed under the MIT License. See LICENSE in the repository root for more information.
 //
 //   THIS FILE IS SYSTEMATICALLY MANAGED.
-//   Please follow strict StyleCop, ReSharper, and AI-Refactored code standards for all modifications.
+//   Do not use NavPointRegistry unless it is fully initialized and built.
 // </auto-generated>
 
 namespace AIRefactored.AI.Navigation
 {
+    using System.Collections.Generic;
     using AIRefactored.Core;
+    using AIRefactored.Pools;
     using BepInEx.Logging;
+    using Unity.AI.Navigation;
     using UnityEngine;
+    using UnityEngine.AI;
 
     /// <summary>
     /// Provides fallback nav points if NavPointRegistry is unavailable or empty.
@@ -18,6 +22,13 @@ namespace AIRefactored.AI.Navigation
     /// </summary>
     public static class FallbackNavPointProvider
     {
+        #region Constants
+
+        private const float MaxFallbackSampleRadius = 1.5f;
+        private const float LogCooldown = 2.0f;
+
+        #endregion
+
         #region Fields
 
         private static readonly ManualLogSource Logger = Plugin.LoggerInstance;
@@ -31,28 +42,60 @@ namespace AIRefactored.AI.Navigation
             new Vector3(0f, 0f, 15f),
         };
 
+        private static float _lastLogTime;
+
         #endregion
 
         #region Public API
 
         /// <summary>
         /// Returns a fallback nav point offset from a base position.
+        /// Uses NavPointRegistry if available, otherwise falls back to static offset with NavMesh validation.
         /// </summary>
-        /// <param name="fromPosition">World-space position to base fallback from.</param>
-        /// <returns>Offset fallback point, or Vector3.zero if input is invalid.</returns>
         public static Vector3 GetSafePoint(Vector3 fromPosition)
         {
             if (!IsValid(fromPosition))
             {
-                Logger.LogWarning("[FallbackNavPointProvider] Invalid origin passed to GetSafePoint.");
                 return Vector3.zero;
             }
 
-            int index = Random.Range(0, StaticFallbackOffsets.Length);
-            Vector3 fallback = fromPosition + StaticFallbackOffsets[index];
+            // Use runtime-registered nav points if available
+            if (NavPointRegistry.IsReady)
+            {
+                List<Vector3> candidates = NavPointRegistry.QueryNearby(fromPosition, 12f, null, false);
+                for (int i = 0; i < candidates.Count; i++)
+                {
+                    Vector3 candidate = candidates[i];
+                    if (NavMesh.SamplePosition(candidate, out NavMeshHit hit, MaxFallbackSampleRadius, NavMesh.AllAreas))
+                    {
+                        TempListPool.Return(candidates);
+                        return hit.position;
+                    }
+                }
+                TempListPool.Return(candidates);
+            }
 
-            Logger.LogWarning("[FallbackNavPointProvider] Generated fallback at: " + fallback.ToString("F1"));
-            return fallback;
+            // Try static offsets + NavMesh validation
+            for (int i = 0; i < StaticFallbackOffsets.Length; i++)
+            {
+                Vector3 testPos = fromPosition + StaticFallbackOffsets[i];
+                if (NavMesh.SamplePosition(testPos, out NavMeshHit hit, MaxFallbackSampleRadius, NavMesh.AllAreas))
+                {
+                    TryLogOnce("[FallbackNavPointProvider] ⚠ Using static fallback at: " + hit.position.ToString("F1"));
+                    return hit.position;
+                }
+            }
+
+            // Final fallback if nothing else is valid
+            Vector3 emergency = fromPosition + Vector3.forward * 4f;
+            if (NavMesh.SamplePosition(emergency, out NavMeshHit finalHit, MaxFallbackSampleRadius, NavMesh.AllAreas))
+            {
+                TryLogOnce("[FallbackNavPointProvider] ⚠ Using emergency fallback at: " + finalHit.position.ToString("F1"));
+                return finalHit.position;
+            }
+
+            TryLogOnce("[FallbackNavPointProvider] ❌ No valid fallback found, returning origin.");
+            return fromPosition;
         }
 
         /// <summary>
@@ -61,13 +104,13 @@ namespace AIRefactored.AI.Navigation
         public static Vector3 GetSafeWorldPoint()
         {
             Vector3 fallback = new Vector3(5f, 0f, 5f);
-            Logger.LogWarning("[FallbackNavPointProvider] Global fallback used: " + fallback.ToString("F1"));
+            TryLogOnce("[FallbackNavPointProvider] ⚠ Global fallback used: " + fallback.ToString("F1"));
             return fallback;
         }
 
         #endregion
 
-        #region Private Helpers
+        #region Internal
 
         private static bool IsValid(Vector3 pos)
         {
@@ -75,6 +118,16 @@ namespace AIRefactored.AI.Navigation
                    !float.IsNaN(pos.x) &&
                    !float.IsNaN(pos.y) &&
                    !float.IsNaN(pos.z);
+        }
+
+        private static void TryLogOnce(string msg)
+        {
+            float now = Time.time;
+            if (now - _lastLogTime > LogCooldown)
+            {
+                Logger.LogWarning(msg);
+                _lastLogTime = now;
+            }
         }
 
         #endregion

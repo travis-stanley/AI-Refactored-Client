@@ -88,16 +88,15 @@ namespace AIRefactored.AI.Combat
         public bool IsInCombatState()
         {
             return _initialized &&
-                   (_fallback.IsActive() ||
-                    _engage.IsEngaging() ||
-                    _investigate.IsInvestigating() ||
-                    _cache.ThreatSelector.CurrentTarget != null);
+                (_fallback.IsActive() ||
+                 _engage.IsEngaging() ||
+                 _investigate.IsInvestigating() ||
+                 _cache.ThreatSelector.CurrentTarget != null);
         }
 
         public void NotifyDamaged()
         {
-            if (!_initialized)
-                return;
+            if (!_initialized) return;
 
             float time = Time.time;
             if (_fallback.ShallUseNow(time))
@@ -110,8 +109,7 @@ namespace AIRefactored.AI.Combat
 
         public void NotifyEchoInvestigate()
         {
-            if (!_initialized)
-                return;
+            if (!_initialized) return;
 
             float time = Time.time;
             if (_investigate.ShallUseNow(time, _lastStateChangeTime))
@@ -227,8 +225,14 @@ namespace AIRefactored.AI.Combat
 
         private void AssignFallbackIfNeeded()
         {
-            if (_fallback.HasValidFallbackPath() || _cache.Pathing == null)
+            if (_fallback.HasValidFallbackPath())
                 return;
+
+            if (_cache.Pathing == null)
+            {
+                Plugin.LoggerInstance.LogWarning("[CombatStateMachine] Pathing system is null — fallback skipped.");
+                return;
+            }
 
             Vector3 lookDir = _bot.LookDirection;
             Vector3 retreatDir = lookDir.sqrMagnitude > 0.01f ? -lookDir.normalized : Vector3.back;
@@ -252,6 +256,10 @@ namespace AIRefactored.AI.Combat
                 {
                     Plugin.LoggerInstance.LogWarning("[CombatStateMachine] Fallback path not found.");
                 }
+            }
+            catch (Exception ex)
+            {
+                Plugin.LoggerInstance.LogError("[CombatStateMachine] Fallback planner failed: " + ex);
             }
             finally
             {

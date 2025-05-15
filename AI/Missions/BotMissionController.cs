@@ -204,13 +204,18 @@ namespace AIRefactored.AI.Missions
                     return;
                 }
 
-                _cache.Movement.EnterLootingMode();
-                _cache.PoseController.LockCrouchPose();
+                if (_cache.Movement != null)
+                    _cache.Movement.EnterLootingMode();
+
+                if (_cache.PoseController != null)
+                    _cache.PoseController.LockCrouchPose();
 
                 _cache.LootScanner.TryLootNearby();
                 _cache.DeadBodyScanner?.TryLootNearby();
 
-                _cache.Movement.ExitLootingMode();
+                if (_cache.Movement != null)
+                    _cache.Movement.ExitLootingMode();
+
                 _voice.OnLoot();
             }
 

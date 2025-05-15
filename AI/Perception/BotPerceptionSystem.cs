@@ -109,6 +109,11 @@ namespace AIRefactored.AI.Perception
 
         public void ApplyFlareExposure(float strength)
         {
+            if (!IsActive())
+            {
+                return;
+            }
+
             _flareIntensity = Mathf.Clamp(strength * 0.6f, 0f, 0.8f);
         }
 
@@ -169,8 +174,7 @@ namespace AIRefactored.AI.Perception
                 return;
             }
 
-            Light source;
-            if (FlashlightRegistry.IsExposingBot(head, out source) && source != null)
+            if (FlashlightRegistry.IsExposingBot(head, out Light source) && source != null)
             {
                 float score = FlashLightUtils.CalculateFlashScore(source.transform, head, 20f);
                 if (score > 0.25f)

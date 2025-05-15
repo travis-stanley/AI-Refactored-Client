@@ -87,9 +87,17 @@ namespace AIRefactored.AI.Movement
                 return;
             }
 
+            // PATCHED: allow fallback logic if NavMesh isn't ready
             if (!NavMeshStatus.IsReady && !_inLootingMode)
             {
-                return;
+                if (NavPointRegistry.IsEmpty)
+                {
+                    Logger.LogDebug("[Movement] NavMesh not ready, using fallback navigation logic.");
+                }
+                else
+                {
+                    return;
+                }
             }
 
             _jump.Tick(deltaTime);
@@ -125,7 +133,6 @@ namespace AIRefactored.AI.Movement
         }
 
         public void EnterLootingMode() => _inLootingMode = true;
-
         public void ExitLootingMode() => _inLootingMode = false;
 
         #endregion

@@ -3,7 +3,7 @@
 //   Licensed under the MIT License. See LICENSE in the repository root for more information.
 //
 //   THIS FILE IS SYSTEMATICALLY MANAGED.
-//   Please follow strict StyleCop, ReSharper, and AI-Refactored code standards for all modifications.
+//   Failures in AIRefactored logic must always trigger safe fallback to EFT base AI.
 // </auto-generated>
 
 namespace AIRefactored.AI.Missions
@@ -178,9 +178,9 @@ namespace AIRefactored.AI.Missions
         private bool HasSquadWiped()
         {
             BotsGroup group = _bot.BotsGroup;
-            if (group == null)
+            if (group == null || group.MembersCount <= 1)
             {
-                return true;
+                return false; // Solo bots should NOT extract due to squad wipe
             }
 
             for (int i = 0; i < group.MembersCount; i++)
@@ -198,7 +198,7 @@ namespace AIRefactored.AI.Missions
         private bool IsBotIsolated(float radius)
         {
             BotsGroup group = _bot.BotsGroup;
-            if (group == null)
+            if (group == null || group.MembersCount <= 1)
             {
                 return true;
             }

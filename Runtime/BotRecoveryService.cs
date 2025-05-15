@@ -45,12 +45,16 @@ namespace AIRefactored.Runtime
 		private static bool _hasInitialized;
 		private static bool _hookedSpawner;
 
+		/// <summary>
+		/// Gets the shared singleton instance.
+		/// </summary>
 		public static BotRecoveryService Instance { get; } = new BotRecoveryService();
 
 		#endregion
 
 		#region Lifecycle
 
+		/// <inheritdoc />
 		public void Initialize()
 		{
 			try
@@ -65,6 +69,7 @@ namespace AIRefactored.Runtime
 			}
 		}
 
+		/// <inheritdoc />
 		public void OnRaidEnd()
 		{
 			try
@@ -85,16 +90,21 @@ namespace AIRefactored.Runtime
 			}
 		}
 
+		/// <inheritdoc />
 		public bool IsReady()
 		{
 			return _hasInitialized && GameWorldHandler.IsReady();
 		}
 
+		/// <inheritdoc />
 		public WorldPhase RequiredPhase()
 		{
 			return WorldPhase.WorldReady;
 		}
 
+		/// <summary>
+		/// Resets all static flags and internal state for next raid.
+		/// </summary>
 		public static void Reset()
 		{
 			_nextTickTime = -1f;
@@ -107,6 +117,7 @@ namespace AIRefactored.Runtime
 
 		#region Tick
 
+		/// <inheritdoc />
 		public void Tick(float deltaTime)
 		{
 			try

@@ -64,7 +64,6 @@ namespace AIRefactored.Runtime
                 }
 
                 WorldInitState.SetPhase(WorldPhase.AwaitWorld);
-
                 NavMeshStatus.Reset();
 
                 string mapId = GameWorldHandler.TryGetValidMapName();
@@ -89,7 +88,7 @@ namespace AIRefactored.Runtime
         }
 
         /// <summary>
-        /// Resets phase state for teardown or retry scenarios.
+        /// Stops and resets all world systems in preparation for a new raid.
         /// </summary>
         public static void Stop()
         {

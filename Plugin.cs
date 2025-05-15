@@ -16,6 +16,7 @@ namespace AIRefactored
 
     /// <summary>
     /// Entry point for AI-Refactored mod. Supports traditional client, client-host, and FIKA headless modes.
+    /// Initializes all world systems and routes teardown via GameWorldHandler on plugin destruction.
     /// </summary>
     [BepInPlugin("com.spock.airefactored", "AI-Refactored (Host Only)", "1.0.0")]
     public sealed class Plugin : BaseUnityPlugin
@@ -46,6 +47,9 @@ namespace AIRefactored
 
         #region Unity Lifecycle
 
+        /// <summary>
+        /// Unity Awake hook. Initializes logger and controller systems in thread-safe manner.
+        /// </summary>
         private void Awake()
         {
             lock (InitLock)
@@ -56,6 +60,7 @@ namespace AIRefactored
                 }
 
                 _logger = base.Logger;
+                AppDomain.CurrentDomain.UnhandledException += OnUnhandledException;
 
                 try
                 {
@@ -71,6 +76,9 @@ namespace AIRefactored
             }
         }
 
+        /// <summary>
+        /// Unity OnDestroy hook. Tears down world systems and logs result.
+        /// </summary>
         private void OnDestroy()
         {
             lock (InitLock)
@@ -96,7 +104,21 @@ namespace AIRefactored
                     _logger.LogError("[AIRefactored] ❌ Plugin OnDestroy exception: " + ex);
                 }
 
+                AppDomain.CurrentDomain.UnhandledException -= OnUnhandledException;
                 _initialized = false;
+            }
+        }
+
+        /// <summary>
+        /// Handles unexpected unhandled exceptions globally for AIRefactored.
+        /// </summary>
+        /// <param name="sender">Exception source.</param>
+        /// <param name="e">Exception data.</param>
+        private static void OnUnhandledException(object sender, UnhandledExceptionEventArgs e)
+        {
+            if (_logger != null && e?.ExceptionObject is Exception exception)
+            {
+                _logger.LogError("[AIRefactored] ❗ Unhandled exception: " + exception);
             }
         }
 

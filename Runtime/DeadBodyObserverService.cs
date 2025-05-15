@@ -44,6 +44,7 @@ namespace AIRefactored.Runtime
 
 		#region Lifecycle
 
+		/// <inheritdoc />
 		public void Initialize()
 		{
 			try
@@ -58,6 +59,60 @@ namespace AIRefactored.Runtime
 			}
 		}
 
+		/// <inheritdoc />
+		public void OnRaidEnd()
+		{
+			try
+			{
+				Reset();
+				Logger.LogDebug("[DeadBodyObserver] 🧹 Reset after raid.");
+			}
+			catch (Exception ex)
+			{
+				Logger.LogError("[DeadBodyObserver] ❌ OnRaidEnd error: " + ex);
+			}
+		}
+
+		/// <inheritdoc />
+		public bool IsReady()
+		{
+			return true;
+		}
+
+		/// <inheritdoc />
+		public WorldPhase RequiredPhase()
+		{
+			return WorldPhase.WorldReady;
+		}
+
+		/// <summary>
+		/// Resets scan timing and marks reset state.
+		/// </summary>
+		public static void Reset()
+		{
+			if (_hasLoggedReset)
+			{
+				return;
+			}
+
+			_nextScanTime = -1f;
+			_hasLoggedReset = true;
+
+			try
+			{
+				Logger.LogDebug("[DeadBodyObserver] 🔄 Reset complete.");
+			}
+			catch
+			{
+				// Logger may be disposed during shutdown.
+			}
+		}
+
+		#endregion
+
+		#region Tick
+
+		/// <inheritdoc />
 		public void Tick(float deltaTime)
 		{
 			try
@@ -156,49 +211,6 @@ namespace AIRefactored.Runtime
 			{
 				Logger.LogError("[DeadBodyObserver] ❌ Tick error: " + ex);
 			}
-		}
-
-		public void OnRaidEnd()
-		{
-			try
-			{
-				Reset();
-				Logger.LogDebug("[DeadBodyObserver] 🧹 Reset after raid.");
-			}
-			catch (Exception ex)
-			{
-				Logger.LogError("[DeadBodyObserver] ❌ OnRaidEnd error: " + ex);
-			}
-		}
-
-		public static void Reset()
-		{
-			if (_hasLoggedReset)
-			{
-				return;
-			}
-
-			_nextScanTime = -1f;
-			_hasLoggedReset = true;
-
-			try
-			{
-				Logger.LogDebug("[DeadBodyObserver] 🔄 Reset complete.");
-			}
-			catch
-			{
-				// Logger may be unavailable during shutdown
-			}
-		}
-
-		public bool IsReady()
-		{
-			return true;
-		}
-
-		public WorldPhase RequiredPhase()
-		{
-			return WorldPhase.WorldReady;
 		}
 
 		#endregion

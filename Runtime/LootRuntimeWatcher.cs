@@ -38,8 +38,9 @@ namespace AIRefactored.Runtime
 
         #endregion
 
-        #region Bootstrap Interface
+        #region Lifecycle
 
+        /// <inheritdoc />
         public void Initialize()
         {
             try
@@ -53,6 +54,7 @@ namespace AIRefactored.Runtime
             }
         }
 
+        /// <inheritdoc />
         public void Tick(float deltaTime)
         {
             try
@@ -77,6 +79,7 @@ namespace AIRefactored.Runtime
             }
         }
 
+        /// <inheritdoc />
         public void OnRaidEnd()
         {
             try
@@ -90,11 +93,13 @@ namespace AIRefactored.Runtime
             }
         }
 
+        /// <inheritdoc />
         public bool IsReady()
         {
             return true;
         }
 
+        /// <inheritdoc />
         public WorldPhase RequiredPhase()
         {
             return WorldPhase.WorldReady;
@@ -171,7 +176,7 @@ namespace AIRefactored.Runtime
                 }
                 catch
                 {
-                    // Safe silent fallback
+                    // Logger may be disposed during teardown
                 }
             }
         }

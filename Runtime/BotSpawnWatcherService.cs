@@ -43,6 +43,7 @@ namespace AIRefactored.Runtime
 
 		#region Lifecycle
 
+		/// <inheritdoc />
 		public void Initialize()
 		{
 			try
@@ -56,6 +57,7 @@ namespace AIRefactored.Runtime
 			}
 		}
 
+		/// <inheritdoc />
 		public void OnRaidEnd()
 		{
 			try
@@ -69,6 +71,9 @@ namespace AIRefactored.Runtime
 			}
 		}
 
+		/// <summary>
+		/// Clears internal bot ID cache and state flags for reuse in next raid.
+		/// </summary>
 		public static void Reset()
 		{
 			SeenBotIds.Clear();
@@ -81,7 +86,7 @@ namespace AIRefactored.Runtime
 			}
 			catch
 			{
-				// Ignore logger errors during shutdown
+				// Safe ignore: logger might be disposed during shutdown.
 			}
 		}
 
@@ -89,6 +94,7 @@ namespace AIRefactored.Runtime
 
 		#region Tick
 
+		/// <inheritdoc />
 		public void Tick(float deltaTime)
 		{
 			try
@@ -174,11 +180,13 @@ namespace AIRefactored.Runtime
 
 		#region Integration
 
+		/// <inheritdoc />
 		public bool IsReady()
 		{
 			return WorldInitState.IsInPhase(WorldPhase.WorldReady);
 		}
 
+		/// <inheritdoc />
 		public WorldPhase RequiredPhase()
 		{
 			return WorldPhase.WorldReady;

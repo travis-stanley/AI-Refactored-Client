@@ -37,12 +37,14 @@ namespace AIRefactored.Runtime
 
         #region Lifecycle
 
+        /// <inheritdoc />
         public void Initialize()
         {
             _initialized = false;
             _bound = false;
         }
 
+        /// <inheritdoc />
         public void Tick(float deltaTime)
         {
             try
@@ -75,6 +77,7 @@ namespace AIRefactored.Runtime
             }
         }
 
+        /// <inheritdoc />
         public void OnRaidEnd()
         {
             try
@@ -111,11 +114,13 @@ namespace AIRefactored.Runtime
 
         #region Phase Control
 
+        /// <inheritdoc />
         public bool IsReady()
         {
             return true;
         }
 
+        /// <inheritdoc />
         public WorldPhase RequiredPhase()
         {
             return WorldPhase.AwaitWorld;

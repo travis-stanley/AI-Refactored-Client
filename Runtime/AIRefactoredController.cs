@@ -19,13 +19,13 @@ namespace AIRefactored.Runtime
     using UnityEngine;
 
     /// <summary>
-    /// Global entry point for AI-Refactored.
-    /// Spawns a persistent host object and launches phase-based initialization.
+    /// Global AIRefactored lifecycle manager. Spawns persistent host and routes raid start/end logic and tick delegation.
     /// </summary>
     public sealed class AIRefactoredController : MonoBehaviour
     {
         #region Fields
 
+        private static readonly object InitLock = new object();
         private static GameObject s_Host;
         private static AIRefactoredController s_Instance;
         private static bool s_Initialized;
@@ -61,28 +61,31 @@ namespace AIRefactored.Runtime
         /// </summary>
         public static void Initialize()
         {
-            if (s_Initialized)
+            lock (InitLock)
             {
-                Logger.LogDebug("[AIRefactoredController] Already initialized — skipping.");
-                return;
-            }
+                if (s_Initialized)
+                {
+                    Logger.LogDebug("[AIRefactoredController] Already initialized — skipping.");
+                    return;
+                }
 
-            try
-            {
-                s_Host = new GameObject("AIRefactoredHost");
-                UnityEngine.Object.DontDestroyOnLoad(s_Host);
+                try
+                {
+                    s_Host = new GameObject("AIRefactoredHost");
+                    UnityEngine.Object.DontDestroyOnLoad(s_Host);
 
-                s_Instance = s_Host.AddComponent<AIRefactoredController>();
-                s_Host.AddComponent<GameWorldSpawnHook>();
+                    s_Instance = s_Host.AddComponent<AIRefactoredController>();
+                    s_Host.AddComponent<GameWorldSpawnHook>();
 
-                WorldTickDispatcher.Initialize();
+                    WorldTickDispatcher.Initialize();
 
-                s_Initialized = true;
-                Logger.LogDebug("[AIRefactoredController] ✅ Initialization complete — awaiting GameWorld.");
-            }
-            catch (Exception ex)
-            {
-                Logger.LogError("[AIRefactoredController] ❌ Initialization failed: " + ex);
+                    s_Initialized = true;
+                    Logger.LogDebug("[AIRefactoredController] ✅ Initialization complete — awaiting GameWorld.");
+                }
+                catch (Exception ex)
+                {
+                    Logger.LogError("[AIRefactoredController] ❌ Initialization failed: " + ex);
+                }
             }
         }
 
@@ -129,6 +132,7 @@ namespace AIRefactored.Runtime
                 }
 
                 Logger.LogInfo("[AIRefactoredController] 🚀 GameWorld valid — starting AI systems.");
+
                 GameWorldHandler.Initialize(world);
                 WorldBootstrapper.Begin(Logger, GameWorldHandler.TryGetValidMapName());
 
@@ -153,6 +157,8 @@ namespace AIRefactored.Runtime
             try
             {
                 Logger.LogInfo("[AIRefactoredController] 🧹 Raid ended — cleaning up world systems...");
+
+                InitPhaseRunner.Stop();
                 WorldBootstrapper.Stop();
                 GameWorldHandler.Cleanup();
                 BotRecoveryService.Reset();

@@ -6,71 +6,33 @@
 //   Please follow strict StyleCop, ReSharper, and AI-Refactored code standards for all modifications.
 // </auto-generated>
 
-#nullable enable
-
 namespace AIRefactored.AI.Navigation
 {
+    using System;
     using UnityEngine;
 
     /// <summary>
-    /// Lightweight tactical navigation point metadata for fast lookup and AI decision-making.
+    /// Immutable tactical navigation point used by AIRefactored for pathfinding, cover, and zone awareness.
+    /// Fully precomputed for ultra-fast lookup and zero allocations.
     /// </summary>
     public sealed class NavPointData
     {
         #region Fields
 
-        /// <summary>
-        /// World position of the navigation point.
-        /// </summary>
         public readonly Vector3 Position;
-
-        /// <summary>
-        /// Indicates if the point provides cover.
-        /// </summary>
         public readonly bool IsCover;
-
-        /// <summary>
-        /// Navigation zone tag assigned to the point (e.g., Room, Street, etc.).
-        /// </summary>
         public readonly string Tag;
-
-        /// <summary>
-        /// Vertical world elevation of the point.
-        /// </summary>
         public readonly float Elevation;
-
-        /// <summary>
-        /// Indicates if the point is located indoors.
-        /// </summary>
         public readonly bool IsIndoor;
-
-        /// <summary>
-        /// Indicates if the point is safe and jumpable for traversal.
-        /// </summary>
         public readonly bool IsJumpable;
-
-        /// <summary>
-        /// Optimal cover angle relative to incoming threat direction.
-        /// </summary>
         public readonly float CoverAngle;
-
-        /// <summary>
-        /// Name of the zone this point belongs to.
-        /// </summary>
         public readonly string Zone;
-
-        /// <summary>
-        /// Elevation classification band (e.g., Low, Mid, High).
-        /// </summary>
         public readonly string ElevationBand;
 
         #endregion
 
         #region Constructor
 
-        /// <summary>
-        /// Initializes a new instance of the <see cref="NavPointData"/> class.
-        /// </summary>
         public NavPointData(
             Vector3 position,
             bool isCover,
@@ -82,6 +44,21 @@ namespace AIRefactored.AI.Navigation
             string zone,
             string elevationBand)
         {
+            if (tag == null)
+            {
+                throw new ArgumentNullException(nameof(tag), "NavPointData constructor: tag must not be null.");
+            }
+
+            if (zone == null)
+            {
+                throw new ArgumentNullException(nameof(zone), "NavPointData constructor: zone must not be null.");
+            }
+
+            if (elevationBand == null)
+            {
+                throw new ArgumentNullException(nameof(elevationBand), "NavPointData constructor: elevationBand must not be null.");
+            }
+
             this.Position = position;
             this.IsCover = isCover;
             this.Tag = tag;
@@ -95,22 +72,32 @@ namespace AIRefactored.AI.Navigation
 
         #endregion
 
-        #region Public API
+        #region Public Methods
 
         /// <summary>
-        /// Calculates the squared distance to a target point for efficient proximity checks.
+        /// Computes the squared distance from this point to a target world position.
         /// </summary>
-        public float DistanceSqr(Vector3 target)
+        public float DistanceSqr(Vector3 other)
         {
-            return (this.Position - target).sqrMagnitude;
+            float dx = this.Position.x - other.x;
+            float dy = this.Position.y - other.y;
+            float dz = this.Position.z - other.z;
+            return (dx * dx) + (dy * dy) + (dz * dz);
         }
 
         /// <summary>
-        /// Returns a short description of this point for debugging.
+        /// Returns a compact string representation for debugging and diagnostics.
         /// </summary>
         public override string ToString()
         {
-            return $"[{this.Tag}] {this.Position} | Cover={this.IsCover} Jump={this.IsJumpable} Indoor={this.IsIndoor} Zone={this.Zone}";
+            return string.Concat(
+                "[", this.Tag, "] ",
+                this.Position.ToString(),
+                " | Cover=", this.IsCover ? "Y" : "N",
+                " Jump=", this.IsJumpable ? "Y" : "N",
+                " Indoor=", this.IsIndoor ? "Y" : "N",
+                " Zone=", this.Zone,
+                " ElevBand=", this.ElevationBand);
         }
 
         #endregion

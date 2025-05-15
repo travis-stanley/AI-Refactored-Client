@@ -6,143 +6,163 @@
 //   Please follow strict StyleCop, ReSharper, and AI-Refactored code standards for all modifications.
 // </auto-generated>
 
-#nullable enable
-
 namespace AIRefactored.AI.Optimization
 {
-    using System;
-    using System.Collections.Generic;
-    using System.Threading.Tasks;
-    using AIRefactored.Core;
-    using AIRefactored.Runtime;
-    using BepInEx.Logging;
-    using EFT;
-    using UnityEngine;
+	using System;
+	using System.Collections.Generic;
+	using System.Threading.Tasks;
+	using AIRefactored.Core;
+	using AIRefactored.Pools;
+	using AIRefactored.Runtime;
+	using BepInEx.Logging;
+	using EFT;
+	using UnityEngine;
 
-    /// <summary>
-    /// Schedules and dispatches thread-safe bot workloads during headless server or client-host execution.
-    /// Used for background AI tasks like group evaluation and noise scoring.
-    /// </summary>
-    public sealed class BotWorkGroupDispatcher : MonoBehaviour
-    {
-        #region Configuration
+	/// <summary>
+	/// Schedules and dispatches thread-safe bot workloads during headless or client-hosted execution.
+	/// </summary>
+	public static class BotWorkGroupDispatcher
+	{
+		#region Constants
 
-        private const int MaxThreadsCap = 16;
-        private const int MaxWorkPerFrame = 256;
+		private const int MaxWorkPerTick = 256;
+		private const int MaxThreads = 16;
 
-        #endregion
+		#endregion
 
-        #region Static Fields
+		#region Fields
 
-        private static readonly List<IBotWorkload> _pendingWorkloads = new List<IBotWorkload>(MaxWorkPerFrame);
-        private static readonly object _lock = new object();
-        private static readonly ManualLogSource Logger = AIRefactoredController.Logger;
-        private static readonly int LogicalThreadCount = Mathf.Clamp(Environment.ProcessorCount, 1, MaxThreadsCap);
+		private static readonly object Sync = new object();
+		private static readonly ManualLogSource Log = Plugin.LoggerInstance;
+		private static readonly List<IBotWorkload> WorkQueue = new List<IBotWorkload>(MaxWorkPerTick);
+		private static readonly int ThreadCount = Mathf.Clamp(Environment.ProcessorCount, 1, MaxThreads);
 
-        #endregion
+		#endregion
 
-        #region Unity Lifecycle
+		#region Public API
 
-        private void Update()
-        {
-            // Only run on the authoritative host (headless OR client-host)
-            if (!GameWorldHandler.IsLocalHost())
-            {
-                return;
-            }
+		/// <summary>
+		/// Queues a bot workload for background execution.
+		/// </summary>
+		/// <param name="workload">The workload to execute.</param>
+		public static void Schedule(IBotWorkload workload)
+		{
+			if (workload == null)
+			{
+				return;
+			}
 
-            List<IBotWorkload> batch;
-            lock (_lock)
-            {
-                if (_pendingWorkloads.Count == 0)
-                {
-                    return;
-                }
+			lock (Sync)
+			{
+				if (WorkQueue.Count >= MaxWorkPerTick)
+				{
+					Log.LogWarning("[BotWorkGroupDispatcher] Max queue capacity reached. Dropping workload.");
+					return;
+				}
 
-                int count = Mathf.Min(_pendingWorkloads.Count, MaxWorkPerFrame);
-                batch = new List<IBotWorkload>(_pendingWorkloads.GetRange(0, count));
-                _pendingWorkloads.RemoveRange(0, count);
-            }
+				WorkQueue.Add(workload);
+			}
+		}
 
-            DispatchBatch(batch);
-        }
+		/// <summary>
+		/// Executes queued workloads in thread batches. Call from Update().
+		/// </summary>
+		public static void Tick()
+		{
+			if (!GameWorldHandler.IsLocalHost())
+			{
+				return;
+			}
 
-        #endregion
+			List<IBotWorkload> batch = null;
 
-        #region Dispatch Logic
+			lock (Sync)
+			{
+				if (WorkQueue.Count == 0)
+				{
+					return;
+				}
 
-        private static void DispatchBatch(List<IBotWorkload> batch)
-        {
-            int total = batch.Count;
-            if (total == 0)
-            {
-                return;
-            }
+				int count = Mathf.Min(WorkQueue.Count, MaxWorkPerTick);
+				batch = TempListPool.Rent<IBotWorkload>();
 
-            int threadCount = Mathf.Clamp(LogicalThreadCount, 1, total);
-            int batchSize = Mathf.CeilToInt(total / (float)threadCount);
+				for (int i = 0; i < count; i++)
+				{
+					batch.Add(WorkQueue[i]);
+				}
 
-            for (int i = 0; i < total; i += batchSize)
-            {
-                int start = i;
-                int end = Mathf.Min(start + batchSize, total);
+				WorkQueue.RemoveRange(0, count);
+			}
 
-                Task.Run(() =>
-                {
-                    for (int j = start; j < end; j++)
-                    {
-                        try
-                        {
-                            IBotWorkload work = batch[j];
-                            work?.RunBackgroundWork();
-                        }
-                        catch (Exception ex)
-                        {
-                            Logger.LogWarning(
-                                $"[AIRefactored] Exception in background bot workload: {ex.Message}\n{ex.StackTrace}");
-                        }
-                    }
-                });
-            }
-        }
+			try
+			{
+				Dispatch(batch);
+			}
+			finally
+			{
+				TempListPool.Return(batch);
+			}
+		}
 
-        #endregion
+		#endregion
 
-        #region Public API
+		#region Dispatch
 
-        /// <summary>
-        /// Queues a workload for background processing. Safe from any thread.
-        /// </summary>
-        public static void Schedule(IBotWorkload? workload)
-        {
-            if (workload == null)
-            {
-                return;
-            }
+		private static void Dispatch(List<IBotWorkload> batch)
+		{
+			if (batch == null || batch.Count == 0)
+			{
+				return;
+			}
 
-            lock (_lock)
-            {
-                if (_pendingWorkloads.Count >= MaxWorkPerFrame)
-                {
-                    Logger.LogWarning("[AIRefactored] BotWorkGroupDispatcher queue is full. Task dropped.");
-                    return;
-                }
+			int total = batch.Count;
+			int threads = Mathf.Clamp(ThreadCount, 1, total);
+			int blockSize = Mathf.CeilToInt(total / (float)threads);
 
-                _pendingWorkloads.Add(workload);
-            }
-        }
+			for (int t = 0; t < threads; t++)
+			{
+				int start = t * blockSize;
+				if (start >= total)
+				{
+					break;
+				}
 
-        #endregion
-    }
+				int end = Mathf.Min(start + blockSize, total);
 
-    /// <summary>
-    /// Interface for asynchronous background-safe bot workloads.
-    /// </summary>
-    public interface IBotWorkload
-    {
-        /// <summary>
-        /// Called from a thread pool. Must not call Unity APIs.
-        /// </summary>
-        void RunBackgroundWork();
-    }
+				Task.Run(() =>
+				{
+					for (int i = start; i < end; i++)
+					{
+						IBotWorkload job = batch[i];
+						if (job == null)
+						{
+							continue;
+						}
+
+						try
+						{
+							job.RunBackgroundWork();
+						}
+						catch (Exception ex)
+						{
+							Log.LogWarning("[BotWorkGroupDispatcher] Background workload exception:\n" + ex);
+						}
+					}
+				});
+			}
+		}
+
+		#endregion
+	}
+
+	/// <summary>
+	/// Background-safe interface for threaded bot logic. Must not use Unity APIs.
+	/// </summary>
+	public interface IBotWorkload
+	{
+		/// <summary>
+		/// Executes the workload from a thread pool context.
+		/// </summary>
+		void RunBackgroundWork();
+	}
 }

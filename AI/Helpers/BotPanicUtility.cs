@@ -3,10 +3,8 @@
 //   Licensed under the MIT License. See LICENSE in the repository root for more information.
 //
 //   THIS FILE IS SYSTEMATICALLY MANAGED.
-//   Please follow strict StyleCop, ReSharper, and AI-Refactored code standards for all modifications.
+//   Failures in AIRefactored logic must always trigger safe fallback to EFT base AI.
 // </auto-generated>
-
-#nullable enable
 
 namespace AIRefactored.AI.Helpers
 {
@@ -22,33 +20,23 @@ namespace AIRefactored.AI.Helpers
     /// </summary>
     public static class BotPanicUtility
     {
+        #region Public API
+
         /// <summary>
         /// Triggers panic on a single bot if valid and eligible.
         /// </summary>
-        /// <param name="cache">The bot component cache.</param>
-        public static void Trigger(BotComponentCache? cache)
+        public static void Trigger(BotComponentCache cache)
         {
-            if (cache == null || cache.Bot == null)
+            if (IsEligible(cache))
             {
-                return;
-            }
-
-            BotOwner bot = cache.Bot;
-            if (!bot.IsDead && bot.GetPlayer?.IsAI == true)
-            {
-                BotPanicHandler? panic = cache.PanicHandler;
-                if (panic != null)
-                {
-                    panic.TriggerPanic();
-                }
+                cache.PanicHandler.TriggerPanic();
             }
         }
 
         /// <summary>
         /// Triggers panic across an entire squad or cache group.
         /// </summary>
-        /// <param name="group">The list of bot component caches representing the squad.</param>
-        public static void TriggerGroup(List<BotComponentCache>? group)
+        public static void TriggerGroup(List<BotComponentCache> group)
         {
             if (group == null)
             {
@@ -57,54 +45,13 @@ namespace AIRefactored.AI.Helpers
 
             for (int i = 0; i < group.Count; i++)
             {
-                BotComponentCache cache = group[i];
-                if (cache == null || cache.Bot == null)
-                {
-                    continue;
-                }
-
-                BotOwner bot = cache.Bot;
-                if (!bot.IsDead && bot.GetPlayer?.IsAI == true)
-                {
-                    BotPanicHandler? panic = cache.PanicHandler;
-                    if (panic != null)
-                    {
-                        panic.TriggerPanic();
-                    }
-                }
+                Trigger(group[i]);
             }
         }
 
         /// <summary>
-        /// Legacy alias for TryGetPanicComponent.
-        /// Kept for compatibility with older subsystems.
-        /// </summary>
-        /// <param name="cache">The bot component cache.</param>
-        /// <param name="panic">The retrieved panic handler, if available.</param>
-        /// <returns>True if a panic handler was found; otherwise, false.</returns>
-        public static bool TryGet(BotComponentCache? cache, out BotPanicHandler? panic)
-        {
-            return TryGetPanicComponent(cache, out panic);
-        }
-
-        /// <summary>
-        /// Attempts to retrieve the panic handler from a bot’s component cache.
-        /// </summary>
-        /// <param name="cache">The bot component cache.</param>
-        /// <param name="panic">The retrieved panic handler, if available.</param>
-        /// <returns>True if a panic handler was found; otherwise, false.</returns>
-        public static bool TryGetPanicComponent(BotComponentCache? cache, out BotPanicHandler? panic)
-        {
-            panic = cache?.PanicHandler;
-            return panic != null;
-        }
-
-        /// <summary>
         /// Triggers panic in all bots within a radius of the given origin.
-        /// Used for fear propagation after explosions, flashes, or loud impacts.
         /// </summary>
-        /// <param name="origin">Center point for panic propagation.</param>
-        /// <param name="radius">Radius in meters to check for nearby bots.</param>
         public static void TriggerNearby(Vector3 origin, float radius)
         {
             if (radius <= 0f)
@@ -112,31 +59,64 @@ namespace AIRefactored.AI.Helpers
                 return;
             }
 
-            float radiusSq = radius * radius;
+            float radiusSqr = radius * radius;
 
             foreach (BotComponentCache cache in BotCacheUtility.AllActiveBots())
             {
-                if (cache == null || cache.Bot == null)
+                if (!IsEligible(cache))
                 {
                     continue;
                 }
 
-                BotOwner bot = cache.Bot;
-                if (bot.IsDead || bot.GetPlayer?.IsAI != true)
-                {
-                    continue;
-                }
+                Vector3 pos = cache.Bot.Position;
+                float dx = pos.x - origin.x;
+                float dy = pos.y - origin.y;
+                float dz = pos.z - origin.z;
+                float distSqr = (dx * dx) + (dy * dy) + (dz * dz);
 
-                float distSq = (bot.Position - origin).sqrMagnitude;
-                if (distSq <= radiusSq)
+                if (distSqr <= radiusSqr)
                 {
-                    BotPanicHandler? panic = cache.PanicHandler;
-                    if (panic != null)
-                    {
-                        panic.TriggerPanic();
-                    }
+                    cache.PanicHandler.TriggerPanic();
                 }
             }
         }
+
+        /// <summary>
+        /// Legacy alias for TryGetPanicComponent.
+        /// </summary>
+        public static bool TryGet(BotComponentCache cache, out BotPanicHandler panic)
+        {
+            return TryGetPanicComponent(cache, out panic);
+        }
+
+        /// <summary>
+        /// Attempts to retrieve the panic handler from a bot’s component cache.
+        /// </summary>
+        public static bool TryGetPanicComponent(BotComponentCache cache, out BotPanicHandler panic)
+        {
+            if (cache != null && cache.PanicHandler != null)
+            {
+                panic = cache.PanicHandler;
+                return true;
+            }
+
+            panic = null;
+            return false;
+        }
+
+        #endregion
+
+        #region Internal Helpers
+
+        private static bool IsEligible(BotComponentCache cache)
+        {
+            return cache != null &&
+                   cache.Bot != null &&
+                   !cache.Bot.IsDead &&
+                   cache.PanicHandler != null &&
+                   !cache.PanicHandler.IsPanicking;
+        }
+
+        #endregion
     }
 }

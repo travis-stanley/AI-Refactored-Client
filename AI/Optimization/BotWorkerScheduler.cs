@@ -6,8 +6,6 @@
 //   Please follow strict StyleCop, ReSharper, and AI-Refactored code standards for all modifications.
 // </auto-generated>
 
-#nullable enable
-
 namespace AIRefactored.AI.Optimization
 {
     using System;
@@ -21,174 +19,146 @@ namespace AIRefactored.AI.Optimization
 
     /// <summary>
     /// Central dispatcher for safely queuing Unity API calls from background threads.
-    /// Schedules Unity-related tasks and defers smoothed spawns to prevent frame spikes.
-    /// Only active on the authoritative host (headless or client-host). Flushes must be invoked from main thread once per frame.
+    /// Schedules Unity-related tasks and defers spawns to prevent frame spikes.
+    /// Manual Tick(float now) must be called every frame from host.
     /// </summary>
     public static class BotWorkScheduler
     {
-        #region Fields
+        #region Constants
 
         private const int MaxSpawnsPerSecond = 5;
         private const int MaxSpawnQueueSize = 256;
 
-        private static readonly ConcurrentQueue<Action> _mainThreadQueue = new();
-        private static readonly Queue<Action> _spawnQueue = new(MaxSpawnQueueSize);
-        private static readonly object _spawnLock = new();
-        private static readonly ManualLogSource Logger = AIRefactoredController.Logger;
+        #endregion
+
+        #region Fields
+
+        private static readonly ConcurrentQueue<Action> MainThreadQueue = new ConcurrentQueue<Action>();
+        private static readonly Queue<Action> SpawnQueue = new Queue<Action>(MaxSpawnQueueSize);
+        private static readonly object SpawnLock = new object();
 
         private static int _queuedCount;
         private static int _executedCount;
         private static int _errorCount;
 
-        // Prevents multiple injections of the FlushRunner
-        private static bool _flushHostInjected;
+        private static ManualLogSource _logger;
 
         #endregion
 
         #region Public API
 
         /// <summary>
-        /// Injects an invisible MonoBehaviour to run Flush() automatically each frame.
-        /// Only on client-host (not on remote clients)—headless still doesn’t need a runner.
+        /// Schedules a Unity-safe action to run on the next main thread tick.
         /// </summary>
-        public static void AutoInjectFlushHost()
-        {
-            // Only inject once, and only on the authoritative host
-            if (_flushHostInjected || !GameWorldHandler.IsLocalHost())
-            {
-                return;
-            }
-
-            _flushHostInjected = true;
-
-            // If someone else already put a GameObject by this name, respect it
-            if (GameObject.Find("AIRefactored.FlushHost") != null)
-            {
-                Logger.LogDebug("[BotWorkScheduler] Found existing FlushHost—skipping injection.");
-                return;
-            }
-
-            GameObject? go = null;
-            try
-            {
-                go = new GameObject("AIRefactored.FlushHost");
-                go.AddComponent<FlushRunner>();
-                GameObject.DontDestroyOnLoad(go);
-                Logger.LogInfo("[BotWorkScheduler] Flush host injected into scene.");
-            }
-            catch (Exception ex)
-            {
-                Logger.LogError($"[BotWorkScheduler] Failed to inject FlushRunner: {ex}");
-                // Clean up partial GameObject if creation failed
-                if (go != null)
-                {
-                    UnityEngine.Object.Destroy(go);
-                }
-            }
-        }
-
-        /// <summary>
-        /// Schedules a Unity-safe action from a background thread to be executed on main thread.
-        /// </summary>
-        public static void EnqueueToMainThread(Action? action)
+        /// <param name="action">Action to invoke from the Unity thread.</param>
+        public static void EnqueueToMainThread(Action action)
         {
             if (action == null || !GameWorldHandler.IsLocalHost())
             {
                 return;
             }
 
-            _mainThreadQueue.Enqueue(action);
+            MainThreadQueue.Enqueue(action);
             Interlocked.Increment(ref _queuedCount);
-            Logger?.LogDebug("[BotWorkScheduler] Main thread action queued. Total queued: " + _queuedCount);
+            EnsureLogger().LogDebug("[BotWorkScheduler] Main thread task queued.");
         }
 
         /// <summary>
-        /// Enqueues GameObject.Instantiate or similar load-heavy logic for deferred spawn throttling.
+        /// Enqueues spawn logic for deferred throttling.
         /// </summary>
-        public static void EnqueueSpawnSmoothed(Action? spawnAction)
+        /// <param name="action">Spawn or allocation action to invoke.</param>
+        public static void EnqueueSpawnSmoothed(Action action)
         {
-            if (spawnAction == null || !GameWorldHandler.IsLocalHost())
+            if (action == null || !GameWorldHandler.IsLocalHost())
             {
                 return;
             }
 
-            lock (_spawnLock)
+            lock (SpawnLock)
             {
-                if (_spawnQueue.Count < MaxSpawnQueueSize)
+                if (SpawnQueue.Count < MaxSpawnQueueSize)
                 {
-                    _spawnQueue.Enqueue(spawnAction);
-                    Logger?.LogDebug("[BotWorkScheduler] Spawn action queued. Queue size: " + _spawnQueue.Count);
+                    SpawnQueue.Enqueue(action);
+                    EnsureLogger().LogDebug("[BotWorkScheduler] Spawn action queued.");
                 }
                 else
                 {
-                    Logger.LogWarning("[BotWorkScheduler] Spawn queue full. Task dropped.");
+                    EnsureLogger().LogWarning("[BotWorkScheduler] Spawn queue full. Task dropped.");
                 }
             }
         }
 
         /// <summary>
-        /// Executes pending Unity-safe calls and batched spawns.
-        /// Must be called from Unity's main thread once per frame.
+        /// Ticks the scheduler. Call once per frame from world update.
         /// </summary>
-        public static void Flush()
+        /// <param name="now">Current time from Time.time.</param>
+        public static void Tick(float now)
         {
             if (!GameWorldHandler.IsLocalHost())
             {
                 return;
             }
 
-            // -- Main-thread queue --
-            while (_mainThreadQueue.TryDequeue(out var action))
+            ManualLogSource logger = EnsureLogger();
+
+            while (MainThreadQueue.TryDequeue(out Action task))
             {
                 try
                 {
-                    action();
+                    task();
                     Interlocked.Increment(ref _executedCount);
                 }
                 catch (Exception ex)
                 {
                     Interlocked.Increment(ref _errorCount);
-                    Logger.LogWarning($"[BotWorkScheduler] Main-thread task failed: {ex.Message}\n{ex.StackTrace}");
+                    logger.LogWarning("[BotWorkScheduler] Task failed:\n" + ex);
                 }
             }
 
-            // -- Smooth spawns --
-            int allowedThisFrame = Mathf.Max(1, Mathf.FloorToInt(MaxSpawnsPerSecond * Time.unscaledDeltaTime));
+            int allowed = Mathf.Max(1, Mathf.FloorToInt(MaxSpawnsPerSecond * Time.unscaledDeltaTime));
             int executed = 0;
-            lock (_spawnLock)
+
+            lock (SpawnLock)
             {
-                while (executed < allowedThisFrame && _spawnQueue.Count > 0)
+                while (executed < allowed && SpawnQueue.Count > 0)
                 {
-                    var next = _spawnQueue.Dequeue();
                     try
                     {
-                        next();
+                        SpawnQueue.Dequeue().Invoke();
                         executed++;
                     }
                     catch (Exception ex)
                     {
-                        Logger.LogWarning($"[BotWorkScheduler] Spawn task failed: {ex.Message}\n{ex.StackTrace}");
+                        logger.LogWarning("[BotWorkScheduler] Spawn failed:\n" + ex);
                     }
                 }
             }
         }
 
         /// <summary>
-        /// Returns current diagnostic snapshot of workload and execution metrics.
+        /// Returns internal scheduler stats for diagnostics.
         /// </summary>
+        /// <returns>Formatted scheduler state.</returns>
         public static string GetStats()
-            => $"[BotWorkScheduler] Queued: {_queuedCount}, Executed: {_executedCount}, Errors: {_errorCount}, SpawnQueue: {_spawnQueue.Count}";
+        {
+            return "[BotWorkScheduler] Queued=" + _queuedCount +
+                   ", Executed=" + _executedCount +
+                   ", Errors=" + _errorCount +
+                   ", SpawnQueue=" + SpawnQueue.Count;
+        }
 
         #endregion
 
-        #region Internal Types
+        #region Internals
 
-        /// <summary>
-        /// Invisible runner that invokes Flush() each Unity Update.
-        /// </summary>
-        private sealed class FlushRunner : MonoBehaviour
+        private static ManualLogSource EnsureLogger()
         {
-            private void Update() => Flush();
+            if (_logger == null)
+            {
+                _logger = Plugin.LoggerInstance;
+            }
+
+            return _logger;
         }
 
         #endregion

@@ -3,13 +3,12 @@
 //   Licensed under the MIT License. See LICENSE in the repository root for more information.
 //
 //   THIS FILE IS SYSTEMATICALLY MANAGED.
-//   Please follow strict StyleCop, ReSharper, and AI-Refactored code standards for all modifications.
+//   Failures in AIRefactored logic must always trigger safe fallback to EFT base AI.
 // </auto-generated>
-
-#nullable enable
 
 namespace AIRefactored.AI.Movement
 {
+    using System;
     using UnityEngine;
     using UnityEngine.AI;
 
@@ -54,35 +53,25 @@ namespace AIRefactored.AI.Movement
         /// Attempts to find a valid flank point on a preferred side of the enemy.
         /// Falls back to the opposite side if preferred side fails.
         /// </summary>
-        /// <param name="botPos">The position of the bot.</param>
-        /// <param name="enemyPos">The position of the enemy.</param>
-        /// <param name="flankPoint">The resulting flank point, if successful.</param>
-        /// <param name="preferred">The preferred side to flank.</param>
-        /// <returns>True if a valid flank point was found; otherwise, false.</returns>
-        public static bool TryFindFlankPosition(
-            Vector3 botPos,
-            Vector3 enemyPos,
-            out Vector3 flankPoint,
-            Side preferred = Side.Left)
+        public static bool TryFindFlankPosition(Vector3 botPos, Vector3 enemyPos, out Vector3 flankPoint, Side preferred)
         {
             flankPoint = Vector3.zero;
 
             Vector3 toEnemy = enemyPos - botPos;
-            if (toEnemy.sqrMagnitude < 0.01f)
+            toEnemy.y = 0f;
+
+            if (toEnemy.sqrMagnitude < 0.0001f)
             {
                 return false;
             }
 
-            toEnemy.y = 0f;
             toEnemy.Normalize();
 
-            // Try preferred side first
             if (TrySide(botPos, toEnemy, preferred, out flankPoint))
             {
                 return true;
             }
 
-            // Fallback to opposite side
             Side fallback = preferred == Side.Left ? Side.Right : Side.Left;
             return TrySide(botPos, toEnemy, fallback, out flankPoint);
         }
@@ -90,45 +79,66 @@ namespace AIRefactored.AI.Movement
         /// <summary>
         /// Uses enemy forward vector and bot position to smartly pick a flank side.
         /// </summary>
-        /// <param name="botPos">The position of the bot.</param>
-        /// <param name="enemyPos">The position of the enemy.</param>
-        /// <param name="enemyForward">The forward vector of the enemy.</param>
-        /// <param name="flankPoint">The resulting flank point, if successful.</param>
-        /// <returns>True if a valid flank point was found; otherwise, false.</returns>
         public static bool TrySmartFlank(Vector3 botPos, Vector3 enemyPos, Vector3 enemyForward, out Vector3 flankPoint)
         {
-            Vector3 toBot = (botPos - enemyPos).normalized;
-            float dot = Vector3.Dot(Vector3.Cross(enemyForward, Vector3.up), toBot);
-            Side smartSide = dot >= 0f ? Side.Right : Side.Left;
+            flankPoint = Vector3.zero;
 
-            return TryFindFlankPosition(botPos, enemyPos, out flankPoint, smartSide);
+            Vector3 toBot = botPos - enemyPos;
+            toBot.y = 0f;
+
+            if (toBot.sqrMagnitude < 0.0001f)
+            {
+                return false;
+            }
+
+            toBot.Normalize();
+
+            float sideDot = Vector3.Dot(Vector3.Cross(enemyForward, Vector3.up), toBot);
+            Side side = sideDot >= 0f ? Side.Right : Side.Left;
+
+            return TryFindFlankPosition(botPos, enemyPos, out flankPoint, side);
         }
 
         #endregion
 
-        #region Private Helpers
+        #region Internal Logic
 
-        /// <summary>
-        /// Checks if a candidate flank point is valid on the NavMesh and within combat spacing tolerances.
-        /// </summary>
-        /// <param name="candidate">The candidate world position.</param>
-        /// <param name="origin">The bot's position.</param>
-        /// <param name="final">Validated position on NavMesh.</param>
-        /// <returns>True if candidate is valid.</returns>
+        private static bool TrySide(Vector3 origin, Vector3 toEnemy, Side side, out Vector3 result)
+        {
+            result = Vector3.zero;
+
+            Vector3 perpendicular = Vector3.Cross(Vector3.up, toEnemy) * (side == Side.Left ? -1f : 1f);
+
+            for (int i = 0; i < MaxAttemptsPerSide; i++)
+            {
+                float lateralOffset = BaseOffset + UnityEngine.Random.Range(-OffsetVariation, OffsetVariation);
+                float forwardOffset = UnityEngine.Random.Range(MinDistance, MaxDistance);
+
+                Vector3 candidate = origin + (perpendicular * lateralOffset) + (toEnemy * forwardOffset);
+
+                if (IsValidFlankPoint(candidate, origin, out Vector3 valid))
+                {
+                    result = valid;
+                    return true;
+                }
+            }
+
+            return false;
+        }
+
         private static bool IsValidFlankPoint(Vector3 candidate, Vector3 origin, out Vector3 final)
         {
             final = Vector3.zero;
 
-            NavMeshHit hit;
-            if (!NavMesh.SamplePosition(candidate, out hit, NavSampleRadius, NavMesh.AllAreas))
+            if (!NavMesh.SamplePosition(candidate, out NavMeshHit hit, NavSampleRadius, NavMesh.AllAreas))
             {
                 return false;
             }
 
             float verticalDelta = Mathf.Abs(origin.y - hit.position.y);
-            float sqrDistance = (origin - hit.position).sqrMagnitude;
+            float distanceSqr = (origin - hit.position).sqrMagnitude;
 
-            if (sqrDistance < MinDistance * MinDistance || sqrDistance > MaxDistance * MaxDistance)
+            if (distanceSqr < MinDistance * MinDistance || distanceSqr > MaxDistance * MaxDistance)
             {
                 return false;
             }
@@ -140,38 +150,6 @@ namespace AIRefactored.AI.Movement
 
             final = hit.position;
             return true;
-        }
-
-        /// <summary>
-        /// Attempts to find a flank position on the given side relative to enemy direction.
-        /// </summary>
-        /// <param name="origin">Bot position.</param>
-        /// <param name="toEnemy">Normalized direction to enemy.</param>
-        /// <param name="side">Side to try (Left or Right).</param>
-        /// <param name="result">Resulting flank point.</param>
-        /// <returns>True if successful.</returns>
-        private static bool TrySide(Vector3 origin, Vector3 toEnemy, Side side, out Vector3 result)
-        {
-            result = Vector3.zero;
-
-            Vector3 perpendicular = Vector3.Cross(Vector3.up, toEnemy) * (side == Side.Left ? -1f : 1f);
-
-            for (int i = 0; i < MaxAttemptsPerSide; i++)
-            {
-                float offset = BaseOffset + Random.Range(-OffsetVariation, OffsetVariation);
-                float distance = Random.Range(MinDistance, MaxDistance);
-
-                Vector3 candidate = origin + perpendicular * offset + toEnemy * distance;
-
-                Vector3 validated;
-                if (IsValidFlankPoint(candidate, origin, out validated))
-                {
-                    result = validated;
-                    return true;
-                }
-            }
-
-            return false;
         }
 
         #endregion

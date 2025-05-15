@@ -6,17 +6,16 @@
 //   Please follow strict StyleCop, ReSharper, and AI-Refactored code standards for all modifications.
 // </auto-generated>
 
-#nullable enable
-
 namespace AIRefactored.AI.Hotspots
 {
+    using System;
     using System.Collections.Generic;
     using UnityEngine;
 
     /// <summary>
-    /// Represents a single tactical hotspot point with a position and associated zone label.
+    /// Represents a single tactical hotspot in the world.
     /// </summary>
-    public class HotspotData
+    public sealed class HotspotData
     {
         /// <summary>
         /// Initializes a new instance of the <see cref="HotspotData"/> class.
@@ -25,8 +24,13 @@ namespace AIRefactored.AI.Hotspots
         /// <param name="zone">Label or tactical area name associated with this hotspot.</param>
         public HotspotData(Vector3 position, string zone)
         {
+            if (string.IsNullOrEmpty(zone))
+            {
+                throw new ArgumentException("Zone label cannot be null or empty.", nameof(zone));
+            }
+
             this.Position = position;
-            this.Zone = zone;
+            this.Zone = zone.Trim();
         }
 
         /// <summary>
@@ -43,7 +47,7 @@ namespace AIRefactored.AI.Hotspots
     /// <summary>
     /// Represents a collection of hotspots for a map.
     /// </summary>
-    public class HotspotSet
+    public sealed class HotspotSet
     {
         /// <summary>
         /// Initializes a new instance of the <see cref="HotspotSet"/> class.
@@ -51,7 +55,20 @@ namespace AIRefactored.AI.Hotspots
         /// <param name="points">The list of hotspot data points.</param>
         public HotspotSet(List<HotspotData> points)
         {
-            this.Points = points;
+            if (points == null)
+            {
+                throw new ArgumentNullException(nameof(points));
+            }
+
+            this.Points = new List<HotspotData>(points.Count);
+            for (int i = 0; i < points.Count; i++)
+            {
+                HotspotData entry = points[i];
+                if (entry != null)
+                {
+                    this.Points.Add(entry);
+                }
+            }
         }
 
         /// <summary>
@@ -438,23 +455,31 @@ namespace AIRefactored.AI.Hotspots
 
         /// <summary>
         /// Returns a <see cref="HotspotSet"/> for the specified map ID.
+        /// Throws an exception if the map ID is invalid or not found.
         /// </summary>
         /// <param name="mapId">The map ID string, e.g., "bigmap", "factory4_day".</param>
-        /// <returns>The corresponding <see cref="HotspotSet"/>, or null if not found.</returns>
-        public static HotspotSet? GetForMap(string mapId)
+        /// <returns>The corresponding <see cref="HotspotSet"/>.</returns>
+        public static HotspotSet GetForMap(string mapId)
         {
             if (string.IsNullOrEmpty(mapId))
             {
-                return null;
+                throw new ArgumentException("Map ID cannot be null or empty.", nameof(mapId));
             }
 
-            List<HotspotData>? points;
-            if (Hotspots.TryGetValue(mapId.ToLowerInvariant(), out points))
+            string key = mapId.Trim().ToLowerInvariant();
+            if (key.Length == 0)
+            {
+                throw new ArgumentException("Map ID cannot be whitespace.", nameof(mapId));
+            }
+
+            List<HotspotData> points;
+            if (Hotspots.TryGetValue(key, out points))
             {
                 return new HotspotSet(points);
             }
 
-            return null;
+            throw new KeyNotFoundException($"Hotspot set for map ID '{mapId}' not found.");
         }
+
     }
 }

@@ -6,206 +6,114 @@
 //   Please follow strict StyleCop, ReSharper, and AI-Refactored code standards for all modifications.
 // </auto-generated>
 
-#nullable enable
-
 namespace AIRefactored.AI.Navigation
 {
     using System;
     using System.Collections.Generic;
-    using AIRefactored.Runtime;
     using BepInEx.Logging;
     using EFT.Game.Spawning;
     using UnityEngine;
 
     /// <summary>
-    /// Assigns zone names to world positions using IZones and spawn metadata.
-    /// Supports proximity detection, zone weights, and boss presence.
+    /// Legacy stub. Previously assigned zone names using IZones.
+    /// Now fallback-only for compatibility — always returns 'unassigned' or empty values.
+    /// Safe for all environments.
     /// </summary>
     public static class ZoneAssignmentHelper
     {
-        #region Constants
+        #region Static Fields
 
-        private const float MaxZoneSnapDistance = 28f;
-        private const float BaseBossWeight = 2.5f;
+        private static readonly ManualLogSource Logger = Plugin.LoggerInstance;
+        private static readonly IReadOnlyList<string> EmptyZones = Array.Empty<string>();
+        private static readonly List<ISpawnPoint> EmptySpawnPoints = new List<ISpawnPoint>(0);
 
         #endregion
 
-        #region Fields
+        #region Properties
 
-        private static readonly ManualLogSource Logger = AIRefactoredController.Logger;
-
-        private static readonly HashSet<string> _bossZones = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
-        private static readonly Dictionary<string, Vector3> _zoneCenters = new Dictionary<string, Vector3>(StringComparer.OrdinalIgnoreCase);
-        private static readonly Dictionary<string, List<ISpawnPoint>> _zoneSpawns = new Dictionary<string, List<ISpawnPoint>>(StringComparer.OrdinalIgnoreCase);
-        private static readonly Dictionary<string, float> _zoneWeights = new Dictionary<string, float>(StringComparer.OrdinalIgnoreCase);
-        private static readonly List<string> _zoneNames = new List<string>(64);
-
-        private static IZones? _zones;
-        private static volatile bool _initialized;
+        /// <summary>
+        /// Gets a value indicating whether the system is initialized (always false in fallback mode).
+        /// </summary>
+        public static bool IsInitialized => false;
 
         #endregion
 
         #region Public API
 
         /// <summary>
-        /// True if Initialize has completed and zones are valid.
-        /// </summary>
-        public static bool IsInitialized => _initialized;
-
-        /// <summary>
-        /// Clears all cached zone data (called on world unload or reset).
+        /// Clears zone data (no-op in fallback mode).
         /// </summary>
         public static void Clear()
         {
-            _zones = null;
-            _zoneCenters.Clear();
-            _zoneSpawns.Clear();
-            _zoneWeights.Clear();
-            _bossZones.Clear();
-            _zoneNames.Clear();
-            _initialized = false;
         }
 
         /// <summary>
-        /// Returns all known zone names.
+        /// Gets all known zone names (always empty).
         /// </summary>
+        /// <returns>Empty string list.</returns>
         public static IReadOnlyList<string> GetAllZoneNames()
         {
-            return _zoneNames;
+            return EmptyZones;
         }
 
         /// <summary>
-        /// Returns the nearest known zone name based on proximity to a position.
+        /// Gets the nearest zone to a position (always "unassigned").
         /// </summary>
+        /// <param name="position">World-space position.</param>
+        /// <returns>"unassigned"</returns>
         public static string GetNearestZone(Vector3 position)
         {
-            string bestZone = "unassigned";
-            float bestDistanceSq = MaxZoneSnapDistance * MaxZoneSnapDistance;
-
-            foreach (KeyValuePair<string, Vector3> pair in _zoneCenters)
-            {
-                float distSq = (pair.Value - position).sqrMagnitude;
-                if (distSq < bestDistanceSq)
-                {
-                    bestZone = pair.Key;
-                    bestDistanceSq = distSq;
-                }
-            }
-
-            return bestZone;
+            return "unassigned";
         }
 
         /// <summary>
-        /// Gets all spawn points registered under the zone.
+        /// Gets all spawn points in a zone (always empty).
         /// </summary>
+        /// <param name="zone">Zone name.</param>
+        /// <returns>Empty spawn point list.</returns>
         public static List<ISpawnPoint> GetSpawnPoints(string zone)
         {
-            if (string.IsNullOrWhiteSpace(zone))
-            {
-                return new List<ISpawnPoint>();
-            }
-
-            return _zoneSpawns.TryGetValue(zone, out List<ISpawnPoint>? list) && list != null
-                ? list
-                : new List<ISpawnPoint>();
+            return EmptySpawnPoints;
         }
 
         /// <summary>
-        /// Returns the average spawn point location for a zone.
+        /// Gets the center of a zone (always Vector3.zero).
         /// </summary>
+        /// <param name="zone">Zone name.</param>
+        /// <returns>Vector3.zero</returns>
         public static Vector3 GetZoneCenter(string zone)
         {
-            return _zoneCenters.TryGetValue(zone, out Vector3 center) ? center : Vector3.zero;
+            return Vector3.zero;
         }
 
         /// <summary>
-        /// Returns the tactical weight (risk/value) of a zone.
+        /// Gets the weight of a zone (always 1.0).
         /// </summary>
+        /// <param name="zone">Zone name.</param>
+        /// <returns>1.0f</returns>
         public static float GetZoneWeight(string zone)
         {
-            return _zoneWeights.TryGetValue(zone, out float value) ? value : 1f;
+            return 1f;
         }
 
         /// <summary>
-        /// Returns true if the specified zone has a known boss presence.
+        /// Determines if the zone is flagged as a boss zone (always false).
         /// </summary>
+        /// <param name="zone">Zone name.</param>
+        /// <returns>False</returns>
         public static bool IsBossZone(string zone)
         {
-            return _bossZones.Contains(zone);
+            return false;
         }
 
         /// <summary>
-        /// Initializes zone metadata using IZones reference and populates all caches.
+        /// Initializes the fallback zone system (logs stub message).
         /// </summary>
-        public static void Initialize(IZones zones, bool includeSnipingZones = true)
+        /// <param name="zones">Unused IZones ref.</param>
+        /// <param name="includeSnipingZones">Unused flag.</param>
+        public static void Initialize(object zones, bool includeSnipingZones = true)
         {
-            if (_initialized)
-            {
-                Logger.LogWarning("[ZoneAssignmentHelper] Initialize called more than once.");
-                return;
-            }
-
-            if (zones == null)
-            {
-                throw new ArgumentNullException(nameof(zones));
-            }
-
-            _zones = zones;
-            _initialized = true;
-
-            _zoneCenters.Clear();
-            _zoneSpawns.Clear();
-            _zoneWeights.Clear();
-            _bossZones.Clear();
-            _zoneNames.Clear();
-
-            List<string> zoneList = new List<string>(zones.ZoneNames(includeSnipingZones));
-            foreach (string zoneName in zoneList)
-            {
-                if (string.IsNullOrEmpty(zoneName))
-                {
-                    continue;
-                }
-
-                _zoneNames.Add(zoneName);
-
-                ISpawnPoint[] spawns = zones.ZoneSpawnPoints(zoneName);
-                if (spawns == null || spawns.Length == 0)
-                {
-                    continue;
-                }
-
-                Vector3 sum = Vector3.zero;
-                List<ISpawnPoint> spawnList = new List<ISpawnPoint>(spawns.Length);
-
-                foreach (ISpawnPoint? spawn in spawns)
-                {
-                    if (spawn != null)
-                    {
-                        sum += spawn.Position;
-                        spawnList.Add(spawn);
-                    }
-                }
-
-                _zoneCenters[zoneName] = sum / spawnList.Count;
-                _zoneSpawns[zoneName] = spawnList;
-
-                float weight = 1f;
-                if (int.TryParse(zoneName, out int zoneId))
-                {
-                    BotZone botZone = new BotZone { Id = zoneId };
-                    Vector3? bossPos = zones.GetBossPosition(botZone);
-                    if (bossPos.HasValue)
-                    {
-                        _bossZones.Add(zoneName);
-                        weight += BaseBossWeight;
-                    }
-                }
-
-                _zoneWeights[zoneName] = weight;
-            }
-
-            Logger.LogInfo($"[ZoneAssignmentHelper] Initialized with {_zoneNames.Count} zones.");
+            Logger.LogDebug("[ZoneAssignmentHelper] IZones is disabled. Skipping zone assignment.");
         }
 
         #endregion

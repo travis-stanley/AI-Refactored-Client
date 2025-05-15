@@ -6,8 +6,6 @@
 //   Please follow strict StyleCop, ReSharper, and AI-Refactored code standards for all modifications.
 // </auto-generated>
 
-#nullable enable
-
 namespace AIRefactored.AI.Missions.Subsystems
 {
     using System;
@@ -16,6 +14,7 @@ namespace AIRefactored.AI.Missions.Subsystems
     using AIRefactored.Runtime;
     using BepInEx.Logging;
     using EFT;
+    using EFT.HealthSystem;
 
     /// <summary>
     /// Handles voice lines for looting, extraction, and coordination.
@@ -23,44 +22,63 @@ namespace AIRefactored.AI.Missions.Subsystems
     /// </summary>
     public sealed class MissionVoiceCoordinator
     {
-        private static readonly ManualLogSource Logger = AIRefactoredController.Logger;
+        #region Fields
+
+        private static readonly ManualLogSource Logger = Plugin.LoggerInstance;
 
         private readonly BotOwner _bot;
+
+        #endregion
+
+        #region Constructor
 
         /// <summary>
         /// Initializes a new instance of the <see cref="MissionVoiceCoordinator"/> class.
         /// </summary>
-        /// <param name="bot">The bot owner reference.</param>
+        /// <param name="bot">The owning bot.</param>
         public MissionVoiceCoordinator(BotOwner bot)
         {
-            this._bot = bot ?? throw new ArgumentNullException(nameof(bot));
+            if (!EFTPlayerUtil.IsValidBotOwner(bot))
+            {
+                throw new ArgumentException("[MissionVoiceCoordinator] Invalid bot reference.");
+            }
+
+            _bot = bot;
         }
 
+        #endregion
+
+        #region Public Methods
+
         /// <summary>
-        /// Plays extraction located voice line.
+        /// Triggers voice line when exit is located.
         /// </summary>
         public void OnExitLocated()
         {
-            this.TrySay(EPhraseTrigger.ExitLocated);
+            TrySay(EPhraseTrigger.ExitLocated);
         }
 
         /// <summary>
-        /// Plays loot acknowledgment voice line.
+        /// Triggers voice line on looting.
         /// </summary>
         public void OnLoot()
         {
-            this.TrySay(EPhraseTrigger.OnLoot);
+            TrySay(EPhraseTrigger.OnLoot);
         }
 
         /// <summary>
-        /// Plays coordination or mission switch voice line.
+        /// Triggers voice line on mission switch.
         /// </summary>
         public void OnMissionSwitch()
         {
-            this.TrySay(EPhraseTrigger.Cooperation);
+            TrySay(EPhraseTrigger.Cooperation);
         }
 
-        private void TrySay(EPhraseTrigger phrase)
+        #endregion
+
+        #region Internal Logic
+
+        private void TrySay(EPhraseTrigger trigger)
         {
             if (FikaHeadlessDetector.IsHeadless)
             {
@@ -69,13 +87,19 @@ namespace AIRefactored.AI.Missions.Subsystems
 
             try
             {
-                this._bot.GetPlayer?.Say(phrase);
+                Player player = _bot.GetPlayer;
+                if (player != null && player.HealthController != null && player.HealthController.IsAlive)
+                {
+                    player.Say(trigger);
+                }
             }
             catch (Exception ex)
             {
-                string nickname = this._bot.Profile?.Info?.Nickname ?? "Unknown";
-                Logger.LogWarning($"[MissionVoiceCoordinator] VO failed for bot '{nickname}': {ex.Message}");
+                string name = _bot.Profile?.Info?.Nickname ?? "Unknown";
+                Logger.LogWarning("[MissionVoiceCoordinator] VO failed for '" + name + "': " + ex.Message);
             }
         }
+
+        #endregion
     }
 }

@@ -3,15 +3,12 @@
 //   Licensed under the MIT License. See LICENSE in the repository root for more information.
 //
 //   THIS FILE IS SYSTEMATICALLY MANAGED.
-//   Please follow strict StyleCop, ReSharper, and AI-Refactored code standards for all modifications.
+//   Failures in AIRefactored logic must always trigger safe fallback to EFT base AI.
 // </auto-generated>
-
-#nullable enable
 
 namespace AIRefactored.AI.Combat
 {
     using System;
-    using EFT;
     using UnityEngine;
 
     /// <summary>
@@ -28,112 +25,76 @@ namespace AIRefactored.AI.Combat
 
         #region Fields
 
-        private string? _lastAttackerId;
-        private float _lastHitTime;
+        private string _lastAttackerId = string.Empty;
+        private float _lastHitTime = float.NegativeInfinity;
 
-        private string? _lastTargetId;
-        private float _lastShotTime;
+        private string _lastTargetId = string.Empty;
+        private float _lastShotTime = float.NegativeInfinity;
 
         #endregion
 
-        #region Public API
+        #region Public Methods
 
         /// <summary>
         /// Returns true if the specified profile was shot at recently by this bot.
         /// </summary>
-        /// <param name="profileId">Profile ID of the target.</param>
-        /// <param name="now">Optional override of current time.</param>
-        /// <param name="memoryWindow">Memory window in seconds.</param>
-        /// <returns>True if shot occurred within memory window.</returns>
-        public bool DidRecentlyShoot(string? profileId, float now = -1f, float memoryWindow = DefaultMemoryWindow)
+        public bool DidRecentlyShoot(string profileId, float now = -1f, float memoryWindow = DefaultMemoryWindow)
         {
-            if (string.IsNullOrWhiteSpace(profileId))
+            if (string.IsNullOrEmpty(profileId) || string.IsNullOrEmpty(_lastTargetId))
             {
                 return false;
             }
 
-            if (string.IsNullOrWhiteSpace(this._lastTargetId))
-            {
-                return false;
-            }
-
-            if (!string.Equals(this._lastTargetId, profileId, StringComparison.Ordinal))
+            if (!string.Equals(_lastTargetId, profileId, StringComparison.Ordinal))
             {
                 return false;
             }
 
             float currentTime = now >= 0f ? now : Time.time;
-            return currentTime - this._lastShotTime <= memoryWindow;
+            return (currentTime - _lastShotTime) <= memoryWindow;
         }
 
         /// <summary>
         /// Returns true if this bot was recently hit by the specified profile.
         /// </summary>
-        /// <param name="profileId">Profile ID of attacker.</param>
-        /// <param name="now">Optional override of current time.</param>
-        /// <param name="memoryWindow">Memory window in seconds.</param>
-        /// <returns>True if hit occurred within memory window.</returns>
-        public bool WasRecentlyShotBy(string? profileId, float now = -1f, float memoryWindow = DefaultMemoryWindow)
+        public bool WasRecentlyShotBy(string profileId, float now = -1f, float memoryWindow = DefaultMemoryWindow)
         {
-            if (string.IsNullOrWhiteSpace(profileId))
+            if (string.IsNullOrEmpty(profileId) || string.IsNullOrEmpty(_lastAttackerId))
             {
                 return false;
             }
 
-            if (string.IsNullOrWhiteSpace(this._lastAttackerId))
-            {
-                return false;
-            }
-
-            if (!string.Equals(this._lastAttackerId, profileId, StringComparison.Ordinal))
+            if (!string.Equals(_lastAttackerId, profileId, StringComparison.Ordinal))
             {
                 return false;
             }
 
             float currentTime = now >= 0f ? now : Time.time;
-            return currentTime - this._lastHitTime <= memoryWindow;
+            return (currentTime - _lastHitTime) <= memoryWindow;
         }
 
         /// <summary>
-        /// Registers that this bot was hit by the specified player.
+        /// Registers that this bot was hit by the specified profile ID.
         /// </summary>
-        /// <param name="attacker">Attacking player instance.</param>
-        public void RegisterHitBy(IPlayer? attacker)
+        public void RegisterHit(string profileId)
         {
-            if (attacker == null)
+            if (!string.IsNullOrEmpty(profileId))
             {
-                return;
+                _lastAttackerId = profileId;
+                _lastHitTime = Time.time;
             }
-
-            string profileId = attacker.ProfileId;
-            if (string.IsNullOrWhiteSpace(profileId))
-            {
-                return;
-            }
-
-            this._lastAttackerId = profileId;
-            this._lastHitTime = Time.time;
         }
 
         /// <summary>
-        /// Registers a shot fired by this bot at the specified target.
+        /// Registers a shot fired by this bot at the specified profile ID.
         /// </summary>
-        /// <param name="target">Target player instance.</param>
-        public void RegisterShot(IPlayer? target)
+        public void RegisterShot(string profileId)
         {
-            if (target == null)
+            if (!string.IsNullOrEmpty(profileId))
             {
-                return;
+                _lastTargetId = profileId;
+                _lastShotTime = Time.time;
             }
-
-            string profileId = target.ProfileId;
-            if (string.IsNullOrWhiteSpace(profileId))
-            {
-                return;
-            }
-
-            this._lastTargetId = profileId;
-            this._lastShotTime = Time.time;
         }
 
         /// <summary>
@@ -141,10 +102,10 @@ namespace AIRefactored.AI.Combat
         /// </summary>
         public void Reset()
         {
-            this._lastAttackerId = null;
-            this._lastTargetId = null;
-            this._lastHitTime = 0f;
-            this._lastShotTime = 0f;
+            _lastAttackerId = string.Empty;
+            _lastTargetId = string.Empty;
+            _lastHitTime = float.NegativeInfinity;
+            _lastShotTime = float.NegativeInfinity;
         }
 
         #endregion

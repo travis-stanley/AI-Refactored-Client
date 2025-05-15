@@ -6,8 +6,6 @@
 //   Please follow strict StyleCop, ReSharper, and AI-Refactored code standards for all modifications.
 // </auto-generated>
 
-#nullable enable
-
 namespace AIRefactored.AI.Reactions
 {
     using AIRefactored.AI.Combat;
@@ -28,8 +26,8 @@ namespace AIRefactored.AI.Reactions
 
         private const float FallbackDistance = 5f;
         private const float FallbackJitter = 1.25f;
-        private const float MaxSuppressionDuration = 5.0f;
-        private const float MinSuppressionDuration = 1.0f;
+        private const float MaxSuppressionDuration = 5f;
+        private const float MinSuppressionDuration = 1f;
         private const float ReactionCooldown = 0.5f;
         private const float TriggerIntensityThreshold = 0.35f;
 
@@ -37,149 +35,139 @@ namespace AIRefactored.AI.Reactions
 
         #region Fields
 
-        private BotComponentCache? _cache;
+        private BotComponentCache _cache;
         private float _lastTriggerTime = -1f;
         private float _suppressedUntil = -1f;
 
         #endregion
 
-        #region Public API
+        #region Initialization
 
         /// <summary>
         /// Links this flash reaction handler to the active bot's shared component cache.
         /// </summary>
-        /// <param name="cache">The component cache containing bot references.</param>
         public void Initialize(BotComponentCache cache)
         {
-            this._cache = cache;
+            _cache = cache ?? throw new System.ArgumentNullException(nameof(cache));
         }
+
+        #endregion
+
+        #region Runtime
 
         /// <summary>
         /// Returns true if the bot is still suppressed from a flash reaction.
         /// </summary>
-        /// <returns>True if suppression is still active; otherwise, false.</returns>
         public bool IsSuppressed()
         {
-            return Time.time < this._suppressedUntil;
+            return Time.time < _suppressedUntil;
         }
 
         /// <summary>
         /// Called every frame from BotBrain. Updates suppression state and performs exposure checks.
         /// </summary>
-        /// <param name="time">The current time in seconds.</param>
         public void Tick(float time)
         {
-            if (this._cache == null || this._cache.Bot == null)
+            if (_cache == null || _cache.Bot == null)
             {
                 return;
             }
 
-            if (time >= this._suppressedUntil)
+            if (time >= _suppressedUntil)
             {
-                this._suppressedUntil = -1f;
+                _suppressedUntil = -1f;
             }
 
-            Transform? head = BotCacheUtility.Head(this._cache);
+            Transform head = BotCacheUtility.Head(_cache);
             if (head == null)
             {
                 return;
             }
 
-            // Ensure Flashlight exposure is checked only if head is not null
-            for (int i = 0; i < FlashlightRegistry.GetLastKnownFlashlightPositions().Count; i++)
+            var lights = FlashlightRegistry.GetLastKnownFlashlightPositions();
+            for (int i = 0; i < lights.Count; i++)
             {
-                Light? light;
-                if (FlashlightRegistry.IsExposingBot(head, out light) && light != null)
+                if (FlashlightRegistry.IsExposingBot(head, out Light light) && light != null)
                 {
                     float score = FlashLightUtils.CalculateFlashScore(light.transform, head, 20f);
                     if (score >= TriggerIntensityThreshold)
                     {
-                        this.TriggerSuppression(score);
-                        break;
+                        TriggerSuppression(score);
+                        return;
                     }
                 }
             }
         }
 
         /// <summary>
-        /// Triggers suppression, fallback, and panic if flash conditions are met.
+        /// Triggers suppression, fallback, and panic based on light strength and composure.
         /// </summary>
-        /// <param name="strength">The intensity of the flash (0.0 to 1.0).</param>
         public void TriggerSuppression(float strength = 0.6f)
         {
-            if (this._cache == null)
+            if (_cache == null || _cache.Bot == null)
             {
                 return;
             }
 
-            BotOwner? bot = this._cache.Bot;
-            if (bot == null || bot.IsDead)
+            BotOwner bot = _cache.Bot;
+            if (bot.IsDead)
             {
                 return;
             }
 
-            Player? eftPlayer = EFTPlayerUtil.ResolvePlayer(bot);
-            if (eftPlayer == null || !eftPlayer.IsAI || eftPlayer.IsYourPlayer)
+            Player player = bot.GetPlayer;
+            if (player == null || !player.IsAI || player.IsYourPlayer)
             {
                 return;
             }
 
             float now = Time.time;
-            if (now - this._lastTriggerTime < ReactionCooldown)
+            if (now - _lastTriggerTime < ReactionCooldown)
             {
                 return;
             }
 
-            this._lastTriggerTime = now;
+            _lastTriggerTime = now;
 
-            float composure = this._cache.PanicHandler != null
-                ? this._cache.PanicHandler.GetComposureLevel()
-                : 1f;
+            float composure = 1f;
+            if (_cache.PanicHandler != null)
+            {
+                composure = _cache.PanicHandler.GetComposureLevel();
+            }
 
-            // Scale suppression duration based on flash strength and composure level
-            float scaled = Mathf.Clamp01(strength * composure);
+            float scaled = Mathf.Clamp01(strength) * composure;
             float duration = Mathf.Lerp(MinSuppressionDuration, MaxSuppressionDuration, scaled);
-            this._suppressedUntil = now + duration;
+            _suppressedUntil = now + duration;
 
-            // Apply fallback and panic behavior after suppression trigger
             TriggerFallback(bot);
-            TriggerPanic(this._cache);
+            TriggerPanic(_cache);
         }
 
         #endregion
 
-        #region Private Methods
+        #region Helpers
 
         private static void TriggerFallback(BotOwner bot)
         {
-            // Calculate fallback movement direction
-            Vector3 threatDirection = bot.LookDirection;
-            Vector3? scoredRetreat = HybridFallbackResolver.GetBestRetreatPoint(bot, threatDirection);
+            Vector3 dir = bot.LookDirection;
+            Vector3? retreat = HybridFallbackResolver.GetBestRetreatPoint(bot, dir);
 
-            if (scoredRetreat.HasValue)
+            if (retreat.HasValue)
             {
-                BotMovementHelper.SmoothMoveTo(bot, scoredRetreat.Value);
+                BotMovementHelper.SmoothMoveTo(bot, retreat.Value);
                 return;
             }
 
-            // Fallback jitter if no valid retreat point is found
-            Vector3 forward = bot.LookDirection;
-            Vector3 lateral = new Vector3(-forward.x, 0f, -forward.z).normalized;
+            Vector3 lateral = new Vector3(-dir.x, 0f, -dir.z).normalized;
             Vector3 fallback = bot.Position + lateral * FallbackDistance + Random.insideUnitSphere * FallbackJitter;
             fallback.y = bot.Position.y;
 
             BotMovementHelper.SmoothMoveTo(bot, fallback);
         }
 
-        private static void TriggerPanic(BotComponentCache? cache)
+        private static void TriggerPanic(BotComponentCache cache)
         {
-            if (cache == null)
-            {
-                return;
-            }
-
-            BotPanicHandler? panic;
-            if (BotPanicUtility.TryGetPanicComponent(cache, out panic) && panic != null)
+            if (BotPanicUtility.TryGetPanicComponent(cache, out BotPanicHandler panic))
             {
                 panic.TriggerPanic();
             }

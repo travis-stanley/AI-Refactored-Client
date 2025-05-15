@@ -3,10 +3,8 @@
 //   Licensed under the MIT License. See LICENSE in the repository root for more information.
 //
 //   THIS FILE IS SYSTEMATICALLY MANAGED.
-//   Please follow strict StyleCop, ReSharper, and AI-Refactored code standards for all modifications.
+//   Failures in AIRefactored logic must always trigger safe fallback to EFT base AI.
 // </auto-generated>
-
-#nullable enable
 
 namespace AIRefactored.AI.Memory
 {
@@ -15,11 +13,12 @@ namespace AIRefactored.AI.Memory
     using AIRefactored.AI.Combat;
     using AIRefactored.AI.Core;
     using AIRefactored.Core;
+    using AIRefactored.Pools;
     using UnityEngine;
 
     /// <summary>
     /// Tracks enemy sightings and cleared tactical zones.
-    /// Used to prevent over-investigation, support fallback, and enable squad memory sync.
+    /// Prevents over-investigation, supports fallback, and enables squad memory sync.
     /// </summary>
     public sealed class BotTacticalMemory
     {
@@ -38,7 +37,7 @@ namespace AIRefactored.AI.Memory
         private readonly Dictionary<string, SeenEnemyRecord> _enemyMemoryById = new Dictionary<string, SeenEnemyRecord>(4, StringComparer.OrdinalIgnoreCase);
         private readonly List<SeenEnemyRecord> _enemyMemoryList = new List<SeenEnemyRecord>(4);
 
-        private BotComponentCache? _cache;
+        private BotComponentCache _cache;
         private bool _extractionStarted;
 
         #endregion
@@ -47,7 +46,7 @@ namespace AIRefactored.AI.Memory
 
         public void Initialize(BotComponentCache cache)
         {
-            this._cache = cache;
+            _cache = cache;
         }
 
         #endregion
@@ -58,229 +57,197 @@ namespace AIRefactored.AI.Memory
         {
             float now = Time.time;
 
-            for (int i = this._enemyMemoryList.Count - 1; i >= 0; i--)
+            for (int i = _enemyMemoryList.Count - 1; i >= 0; i--)
             {
-                if (now - this._enemyMemoryList[i].TimeSeen > MaxMemoryTime)
+                if (now - _enemyMemoryList[i].TimeSeen > MaxMemoryTime)
                 {
-                    this._enemyMemoryList.RemoveAt(i);
+                    _enemyMemoryList.RemoveAt(i);
                 }
             }
 
-            List<string> toRemove = new List<string>();
-            foreach (KeyValuePair<string, SeenEnemyRecord> kvp in this._enemyMemoryById)
+            List<string> expired = TempListPool.Rent<string>();
+            foreach (var pair in _enemyMemoryById)
             {
-                if (now - kvp.Value.TimeSeen > MaxMemoryTime)
+                if (now - pair.Value.TimeSeen > MaxMemoryTime)
                 {
-                    toRemove.Add(kvp.Key);
+                    expired.Add(pair.Key);
                 }
             }
 
-            for (int i = 0; i < toRemove.Count; i++)
+            for (int i = 0; i < expired.Count; i++)
             {
-                this._enemyMemoryById.Remove(toRemove[i]);
+                _enemyMemoryById.Remove(expired[i]);
             }
-        }
 
-        public void ResetMemory()
-        {
-            this._enemyMemoryList.Clear();
-            this._enemyMemoryById.Clear();
-            this._clearedSpots.Clear();
-            this._extractionStarted = false;
+            TempListPool.Return(expired);
         }
 
         public void ClearAll()
         {
-            this._enemyMemoryList.Clear();
-            this._enemyMemoryById.Clear();
-            this._clearedSpots.Clear();
-            this._extractionStarted = false;
+            _enemyMemoryList.Clear();
+            _enemyMemoryById.Clear();
+            _clearedSpots.Clear();
+            _extractionStarted = false;
         }
 
         #endregion
 
-        #region Enemy Memory
+        #region Enemy Recording
 
-        public void RecordEnemyPosition(Vector3 position, string? tag, string? enemyId)
+        public void RecordEnemyPosition(Vector3 position, string tag, string enemyId)
         {
-            if (this._cache == null || this._cache.IsBlinded)
-            {
-                return;
-            }
-
-            BotPanicHandler? panicHandler = this._cache.PanicHandler;
-            if (panicHandler != null && panicHandler.IsPanicking)
-            {
-                return;
-            }
+            if (_cache == null || _cache.IsBlinded || (_cache.PanicHandler?.IsPanicking == true)) return;
 
             float now = Time.time;
             Vector3 gridPos = SnapToGrid(position);
+            string finalTag = string.IsNullOrEmpty(tag) ? "Generic" : tag.Trim();
 
-            string finalTag = "Generic";
-            if (tag != null)
+            if (!string.IsNullOrEmpty(enemyId))
             {
-                string temp = tag.Trim();
-                if (!string.IsNullOrEmpty(temp))
+                string cleanId = enemyId.Trim();
+                if (cleanId.Length > 0)
                 {
-                    finalTag = temp;
+                    _enemyMemoryById[cleanId] = new SeenEnemyRecord(gridPos, now, finalTag);
                 }
             }
 
-            if (enemyId != null)
+            for (int i = 0; i < _enemyMemoryList.Count; i++)
             {
-                string temp = enemyId.Trim();
-                if (!string.IsNullOrEmpty(temp))
+                if ((gridPos - _enemyMemoryList[i].Position).sqrMagnitude < PositionToleranceSqr)
                 {
-                    SeenEnemyRecord record = new SeenEnemyRecord(gridPos, now, finalTag);
-                    this._enemyMemoryById[temp] = record;
-                }
-            }
-
-            for (int i = 0; i < this._enemyMemoryList.Count; i++)
-            {
-                if ((gridPos - this._enemyMemoryList[i].Position).sqrMagnitude < PositionToleranceSqr)
-                {
-                    this._enemyMemoryList[i] = new SeenEnemyRecord(gridPos, now, finalTag);
+                    _enemyMemoryList[i] = new SeenEnemyRecord(gridPos, now, finalTag);
                     return;
                 }
             }
 
-            this._enemyMemoryList.Add(new SeenEnemyRecord(gridPos, now, finalTag));
+            _enemyMemoryList.Add(new SeenEnemyRecord(gridPos, now, finalTag));
         }
 
-        public Vector3? GetRecentEnemyMemory()
+        public Vector3 GetRecentEnemyMemory()
         {
             float now = Time.time;
-            SeenEnemyRecord? freshest = null;
+            float latest = -1f;
+            Vector3 result = Vector3.zero;
 
-            for (int i = 0; i < this._enemyMemoryList.Count; i++)
+            for (int i = 0; i < _enemyMemoryList.Count; i++)
             {
-                SeenEnemyRecord record = this._enemyMemoryList[i];
-                if (now - record.TimeSeen <= MaxMemoryTime)
+                SeenEnemyRecord record = _enemyMemoryList[i];
+                if (now - record.TimeSeen <= MaxMemoryTime && record.TimeSeen > latest)
                 {
-                    if (!freshest.HasValue || record.TimeSeen > freshest.Value.TimeSeen)
-                    {
-                        freshest = record;
-                    }
+                    latest = record.TimeSeen;
+                    result = record.Position;
                 }
             }
 
-            return freshest?.Position;
+            return result;
         }
 
-        public string? GetMostRecentEnemyId()
+        public string GetMostRecentEnemyId()
         {
             float now = Time.time;
-            string? latestId = null;
-            float latestTime = -1f;
+            float latest = -1f;
+            string result = string.Empty;
 
-            foreach (KeyValuePair<string, SeenEnemyRecord> kvp in this._enemyMemoryById)
+            foreach (var pair in _enemyMemoryById)
             {
-                if (now - kvp.Value.TimeSeen <= MaxMemoryTime && kvp.Value.TimeSeen > latestTime)
+                if (now - pair.Value.TimeSeen <= MaxMemoryTime && pair.Value.TimeSeen > latest)
                 {
-                    latestId = kvp.Key;
-                    latestTime = kvp.Value.TimeSeen;
+                    latest = pair.Value.TimeSeen;
+                    result = pair.Key;
                 }
             }
 
-            return latestId;
+            return result;
         }
 
         public List<SeenEnemyRecord> GetAllMemory()
         {
-            return this._enemyMemoryList;
+            return _enemyMemoryList;
         }
 
-        public void SyncMemory(Vector3 position, string tag = "AllyEcho")
+        public void SyncMemory(Vector3 position)
         {
-            this.RecordEnemyPosition(position, tag, null);
+            RecordEnemyPosition(position, "AllyEcho", string.Empty);
         }
 
         public void ShareMemoryWith(List<BotComponentCache> teammates)
         {
-            if (teammates == null || teammates.Count == 0)
+            if (teammates == null || teammates.Count == 0 || _cache?.Bot == null)
             {
                 return;
             }
 
-            string selfId = this._cache?.Bot?.Profile?.Id ?? "unknown";
-
-            for (int i = 0; i < this._enemyMemoryList.Count; i++)
+            for (int i = 0; i < _enemyMemoryList.Count; i++)
             {
-                SeenEnemyRecord record = this._enemyMemoryList[i];
+                SeenEnemyRecord record = _enemyMemoryList[i];
                 for (int j = 0; j < teammates.Count; j++)
                 {
                     BotComponentCache mate = teammates[j];
-                    if (mate == null || mate.Bot == null || mate.Bot == this._cache?.Bot)
+                    if (mate?.Bot != null && mate.Bot != _cache.Bot)
                     {
-                        continue;
+                        mate.TacticalMemory?.SyncMemory(record.Position);
                     }
-
-                    mate.TacticalMemory?.SyncMemory(record.Position, "Echo:" + selfId);
                 }
             }
         }
 
         #endregion
 
-        #region Zone Memory
+        #region Tactical Evaluation
 
         public void MarkCleared(Vector3 position)
         {
-            this._clearedSpots[SnapToGrid(position)] = Time.time;
+            _clearedSpots[SnapToGrid(position)] = Time.time;
         }
 
         public bool WasRecentlyCleared(Vector3 position)
         {
-            Vector3 gridPos = SnapToGrid(position);
-            return this._clearedSpots.TryGetValue(gridPos, out float lastTime)
-                && Time.time - lastTime < ClearedMemoryDuration;
+            Vector3 grid = SnapToGrid(position);
+            return _clearedSpots.TryGetValue(grid, out float lastTime) &&
+                   (Time.time - lastTime < ClearedMemoryDuration);
         }
 
         public bool IsZoneUnsafe(Vector3 position)
         {
-            if (this._cache == null || this._cache.Bot == null)
-            {
-                return false;
-            }
+            if (_cache?.Bot?.Profile == null) return false;
 
             float now = Time.time;
-            Vector3 gridPos = SnapToGrid(position);
+            Vector3 grid = SnapToGrid(position);
 
-            for (int i = 0; i < this._enemyMemoryList.Count; i++)
+            for (int i = 0; i < _enemyMemoryList.Count; i++)
             {
-                if ((gridPos - this._enemyMemoryList[i].Position).sqrMagnitude < PositionToleranceSqr)
+                if ((grid - _enemyMemoryList[i].Position).sqrMagnitude < PositionToleranceSqr)
                 {
                     return true;
                 }
             }
 
-            foreach (KeyValuePair<Vector3, float> kvp in this._clearedSpots)
+            foreach (var kv in _clearedSpots)
             {
-                if ((kvp.Key - gridPos).sqrMagnitude < PositionToleranceSqr && now - kvp.Value < ClearedMemoryDuration)
+                if ((kv.Key - grid).sqrMagnitude < PositionToleranceSqr &&
+                    (now - kv.Value) < ClearedMemoryDuration)
                 {
                     return true;
                 }
             }
 
-            string mapId = GameWorldHandler.GetCurrentMapName();
-            return BotMemoryStore.IsPositionInDangerZone(mapId, position);
+            string mapId = GameWorldHandler.TryGetValidMapName();
+            return mapId.Length > 0 && BotMemoryStore.IsPositionInDangerZone(mapId, position);
         }
 
         public void MarkExtractionStarted()
         {
-            this._extractionStarted = true;
+            _extractionStarted = true;
         }
 
         public bool IsExtracting()
         {
-            return this._extractionStarted;
+            return _extractionStarted;
         }
 
         #endregion
 
-        #region Utility
+        #region Utilities
 
         private static Vector3 SnapToGrid(Vector3 pos)
         {
@@ -292,7 +259,7 @@ namespace AIRefactored.AI.Memory
 
         #endregion
 
-        #region Structs
+        #region Nested Types
 
         public struct SeenEnemyRecord
         {
@@ -302,9 +269,9 @@ namespace AIRefactored.AI.Memory
 
             public SeenEnemyRecord(Vector3 position, float time, string tag)
             {
-                this.Position = position;
-                this.TimeSeen = time;
-                this.Tag = tag;
+                Position = position;
+                TimeSeen = time;
+                Tag = tag;
             }
         }
 

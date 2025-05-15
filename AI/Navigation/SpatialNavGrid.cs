@@ -6,12 +6,12 @@
 //   Please follow strict StyleCop, ReSharper, and AI-Refactored code standards for all modifications.
 // </auto-generated>
 
-#nullable enable
-
 namespace AIRefactored.AI.Navigation
 {
     using System;
     using System.Collections.Generic;
+    using AIRefactored.Core;
+    using AIRefactored.Pools;
     using UnityEngine;
 
     /// <summary>
@@ -32,11 +32,11 @@ namespace AIRefactored.AI.Navigation
         /// <summary>
         /// Initializes a new instance of the <see cref="SpatialNavGrid"/> class.
         /// </summary>
-        /// <param name="cellSize">Grid cell size in world units (defaults to 10).</param>
+        /// <param name="cellSize">Grid cell size in world units (minimum 1.0f).</param>
         public SpatialNavGrid(float cellSize)
         {
-            this._cellSize = Mathf.Max(1f, cellSize);
-            this._grid = new Dictionary<Vector2Int, List<NavPointData>>(256);
+            _cellSize = Mathf.Max(1f, cellSize);
+            _grid = new Dictionary<Vector2Int, List<NavPointData>>(512);
         }
 
         #endregion
@@ -48,59 +48,79 @@ namespace AIRefactored.AI.Navigation
         /// </summary>
         public void Clear()
         {
-            this._grid.Clear();
+            foreach (KeyValuePair<Vector2Int, List<NavPointData>> pair in _grid)
+            {
+                TempListPool.Return(pair.Value);
+            }
+
+            _grid.Clear();
         }
 
         /// <summary>
         /// Adds a navigation point into the appropriate spatial cell.
         /// </summary>
-        /// <param name="point">The navigation point to register.</param>
+        /// <param name="point">The point to register.</param>
         public void Register(NavPointData point)
         {
-            Vector2Int cell = this.WorldToCell(point.Position);
-            if (!this._grid.TryGetValue(cell, out List<NavPointData>? list))
+            if (point == null || !IsPositionValid(point.Position))
             {
-                list = new List<NavPointData>(8);
-                this._grid[cell] = list;
+                return;
             }
 
-            // Only add the point if it's not already registered
-            if (!list.Exists(p => p.Position == point.Position))
+            Vector2Int cell = WorldToCell(point.Position);
+
+            if (!_grid.TryGetValue(cell, out List<NavPointData> list))
             {
-                list.Add(point);
+                list = TempListPool.Rent<NavPointData>();
+                _grid[cell] = list;
             }
+
+            for (int i = 0; i < list.Count; i++)
+            {
+                if (list[i].DistanceSqr(point.Position) < 0.01f)
+                {
+                    return; // prevent near-duplicates
+                }
+            }
+
+            list.Add(point);
         }
 
         /// <summary>
         /// Returns all navigation points within the given radius of a position.
         /// Optionally filter by predicate.
         /// </summary>
-        /// <param name="position">World-space origin position.</param>
-        /// <param name="radius">Search radius in world units.</param>
+        /// <param name="position">Search origin.</param>
+        /// <param name="radius">Search radius.</param>
         /// <param name="filter">Optional predicate filter.</param>
-        /// <returns>List of nearby matching points.</returns>
-        public List<NavPointData> Query(Vector3 position, float radius, Predicate<NavPointData>? filter)
+        public List<NavPointData> Query(Vector3 position, float radius, Predicate<NavPointData> filter)
         {
-            float radiusSq = radius * radius;
-            Vector2Int minCell = this.WorldToCell(position - new Vector3(radius, 0f, radius));
-            Vector2Int maxCell = this.WorldToCell(position + new Vector3(radius, 0f, radius));
+            List<NavPointData> result = TempListPool.Rent<NavPointData>();
+            if (!IsPositionValid(position))
+            {
+                return result;
+            }
 
-            List<NavPointData> result = new List<NavPointData>(16);
+            float radiusSq = radius * radius;
+            Vector2Int minCell = WorldToCell(new Vector3(position.x - radius, 0f, position.z - radius));
+            Vector2Int maxCell = WorldToCell(new Vector3(position.x + radius, 0f, position.z + radius));
 
             for (int x = minCell.x; x <= maxCell.x; x++)
             {
                 for (int z = minCell.y; z <= maxCell.y; z++)
                 {
                     Vector2Int cell = new Vector2Int(x, z);
-                    if (!this._grid.TryGetValue(cell, out List<NavPointData>? bucket))
+
+                    if (!_grid.TryGetValue(cell, out List<NavPointData> bucket))
                     {
                         continue;
                     }
 
-                    foreach (NavPointData point in bucket)
+                    for (int i = 0; i < bucket.Count; i++)
                     {
-                        float distSq = (point.Position - position).sqrMagnitude;
-                        if (distSq <= radiusSq && (filter == null || filter(point)))
+                        NavPointData point = bucket[i];
+                        if ((point.Position - position).sqrMagnitude <= radiusSq &&
+                            (filter == null || filter(point)))
                         {
                             result.Add(point);
                         }
@@ -115,16 +135,20 @@ namespace AIRefactored.AI.Navigation
 
         #region Internal Helpers
 
-        /// <summary>
-        /// Converts a world position to a 2D grid cell index.
-        /// </summary>
-        /// <param name="pos">World-space position.</param>
-        /// <returns>Grid cell coordinates.</returns>
         private Vector2Int WorldToCell(Vector3 pos)
         {
-            int x = Mathf.FloorToInt(pos.x / this._cellSize);
-            int z = Mathf.FloorToInt(pos.z / this._cellSize);
+            int x = Mathf.FloorToInt(pos.x / _cellSize);
+            int z = Mathf.FloorToInt(pos.z / _cellSize);
             return new Vector2Int(x, z);
+        }
+
+        private static bool IsPositionValid(Vector3 pos)
+        {
+            return !float.IsNaN(pos.x) &&
+                   !float.IsNaN(pos.y) &&
+                   !float.IsNaN(pos.z) &&
+                   pos.x > -10000f && pos.x < 10000f &&
+                   pos.z > -10000f && pos.z < 10000f;
         }
 
         #endregion

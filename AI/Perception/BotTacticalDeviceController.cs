@@ -6,13 +6,13 @@
 //   Please follow strict StyleCop, ReSharper, and AI-Refactored code standards for all modifications.
 // </auto-generated>
 
-#nullable enable
-
 namespace AIRefactored.AI.Perception
 {
     using System;
     using System.Collections.Generic;
     using AIRefactored.AI.Core;
+    using AIRefactored.Core;
+    using AIRefactored.Pools;
     using EFT;
     using EFT.InventoryLogic;
     using UnityEngine;
@@ -26,10 +26,8 @@ namespace AIRefactored.AI.Perception
     {
         #region Fields
 
-        private readonly List<LightComponent> _devices = new List<LightComponent>(4);
-
-        private BotOwner? _bot;
-        private BotComponentCache? _cache;
+        private BotOwner _bot;
+        private BotComponentCache _cache;
         private float _nextDecisionTime;
 
         #endregion
@@ -39,7 +37,6 @@ namespace AIRefactored.AI.Perception
         /// <summary>
         /// Initializes the controller with the bot's runtime cache.
         /// </summary>
-        /// <param name="cache">Bot component cache.</param>
         public void Initialize(BotComponentCache cache)
         {
             if (cache == null || cache.Bot == null)
@@ -47,91 +44,104 @@ namespace AIRefactored.AI.Perception
                 throw new ArgumentNullException(nameof(cache));
             }
 
-            this._cache = cache;
-            this._bot = cache.Bot;
+            _bot = cache.Bot;
+            _cache = cache;
         }
 
         #endregion
 
-        #region Public Methods
+        #region Tick
 
         /// <summary>
         /// Ticks the logic once per frame for toggling tactical devices.
         /// </summary>
         public void Tick()
         {
-            if (!this.CanThink())
+            if (!CanThink())
             {
                 return;
             }
 
-            this._nextDecisionTime = Time.time + TacticalConfig.CheckInterval;
+            _nextDecisionTime = Time.time + TacticalConfig.CheckInterval;
 
-            Weapon? weapon = this._bot?.WeaponManager?.CurrentWeapon;
+            Weapon weapon = _bot.WeaponManager?.CurrentWeapon;
             if (weapon == null)
             {
                 return;
             }
 
-            this.ScanMods(weapon);
-
-            bool lowVisibility = IsLowVisibility();
-            bool baitTrigger = Random.value < this.GetChaosBaitChance();
-            bool shouldEnable = lowVisibility || baitTrigger;
-
-            for (int i = 0; i < this._devices.Count; i++)
+            List<LightComponent> devices = TempListPool.Rent<LightComponent>();
+            try
             {
-                LightComponent device = this._devices[i];
-                if (device.IsActive != shouldEnable)
+                ScanMods(weapon, devices);
+
+                bool lowVisibility = IsLowVisibility();
+                bool baitTrigger = Random.value < GetChaosBaitChance();
+                bool shouldEnable = lowVisibility || baitTrigger;
+
+                for (int i = 0; i < devices.Count; i++)
                 {
-                    device.IsActive = shouldEnable;
+                    LightComponent device = devices[i];
+                    if (device != null && device.IsActive != shouldEnable)
+                    {
+                        device.IsActive = shouldEnable;
+                    }
+                }
+
+                if (baitTrigger)
+                {
+                    _nextDecisionTime = Time.time + 1.5f;
+                    for (int i = 0; i < devices.Count; i++)
+                    {
+                        LightComponent device = devices[i];
+                        if (device != null)
+                        {
+                            device.IsActive = false;
+                        }
+                    }
                 }
             }
-
-            if (baitTrigger)
+            finally
             {
-                this._nextDecisionTime = Time.time + 1.5f;
-
-                for (int i = 0; i < this._devices.Count; i++)
-                {
-                    this._devices[i].IsActive = false;
-                }
+                TempListPool.Return(devices);
             }
         }
 
         #endregion
 
-        #region Private Methods
+        #region Internal Logic
 
         private bool CanThink()
         {
-            if (this._bot == null || this._cache == null || this._bot.IsDead || Time.time < this._nextDecisionTime)
-            {
-                return false;
-            }
-
-            Player? player = this._bot.GetPlayer;
-            return player != null && player.IsAI && !player.IsYourPlayer;
+            return _bot != null &&
+                   _cache != null &&
+                   !_bot.IsDead &&
+                   Time.time >= _nextDecisionTime &&
+                   EFTPlayerUtil.IsValid(_bot.GetPlayer) &&
+                   _bot.GetPlayer.IsAI;
         }
 
         private float GetChaosBaitChance()
         {
-            return (this._cache?.AIRefactoredBotOwner?.PersonalityProfile?.ChaosFactor ?? 0f) * 0.25f;
+            if (_cache.AIRefactoredBotOwner == null)
+            {
+                return 0f;
+            }
+
+            BotPersonalityProfile profile = _cache.AIRefactoredBotOwner.PersonalityProfile;
+            return profile != null ? profile.ChaosFactor * 0.25f : 0f;
         }
 
         private static bool IsLowVisibility()
         {
             float ambient = RenderSettings.ambientLight.grayscale;
             float fogDensity = RenderSettings.fog ? RenderSettings.fogDensity : 0f;
-
             return ambient < TacticalConfig.LightThreshold || fogDensity > TacticalConfig.FogThreshold;
         }
 
-        private void ScanMods(Weapon weapon)
+        private static void ScanMods(Weapon weapon, List<LightComponent> result)
         {
-            this._devices.Clear();
-
-            IEnumerable<Slot>? slots = weapon.AllSlots;
+            IEnumerable<Slot> slots = weapon.AllSlots;
             if (slots == null)
             {
                 return;
@@ -144,30 +154,28 @@ namespace AIRefactored.AI.Perception
                     continue;
                 }
 
-                Item? mod = slot.ContainedItem;
-                if (mod?.Template?.Name == null)
+                Item mod = slot.ContainedItem;
+                if (mod == null || mod.Template == null)
                 {
                     continue;
                 }
 
-                string name = mod.Template.Name.ToLowerInvariant();
-                if (!IsTacticalName(name))
+                string name = mod.Template.Name?.ToLowerInvariant();
+                if (string.IsNullOrEmpty(name) || !IsTacticalName(name))
                 {
                     continue;
                 }
 
                 switch (mod)
                 {
-                    case FlashlightItemClass flash when flash.Light != null:
-                        this._devices.Add(flash.Light);
+                    case FlashlightItemClass f when f.Light != null:
+                        result.Add(f.Light);
                         break;
-
-                    case TacticalComboItemClass combo when combo.Light != null:
-                        this._devices.Add(combo.Light);
+                    case TacticalComboItemClass c when c.Light != null:
+                        result.Add(c.Light);
                         break;
-
-                    case LightLaserItemClass laser when laser.Light != null:
-                        this._devices.Add(laser.Light);
+                    case LightLaserItemClass l when l.Light != null:
+                        result.Add(l.Light);
                         break;
                 }
             }
@@ -188,7 +196,7 @@ namespace AIRefactored.AI.Perception
 
         #endregion
 
-        #region Configuration
+        #region Tactical Settings
 
         private static class TacticalConfig
         {

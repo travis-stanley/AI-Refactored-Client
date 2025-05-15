@@ -6,8 +6,6 @@
 //   Please follow strict StyleCop, ReSharper, and AI-Refactored code standards for all modifications.
 // </auto-generated>
 
-#nullable enable
-
 namespace AIRefactored.Core
 {
     using UnityEngine;
@@ -18,7 +16,7 @@ namespace AIRefactored.Core
     /// </summary>
     public static class AIRefactoredLayerMasks
     {
-        #region Individual Layer Indices
+        #region Layer Indices
 
         public static readonly int Default = LayerMask.NameToLayer("Default");
         public static readonly int TransparentFX = LayerMask.NameToLayer("TransparentFX");
@@ -50,31 +48,22 @@ namespace AIRefactored.Core
 
         #endregion
 
-        #region Compound LayerMasks
+        #region Precomputed LayerMasks
 
-        // Pre-calculate layer masks to avoid repeated LayerMask.GetMask calls in runtime
-        private static readonly LayerMask _playerMask = 1 << Player;
-        private static readonly LayerMask _defaultMask = 1 << Default;
-        private static readonly LayerMask _hitColliderMask = 1 << HitCollider;
-        private static readonly LayerMask _lootLayerMask = 1 << Loot;
-        private static readonly LayerMask _interactiveMask = 1 << Interactive;
-        private static readonly LayerMask _triggersMask = 1 << Trigger;
-        private static readonly LayerMask _transparentMask = 1 << TransparentFX;
-        private static readonly LayerMask _terrainMask = 1 << Terrain;
-        private static readonly LayerMask _disablerCullingObjectMask = 1 << DisablerCullingObject;
+        public static readonly LayerMask PlayerMask = 1 << Player;
+        public static readonly LayerMask DefaultMask = 1 << Default;
+        public static readonly LayerMask HitColliderMask = 1 << HitCollider;
+        public static readonly LayerMask LootLayerMask = 1 << Loot;
+        public static readonly LayerMask InteractiveMask = 1 << Interactive;
+        public static readonly LayerMask TriggersMask = 1 << Trigger;
+        public static readonly LayerMask TransparentMask = 1 << TransparentFX;
+        public static readonly LayerMask TerrainMask = 1 << Terrain;
+        public static readonly LayerMask DisablerCullingObjectMask = 1 << DisablerCullingObject;
 
-        // Use precomputed masks for compound operations
-        public static LayerMask PlayerMask => _playerMask;
-        public static LayerMask DefaultMask => _defaultMask;
-        public static LayerMask HitColliderMask => _hitColliderMask;
-        public static LayerMask LootLayerMask => _lootLayerMask;
-        public static LayerMask InteractiveMask => _interactiveMask;
-        public static LayerMask TriggersMask => _triggersMask;
-        public static LayerMask TransparentMask => _transparentMask;
-        public static LayerMask TerrainMask => _terrainMask;
-        public static LayerMask DisablerCullingObjectMask => _disablerCullingObjectMask;
+        #endregion
 
-        // Other pre-calculated compound masks
+        #region Compound Masks
+
         public static readonly LayerMask HighPolyWithTerrainMask =
             (1 << Terrain) | (1 << HighPolyCollider);
 
@@ -82,7 +71,7 @@ namespace AIRefactored.Core
             HighPolyWithTerrainMask | (1 << Foliage);
 
         public static readonly LayerMask HighPolyWithTerrainMaskAI =
-            HighPolyWithTerrainMask | (1 << Foliage) | (1 << LowPolyCollider);
+            HighPolyWithTerrainNoGrassMask | (1 << LowPolyCollider);
 
         public static readonly LayerMask TripwireCheckLayerMaskNoPlayer =
             TerrainMask | (1 << Door) | LootLayerMask | DefaultMask | HighPolyWithTerrainMask;
@@ -143,6 +132,24 @@ namespace AIRefactored.Core
         public static readonly LayerMask GrenadeObstaclesColliderMask = LayerMask.GetMask(
             "HighPolyCollider", "Door", "Terrain");
 
+        public static readonly LayerMask TerrainAndObstacles = LayerMask.GetMask(
+            "Terrain", "HighPolyCollider", "LowPolyCollider", "Door", "DoorHighPolyCollider", "DoorLowPolyCollider");
+
+        public static readonly LayerMask JumpSafeMask = LayerMask.GetMask(
+            "Terrain", "HighPolyCollider", "LowPolyCollider");
+
+        public static readonly LayerMask ClimbObstructionMask = LayerMask.GetMask(
+            "Terrain", "HighPolyCollider", "LowPolyCollider", "Door", "InvisibleCollider");
+
+        public static readonly LayerMask NavRaycastMask = LayerMask.GetMask(
+            "Terrain", "HighPolyCollider", "LowPolyCollider", "InvisibleCollider", "Door");
+
+        public static readonly LayerMask MovementBlockerMask = LayerMask.GetMask(
+            "Terrain", "HighPolyCollider", "LowPolyCollider", "Door", "DoorHighPolyCollider", "DoorLowPolyCollider");
+
+        public static readonly LayerMask NavPointScanMask = LayerMask.GetMask(
+            "Terrain", "HighPolyCollider", "LowPolyCollider", "InvisibleCollider", "Door");
+
         #endregion
 
         #region Utilities
@@ -165,7 +172,10 @@ namespace AIRefactored.Core
                 || layer == Foliage;
         }
 
-        public static bool IsPlayerLayer(int layer) => layer == Player;
+        public static bool IsPlayerLayer(int layer)
+        {
+            return layer == Player;
+        }
 
         public static bool IsDoorLayer(int layer)
         {
@@ -174,16 +184,25 @@ namespace AIRefactored.Core
                 || layer == DoorLowPolyCollider;
         }
 
-        public static bool IsLootLayer(int layer) => layer == Loot;
+        public static bool IsLootLayer(int layer)
+        {
+            return layer == Loot;
+        }
 
         public static bool IsInteractiveLayer(int layer)
         {
             return layer == Interactive || layer == Trigger;
         }
 
-        public static bool IsInvisibleCollider(int layer) => layer == InvisibleCollider;
+        public static bool IsInvisibleCollider(int layer)
+        {
+            return layer == InvisibleCollider;
+        }
 
-        public static bool IsViewCollider(int layer) => layer == ViewCollider;
+        public static bool IsViewCollider(int layer)
+        {
+            return layer == ViewCollider;
+        }
 
         public static bool IsNavBlocker(int layer)
         {

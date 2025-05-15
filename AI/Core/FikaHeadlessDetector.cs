@@ -6,12 +6,11 @@
 //   Please follow strict StyleCop, ReSharper, and AI-Refactored code standards for all modifications.
 // </auto-generated>
 
-#nullable enable
-
 namespace AIRefactored.AI.Core
 {
     using System;
     using System.Text.RegularExpressions;
+    using Fika.Headless.Classes;
     using UnityEngine;
 
     /// <summary>
@@ -20,8 +19,14 @@ namespace AIRefactored.AI.Core
     /// </summary>
     public static class FikaHeadlessDetector
     {
+        #region Fields
+
         private static readonly bool _isHeadless;
-        private static readonly string? _raidLocation;
+        private static readonly string _raidLocation;
+
+        #endregion
+
+        #region Properties
 
         /// <summary>
         /// Gets a value indicating whether the current client is in headless or batch mode.
@@ -30,35 +35,73 @@ namespace AIRefactored.AI.Core
 
         /// <summary>
         /// Gets the map name if parsed from FIKA headless arguments.
+        /// Returns string.Empty if not in headless or if parsing failed.
         /// </summary>
-        public static string? RaidLocationName => _raidLocation;
+        public static string RaidLocationName => _raidLocation;
 
         /// <summary>
-        /// Static constructor for environment detection.
+        /// Gets a value indicating whether the headless environment has fully parsed its arguments.
+        /// Used to delay logic until startup args are loaded.
         /// </summary>
+        public static bool IsReady => _isHeadless && _raidLocation.Length > 0;
+
+        /// <summary>
+        /// Gets a value indicating whether the raid loading phase has started.
+        /// </summary>
+        public static bool HasRaidStarted()
+        {
+            return !_isHeadless || HeadlessRaidControllerExists();
+        }
+
+        #endregion
+
+        #region Static Constructor
+
         static FikaHeadlessDetector()
         {
+            _isHeadless = false;
+            _raidLocation = string.Empty;
+
             try
             {
-                _isHeadless =
-                    Application.isBatchMode ||
-                    Environment.CommandLine.IndexOf("-nographics", StringComparison.OrdinalIgnoreCase) >= 0;
+                string cmd = Environment.CommandLine;
+                bool foundHeadless = Application.isBatchMode || cmd.IndexOf("-nographics", StringComparison.OrdinalIgnoreCase) >= 0;
 
-                _raidLocation = TryParseRaidLocationFromArgs();
+                _isHeadless = foundHeadless;
+
+                if (_isHeadless)
+                {
+                    string result = TryParseRaidLocationFromArgs();
+                    if (!string.IsNullOrEmpty(result))
+                    {
+                        _raidLocation = result;
+                    }
+                }
             }
-            catch (Exception ex)
+            catch
             {
                 _isHeadless = false;
-                _raidLocation = null;
-                Debug.LogWarning("[FikaHeadlessDetector] Failed during static init: " + ex.Message);
+                _raidLocation = string.Empty;
             }
         }
 
-        /// <summary>
-        /// Attempts to parse the raid location from the command line arguments.
-        /// </summary>
-        /// <returns>Returns the raid location if found, otherwise null.</returns>
-        private static string? TryParseRaidLocationFromArgs()
+        #endregion
+
+        #region Helpers
+
+        private static bool HeadlessRaidControllerExists()
+        {
+            try
+            {
+                return GameObject.FindObjectOfType<HeadlessRaidController>() != null;
+            }
+            catch
+            {
+                return false;
+            }
+        }
+
+        private static string TryParseRaidLocationFromArgs()
         {
             try
             {
@@ -68,15 +111,20 @@ namespace AIRefactored.AI.Core
                 if (match.Success && match.Groups.Count > 1)
                 {
                     string location = match.Groups[1].Value;
-                    return string.IsNullOrWhiteSpace(location) ? null : location;
+                    if (!string.IsNullOrEmpty(location))
+                    {
+                        return location;
+                    }
                 }
             }
             catch
             {
-                // Silent fail is acceptable in malformed command-line environments
+                // Silent fail, fallback to string.Empty
             }
 
-            return null;
+            return string.Empty;
         }
+
+        #endregion
     }
 }

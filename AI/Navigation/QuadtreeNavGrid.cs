@@ -6,12 +6,11 @@
 //   Please follow strict StyleCop, ReSharper, and AI-Refactored code standards for all modifications.
 // </auto-generated>
 
-#nullable enable
-
 namespace AIRefactored.AI.Navigation
 {
     using System;
     using System.Collections.Generic;
+    using AIRefactored.Pools;
     using UnityEngine;
 
     /// <summary>
@@ -25,213 +24,181 @@ namespace AIRefactored.AI.Navigation
 
         private Node _root;
 
-        /// <summary>
-        /// Initializes a new instance of the <see cref="QuadtreeNavGrid"/> class.
-        /// </summary>
-        /// <param name="center">The center of the grid.</param>
-        /// <param name="size">The total side length of the grid.</param>
         public QuadtreeNavGrid(Vector2 center, float size)
         {
             float half = size * 0.5f;
             Rect bounds = new Rect(center.x - half, center.y - half, size, size);
-            this._root = new Node(bounds, 0);
+            _root = new Node(bounds, 0);
         }
 
-        /// <summary>
-        /// Clears all stored points and resets the root node.
-        /// </summary>
         public void Clear()
         {
-            this._root = new Node(this._root.Bounds, 0);
+            _root = new Node(_root.Bounds, 0);
         }
 
-        /// <summary>
-        /// Inserts a <see cref="NavPointData"/> point into the quadtree.
-        /// </summary>
-        /// <param name="point">The point to insert.</param>
         public void Insert(NavPointData point)
         {
-            if (point == null)
+            if (point == null) return;
+
+            Vector2 pos2D = new Vector2(point.Position.x, point.Position.z);
+            Stack<Node> stack = TempStackPool.Rent<Node>();
+            stack.Push(_root);
+
+            while (stack.Count > 0)
             {
-                return;
+                Node node = stack.Pop();
+                if (!node.Bounds.Contains(pos2D)) continue;
+
+                if (node.IsLeaf)
+                {
+                    node.NavPoints.Add(point);
+
+                    if (node.NavPoints.Count > MaxPointsPerNode && node.Depth < MaxDepth)
+                    {
+                        List<NavPointData> tempPoints = node.NavPoints;
+                        Subdivide(node);
+                        for (int i = 0; i < tempPoints.Count; i++)
+                        {
+                            Insert(tempPoints[i]); // Re-insert into new tree
+                        }
+                        TempListPool.Return(tempPoints);
+                        node.NavPoints = TempListPool.Rent<NavPointData>();
+                    }
+                    break;
+                }
+
+                for (int i = 0; i < node.Children.Length; i++)
+                {
+                    stack.Push(node.Children[i]);
+                }
             }
 
-            this.Insert(this._root, point);
+            TempStackPool.Return(stack);
         }
 
-        /// <summary>
-        /// Inserts a raw world position into the quadtree.
-        /// </summary>
-        /// <param name="point">The point to insert.</param>
         public void Insert(Vector3 point)
         {
-            this.Insert(this._root, point);
-        }
-
-        /// <summary>
-        /// Performs a filtered radius query on stored <see cref="NavPointData"/>.
-        /// </summary>
-        public List<NavPointData> Query(Vector3 position, float radius, Predicate<NavPointData>? filter)
-        {
-            List<NavPointData> result = new List<NavPointData>(16);
-            float radiusSq = radius * radius;
-            this.Query(this._root, position, radiusSq, result, filter);
-            return result;
-        }
-
-        /// <summary>
-        /// Performs a filtered query with zone, elevation band, and tag filtering.
-        /// </summary>
-        public List<NavPointData> QueryCombined(Vector3 position, float radius, string? zone, string? elevationBand, string? coverTag)
-        {
-            Predicate<NavPointData> filter = delegate (NavPointData p)
-            {
-                if (zone != null && !string.Equals(p.Zone, zone, StringComparison.OrdinalIgnoreCase))
-                {
-                    return false;
-                }
-
-                if (elevationBand != null && !string.Equals(p.ElevationBand, elevationBand, StringComparison.OrdinalIgnoreCase))
-                {
-                    return false;
-                }
-
-                if (coverTag != null && !string.Equals(p.Tag, coverTag, StringComparison.OrdinalIgnoreCase))
-                {
-                    return false;
-                }
-
-                return true;
-            };
-
-            return this.Query(position, radius, filter);
-        }
-
-        /// <summary>
-        /// Performs a filtered radius query on stored raw Vector3 points.
-        /// </summary>
-        public List<Vector3> QueryRaw(Vector3 position, float radius, Predicate<Vector3>? filter)
-        {
-            List<Vector3> result = new List<Vector3>(16);
-            float radiusSq = radius * radius;
-            this.QueryRaw(this._root, position, radiusSq, result, filter);
-            return result;
-        }
-
-        private void Insert(Node node, NavPointData point)
-        {
-            Vector2 pos2D = new Vector2(point.Position.x, point.Position.z);
-            if (!node.Bounds.Contains(pos2D))
-            {
-                return;
-            }
-
-            if (node.IsLeaf)
-            {
-                node.NavPoints.Add(point);
-                if (node.NavPoints.Count > MaxPointsPerNode && node.Depth < MaxDepth)
-                {
-                    this.Subdivide(node);
-                    this.ReinsertPoints(node);
-                }
-            }
-            else
-            {
-                for (int i = 0; i < node.Children.Length; i++)
-                {
-                    this.Insert(node.Children[i], point);
-                }
-            }
-        }
-
-        private void Insert(Node node, Vector3 point)
-        {
             Vector2 pos2D = new Vector2(point.x, point.z);
-            if (!node.Bounds.Contains(pos2D))
-            {
-                return;
-            }
+            Stack<Node> stack = TempStackPool.Rent<Node>();
+            stack.Push(_root);
 
-            if (node.IsLeaf)
+            while (stack.Count > 0)
             {
-                node.RawPoints.Add(point);
-                if (node.RawPoints.Count > MaxPointsPerNode && node.Depth < MaxDepth)
+                Node node = stack.Pop();
+                if (!node.Bounds.Contains(pos2D)) continue;
+
+                if (node.IsLeaf)
                 {
-                    this.Subdivide(node);
-                    this.ReinsertPoints(node);
+                    node.RawPoints.Add(point);
+
+                    if (node.RawPoints.Count > MaxPointsPerNode && node.Depth < MaxDepth)
+                    {
+                        List<Vector3> tempRaw = node.RawPoints;
+                        Subdivide(node);
+                        for (int i = 0; i < tempRaw.Count; i++)
+                        {
+                            Insert(tempRaw[i]); // Re-insert
+                        }
+                        TempListPool.Return(tempRaw);
+                        node.RawPoints = TempListPool.Rent<Vector3>();
+                    }
+                    break;
                 }
-            }
-            else
-            {
+
                 for (int i = 0; i < node.Children.Length; i++)
                 {
-                    this.Insert(node.Children[i], point);
+                    stack.Push(node.Children[i]);
                 }
             }
+
+            TempStackPool.Return(stack);
         }
 
-        private void Query(Node node, Vector3 worldPos, float radiusSq, List<NavPointData> result, Predicate<NavPointData>? filter)
+        public List<NavPointData> Query(Vector3 position, float radius, Predicate<NavPointData> filter)
         {
-            Vector2 pos2D = new Vector2(worldPos.x, worldPos.z);
-            float radius = Mathf.Sqrt(radiusSq);
-            Rect queryRect = new Rect(pos2D.x - radius, pos2D.y - radius, radius * 2f, radius * 2f);
+            List<NavPointData> result = TempListPool.Rent<NavPointData>();
+            float radiusSq = radius * radius;
+            Vector2 pos2D = new Vector2(position.x, position.z);
+            Rect queryBounds = new Rect(pos2D.x - radius, pos2D.y - radius, radius * 2f, radius * 2f);
 
-            if (!node.Bounds.Overlaps(queryRect))
-            {
-                return;
-            }
+            Stack<Node> stack = TempStackPool.Rent<Node>();
+            stack.Push(_root);
 
-            if (node.IsLeaf)
+            while (stack.Count > 0)
             {
-                for (int i = 0; i < node.NavPoints.Count; i++)
+                Node node = stack.Pop();
+                if (!node.Bounds.Overlaps(queryBounds)) continue;
+
+                if (node.IsLeaf)
                 {
-                    NavPointData p = node.NavPoints[i];
-                    float dSq = (p.Position - worldPos).sqrMagnitude;
-                    if (dSq <= radiusSq && (filter == null || filter(p)))
+                    for (int i = 0; i < node.NavPoints.Count; i++)
                     {
-                        result.Add(p);
+                        NavPointData p = node.NavPoints[i];
+                        if ((p.Position - position).sqrMagnitude <= radiusSq && (filter == null || filter(p)))
+                        {
+                            result.Add(p);
+                        }
                     }
+                    continue;
                 }
-            }
-            else
-            {
+
                 for (int i = 0; i < node.Children.Length; i++)
                 {
-                    this.Query(node.Children[i], worldPos, radiusSq, result, filter);
+                    stack.Push(node.Children[i]);
                 }
             }
+
+            TempStackPool.Return(stack);
+            return result;
         }
 
-        private void QueryRaw(Node node, Vector3 worldPos, float radiusSq, List<Vector3> result, Predicate<Vector3>? filter)
+        public List<NavPointData> QueryCombined(Vector3 position, float radius, string zone, string elevationBand, string coverTag)
         {
-            Vector2 pos2D = new Vector2(worldPos.x, worldPos.z);
-            float radius = Mathf.Sqrt(radiusSq);
-            Rect queryRect = new Rect(pos2D.x - radius, pos2D.y - radius, radius * 2f, radius * 2f);
-
-            if (!node.Bounds.Overlaps(queryRect))
+            return Query(position, radius, delegate (NavPointData p)
             {
-                return;
-            }
+                if (!string.IsNullOrEmpty(zone) && !string.Equals(p.Zone, zone, StringComparison.OrdinalIgnoreCase)) return false;
+                if (!string.IsNullOrEmpty(elevationBand) && !string.Equals(p.ElevationBand, elevationBand, StringComparison.OrdinalIgnoreCase)) return false;
+                if (!string.IsNullOrEmpty(coverTag) && !string.Equals(p.Tag, coverTag, StringComparison.OrdinalIgnoreCase)) return false;
+                return true;
+            });
+        }
 
-            if (node.IsLeaf)
+        public List<Vector3> QueryRaw(Vector3 position, float radius, Predicate<Vector3> filter)
+        {
+            List<Vector3> result = TempListPool.Rent<Vector3>();
+            float radiusSq = radius * radius;
+            Vector2 pos2D = new Vector2(position.x, position.z);
+            Rect queryBounds = new Rect(pos2D.x - radius, pos2D.y - radius, radius * 2f, radius * 2f);
+
+            Stack<Node> stack = TempStackPool.Rent<Node>();
+            stack.Push(_root);
+
+            while (stack.Count > 0)
             {
-                for (int i = 0; i < node.RawPoints.Count; i++)
+                Node node = stack.Pop();
+                if (!node.Bounds.Overlaps(queryBounds)) continue;
+
+                if (node.IsLeaf)
                 {
-                    Vector3 p = node.RawPoints[i];
-                    float dSq = (p - worldPos).sqrMagnitude;
-                    if (dSq <= radiusSq && (filter == null || filter(p)))
+                    for (int i = 0; i < node.RawPoints.Count; i++)
                     {
-                        result.Add(p);
+                        Vector3 p = node.RawPoints[i];
+                        if ((p - position).sqrMagnitude <= radiusSq && (filter == null || filter(p)))
+                        {
+                            result.Add(p);
+                        }
                     }
+                    continue;
                 }
-            }
-            else
-            {
+
                 for (int i = 0; i < node.Children.Length; i++)
                 {
-                    this.QueryRaw(node.Children[i], worldPos, radiusSq, result, filter);
+                    stack.Push(node.Children[i]);
                 }
             }
+
+            TempStackPool.Return(stack);
+            return result;
         }
 
         private void Subdivide(Node node)
@@ -242,77 +209,32 @@ namespace AIRefactored.AI.Navigation
             float y = node.Bounds.y;
             int d = node.Depth + 1;
 
-            Node[] children = new Node[4];
-            children[0] = new Node(new Rect(x, y, halfW, halfH), d); // BL
-            children[1] = new Node(new Rect(x + halfW, y, halfW, halfH), d); // BR
-            children[2] = new Node(new Rect(x, y + halfH, halfW, halfH), d); // TL
-            children[3] = new Node(new Rect(x + halfW, y + halfH, halfW, halfH), d); // TR
-
-            node.SetChildren(children);
+            node.Children = new[]
+            {
+                new Node(new Rect(x, y, halfW, halfH), d),
+                new Node(new Rect(x + halfW, y, halfW, halfH), d),
+                new Node(new Rect(x, y + halfH, halfW, halfH), d),
+                new Node(new Rect(x + halfW, y + halfH, halfW, halfH), d)
+            };
         }
 
-        private void ReinsertPoints(Node node)
-        {
-            List<NavPointData> navPoints = node.NavPoints;
-            node.NavPoints = new List<NavPointData>(MaxPointsPerNode);
-
-            for (int i = 0; i < navPoints.Count; i++)
-            {
-                for (int j = 0; j < node.Children.Length; j++)
-                {
-                    this.Insert(node.Children[j], navPoints[i]);
-                }
-            }
-
-            List<Vector3> rawPoints = node.RawPoints;
-            node.RawPoints = new List<Vector3>(MaxPointsPerNode);
-
-            for (int i = 0; i < rawPoints.Count; i++)
-            {
-                for (int j = 0; j < node.Children.Length; j++)
-                {
-                    this.Insert(node.Children[j], rawPoints[i]);
-                }
-            }
-        }
-
-        /// <summary>
-        /// Internal node class for quadtree hierarchy.
-        /// </summary>
         private sealed class Node
         {
             public Node(Rect bounds, int depth)
             {
                 this.Bounds = bounds;
                 this.Depth = depth;
-                this.NavPoints = new List<NavPointData>(MaxPointsPerNode);
-                this.RawPoints = new List<Vector3>(MaxPointsPerNode);
-                this.Children = new Node[0];
+                this.NavPoints = TempListPool.Rent<NavPointData>();
+                this.RawPoints = TempListPool.Rent<Vector3>();
+                this.Children = Array.Empty<Node>();
             }
 
             public Rect Bounds { get; }
-
             public int Depth { get; }
-
             public List<NavPointData> NavPoints;
-
             public List<Vector3> RawPoints;
-
-            public Node[] Children { get; private set; }
-
+            public Node[] Children;
             public bool IsLeaf => this.Children.Length == 0;
-
-            public void SetChildren(Node[] children)
-            {
-                if (children == null)
-                {
-                    this.Children = new Node[0];
-                }
-                else
-                {
-                    this.Children = children;
-                }
-            }
         }
     }
 }

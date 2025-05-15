@@ -6,8 +6,6 @@
 //   Please follow strict StyleCop, ReSharper, and AI-Refactored code standards for all modifications.
 // </auto-generated>
 
-#nullable enable
-
 namespace AIRefactored.AI.Hotspots
 {
     using System;
@@ -19,6 +17,7 @@ namespace AIRefactored.AI.Hotspots
     using BepInEx.Logging;
     using Comfort.Common;
     using EFT;
+    using EFT.HealthSystem;
     using UnityEngine;
 
     /// <summary>
@@ -28,7 +27,7 @@ namespace AIRefactored.AI.Hotspots
     public sealed class HotspotSystem
     {
         private static readonly List<BotOwner> BotList = new List<BotOwner>(64);
-        private static readonly ManualLogSource Logger = AIRefactoredController.Logger;
+        private static readonly ManualLogSource Logger = Plugin.LoggerInstance;
 
         private readonly Dictionary<BotOwner, HotspotSession> _sessions = new Dictionary<BotOwner, HotspotSession>(64);
 
@@ -39,13 +38,23 @@ namespace AIRefactored.AI.Hotspots
 
         public void Initialize()
         {
-            this._sessions.Clear();
-            HotspotRegistry.Initialize(GameWorldHandler.GetCurrentMapName());
+            _sessions.Clear();
+            string map = GameWorldHandler.TryGetValidMapName();
+
+            if (string.IsNullOrEmpty(map))
+            {
+                Logger.LogWarning("[HotspotSystem] No valid map found. Falling back to default EFT behavior.");
+                HotspotRegistry.Initialize(string.Empty);
+            }
+            else
+            {
+                HotspotRegistry.Initialize(map);
+            }
         }
 
         public void Tick()
         {
-            BotsController? controller = Singleton<BotsController>.Instance;
+            BotsController controller = Singleton<BotsController>.Instance;
             if (controller?.Bots?.BotOwners == null)
             {
                 return;
@@ -57,17 +66,17 @@ namespace AIRefactored.AI.Hotspots
             for (int i = 0; i < BotList.Count; i++)
             {
                 BotOwner bot = BotList[i];
-                if (bot == null || bot.IsDead || bot.GetPlayer?.IsYourPlayer == true)
+                if (bot == null || bot.IsDead || bot.GetPlayer == null || bot.GetPlayer.IsYourPlayer)
                 {
                     continue;
                 }
 
-                if (!this._sessions.TryGetValue(bot, out HotspotSession? session) || session == null)
+                if (!_sessions.TryGetValue(bot, out var session))
                 {
-                    session = this.AssignHotspotRoute(bot);
+                    session = AssignHotspotRoute(bot);
                     if (session != null)
                     {
-                        this._sessions[bot] = session;
+                        _sessions[bot] = session;
                     }
                 }
 
@@ -75,19 +84,25 @@ namespace AIRefactored.AI.Hotspots
             }
         }
 
-        private HotspotSession? AssignHotspotRoute(BotOwner bot)
+        private HotspotSession AssignHotspotRoute(BotOwner bot)
         {
             BotPersonalityProfile profile = BotRegistry.Get(bot.ProfileId);
-            string map = GameWorldHandler.GetCurrentMapName();
-            IReadOnlyList<HotspotRegistry.Hotspot> all = HotspotRegistry.GetAll();
+            string map = GameWorldHandler.TryGetValidMapName();
 
+            if (string.IsNullOrEmpty(map))
+            {
+                Logger.LogWarning("[HotspotSystem] ❌ No valid map found. Falling back to default EFT behavior.");
+                return null;
+            }
+
+            IReadOnlyList<HotspotRegistry.Hotspot> all = HotspotRegistry.GetAll();
             if (all.Count == 0)
             {
                 Logger.LogWarning("[HotspotSystem] ❌ No hotspots found for " + map);
                 return null;
             }
 
-            List<HotspotRegistry.Hotspot> nearby = HotspotRegistry.QueryNearby(bot.Position, 150f);
+            List<HotspotRegistry.Hotspot> nearby = HotspotRegistry.QueryNearby(bot.Position, 150f, null);
             if (nearby.Count == 0)
             {
                 nearby = new List<HotspotRegistry.Hotspot>(all);
@@ -124,9 +139,9 @@ namespace AIRefactored.AI.Hotspots
             private const float DamageCooldown = 6f;
 
             private readonly BotOwner _bot;
-            private readonly BotComponentCache? _cache;
-            private readonly bool _isDefender;
+            private readonly BotComponentCache _cache;
             private readonly List<HotspotRegistry.Hotspot> _route;
+            private readonly bool _isDefender;
 
             private int _index;
             private float _lastHitTime;
@@ -134,68 +149,72 @@ namespace AIRefactored.AI.Hotspots
 
             public HotspotSession(BotOwner bot, List<HotspotRegistry.Hotspot> route, bool isDefender)
             {
-                this._bot = bot ?? throw new ArgumentNullException(nameof(bot));
-                this._route = route ?? throw new ArgumentNullException(nameof(route));
-                this._isDefender = isDefender;
-                this._cache = BotCacheUtility.GetCache(bot);
-                this._lastHitTime = -999f;
-                this._index = 0;
-                this._nextSwitchTime = Time.time + this.GetSwitchInterval();
-
-                HealthControllerClass? health = bot.GetPlayer?.HealthController as HealthControllerClass;
-                if (health != null)
+                if (bot == null || route == null || route.Count == 0)
                 {
-                    health.ApplyDamageEvent += this.OnDamaged;
+                    throw new ArgumentException("Invalid HotspotSession initialization.");
+                }
+
+                _bot = bot;
+                _route = route;
+                _isDefender = isDefender;
+                _cache = BotCacheUtility.GetCache(bot);
+                _index = 0;
+                _lastHitTime = -999f;
+                _nextSwitchTime = Time.time + GetSwitchInterval();
+
+                if (bot.GetPlayer?.HealthController is HealthControllerClass health)
+                {
+                    health.ApplyDamageEvent += OnDamaged;
                 }
             }
 
             public void Tick()
             {
-                if (this._bot.IsDead || this._route.Count == 0 || this._bot.GetPlayer?.IsYourPlayer == true)
+                if (_bot.IsDead || _route.Count == 0 || _bot.GetPlayer == null || _bot.GetPlayer.IsYourPlayer)
                 {
                     return;
                 }
 
-                if (this._bot.Memory?.GoalEnemy != null)
+                if (_bot.Memory?.GoalEnemy != null)
                 {
-                    this._bot.Sprint(true);
+                    _bot.Sprint(true);
                     return;
                 }
 
-                if (Time.time - this._lastHitTime < DamageCooldown)
+                if (Time.time - _lastHitTime < DamageCooldown)
                 {
                     return;
                 }
 
-                Vector3 target = this._route[this._index].Position;
+                Vector3 target = _route[_index].Position;
 
-                if (this._isDefender)
+                if (_isDefender)
                 {
-                    float dist = Vector3.Distance(this._bot.Position, target);
-                    float composure = this._cache?.PanicHandler?.GetComposureLevel() ?? 1f;
-                    float defendRadius = BaseDefendRadius * Mathf.Clamp(1f + (1f - composure), 1f, 2f);
+                    float dist = Vector3.Distance(_bot.Position, target);
+                    float composure = _cache.PanicHandler?.GetComposureLevel() ?? 1f;
+                    float radius = BaseDefendRadius * Mathf.Clamp(1f + (1f - composure), 1f, 2f);
 
-                    if (dist > defendRadius)
+                    if (dist > radius)
                     {
-                        BotMovementHelper.SmoothMoveTo(this._bot, target);
+                        BotMovementHelper.SmoothMoveTo(_bot, target);
                     }
                 }
                 else
                 {
-                    float distToTarget = Vector3.Distance(this._bot.Position, target);
-                    if (Time.time >= this._nextSwitchTime || distToTarget < 2f)
+                    float dist = Vector3.Distance(_bot.Position, target);
+                    if (Time.time >= _nextSwitchTime || dist < 2f)
                     {
-                        this._index = (this._index + 1) % this._route.Count;
-                        this._nextSwitchTime = Time.time + this.GetSwitchInterval();
+                        _index = (_index + 1) % _route.Count;
+                        _nextSwitchTime = Time.time + GetSwitchInterval();
                     }
 
-                    BotMovementHelper.SmoothMoveTo(this._bot, this.AddJitterTo(target));
+                    BotMovementHelper.SmoothMoveTo(_bot, AddJitterTo(target));
                 }
             }
 
             private Vector3 AddJitterTo(Vector3 target)
             {
-                BotPersonalityProfile? profile = this._cache?.AIRefactoredBotOwner?.PersonalityProfile;
+                BotPersonalityProfile profile = _cache.AIRefactoredBotOwner?.PersonalityProfile;
                 if (profile == null)
                 {
                     return target;
@@ -223,25 +242,77 @@ namespace AIRefactored.AI.Hotspots
 
             private float GetSwitchInterval()
             {
-                BotPersonalityProfile profile = BotRegistry.Get(this._bot.ProfileId);
-                float baseTime = 120f;
+                BotPersonalityProfile profile = BotRegistry.Get(_bot.ProfileId);
+                float baseTime;
 
                 switch (profile.Personality)
                 {
-                    case PersonalityType.Cautious:
+                    case PersonalityType.Camper:
+                    case PersonalityType.Stoic:
+                    case PersonalityType.Sentinel:
+                    case PersonalityType.Sniper:
+                    case PersonalityType.Patient:
+                    case PersonalityType.Defensive:
+                    case PersonalityType.Stubborn:
+                    case PersonalityType.ColdBlooded:
+                        baseTime = 200f;
+                        break;
+
+                    case PersonalityType.Methodical:
+                    case PersonalityType.Tactical:
+                    case PersonalityType.Strategic:
+                    case PersonalityType.Vigilant:
+                    case PersonalityType.Calculating:
+                    case PersonalityType.Supportive:
+                    case PersonalityType.TeamPlayer:
                         baseTime = 160f;
                         break;
-                    case PersonalityType.TeamPlayer:
+
+                    case PersonalityType.Balanced:
+                    case PersonalityType.Explorer:
+                    case PersonalityType.Adaptive:
+                    case PersonalityType.Heroic:
+                    case PersonalityType.Vigilante:
                         baseTime = 100f;
                         break;
-                    case PersonalityType.Strategic:
-                        baseTime = 90f;
+
+                    case PersonalityType.Aggressive:
+                    case PersonalityType.Bulldozer:
+                    case PersonalityType.Cowboy:
+                    case PersonalityType.Hunter:
+                    case PersonalityType.Stalker:
+                    case PersonalityType.Vengeful:
+                    case PersonalityType.Saboteur:
+                        baseTime = 60f;
                         break;
-                    case PersonalityType.Explorer:
-                        baseTime = 75f;
+
+                    case PersonalityType.Cautious:
+                    case PersonalityType.Paranoid:
+                    case PersonalityType.Loner:
+                    case PersonalityType.Covert:
+                    case PersonalityType.SilentHunter:
+                        baseTime = UnityEngine.Random.Range(120f, 180f);
                         break;
+
+                    case PersonalityType.Unpredictable:
+                    case PersonalityType.Disruptor:
+                    case PersonalityType.Erratic:
+                    case PersonalityType.Reckless:
+                    case PersonalityType.RiskTaker:
+                    case PersonalityType.Frenzied:
+                    case PersonalityType.Greedy:
+                    case PersonalityType.Panicked:
+                        baseTime = UnityEngine.Random.Range(45f, 90f);
+                        break;
+
                     case PersonalityType.Dumb:
+                    case PersonalityType.Fearful:
+                    case PersonalityType.Cowardly:
                         baseTime = 45f;
+                        break;
+
+                    default:
+                        baseTime = 100f;
                         break;
                 }
 
@@ -250,8 +321,8 @@ namespace AIRefactored.AI.Hotspots
 
             private void OnDamaged(EBodyPart part, float damage, DamageInfoStruct info)
             {
-                this._lastHitTime = Time.time;
-                this._cache?.PanicHandler?.TriggerPanic();
+                _lastHitTime = Time.time;
+                _cache.PanicHandler?.TriggerPanic();
             }
         }
     }

@@ -6,41 +6,45 @@
 //   Please follow strict StyleCop, ReSharper, and AI-Refactored code standards for all modifications.
 // </auto-generated>
 
-#nullable enable
-
 namespace AIRefactored.AI.Hotspots
 {
     using System;
     using System.Collections.Generic;
+    using AIRefactored.Pools;
     using UnityEngine;
 
     /// <summary>
     /// Spatial quadtree for hotspot lookup acceleration.
     /// Supports efficient spatial queries to reduce search time for hotspot scanning.
     /// </summary>
-    public class HotspotQuadtree
+    public sealed class HotspotQuadtree
     {
+        #region Constants
+
         private const int MaxDepth = 6;
         private const int MaxPerNode = 8;
 
+        #endregion
+
+        #region Fields
+
         private readonly Node _root;
 
-        /// <summary>
-        /// Initializes a new instance of the <see cref="HotspotQuadtree"/> class with a world center and size.
-        /// </summary>
-        /// <param name="center">2D center of the quadtree region.</param>
-        /// <param name="size">World-space length/width of the square region.</param>
+        #endregion
+
+        #region Constructor
+
         public HotspotQuadtree(Vector2 center, float size)
         {
             float half = size * 0.5f;
             Rect bounds = new Rect(center.x - half, center.y - half, size, size);
-            this._root = new Node(bounds, 0);
+            _root = new Node(bounds, 0);
         }
 
-        /// <summary>
-        /// Inserts a hotspot into the spatial quadtree.
-        /// </summary>
-        /// <param name="hotspot">Hotspot to insert.</param>
+        #endregion
+
+        #region Public API
+
         public void Insert(HotspotRegistry.Hotspot hotspot)
         {
             if (hotspot == null)
@@ -48,145 +52,153 @@ namespace AIRefactored.AI.Hotspots
                 return;
             }
 
-            this.Insert(this._root, hotspot);
-        }
-
-        /// <summary>
-        /// Returns all hotspots within a given world-space radius of a point.
-        /// </summary>
-        /// <param name="worldPosition">3D position to search around.</param>
-        /// <param name="radius">Radius of interest.</param>
-        /// <param name="filter">Optional filter predicate.</param>
-        /// <returns>List of matching hotspots.</returns>
-        public List<HotspotRegistry.Hotspot> Query(Vector3 worldPosition, float radius, Predicate<HotspotRegistry.Hotspot>? filter = null)
-        {
-            List<HotspotRegistry.Hotspot> result = new List<HotspotRegistry.Hotspot>(16);
-            float radiusSq = radius * radius;
-            this.Query(this._root, worldPosition, radiusSq, result, filter);
-            return result;
-        }
-
-        private void Insert(Node node, HotspotRegistry.Hotspot hotspot)
-        {
             Vector2 pos2D = new Vector2(hotspot.Position.x, hotspot.Position.z);
+            Stack<Node> stack = TempStackPool.Rent<Node>();
+            stack.Push(_root);
 
-            if (!node.Bounds.Contains(pos2D))
+            while (stack.Count > 0)
             {
-                return;
-            }
-
-            if (node.IsLeaf)
-            {
-                node.Points.Add(hotspot);
-
-                if (node.Points.Count > MaxPerNode && node.Depth < MaxDepth)
+                Node node = stack.Pop();
+                if (!node.Bounds.Contains(pos2D))
                 {
-                    this.Subdivide(node);
+                    continue;
+                }
 
-                    if (node.Children != null)
+                if (node.IsLeaf)
+                {
+                    node.Points.Add(hotspot);
+
+                    if (node.Points.Count > MaxPerNode && node.Depth < MaxDepth)
                     {
-                        foreach (HotspotRegistry.Hotspot point in node.Points)
+                        Subdivide(node);
+
+                        for (int i = 0; i < node.Points.Count; i++)
                         {
+                            HotspotRegistry.Hotspot existing = node.Points[i];
+                            Vector2 existing2D = new Vector2(existing.Position.x, existing.Position.z);
+
                             for (int j = 0; j < 4; j++)
                             {
-                                this.Insert(node.Children[j], point);
+                                Node child = node.Children[j];
+                                if (child.Bounds.Contains(existing2D))
+                                {
+                                    child.Points.Add(existing);
+                                    break;
+                                }
                             }
                         }
 
                         node.Points.Clear();
                     }
+
+                    break;
                 }
-            }
-            else
-            {
-                if (node.Children != null)
+
+                for (int i = 0; i < node.Children.Length; i++)
                 {
-                    for (int i = 0; i < 4; i++)
-                    {
-                        this.Insert(node.Children[i], hotspot);
-                    }
+                    stack.Push(node.Children[i]);
                 }
             }
+
+            TempStackPool.Return(stack);
         }
 
-        private void Query(Node node, Vector3 worldPosition, float radiusSq, List<HotspotRegistry.Hotspot> result, Predicate<HotspotRegistry.Hotspot>? filter)
+        public List<HotspotRegistry.Hotspot> Query(Vector3 position, float radius, Predicate<HotspotRegistry.Hotspot> filter)
         {
-            Vector2 pos2D = new Vector2(worldPosition.x, worldPosition.z);
-            float radius = Mathf.Sqrt(radiusSq);
-            Rect queryRect = new Rect(pos2D.x - radius, pos2D.y - radius, radius * 2f, radius * 2f);
+            List<HotspotRegistry.Hotspot> results = TempListPool.Rent<HotspotRegistry.Hotspot>();
+            Vector2 pos2D = new Vector2(position.x, position.z);
+            float radiusSq = radius * radius;
+            float size = radius * 2f;
+            Rect queryBounds = new Rect(pos2D.x - radius, pos2D.y - radius, size, size);
 
-            if (!node.Bounds.Overlaps(queryRect))
-            {
-                return;
-            }
+            Stack<Node> stack = TempStackPool.Rent<Node>();
+            stack.Push(_root);
 
-            if (node.IsLeaf)
+            while (stack.Count > 0)
             {
-                foreach (HotspotRegistry.Hotspot h in node.Points)
+                Node node = stack.Pop();
+
+                if (!node.Bounds.Overlaps(queryBounds))
                 {
-                    if ((h.Position - worldPosition).sqrMagnitude <= radiusSq && (filter == null || filter(h)))
+                    continue;
+                }
+
+                if (node.IsLeaf)
+                {
+                    for (int i = 0; i < node.Points.Count; i++)
                     {
-                        result.Add(h);
+                        HotspotRegistry.Hotspot h = node.Points[i];
+                        Vector3 delta = h.Position - position;
+
+                        if (delta.sqrMagnitude <= radiusSq && (filter == null || filter(h)))
+                        {
+                            results.Add(h);
+                        }
                     }
+
+                    continue;
                 }
-            }
-            else if (node.Children != null)
-            {
-                for (int i = 0; i < 4; i++)
+
+                for (int i = 0; i < node.Children.Length; i++)
                 {
-                    this.Query(node.Children[i], worldPosition, radiusSq, result, filter);
+                    stack.Push(node.Children[i]);
                 }
             }
+
+            TempStackPool.Return(stack);
+            return results;
         }
+
+        #endregion
+
+        #region Internal Logic
 
         private void Subdivide(Node node)
         {
-            Node[] children = new Node[4];
-
             float halfW = node.Bounds.width * 0.5f;
             float halfH = node.Bounds.height * 0.5f;
             float x = node.Bounds.x;
             float y = node.Bounds.y;
-            int d = node.Depth + 1;
+            int depth = node.Depth + 1;
 
-            children[0] = new Node(new Rect(x, y, halfW, halfH), d);                   // Bottom Left
-            children[1] = new Node(new Rect(x + halfW, y, halfW, halfH), d);           // Bottom Right
-            children[2] = new Node(new Rect(x, y + halfH, halfW, halfH), d);           // Top Left
-            children[3] = new Node(new Rect(x + halfW, y + halfH, halfW, halfH), d);   // Top Right
-
-            node.SetChildren(children);
+            node.SetChildren(new[]
+            {
+                new Node(new Rect(x, y, halfW, halfH), depth),
+                new Node(new Rect(x + halfW, y, halfW, halfH), depth),
+                new Node(new Rect(x, y + halfH, halfW, halfH), depth),
+                new Node(new Rect(x + halfW, y + halfH, halfW, halfH), depth)
+            });
         }
 
-        /// <summary>
-        /// Internal quadtree node used for spatial partitioning.
-        /// </summary>
-        private class Node
+        #endregion
+
+        #region Node Class
+
+        private sealed class Node
         {
+            public readonly Rect Bounds;
+            public readonly int Depth;
+            public readonly List<HotspotRegistry.Hotspot> Points;
+            public Node[] Children;
+
+            private static readonly Node[] EmptyArray = new Node[0];
+
             public Node(Rect bounds, int depth)
             {
-                this.Bounds = bounds;
-                this.Depth = depth;
-                this.Points = new List<HotspotRegistry.Hotspot>(8);
-                this.Children = Array.Empty<Node>();
+                Bounds = bounds;
+                Depth = depth;
+                Points = new List<HotspotRegistry.Hotspot>(MaxPerNode);
+                Children = EmptyArray;
             }
 
-            public Rect Bounds { get; }
-
-            public int Depth { get; }
-
-            public List<HotspotRegistry.Hotspot> Points { get; }
-
-            /// <summary>
-            /// Gets or sets the four quadrant child nodes, if subdivided.
-            /// </summary>
-            public Node[] Children { get; private set; }
-
-            public bool IsLeaf => this.Children.Length == 0;
+            public bool IsLeaf => Children.Length == 0;
 
             public void SetChildren(Node[] children)
             {
-                this.Children = children ?? Array.Empty<Node>();
+                Children = children ?? EmptyArray;
             }
         }
+
+        #endregion
     }
 }

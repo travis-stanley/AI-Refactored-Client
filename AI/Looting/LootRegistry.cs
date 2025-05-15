@@ -6,12 +6,11 @@
 //   Please follow strict StyleCop, ReSharper, and AI-Refactored code standards for all modifications.
 // </auto-generated>
 
-#nullable enable
-
 namespace AIRefactored.AI.Looting
 {
     using System;
     using System.Collections.Generic;
+    using AIRefactored.Pools;
     using AIRefactored.Runtime;
     using BepInEx.Logging;
     using EFT.Interactive;
@@ -20,121 +19,172 @@ namespace AIRefactored.AI.Looting
     /// <summary>
     /// Centralized registry for all lootables in the scene.
     /// Bots query this instead of using expensive GetComponent calls.
-    /// Injects runtime watchers where needed for dynamic state tracking.
+    /// Tracks timestamp metadata for prioritization and pruning.
     /// </summary>
     public static class LootRegistry
     {
-        #region Buffers
+        #region Structs
 
-        private static readonly List<LootableContainer> _containerBuffer = new List<LootableContainer>(32);
-        private static readonly List<LootItem> _itemBuffer = new List<LootItem>(64);
+        private struct TrackedContainer
+        {
+            public LootableContainer Container;
+            public Transform Transform;
+            public float LastSeenTime;
+        }
+
+        private struct TrackedItem
+        {
+            public LootItem Item;
+            public Transform Transform;
+            public float LastSeenTime;
+        }
 
         #endregion
 
-        #region State
+        #region Static Fields
 
-        private static readonly HashSet<LootableContainer> _containers = new HashSet<LootableContainer>();
-        private static readonly HashSet<LootItem> _items = new HashSet<LootItem>();
-        private static readonly HashSet<GameObject> _watchedObjects = new HashSet<GameObject>();
-
-        private static readonly ManualLogSource Logger = AIRefactoredController.Logger;
+        private static readonly Dictionary<LootableContainer, TrackedContainer> Containers = new Dictionary<LootableContainer, TrackedContainer>(64);
+        private static readonly Dictionary<LootItem, TrackedItem> Items = new Dictionary<LootItem, TrackedItem>(128);
+        private static readonly HashSet<int> WatchedInstanceIds = new HashSet<int>();
+        private static readonly ManualLogSource Logger = Plugin.LoggerInstance;
 
         #endregion
 
-        #region Public API
+        #region Lifecycle
 
-        public static List<LootableContainer> GetAllContainers() =>
-            new List<LootableContainer>(_containers);
-
-        public static List<LootItem> GetAllItems() =>
-            new List<LootItem>(_items);
+        public static void Initialize()
+        {
+            Clear();
+            LootRuntimeWatcher.Reset();
+            Logger.LogDebug("[LootRegistry] Initialized loot tracking system.");
+        }
 
         public static void Clear()
         {
-            _containers.Clear();
-            _items.Clear();
-            _watchedObjects.Clear();
-            _containerBuffer.Clear();
-            _itemBuffer.Clear();
+            Containers.Clear();
+            Items.Clear();
+            WatchedInstanceIds.Clear();
+        }
+
+        #endregion
+
+        #region Container Access
+
+        public static List<LootableContainer> GetAllContainers()
+        {
+            List<LootableContainer> list = TempListPool.Rent<LootableContainer>();
+            foreach (var kv in Containers)
+            {
+                if (kv.Key != null)
+                {
+                    list.Add(kv.Key);
+                }
+            }
+            return list;
+        }
+
+        public static List<LootItem> GetAllItems()
+        {
+            List<LootItem> list = TempListPool.Rent<LootItem>();
+            foreach (var kv in Items)
+            {
+                if (kv.Key != null)
+                {
+                    list.Add(kv.Key);
+                }
+            }
+            return list;
         }
 
         public static List<LootableContainer> GetNearbyContainers(Vector3 origin, float radius)
         {
-            _containerBuffer.Clear();
+            List<LootableContainer> result = TempListPool.Rent<LootableContainer>();
             float radiusSqr = radius * radius;
 
-            foreach (LootableContainer container in _containers)
+            foreach (var kv in Containers)
             {
-                if (container == null || container.transform == null)
+                Transform tf = kv.Value.Transform;
+                if (tf != null && (tf.position - origin).sqrMagnitude <= radiusSqr)
                 {
-                    continue;
-                }
-
-                Vector3 pos = container.transform.position;
-                if ((pos - origin).sqrMagnitude <= radiusSqr)
-                {
-                    _containerBuffer.Add(container);
+                    result.Add(kv.Value.Container);
                 }
             }
 
-            return new List<LootableContainer>(_containerBuffer);
+            return result;
         }
 
         public static List<LootItem> GetNearbyItems(Vector3 origin, float radius)
         {
-            _itemBuffer.Clear();
+            List<LootItem> result = TempListPool.Rent<LootItem>();
             float radiusSqr = radius * radius;
 
-            foreach (LootItem item in _items)
+            foreach (var kv in Items)
             {
-                if (item == null || item.transform == null)
+                Transform tf = kv.Value.Transform;
+                if (tf != null && (tf.position - origin).sqrMagnitude <= radiusSqr)
                 {
-                    continue;
-                }
-
-                Vector3 pos = item.transform.position;
-                if ((pos - origin).sqrMagnitude <= radiusSqr)
-                {
-                    _itemBuffer.Add(item);
+                    result.Add(kv.Value.Item);
                 }
             }
 
-            return new List<LootItem>(_itemBuffer);
+            return result;
         }
 
-        public static void RegisterContainer(LootableContainer? container)
+        #endregion
+
+        #region Registration
+
+        public static void RegisterContainer(LootableContainer container)
         {
-            if (container == null || !_containers.Add(container))
+            if (container == null || container.transform == null)
             {
                 return;
             }
+
+            Containers[container] = new TrackedContainer
+            {
+                Container = container,
+                Transform = container.transform,
+                LastSeenTime = Time.time
+            };
 
             InjectWatcherIfNeeded(container.gameObject);
         }
 
-        public static void RegisterItem(LootItem? item)
+        public static void RegisterItem(LootItem item)
         {
-            if (item == null || !_items.Add(item))
+            if (item == null || item.transform == null)
             {
                 return;
             }
 
+            Items[item] = new TrackedItem
+            {
+                Item = item,
+                Transform = item.transform,
+                LastSeenTime = Time.time
+            };
+
             InjectWatcherIfNeeded(item.gameObject);
         }
 
-        public static bool TryGetContainerByName(string? name, out LootableContainer? found)
+        #endregion
+
+        #region Lookup API
+
+        public static bool TryGetContainerByName(string name, out LootableContainer found)
         {
             found = null;
-            if (string.IsNullOrEmpty(name))
+            if (string.IsNullOrWhiteSpace(name))
             {
                 return false;
             }
 
-            foreach (LootableContainer container in _containers)
+            foreach (var kv in Containers)
             {
-                if (string.Equals(container?.name, name, StringComparison.OrdinalIgnoreCase))
+                if (kv.Key != null && string.Equals(kv.Key.name, name.Trim(), StringComparison.OrdinalIgnoreCase))
                 {
-                    found = container;
+                    found = kv.Key;
                     return true;
                 }
             }
@@ -142,56 +192,97 @@ namespace AIRefactored.AI.Looting
             return false;
         }
 
-        public static bool TryGetItemByName(string? name, out LootItem? found)
+        public static bool TryGetItemByName(string name, out LootItem found)
         {
             found = null;
-            if (string.IsNullOrEmpty(name))
+            if (string.IsNullOrWhiteSpace(name))
             {
                 return false;
             }
 
-            foreach (LootItem item in _items)
+            foreach (var kv in Items)
             {
-                if (string.Equals(item?.name, name, StringComparison.OrdinalIgnoreCase))
+                if (kv.Key != null && string.Equals(kv.Key.name, name.Trim(), StringComparison.OrdinalIgnoreCase))
                 {
-                    found = item;
+                    found = kv.Key;
                     return true;
                 }
             }
 
+            return false;
+        }
+
+        public static bool TryGetLastSeenTime(LootableContainer container, out float time)
+        {
+            if (container != null && Containers.TryGetValue(container, out var tracked))
+            {
+                time = tracked.LastSeenTime;
+                return true;
+            }
+
+            time = 0f;
+            return false;
+        }
+
+        public static bool TryGetLastSeenTime(LootItem item, out float time)
+        {
+            if (item != null && Items.TryGetValue(item, out var tracked))
+            {
+                time = tracked.LastSeenTime;
+                return true;
+            }
+
+            time = 0f;
             return false;
         }
 
         #endregion
 
-        #region Internal Logic
+        #region Maintenance
 
-        private static void InjectWatcherIfNeeded(GameObject? go)
+        public static void PruneStale(float olderThanSeconds)
         {
-            if (go == null || _watchedObjects.Contains(go))
+            float cutoff = Time.time - olderThanSeconds;
+
+            RemoveWhere(Containers, kv => kv.Value.LastSeenTime < cutoff);
+            RemoveWhere(Items, kv => kv.Value.LastSeenTime < cutoff);
+        }
+
+        private static void InjectWatcherIfNeeded(GameObject go)
+        {
+            if (go == null)
             {
                 return;
             }
 
-            // If the component is already there, just mark it watched
-            if (go.TryGetComponent<LootRuntimeWatcher>(out _))
+            int id = go.GetInstanceID();
+            if (WatchedInstanceIds.Add(id))
             {
-                _watchedObjects.Add(go);
-                Logger.LogDebug("[LootRegistry] Found existing LootRuntimeWatcher on " + go.name);
-                return;
+                LootRuntimeWatcher.Register(go);
             }
+        }
 
+        private static void RemoveWhere<TKey, TValue>(Dictionary<TKey, TValue> dict, Func<KeyValuePair<TKey, TValue>, bool> predicate)
+        {
+            List<TKey> toRemove = TempListPool.Rent<TKey>();
             try
             {
-                // Add the watcher safely
-                var watcher = go.AddComponent<LootRuntimeWatcher>();
-                _watchedObjects.Add(go);
-                Logger.LogDebug("[LootRegistry] Injected LootRuntimeWatcher on " + go.name);
+                foreach (var kv in dict)
+                {
+                    if (predicate(kv))
+                    {
+                        toRemove.Add(kv.Key);
+                    }
+                }
+
+                for (int i = 0; i < toRemove.Count; i++)
+                {
+                    dict.Remove(toRemove[i]);
+                }
             }
-            catch (Exception ex)
+            finally
             {
-                Logger.LogError("[LootRegistry] Failed to inject LootRuntimeWatcher on "
-                                 + go.name + ": " + ex.Message);
+                TempListPool.Return(toRemove);
             }
         }
 

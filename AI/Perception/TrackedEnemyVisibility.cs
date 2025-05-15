@@ -6,11 +6,11 @@
 //   Please follow strict StyleCop, ReSharper, and AI-Refactored code standards for all modifications.
 // </auto-generated>
 
-#nullable enable
-
 namespace AIRefactored.AI.Perception
 {
     using System.Collections.Generic;
+    using AIRefactored.Core;
+    using AIRefactored.Pools;
     using UnityEngine;
 
     /// <summary>
@@ -24,11 +24,7 @@ namespace AIRefactored.AI.Perception
         private const float BoneVisibilityDuration = 0.5f;
         private const float LinecastSlack = 0.15f;
 
-        #endregion
-
-        #region Static
-
-        private static readonly Queue<string> ExpiredKeys = new Queue<string>(8);
+        private static readonly Vector3 EyeOffset = new Vector3(0f, 1.4f, 0f);
 
         #endregion
 
@@ -41,45 +37,36 @@ namespace AIRefactored.AI.Perception
 
         #region Constructor
 
-        /// <summary>
-        /// Initializes a new instance of the <see cref="TrackedEnemyVisibility"/> class.
-        /// </summary>
-        /// <param name="botOrigin">The transform from which visibility is evaluated.</param>
         public TrackedEnemyVisibility(Transform botOrigin)
         {
-            this._botOrigin = botOrigin;
+            _botOrigin = botOrigin;
         }
 
         #endregion
 
-        #region Public API
+        #region Properties
 
         /// <summary>
-        /// Gets a value indicating whether enough body parts are visible to make a confident decision.
+        /// Gets whether the bot has enough visual data to estimate a threat confidently.
         /// </summary>
         public bool HasEnoughData
         {
-            get { return this._visibleBones.Count >= 2; }
+            get { return _visibleBones.Count >= 2; }
         }
 
-        /// <summary>
-        /// Gets a value indicating whether any bones are currently visible.
-        /// </summary>
+        #endregion
+
+        #region Public Methods
+
         public bool CanSeeAny()
         {
-            this.CleanExpired(Time.time);
-            return this._visibleBones.Count > 0;
+            CleanExpired(Time.time);
+            return _visibleBones.Count > 0;
         }
 
-        /// <summary>
-        /// Determines whether a previously seen bone is still shootable (unobstructed).
-        /// </summary>
-        /// <param name="boneName">The name of the bone to test.</param>
-        /// <returns>True if the bone is still visible and shootable; otherwise, false.</returns>
         public bool CanShootTo(string boneName)
         {
-            BoneInfo info;
-            if (!this._visibleBones.TryGetValue(boneName, out info))
+            if (!_visibleBones.TryGetValue(boneName, out BoneInfo info))
             {
                 return false;
             }
@@ -90,118 +77,105 @@ namespace AIRefactored.AI.Perception
                 return false;
             }
 
-            Vector3 eye = this._botOrigin.position + new Vector3(0f, 1.4f, 0f);
+            Vector3 eye = _botOrigin.position + EyeOffset;
             float dist = Vector3.Distance(eye, info.Position);
 
-            RaycastHit hit;
-            return !Physics.Linecast(eye, info.Position, out hit) || hit.distance >= dist - LinecastSlack;
+            return !Physics.Linecast(eye, info.Position, out RaycastHit hit, AIRefactoredLayerMasks.LineOfSightMask)
+                   || hit.distance >= dist - LinecastSlack;
         }
 
-        /// <summary>
-        /// Clears all tracked visibility data.
-        /// </summary>
-        public void Clear()
-        {
-            this._visibleBones.Clear();
-        }
-
-        /// <summary>
-        /// Applies aging to confidence by reducing timestamps.
-        /// </summary>
-        /// <param name="decayAmount">Time to subtract from each visible bone's timestamp.</param>
-        public void DecayConfidence(float decayAmount)
-        {
-            float now = Time.time;
-
-            List<string> keys = new List<string>(this._visibleBones.Keys);
-            for (int i = 0; i < keys.Count; i++)
-            {
-                string key = keys[i];
-                BoneInfo info = this._visibleBones[key];
-                float newTimestamp = Mathf.Max(0f, info.Timestamp - decayAmount);
-                this._visibleBones[key] = new BoneInfo(info.Position, newTimestamp);
-            }
-
-            this.CleanExpired(now);
-        }
-
-        /// <summary>
-        /// Gets number of bones currently visible.
-        /// </summary>
-        public int ExposedBoneCount()
-        {
-            this.CleanExpired(Time.time);
-            return this._visibleBones.Count;
-        }
-
-        /// <summary>
-        /// Returns total bone confidence scaled to [0,1].
-        /// </summary>
-        public float GetOverallConfidence()
-        {
-            this.CleanExpired(Time.time);
-            return Mathf.Clamp01(this._visibleBones.Count / 8f);
-        }
-
-        /// <summary>
-        /// Updates the visibility record for a bone with default visibility weight.
-        /// </summary>
         public void UpdateBoneVisibility(string boneName, Vector3 worldPosition)
         {
-            this._visibleBones[boneName] = new BoneInfo(worldPosition, Time.time);
+            _visibleBones[boneName] = new BoneInfo(worldPosition, Time.time);
         }
 
-        /// <summary>
-        /// Updates the visibility record with optional motion and occlusion bonuses.
-        /// </summary>
-        /// <param name="boneName">Bone name (e.g. "Head", "Spine").</param>
-        /// <param name="worldPosition">Bone world-space location.</param>
-        /// <param name="motionBonus">Optional motion confidence boost [0..1].</param>
-        /// <param name="ambientOcclusionFactor">Optional decay penalty from ambient occlusion [0..1].</param>
         public void UpdateBoneVisibility(string boneName, Vector3 worldPosition, float motionBonus, float ambientOcclusionFactor)
         {
             float now = Time.time;
-            float timestamp = now + Mathf.Clamp(motionBonus, 0f, 0.4f);
-            float decay = Mathf.Lerp(0f, 0.2f, 1f - ambientOcclusionFactor);
-            this._visibleBones[boneName] = new BoneInfo(worldPosition, timestamp - decay);
+            float extra = Mathf.Clamp(motionBonus, 0f, 0.4f);
+            float penalty = Mathf.Lerp(0f, 0.2f, 1f - ambientOcclusionFactor);
+            float timestamp = now + extra - penalty;
+
+            _visibleBones[boneName] = new BoneInfo(worldPosition, timestamp);
+        }
+
+        public void DecayConfidence(float decayAmount)
+        {
+            float now = Time.time;
+            List<string> keys = TempListPool.Rent<string>();
+
+            foreach (KeyValuePair<string, BoneInfo> kv in _visibleBones)
+            {
+                keys.Add(kv.Key);
+            }
+
+            for (int i = 0; i < keys.Count; i++)
+            {
+                string key = keys[i];
+                BoneInfo info = _visibleBones[key];
+                float decayed = Mathf.Max(0f, info.Timestamp - decayAmount);
+                _visibleBones[key] = new BoneInfo(info.Position, decayed);
+            }
+
+            TempListPool.Return(keys);
+            CleanExpired(now);
+        }
+
+        public float GetOverallConfidence()
+        {
+            CleanExpired(Time.time);
+            return Mathf.Clamp01(_visibleBones.Count / 8f);
+        }
+
+        public int ExposedBoneCount()
+        {
+            CleanExpired(Time.time);
+            return _visibleBones.Count;
+        }
+
+        public void Clear()
+        {
+            _visibleBones.Clear();
         }
 
         #endregion
 
-        #region Private Methods
+        #region Internal Methods
 
         private void CleanExpired(float now)
         {
-            ExpiredKeys.Clear();
+            List<string> expired = TempListPool.Rent<string>();
 
-            foreach (KeyValuePair<string, BoneInfo> kvp in this._visibleBones)
+            foreach (KeyValuePair<string, BoneInfo> kv in _visibleBones)
             {
-                if (now - kvp.Value.Timestamp > BoneVisibilityDuration)
+                if (now - kv.Value.Timestamp > BoneVisibilityDuration)
                 {
-                    ExpiredKeys.Enqueue(kvp.Key);
+                    expired.Add(kv.Key);
                 }
             }
 
-            while (ExpiredKeys.Count > 0)
+            for (int i = 0; i < expired.Count; i++)
             {
-                this._visibleBones.Remove(ExpiredKeys.Dequeue());
+                _visibleBones.Remove(expired[i]);
             }
+
+            TempListPool.Return(expired);
         }
 
         #endregion
 
-        #region Private Structs
+        #region Structs
 
         private struct BoneInfo
         {
-            public BoneInfo(Vector3 position, float timestamp)
-            {
-                this.Position = position;
-                this.Timestamp = timestamp;
-            }
-
             public readonly Vector3 Position;
             public readonly float Timestamp;
+
+            public BoneInfo(Vector3 pos, float ts)
+            {
+                Position = pos;
+                Timestamp = ts;
+            }
         }
 
         #endregion

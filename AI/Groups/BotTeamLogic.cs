@@ -3,10 +3,8 @@
 //   Licensed under the MIT License. See LICENSE in the repository root for more information.
 //
 //   THIS FILE IS SYSTEMATICALLY MANAGED.
-//   Please follow strict StyleCop, ReSharper, and AI-Refactored code standards for all modifications.
+//   Failures in AIRefactored logic must always trigger safe fallback to EFT base AI.
 // </auto-generated>
-
-#nullable enable
 
 namespace AIRefactored.AI.Groups
 {
@@ -17,6 +15,7 @@ namespace AIRefactored.AI.Groups
     using AIRefactored.AI.Core;
     using AIRefactored.AI.Helpers;
     using AIRefactored.Core;
+    using AIRefactored.Runtime;
     using EFT;
     using UnityEngine;
     using static AIRefactored.AI.Missions.BotMissionController;
@@ -30,7 +29,7 @@ namespace AIRefactored.AI.Groups
         #region Constants
 
         private const float RegroupJitterRadius = 1.5f;
-        private const float RegroupThreshold = 2.5f;
+        private const float RegroupThresholdSqr = 6.25f;
 
         #endregion
 
@@ -44,13 +43,14 @@ namespace AIRefactored.AI.Groups
 
         #region Constructor
 
-        /// <summary>
-        /// Initializes a new instance of the <see cref="BotTeamLogic"/> class.
-        /// </summary>
-        /// <param name="bot">The controlling bot owner.</param>
         public BotTeamLogic(BotOwner bot)
         {
-            this._bot = bot ?? throw new ArgumentNullException(nameof(bot));
+            if (!EFTPlayerUtil.IsValidBotOwner(bot))
+            {
+                throw new ArgumentException("[BotTeamLogic] Invalid or non-AI bot owner.");
+            }
+
+            _bot = bot;
         }
 
         #endregion
@@ -59,27 +59,24 @@ namespace AIRefactored.AI.Groups
 
         public static void AddEnemy(BotOwner bot, IPlayer target)
         {
-            if (bot == null || bot.IsDead || target == null || bot.BotsGroup == null || bot.Memory == null)
+            if (!EFTPlayerUtil.IsValidBotOwner(bot) || target == null || bot.BotsGroup == null)
             {
                 return;
             }
 
-            Player? resolved = EFTPlayerUtil.ResolvePlayerById(target.ProfileId);
+            Player resolved = EFTPlayerUtil.ResolvePlayerById(target.ProfileId);
             if (!EFTPlayerUtil.IsValid(resolved))
             {
                 return;
             }
 
-            IPlayer? safe = EFTPlayerUtil.AsSafeIPlayer(resolved);
-            if (safe == null)
-            {
-                return;
-            }
+            IPlayer safe = EFTPlayerUtil.AsSafeIPlayer(resolved);
+            int count = bot.BotsGroup.MembersCount;
 
-            for (int i = 0; i < bot.BotsGroup.MembersCount; i++)
+            for (int i = 0; i < count; i++)
             {
-                BotOwner? mate = bot.BotsGroup.Member(i);
-                if (mate != null && mate != bot && !mate.IsDead && mate.BotsGroup != null && mate.Memory != null)
+                BotOwner mate = bot.BotsGroup.Member(i);
+                if (EFTPlayerUtil.IsValidBotOwner(mate) && mate != bot)
                 {
                     ForceRegisterEnemy(mate, safe);
                 }
@@ -88,35 +85,30 @@ namespace AIRefactored.AI.Groups
 
         public static void BroadcastMissionType(BotOwner bot, MissionType mission)
         {
-            if (bot == null || bot.IsDead || FikaHeadlessDetector.IsHeadless)
+            if (!EFTPlayerUtil.IsValidBotOwner(bot) || bot.BotsGroup == null)
             {
                 return;
             }
 
-            BotsGroup? group = bot.BotsGroup;
-            if (group == null)
+            int count = bot.BotsGroup.MembersCount;
+            for (int i = 0; i < count; i++)
             {
-                return;
-            }
-
-            for (int i = 0; i < group.MembersCount; i++)
-            {
-                BotOwner? mate = group.Member(i);
-                if (mate != null && mate != bot && !mate.IsDead && mate.GetPlayer?.IsAI == true)
+                BotOwner mate = bot.BotsGroup.Member(i);
+                if (EFTPlayerUtil.IsValidBotOwner(mate) && mate != bot && mate.BotTalk != null)
                 {
-                    mate.BotTalk?.TrySay(EPhraseTrigger.Cooperation);
+                    mate.BotTalk.TrySay(EPhraseTrigger.Cooperation);
                 }
             }
         }
 
         public void BroadcastFallback(Vector3 retreatPoint)
         {
-            foreach (KeyValuePair<BotOwner, CombatStateMachine> entry in this._combatMap)
+            foreach (var pair in _combatMap)
             {
-                BotOwner mate = entry.Key;
-                CombatStateMachine fsm = entry.Value;
+                BotOwner mate = pair.Key;
+                CombatStateMachine fsm = pair.Value;
 
-                if (mate != null && mate != this._bot && !mate.IsDead)
+                if (EFTPlayerUtil.IsValidBotOwner(mate) && mate != _bot && fsm != null)
                 {
                     TriggerDelayedFallback(fsm, retreatPoint);
                 }
@@ -125,7 +117,7 @@ namespace AIRefactored.AI.Groups
 
         public void CoordinateMovement()
         {
-            if (this._bot.IsDead || this._teammates.Count == 0)
+            if (_bot == null || _bot.IsDead || _teammates.Count == 0)
             {
                 return;
             }
@@ -133,10 +125,10 @@ namespace AIRefactored.AI.Groups
             Vector3 center = Vector3.zero;
             int count = 0;
 
-            for (int i = 0; i < this._teammates.Count; i++)
+            for (int i = 0; i < _teammates.Count; i++)
             {
-                BotOwner mate = this._teammates[i];
-                if (mate != null && !mate.IsDead)
+                BotOwner mate = _teammates[i];
+                if (EFTPlayerUtil.IsValidBotOwner(mate))
                 {
                     center += mate.Position;
                     count++;
@@ -149,38 +141,35 @@ namespace AIRefactored.AI.Groups
             }
 
             center /= count;
-
             Vector3 jitter = Random.insideUnitSphere * RegroupJitterRadius;
             jitter.y = 0f;
 
             Vector3 target = center + jitter;
-            float distSqr = (this._bot.Position - target).sqrMagnitude;
-
-            if (distSqr > RegroupThreshold * RegroupThreshold)
+            if ((_bot.Position - target).sqrMagnitude > RegroupThresholdSqr)
             {
-                BotMovementHelper.SmoothMoveTo(this._bot, target, false);
+                BotMovementHelper.SmoothMoveTo(_bot, target, false);
             }
         }
 
         public void InjectCombatState(BotOwner mate, CombatStateMachine fsm)
         {
-            if (mate != null && fsm != null && mate != this._bot && !this._combatMap.ContainsKey(mate))
+            if (EFTPlayerUtil.IsValidBotOwner(mate) && fsm != null && mate != _bot && !_combatMap.ContainsKey(mate))
             {
-                this._combatMap[mate] = fsm;
+                _combatMap.Add(mate, fsm);
             }
         }
 
         public void SetTeammates(List<BotOwner> allBots)
         {
-            this._teammates.Clear();
+            _teammates.Clear();
 
-            Player? player = this._bot.GetPlayer;
-            if (player?.Profile?.Info == null)
+            Player self = _bot.GetPlayer;
+            if (self?.Profile?.Info == null)
             {
                 return;
             }
 
-            string? groupId = player.Profile.Info.GroupId;
+            string groupId = self.Profile.Info.GroupId;
             if (string.IsNullOrEmpty(groupId))
             {
                 return;
@@ -189,13 +178,11 @@ namespace AIRefactored.AI.Groups
             for (int i = 0; i < allBots.Count; i++)
             {
                 BotOwner other = allBots[i];
-                if (other != null && other != this._bot && !other.IsDead)
+                if (EFTPlayerUtil.IsValidBotOwner(other) &&
+                    other != _bot &&
+                    other.GetPlayer?.Profile?.Info?.GroupId == groupId)
                 {
-                    Player? otherPlayer = other.GetPlayer;
-                    if (otherPlayer?.Profile?.Info?.GroupId == groupId)
-                    {
-                        this._teammates.Add(other);
-                    }
+                    _teammates.Add(other);
                 }
             }
         }
@@ -207,22 +194,18 @@ namespace AIRefactored.AI.Groups
                 return;
             }
 
-            Player? resolved = EFTPlayerUtil.ResolvePlayerById(enemy.ProfileId);
+            Player resolved = EFTPlayerUtil.ResolvePlayerById(enemy.ProfileId);
             if (!EFTPlayerUtil.IsValid(resolved))
             {
                 return;
             }
 
-            IPlayer? safe = EFTPlayerUtil.AsSafeIPlayer(resolved);
-            if (safe == null)
-            {
-                return;
-            }
+            IPlayer safe = EFTPlayerUtil.AsSafeIPlayer(resolved);
 
-            for (int i = 0; i < this._teammates.Count; i++)
+            for (int i = 0; i < _teammates.Count; i++)
             {
-                BotOwner mate = this._teammates[i];
-                if (mate != null && !mate.IsDead)
+                BotOwner mate = _teammates[i];
+                if (EFTPlayerUtil.IsValidBotOwner(mate))
                 {
                     ForceRegisterEnemy(mate, safe);
                 }
@@ -235,29 +218,36 @@ namespace AIRefactored.AI.Groups
 
         private static void ForceRegisterEnemy(BotOwner receiver, IPlayer enemy)
         {
-            if (receiver == null || receiver.IsDead || enemy == null)
-            {
-                return;
-            }
-
-            if (!receiver.BotsGroup.IsEnemy(enemy))
+            if (receiver.BotsGroup != null && !receiver.BotsGroup.IsEnemy(enemy))
             {
                 receiver.BotsGroup.AddEnemy(enemy, EBotEnemyCause.zryachiyLogic);
             }
 
             if (!receiver.EnemiesController.EnemyInfos.ContainsKey(enemy))
             {
-                BotSettingsClass settings = new BotSettingsClass(enemy as Player, receiver.BotsGroup, EBotEnemyCause.zryachiyLogic);
-                receiver.Memory.AddEnemy(enemy, settings, false);
+                var settings = new BotSettingsClass((Player)enemy, receiver.BotsGroup, EBotEnemyCause.zryachiyLogic);
+                receiver.Memory?.AddEnemy(enemy, settings, false);
             }
         }
 
         private static void TriggerDelayedFallback(CombatStateMachine fsm, Vector3 point)
         {
+            if (fsm == null)
+            {
+                return;
+            }
+
             Task.Run(async () =>
             {
-                await Task.Delay(Random.Range(150, 400));
-                fsm.TriggerFallback(point);
+                try
+                {
+                    await Task.Delay(Random.Range(150, 400));
+                    fsm.TriggerFallback(point);
+                }
+                catch (Exception ex)
+                {
+                    Plugin.LoggerInstance.LogError("[BotTeamLogic] Error in fallback delay: " + ex);
+                }
             });
         }
 

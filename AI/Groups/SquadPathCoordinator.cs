@@ -3,10 +3,8 @@
 //   Licensed under the MIT License. See LICENSE in the repository root for more information.
 //
 //   THIS FILE IS SYSTEMATICALLY MANAGED.
-//   Please follow strict StyleCop, ReSharper, and AI-Refactored code standards for all modifications.
+//   Failures in AIRefactored logic must always trigger safe fallback to EFT base AI.
 // </auto-generated>
-
-#nullable enable
 
 namespace AIRefactored.AI.Groups
 {
@@ -30,56 +28,71 @@ namespace AIRefactored.AI.Groups
 
         #region Fields
 
-        private BotOwner? bot;
-        private BotsGroup? group;
-        private Vector3 cachedOffset = Vector3.zero;
-        private int lastGroupSize = -1;
-        private bool offsetInitialized;
+        private BotOwner _bot;
+        private BotsGroup _group;
+        private Vector3 _cachedOffset;
+        private int _lastGroupSize;
+        private bool _offsetInitialized;
+
+        #endregion
+
+        #region Initialization
+
+        /// <summary>
+        /// Initializes the offset logic for the given bot.
+        /// </summary>
+        public void Initialize(BotComponentCache cache)
+        {
+            if (cache == null || cache.Bot == null || cache.Bot.IsDead)
+            {
+                return;
+            }
+
+            _bot = cache.Bot;
+            _group = _bot.BotsGroup;
+
+            if (_group == null)
+            {
+                _bot = null;
+                return;
+            }
+
+            _cachedOffset = Vector3.zero;
+            _offsetInitialized = false;
+            _lastGroupSize = -1;
+        }
 
         #endregion
 
         #region Public Methods
 
         /// <summary>
-        /// Initializes the squad path coordinator for the given bot cache.
+        /// Returns an offset-adjusted destination to reduce clumping.
         /// </summary>
-        /// <param name="cache">The bot component cache.</param>
-        public void Initialize(BotComponentCache cache)
-        {
-            this.bot = cache.Bot;
-            this.group = this.bot?.BotsGroup;
-            this.offsetInitialized = false;
-        }
-
-        /// <summary>
-        /// Returns a spacing offset applied to a squad-shared destination, unique to this bot.
-        /// </summary>
-        /// <param name="sharedDestination">The shared squad destination.</param>
         public Vector3 ApplyOffsetTo(Vector3 sharedDestination)
         {
-            return sharedDestination + this.GetCurrentOffset();
+            return sharedDestination + GetCurrentOffset();
         }
 
         /// <summary>
-        /// Gets the cached or recalculated squad offset for this bot.
+        /// Gets the current assigned formation offset.
         /// </summary>
         public Vector3 GetCurrentOffset()
         {
-            if (this.bot == null || this.group == null)
+            if (_bot == null || _group == null)
             {
                 return Vector3.zero;
             }
 
-            int currentSize = this.group.MembersCount;
-
-            if (!this.offsetInitialized || currentSize != this.lastGroupSize)
+            int currentSize = _group.MembersCount;
+            if (!_offsetInitialized || currentSize != _lastGroupSize)
             {
-                this.cachedOffset = this.ComputeOffset();
-                this.offsetInitialized = true;
-                this.lastGroupSize = currentSize;
+                _cachedOffset = ComputeOffset();
+                _offsetInitialized = true;
+                _lastGroupSize = currentSize;
             }
 
-            return this.cachedOffset;
+            return _cachedOffset;
         }
 
         #endregion
@@ -88,36 +101,52 @@ namespace AIRefactored.AI.Groups
 
         private Vector3 ComputeOffset()
         {
-            if (this.bot == null || this.group == null || this.group.MembersCount < 2)
+            if (_bot == null || _group == null || _bot.IsDead || _group.MembersCount < 2)
             {
                 return Vector3.zero;
             }
 
-            int botIndex = GetBotIndexInGroup(this.bot, this.group);
-            if (botIndex < 0)
+            int index = GetBotIndexInGroup(_bot, _group);
+            if (index < 0)
             {
                 return Vector3.zero;
             }
 
-            int squadSize = this.group.MembersCount;
+            string profileId = _bot.ProfileId;
+            if (string.IsNullOrEmpty(profileId))
+            {
+                return Vector3.zero;
+            }
 
-            int seed = this.bot.ProfileId.GetHashCode() ^ squadSize;
+            int squadSize = _group.MembersCount;
+            int seed = unchecked(profileId.GetHashCode() ^ (squadSize * 397));
             Random.InitState(seed);
 
-            float spacing = Mathf.Clamp(BaseSpacing + Random.Range(-0.4f, 0.4f), MinSpacing, MaxSpacing);
+            float baseNoise = Random.Range(-0.4f, 0.4f);
+            float spacing = Mathf.Clamp(BaseSpacing + baseNoise, MinSpacing, MaxSpacing);
+
             float angleStep = 360f / squadSize;
-            float angle = botIndex * angleStep + Random.Range(-8f, 8f);
+            float angle = (index * angleStep) + Random.Range(-8f, 8f);
             float radians = angle * Mathf.Deg2Rad;
 
-            return new Vector3(Mathf.Cos(radians), 0f, Mathf.Sin(radians)) * spacing;
+            float x = Mathf.Cos(radians) * spacing;
+            float z = Mathf.Sin(radians) * spacing;
+
+            return new Vector3(x, 0f, z);
         }
 
         private static int GetBotIndexInGroup(BotOwner bot, BotsGroup group)
         {
-            for (int i = 0; i < group.MembersCount; i++)
+            if (bot == null || group == null || string.IsNullOrEmpty(bot.ProfileId))
             {
-                BotOwner? member = group.Member(i);
-                if (member != null && member.ProfileId == bot.ProfileId)
+                return -1;
+            }
+
+            int count = group.MembersCount;
+            for (int i = 0; i < count; i++)
+            {
+                BotOwner member = group.Member(i);
+                if (member != null && !member.IsDead && member.ProfileId == bot.ProfileId)
                 {
                     return i;
                 }

@@ -6,13 +6,12 @@
 //   Please follow strict StyleCop, ReSharper, and AI-Refactored code standards for all modifications.
 // </auto-generated>
 
-#nullable enable
-
 namespace AIRefactored.AI.Optimization
 {
     using System.Collections.Generic;
     using AIRefactored.AI.Core;
     using AIRefactored.AI.Helpers;
+    using AIRefactored.AI.Memory;
     using EFT;
     using UnityEngine;
 
@@ -24,108 +23,106 @@ namespace AIRefactored.AI.Optimization
     {
         private readonly Dictionary<string, BotStateSnapshot> _cache = new Dictionary<string, BotStateSnapshot>(64);
 
-        /// <summary>
-        /// Captures the bot's personality state into the cache at mission start.
-        /// </summary>
         public void CacheBotOwnerState(BotOwner botOwner)
         {
-            if (!IsAIBot(botOwner) || botOwner.Profile == null)
+            if (!IsValidBot(botOwner))
             {
                 return;
             }
 
             string id = botOwner.Profile.Id;
-            if (string.IsNullOrEmpty(id) || this._cache.ContainsKey(id))
+            if (!_cache.ContainsKey(id))
             {
-                return;
+                _cache[id] = CaptureSnapshot(botOwner);
             }
-
-            this._cache[id] = this.CaptureSnapshot(botOwner);
         }
 
-        /// <summary>
-        /// Checks for personality state changes and applies behavior adjustments if needed.
-        /// </summary>
         public void UpdateBotOwnerStateIfNeeded(BotOwner botOwner)
         {
-            if (!IsAIBot(botOwner) || botOwner.Profile == null)
+            if (!IsValidBot(botOwner))
             {
                 return;
             }
 
             string id = botOwner.Profile.Id;
-            if (string.IsNullOrEmpty(id))
-            {
-                return;
-            }
+            BotStateSnapshot current = CaptureSnapshot(botOwner);
 
-            BotStateSnapshot current = this.CaptureSnapshot(botOwner);
-
-            if (this._cache.TryGetValue(id, out BotStateSnapshot previous))
+            if (_cache.TryGetValue(id, out BotStateSnapshot previous))
             {
                 if (!previous.Equals(current))
                 {
-                    this._cache[id] = current;
-                    this.ApplyStateChange(botOwner, current);
+                    _cache[id] = current;
+                    ApplyStateChange(botOwner, current);
                 }
             }
             else
             {
-                this._cache[id] = current;
+                _cache[id] = current;
             }
         }
 
-        private static bool IsAIBot(BotOwner? bot)
+        private static bool IsValidBot(BotOwner bot)
         {
-            Player? player = bot?.GetPlayer;
-            return player != null && player.IsAI && !player.IsYourPlayer;
+            return bot != null &&
+                   bot.Profile != null &&
+                   bot.GetPlayer != null &&
+                   bot.GetPlayer.IsAI &&
+                   !bot.GetPlayer.IsYourPlayer;
         }
 
-        private BotStateSnapshot CaptureSnapshot(BotOwner botOwner)
+        private static BotStateSnapshot CaptureSnapshot(BotOwner botOwner)
         {
-            BotPersonalityProfile? profile = BotRegistry.Get(botOwner.ProfileId);
-            BotComponentCache? cache = BotCacheUtility.GetCache(botOwner);
-            float composure = cache?.PanicHandler?.GetComposureLevel() ?? 1f;
+            BotPersonalityProfile profile = BotRegistry.Get(botOwner.ProfileId);
+            BotComponentCache cache = BotCacheUtility.GetCache(botOwner);
 
-            if (profile == null)
+            float aggression = 0.5f;
+            float caution = 0.5f;
+            float composure = 1f;
+            bool isSneaky = false;
+
+            if (profile != null)
             {
-                return new BotStateSnapshot(0.5f, 0.5f, composure, false);
+                aggression = profile.AggressionLevel;
+                caution = profile.Caution;
+                isSneaky = profile.IsSilentHunter;
             }
 
-            return new BotStateSnapshot(
-                profile.AggressionLevel,
-                profile.Caution,
-                composure,
-                profile.IsSilentHunter);
+            if (cache != null && cache.PanicHandler != null)
+            {
+                composure = cache.PanicHandler.GetComposureLevel();
+            }
+
+            return new BotStateSnapshot(aggression, caution, composure, isSneaky);
         }
 
         private void ApplyStateChange(BotOwner botOwner, BotStateSnapshot snapshot)
         {
-            bool isAggressive = snapshot.Aggression > 0.7f && snapshot.Composure > 0.8f;
-            bool isCautious = snapshot.Caution > 0.6f || snapshot.Composure < 0.35f;
+            bool aggressive = snapshot.Aggression > 0.7f && snapshot.Composure > 0.8f;
+            bool cautious = snapshot.Caution > 0.6f || snapshot.Composure < 0.35f;
 
-            if (isAggressive)
+            if (aggressive)
             {
-                this.TriggerZoneShift(botOwner, advance: true);
+                TriggerZoneShift(botOwner, true);
             }
-            else if (isCautious)
+            else if (cautious)
             {
-                this.TriggerZoneShift(botOwner, advance: false);
+                TriggerZoneShift(botOwner, false);
             }
             else
             {
-                this.TriggerZoneShift(botOwner, advance: null);
+                TriggerZoneShift(botOwner, null);
             }
         }
 
-        private void TriggerZoneShift(BotOwner botOwner, bool? advance)
+        private static void TriggerZoneShift(BotOwner botOwner, bool? advance)
         {
-            if (botOwner.Transform == null)
+            if (botOwner?.Transform == null)
             {
                 return;
             }
 
             Vector3 shift = Vector3.zero;
+
             if (advance == true)
             {
                 shift = botOwner.Transform.forward * 8f;
@@ -151,25 +148,25 @@ namespace AIRefactored.AI.Optimization
 
             public BotStateSnapshot(float aggression, float caution, float composure, bool isSneaky)
             {
-                this.Aggression = aggression;
-                this.Caution = caution;
-                this.Composure = composure;
-                this.IsSneaky = isSneaky;
+                Aggression = aggression;
+                Caution = caution;
+                Composure = composure;
+                IsSneaky = isSneaky;
             }
 
-            public override bool Equals(object? obj)
+            public override bool Equals(object obj)
             {
-                if (obj == null || !(obj is BotStateSnapshot))
+                if (!(obj is BotStateSnapshot))
                 {
                     return false;
                 }
 
                 BotStateSnapshot other = (BotStateSnapshot)obj;
 
-                return Mathf.Abs(this.Aggression - other.Aggression) < 0.05f &&
-                       Mathf.Abs(this.Caution - other.Caution) < 0.05f &&
-                       Mathf.Abs(this.Composure - other.Composure) < 0.05f &&
-                       this.IsSneaky == other.IsSneaky;
+                return Mathf.Abs(Aggression - other.Aggression) < 0.05f &&
+                       Mathf.Abs(Caution - other.Caution) < 0.05f &&
+                       Mathf.Abs(Composure - other.Composure) < 0.05f &&
+                       IsSneaky == other.IsSneaky;
             }
 
             public override int GetHashCode()
@@ -177,10 +174,10 @@ namespace AIRefactored.AI.Optimization
                 unchecked
                 {
                     int hash = 17;
-                    hash = (hash * 23) + this.Aggression.GetHashCode();
-                    hash = (hash * 23) + this.Caution.GetHashCode();
-                    hash = (hash * 23) + this.Composure.GetHashCode();
-                    hash = (hash * 23) + this.IsSneaky.GetHashCode();
+                    hash = (hash * 31) + Aggression.GetHashCode();
+                    hash = (hash * 31) + Caution.GetHashCode();
+                    hash = (hash * 31) + Composure.GetHashCode();
+                    hash = (hash * 31) + IsSneaky.GetHashCode();
                     return hash;
                 }
             }

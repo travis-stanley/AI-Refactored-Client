@@ -3,10 +3,8 @@
 //   Licensed under the MIT License. See LICENSE in the repository root for more information.
 //
 //   THIS FILE IS SYSTEMATICALLY MANAGED.
-//   Please follow strict StyleCop, ReSharper, and AI-Refactored code standards for all modifications.
+//   Failures in AIRefactored logic must always trigger safe fallback to EFT base AI.
 // </auto-generated>
-
-#nullable enable
 
 namespace AIRefactored.AI.Missions.Subsystems
 {
@@ -17,6 +15,7 @@ namespace AIRefactored.AI.Missions.Subsystems
     using AIRefactored.AI.Helpers;
     using AIRefactored.AI.Optimization;
     using AIRefactored.Core;
+    using AIRefactored.Pools;
     using AIRefactored.Runtime;
     using BepInEx.Logging;
     using EFT;
@@ -25,182 +24,198 @@ namespace AIRefactored.AI.Missions.Subsystems
     using UnityEngine;
 
     /// <summary>
-    /// Evaluates combat, squad alignment, loot threshold, and stuck logic
-    /// to guide mission reassessment and fallback behavior.
+    /// Evaluates combat, squad cohesion, loot status, and fallback triggers to adjust bot missions.
     /// </summary>
     public sealed class MissionEvaluator
     {
+        #region Constants
+
         private const int LootItemCountThreshold = 40;
         private const float SquadCohesionRange = 10f;
         private const float StuckCooldown = 30f;
         private const float StuckDuration = 25f;
+        private const float MinMoveThreshold = 0.3f;
 
-        private static readonly ManualLogSource Logger = AIRefactoredController.Logger;
-        private static readonly List<BotOwner> TeammateBuffer = new List<BotOwner>(16);
-        private static readonly List<Item> ItemBuffer = new List<Item>(64);
+        #endregion
+
+        #region Fields
+
+        private static readonly ManualLogSource Logger = Plugin.LoggerInstance;
 
         private readonly BotOwner _bot;
         private readonly BotComponentCache _cache;
-        private readonly BotGroupSyncCoordinator? _group;
+        private readonly BotGroupSyncCoordinator _group;
         private readonly BotPersonalityProfile _profile;
 
         private int _fallbackAttempts;
         private float _lastMoveTime;
         private float _stuckSince;
+        private float _lastStuckFallbackTime;
         private Vector3 _lastPos;
 
-        /// <summary>
-        /// Initializes a new instance of the <see cref="MissionEvaluator"/> class.
-        /// </summary>
-        /// <param name="bot">Bot owner reference.</param>
-        /// <param name="cache">Bot component cache reference.</param>
+        #endregion
+
+        #region Constructor
+
         public MissionEvaluator(BotOwner bot, BotComponentCache cache)
         {
-            this._bot = bot ?? throw new ArgumentNullException(nameof(bot));
-            this._cache = cache ?? throw new ArgumentNullException(nameof(cache));
-            this._profile = BotRegistry.Get(bot.Profile.Id);
-            this._group = BotCacheUtility.GetGroupSync(cache);
-            this._lastPos = bot.Position;
-            this._lastMoveTime = Time.time;
+            if (!EFTPlayerUtil.IsValidBotOwner(bot) || cache == null)
+            {
+                throw new ArgumentException("[MissionEvaluator] Invalid bot or cache.");
+            }
+
+            _bot = bot;
+            _cache = cache;
+            _profile = BotRegistry.Get(bot.ProfileId);
+            _group = BotCacheUtility.GetGroupSync(cache);
+            _lastPos = bot.Position;
+            _lastMoveTime = Time.time;
         }
 
-        /// <summary>
-        /// Checks if the bot's group is sufficiently cohesive.
-        /// </summary>
+        #endregion
+
+        #region Mission Checks
+
         public bool IsGroupAligned()
         {
-            if (this._group == null)
-            {
-                return true;
-            }
+            if (_group == null) return true;
 
-            TeammateBuffer.Clear();
-            TeammateBuffer.AddRange(this._group.GetTeammates());
+            IReadOnlyList<BotOwner> squad = _group.GetTeammates();
+            if (squad == null || squad.Count == 0) return true;
 
-            int near = 0;
-            for (int i = 0; i < TeammateBuffer.Count; i++)
+            int nearby = 0;
+            Vector3 selfPos = _bot.Position;
+            float sqrRange = SquadCohesionRange * SquadCohesionRange;
+
+            for (int i = 0; i < squad.Count; i++)
             {
-                BotOwner mate = TeammateBuffer[i];
-                if (mate != null && Vector3.Distance(mate.Position, this._bot.Position) < SquadCohesionRange)
+                BotOwner mate = squad[i];
+                if (mate != null && !mate.IsDead && (mate.Position - selfPos).sqrMagnitude <= sqrRange)
                 {
-                    near++;
+                    nearby++;
                 }
             }
 
-            int required = Mathf.CeilToInt(TeammateBuffer.Count * 0.6f);
-            return near >= required;
+            int required = Mathf.CeilToInt(squad.Count * 0.6f);
+            return nearby >= required;
         }
 
-        /// <summary>
-        /// Determines whether the bot should extract early based on loot and caution level.
-        /// </summary>
         public bool ShouldExtractEarly()
         {
-            float threshold = this._profile.RetreatThreshold;
-            Item? backpack = this._bot.GetPlayer?.Inventory?.Equipment?.GetSlot(EquipmentSlot.Backpack)?.ContainedItem;
-            if (backpack == null)
+            if (_profile.IsFrenzied || _profile.Caution <= 0.6f) return false;
+
+            Player player = _bot.GetPlayer;
+            if (player?.Inventory?.Equipment == null) return false;
+
+            Slot backpackSlot = player.Inventory.Equipment.GetSlot(EquipmentSlot.Backpack);
+            if (backpackSlot?.ContainedItem == null) return false;
+
+            List<Item> items = TempListPool.Rent<Item>();
+            try
             {
-                return false;
+                items.AddRange(backpackSlot.ContainedItem.GetAllItems());
+                float fullness = (float)items.Count / LootItemCountThreshold;
+                return fullness >= _profile.RetreatThreshold;
             }
-
-            ItemBuffer.Clear();
-            ItemBuffer.AddRange(backpack.GetAllItems());
-
-            int count = 0;
-            for (int i = 0; i < ItemBuffer.Count; i++)
+            finally
             {
-                if (ItemBuffer[i] != null)
-                {
-                    count++;
-                }
+                TempListPool.Return(items);
             }
-
-            float fullness = (float)count / LootItemCountThreshold;
-            return fullness >= threshold && this._profile.Caution > 0.6f && !this._profile.IsFrenzied;
         }
 
-        /// <summary>
-        /// Attempts to navigate the bot toward an extraction point.
-        /// </summary>
         public void TryExtract()
         {
             try
             {
-                ExfiltrationPoint? closest = null;
-                float minDist = float.MaxValue;
-
                 ExfiltrationPoint[] allPoints = GameObject.FindObjectsOfType<ExfiltrationPoint>();
+                if (allPoints == null || allPoints.Length == 0) return;
+
+                ExfiltrationPoint closest = null;
+                float minDist = float.MaxValue;
+                Vector3 myPos = _bot.Position;
+
                 for (int i = 0; i < allPoints.Length; i++)
                 {
                     ExfiltrationPoint point = allPoints[i];
-                    if (point == null || point.Status != EExfiltrationStatus.RegularMode)
+                    if (point != null && point.Status == EExfiltrationStatus.RegularMode)
                     {
-                        continue;
-                    }
-
-                    float dist = Vector3.Distance(this._bot.Position, point.transform.position);
-                    if (dist < minDist)
-                    {
-                        minDist = dist;
-                        closest = point;
+                        float dist = (point.transform.position - myPos).sqrMagnitude;
+                        if (dist < minDist)
+                        {
+                            minDist = dist;
+                            closest = point;
+                        }
                     }
                 }
 
                 if (closest != null)
                 {
-                    BotMovementHelper.SmoothMoveTo(this._bot, closest.transform.position);
-                    this.Say(EPhraseTrigger.ExitLocated);
+                    BotMovementHelper.SmoothMoveTo(_bot, closest.transform.position);
+                    Say(EPhraseTrigger.ExitLocated);
                 }
             }
             catch (Exception ex)
             {
-                Logger.LogWarning($"[MissionEvaluator] Extraction failed: {ex.Message}");
+                Logger.LogWarning("[MissionEvaluator] Extraction failed: " + ex.Message);
             }
         }
 
-        /// <summary>
-        /// Updates stuck detection and attempts fallback movement if necessary.
-        /// </summary>
+        #endregion
+
+        #region Stuck Detection
+
         public void UpdateStuckCheck(float time)
         {
-            float moved = Vector3.Distance(this._bot.Position, this._lastPos);
-            if (moved > 0.3f)
+            float moved = Vector3.Distance(_bot.Position, _lastPos);
+
+            if (moved > MinMoveThreshold)
             {
-                this._lastPos = this._bot.Position;
-                this._lastMoveTime = time;
-                this._fallbackAttempts = 0;
+                _lastPos = _bot.Position;
+                _lastMoveTime = time;
+                _fallbackAttempts = 0;
                 return;
             }
 
-            if (time - this._lastMoveTime > StuckDuration && time - this._stuckSince > StuckCooldown && this._fallbackAttempts < 2)
-            {
-                this._stuckSince = time;
-                this._fallbackAttempts++;
+            bool cooldownPassed = time - _stuckSince > StuckCooldown;
+            bool stuckLongEnough = time - _lastMoveTime > StuckDuration;
+            bool notRecentlyFellback = time - _lastStuckFallbackTime > StuckCooldown;
 
-                Vector3 lookDirection = this._bot.LookDirection;
-                Vector3? fallback = HybridFallbackResolver.GetBestRetreatPoint(this._bot, lookDirection);
+            if (stuckLongEnough && cooldownPassed && notRecentlyFellback && _fallbackAttempts < 2)
+            {
+                _stuckSince = time;
+                _lastStuckFallbackTime = time;
+                _fallbackAttempts++;
+
+                Vector3 dir = _bot.LookDirection;
+                Vector3? fallback = HybridFallbackResolver.GetBestRetreatPoint(_bot, dir);
                 if (fallback.HasValue)
                 {
-                    string nickname = this._bot.Profile?.Info?.Nickname ?? "Unknown";
-                    Logger.LogInfo($"[MissionEvaluator] {nickname} fallback #{this._fallbackAttempts} → {fallback.Value}");
-                    BotMovementHelper.SmoothMoveTo(this._bot, fallback.Value);
+                    Logger.LogDebug("[MissionEvaluator] " + (_bot.Profile?.Info?.Nickname ?? "Unknown") +
+                                    " fallback #" + _fallbackAttempts + " → " + fallback.Value);
+                    BotMovementHelper.SmoothMoveTo(_bot, fallback.Value);
                 }
             }
         }
+
+        #endregion
+
+        #region Utilities
 
         private void Say(EPhraseTrigger phrase)
         {
             try
             {
-                if (!FikaHeadlessDetector.IsHeadless)
+                if (!FikaHeadlessDetector.IsHeadless && _bot?.GetPlayer != null)
                 {
-                    this._bot.GetPlayer?.Say(phrase);
+                    _bot.GetPlayer.Say(phrase);
                 }
             }
             catch (Exception ex)
             {
-                Logger.LogWarning($"[MissionEvaluator] VO failed: {ex.Message}");
+                Logger.LogWarning("[MissionEvaluator] VO failed: " + ex.Message);
             }
         }
+
+        #endregion
     }
 }

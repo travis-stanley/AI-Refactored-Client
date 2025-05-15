@@ -3,17 +3,15 @@
 //   Licensed under the MIT License. See LICENSE in the repository root for more information.
 //
 //   THIS FILE IS SYSTEMATICALLY MANAGED.
-//   Please follow strict StyleCop, ReSharper, and AI-Refactored code standards for all modifications.
+//   Failures in AIRefactored logic must always trigger safe fallback to EFT base AI.
 // </auto-generated>
-
-#nullable enable
 
 namespace AIRefactored.AI.Movement
 {
     using System;
-    using AIRefactored.AI.Components;
     using AIRefactored.AI.Core;
     using AIRefactored.Core;
+    using BepInEx.Logging;
     using EFT;
     using UnityEngine;
 
@@ -23,123 +21,166 @@ namespace AIRefactored.AI.Movement
     /// </summary>
     public sealed class BotLookController
     {
+        #region Constants
+
         private const float MaxTurnSpeed = 7.5f;
         private const float MinLookDistanceSqr = 0.25f;
+        private const float BlindLookRadius = 4f;
+        private const float HeardDirectionWeight = 6f;
+        private const float SoundMemoryDuration = 4f;
+
+        #endregion
+
+        #region Fields
+
+        private static readonly ManualLogSource Logger = Plugin.LoggerInstance;
 
         private readonly BotOwner _bot;
         private readonly BotComponentCache _cache;
-
         private Vector3 _fallbackLookTarget;
         private bool _frozen;
 
-        /// <summary>
-        /// Initializes a new instance of the <see cref="BotLookController"/> class.
-        /// </summary>
-        /// <param name="bot">BotOwner reference.</param>
-        /// <param name="cache">Component cache reference.</param>
+        #endregion
+
+        #region Constructor
+
         public BotLookController(BotOwner bot, BotComponentCache cache)
         {
-            this._bot = bot ?? throw new ArgumentNullException(nameof(bot));
-            this._cache = cache ?? throw new ArgumentNullException(nameof(cache));
-            this._fallbackLookTarget = bot.Position + bot.LookDirection;
+            if (!EFTPlayerUtil.IsValidBotOwner(bot) || cache == null)
+            {
+                Logger.LogError("[BotLookController] Constructor failed — null bot or cache.");
+                throw new ArgumentException("Invalid BotLookController parameters.");
+            }
+
+            _bot = bot;
+            _cache = cache;
+            _fallbackLookTarget = bot.Position + bot.LookDirection;
         }
 
-        /// <summary>
-        /// Called every frame to update bot's look direction.
-        /// </summary>
-        /// <param name="deltaTime">Time since last frame.</param>
+        #endregion
+
+        #region Public Methods
+
         public void Tick(float deltaTime)
         {
-            if (this._frozen || this._bot.IsDead || FikaHeadlessDetector.IsHeadless)
+            try
             {
-                return;
+                if (_frozen || _bot == null || _cache == null || _bot.IsDead || !GameWorldHandler.IsSafeToInitialize)
+                {
+                    return;
+                }
+
+                Player player = EFTPlayerUtil.ResolvePlayer(_bot);
+                if (!EFTPlayerUtil.IsValid(player))
+                {
+                    return;
+                }
+
+                Transform body = EFTPlayerUtil.GetTransform(player);
+                if (body == null)
+                {
+                    return;
+                }
+
+                Vector3 origin = body.position;
+                Vector3 target = ResolveLookTarget(origin);
+                Vector3 dir = target - origin;
+                dir.y = 0f;
+
+                if (dir.sqrMagnitude < MinLookDistanceSqr)
+                {
+                    return;
+                }
+
+                Quaternion from = body.rotation;
+                Quaternion to = Quaternion.LookRotation(dir.normalized);
+                body.rotation = Quaternion.Slerp(from, to, Mathf.Clamp01(MaxTurnSpeed * deltaTime));
             }
-
-            Vector3 origin = this._bot.Position;
-            Vector3 lookTarget = this.ResolveLookTarget(origin);
-            Vector3 direction = lookTarget - origin;
-            direction.y = 0f;
-
-            if (direction.sqrMagnitude < MinLookDistanceSqr)
+            catch (Exception ex)
             {
-                return;
+                Logger.LogError("[BotLookController] Tick failed: " + ex);
+                BotFallbackUtility.FallbackToEFTLogic(_bot);
             }
-
-            PlayerBones? bones = this._bot.GetPlayer?.PlayerBones;
-            if (bones == null || bones.Head == null)
-            {
-                return;
-            }
-
-            Quaternion current = bones.Head.rotation;
-            Quaternion desired = Quaternion.LookRotation(direction);
-
-            bones.Head.rotation = Quaternion.Slerp(current, desired, Mathf.Clamp01(MaxTurnSpeed * deltaTime));
         }
 
-        /// <summary>
-        /// Overrides the bot's default look direction.
-        /// </summary>
-        /// <param name="worldPos">World-space target.</param>
         public void SetLookTarget(Vector3 worldPos)
         {
-            this._fallbackLookTarget = worldPos;
+            if (IsValid(worldPos))
+            {
+                _fallbackLookTarget = worldPos;
+            }
         }
 
-        /// <summary>
-        /// Freezes bot rotation (e.g. stunned).
-        /// </summary>
         public void FreezeLook()
         {
-            this._frozen = true;
+            _frozen = true;
         }
 
-        /// <summary>
-        /// Resumes rotation behavior.
-        /// </summary>
         public void ResumeLook()
         {
-            this._frozen = false;
+            _frozen = false;
         }
 
-        /// <summary>
-        /// Gets current world look direction.
-        /// </summary>
         public Vector3 GetLookDirection()
         {
-            return this._bot.LookDirection;
+            return _bot != null ? _bot.LookDirection : Vector3.forward;
         }
+
+        #endregion
+
+        #region Private Methods
 
         private Vector3 ResolveLookTarget(Vector3 origin)
         {
             float now = Time.time;
 
-            if (this._cache.IsBlinded && now < this._cache.BlindUntilTime)
+            if (_cache.IsBlinded && now < _cache.BlindUntilTime)
             {
-                return origin + UnityEngine.Random.insideUnitSphere.normalized * 4f;
+                Vector3 offset = UnityEngine.Random.insideUnitSphere;
+                offset.y = 0f;
+                return origin + offset.normalized * BlindLookRadius;
             }
 
-            if (this._cache.Panic?.IsPanicking == true)
+            if (_cache.Panic != null && _cache.Panic.IsPanicking)
             {
-                if (this._cache.LastHeardDirection.HasValue)
+                if (_cache.HasHeardDirection)
                 {
-                    return origin + this._cache.LastHeardDirection.Value.normalized * 6f;
+                    return origin + _cache.LastHeardDirection.normalized * HeardDirectionWeight;
                 }
 
-                return origin + this._bot.LookDirection;
+                return origin + _bot.LookDirection;
             }
 
-            if (this._cache.ThreatSelector?.CurrentTarget != null)
+            if (_cache.ThreatSelector != null)
             {
-                return EFTPlayerUtil.GetPosition(this._cache.ThreatSelector.CurrentTarget);
+                string id = _cache.ThreatSelector.GetTargetProfileId();
+                if (!string.IsNullOrEmpty(id))
+                {
+                    Player enemy = EFTPlayerUtil.ResolvePlayerById(id);
+                    if (EFTPlayerUtil.IsValid(enemy))
+                    {
+                        Vector3 pos = EFTPlayerUtil.GetPosition(enemy);
+                        if (pos.sqrMagnitude > 0.01f)
+                        {
+                            return pos;
+                        }
+                    }
+                }
             }
 
-            if (this._cache.LastHeardDirection.HasValue && now - this._cache.LastHeardTime < 4f)
+            if (_cache.HasHeardDirection && now - _cache.LastHeardTime < SoundMemoryDuration)
             {
-                return origin + this._cache.LastHeardDirection.Value.normalized * 6f;
+                return origin + _cache.LastHeardDirection.normalized * HeardDirectionWeight;
             }
 
-            return this._fallbackLookTarget;
+            return _fallbackLookTarget;
         }
+
+        private static bool IsValid(Vector3 pos)
+        {
+            return !float.IsNaN(pos.x) && !float.IsNaN(pos.y) && !float.IsNaN(pos.z);
+        }
+
+        #endregion
     }
 }

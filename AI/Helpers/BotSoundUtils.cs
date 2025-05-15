@@ -6,10 +6,9 @@
 //   Please follow strict StyleCop, ReSharper, and AI-Refactored code standards for all modifications.
 // </auto-generated>
 
-#nullable enable
-
 namespace AIRefactored.AI.Helpers
 {
+    using AIRefactored.Core;
     using EFT;
 
     /// <summary>
@@ -21,58 +20,29 @@ namespace AIRefactored.AI.Helpers
         /// <summary>
         /// Returns true if a non-teammate fired recently.
         /// </summary>
-        /// <param name="self">The listening bot.</param>
-        /// <param name="source">The source player emitting the sound.</param>
-        /// <param name="recentThreshold">Threshold window in seconds to consider the sound recent.</param>
-        /// <param name="now">Optional time override (defaults to Time.time).</param>
-        /// <returns>True if the source fired recently and is valid for tracking.</returns>
-        public static bool DidFireRecently(BotOwner self, Player? source, float recentThreshold = 1.5f, float now = -1f)
+        public static bool DidFireRecently(BotOwner self, Player source, float recentThreshold = 1.5f, float now = -1f)
         {
-            return IsValidSoundSource(self, source) &&
-                   BotSoundRegistry.FiredRecently(source, recentThreshold, now);
+            if (!EFTPlayerUtil.IsValidBotOwner(self) || !EFTPlayerUtil.IsValid(source))
+            {
+                return false;
+            }
+
+            return EFTPlayerUtil.IsEnemyOf(self, source)
+                   && BotSoundRegistry.FiredRecently(source, recentThreshold, now);
         }
 
         /// <summary>
         /// Returns true if a non-teammate stepped recently.
         /// </summary>
-        /// <param name="self">The listening bot.</param>
-        /// <param name="source">The source player emitting the footstep.</param>
-        /// <param name="recentThreshold">Threshold window in seconds to consider the step recent.</param>
-        /// <param name="now">Optional time override (defaults to Time.time).</param>
-        /// <returns>True if the source stepped recently and is valid for tracking.</returns>
-        public static bool DidStepRecently(BotOwner self, Player? source, float recentThreshold = 1.2f, float now = -1f)
+        public static bool DidStepRecently(BotOwner self, Player source, float recentThreshold = 1.2f, float now = -1f)
         {
-            return IsValidSoundSource(self, source) &&
-                   BotSoundRegistry.SteppedRecently(source, recentThreshold, now);
-        }
-
-        /// <summary>
-        /// Filters out invalid sound sources: null, self, same group, or invalid profile.
-        /// </summary>
-        /// <param name="self">The bot checking the sound.</param>
-        /// <param name="source">The player generating the sound.</param>
-        /// <returns>True if the source is valid for sound tracking.</returns>
-        private static bool IsValidSoundSource(BotOwner self, Player? source)
-        {
-            if (self == null || self.GetPlayer == null || source == null || source.AIData == null)
+            if (!EFTPlayerUtil.IsValidBotOwner(self) || !EFTPlayerUtil.IsValid(source))
             {
                 return false;
             }
 
-            if (source == self.GetPlayer)
-            {
-                return false;
-            }
-
-            string? selfGroup = self.Profile?.Info?.GroupId;
-            string? sourceGroup = source.Profile?.Info?.GroupId;
-
-            if (!string.IsNullOrEmpty(selfGroup) && selfGroup == sourceGroup)
-            {
-                return false;
-            }
-
-            return true;
+            return EFTPlayerUtil.IsEnemyOf(self, source)
+                   && BotSoundRegistry.SteppedRecently(source, recentThreshold, now);
         }
     }
 }

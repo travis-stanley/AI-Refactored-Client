@@ -3,10 +3,8 @@
 //   Licensed under the MIT License. See LICENSE in the repository root for more information.
 //
 //   THIS FILE IS SYSTEMATICALLY MANAGED.
-//   Please follow strict StyleCop, ReSharper, and AI-Refactored code standards for all modifications.
+//   Failures in AIRefactored logic must always trigger safe fallback to EFT base AI.
 // </auto-generated>
-
-#nullable enable
 
 namespace AIRefactored.AI.Combat
 {
@@ -33,19 +31,18 @@ namespace AIRefactored.AI.Combat
 
         #region Fields
 
-        private BotOwner? _bot;
-        private BotComponentCache? _cache;
+        private BotOwner _bot;
+        private BotComponentCache _cache;
         private bool _isSuppressed;
-        private float _suppressionStartTime = -99.0f;
+        private float _suppressionStartTime = float.NegativeInfinity;
 
         #endregion
 
-        #region Public API
+        #region Public Methods
 
         /// <summary>
         /// Initializes the suppression reaction component with a bot's component cache.
         /// </summary>
-        /// <param name="componentCache">The component cache containing references.</param>
         public void Initialize(BotComponentCache componentCache)
         {
             if (componentCache == null || componentCache.Bot == null)
@@ -53,116 +50,112 @@ namespace AIRefactored.AI.Combat
                 throw new ArgumentNullException(nameof(componentCache), "[Suppression] Bot or cache is null.");
             }
 
-            this._cache = componentCache;
-            this._bot = componentCache.Bot;
+            _cache = componentCache;
+            _bot = componentCache.Bot;
+            _isSuppressed = false;
+            _suppressionStartTime = float.NegativeInfinity;
         }
 
         /// <summary>
         /// Returns whether the bot is currently suppressed.
         /// </summary>
-        /// <returns>True if suppressed, otherwise false.</returns>
         public bool IsSuppressed()
         {
-            return this._isSuppressed;
+            return _isSuppressed;
         }
 
         /// <summary>
         /// Updates suppression decay over time.
         /// </summary>
-        /// <param name="time">The current game time.</param>
         public void Tick(float time)
         {
-            if (!this._isSuppressed)
+            if (!_isSuppressed)
             {
                 return;
             }
 
-            if (!this.IsValid())
+            if (!IsValid())
             {
-                this._isSuppressed = false;
+                _isSuppressed = false;
                 return;
             }
 
-            if (time - this._suppressionStartTime >= SuppressionDuration)
+            if (time - _suppressionStartTime >= SuppressionDuration)
             {
-                this._isSuppressed = false;
+                _isSuppressed = false;
             }
         }
 
         /// <summary>
         /// Triggers suppression effects: sprint, fallback, panic escalation.
         /// </summary>
-        /// <param name="source">Optional suppression origin point.</param>
-        public void TriggerSuppression(Vector3? source = null)
+        public void TriggerSuppression(Vector3? source)
         {
-            if (this._bot == null || this._cache == null || this._isSuppressed)
+            if (_isSuppressed || !IsValid())
             {
                 return;
             }
 
-            if (this._cache.PanicHandler != null && this._cache.PanicHandler.IsPanicking)
+            var panic = _cache.PanicHandler;
+            if (panic != null && panic.IsPanicking)
             {
                 return;
             }
 
-            this._isSuppressed = true;
-            this._suppressionStartTime = Time.time;
+            _isSuppressed = true;
+            _suppressionStartTime = Time.time;
 
-            Vector3 fallbackDirection = source.HasValue
-                ? (this._bot.Position - source.Value).normalized
-                : this._bot.LookDirection.sqrMagnitude > 0.1f
-                    ? -this._bot.LookDirection.normalized
-                    : Vector3.back;
+            Vector3 retreatDir = source.HasValue
+                ? (_bot.Position - source.Value).normalized
+                : GetDefaultRetreatDirection();
 
-            Vector3 fallbackPosition = this.GetFallbackPosition(fallbackDirection);
-            float cohesion = this._cache.AIRefactoredBotOwner?.PersonalityProfile?.Cohesion ?? 1.0f;
+            Vector3 fallback = ComputeFallbackPosition(retreatDir);
+            float cohesion = _cache.AIRefactoredBotOwner?.PersonalityProfile?.Cohesion ?? 1f;
 
-            BotMovementHelper.SmoothMoveTo(this._bot, fallbackPosition, false, cohesion);
-            this._bot.Sprint(true);
+            BotMovementHelper.SmoothMoveTo(_bot, fallback, false, cohesion);
+            _bot.Sprint(true);
 
-            this._cache.PanicHandler?.TriggerPanic();
+            panic?.TriggerPanic();
+            _cache.Escalation?.NotifyPanicTriggered();
 
-            // Ensure BotTalk only happens in non-headless mode
-            if (!FikaHeadlessDetector.IsHeadless && this._bot.BotTalk != null)
+            if (!FikaHeadlessDetector.IsHeadless && _bot.BotTalk != null)
             {
-                this._bot.BotTalk.TrySay(EPhraseTrigger.OnLostVisual);
+                _bot.BotTalk.TrySay(EPhraseTrigger.OnLostVisual);
             }
         }
 
         #endregion
 
-        #region Private Helpers
+        #region Private Methods
 
-        private Vector3 GetFallbackPosition(Vector3 retreatDirection)
+        private Vector3 ComputeFallbackPosition(Vector3 retreatDirection)
         {
-            if (this._bot == null)
+            if (_cache.Pathing != null)
             {
-                return Vector3.zero;
-            }
-
-            Vector3 proposed = this._bot.Position + (retreatDirection * MinSuppressionRetreatDistance);
-
-            if (this._cache != null && this._cache.Pathing != null)
-            {
-                var path = BotCoverRetreatPlanner.GetCoverRetreatPath(this._bot, retreatDirection, this._cache.Pathing);
+                var path = BotCoverRetreatPlanner.GetCoverRetreatPath(_bot, retreatDirection, _cache.Pathing);
                 if (path.Count > 0)
                 {
-                    return Vector3.Distance(path[0], this._bot.Position) < 1.0f && path.Count > 1 ? path[1] : path[0];
+                    return (Vector3.Distance(path[0], _bot.Position) < 1f && path.Count > 1)
+                        ? path[1]
+                        : path[0];
                 }
             }
 
-            return proposed;
+            return _bot.Position + retreatDirection.normalized * MinSuppressionRetreatDistance;
+        }
+
+        private static Vector3 GetDefaultRetreatDirection()
+        {
+            return Vector3.back;
         }
 
         private bool IsValid()
         {
-            if (this._bot == null || this._cache == null || this._bot.IsDead)
-            {
-                return false;
-            }
-
-            EFT.Player? player = this._bot.GetPlayer;
-            return player != null && player.IsAI;
+            return _bot != null &&
+                   _cache != null &&
+                   !_bot.IsDead &&
+                   _bot.GetPlayer is Player player &&
+                   player.IsAI;
         }
 
         #endregion

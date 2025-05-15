@@ -6,16 +6,14 @@
 //   Please follow strict StyleCop, ReSharper, and AI-Refactored code standards for all modifications.
 // </auto-generated>
 
-#nullable enable
-
 namespace AIRefactored.AI.Perception
 {
     using System.Collections.Generic;
     using AIRefactored.AI.Core;
-    using AIRefactored.AI.Groups;
     using AIRefactored.AI.Helpers;
     using AIRefactored.AI.Memory;
     using AIRefactored.Core;
+    using AIRefactored.Pools;
     using EFT;
     using UnityEngine;
 
@@ -34,117 +32,132 @@ namespace AIRefactored.AI.Perception
 
         #region Fields
 
-        private BotOwner? _bot;
-        private BotComponentCache? _cache;
+        private BotOwner _bot;
+        private BotComponentCache _cache;
 
         #endregion
 
-        #region Public Methods
+        #region Public API
 
         /// <summary>
-        /// Initializes the hearing system with a bot's runtime cache.
+        /// Initializes the hearing system with the bot's component cache.
         /// </summary>
-        /// <param name="cache">Bot component cache.</param>
+        /// <param name="cache">Runtime bot cache.</param>
         public void Initialize(BotComponentCache cache)
         {
-            this._cache = cache;
-            this._bot = cache.Bot;
-        }
-
-        /// <summary>
-        /// Performs a hearing scan based on nearby players and sound events.
-        /// </summary>
-        /// <param name="deltaTime">Frame delta time.</param>
-        public void Tick(float deltaTime)
-        {
-            if (!this.CanEvaluate() || this._bot == null)
+            if (cache == null || cache.Bot == null)
             {
                 return;
             }
 
-            Vector3 origin = this._bot.Position;
+            Player player = cache.Bot.GetPlayer;
+            if (!EFTPlayerUtil.IsValid(player))
+            {
+                return;
+            }
+
+            _bot = cache.Bot;
+            _cache = cache;
+        }
+
+        /// <summary>
+        /// Scans for sound cues from nearby players and bots.
+        /// </summary>
+        /// <param name="deltaTime">Frame time in seconds.</param>
+        public void Tick(float deltaTime)
+        {
+            if (!GameWorldHandler.IsSafeToInitialize || _bot == null || _cache == null)
+            {
+                return;
+            }
+
+            if (!IsActive())
+            {
+                return;
+            }
+
+            Vector3 origin = _bot.Position;
             float rangeSqr = BaseHearingRange * BaseHearingRange;
 
             List<Player> players = BotMemoryStore.GetNearbyPlayers(origin, BaseHearingRange);
-            for (int i = 0; i < players.Count; i++)
+            try
             {
-                Player player = players[i];
-                if (!this.IsAudibleSource(player, origin, rangeSqr))
+                for (int i = 0; i < players.Count; i++)
                 {
-                    continue;
-                }
-
-                if (this.HeardSomething(player))
-                {
-                    Vector3 pos = EFTPlayerUtil.GetPosition(player);
-                    if (pos.sqrMagnitude > 0.01f)
+                    Player candidate = players[i];
+                    if (!IsAudibleSource(candidate, origin, rangeSqr))
                     {
-                        this._cache?.RegisterHeardSound(pos);
+                        continue;
+                    }
+
+                    if (HeardSomething(candidate))
+                    {
+                        Vector3 pos = EFTPlayerUtil.GetPosition(candidate);
+                        if (pos.sqrMagnitude > 0.01f)
+                        {
+                            _cache.RegisterHeardSound(pos);
+                        }
                     }
                 }
+            }
+            finally
+            {
+                TempListPool.Return(players);
             }
         }
 
         #endregion
 
-        #region Private Methods
+        #region Internal Logic
 
-        private bool CanEvaluate()
+        private bool IsActive()
         {
-            if (this._bot == null || this._bot.IsDead || this._cache?.PanicHandler?.IsPanicking == true)
-            {
-                return false;
-            }
-
-            Player? player = this._bot.GetPlayer;
-            return player != null && player.IsAI;
+            return _bot != null &&
+                   !_bot.IsDead &&
+                   EFTPlayerUtil.IsValid(_bot.GetPlayer) &&
+                   _cache.PanicHandler != null &&
+                   !_cache.PanicHandler.IsPanicking;
         }
 
-        private bool HeardSomething(Player player)
+        private bool HeardSomething(Player source)
         {
-            if (this._bot == null)
-            {
-                return false;
-            }
-
-            return BotSoundUtils.DidFireRecently(this._bot, player, 1f, TimeWindow) ||
-                   BotSoundUtils.DidStepRecently(this._bot, player, 1f, TimeWindow);
+            return BotSoundUtils.DidFireRecently(_bot, source, 1f, TimeWindow) ||
+                   BotSoundUtils.DidStepRecently(_bot, source, 1f, TimeWindow);
         }
 
-        private bool IsAudibleSource(Player player, Vector3 origin, float rangeSqr)
+        private bool IsAudibleSource(Player candidate, Vector3 origin, float rangeSqr)
         {
-            if (player == null ||
-                player.HealthController == null ||
-                !player.HealthController.IsAlive)
+            if (!EFTPlayerUtil.IsValid(candidate))
             {
                 return false;
             }
 
-            if (this._bot == null || player.ProfileId == this._bot.ProfileId)
+            Player self = _bot.GetPlayer;
+            if (candidate == self)
             {
                 return false;
             }
 
-            if (AreInSameTeam(this._bot, player))
+            if (IsSameGroup(self, candidate))
             {
                 return false;
             }
 
-            Vector3 targetPos = EFTPlayerUtil.GetPosition(player);
-            return (targetPos - origin).sqrMagnitude <= rangeSqr;
+            Vector3 pos = EFTPlayerUtil.GetPosition(candidate);
+            return (pos - origin).sqrMagnitude <= rangeSqr;
         }
 
-        private static bool AreInSameTeam(BotOwner self, Player target)
+        private static bool IsSameGroup(Player a, Player b)
         {
-            string? selfGroup = self.GetPlayer?.Profile?.Info?.GroupId;
-            string? targetGroup = target.Profile?.Info?.GroupId;
-
-            if (string.IsNullOrEmpty(selfGroup) || string.IsNullOrEmpty(targetGroup))
+            if (a == null || b == null)
             {
                 return false;
             }
 
-            return selfGroup == targetGroup;
+            string ag = a.Profile?.Info?.GroupId;
+            string bg = b.Profile?.Info?.GroupId;
+
+            return !string.IsNullOrEmpty(ag) && ag == bg;
         }
 
         #endregion

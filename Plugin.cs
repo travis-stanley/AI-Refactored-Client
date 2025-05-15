@@ -6,68 +6,122 @@
 //   Please follow strict StyleCop, ReSharper, and AI-Refactored code standards for all modifications.
 // </auto-generated>
 
-#nullable enable
-
 namespace AIRefactored
 {
     using System;
+    using AIRefactored.Core;
+    using AIRefactored.Runtime;
     using BepInEx;
     using BepInEx.Logging;
-    using AIRefactored.Runtime;
-    using AIRefactored.Core;
 
     /// <summary>
-    /// Entry point for AI-Refactored mod. Kicks off the global controller which
-    /// handles *all* further injection and bootstrapping exactly once.
+    /// Entry point for AI-Refactored mod. Supports traditional client, client-host, and FIKA headless modes.
+    /// Initializes all world systems and routes teardown via GameWorldHandler on plugin destruction.
     /// </summary>
-    [BepInPlugin("com.spock.airefactored", "AI-Refactored", "1.0.0")]
+    [BepInPlugin("com.spock.airefactored", "AI-Refactored (Host Only)", "1.0.0")]
     public sealed class Plugin : BaseUnityPlugin
     {
-        private static ManualLogSource? _log;
+        #region Fields
+
+        private static readonly object InitLock = new object();
+        private static ManualLogSource _logger;
         private static bool _initialized;
-        private static readonly object _lock = new object();
 
         /// <summary>
-        /// Global logger for other classes to use.
+        /// Gets the shared logger instance for all AI-Refactored systems.
         /// </summary>
-        public static ManualLogSource LoggerInstance =>
-            _log ?? throw new InvalidOperationException("Logger was not initialized.");
+        public static ManualLogSource LoggerInstance
+        {
+            get
+            {
+                if (_logger == null)
+                {
+                    throw new InvalidOperationException("[AIRefactored] LoggerInstance accessed before plugin Awake.");
+                }
 
+                return _logger;
+            }
+        }
+
+        #endregion
+
+        #region Unity Lifecycle
+
+        /// <summary>
+        /// Unity Awake hook. Initializes logger and controller systems in thread-safe manner.
+        /// </summary>
         private void Awake()
         {
-            lock (_lock)
+            lock (InitLock)
             {
                 if (_initialized)
                 {
-                    Logger.LogWarning("[AIRefactored] Plugin already initialized; skipping duplicate Awake.");
                     return;
                 }
 
-                _log = Logger; // BaseUnityPlugin.Logger
-                _log.LogInfo("[AIRefactored] Plugin Awake — initializing AIRefactoredController.");
+                _logger = base.Logger;
+                AppDomain.CurrentDomain.UnhandledException += OnUnhandledException;
 
-                // Hand off *everything* to our single controller instance.
-                AIRefactoredController.Initialize(_log);
-
-                _initialized = true;
-                _log.LogInfo("[AIRefactored] Plugin initialization complete.");
+                try
+                {
+                    _logger.LogInfo("[AIRefactored] ⏳ Plugin Awake — initializing AIRefactoredController...");
+                    AIRefactoredController.Initialize();
+                    _initialized = true;
+                    _logger.LogInfo("[AIRefactored] ✅ AIRefactoredController.Initialize() complete.");
+                }
+                catch (Exception ex)
+                {
+                    _logger.LogError("[AIRefactored] ❌ Plugin Awake exception: " + ex);
+                }
             }
         }
 
+        /// <summary>
+        /// Unity OnDestroy hook. Tears down world systems and logs result.
+        /// </summary>
         private void OnDestroy()
         {
-            lock (_lock)
+            lock (InitLock)
             {
+                if (!_initialized || _logger == null)
+                {
+                    return;
+                }
+
+                try
+                {
+                    _logger.LogInfo("[AIRefactored] 🔻 Plugin OnDestroy — performing teardown...");
+
+                    if (GameWorldHandler.HasValidWorld())
+                    {
+                        GameWorldHandler.UnhookBotSpawns();
+                    }
+
+                    _logger.LogInfo("[AIRefactored] ✅ Cleanup complete — plugin shutdown successful.");
+                }
+                catch (Exception ex)
+                {
+                    _logger.LogError("[AIRefactored] ❌ Plugin OnDestroy exception: " + ex);
+                }
+
+                AppDomain.CurrentDomain.UnhandledException -= OnUnhandledException;
                 _initialized = false;
             }
-
-            if (_log != null)
-            {
-                _log.LogInfo("[AIRefactored] Plugin OnDestroy — cleaning up.");
-            }
-
-            // Tear down any host injections if still up.
-            GameWorldHandler.UnhookBotSpawns();
         }
+
+        /// <summary>
+        /// Handles unexpected unhandled exceptions globally for AIRefactored.
+        /// </summary>
+        /// <param name="sender">Exception source.</param>
+        /// <param name="e">Exception data.</param>
+        private static void OnUnhandledException(object sender, UnhandledExceptionEventArgs e)
+        {
+            if (_logger != null && e?.ExceptionObject is Exception exception)
+            {
+                _logger.LogError("[AIRefactored] ❗ Unhandled exception: " + exception);
+            }
+        }
+
+        #endregion
     }
 }

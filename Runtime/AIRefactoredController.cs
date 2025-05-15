@@ -6,70 +6,168 @@
 //   Please follow strict StyleCop, ReSharper, and AI-Refactored code standards for all modifications.
 // </auto-generated>
 
-#nullable enable
-
 namespace AIRefactored.Runtime
 {
     using System;
-    using System.Collections;
-    using BepInEx.Logging;
-    using UnityEngine;
-    using AIRefactored.Core;
+    using AIRefactored.AI.Core;
+    using AIRefactored.AI.Navigation;
     using AIRefactored.Bootstrap;
-    using AIRefactored.AI.Optimization;
+    using AIRefactored.Core;
+    using BepInEx.Logging;
+    using Comfort.Common;
+    using EFT;
+    using UnityEngine;
 
     /// <summary>
-    /// Global entry point for AI-Refactored.
-    /// Ensures exactly one controller lives, injects the FlushRunner,
-    /// and bootstraps world & bot systems identically in headless and client-host modes.
+    /// Global AIRefactored lifecycle manager. Spawns persistent host and routes raid start/end logic and tick delegation.
     /// </summary>
     public sealed class AIRefactoredController : MonoBehaviour
     {
-        #region Static Fields
+        #region Fields
 
-        private static AIRefactoredController? _instance;
-        private static ManualLogSource? _logger;
-        private static bool _initialized;
-        private static GameObject? _host;
         private static readonly object InitLock = new object();
+        private static GameObject s_Host;
+        private static AIRefactoredController s_Instance;
+        private static bool s_Initialized;
+        private static bool s_RaidActive;
 
         #endregion
 
         #region Properties
 
         /// <summary>
-        /// BepInEx logger, passed from Plugin.cs.
+        /// Gets the shared logger from Plugin.cs.
         /// </summary>
-        public static ManualLogSource Logger =>
-            _logger ?? throw new InvalidOperationException("[AIRefactoredController] Logger accessed before Initialize.");
+        public static ManualLogSource Logger
+        {
+            get
+            {
+                ManualLogSource log = Plugin.LoggerInstance;
+                if (log == null)
+                {
+                    throw new InvalidOperationException("[AIRefactoredController] Logger is not available.");
+                }
+
+                return log;
+            }
+        }
 
         #endregion
 
-        #region Initialization
+        #region Public API
 
         /// <summary>
-        /// Call once from Plugin.Awake().
+        /// Initializes the controller by spawning the persistent host and attaching required components.
         /// </summary>
-        /// <param name="logger">The BepInEx logger to use.</param>
-        public static void Initialize(ManualLogSource logger)
+        public static void Initialize()
         {
             lock (InitLock)
             {
-                if (_initialized)
+                if (s_Initialized)
                 {
-                    logger.LogWarning("[AIRefactoredController] Already initialized, skipping.");
+                    Logger.LogDebug("[AIRefactoredController] Already initialized — skipping.");
                     return;
                 }
 
-                _logger = logger ?? throw new ArgumentNullException(nameof(logger));
+                try
+                {
+                    s_Host = new GameObject("AIRefactoredHost");
+                    UnityEngine.Object.DontDestroyOnLoad(s_Host);
 
-                // Create a dedicated host GameObject
-                _host = new GameObject("AIRefactoredController");
-                DontDestroyOnLoad(_host);
-                _instance = _host.AddComponent<AIRefactoredController>();
+                    s_Instance = s_Host.AddComponent<AIRefactoredController>();
+                    s_Host.AddComponent<GameWorldSpawnHook>();
 
-                _initialized = true;
-                logger.LogInfo("[AIRefactoredController] Initialized host, scheduling bootstrap.");
+                    WorldTickDispatcher.Initialize();
+
+                    s_Initialized = true;
+                    Logger.LogDebug("[AIRefactoredController] ✅ Initialization complete — awaiting GameWorld.");
+                }
+                catch (Exception ex)
+                {
+                    Logger.LogError("[AIRefactoredController] ❌ Initialization failed: " + ex);
+                }
+            }
+        }
+
+        /// <summary>
+        /// Triggered when the GameWorld becomes active. Launches phase bootstrapper.
+        /// </summary>
+        /// <param name="world">Active GameWorld instance.</param>
+        public static void OnRaidStarted(GameWorld world)
+        {
+            if (!s_Initialized || s_RaidActive || world == null)
+            {
+                return;
+            }
+
+            if (!GameWorldHandler.IsHost)
+            {
+                Logger.LogDebug("[AIRefactoredController] Skipped OnRaidStarted — not a valid host.");
+                return;
+            }
+
+            try
+            {
+                if (world.RegisteredPlayers == null || world.RegisteredPlayers.Count == 0)
+                {
+                    Logger.LogWarning("[AIRefactoredController] Skipped — RegisteredPlayers not ready.");
+                    return;
+                }
+
+                bool hasValidPlayer = false;
+                for (int i = 0; i < world.RegisteredPlayers.Count; i++)
+                {
+                    Player p = EFTPlayerUtil.AsEFTPlayer(world.RegisteredPlayers[i]);
+                    if (p != null && EFTPlayerUtil.IsValid(p))
+                    {
+                        hasValidPlayer = true;
+                        break;
+                    }
+                }
+
+                if (!hasValidPlayer)
+                {
+                    Logger.LogWarning("[AIRefactoredController] Skipped — no valid EFT.Player found.");
+                    return;
+                }
+
+                Logger.LogInfo("[AIRefactoredController] 🚀 GameWorld valid — starting AI systems.");
+
+                GameWorldHandler.Initialize(world);
+                WorldBootstrapper.Begin(Logger, GameWorldHandler.TryGetValidMapName());
+
+                s_RaidActive = true;
+            }
+            catch (Exception ex)
+            {
+                Logger.LogError("[AIRefactoredController] ❌ OnRaidStarted error: " + ex);
+            }
+        }
+
+        /// <summary>
+        /// Called at end of raid. Cleans up all state and stops world logic.
+        /// </summary>
+        public static void OnRaidEnded()
+        {
+            if (!s_RaidActive)
+            {
+                return;
+            }
+
+            try
+            {
+                Logger.LogInfo("[AIRefactoredController] 🧹 Raid ended — cleaning up world systems...");
+
+                InitPhaseRunner.Stop();
+                WorldBootstrapper.Stop();
+                GameWorldHandler.Cleanup();
+                BotRecoveryService.Reset();
+
+                s_RaidActive = false;
+            }
+            catch (Exception ex)
+            {
+                Logger.LogError("[AIRefactoredController] ❌ OnRaidEnded error: " + ex);
             }
         }
 
@@ -77,72 +175,33 @@ namespace AIRefactored.Runtime
 
         #region Unity Lifecycle
 
-        private void Awake()
+        private void Update()
         {
-            // Only the designated host instance should remain
-            if (_instance != this)
+            if (WorldInitState.IsInitialized)
             {
-                Destroy(gameObject);
-                return;
-            }
-
-            Logger.LogInfo("[AIRefactoredController] Awake — injecting FlushRunner.");
-
-            // Always inject our flush runner (works both headless & client-host)
-            BotWorkScheduler.AutoInjectFlushHost();
-
-            // Kick off the bootstrap on next frame
-            try
-            {
-                StartCoroutine(RunBootstrapSafe());
-            }
-            catch (Exception ex)
-            {
-                Logger.LogError($"[AIRefactoredController] Error starting bootstrap coroutine: {ex}");
+                WorldTickDispatcher.Tick(Time.deltaTime);
             }
         }
 
         private void OnDestroy()
         {
-            // If the host is destroyed, clear static refs
-            if (_instance == this)
-            {
-                Logger.LogInfo("[AIRefactoredController] OnDestroy — cleaning up static references.");
-                _instance = null;
-                _logger = null;
-                _initialized = false;
-
-                if (_host == this.gameObject)
-                {
-                    _host = null;
-                }
-            }
-        }
-
-        #endregion
-
-        #region Bootstrapping
-
-        private IEnumerator RunBootstrapSafe()
-        {
-            // Wait one frame so everything else has awakened
-            yield return null;
-
-            Logger.LogInfo("[AIRefactoredController] ▶ Beginning world & bot bootstrap...");
-
             try
             {
-                // Core world init & bot wiring (works both headless & client-host)
-                GameWorldHandler.TryInitializeWorld();
-                GameWorldHandler.HookBotSpawns();
+                Logger.LogInfo("[AIRefactoredController] 🔻 OnDestroy — executing full shutdown.");
 
-                // Full world bootstrap (zones, navmesh, loot, hotspots, etc.)
-                WorldBootstrapper.TryInitialize();
-                Logger.LogInfo("[AIRefactoredController] ✅ WorldBootstrapper injected.");
+                InitPhaseRunner.Stop();
+                WorldBootstrapper.Stop();
+                GameWorldHandler.Cleanup();
+                BotRecoveryService.Reset();
+
+                s_Initialized = false;
+                s_RaidActive = false;
+
+                Logger.LogInfo("[AIRefactoredController] ✅ AIRefactoredController teardown complete.");
             }
             catch (Exception ex)
             {
-                Logger.LogError($"[AIRefactoredController] Exception during bootstrap: {ex}");
+                Logger.LogError("[AIRefactoredController] ❌ OnDestroy error: " + ex);
             }
         }
 

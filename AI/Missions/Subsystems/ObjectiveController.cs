@@ -6,8 +6,6 @@
 //   Please follow strict StyleCop, ReSharper, and AI-Refactored code standards for all modifications.
 // </auto-generated>
 
-#nullable enable
-
 using MissionType = AIRefactored.AI.Missions.BotMissionController.MissionType;
 
 namespace AIRefactored.AI.Missions.Subsystems
@@ -18,12 +16,14 @@ namespace AIRefactored.AI.Missions.Subsystems
     using AIRefactored.AI.Helpers;
     using AIRefactored.AI.Hotspots;
     using AIRefactored.AI.Looting;
+    using AIRefactored.Core;
+    using AIRefactored.Pools;
     using EFT;
     using UnityEngine;
 
     /// <summary>
-    /// Handles all routing, objective assignment, quest queueing, and re-pathing logic
-    /// for active missions (Loot, Fight, Quest). Fully integrated with squad pathing.
+    /// Handles routing, objective assignment, and mission-based movement logic.
+    /// Supports squad-aware quest paths and loot/fight transitions.
     /// </summary>
     public sealed class ObjectiveController
     {
@@ -31,7 +31,7 @@ namespace AIRefactored.AI.Missions.Subsystems
 
         private readonly BotOwner _bot;
         private readonly BotComponentCache _cache;
-        private readonly BotLootScanner? _lootScanner;
+        private readonly BotLootScanner _lootScanner;
         private readonly Queue<Vector3> _questRoute;
         private readonly System.Random _rng;
 
@@ -39,18 +39,23 @@ namespace AIRefactored.AI.Missions.Subsystems
 
         #region Constructor
 
-        /// <summary>
-        /// Initializes a new instance of the <see cref="ObjectiveController"/> class.
-        /// </summary>
-        /// <param name="bot">Bot owner reference.</param>
-        /// <param name="cache">Bot component cache reference.</param>
         public ObjectiveController(BotOwner bot, BotComponentCache cache)
         {
-            this._bot = bot ?? throw new ArgumentNullException(nameof(bot));
-            this._cache = cache ?? throw new ArgumentNullException(nameof(cache));
-            this._lootScanner = cache.LootScanner;
-            this._questRoute = new Queue<Vector3>(4);
-            this._rng = new System.Random();
+            if (!EFTPlayerUtil.IsValidBotOwner(bot))
+            {
+                throw new ArgumentException("[ObjectiveController] Invalid BotOwner.");
+            }
+
+            if (cache == null)
+            {
+                throw new ArgumentNullException(nameof(cache));
+            }
+
+            _bot = bot;
+            _cache = cache;
+            _lootScanner = cache.LootScanner;
+            _questRoute = new Queue<Vector3>(4);
+            _rng = new System.Random();
         }
 
         #endregion
@@ -58,7 +63,7 @@ namespace AIRefactored.AI.Missions.Subsystems
         #region Properties
 
         /// <summary>
-        /// Gets the current world-space objective the bot is routing toward.
+        /// Gets the current movement target.
         /// </summary>
         public Vector3 CurrentObjective { get; private set; }
 
@@ -67,137 +72,121 @@ namespace AIRefactored.AI.Missions.Subsystems
         #region Public Methods
 
         /// <summary>
-        /// Called when an objective is reached. Requeues or updates based on mission type.
+        /// Called when a bot reaches its current objective.
         /// </summary>
-        /// <param name="type">Current mission type.</param>
         public void OnObjectiveReached(MissionType type)
         {
-            Vector3 next;
-
-            switch (type)
-            {
-                case MissionType.Quest:
-                    next = this.GetNextQuestObjective();
-                    break;
-                case MissionType.Fight:
-                    next = this.GetFightZone();
-                    break;
-                case MissionType.Loot:
-                    next = this.GetLootObjective();
-                    break;
-                default:
-                    next = this._bot.Position;
-                    break;
-            }
-
-            this.CurrentObjective = next;
-            BotMovementHelper.SmoothMoveTo(this._bot, next);
+            Vector3 next = GetObjectiveTarget(type);
+            CurrentObjective = next;
+            BotMovementHelper.SmoothMoveTo(_bot, next);
         }
 
         /// <summary>
-        /// Resumes quest routing after fallback, combat, or diversion.
+        /// Resumes movement along the quest path.
         /// </summary>
         public void ResumeQuesting()
         {
-            if (this._questRoute.Count == 0)
+            if (_questRoute.Count == 0)
             {
-                this.PopulateQuestRoute();
+                PopulateQuestRoute();
             }
 
-            if (this._questRoute.Count > 0)
+            if (_questRoute.Count > 0)
             {
-                Vector3 next = this.GetNextQuestObjective();
-                this.CurrentObjective = next;
-                BotMovementHelper.SmoothMoveTo(this._bot, next);
+                Vector3 next = GetNextQuestObjective();
+                CurrentObjective = next;
+                BotMovementHelper.SmoothMoveTo(_bot, next);
             }
         }
 
         /// <summary>
-        /// Sets the first objective for a newly assigned mission.
+        /// Sets the initial movement objective based on mission type.
         /// </summary>
-        /// <param name="type">Mission type to initialize.</param>
         public void SetInitialObjective(MissionType type)
         {
-            Vector3 target;
-
-            switch (type)
-            {
-                case MissionType.Quest:
-                    target = this.GetNextQuestObjective();
-                    break;
-                case MissionType.Fight:
-                    target = this.GetFightZone();
-                    break;
-                case MissionType.Loot:
-                    target = this.GetLootObjective();
-                    break;
-                default:
-                    target = this._bot.Position;
-                    break;
-            }
-
-            this.CurrentObjective = target;
-            BotMovementHelper.SmoothMoveTo(this._bot, target);
+            Vector3 target = GetObjectiveTarget(type);
+            CurrentObjective = target;
+            BotMovementHelper.SmoothMoveTo(_bot, target);
         }
 
         #endregion
 
-        #region Private Methods
+        #region Internal Logic
+
+        private Vector3 GetObjectiveTarget(MissionType type)
+        {
+            switch (type)
+            {
+                case MissionType.Quest:
+                    return GetNextQuestObjective();
+                case MissionType.Fight:
+                    return GetFightZone();
+                case MissionType.Loot:
+                    return GetLootObjective();
+                default:
+                    return _bot.Position;
+            }
+        }
 
         private Vector3 GetFightZone()
         {
             BotZone[] zones = GameObject.FindObjectsOfType<BotZone>();
-            if (zones.Length > 0)
+            if (zones == null || zones.Length == 0)
             {
-                return zones[this._rng.Next(0, zones.Length)].transform.position;
+                return _bot.Position;
             }
 
-            return this._bot.Position;
+            int index = _rng.Next(0, zones.Length);
+            BotZone zone = zones[index];
+            return zone != null ? zone.transform.position : _bot.Position;
         }
 
         private Vector3 GetLootObjective()
         {
-            return this._lootScanner != null
-                ? this._lootScanner.GetHighestValueLootPoint()
-                : this._bot.Position;
+            return _lootScanner != null
+                ? _lootScanner.GetBestLootPosition()
+                : _bot.Position;
         }
 
         private Vector3 GetNextQuestObjective()
         {
-            return this._questRoute.Count > 0
-                ? this._questRoute.Dequeue()
-                : this._bot.Position;
+            return _questRoute.Count > 0
+                ? _questRoute.Dequeue()
+                : _bot.Position;
         }
 
         private void PopulateQuestRoute()
         {
-            this._questRoute.Clear();
-            Vector3 origin = this._bot.Position;
+            _questRoute.Clear();
 
-            Predicate<HotspotRegistry.Hotspot> directionFilter = delegate (HotspotRegistry.Hotspot h)
+            Vector3 origin = _bot.Position;
+            Vector3 forward = _bot.LookDirection.normalized;
+
+            Predicate<HotspotRegistry.Hotspot> directionFilter = h =>
             {
-                return Vector3.Dot((h.Position - origin).normalized, this._bot.LookDirection.normalized) > 0.25f;
+                Vector3 dir = h.Position - origin;
+                return dir.sqrMagnitude > 1f && Vector3.Dot(dir.normalized, forward) > 0.25f;
             };
 
-            List<HotspotRegistry.Hotspot> filtered = new List<HotspotRegistry.Hotspot>(
-                HotspotRegistry.QueryNearby(origin, 100f, directionFilter));
-
-            if (filtered.Count == 0)
+            List<HotspotRegistry.Hotspot> candidates = HotspotRegistry.QueryNearby(origin, 100f, directionFilter);
+            if (candidates == null || candidates.Count == 0)
             {
                 return;
             }
 
-            int count = UnityEngine.Random.Range(2, 4);
-            HashSet<int> used = new HashSet<int>(EqualityComparer<int>.Default);
+            int desired = UnityEngine.Random.Range(2, 4);
+            HashSet<int> used = TempHashSetPool.Rent<int>();
 
-            while (this._questRoute.Count < count && used.Count < filtered.Count)
+            while (_questRoute.Count < desired && used.Count < candidates.Count)
             {
-                int index = UnityEngine.Random.Range(0, filtered.Count);
+                int index = UnityEngine.Random.Range(0, candidates.Count);
                 if (used.Add(index))
                 {
-                    this._questRoute.Enqueue(filtered[index].Position);
+                    _questRoute.Enqueue(candidates[index].Position);
                 }
             }
+
+            TempHashSetPool.Return(used);
         }
 
         #endregion

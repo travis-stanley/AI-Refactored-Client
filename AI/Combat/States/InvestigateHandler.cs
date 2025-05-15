@@ -3,10 +3,8 @@
 //   Licensed under the MIT License. See LICENSE in the repository root for more information.
 //
 //   THIS FILE IS SYSTEMATICALLY MANAGED.
-//   Please follow strict StyleCop, ReSharper, and AI-Refactored code standards for all modifications.
+//   Failures in AIRefactored logic must always trigger safe fallback to EFT base AI.
 // </auto-generated>
-
-#nullable enable
 
 namespace AIRefactored.AI.Combat.States
 {
@@ -14,13 +12,14 @@ namespace AIRefactored.AI.Combat.States
     using AIRefactored.AI.Core;
     using AIRefactored.AI.Helpers;
     using AIRefactored.AI.Memory;
+    using AIRefactored.AI.Navigation;
     using AIRefactored.Runtime;
     using EFT;
     using UnityEngine;
 
     /// <summary>
-    /// Handles investigation behavior when a bot hears or senses enemy presence without visual contact.
-    /// Bots move toward the source and dynamically search nearby points to simulate real player behavior.
+    /// Manages bot investigation behavior when sound or memory suggest enemy presence.
+    /// Guides cautious, reactive movement toward enemy vicinity with adaptive stance.
     /// </summary>
     public sealed class InvestigateHandler
     {
@@ -30,6 +29,9 @@ namespace AIRefactored.AI.Combat.States
         private const float ScanRadius = 4.0f;
         private const float SoundReactTime = 1.0f;
         private const float MaxInvestigateTime = 15.0f;
+        private const float MinCaution = 0.3f;
+        private const float ExitDelayBuffer = 1.25f;
+        private const float ActiveWindow = 5.0f;
 
         #endregion
 
@@ -43,33 +45,17 @@ namespace AIRefactored.AI.Combat.States
 
         #region Constructor
 
-        /// <summary>
-        /// Initializes a new instance of the <see cref="InvestigateHandler"/> class.
-        /// </summary>
-        /// <param name="cache">Bot component cache containing shared systems.</param>
         public InvestigateHandler(BotComponentCache cache)
         {
-            if (cache == null)
+            if (cache == null || cache.Bot == null || cache.TacticalMemory == null)
             {
-                AIRefactoredController.Logger.LogError("[InvestigateHandler] ❌ Constructor failed: cache is null.");
-                throw new ArgumentNullException(nameof(cache));
+                Plugin.LoggerInstance.LogError("[InvestigateHandler] Constructor failed: Cache or required fields are null.");
+                throw new InvalidOperationException("InvestigateHandler requires valid cache, BotOwner, and TacticalMemory.");
             }
 
-            if (cache.Bot == null)
-            {
-                AIRefactoredController.Logger.LogError("[InvestigateHandler] ❌ Constructor failed: BotOwner is null.");
-                throw new InvalidOperationException("InvestigateHandler requires a valid BotOwner.");
-            }
-
-            if (cache.TacticalMemory == null)
-            {
-                AIRefactoredController.Logger.LogError("[InvestigateHandler] ❌ Constructor failed: TacticalMemory is null.");
-                throw new InvalidOperationException("InvestigateHandler requires TacticalMemory to function.");
-            }
-
-            this._cache = cache;
-            this._bot = cache.Bot;
-            this._memory = cache.TacticalMemory;
+            _cache = cache;
+            _bot = cache.Bot;
+            _memory = cache.TacticalMemory;
         }
 
         #endregion
@@ -77,105 +63,129 @@ namespace AIRefactored.AI.Combat.States
         #region Public Methods
 
         /// <summary>
-        /// Gets the best target to investigate from last known enemy position or memory.
+        /// Resolves a safe target for investigation from visual memory, tactical memory, or randomized fallback.
         /// </summary>
-        /// <param name="lastKnownEnemyPos">Last known position of enemy if available.</param>
-        /// <returns>Investigate target position.</returns>
-        public Vector3 GetInvestigateTarget(Vector3? lastKnownEnemyPos)
+        public Vector3 GetInvestigateTarget(Vector3 visualLastKnown)
         {
-            if (lastKnownEnemyPos.HasValue)
+            if (IsVectorValid(visualLastKnown))
             {
-                return lastKnownEnemyPos.Value;
+                return visualLastKnown;
             }
 
-            Vector3? memoryPos = this._memory.GetRecentEnemyMemory();
-            if (memoryPos.HasValue)
+            if (TryGetMemoryEnemyPosition(out Vector3 memoryPos))
             {
-                return memoryPos.Value;
+                return memoryPos;
             }
 
-            return this.RandomNearbyPosition();
+            Vector3 fallback = RandomNearbyPosition();
+            return BotNavValidator.Validate(_bot, "InvestigateRandomFallback")
+                ? fallback
+                : FallbackNavPointProvider.GetSafePoint(_bot.Position);
         }
 
         /// <summary>
-        /// Starts an investigation by moving to the target and clearing tactical memory.
+        /// Moves bot toward the investigation target and clears the tactical memory entry.
         /// </summary>
-        /// <param name="target">Investigate position.</param>
         public void Investigate(Vector3 target)
         {
-            Vector3 destination = this._cache.SquadPath != null
-                ? this._cache.SquadPath.ApplyOffsetTo(target)
-                : target;
-
-            if (float.IsNaN(destination.x) || float.IsNaN(destination.y) || float.IsNaN(destination.z))
+            if (_cache == null || _bot == null)
             {
-                AIRefactoredController.Logger.LogWarning("[InvestigateHandler] Skipped investigation: invalid destination.");
                 return;
             }
 
-            BotMovementHelper.SmoothMoveTo(this._bot, destination);
-            this._memory.MarkCleared(destination);
+            Vector3 destination = _cache.SquadPath != null
+                ? _cache.SquadPath.ApplyOffsetTo(target)
+                : target;
 
-            if (this._cache.Combat != null)
+            if (!IsVectorValid(destination) || !BotNavValidator.Validate(_bot, "InvestigateDestination"))
             {
-                this._cache.Combat.TrySetStanceFromNearbyCover(destination);
+                destination = FallbackNavPointProvider.GetSafePoint(_bot.Position);
             }
+
+            BotMovementHelper.SmoothMoveTo(_bot, destination);
+            _memory.MarkCleared(destination);
+            _cache.Combat?.TrySetStanceFromNearbyCover(destination);
         }
 
         /// <summary>
-        /// Determines if the bot should transition into Investigate state.
+        /// Determines whether the bot should enter investigation state based on caution and sound memory.
         /// </summary>
-        /// <param name="time">Current time.</param>
-        /// <param name="lastTransition">Last time the bot changed state.</param>
-        /// <returns>True if investigate should activate.</returns>
         public bool ShallUseNow(float time, float lastTransition)
         {
-            if (this._cache == null || this._cache.AIRefactoredBotOwner == null)
+            if (_cache?.AIRefactoredBotOwner?.PersonalityProfile == null)
             {
                 return false;
             }
 
-            BotPersonalityProfile? profile = this._cache.AIRefactoredBotOwner.PersonalityProfile;
-            if (profile == null || profile.Caution < 0.3f)
+            if (_cache.AIRefactoredBotOwner.PersonalityProfile.Caution < MinCaution)
             {
                 return false;
             }
 
-            bool recentlyHeard = this._cache.LastHeardTime + SoundReactTime > time;
-            bool transitionDelayMet = time - lastTransition > 1.25f;
-
-            return recentlyHeard && transitionDelayMet;
+            float heardTime = _cache.LastHeardTime;
+            return (heardTime + SoundReactTime) > time && (time - lastTransition) > ExitDelayBuffer;
         }
 
         /// <summary>
-        /// Determines whether the bot should exit investigate state based on a cooldown.
+        /// Determines if bot has exceeded its investigation time or cooldown.
         /// </summary>
-        /// <param name="now">Current time.</param>
-        /// <param name="lastHitTime">Last investigate trigger time.</param>
-        /// <param name="cooldown">Cooldown duration.</param>
-        /// <returns>True if bot should exit investigate.</returns>
         public bool ShouldExit(float now, float lastHitTime, float cooldown)
         {
-            return (now - lastHitTime) > cooldown || (now - lastHitTime) > MaxInvestigateTime;
+            float elapsed = now - lastHitTime;
+            return elapsed > cooldown || elapsed > MaxInvestigateTime;
+        }
+
+        /// <summary>
+        /// Returns true if the bot is actively investigating a recent stimulus.
+        /// </summary>
+        public bool IsInvestigating()
+        {
+            return (Time.time - _cache.LastHeardTime) <= ActiveWindow;
         }
 
         #endregion
 
         #region Private Methods
 
+        /// <summary>
+        /// Attempts to retrieve a valid enemy position from tactical memory.
+        /// </summary>
+        private bool TryGetMemoryEnemyPosition(out Vector3 result)
+        {
+            result = Vector3.zero;
+
+            if (_memory == null)
+            {
+                return false;
+            }
+
+            Vector3? memory = _memory.GetRecentEnemyMemory();
+            if (memory.HasValue && IsVectorValid(memory.Value))
+            {
+                result = memory.Value;
+                return true;
+            }
+
+            return false;
+        }
+
+        /// <summary>
+        /// Generates a random offset near the bot for fallback investigation.
+        /// </summary>
         private Vector3 RandomNearbyPosition()
         {
-            Vector3 basePos = this._bot.Position;
-            Vector3 jitter = UnityEngine.Random.insideUnitSphere * ScanRadius;
-            jitter.y = 0f;
-            return basePos + jitter;
+            Vector3 basePos = _bot != null ? _bot.Position : Vector3.zero;
+            Vector3 offset = UnityEngine.Random.insideUnitSphere * ScanRadius;
+            offset.y = 0f;
+            return basePos + offset;
         }
+
         /// <summary>
-        /// Returns true if the bot is investigating a recent sound or memory.
+        /// Verifies a vector is usable (non-NaN, non-zero).
         /// </summary>
-        public bool IsInvestigating()
+        private static bool IsVectorValid(Vector3 v)
         {
-            return this._cache.LastHeardTime + 5f > Time.time;
+            return !float.IsNaN(v.x) && !float.IsNaN(v.y) && !float.IsNaN(v.z) && v != Vector3.zero;
         }
 
         #endregion

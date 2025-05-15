@@ -6,11 +6,10 @@
 //   Please follow strict StyleCop, ReSharper, and AI-Refactored code standards for all modifications.
 // </auto-generated>
 
-#nullable enable
-
 namespace AIRefactored.AI.Looting
 {
     using System.Collections.Generic;
+    using AIRefactored.Core;
     using EFT;
     using EFT.Interactive;
 
@@ -22,17 +21,14 @@ namespace AIRefactored.AI.Looting
     {
         #region Fields
 
-        /// <summary>
-        /// Internal dictionary mapping profile IDs to lootable corpse containers.
-        /// </summary>
         private static readonly Dictionary<string, LootableContainer> Containers = new Dictionary<string, LootableContainer>(64);
 
         #endregion
 
-        #region API
+        #region Public API
 
         /// <summary>
-        /// Clears the cache of all dead body container references.
+        /// Clears all dead body container associations.
         /// </summary>
         public static void Clear()
         {
@@ -40,93 +36,63 @@ namespace AIRefactored.AI.Looting
         }
 
         /// <summary>
-        /// Returns true if the specified profile ID has a registered corpse container.
+        /// Checks if a container is cached for the given player profile ID.
         /// </summary>
-        /// <param name="profileId">The bot's profile ID.</param>
-        /// <returns>True if a corpse container is cached for the given profile ID.</returns>
-        public static bool Contains(string? profileId)
+        public static bool Contains(string profileId)
         {
-            string key;
-            if (!TryGetSafeKey(profileId, out key))
-            {
-                return false;
-            }
-
-            return Containers.ContainsKey(key);
+            return TryGetValidKey(profileId, out string key) && Containers.ContainsKey(key);
         }
 
         /// <summary>
-        /// Attempts to retrieve a corpse loot container by profile ID.
+        /// Gets the cached LootableContainer for a player, or null if missing.
         /// </summary>
-        /// <param name="profileId">The bot's profile ID.</param>
-        /// <returns>The associated lootable container, or null if not found.</returns>
-        public static LootableContainer? Get(string? profileId)
+        public static LootableContainer Get(string profileId)
         {
-            string key;
-            if (!TryGetSafeKey(profileId, out key))
+            if (!TryGetValidKey(profileId, out string key))
             {
                 return null;
             }
 
-            LootableContainer? container;
-            return Containers.TryGetValue(key, out container) ? container : null;
+            Containers.TryGetValue(key, out var result);
+            return result;
         }
 
         /// <summary>
-        /// Registers a lootable corpse container using the given player's profile ID.
+        /// Registers a LootableContainer for a dead player body.
         /// </summary>
-        /// <param name="player">The player who died.</param>
-        /// <param name="container">The corpse's lootable container.</param>
-        public static void Register(Player? player, LootableContainer? container)
+        public static void Register(Player player, LootableContainer container)
         {
-            if (player == null || container == null)
+            if (!EFTPlayerUtil.IsValid(player) || container == null)
             {
                 return;
             }
 
-            string? id = player.ProfileId;
-            string key;
-
-            if (id == null || !TryGetSafeKey(id, out key))
+            if (!TryGetValidKey(player.ProfileId, out string key))
             {
                 return;
             }
 
-            if (Containers.ContainsKey(key))
+            if (!Containers.ContainsKey(key))
             {
-                return;
+                Containers.Add(key, container);
             }
-
-            Containers.Add(key, container);
         }
 
         #endregion
 
         #region Helpers
 
-        /// <summary>
-        /// Trims and validates a string profile ID for safe dictionary usage.
-        /// </summary>
-        /// <param name="profileId">The input profile ID.</param>
-        /// <param name="key">The trimmed output key.</param>
-        /// <returns>True if valid; otherwise, false.</returns>
-        private static bool TryGetSafeKey(string? profileId, out string key)
+        private static bool TryGetValidKey(string profileId, out string key)
         {
             key = string.Empty;
 
-            if (profileId == null)
+            if (string.IsNullOrEmpty(profileId))
             {
                 return false;
             }
 
-            string trimmed = profileId.Trim();
-            if (trimmed.Length == 0)
-            {
-                return false;
-            }
-
-            key = trimmed;
-            return true;
+            key = profileId.Trim();
+            return key.Length > 0;
         }
 
         #endregion

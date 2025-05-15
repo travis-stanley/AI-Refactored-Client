@@ -3,28 +3,44 @@
 //   Licensed under the MIT License. See LICENSE in the repository root for more information.
 //
 //   THIS FILE IS SYSTEMATICALLY MANAGED.
-//   Please follow strict StyleCop, ReSharper, and AI-Refactored code standards for all modifications.
+//   Failures in AIRefactored logic must always trigger safe fallback to EFT base AI.
 // </auto-generated>
-
-#nullable enable
 
 namespace AIRefactored.AI.Combat
 {
     using System;
     using AIRefactored.AI.Core;
+    using AIRefactored.AI.Memory;
+    using AIRefactored.AI.Navigation;
     using AIRefactored.Core;
     using EFT;
     using UnityEngine;
 
     /// <summary>
-    /// Selects and maintains the most viable enemy target based on distance and visibility.
-    /// Stores tactical memory and prevents excessive target switching for realism.
+    /// Selects and maintains the most viable enemy target based on distance, visibility, memory, and tactical realism.
+    /// Prevents erratic switching and reinforces believable combat behavior.
     /// </summary>
     public sealed class BotThreatSelector
     {
+        #region Constants
+
         private const float EvaluationCooldown = 0.35f;
         private const float MaxScanDistance = 120f;
         private const float SwitchCooldown = 2.0f;
+
+        private const float VisibilityBonus = 25f;
+        private const float RecentSeenBonus = 10f;
+        private const float BlindPenalty = 20f;
+        private const float HiddenPenalty = 5f;
+        private const float UnknownPenalty = 10f;
+
+        private const float AggressionPersistenceWindow = 6f;
+        private const float AggressionMaxBonus = 15f;
+        private const float TargetSwitchThreshold = 10f;
+
+        #endregion
+
+        #region Fields
 
         private readonly BotOwner _bot;
         private readonly BotComponentCache _cache;
@@ -32,33 +48,42 @@ namespace AIRefactored.AI.Combat
 
         private float _lastTargetSwitchTime = -999f;
         private float _nextEvaluateTime;
+        private Player _currentTarget;
 
-        /// <summary>
-        /// Gets the currently selected threat target, if any.
-        /// </summary>
-        public Player? CurrentTarget { get; private set; }
+        #endregion
+
+        #region Properties
+
+        public Player CurrentTarget => _currentTarget;
+
+        #endregion
+
+        #region Constructor
 
         public BotThreatSelector(BotComponentCache cache)
         {
-            this._cache = cache ?? throw new ArgumentNullException(nameof(cache));
-            this._bot = cache.Bot ?? throw new ArgumentNullException(nameof(cache.Bot));
-            this._profile = cache.AIRefactoredBotOwner?.PersonalityProfile
-                            ?? throw new ArgumentNullException(nameof(cache.AIRefactoredBotOwner));
+            if (cache == null || cache.Bot == null || cache.AIRefactoredBotOwner == null)
+            {
+                throw new ArgumentNullException(nameof(cache));
+            }
+
+            _cache = cache;
+            _bot = cache.Bot;
+            _profile = cache.AIRefactoredBotOwner.PersonalityProfile;
         }
+
+        #endregion
+
+        #region Public Methods
 
         public void Tick(float time)
         {
-            if (this._bot == null || this._bot.IsDead || !this._bot.IsAI || FikaHeadlessDetector.IsHeadless)
+            if (time < _nextEvaluateTime || _bot == null || _bot.IsDead || !_bot.IsAI)
             {
                 return;
             }
 
-            if (time < this._nextEvaluateTime)
-            {
-                return;
-            }
-
-            this._nextEvaluateTime = time + EvaluationCooldown;
+            _nextEvaluateTime = time + EvaluationCooldown;
 
             var players = GameWorldHandler.GetAllAlivePlayers();
             if (players == null || players.Count == 0)
@@ -66,29 +91,29 @@ namespace AIRefactored.AI.Combat
                 return;
             }
 
-            Player? bestTarget = null;
+            Player bestTarget = null;
             float bestScore = float.MinValue;
 
             for (int i = 0; i < players.Count; i++)
             {
-                Player? candidate = players[i];
+                Player candidate = players[i];
                 if (!EFTPlayerUtil.IsValid(candidate))
                 {
                     continue;
                 }
 
-                string? profileId = candidate.ProfileId;
-                if (string.IsNullOrEmpty(profileId) || profileId == this._bot.ProfileId)
+                string profileId = candidate.ProfileId;
+                if (string.IsNullOrEmpty(profileId) || profileId == _bot.ProfileId)
                 {
                     continue;
                 }
 
-                if (!EFTPlayerUtil.IsEnemyOf(this._bot, candidate))
+                if (!EFTPlayerUtil.IsEnemyOf(_bot, candidate))
                 {
                     continue;
                 }
 
-                float score = this.ScoreTarget(candidate, time);
+                float score = ScoreTarget(candidate, time);
                 if (score > bestScore)
                 {
                     bestScore = score;
@@ -101,69 +126,59 @@ namespace AIRefactored.AI.Combat
                 return;
             }
 
-            if (this.CurrentTarget == null)
+            if (_currentTarget == null)
             {
-                this.SetTarget(bestTarget, time);
+                SetTarget(bestTarget, time);
                 return;
             }
 
-            float currentScore = this.ScoreTarget(this.CurrentTarget, time);
-            float switchThreshold = 10f;
-            float cooldown = SwitchCooldown * (1f - this._profile.AggressionLevel * 0.5f);
+            float currentScore = ScoreTarget(_currentTarget, time);
+            float cooldown = SwitchCooldown * (1f - (_profile.AggressionLevel * 0.5f));
 
-            if (bestScore > currentScore + switchThreshold &&
-                time > this._lastTargetSwitchTime + cooldown)
+            if (bestScore > currentScore + TargetSwitchThreshold &&
+                time > _lastTargetSwitchTime + cooldown)
             {
-                this.SetTarget(bestTarget, time);
+                SetTarget(bestTarget, time);
             }
         }
 
         public void ResetTarget()
         {
-            this.CurrentTarget = null;
+            _currentTarget = null;
         }
 
-        /// <summary>
-        /// Gets the most viable current or recent target as a valid IPlayer reference.
-        /// </summary>
-        public IPlayer? GetPriorityTarget()
+        public Player GetPriorityTarget()
         {
-            if (this.CurrentTarget != null)
+            if (EFTPlayerUtil.IsValid(_currentTarget))
             {
-                IPlayer? iTarget = EFTPlayerUtil.AsSafeIPlayer(this.CurrentTarget);
-                if (iTarget != null)
-                {
-                    return iTarget;
-                }
+                return _currentTarget;
             }
 
-            if (this._cache != null &&
-                this._cache.TacticalMemory != null)
+            string id = _cache.TacticalMemory.GetMostRecentEnemyId();
+            if (string.IsNullOrEmpty(id))
             {
-                string? id = this._cache.TacticalMemory.GetMostRecentEnemyId();
-
-                if (id != null)
-                {
-                    string trimmedId = id.Trim();
-                    if (trimmedId.Length > 0)
-                    {
-                        Player? fallback = EFTPlayerUtil.ResolvePlayerById(trimmedId);
-                        if (EFTPlayerUtil.IsValid(fallback))
-                        {
-                            return EFTPlayerUtil.AsSafeIPlayer(fallback);
-                        }
-                    }
-                }
+                return null;
             }
 
-            return null;
+            Player fallback = EFTPlayerUtil.ResolvePlayerById(id);
+            return EFTPlayerUtil.IsValid(fallback) ? fallback : null;
         }
+
+        public string GetTargetProfileId()
+        {
+            return _currentTarget != null ? _currentTarget.ProfileId : string.Empty;
+        }
+
+        #endregion
+
+        #region Private Methods
 
         private float ScoreTarget(Player candidate, float time)
         {
-            Vector3 botPos = this._bot.Position;
+            Vector3 botPos = _bot.Position;
             Vector3 targetPos = EFTPlayerUtil.GetPosition(candidate);
             float distance = Vector3.Distance(botPos, targetPos);
+
             if (distance > MaxScanDistance)
             {
                 return float.MinValue;
@@ -171,71 +186,117 @@ namespace AIRefactored.AI.Combat
 
             float score = MaxScanDistance - distance;
 
-            if (this._bot.EnemiesController?.EnemyInfos != null)
+            EnemyInfo info = GetEnemyInfo(candidate);
+            if (info != null)
             {
-                IPlayer? iTarget = EFTPlayerUtil.AsSafeIPlayer(candidate);
-                if (iTarget != null && this._bot.EnemiesController.EnemyInfos.TryGetValue(iTarget, out var info) && info != null)
+                if (info.IsVisible)
                 {
-                    if (info.IsVisible)
+                    score += VisibilityBonus;
+
+                    if (info.PersonalLastSeenTime + 2f > time)
                     {
-                        score += 25f;
-
-                        if (info.PersonalLastSeenTime + 2f > time)
-                        {
-                            score += 10f;
-                        }
-
-                        if (this._profile.Caution > 0.6f)
-                        {
-                            score += 5f;
-                        }
-
-                        if (this._cache.IsBlinded && this._cache.BlindUntilTime > time)
-                        {
-                            score -= 20f;
-                        }
+                        score += RecentSeenBonus;
                     }
-                    else
-                    {
-                        score -= 5f;
 
-                        if (this._profile.AggressionLevel > 0.7f)
-                        {
-                            float unseenTime = time - info.PersonalLastSeenTime;
-                            if (unseenTime < 6f)
-                            {
-                                score += Mathf.Lerp(0f, 15f, 1f - (unseenTime / 6f));
-                            }
-                        }
+                    if (_profile.Caution > 0.6f)
+                    {
+                        score += 5f;
+                    }
+
+                    if (_cache.IsBlinded && _cache.BlindUntilTime > time)
+                    {
+                        score -= BlindPenalty;
                     }
                 }
                 else
                 {
-                    score -= 10f;
+                    score -= HiddenPenalty;
+
+                    if (_profile.AggressionLevel > 0.7f)
+                    {
+                        float unseen = time - info.PersonalLastSeenTime;
+                        if (unseen < AggressionPersistenceWindow)
+                        {
+                            float bonus = Mathf.Lerp(0f, AggressionMaxBonus, 1f - (unseen / AggressionPersistenceWindow));
+                            score += bonus;
+                        }
+                    }
                 }
+            }
+            else
+            {
+                score -= UnknownPenalty;
             }
 
             return score;
         }
 
+        private EnemyInfo GetEnemyInfo(Player candidate)
+        {
+            if (candidate == null || _bot.EnemiesController == null)
+            {
+                return null;
+            }
+
+            string id = candidate.ProfileId;
+            if (string.IsNullOrEmpty(id))
+            {
+                return null;
+            }
+
+            var enemyInfos = _bot.EnemiesController.EnemyInfos;
+            if (enemyInfos != null)
+            {
+                foreach (var kvp in enemyInfos)
+                {
+                    if (kvp.Key is Player known && known.ProfileId == id)
+                    {
+                        return kvp.Value;
+                    }
+                }
+            }
+
+            if (_bot.Memory?.GoalEnemy?.Person?.ProfileId == id)
+            {
+                return _bot.Memory.GoalEnemy;
+            }
+
+            return null;
+        }
+
         private void SetTarget(Player target, float time)
         {
-            this.CurrentTarget = target;
-            this._lastTargetSwitchTime = time;
+            _currentTarget = target;
+            _lastTargetSwitchTime = time;
 
-            if (!string.IsNullOrEmpty(target.ProfileId))
+            string id = target.ProfileId;
+            if (!string.IsNullOrEmpty(id))
             {
-                this._cache.TacticalMemory?.RecordEnemyPosition(
-                    EFTPlayerUtil.GetPosition(target),
-                    "Target",
-                    target.ProfileId);
+                _cache.TacticalMemory.RecordEnemyPosition(EFTPlayerUtil.GetPosition(target), "Target", id);
+                _cache.LastShotTracker?.RegisterHit(id);
             }
 
-            IPlayer? safeIPlayer = EFTPlayerUtil.AsSafeIPlayer(target);
-            if (safeIPlayer != null)
+            if (_cache.Movement != null && !_cache.Bot.IsDead && _cache.Bot.Mover != null && !_cache.Bot.Mover.IsMoving)
             {
-                this._cache.LastShotTracker?.RegisterHitBy(safeIPlayer);
+                Vector3 fallback = Vector3.zero;
+
+                if (NavPointRegistry.IsReady && !NavPointRegistry.IsEmpty)
+                {
+                    fallback = NavPointRegistry.GetClosestPosition(_cache.Bot.Position);
+                }
+
+                if (!BotNavValidator.Validate(_cache.Bot, nameof(SetTarget)))
+                {
+                    fallback = FallbackNavPointProvider.GetSafePoint(_cache.Bot.Position);
+                }
+
+                if (fallback != Vector3.zero)
+                {
+                    _cache.Bot.Mover.GoToPoint(fallback, true, 1.0f);
+                }
             }
         }
+
+        #endregion
     }
 }

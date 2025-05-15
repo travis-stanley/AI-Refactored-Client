@@ -3,32 +3,40 @@
 //   Licensed under the MIT License. See LICENSE in the repository root for more information.
 //
 //   THIS FILE IS SYSTEMATICALLY MANAGED.
-//   Please follow strict StyleCop, ReSharper, and AI-Refactored code standards for all modifications.
+//   Failures in AIRefactored logic must always trigger safe fallback to EFT base AI.
 // </auto-generated>
-
-#nullable enable
 
 namespace AIRefactored.AI.Combat.States
 {
     using System;
     using AIRefactored.AI.Core;
     using AIRefactored.AI.Helpers;
+    using AIRefactored.AI.Navigation;
     using AIRefactored.Core;
+    using AIRefactored.Pools;
     using AIRefactored.Runtime;
     using EFT;
     using UnityEngine;
 
     /// <summary>
-    /// Controls behavior during direct combat engagements.
-    /// Drives toward target, aligns stance, and updates destination dynamically.
+    /// Controls direct combat engagement logic.
+    /// Pushes toward the enemy, recalculates stance and movement based on distance, visibility, and cover presence.
     /// </summary>
     public sealed class AttackHandler
     {
+        #region Constants
+
+        private const float PositionUpdateThresholdSqr = 1.0f;
+
+        #endregion
+
         #region Fields
 
         private readonly BotOwner _bot;
         private readonly BotComponentCache _cache;
-        private Vector3? _lastTargetPosition;
+
+        private Vector3 _lastTargetPosition;
+        private bool _hasLastTarget;
 
         #endregion
 
@@ -37,23 +45,18 @@ namespace AIRefactored.AI.Combat.States
         /// <summary>
         /// Initializes the attack handler with bot component cache.
         /// </summary>
-        /// <param name="cache">The component cache for the bot.</param>
         public AttackHandler(BotComponentCache cache)
         {
-            if (cache == null)
+            if (cache == null || cache.Bot == null)
             {
-                AIRefactoredController.Logger.LogError("[AttackHandler] Constructor failed: cache is null.");
-                throw new ArgumentNullException(nameof(cache));
+                Plugin.LoggerInstance.LogError("[AttackHandler] Null cache or BotOwner during construction.");
+                throw new ArgumentException("AttackHandler requires a valid cache with BotOwner.");
             }
 
-            if (cache.Bot == null)
-            {
-                AIRefactoredController.Logger.LogError("[AttackHandler] Constructor failed: BotOwner is null.");
-                throw new InvalidOperationException("AttackHandler requires a valid BotOwner.");
-            }
-
-            this._cache = cache;
-            this._bot = cache.Bot;
+            _cache = cache;
+            _bot = cache.Bot;
+            _lastTargetPosition = Vector3.zero;
+            _hasLastTarget = false;
         }
 
         #endregion
@@ -61,58 +64,68 @@ namespace AIRefactored.AI.Combat.States
         #region Public Methods
 
         /// <summary>
-        /// Clears last known target position.
+        /// Clears last known enemy position tracking.
         /// </summary>
         public void ClearTarget()
         {
-            this._lastTargetPosition = null;
+            _hasLastTarget = false;
+            _lastTargetPosition = Vector3.zero;
         }
 
         /// <summary>
-        /// Determines if the attack state should be used.
+        /// Determines if the bot currently has a valid target to attack.
         /// </summary>
-        /// <returns>True if the bot should use attack logic.</returns>
         public bool ShallUseNow()
         {
-            Player? target = this.GetCurrentEnemy();
-            return EFTPlayerUtil.IsValid(target);
+            Player _;
+            return TryResolveEnemy(out _);
         }
 
         /// <summary>
-        /// Updates attack logic based on target position.
+        /// Executes per-frame attack logic: move toward enemy and adjust stance.
         /// </summary>
-        /// <param name="time">Current game time.</param>
-        public void Tick(float time)
+        public void Tick(float deltaTime)
         {
-            Player? enemy = this.GetCurrentEnemy();
-            if (!EFTPlayerUtil.IsValid(enemy))
+            try
             {
-                return;
-            }
+                Player enemy;
+                if (!TryResolveEnemy(out enemy))
+                {
+                    return;
+                }
 
-            Transform? enemyTransform = EFTPlayerUtil.GetTransform(enemy);
-            if (enemyTransform == null)
+                Transform enemyTransform = EFTPlayerUtil.GetTransform(enemy);
+                if (enemyTransform == null)
+                {
+                    return;
+                }
+
+                Vector3 currentTargetPos = enemyTransform.position;
+                float deltaSqr = (currentTargetPos - _lastTargetPosition).sqrMagnitude;
+
+                if (!_hasLastTarget || deltaSqr > PositionUpdateThresholdSqr)
+                {
+                    _lastTargetPosition = currentTargetPos;
+                    _hasLastTarget = true;
+
+                    Vector3 destination = (_cache.SquadPath != null)
+                        ? _cache.SquadPath.ApplyOffsetTo(currentTargetPos)
+                        : currentTargetPos;
+
+                    if (!BotNavValidator.Validate(_bot, "AttackHandlerTarget"))
+                    {
+                        destination = FallbackNavPointProvider.GetSafePoint(_bot.Position);
+                    }
+
+                    BotMovementHelper.SmoothMoveTo(_bot, destination);
+                    BotCoverHelper.TrySetStanceFromNearbyCover(_cache, destination);
+                }
+            }
+            catch (Exception ex)
             {
-                return;
+                Plugin.LoggerInstance.LogError("[AttackHandler] Exception in Tick: " + ex);
+                BotFallbackUtility.FallbackToEFTLogic(_bot);
             }
-
-            Vector3 targetPosition = enemyTransform.position;
-            bool needsUpdate = !this._lastTargetPosition.HasValue ||
-                               (this._lastTargetPosition.Value - targetPosition).sqrMagnitude > 1.0f;
-
-            if (!needsUpdate)
-            {
-                return;
-            }
-
-            this._lastTargetPosition = targetPosition;
-
-            Vector3 destination = this._cache.SquadPath != null
-                ? this._cache.SquadPath.ApplyOffsetTo(targetPosition)
-                : targetPosition;
-
-            BotMovementHelper.SmoothMoveTo(this._bot, destination);
-            BotCoverHelper.TrySetStanceFromNearbyCover(this._cache, destination);
         }
 
         #endregion
@@ -120,27 +133,26 @@ namespace AIRefactored.AI.Combat.States
         #region Private Methods
 
         /// <summary>
-        /// Gets the current valid enemy, if any.
+        /// Attempts to resolve the most appropriate enemy target for attack.
         /// </summary>
-        /// <returns>The current enemy target or null.</returns>
-        private Player? GetCurrentEnemy()
+        private bool TryResolveEnemy(out Player result)
         {
-            if (this._cache == null || this._bot == null)
+            result = null;
+
+            BotThreatSelector selector = _cache.ThreatSelector;
+            if (selector != null && EFTPlayerUtil.IsValid(selector.CurrentTarget))
             {
-                return null;
+                result = selector.CurrentTarget;
+                return true;
             }
 
-            if (this._cache.ThreatSelector?.CurrentTarget is Player target && EFTPlayerUtil.IsValid(target))
+            if (_bot.Memory?.GoalEnemy?.Person is Player fallback && EFTPlayerUtil.IsValid(fallback))
             {
-                return target;
+                result = fallback;
+                return true;
             }
 
-            if (this._bot.Memory?.GoalEnemy?.Person is Player fallback && EFTPlayerUtil.IsValid(fallback))
-            {
-                return fallback;
-            }
-
-            return null;
+            return false;
         }
 
         #endregion

@@ -6,8 +6,6 @@
 //   Please follow strict StyleCop, ReSharper, and AI-Refactored code standards for all modifications.
 // </auto-generated>
 
-#nullable enable
-
 namespace AIRefactored.AI.Helpers
 {
     using UnityEngine;
@@ -22,14 +20,7 @@ namespace AIRefactored.AI.Helpers
         /// Returns a visibility score between 0 and 1 based on angle and distance to flashlight.
         /// Combines frontal alignment and proximity to determine severity of exposure.
         /// </summary>
-        /// <param name="lightTransform">Transform of the flashlight source.</param>
-        /// <param name="botHeadTransform">Transform of the bot's head or eyes.</param>
-        /// <param name="maxDistance">Maximum distance considered for light exposure.</param>
-        /// <returns>Normalized flash exposure score from 0 (no exposure) to 1 (full exposure).</returns>
-        public static float CalculateFlashScore(
-            Transform? lightTransform,
-            Transform? botHeadTransform,
-            float maxDistance = 20f)
+        public static float CalculateFlashScore(Transform lightTransform, Transform botHeadTransform, float maxDistance = 20f)
         {
             if (lightTransform == null || botHeadTransform == null)
             {
@@ -44,47 +35,30 @@ namespace AIRefactored.AI.Helpers
                 return 0f;
             }
 
-            Vector3 botForward = botHeadTransform.forward.normalized;
-            Vector3 lightDir = toLight.normalized;
-
-            float angleFactor = Mathf.Clamp01(Vector3.Dot(botForward, lightDir));
+            float alignmentFactor = Mathf.Clamp01(Vector3.Dot(botHeadTransform.forward, toLight.normalized));
             float distanceFactor = 1f - Mathf.Clamp01(distance / maxDistance);
 
-            return angleFactor * distanceFactor;
+            return alignmentFactor * distanceFactor;
         }
 
         /// <summary>
         /// Calculates the normalized frontal exposure to a flashlight.
         /// </summary>
-        /// <param name="lightTransform">Transform of the flashlight source.</param>
-        /// <param name="botHeadTransform">Transform of the bot's head or camera.</param>
-        /// <returns>Value from 0 to 1 representing how directly the bot is facing the light source.</returns>
-        public static float GetFlashIntensityFactor(
-            Transform? lightTransform,
-            Transform? botHeadTransform)
+        public static float GetFlashIntensityFactor(Transform lightTransform, Transform botHeadTransform)
         {
             if (lightTransform == null || botHeadTransform == null)
             {
                 return 0f;
             }
 
-            Vector3 toLight = (lightTransform.position - botHeadTransform.position).normalized;
-            Vector3 forward = botHeadTransform.forward.normalized;
-
-            return Mathf.Clamp01(Vector3.Dot(forward, toLight));
+            Vector3 toLight = lightTransform.position - botHeadTransform.position;
+            return Mathf.Clamp01(Vector3.Dot(botHeadTransform.forward, toLight.normalized));
         }
 
         /// <summary>
         /// Determines whether the bot is facing a light source within a dangerous exposure cone.
         /// </summary>
-        /// <param name="lightTransform">Transform of the flashlight source.</param>
-        /// <param name="botHeadTransform">Transform of the bot's head or camera.</param>
-        /// <param name="angleThreshold">Maximum allowable angle (degrees) for considering exposure.</param>
-        /// <returns>True if the bot is being blinded by the light source; otherwise, false.</returns>
-        public static bool IsBlindingLight(
-            Transform? lightTransform,
-            Transform? botHeadTransform,
-            float angleThreshold = 30f)
+        public static bool IsBlindingLight(Transform lightTransform, Transform botHeadTransform, float angleThreshold = 30f)
         {
             if (lightTransform == null || botHeadTransform == null)
             {
@@ -98,16 +72,9 @@ namespace AIRefactored.AI.Helpers
         }
 
         /// <summary>
-        /// Determines if the flashlight is pointing toward the bot within the specified angle threshold.
+        /// Determines if the flashlight is pointing toward the target within the specified angle threshold.
         /// </summary>
-        /// <param name="source">Transform of the light source or entity.</param>
-        /// <param name="target">Transform of the target (bot).</param>
-        /// <param name="angleThreshold">Maximum angle for detection (in degrees).</param>
-        /// <returns>True if the source is aiming toward the target; otherwise, false.</returns>
-        public static bool IsFacingTarget(
-            Transform? source,
-            Transform? target,
-            float angleThreshold = 30f)
+        public static bool IsFacingTarget(Transform source, Transform target, float angleThreshold = 30f)
         {
             if (source == null || target == null)
             {

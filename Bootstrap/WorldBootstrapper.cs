@@ -6,11 +6,11 @@
 //   Please follow strict StyleCop, ReSharper, and AI-Refactored code standards for all modifications.
 // </auto-generated>
 
-#nullable enable
-
 namespace AIRefactored.Bootstrap
 {
+    using System;
     using System.Collections;
+    using System.Collections.Generic;
     using AIRefactored.AI.Core;
     using AIRefactored.AI.Hotspots;
     using AIRefactored.AI.Looting;
@@ -18,6 +18,7 @@ namespace AIRefactored.Bootstrap
     using AIRefactored.AI.Optimization;
     using AIRefactored.AI.Threads;
     using AIRefactored.Core;
+    using AIRefactored.Pools;
     using AIRefactored.Runtime;
     using BepInEx.Logging;
     using Comfort.Common;
@@ -26,226 +27,303 @@ namespace AIRefactored.Bootstrap
     using UnityEngine;
 
     /// <summary>
-    /// Initializes AIRefactored world systems on scene load. Handles bot registration, NavMesh warm-up,
-    /// and AI brain injection in both multiplayer and headless environments.
+    /// Main coordinator for AIRefactored world systems. Handles initialization, updates, NavMesh warmup, and teardown.
     /// </summary>
-    public sealed class WorldBootstrapper : MonoBehaviour
+    public static class WorldBootstrapper
     {
+        #region Fields
+
+        private static readonly List<IAIWorldSystemBootstrapper> Systems = new List<IAIWorldSystemBootstrapper>(16);
+        private static ManualLogSource _loggerInstance = Plugin.LoggerInstance;
+
+        private static bool _hasInitialized;
+        private static bool _hasShutdownLogged;
+        private static float _lastSweep;
         private const float SweepInterval = 20f;
-        private const float ZoneCheckInterval = 1f;
-        private const float InitializationRetryInterval = 3f;
-        private const int MaxInitializationRetries = 5;
 
-        private static readonly ManualLogSource Logger = AIRefactoredController.Logger;
-        private static readonly object LockObj = new object();
+        private static ManualLogSource Logger => _loggerInstance ?? Plugin.LoggerInstance;
 
-        // Only this host GameObject ever holds the real bootstrapper.
-        private static GameObject? _injectedHost;
+        #endregion
 
-        private bool _isInitializing;
-        private int _attempts;
-        private bool _resetAfterReady;
-        private float _lastSweep = -999f;
-        private float _lastZoneCheck = -999f;
-        private BotSystemRecoveryWatcher? _recoveryWatcher;
+        #region Lifecycle
 
-        /// <summary>
-        /// Creates exactly one WorldBootstrapper on a new GameObject, if and only if we’re the authoritative host.
-        /// </summary>
-        public static void TryInitialize()
+        public static void Begin(ManualLogSource logger, string mapId)
         {
-            if (!GameWorldHandler.IsLocalHost())
+            _loggerInstance = logger ?? Plugin.LoggerInstance;
+
+            if (_hasInitialized)
             {
-                Logger.LogWarning("[WorldBootstrapper] Skipped bootstrap — not authoritative.");
+                Logger.LogDebug("[WorldBootstrapper] Already initialized — skipping.");
                 return;
             }
 
-            if (_injectedHost != null)
+            try
             {
-                Logger.LogWarning("[WorldBootstrapper] Already injected — skipping.");
-                return;
-            }
+                _hasShutdownLogged = false;
+                Systems.Clear();
 
-            _injectedHost = new GameObject("WorldBootstrapper (Injected)");
-            Object.DontDestroyOnLoad(_injectedHost);
-            _injectedHost.AddComponent<WorldBootstrapper>();
+                // Global resets
+                BotRecoveryService.Reset();
+                BotSpawnWatcherService.Reset();
+                LootRuntimeWatcher.Reset();
+                DeadBodyObserverService.Reset();
+                DeadBodyContainerCache.Clear();
+                LootRegistry.Clear();
+                HotspotRegistry.Clear();
+                NavPointRegistry.Clear();
 
-            Logger.LogInfo("[WorldBootstrapper] ✅ Manual bootstrap injected.");
-        }
-
-        private void Awake()
-        {
-            // Only the one host GameObject may survive
-            if (this.gameObject != _injectedHost)
-            {
-                Logger.LogWarning("[WorldBootstrapper] Duplicate instance detected — destroying.");
-                Destroy(this.gameObject);
-                return;
-            }
-
-            Logger.LogInfo("[WorldBootstrapper] 🟢 Awake on primary bootstrapper.");
-
-            // Recovery watcher must exist exactly once
-            _recoveryWatcher = this.gameObject.AddComponent<BotSystemRecoveryWatcher>();
-            BotWorkScheduler.AutoInjectFlushHost();
-
-            // Kick off deferred initialization
-            if (GameWorldHandler.IsLocalHost())
-            {
-                Logger.LogInfo("[WorldBootstrapper] 🧠 Authoritative host — starting initialization.");
-                StartCoroutine(SafeInitializeRoutine());
-            }
-            else
-            {
-                Logger.LogWarning("[WorldBootstrapper] 🚫 Non-host — skipping initialization.");
-            }
-        }
-
-        private IEnumerator SafeInitializeRoutine()
-        {
-            if (_isInitializing)
-            {
-                Logger.LogWarning("[WorldBootstrapper] Initialization already in progress — skipping.");
-                yield break;
-            }
-
-            _isInitializing = true;
-            yield return StartCoroutine(DelayedInitialize());
-            _isInitializing = false;
-        }
-
-        private IEnumerator DelayedInitialize()
-        {
-            lock (LockObj)
-            {
-                // Back off if we've retried too many times before the world was ready
-                if (_attempts >= MaxInitializationRetries && !_resetAfterReady && GameWorldHandler.IsReady())
+                if (!string.IsNullOrEmpty(mapId))
                 {
-                    _resetAfterReady = true;
-                    _attempts = 0;
+                    NavPointBootstrapper.RegisterAll(mapId);
+                    HotspotRegistry.Initialize(mapId);
                 }
-                _attempts++;
-            }
-
-            yield return new WaitForSeconds(Mathf.Pow(2, _attempts) * InitializationRetryInterval);
-
-            if (!GameWorldHandler.TryForceResolveMapName() || !GameWorldHandler.IsReady())
-            {
-                Logger.LogWarning("[WorldBootstrapper] 🚧 Deferring initialization until world ready.");
-                yield break;
-            }
-
-            string mapId = GameWorldHandler.GetCurrentMapName();
-            Logger.LogInfo($"[WorldBootstrapper] 🔧 Initializing systems for map: {mapId}");
-
-            // Hotspots
-            HotspotRegistry.Clear();
-            HotspotRegistry.Initialize(mapId);
-
-            // Zones + NavPoints
-            ZoneAssignmentHelper.Clear();
-            NavPointRegistry.Clear();
-            IZones? zones = null;
-            int wait = 0;
-            while (!GameWorldHandler.TryGetIZones(out zones) || zones == null)
-            {
-                if (++wait > 60)
+                else
                 {
-                    Logger.LogWarning("[WorldBootstrapper] ⚠ Timed out waiting for IZones.");
-                    break;
+                    Logger.LogWarning("[WorldBootstrapper] Cannot initialize registries — mapId is invalid.");
                 }
+
+                // Register world systems
+                RegisterSystem(new RaidLifecycleWatcher());
+                RegisterSystem(new BotRecoveryService());
+                RegisterSystem(new BotSpawnWatcherService());
+                RegisterSystem(new LootRuntimeWatcher());
+                RegisterSystem(new DeadBodyObserverService());
+                RegisterSystem(new HotspotRegistryBootstrapper());
+
+                // Initialize all systems
+                for (int i = 0; i < Systems.Count; i++)
+                {
+                    try { Systems[i].Initialize(); }
+                    catch (Exception ex) { Logger.LogError("[WorldBootstrapper] Failed to initialize system: " + ex); }
+                }
+
+                _hasInitialized = true;
+                Logger.LogDebug("[WorldBootstrapper] ✅ World systems initialized.");
+
+                if (GameWorldHandler.IsHost)
+                {
+                    StaticManager.Instance.StartCoroutine(DelayedNavMeshWarmup());
+                }
+            }
+            catch (Exception ex)
+            {
+                Logger.LogError("[WorldBootstrapper] Initialization failed: " + ex);
+            }
+        }
+
+        public static void Stop()
+        {
+            if (!_hasInitialized) return;
+
+            try
+            {
+                for (int i = 0; i < Systems.Count; i++)
+                {
+                    try { Systems[i].OnRaidEnd(); }
+                    catch (Exception ex) { Logger.LogError("[WorldBootstrapper] OnRaidEnd error in system: " + ex); }
+                }
+
+                Systems.Clear();
+                _hasInitialized = false;
+
+                if (!_hasShutdownLogged)
+                {
+                    _hasShutdownLogged = true;
+                    Logger.LogDebug("[WorldBootstrapper] 🔻 AIRefactored systems shut down.");
+                }
+            }
+            catch (Exception ex)
+            {
+                Logger.LogError("[WorldBootstrapper] Stop() encountered error: " + ex);
+            }
+        }
+
+        #endregion
+
+        #region Tick
+
+        public static void Tick(float deltaTime)
+        {
+            if (!_hasInitialized)
+            {
+                return;
+            }
+
+            try
+            {
+                float now = Time.time;
+
+                for (int i = 0; i < Systems.Count; i++)
+                {
+                    IAIWorldSystemBootstrapper system = Systems[i];
+                    if (system == null) continue;
+
+                    try
+                    {
+                        if (WorldInitState.IsInPhase(system.RequiredPhase()))
+                        {
+                            system.Tick(deltaTime);
+                        }
+                    }
+                    catch (Exception ex)
+                    {
+                        Logger.LogError("[WorldBootstrapper] System Tick() error: " + ex);
+                    }
+                }
+
+                List<Player> players = GameWorldHandler.GetAllAlivePlayers();
+                try
+                {
+                    for (int i = 0; i < players.Count; i++)
+                    {
+                        Player player = players[i];
+                        if (!EFTPlayerUtil.IsValid(player) || !player.IsAI) continue;
+
+                        GameObject go = player.gameObject;
+                        if (go == null) continue;
+
+                        BotBrain brain = go.GetComponent<BotBrain>();
+                        if (brain != null && brain.enabled)
+                        {
+                            try { brain.Tick(deltaTime); }
+                            catch (Exception ex) { Logger.LogError("[WorldBootstrapper] BotBrain.Tick() error: " + ex); }
+                        }
+                    }
+                }
+                finally
+                {
+                    TempListPool.Return(players);
+                }
+
+                if (now - _lastSweep >= SweepInterval)
+                {
+                    _lastSweep = now;
+                    GameWorldHandler.EnforceBotBrains();
+                    GameWorldHandler.CleanupDeadBotsSmoothly();
+                }
+            }
+            catch (Exception ex)
+            {
+                Logger.LogError("[WorldBootstrapper] Tick() outer error: " + ex);
+            }
+        }
+
+        #endregion
+
+        #region NavMesh Warmup
+
+        private static IEnumerator DelayedNavMeshWarmup()
+        {
+            const int MaxFrames = 300;
+            int frame = 0;
+
+            while (!CanWarmupNavMesh() || (FikaHeadlessDetector.IsHeadless && !FikaHeadlessDetector.HasRaidStarted()))
+            {
+                if (frame++ >= MaxFrames)
+                {
+                    Logger.LogWarning("[WorldBootstrapper] NavMesh warmup timed out — world or FIKA not ready.");
+                    yield break;
+                }
+
                 yield return null;
             }
-            if (zones != null)
+
+            Logger.LogInfo("[WorldBootstrapper] Starting NavMesh warmup...");
+
+            string mapId = GameWorldHandler.TryGetValidMapName();
+            if (string.IsNullOrEmpty(mapId))
             {
-                ZoneAssignmentHelper.Initialize(zones);
-                NavPointRegistry.InitializeZoneSystem(zones);
-            }
-            NavPointRegistry.EnableSpatialIndexing(true);
-            NavPointRegistry.RegisterAll(mapId);
-
-            // Loot
-            LootRegistry.Clear();
-            LootBootstrapper.RegisterAllLoot();
-            BotDeadBodyScanner.ScanAll();
-
-            // NavMesh prewarm
-            PrewarmAllNavMeshes();
-            Logger.LogInfo("[WorldBootstrapper] ✅ All systems initialized.");
-        }
-
-        private void Update()
-        {
-            if (!GameWorldHandler.IsLocalHost())
-                return;
-
-            float now = Time.time;
-
-            // Periodic brain enforcement
-            if (now - _lastSweep >= SweepInterval)
-            {
-                _lastSweep = now;
-                GameWorldHandler.EnforceBotBrains();
+                Logger.LogWarning("[WorldBootstrapper] Cannot prewarm — invalid mapId.");
+                yield break;
             }
 
-            // Dead-bot cleanup
-            GameWorldHandler.CleanupDeadBotsSmoothly();
-
-            // Zone readiness check
-            if (now - _lastZoneCheck >= ZoneCheckInterval)
+            NavMeshSurface[] surfaces = UnityEngine.Object.FindObjectsOfType<NavMeshSurface>();
+            for (int i = 0; i < surfaces.Length; i++)
             {
-                _lastZoneCheck = now;
-                if (!GameWorldHandler.TryGetIZones(out _))
+                NavMeshSurface surface = surfaces[i];
+                if (surface != null && surface.enabled && surface.gameObject.activeInHierarchy)
                 {
-                    Logger.LogWarning("[WorldBootstrapper] ⚠ Zones not ready.");
+                    try
+                    {
+                        surface.BuildNavMesh();
+                        BotCoverRetreatPlanner.RegisterSurface(mapId, surface);
+                    }
+                    catch (Exception ex)
+                    {
+                        Logger.LogWarning("[WorldBootstrapper] NavMesh build failed: " + ex);
+                    }
                 }
             }
+
+            NavMeshStatus.SetReady();
+            Logger.LogInfo("[WorldBootstrapper] ✅ NavMesh warmup complete.");
         }
 
-        private void OnDestroy()
+        private static bool CanWarmupNavMesh()
         {
-            // Only clear everything when our one true host is torn down
-            if (this.gameObject == _injectedHost)
+            GameWorld world = Singleton<GameWorld>.Instance;
+            if (world == null || world.RegisteredPlayers == null || world.RegisteredPlayers.Count == 0)
             {
-                Logger.LogInfo("[WorldBootstrapper] 🔻 Destroying primary bootstrapper.");
-                HotspotRegistry.Clear();
-                LootRegistry.Clear();
-                NavPointRegistry.Clear();
-                ZoneAssignmentHelper.Clear();
-                _injectedHost = null;
+                return false;
             }
-        }
 
-        private void PrewarmAllNavMeshes()
-        {
-            string mapId = GameWorldHandler.GetCurrentMapName();
-            var surfaces = FindObjectsOfType<NavMeshSurface>();
-            foreach (var s in surfaces)
+            for (int i = 0; i < world.RegisteredPlayers.Count; i++)
             {
-                if (s != null && s.enabled && s.gameObject.activeInHierarchy)
+                var raw = world.RegisteredPlayers[i];
+                var player = EFTPlayerUtil.AsEFTPlayer(raw);
+                if (player != null && EFTPlayerUtil.IsValid(player))
                 {
-                    s.BuildNavMesh();
-                    BotCoverRetreatPlanner.RegisterSurface(mapId, s);
+                    return true;
                 }
             }
+
+            return false;
         }
 
-        /// <summary>
-        /// Helper to ensure any existing or newly spawned bot gets a BotBrain attached.
-        /// </summary>
-        public static void EnforceBotBrain(Player player, BotOwner? bot = null)
+        #endregion
+
+        #region BotBrain Injection
+
+        public static void EnforceBotBrain(Player player, BotOwner bot)
         {
-            if (player == null || !player.IsAI || player.gameObject == null)
-                return;
+            if (!EFTPlayerUtil.IsValid(player) || !player.IsAI) return;
 
-            var go = player.gameObject;
-            BotBrainGuardian.Enforce(go);
+            GameObject go = player.gameObject;
+            if (go == null) return;
 
-            if (go.GetComponent<BotBrain>() == null && bot != null)
+            try
             {
-                var brain = go.AddComponent<BotBrain>();
-                brain.Initialize(bot);
+                BotBrainGuardian.Enforce(go);
+
+                BotBrain existing = go.GetComponent<BotBrain>();
+                if (existing == null && bot != null)
+                {
+                    BotBrain brain = go.AddComponent<BotBrain>();
+                    brain.enabled = true;
+                    brain.Initialize(bot);
+                }
+                else if (existing != null && !existing.enabled)
+                {
+                    existing.enabled = true;
+                    Logger.LogWarning("[WorldBootstrapper] Re-enabled BotBrain for: " + player.ProfileId);
+                }
+            }
+            catch (Exception ex)
+            {
+                Logger.LogWarning("[WorldBootstrapper] BotBrain init failed for " + player.ProfileId + ": " + ex);
             }
         }
+
+        #endregion
+
+        #region System Registration
+
+        public static void RegisterSystem(IAIWorldSystemBootstrapper system)
+        {
+            if (system == null || Systems.Contains(system)) return;
+            Systems.Add(system);
+        }
+
+        #endregion
     }
 }

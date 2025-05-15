@@ -6,8 +6,6 @@
 //   Please follow strict StyleCop, ReSharper, and AI-Refactored code standards for all modifications.
 // </auto-generated>
 
-#nullable enable
-
 namespace AIRefactored.AI.Groups
 {
     using System;
@@ -24,15 +22,16 @@ namespace AIRefactored.AI.Groups
     {
         #region Constants
 
-        private const float AllyRadius = 12f;
+        private const float AllyRadius = 12.0f;
         private const float VoiceCooldown = 4.5f;
-        private static readonly float AllyRadiusSq = AllyRadius * AllyRadius;
+        private static readonly float AllyRadiusSqr = AllyRadius * AllyRadius;
 
         #endregion
 
         #region Fields
 
         private readonly BotComponentCache _cache;
+        private readonly BotOwner _bot;
         private float _nextVoiceTime;
 
         #endregion
@@ -40,8 +39,7 @@ namespace AIRefactored.AI.Groups
         #region Properties
 
         /// <summary>
-        /// Gets or sets a value indicating whether this bot is muted from triggering voice lines.
-        /// Used by healing and suppression logic.
+        /// Gets or sets whether this bot is muted (cannot issue group VO lines).
         /// </summary>
         public bool IsMuted { get; set; }
 
@@ -49,138 +47,126 @@ namespace AIRefactored.AI.Groups
 
         #region Constructor
 
-        /// <summary>
-        /// Initializes a new instance of the <see cref="BotGroupComms"/> class.
-        /// </summary>
-        /// <param name="cache">The bot's component cache.</param>
         public BotGroupComms(BotComponentCache cache)
         {
-            this._cache = cache ?? throw new ArgumentNullException(nameof(cache));
+            if (cache == null || cache.Bot == null)
+            {
+                throw new ArgumentException("[BotGroupComms] Invalid cache or bot.");
+            }
+
+            _cache = cache;
+            _bot = cache.Bot;
         }
 
         #endregion
 
         #region Public Methods
 
-        /// <summary>
-        /// Explicitly triggers a voice line immediately.
-        /// </summary>
-        /// <param name="phrase">The voice phrase to say.</param>
         public void Say(EPhraseTrigger phrase)
         {
-            if (!this.IsMuted && this.IsEligible())
+            if (!IsMuted && IsEligible())
             {
-                this._cache.Bot?.BotTalk?.TrySay(phrase);
+                _bot.BotTalk.TrySay(phrase);
             }
         }
 
-        /// <summary>
-        /// Says a fallback alert ("Get back!") with 50% chance.
-        /// </summary>
         public void SayFallback()
         {
-            this.TriggerVoice(EPhraseTrigger.GetBack, 0.5f);
+            TryTriggerVoice(EPhraseTrigger.GetBack, 0.5f);
         }
 
-        /// <summary>
-        /// Says a "Frag Out!" grenade callout, 80% chance if squad nearby.
-        /// </summary>
         public void SayFragOut()
         {
-            this.TriggerVoice(EPhraseTrigger.OnEnemyGrenade, this.HasNearbyAlly() ? 0.8f : 0f);
+            float chance = HasNearbyAlly() ? 0.8f : 0.0f;
+            TryTriggerVoice(EPhraseTrigger.OnEnemyGrenade, chance);
         }
 
-        /// <summary>
-        /// Says an injury reaction ("I'm hit!") with 70% chance.
-        /// </summary>
         public void SayHit()
         {
-            this.TriggerVoice(EPhraseTrigger.OnBeingHurt, 0.7f);
+            TryTriggerVoice(EPhraseTrigger.OnBeingHurt, 0.7f);
         }
 
-        /// <summary>
-        /// Says a suppression alert ("Suppress them!") with 60% chance.
-        /// </summary>
         public void SaySuppression()
         {
-            this.TriggerVoice(EPhraseTrigger.Suppress, 0.6f);
+            TryTriggerVoice(EPhraseTrigger.Suppress, 0.6f);
         }
 
         #endregion
 
-        #region Internal Logic
+        #region Private Methods
 
         private bool IsEligible()
         {
-            BotOwner? bot = this._cache.Bot;
-            return bot != null &&
-                   bot.GetPlayer != null &&
-                   bot.GetPlayer.IsAI &&
-                   !bot.IsDead &&
-                   bot.BotTalk != null;
+            return _bot != null &&
+                   !_bot.IsDead &&
+                   _bot.GetPlayer != null &&
+                   _bot.GetPlayer.IsAI &&
+                   _bot.BotTalk != null;
+        }
+
+        private void TryTriggerVoice(EPhraseTrigger phrase, float chance)
+        {
+            if (IsMuted || _bot.BotTalk == null)
+            {
+                return;
+            }
+
+            float now = Time.time;
+            if (now < _nextVoiceTime)
+            {
+                return;
+            }
+
+            if (chance < 1.0f && UnityEngine.Random.value > chance)
+            {
+                return;
+            }
+
+            _nextVoiceTime = now + (VoiceCooldown * UnityEngine.Random.Range(0.8f, 1.2f));
+            _bot.BotTalk.TrySay(phrase);
         }
 
         private bool HasNearbyAlly()
         {
-            BotOwner? bot = this._cache.Bot;
-            if (bot == null)
+            if (_bot?.Profile?.Info == null)
             {
                 return false;
             }
 
-            string? groupId = bot.Profile?.Info?.GroupId;
+            string groupId = _bot.Profile.Info.GroupId;
             if (string.IsNullOrEmpty(groupId))
             {
                 return false;
             }
 
-            Vector3 myPos = bot.Position;
+            Vector3 myPos = _bot.Position;
 
-            foreach (BotComponentCache otherCache in BotCacheUtility.AllActiveBots())
+            foreach (BotComponentCache other in BotCacheUtility.AllActiveBots())
             {
-                if (otherCache == null || otherCache == this._cache)
+                if (ReferenceEquals(other, _cache) || other.Bot == null || other.Bot.IsDead)
                 {
                     continue;
                 }
 
-                BotOwner? mate = otherCache.Bot;
-                if (mate == null || mate.IsDead)
+                Profile otherProfile = other.Bot.Profile;
+                if (otherProfile?.Info == null)
                 {
                     continue;
                 }
 
-                string? mateGroup = mate.Profile?.Info?.GroupId;
-                if (!string.IsNullOrEmpty(mateGroup) &&
-                    mateGroup == groupId &&
-                    (mate.Position - myPos).sqrMagnitude <= AllyRadiusSq)
+                if (!groupId.Equals(otherProfile.Info.GroupId, StringComparison.Ordinal))
+                {
+                    continue;
+                }
+
+                Vector3 offset = other.Bot.Position - myPos;
+                if (offset.sqrMagnitude <= AllyRadiusSqr)
                 {
                     return true;
                 }
             }
 
             return false;
-        }
-
-        private void TriggerVoice(EPhraseTrigger phrase, float chance = 1f)
-        {
-            if (this.IsMuted || !this.IsEligible())
-            {
-                return;
-            }
-
-            float now = Time.time;
-            if (now < this._nextVoiceTime)
-            {
-                return;
-            }
-
-            if (chance < 1f && UnityEngine.Random.value > chance)
-            {
-                return;
-            }
-
-            this._nextVoiceTime = now + (VoiceCooldown * UnityEngine.Random.Range(0.8f, 1.2f));
-            this._cache.Bot?.BotTalk?.TrySay(phrase);
         }
 
         #endregion

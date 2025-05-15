@@ -3,229 +3,268 @@
 //   Licensed under the MIT License. See LICENSE in the repository root for more information.
 //
 //   THIS FILE IS SYSTEMATICALLY MANAGED.
-//   Please follow strict StyleCop, ReSharper, and AI-Refactored code standards for all modifications.
+//   Runtime-safe, deferred bootstrap with cache support.
 // </auto-generated>
-
-#nullable enable
 
 namespace AIRefactored.AI.Navigation
 {
-    using System.Collections.Generic;
-    using System.Threading.Tasks;
-    using AIRefactored.AI.Core;
-    using AIRefactored.Core;
-    using AIRefactored.Runtime;
-    using BepInEx.Logging;
-    using Unity.AI.Navigation;
-    using UnityEngine;
-    using UnityEngine.AI;
+	using System;
+	using System.Collections.Generic;
+	using System.Threading.Tasks;
+	using AIRefactored.AI.Core;
+	using AIRefactored.Core;
+	using AIRefactored.Pools;
+	using AIRefactored.Runtime;
+	using BepInEx.Logging;
+	using Unity.AI.Navigation;
+	using UnityEngine;
+	using UnityEngine.AI;
 
-    /// <summary>
-    /// Dynamically scans valid AI navigation points including cover, rooftop, flank, and fallback zones.
-    /// Headless-safe, memory-safe, and deferred for runtime performance.
-    /// </summary>
-    public static class NavPointBootstrapper
-    {
-        #region Constants
+	/// <summary>
+	/// Dynamically scans valid AI navigation points including cover, rooftop, flank, and fallback zones.
+	/// Headless-safe, memory-safe, and cache-enabled for runtime performance.
+	/// </summary>
+	public static class NavPointBootstrapper
+	{
+		#region Constants
 
-        private const float ForwardCoverCheckDistance = 4.0f;
-        private const float MaxSampleHeight = 30.0f;
-        private const float MinNavPointClearance = 1.6f;
-        private const float RoofRaycastHeight = 12.0f;
-        private const float ScanRadius = 80.0f;
-        private const float ScanSpacing = 2.5f;
-        private const float VerticalProbeMax = 24.0f;
-        private const float VerticalStep = 2.0f;
+		private const float ForwardCoverCheckDistance = 4.0f;
+		private const float MaxSampleHeight = 30.0f;
+		private const float MinNavPointClearance = 1.6f;
+		private const float RoofRaycastHeight = 12.0f;
+		private const float ScanRadius = 80.0f;
+		private const float ScanSpacing = 2.5f;
+		private const float VerticalProbeMax = 24.0f;
+		private const float VerticalStep = 2.0f;
 
-        #endregion
+		#endregion
 
-        #region Fields
+		#region State
 
-        private static readonly List<Vector3> BackgroundPending = new List<Vector3>(512);
-        private static readonly Queue<Vector3> ScanQueue = new Queue<Vector3>(2048);
-        private static readonly ManualLogSource Logger = AIRefactoredController.Logger;
+		private static readonly List<Vector3> BackgroundPending = new List<Vector3>(1024);
+		private static readonly Queue<Vector3> ScanQueue = new Queue<Vector3>(2048);
+		private static readonly ManualLogSource Logger = Plugin.LoggerInstance;
 
-        private static Vector3 _center = Vector3.zero;
-        private static bool _isRunning;
-        private static bool _isTaskRunning;
-        private static int _registered;
+		private static Vector3 _center = Vector3.zero;
+		private static bool _isRunning;
+		private static bool _isTaskRunning;
+		private static int _registered;
+		private static string _mapId = string.Empty;
 
-        #endregion
+		#endregion
 
-        #region Public API
+		#region Public API
 
-        /// <summary>
-        /// Queues all spatial points for scanning and begins NavPoint registration.
-        /// </summary>
-        /// <param name="mapId">The name of the current map (used for surface context).</param>
-        public static void RegisterAll(string mapId)
-        {
-            if (_isRunning || !IsHostEnvironment())
-            {
-                Logger.LogWarning("[NavPointBootstrapper] Skipped — already running or non-host.");
-                return;
-            }
+		public static void RegisterAll(string mapId)
+		{
+			Reset();
+			_mapId = mapId;
 
-            _isRunning = true;
-            _registered = 0;
-            ScanQueue.Clear();
-            BackgroundPending.Clear();
+			if (!GameWorldHandler.IsHost || !GameWorldHandler.IsInitialized)
+			{
+				Logger.LogWarning("[NavPointBootstrapper] Skipped — not host or world not initialized.");
+				return;
+			}
 
-            NavMeshSurface? surface = Object.FindObjectOfType<NavMeshSurface>();
-            if (surface == null)
-            {
-                Logger.LogWarning("[NavPointBootstrapper] No NavMeshSurface found.");
-                _isRunning = false;
-                return;
-            }
+			if (NavPointCacheManager.TryLoad(mapId, out var cached))
+			{
+				for (int i = 0; i < cached.Count; i++)
+				{
+					var p = cached[i];
+					NavPointRegistry.Register(p.Position, p.IsCover, p.Tag, p.Elevation, p.IsIndoor, p.IsJumpable, p.CoverAngle);
+				}
 
-            _center = surface.transform.position;
-            float half = ScanRadius * 0.5f;
+				NavMeshStatus.SetReady();
+				Logger.LogDebug("[NavPointBootstrapper] ✅ Loaded from cache: " + cached.Count + " points.");
+				return;
+			}
 
-            for (float x = -half; x <= half; x += ScanSpacing)
-            {
-                for (float z = -half; z <= half; z += ScanSpacing)
-                {
-                    Vector3 basePos = _center + new Vector3(x, MaxSampleHeight, z);
-                    ScanQueue.Enqueue(basePos);
-                }
-            }
+			_isRunning = true;
+			_registered = 0;
+			NavMeshStatus.Reset();
 
-            Logger.LogInfo("[NavPointBootstrapper] Queued " + ScanQueue.Count + " surface points.");
+			NavMeshSurface surface = UnityEngine.Object.FindObjectOfType<NavMeshSurface>();
+			if (surface == null)
+			{
+				Logger.LogWarning("[NavPointBootstrapper] No NavMeshSurface found.");
+				_isRunning = false;
+				return;
+			}
 
-            if (!_isTaskRunning)
-            {
-                _isTaskRunning = true;
-                Task.Run(PrequeueVerticalPoints);
-            }
-        }
+			_center = surface.transform.position;
+			float half = ScanRadius * 0.5f;
 
-        /// <summary>
-        /// Processes queued spatial points to detect and register valid AI nav points.
-        /// </summary>
-        public static void Tick()
-        {
-            if (!_isRunning || !IsHostEnvironment())
-            {
-                return;
-            }
+			List<Vector3> pooled = TempListPool.Rent<Vector3>();
+			try
+			{
+				for (float x = -half; x <= half; x += ScanSpacing)
+				{
+					for (float z = -half; z <= half; z += ScanSpacing)
+					{
+						pooled.Add(new Vector3(x, MaxSampleHeight, z) + _center);
+					}
+				}
 
-            int maxPerFrame = FikaHeadlessDetector.IsHeadless ? 80 : 40;
-            int processed = 0;
+				for (int i = 0; i < pooled.Count; i++)
+				{
+					ScanQueue.Enqueue(pooled[i]);
+				}
+			}
+			finally
+			{
+				TempListPool.Return(pooled);
+			}
 
-            while (ScanQueue.Count > 0 && processed++ < maxPerFrame)
-            {
-                Vector3 probe = ScanQueue.Dequeue();
+			Logger.LogDebug("[NavPointBootstrapper] Queued " + ScanQueue.Count + " surface points.");
 
-                if (!Physics.Raycast(probe, Vector3.down, out RaycastHit hit, MaxSampleHeight))
-                {
-                    continue;
-                }
+			if (!_isTaskRunning)
+			{
+				_isTaskRunning = true;
+				Task.Run(() =>
+				{
+					try { PrequeueVerticalPoints(); }
+					catch (Exception ex) { Logger.LogError("[NavPointBootstrapper] Vertical prequeue error: " + ex); }
+					finally { _isTaskRunning = false; }
+				});
+			}
+		}
 
-                Vector3 pos = hit.point;
+		public static void Tick()
+		{
+			if (!_isRunning || !GameWorldHandler.IsHost)
+			{
+				return;
+			}
 
-                if (!NavMesh.SamplePosition(pos, out NavMeshHit navHit, 1.0f, NavMesh.AllAreas))
-                {
-                    continue;
-                }
+			int maxPerFrame = FikaHeadlessDetector.IsHeadless ? 80 : 40;
+			int processed = 0;
 
-                if (Physics.Raycast(pos + Vector3.up * 0.5f, Vector3.up, MinNavPointClearance))
-                {
-                    continue;
-                }
+			while (ScanQueue.Count > 0 && processed++ < maxPerFrame)
+			{
+				Vector3 probe = ScanQueue.Dequeue();
 
-                Vector3 final = navHit.position;
-                float elevation = final.y - _center.y;
+				if (!Physics.Raycast(probe, Vector3.down, out RaycastHit hit, MaxSampleHeight))
+				{
+					continue;
+				}
 
-                bool isCover = IsCoverPoint(final);
-                bool isIndoor = IsIndoorPoint(final);
-                string tag = ClassifyNavPoint(elevation, isCover, isIndoor);
+				Vector3 pos = hit.point;
+				if (!NavMesh.SamplePosition(pos, out NavMeshHit navHit, 1.0f, NavMesh.AllAreas))
+				{
+					continue;
+				}
 
-                NavPointRegistry.Register(final, isCover, tag, elevation, isIndoor);
-                _registered++;
-            }
+				if (Physics.Raycast(pos + Vector3.up * 0.5f, Vector3.up, MinNavPointClearance))
+				{
+					continue;
+				}
 
-            if (ScanQueue.Count == 0 && BackgroundPending.Count > 0)
-            {
-                for (int i = 0; i < BackgroundPending.Count; i++)
-                {
-                    ScanQueue.Enqueue(BackgroundPending[i]);
-                }
+				Vector3 final = navHit.position;
+				float elevation = final.y - _center.y;
+				bool isCover = IsCoverPoint(final);
+				bool isIndoor = IsIndoorPoint(final);
+				string tag = ClassifyNavPoint(elevation, isCover, isIndoor);
 
-                BackgroundPending.Clear();
-                Logger.LogInfo("[NavPointBootstrapper] Queued vertical fallback points.");
-            }
+				NavPointRegistry.Register(final, isCover, tag, elevation, isIndoor);
+				_registered++;
+			}
 
-            if (ScanQueue.Count == 0)
-            {
-                _isRunning = false;
-                Logger.LogInfo("[NavPointBootstrapper] ✅ Completed — " + _registered + " nav points registered.");
-            }
-        }
+			if (ScanQueue.Count == 0 && BackgroundPending.Count > 0)
+			{
+				lock (BackgroundPending)
+				{
+					for (int i = 0; i < BackgroundPending.Count; i++)
+					{
+						ScanQueue.Enqueue(BackgroundPending[i]);
+					}
+					BackgroundPending.Clear();
+				}
 
-        #endregion
+				Logger.LogDebug("[NavPointBootstrapper] Queued vertical fallback points.");
+			}
 
-        #region Internal Methods
+			if (ScanQueue.Count == 0 && !_isTaskRunning)
+			{
+				_isRunning = false;
+				NavMeshStatus.SetReady();
 
-        private static void PrequeueVerticalPoints()
-        {
-            float half = ScanRadius * 0.5f;
+				List<NavPointData> snapshot = NavPointRegistry.QueryNearby(_center, 200f, null);
+				NavPointCacheManager.Save(_mapId, snapshot);
 
-            for (float x = -half; x <= half; x += ScanSpacing)
-            {
-                for (float z = -half; z <= half; z += ScanSpacing)
-                {
-                    for (float y = 5.0f; y <= VerticalProbeMax; y += VerticalStep)
-                    {
-                        BackgroundPending.Add(_center + new Vector3(x, y, z));
-                    }
-                }
-            }
+				Logger.LogDebug("[NavPointBootstrapper] ✅ Completed scan and cached " + snapshot.Count + " nav points.");
+			}
+		}
 
-            _isTaskRunning = false;
-        }
+		public static void Reset()
+		{
+			ScanQueue.Clear();
+			BackgroundPending.Clear();
+			_registered = 0;
+			_isRunning = false;
+			_isTaskRunning = false;
+			NavMeshStatus.Reset();
+			_mapId = string.Empty;
+		}
 
-        private static bool IsCoverPoint(Vector3 pos)
-        {
-            Vector3 eye = pos + Vector3.up * 1.4f;
+		#endregion
 
-            for (float angle = -45.0f; angle <= 45.0f; angle += 15.0f)
-            {
-                Vector3 dir = Quaternion.Euler(0.0f, angle, 0.0f) * Vector3.forward;
-                if (Physics.Raycast(eye, dir, ForwardCoverCheckDistance, AIRefactoredLayerMasks.HighPolyCollider))
-                {
-                    return true;
-                }
-            }
+		#region Internals
 
-            return false;
-        }
+		private static void PrequeueVerticalPoints()
+		{
+			float half = ScanRadius * 0.5f;
+			List<Vector3> tempList = TempListPool.Rent<Vector3>();
 
-        private static bool IsIndoorPoint(Vector3 pos)
-        {
-            return Physics.Raycast(pos + Vector3.up * 1.4f, Vector3.up, RoofRaycastHeight);
-        }
+			try
+			{
+				for (float x = -half; x <= half; x += ScanSpacing)
+				{
+					for (float z = -half; z <= half; z += ScanSpacing)
+					{
+						for (float y = 5.0f; y <= VerticalProbeMax; y += VerticalStep)
+						{
+							tempList.Add(_center + new Vector3(x, y, z));
+						}
+					}
+				}
 
-        private static string ClassifyNavPoint(float elevation, bool isCover, bool isIndoor)
-        {
-            if (isIndoor)
-            {
-                return "indoor";
-            }
+				lock (BackgroundPending)
+				{
+					BackgroundPending.AddRange(tempList);
+				}
+			}
+			finally
+			{
+				TempListPool.Return(tempList);
+			}
+		}
 
-            if (elevation > 6.0f)
-            {
-                return "roof";
-            }
+		private static bool IsCoverPoint(Vector3 pos)
+		{
+			Vector3 eye = pos + Vector3.up * 1.4f;
+			for (float angle = -45f; angle <= 45f; angle += 15f)
+			{
+				Vector3 dir = Quaternion.Euler(0f, angle, 0f) * Vector3.forward;
+				if (Physics.Raycast(eye, dir, ForwardCoverCheckDistance, AIRefactoredLayerMasks.HighPolyCollider))
+				{
+					return true;
+				}
+			}
+			return false;
+		}
 
-            return isCover ? "fallback" : "flank";
-        }
+		private static bool IsIndoorPoint(Vector3 pos)
+		{
+			return Physics.Raycast(pos + Vector3.up * 1.4f, Vector3.up, RoofRaycastHeight);
+		}
 
-        private static bool IsHostEnvironment()
-        {
-            return GameWorldHandler.IsLocalHost() || FikaHeadlessDetector.IsHeadless;
-        }
+		private static string ClassifyNavPoint(float elevation, bool isCover, bool isIndoor)
+		{
+			if (isIndoor) return "indoor";
+			if (elevation > 6.0f) return "roof";
+			return isCover ? "fallback" : "flank";
+		}
 
-        #endregion
-    }
+		#endregion
+	}
 }

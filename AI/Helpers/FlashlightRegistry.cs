@@ -3,14 +3,13 @@
 //   Licensed under the MIT License. See LICENSE in the repository root for more information.
 //
 //   THIS FILE IS SYSTEMATICALLY MANAGED.
-//   Please follow strict StyleCop, ReSharper, and AI-Refactored code standards for all modifications.
+//   Failures in AIRefactored logic must always trigger safe fallback to EFT base AI.
 // </auto-generated>
-
-#nullable enable
 
 namespace AIRefactored.AI.Helpers
 {
     using System.Collections.Generic;
+    using EFT;
     using UnityEngine;
 
     /// <summary>
@@ -19,32 +18,45 @@ namespace AIRefactored.AI.Helpers
     /// </summary>
     public static class FlashlightRegistry
     {
+        #region Constants
+
         private const float AngleThreshold = 60f;
         private const float ExposureConeAngle = 35f;
         private const float EyeRayBias = 0.22f;
         private const float IntensityThreshold = 1.5f;
         private const float MaxExposureDistance = 28f;
 
+        #endregion
+
+        #region Static State
+
         private static readonly List<Light> ActiveLights = new List<Light>(32);
         private static readonly List<Vector3> LastKnownFlashPositions = new List<Vector3>(32);
+
+        #endregion
+
+        #region Public API
 
         /// <summary>
         /// Scans the scene for active tactical flashlights.
         /// </summary>
-        /// <returns>List of detected active tactical lights.</returns>
         public static IEnumerable<Light> GetActiveFlashlights()
         {
             ActiveLights.Clear();
             LastKnownFlashPositions.Clear();
 
-            Light[] allLights = Object.FindObjectsOfType<Light>();
-            for (int i = 0; i < allLights.Length; i++)
+            Light[] lights = Object.FindObjectsOfType<Light>();
+            for (int i = 0; i < lights.Length; i++)
             {
-                Light light = allLights[i];
+                Light light = lights[i];
                 if (IsValidTacticalLight(light))
                 {
-                    ActiveLights.Add(light);
-                    LastKnownFlashPositions.Add(light.transform.position);
+                    Transform t = light.transform;
+                    if (t != null)
+                    {
+                        ActiveLights.Add(light);
+                        LastKnownFlashPositions.Add(t.position);
+                    }
                 }
             }
 
@@ -54,7 +66,6 @@ namespace AIRefactored.AI.Helpers
         /// <summary>
         /// Returns the last-known positions of visible flashlights.
         /// </summary>
-        /// <returns>List of last-known flashlight positions.</returns>
         public static IReadOnlyList<Vector3> GetLastKnownFlashlightPositions()
         {
             return LastKnownFlashPositions;
@@ -63,17 +74,9 @@ namespace AIRefactored.AI.Helpers
         /// <summary>
         /// Determines if any flashlight is currently hitting this bot in the eyes.
         /// </summary>
-        /// <param name="botHead">The bot's head transform.</param>
-        /// <param name="blindingLight">The flashlight causing blindness if found.</param>
-        /// <param name="customMaxDist">Optional maximum detection distance override.</param>
-        /// <returns>True if the bot is being exposed to flashlight glare; otherwise, false.</returns>
-        public static bool IsExposingBot(
-            Transform botHead,
-            out Light? blindingLight,
-            float customMaxDist = MaxExposureDistance)
+        public static bool IsExposingBot(Transform botHead, out Light blindingLight, float customMaxDist = MaxExposureDistance)
         {
             blindingLight = null;
-
             if (botHead == null)
             {
                 return false;
@@ -84,38 +87,38 @@ namespace AIRefactored.AI.Helpers
             for (int i = 0; i < ActiveLights.Count; i++)
             {
                 Light light = ActiveLights[i];
-                if (light == null || !light.enabled || !light.gameObject.activeInHierarchy)
+                if (!IsValidTacticalLight(light))
                 {
                     continue;
                 }
 
-                Vector3 toBot = eyePos - light.transform.position;
+                Transform lightTransform = light.transform;
+                if (lightTransform == null)
+                {
+                    continue;
+                }
+
+                Vector3 toBot = eyePos - lightTransform.position;
                 float distance = toBot.magnitude;
+
                 if (distance > customMaxDist)
                 {
                     continue;
                 }
 
-                float angle = Vector3.Angle(light.transform.forward, toBot);
+                float angle = Vector3.Angle(lightTransform.forward, toBot);
                 if (angle > ExposureConeAngle)
                 {
                     continue;
                 }
 
-                Vector3 origin = light.transform.position;
-                Vector3 direction = toBot.normalized;
-                float rayDistance = distance + 0.1f;
+                Vector3 origin = lightTransform.position;
+                Vector3 dir = toBot.normalized;
+                float rayLen = distance + 0.1f;
 
-                bool hitSomething = Physics.Raycast(
-                    origin,
-                    direction,
-                    out RaycastHit hit,
-                    rayDistance,
-                    LayerMaskClass.HighPolyWithTerrainMaskAI);
-
-                if (hitSomething)
+                if (Physics.Raycast(origin, dir, out RaycastHit hit, rayLen, LayerMaskClass.HighPolyWithTerrainMaskAI))
                 {
-                    if (hit.transform == botHead || hit.collider.transform == botHead)
+                    if (ReferenceEquals(hit.transform, botHead) || ReferenceEquals(hit.collider.transform, botHead))
                     {
                         blindingLight = light;
                         return true;
@@ -134,25 +137,25 @@ namespace AIRefactored.AI.Helpers
         /// <summary>
         /// Indicates whether any flashlight is flickering (reserved for future upgrades).
         /// </summary>
-        /// <returns>False; flicker detection is not yet implemented.</returns>
         public static bool IsFlickeringFlashlightActive()
         {
             return false;
         }
 
-        /// <summary>
-        /// Determines if a light is a valid tactical flashlight.
-        /// </summary>
-        /// <param name="light">The light to check.</param>
-        /// <returns>True if the light matches tactical specs.</returns>
+        #endregion
+
+        #region Internal
+
         private static bool IsValidTacticalLight(Light light)
         {
             return light != null &&
-                light.enabled &&
-                light.type == LightType.Spot &&
-                light.intensity >= IntensityThreshold &&
-                light.spotAngle <= AngleThreshold &&
-                light.gameObject.activeInHierarchy;
+                   light.enabled &&
+                   light.type == LightType.Spot &&
+                   light.intensity >= IntensityThreshold &&
+                   light.spotAngle <= AngleThreshold &&
+                   light.gameObject.activeInHierarchy;
         }
+
+        #endregion
     }
 }

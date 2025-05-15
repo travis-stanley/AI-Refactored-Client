@@ -3,10 +3,8 @@
 //   Licensed under the MIT License. See LICENSE in the repository root for more information.
 //
 //   THIS FILE IS SYSTEMATICALLY MANAGED.
-//   Please follow strict StyleCop, ReSharper, and AI-Refactored code standards for all modifications.
+//   Failures in AIRefactored logic must always trigger safe fallback to EFT base AI.
 // </auto-generated>
-
-#nullable enable
 
 namespace AIRefactored.AI.Groups
 {
@@ -14,6 +12,7 @@ namespace AIRefactored.AI.Groups
     using System.Collections.Generic;
     using System.Threading.Tasks;
     using AIRefactored.AI.Core;
+    using AIRefactored.Core;
     using EFT;
     using UnityEngine;
 
@@ -26,252 +25,253 @@ namespace AIRefactored.AI.Groups
         #region Constants
 
         private const float BaseSyncInterval = 0.5f;
-        private const float PositionEpsilon = 0.15f;
+        private const float PositionEpsilonSqr = 0.0225f;
 
         #endregion
 
         #region Fields
 
-        private static readonly List<BotOwner> TempTeammates = new List<BotOwner>(8);
-
         private readonly Dictionary<BotOwner, BotComponentCache> _teammateCaches = new Dictionary<BotOwner, BotComponentCache>(8);
 
-        private BotOwner? _bot;
-        private BotComponentCache? _cache;
-        private BotsGroup? _group;
-        private Vector3? _extractPoint;
-        private Vector3? _fallbackPoint;
-        private Vector3? _lootPoint;
+        private BotOwner _bot;
+        private BotComponentCache _cache;
+        private BotsGroup _group;
+
+        private Vector3 _fallbackPoint;
+        private Vector3 _lootPoint;
+        private Vector3 _extractPoint;
+
         private float _nextSyncTime;
+        private bool _hasFallback;
+        private bool _hasLoot;
+        private bool _hasExtract;
 
         #endregion
 
         #region Properties
 
-        /// <summary>
-        /// Gets the last broadcast danger timestamp.
-        /// </summary>
-        public float LastDangerBroadcastTime { get; private set; } = -999f;
+        public float LastDangerBroadcastTime { get; private set; }
 
-        /// <summary>
-        /// Gets the last danger broadcasted position.
-        /// </summary>
         public Vector3 LastDangerPosition { get; private set; }
+
+        public bool IsActive =>
+            _bot != null && !_bot.IsDead && _group != null && _cache != null;
 
         #endregion
 
         #region Initialization
 
-        /// <summary>
-        /// Initializes the group sync for the specified bot.
-        /// </summary>
-        /// <param name="botOwner">The bot owner instance.</param>
         public void Initialize(BotOwner botOwner)
         {
-            this._bot = botOwner ?? throw new ArgumentNullException(nameof(botOwner));
-            this._group = botOwner.BotsGroup;
-
-            if (this._bot.GetPlayer?.IsAI != true || this._group == null)
+            if (botOwner == null || botOwner.GetPlayer == null || !botOwner.GetPlayer.IsAI)
             {
-                return;
+                throw new ArgumentException("[BotGroupSyncCoordinator] BotOwner is null or not AI.");
             }
 
-            this._group.OnMemberAdd += this.OnMemberAdded;
-            this._group.OnMemberRemove += this.OnMemberRemoved;
+            _bot = botOwner;
+            _group = botOwner.BotsGroup;
+
+            if (_group == null)
+            {
+                throw new ArgumentException("[BotGroupSyncCoordinator] BotsGroup is null.");
+            }
+
+            _group.OnMemberAdd += OnMemberAdded;
+            _group.OnMemberRemove += OnMemberRemoved;
+
+            LastDangerBroadcastTime = -999f;
         }
 
-        /// <summary>
-        /// Injects the local bot cache.
-        /// </summary>
-        /// <param name="localCache">The bot's cache instance.</param>
         public void InjectLocalCache(BotComponentCache localCache)
         {
-            this._cache = localCache ?? throw new ArgumentNullException(nameof(localCache));
+            if (localCache == null)
+            {
+                throw new ArgumentNullException(nameof(localCache));
+            }
+
+            _cache = localCache;
         }
 
         #endregion
 
-        #region Public API
+        #region Broadcasts
 
-        /// <summary>
-        /// Broadcasts a squad fallback point.
-        /// </summary>
         public void BroadcastFallbackPoint(Vector3 point)
         {
-            this._fallbackPoint = point;
+            _fallbackPoint = point;
+            _hasFallback = true;
 
-            foreach (BotComponentCache teammate in this._teammateCaches.Values)
+            foreach (var kv in _teammateCaches)
             {
-                teammate.Combat?.TriggerFallback(point);
-
-                if (teammate.PanicHandler != null && !teammate.PanicHandler.IsPanicking)
+                BotComponentCache mate = kv.Value;
+                if (mate?.Bot != null && !mate.Bot.IsDead)
                 {
-                    teammate.PanicHandler.TriggerPanic();
+                    mate.Combat?.TriggerFallback(point);
+
+                    if (mate.PanicHandler != null && !mate.PanicHandler.IsPanicking)
+                    {
+                        mate.PanicHandler.TriggerPanic();
+                    }
                 }
             }
         }
 
-        /// <summary>
-        /// Broadcasts a squad extraction point.
-        /// </summary>
-        public void BroadcastExtractPoint(Vector3 point)
-        {
-            this._extractPoint = point;
-        }
-
-        /// <summary>
-        /// Broadcasts a loot target to the squad.
-        /// </summary>
-        public void BroadcastLootPoint(Vector3 point)
-        {
-            this._lootPoint = point;
-        }
-
-        /// <summary>
-        /// Broadcasts a squad-wide danger event.
-        /// </summary>
         public void BroadcastDanger(Vector3 position)
         {
-            this.LastDangerBroadcastTime = Time.time;
-            this.LastDangerPosition = position;
+            LastDangerPosition = position;
+            LastDangerBroadcastTime = Time.time;
 
-            foreach (BotComponentCache cache in this._teammateCaches.Values)
+            foreach (var kv in _teammateCaches)
             {
-                if (cache.PanicHandler != null && !cache.PanicHandler.IsPanicking)
+                BotComponentCache mate = kv.Value;
+                if (mate?.Bot != null && !mate.Bot.IsDead && mate.PanicHandler != null && !mate.PanicHandler.IsPanicking)
                 {
                     float delay = UnityEngine.Random.Range(0.1f, 0.35f);
-                    TriggerDelayedPanic(cache, delay);
+                    TriggerDelayedPanic(mate, delay);
                 }
             }
         }
 
-        /// <summary>
-        /// Called each frame to sync fallback or danger data.
-        /// </summary>
-        public void Tick(float time)
+        public void BroadcastLootPoint(Vector3 point)
         {
-            if (this._cache?.Bot?.GetPlayer?.IsAI != true || this._teammateCaches.Count == 0)
-            {
-                return;
-            }
-
-            if (time < this._nextSyncTime)
-            {
-                return;
-            }
-
-            this._nextSyncTime = time + (BaseSyncInterval * UnityEngine.Random.Range(0.8f, 1.2f));
-
-            if (this._cache.PanicHandler?.IsPanicking != true || this._bot == null)
-            {
-                return;
-            }
-
-            Vector3 myPos = this._bot.Position;
-
-            if (!this._fallbackPoint.HasValue || (this._fallbackPoint.Value - myPos).sqrMagnitude > PositionEpsilon * PositionEpsilon)
-            {
-                this.BroadcastFallbackPoint(myPos);
-            }
-
-            if ((this.LastDangerPosition - myPos).sqrMagnitude > PositionEpsilon * PositionEpsilon)
-            {
-                this.BroadcastDanger(myPos);
-            }
+            _lootPoint = point;
+            _hasLoot = true;
         }
 
-        /// <summary>
-        /// Returns the shared squad fallback target if any.
-        /// </summary>
-        public Vector3? GetSharedFallbackTarget() => this._fallbackPoint;
-
-        /// <summary>
-        /// Returns the shared squad loot target if any.
-        /// </summary>
-        public Vector3? GetSharedLootTarget() => this._lootPoint;
-
-        /// <summary>
-        /// Returns the shared squad extract target if any.
-        /// </summary>
-        public Vector3? GetSharedExtractTarget() => this._extractPoint;
-
-        /// <summary>
-        /// Returns whether the squad is fully synchronized.
-        /// </summary>
-        public bool IsSquadReady()
+        public void BroadcastExtractPoint(Vector3 point)
         {
-            return this._bot != null && this._group != null && this._teammateCaches.Count > 0;
-        }
-
-        /// <summary>
-        /// Gets the local bot cache for a teammate, if available.
-        /// </summary>
-        public BotComponentCache? GetCache(BotOwner teammate)
-        {
-            return this._teammateCaches.TryGetValue(teammate, out BotComponentCache cache) ? cache : null;
-        }
-
-        /// <summary>
-        /// Returns live squadmates (not dead, valid AI).
-        /// </summary>
-        public IReadOnlyList<BotOwner> GetTeammates()
-        {
-            TempTeammates.Clear();
-
-            foreach (KeyValuePair<BotOwner, BotComponentCache> pair in this._teammateCaches)
-            {
-                BotOwner mate = pair.Key;
-                if (mate != null && !mate.IsDead && mate.GetPlayer?.IsAI == true)
-                {
-                    TempTeammates.Add(mate);
-                }
-            }
-
-            return TempTeammates;
+            _extractPoint = point;
+            _hasExtract = true;
         }
 
         #endregion
 
-        #region Teammate Lifecycle
+        #region Queries
+
+        public Vector3? GetSharedFallbackTarget() => _hasFallback ? (Vector3?)_fallbackPoint : null;
+
+        public Vector3? GetSharedLootTarget() => _hasLoot ? (Vector3?)_lootPoint : null;
+
+        public Vector3? GetSharedExtractTarget() => _hasExtract ? (Vector3?)_extractPoint : null;
+
+        public bool IsSquadReady() => _teammateCaches.Count > 0;
+
+        public IReadOnlyList<BotOwner> GetTeammates()
+        {
+            List<BotOwner> result = new List<BotOwner>(_teammateCaches.Count);
+            foreach (var kv in _teammateCaches)
+            {
+                BotOwner bot = kv.Key;
+                if (bot != null && !bot.IsDead && bot.GetPlayer?.IsAI == true)
+                {
+                    result.Add(bot);
+                }
+            }
+
+            return result;
+        }
+
+        public BotComponentCache GetCache(BotOwner teammate)
+        {
+            if (teammate == null || !_teammateCaches.TryGetValue(teammate, out BotComponentCache cache) || cache == null)
+            {
+                throw new KeyNotFoundException($"[BotGroupSyncCoordinator] No teammate cache found for: {teammate?.ProfileId ?? "null"}");
+            }
+
+            return cache;
+        }
+
+        #endregion
+
+        #region Tick
+
+        public void Tick(float time)
+        {
+            if (!IsActive || _teammateCaches.Count == 0 || time < _nextSyncTime)
+            {
+                return;
+            }
+
+            _nextSyncTime = time + BaseSyncInterval * UnityEngine.Random.Range(0.85f, 1.15f);
+
+            if (_cache?.PanicHandler == null || !_cache.PanicHandler.IsPanicking)
+            {
+                return;
+            }
+
+            Vector3 myPos = _bot.Position;
+
+            if (!_hasFallback || (myPos - _fallbackPoint).sqrMagnitude > PositionEpsilonSqr)
+            {
+                BroadcastFallbackPoint(myPos);
+            }
+
+            if ((myPos - LastDangerPosition).sqrMagnitude > PositionEpsilonSqr)
+            {
+                BroadcastDanger(myPos);
+            }
+        }
+
+        #endregion
+
+        #region Internal Logic
 
         private void OnMemberAdded(BotOwner teammate)
         {
-            if (teammate == null || this._bot == null || teammate == this._bot || this._teammateCaches.ContainsKey(teammate))
+            if (teammate == null || teammate == _bot || _teammateCaches.ContainsKey(teammate))
             {
                 return;
             }
 
-            if (teammate.GetPlayer?.IsAI != true || teammate.IsDead)
+            if (teammate.IsDead || teammate.GetPlayer?.IsAI != true)
             {
                 return;
             }
 
-            AIRefactoredBotOwner? owner = BotRegistry.TryGetRefactoredOwner(teammate.ProfileId);
-            if (owner == null)
+            string profileId = teammate.ProfileId;
+            if (string.IsNullOrEmpty(profileId))
             {
                 return;
             }
 
-            BotComponentCache newCache = new BotComponentCache();
-            newCache.Initialize(teammate);
-            newCache.SetOwner(owner);
+            if (!BotRegistry.TryGetRefactoredOwner(profileId, out AIRefactoredBotOwner owner))
+            {
+                return;
+            }
 
-            this._teammateCaches.Add(teammate, newCache);
+            BotComponentCache cache = new BotComponentCache();
+            cache.Initialize(teammate);
+            cache.SetOwner(owner);
+
+            _teammateCaches[teammate] = cache;
         }
 
         private void OnMemberRemoved(BotOwner teammate)
         {
-            this._teammateCaches.Remove(teammate);
+            _teammateCaches.Remove(teammate);
         }
 
         private static void TriggerDelayedPanic(BotComponentCache cache, float delay)
         {
+            if (cache == null)
+            {
+                return;
+            }
+
             Task.Run(async () =>
             {
-                await Task.Delay((int)(delay * 1000f));
-                if (cache.Bot?.IsDead == false)
+                try
                 {
-                    cache.PanicHandler?.TriggerPanic();
+                    await Task.Delay((int)(delay * 1000f));
+
+                    if (cache.Bot != null && !cache.Bot.IsDead && cache.PanicHandler != null && !cache.PanicHandler.IsPanicking)
+                    {
+                        cache.PanicHandler.TriggerPanic();
+                    }
+                }
+                catch (Exception)
+                {
+                    // Fail silently; async fire-and-forget is best effort only
                 }
             });
         }

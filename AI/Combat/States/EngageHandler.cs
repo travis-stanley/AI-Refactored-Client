@@ -3,47 +3,53 @@
 //   Licensed under the MIT License. See LICENSE in the repository root for more information.
 //
 //   THIS FILE IS SYSTEMATICALLY MANAGED.
-//   Please follow strict StyleCop, ReSharper, and AI-Refactored code standards for all modifications.
+//   Failures in AIRefactored logic must always trigger safe fallback to EFT base AI.
 // </auto-generated>
-
-#nullable enable
 
 namespace AIRefactored.AI.Combat.States
 {
     using System;
     using AIRefactored.AI.Core;
     using AIRefactored.AI.Helpers;
+    using AIRefactored.AI.Navigation;
     using EFT;
     using UnityEngine;
 
     /// <summary>
-    /// Handles tactical movement toward enemy last-known-positions during engagements.
-    /// Guides advance cautiously while coordinating stance and squad path offsets.
+    /// Guides tactical movement toward enemy's last known location.
+    /// Supports cautious advancement and squad-aware pathing.
     /// </summary>
     public sealed class EngageHandler
     {
+        #region Constants
+
+        private const float DefaultEngagementRange = 25.0f;
+
+        #endregion
+
         #region Fields
 
         private readonly BotOwner _bot;
         private readonly BotComponentCache _cache;
+        private readonly float _fallbackRange;
 
         #endregion
 
         #region Constructor
 
-        /// <summary>
-        /// Initializes a new instance of the <see cref="EngageHandler"/> class.
-        /// </summary>
-        /// <param name="cache">The bot's component cache.</param>
         public EngageHandler(BotComponentCache cache)
         {
             if (cache == null || cache.Bot == null)
             {
-                throw new ArgumentNullException(nameof(cache), "[EngageHandler] Initialization failed: cache or bot is null.");
+                Plugin.LoggerInstance.LogError("[EngageHandler] Invalid bot cache provided.");
+                throw new ArgumentException("EngageHandler requires a non-null cache with BotOwner.");
             }
 
-            this._cache = cache;
-            this._bot = cache.Bot;
+            _cache = cache;
+            _bot = cache.Bot;
+
+            float profileRange = cache.PersonalityProfile?.EngagementRange ?? 0f;
+            _fallbackRange = profileRange > 0f ? profileRange : DefaultEngagementRange;
         }
 
         #endregion
@@ -51,78 +57,114 @@ namespace AIRefactored.AI.Combat.States
         #region Public Methods
 
         /// <summary>
-        /// Determines whether the Engage state should be active.
+        /// Determines if the bot should begin advancing toward the enemy.
         /// </summary>
-        /// <returns>True if the bot should continue engaging; otherwise, false.</returns>
         public bool ShallUseNow()
         {
-            CombatStateMachine? combat = this._cache.Combat;
-            if (combat == null)
+            if (!IsCombatCapable())
             {
                 return false;
             }
 
-            return combat.LastKnownEnemyPos.HasValue &&
-                   !this.CanAttack();
+            Vector3 enemyPos;
+            return TryGetLastKnownEnemy(out enemyPos) && !IsWithinRange(enemyPos);
         }
 
         /// <summary>
-        /// Determines if the bot is close enough to transition to Attack state.
+        /// Determines if the bot is close enough to start direct attack behavior.
         /// </summary>
-        /// <returns>True if ready to attack; otherwise, false.</returns>
         public bool CanAttack()
         {
-            CombatStateMachine? combat = this._cache.Combat;
-            if (combat == null || !combat.LastKnownEnemyPos.HasValue)
+            if (!IsCombatCapable())
             {
                 return false;
             }
 
-            Vector3 enemyPos = combat.LastKnownEnemyPos.Value;
-            Vector3 myPos = this._bot.Position;
-            float distance = Vector3.Distance(myPos, enemyPos);
-
-            BotPersonalityProfile? profile = this._cache.AIRefactoredBotOwner?.PersonalityProfile;
-            float range = profile != null ? profile.EngagementRange : 25.0f;
-
-            return distance < range;
+            Vector3 enemyPos;
+            return TryGetLastKnownEnemy(out enemyPos) && IsWithinRange(enemyPos);
         }
 
         /// <summary>
-        /// Guides the bot toward the last known enemy position with cautious stance updates.
+        /// Advances the bot toward last known enemy position with squad offset and cover-aware stance.
         /// </summary>
         public void Tick()
         {
-            CombatStateMachine? combat = this._cache.Combat;
-            if (combat == null || !combat.LastKnownEnemyPos.HasValue)
+            if (!IsCombatCapable())
             {
                 return;
             }
 
-            Vector3 target = combat.LastKnownEnemyPos.Value;
-            Vector3 destination = this._cache.SquadPath != null
-                ? this._cache.SquadPath.ApplyOffsetTo(target)
-                : target;
-
-            // Ensure that destination is valid before proceeding
-            if (float.IsNaN(destination.x) || float.IsNaN(destination.y) || float.IsNaN(destination.z))
+            Vector3 enemyPos;
+            if (!TryGetLastKnownEnemy(out enemyPos))
             {
                 return;
             }
 
-            // Move the bot towards the target destination
-            BotMovementHelper.SmoothMoveTo(this._bot, destination);
+            Vector3 destination = _cache.SquadPath != null
+                ? _cache.SquadPath.ApplyOffsetTo(enemyPos)
+                : enemyPos;
 
-            // Update bot's stance based on nearby cover, if necessary
-            combat.TrySetStanceFromNearbyCover(destination);
+            if (!IsValid(destination) || !BotNavValidator.Validate(_bot, "EngageHandlerDestination"))
+            {
+                destination = FallbackNavPointProvider.GetSafePoint(_bot.Position);
+            }
+
+            BotMovementHelper.SmoothMoveTo(_bot, destination);
+            _cache.Combat.TrySetStanceFromNearbyCover(destination);
         }
+
         /// <summary>
-        /// Returns true if the bot is actively in Engage state.
+        /// Returns whether the bot is currently engaging based on distance to last known enemy.
         /// </summary>
         public bool IsEngaging()
         {
-            CombatStateMachine? combat = this._cache.Combat;
-            return combat != null && combat.LastKnownEnemyPos.HasValue && !this.CanAttack();
+            if (!IsCombatCapable())
+            {
+                return false;
+            }
+
+            Vector3 enemyPos;
+            return TryGetLastKnownEnemy(out enemyPos) && !IsWithinRange(enemyPos);
+        }
+
+        #endregion
+
+        #region Private Methods
+
+        /// <summary>
+        /// Checks whether bot is in valid state to perform combat operations.
+        /// </summary>
+        private bool IsCombatCapable()
+        {
+            return !_cache.IsFallbackMode && _bot != null && _cache.Combat != null;
+        }
+
+        /// <summary>
+        /// Attempts to retrieve a valid last known enemy position.
+        /// </summary>
+        private bool TryGetLastKnownEnemy(out Vector3 result)
+        {
+            result = _cache.Combat.LastKnownEnemyPos;
+            return result != Vector3.zero &&
+                   !float.IsNaN(result.x) &&
+                   !float.IsNaN(result.y) &&
+                   !float.IsNaN(result.z);
+        }
+
+        /// <summary>
+        /// Returns true if the enemy position is within range to attack.
+        /// </summary>
+        private bool IsWithinRange(Vector3 enemyPos)
+        {
+            return Vector3.SqrMagnitude(_bot.Position - enemyPos) < (_fallbackRange * _fallbackRange);
+        }
+
+        /// <summary>
+        /// Validates that a position contains finite and usable coordinates.
+        /// </summary>
+        private static bool IsValid(Vector3 pos)
+        {
+            return !float.IsNaN(pos.x) && !float.IsNaN(pos.y) && !float.IsNaN(pos.z);
         }
 
         #endregion

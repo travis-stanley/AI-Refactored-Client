@@ -6,11 +6,10 @@
 //   Please follow strict StyleCop, ReSharper, and AI-Refactored code standards for all modifications.
 // </auto-generated>
 
-#nullable enable
-
 namespace AIRefactored.AI.Helpers
 {
     using AIRefactored.AI.Core;
+    using AIRefactored.Core;
     using EFT;
     using UnityEngine;
 
@@ -23,63 +22,46 @@ namespace AIRefactored.AI.Helpers
         private const float FlashBlindDuration = 4.5f;
 
         /// <summary>
-        /// Gets the BotOwner instance from a Player, if AI-controlled.
+        /// Gets the BotOwner instance from a Player, if valid AI.
         /// </summary>
-        /// <param name="player">The player to check.</param>
-        /// <returns>The BotOwner instance, or null if not AI.</returns>
-        public static BotOwner? GetBotOwner(Player? player)
+        public static BotOwner GetBotOwner(Player player)
         {
-            if (player?.IsAI == true && player.AIData is BotOwner owner)
-            {
-                return owner;
-            }
-
-            return null;
+            return EFTPlayerUtil.IsValid(player) && player.IsAI
+                ? player.AIData?.BotOwner
+                : null;
         }
 
         /// <summary>
-        /// Gets the BotComponentCache from a Player, if AI-controlled.
+        /// Gets the BotComponentCache from a Player, if valid AI.
         /// </summary>
-        /// <param name="player">The player to check.</param>
-        /// <returns>The bot's BotComponentCache, or null if not AI.</returns>
-        public static BotComponentCache? GetCache(Player? player)
+        public static BotComponentCache GetCache(Player player)
         {
-            if (player?.IsAI == true)
-            {
-                return BotCacheUtility.GetCache(player);
-            }
-
-            return null;
+            return EFTPlayerUtil.IsValid(player) && player.IsAI
+                ? BotCacheUtility.GetCache(player)
+                : null;
         }
 
         /// <summary>
         /// Evaluates whether suppression should occur based on bot visibility and ambient lighting.
         /// </summary>
-        /// <param name="player">The player to evaluate.</param>
-        /// <param name="visibleDistThreshold">The visibility distance threshold.</param>
-        /// <param name="ambientThreshold">The ambient light threshold.</param>
-        /// <returns>True if suppression should be triggered; otherwise, false.</returns>
-        public static bool ShouldTriggerSuppression(
-            Player? player,
-            float visibleDistThreshold = 12f,
-            float ambientThreshold = 0.25f)
+        public static bool ShouldTriggerSuppression(Player player, float visibleDistThreshold = 12f, float ambientThreshold = 0.25f)
         {
-            BotOwner? owner = GetBotOwner(player);
+            BotOwner owner = GetBotOwner(player);
             if (owner?.LookSensor == null)
             {
                 return false;
             }
 
             float visibleDist = owner.LookSensor.ClearVisibleDist;
-            float ambientLight = 0.5f;
 
+            float ambientLight = 0.5f;
             try
             {
                 ambientLight = RenderSettings.ambientLight.grayscale;
             }
             catch
             {
-                // Fallback value
+                // Fallback to default grayscale
             }
 
             return visibleDist < visibleDistThreshold || ambientLight < ambientThreshold;
@@ -89,18 +71,15 @@ namespace AIRefactored.AI.Helpers
         /// Triggers suppression effects for a bot from a threat source.
         /// Applies panic or flash-based blindness depending on bot state.
         /// </summary>
-        /// <param name="player">The player to suppress.</param>
-        /// <param name="threatPosition">The world-space threat position.</param>
-        /// <param name="source">The enemy player causing the suppression, if known.</param>
-        public static void TrySuppressBot(Player? player, Vector3 threatPosition, IPlayer? source = null)
+        public static void TrySuppressBot(Player player, Vector3 threatPosition, IPlayer source = null)
         {
-            if (player == null || player.IsAI != true)
+            if (!EFTPlayerUtil.IsValid(player) || !player.IsAI)
             {
                 return;
             }
 
-            BotOwner? owner = GetBotOwner(player);
-            BotComponentCache? cache = GetCache(player);
+            BotOwner owner = GetBotOwner(player);
+            BotComponentCache cache = GetCache(player);
 
             if (owner == null || cache == null || owner.IsDead)
             {
@@ -115,10 +94,12 @@ namespace AIRefactored.AI.Helpers
             if (cache.PanicHandler != null && !cache.PanicHandler.IsPanicking)
             {
                 cache.PanicHandler.TriggerPanic();
+                return;
             }
-            else
+
+            if (cache.FlashGrenade != null)
             {
-                cache.FlashGrenade?.ForceBlind();
+                cache.FlashGrenade.ForceBlind();
             }
         }
     }

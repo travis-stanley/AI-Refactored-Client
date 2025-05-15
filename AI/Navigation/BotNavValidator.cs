@@ -55,9 +55,9 @@ namespace AIRefactored.AI.Navigation
                 return false;
             }
 
-            Vector3 target;
+            Vector3 target = Vector3.zero;
 
-            if (NavPointRegistry.IsReady)
+            if (NavPointRegistry.IsReady && !NavPointRegistry.IsEmpty)
             {
                 target = NavPointRegistry.GetClosestPosition(position);
                 if (!IsValidPosition(target))
@@ -68,7 +68,7 @@ namespace AIRefactored.AI.Navigation
             }
             else
             {
-                TryLogOnce("[BotNavValidator] ⚠ Registry not ready — using fallback — bot: " + GetBotName(botOwner) + ", context: " + context);
+                TryLogOnce("[BotNavValidator] ⚠ Registry not ready or empty — using fallback — bot: " + GetBotName(botOwner) + ", context: " + context);
                 target = FallbackNavPointProvider.GetSafePoint(position);
             }
 

@@ -87,7 +87,6 @@ namespace AIRefactored.AI.Movement
                 return;
             }
 
-            // PATCHED: allow fallback logic if NavMesh isn't ready
             if (!NavMeshStatus.IsReady && !_inLootingMode)
             {
                 if (NavPointRegistry.IsEmpty)
@@ -157,7 +156,14 @@ namespace AIRefactored.AI.Movement
                 Logger.LogError("[Movement] Exception in LastTargetPoint: " + ex);
             }
 
-            return _bot != null ? _bot.Position : Vector3.zero;
+            Logger.LogWarning("[Movement] Target point not valid, using fallback logic.");
+            if (_bot != null)
+            {
+                Vector3 safe = FallbackNavPointProvider.GetSafePoint(_bot.Position);
+                return safe != Vector3.zero ? safe : _bot.Position;
+            }
+
+            return Vector3.zero;
         }
 
         private void ApplyInertia(Vector3 target, float deltaTime)

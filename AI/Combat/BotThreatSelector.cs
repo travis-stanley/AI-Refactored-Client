@@ -278,7 +278,18 @@ namespace AIRefactored.AI.Combat
 
             if (_cache.Movement != null && !_cache.Bot.IsDead && _cache.Bot.Mover != null && !_cache.Bot.Mover.IsMoving)
             {
-                Vector3 fallback = NavPointRegistry.GetClosestPosition(_cache.Bot.Position);
+                Vector3 fallback = Vector3.zero;
+
+                if (NavPointRegistry.IsReady && !NavPointRegistry.IsEmpty)
+                {
+                    fallback = NavPointRegistry.GetClosestPosition(_cache.Bot.Position);
+                }
+
+                if (!BotNavValidator.Validate(_cache.Bot, nameof(SetTarget)))
+                {
+                    fallback = FallbackNavPointProvider.GetSafePoint(_cache.Bot.Position);
+                }
+
                 if (fallback != Vector3.zero)
                 {
                     _cache.Bot.Mover.GoToPoint(fallback, true, 1.0f);

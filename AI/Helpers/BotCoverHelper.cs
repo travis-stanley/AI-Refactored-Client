@@ -99,6 +99,11 @@ namespace AIRefactored.AI.Helpers
                 return;
             }
 
+            if (!NavPointRegistry.IsReady || NavPointRegistry.IsEmpty)
+            {
+                return;
+            }
+
             BotPoseController controller = cache.PoseController;
             List<NavPointData> points = NavPointRegistry.QueryNearby(position, 4f, null);
 

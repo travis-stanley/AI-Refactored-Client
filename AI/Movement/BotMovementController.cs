@@ -142,7 +142,7 @@ namespace AIRefactored.AI.Movement
         {
             try
             {
-                if (_bot?.Mover != null)
+                if (_bot != null && _bot.Mover != null)
                 {
                     Vector3 point = _bot.Mover.LastTargetPoint(1.0f);
                     if (!float.IsNaN(point.x) && !float.IsNaN(point.y) && !float.IsNaN(point.z))
@@ -157,10 +157,20 @@ namespace AIRefactored.AI.Movement
             }
 
             Logger.LogWarning("[Movement] Target point not valid, using fallback logic.");
+
             if (_bot != null)
             {
-                Vector3 safe = FallbackNavPointProvider.GetSafePoint(_bot.Position);
-                return safe != Vector3.zero ? safe : _bot.Position;
+                if (NavPointRegistry.IsReady && !NavPointRegistry.IsEmpty)
+                {
+                    Vector3 closest = NavPointRegistry.GetClosestPosition(_bot.Position);
+                    if (!float.IsNaN(closest.x) && !float.IsNaN(closest.y) && !float.IsNaN(closest.z))
+                    {
+                        return closest;
+                    }
+                }
+
+                Vector3 fallback = FallbackNavPointProvider.GetSafePoint(_bot.Position);
+                return fallback != Vector3.zero ? fallback : _bot.Position;
             }
 
             return Vector3.zero;

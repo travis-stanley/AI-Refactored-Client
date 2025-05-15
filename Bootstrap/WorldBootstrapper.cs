@@ -23,11 +23,10 @@ namespace AIRefactored.Bootstrap
     using BepInEx.Logging;
     using Comfort.Common;
     using EFT;
-    using Unity.AI.Navigation;
     using UnityEngine;
 
     /// <summary>
-    /// Main coordinator for AIRefactored world systems. Handles initialization, updates, NavMesh warmup, and teardown.
+    /// Main coordinator for AIRefactored world systems. Handles initialization, updates, and teardown.
     /// </summary>
     public static class WorldBootstrapper
     {
@@ -72,9 +71,12 @@ namespace AIRefactored.Bootstrap
                 HotspotRegistry.Clear();
                 NavPointRegistry.Clear();
 
+                // NavMesh and navpoint registration are now handled EXCLUSIVELY in AIRefactoredController.OnRaidStarted
+                // This script never builds NavMesh or registers navpoints directly.
+                // Registries are ONLY initialized (not populated) here.
+
                 if (!string.IsNullOrEmpty(mapId))
                 {
-                    NavPointBootstrapper.RegisterAll(mapId);
                     HotspotRegistry.Initialize(mapId);
                 }
                 else
@@ -99,11 +101,6 @@ namespace AIRefactored.Bootstrap
 
                 _hasInitialized = true;
                 Logger.LogDebug("[WorldBootstrapper] ✅ World systems initialized.");
-
-                if (GameWorldHandler.IsHost)
-                {
-                    StaticManager.Instance.StartCoroutine(DelayedNavMeshWarmup());
-                }
             }
             catch (Exception ex)
             {
@@ -206,78 +203,6 @@ namespace AIRefactored.Bootstrap
             {
                 Logger.LogError("[WorldBootstrapper] Tick() outer error: " + ex);
             }
-        }
-
-        #endregion
-
-        #region NavMesh Warmup
-
-        private static IEnumerator DelayedNavMeshWarmup()
-        {
-            const int MaxFrames = 300;
-            int frame = 0;
-
-            while (!CanWarmupNavMesh() || (FikaHeadlessDetector.IsHeadless && !FikaHeadlessDetector.HasRaidStarted()))
-            {
-                if (frame++ >= MaxFrames)
-                {
-                    Logger.LogWarning("[WorldBootstrapper] NavMesh warmup timed out — world or FIKA not ready.");
-                    yield break;
-                }
-
-                yield return null;
-            }
-
-            Logger.LogInfo("[WorldBootstrapper] Starting NavMesh warmup...");
-
-            string mapId = GameWorldHandler.TryGetValidMapName();
-            if (string.IsNullOrEmpty(mapId))
-            {
-                Logger.LogWarning("[WorldBootstrapper] Cannot prewarm — invalid mapId.");
-                yield break;
-            }
-
-            NavMeshSurface[] surfaces = UnityEngine.Object.FindObjectsOfType<NavMeshSurface>();
-            for (int i = 0; i < surfaces.Length; i++)
-            {
-                NavMeshSurface surface = surfaces[i];
-                if (surface != null && surface.enabled && surface.gameObject.activeInHierarchy)
-                {
-                    try
-                    {
-                        surface.BuildNavMesh();
-                        BotCoverRetreatPlanner.RegisterSurface(mapId, surface);
-                    }
-                    catch (Exception ex)
-                    {
-                        Logger.LogWarning("[WorldBootstrapper] NavMesh build failed: " + ex);
-                    }
-                }
-            }
-
-            NavMeshStatus.SetReady();
-            Logger.LogInfo("[WorldBootstrapper] ✅ NavMesh warmup complete.");
-        }
-
-        private static bool CanWarmupNavMesh()
-        {
-            GameWorld world = Singleton<GameWorld>.Instance;
-            if (world == null || world.RegisteredPlayers == null || world.RegisteredPlayers.Count == 0)
-            {
-                return false;
-            }
-
-            for (int i = 0; i < world.RegisteredPlayers.Count; i++)
-            {
-                var raw = world.RegisteredPlayers[i];
-                var player = EFTPlayerUtil.AsEFTPlayer(raw);
-                if (player != null && EFTPlayerUtil.IsValid(player))
-                {
-                    return true;
-                }
-            }
-
-            return false;
         }
 
         #endregion

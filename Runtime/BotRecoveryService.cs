@@ -226,7 +226,8 @@ namespace AIRefactored.Runtime
 					}
 				}
 
-				if (!_hasRescanned)
+				// Only allow one rescan per tick, and only if phase/world is valid
+				if (!_hasRescanned && GameWorldHandler.IsReady() && WorldInitState.IsInPhase(WorldPhase.WorldReady))
 				{
 					_hasRescanned = true;
 					RescanWorld();
@@ -242,6 +243,12 @@ namespace AIRefactored.Runtime
 		{
 			try
 			{
+				if (!GameWorldHandler.IsReady() || !WorldInitState.IsInPhase(WorldPhase.WorldReady))
+				{
+					Logger.LogWarning("[BotRecoveryService] ❌ Rescan aborted — world or phase not ready.");
+					return;
+				}
+
 				string mapId = GameWorldHandler.TryGetValidMapName();
 				if (string.IsNullOrEmpty(mapId))
 				{

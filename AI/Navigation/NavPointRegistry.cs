@@ -69,6 +69,7 @@ namespace AIRefactored.AI.Navigation
         public static int Count => Points.Count;
         public static bool IsReady => Points.Count > 0;
         public static bool IsEmpty => Points.Count == 0;
+        public static bool IsInitialized { get; private set; }
 
         #endregion
 
@@ -84,6 +85,7 @@ namespace AIRefactored.AI.Navigation
             _spatialGrid = null;
             _useQuadtree = false;
             _useSpatial = false;
+            IsInitialized = true;
 
             Logger.LogDebug("[NavPointRegistry] Initialized.");
         }
@@ -94,6 +96,7 @@ namespace AIRefactored.AI.Navigation
             Unique.Clear();
             _quadtree?.Clear();
             _spatialGrid?.Clear();
+            IsInitialized = false;
         }
 
         #endregion
@@ -107,6 +110,7 @@ namespace AIRefactored.AI.Navigation
             if (source == null || source.Count == 0)
             {
                 Logger.LogWarning("[NavPointRegistry] LoadFrom failed — no points provided.");
+                IsInitialized = false;
                 return;
             }
 
@@ -132,7 +136,9 @@ namespace AIRefactored.AI.Navigation
                 Points.Add(point);
             }
 
+            AutoEnableIndexModeSafe();
             Logger.LogInfo("[NavPointRegistry] ✅ Loaded " + Points.Count + " points from cache.");
+            IsInitialized = Points.Count > 0;
         }
 
         public static List<NavPointData> GetAllPoints()
@@ -163,8 +169,7 @@ namespace AIRefactored.AI.Navigation
 
         public static void RegisterAll(string mapId)
         {
-            Initialize();
-
+            // Protect: Only register after WorldReady, and if not already ready
             if (!WorldInitState.IsInPhase(WorldPhase.WorldReady))
             {
                 Logger.LogWarning("[NavPointRegistry] RegisterAll() skipped — world not ready.");
@@ -176,6 +181,15 @@ namespace AIRefactored.AI.Navigation
                 Logger.LogDebug("[NavPointRegistry] Skipped RegisterAll — not host.");
                 return;
             }
+
+            // Don't re-register if already built for this raid
+            if (IsInitialized && Points.Count > 0)
+            {
+                Logger.LogDebug("[NavPointRegistry] Already built for this raid, skipping RegisterAll.");
+                return;
+            }
+
+            Initialize();
 
             Logger.LogDebug("[NavPointRegistry] Registering nav points for map: " + mapId);
 
@@ -200,7 +214,8 @@ namespace AIRefactored.AI.Navigation
                 Logger.LogWarning("[NavPointRegistry] RegisterAll completed but point list is still empty.");
             }
 
-            AutoEnableIndexMode(mapId);
+            AutoEnableIndexModeSafe();
+            IsInitialized = Points.Count > 0;
         }
 
         public static void Register(Vector3 pos, bool isCover = false, string tag = "generic", float elevation = 0f, bool isIndoor = false, bool isJumpable = false, float coverAngle = 0f)
@@ -344,6 +359,17 @@ namespace AIRefactored.AI.Navigation
                 enableSpatialGrid: mode == SpatialIndexMode.Grid || mode == SpatialIndexMode.GridAndQuadtree);
 
             Logger.LogDebug($"[NavPointRegistry] Indexing mode for map '{mapId}' => {mode}");
+        }
+
+        // Safe wrapper: call only if points present
+        private static void AutoEnableIndexModeSafe()
+        {
+            if (Points.Count == 0)
+                return;
+            string mapId = GameWorldHandler.TryGetValidMapName();
+            if (string.IsNullOrEmpty(mapId))
+                return;
+            AutoEnableIndexMode(mapId);
         }
 
         public static void EnableSpatialIndexing(bool enableQuadtree, bool enableSpatialGrid = true)

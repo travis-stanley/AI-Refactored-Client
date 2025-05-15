@@ -94,20 +94,7 @@ namespace AIRefactored.Runtime
                         return;
                     }
 
-                    Logger.LogDebug("[GameWorldSpawnHook] GameWorld active — warming NavMesh and bootstrapping...");
-
-                    NavMeshWarmupManager.TryPrebuildNavMesh();
-
-                    string mapId = GameWorldHandler.TryGetValidMapName();
-                    if (!string.IsNullOrEmpty(mapId))
-                    {
-                        NavPointRegistry.RegisterAll(mapId);
-                    }
-                    else
-                    {
-                        Logger.LogWarning("[GameWorldSpawnHook] Could not determine map ID for NavPoint registration.");
-                    }
-
+                    // No more NavMesh or NavPoint registration here!
                     Logger.LogDebug("[GameWorldSpawnHook] ✅ Triggering InitPhaseRunner...");
                     InitPhaseRunner.Begin(Logger);
                 }

@@ -31,11 +31,20 @@ namespace AIRefactored.AI.Navigation
 
         #endregion
 
+        #region Properties
+
+        /// <summary>
+        /// Gets a value indicating whether the NavMesh has been warmed up this raid.
+        /// </summary>
+        public static bool IsNavMeshReady => _hasStarted && NavMeshStatus.IsReady;
+
+        #endregion
+
         #region Public API
 
         /// <summary>
         /// Attempts to build the NavMesh and register navpoints after GameWorld is ready.
-        /// Called from InitPhaseRunner before WorldBootstrapper starts.
+        /// Called from AIRefactoredController.OnRaidStarted ONLY.
         /// </summary>
         public static void TryPrebuildNavMesh()
         {
@@ -51,19 +60,21 @@ namespace AIRefactored.AI.Navigation
                 return;
             }
 
+            // Headless/FIKA: Only build if raid fully started
             if (FikaHeadlessDetector.IsHeadless && !FikaHeadlessDetector.HasRaidStarted())
             {
                 Logger.LogWarning("[NavMeshWarmupManager] Skipped — raid not started in headless mode.");
                 return;
             }
 
-            if (!GameWorldHandler.IsInitialized)
+            // GameWorld must be initialized and ready (including all surface objects present)
+            if (!GameWorldHandler.IsReady())
             {
-                Logger.LogWarning("[NavMeshWarmupManager] Skipped — world not initialized.");
+                Logger.LogWarning("[NavMeshWarmupManager] Skipped — GameWorldHandler not ready.");
                 return;
             }
 
-            var mapId = GameWorldHandler.TryGetValidMapName();
+            string mapId = GameWorldHandler.TryGetValidMapName();
             if (string.IsNullOrEmpty(mapId))
             {
                 Logger.LogWarning("[NavMeshWarmupManager] Skipped — no valid map name.");
@@ -82,9 +93,9 @@ namespace AIRefactored.AI.Navigation
                 }
 
                 bool builtAny = false;
-
-                foreach (var surface in surfaces)
+                for (int i = 0; i < surfaces.Length; i++)
                 {
+                    var surface = surfaces[i];
                     if (surface == null || !surface.enabled || !surface.gameObject.activeInHierarchy)
                     {
                         continue;
@@ -106,6 +117,7 @@ namespace AIRefactored.AI.Navigation
                 Logger.LogInfo("[NavMeshWarmupManager] ✅ NavMesh warmup complete.");
                 NavMeshStatus.SetReady();
 
+                // Try to load cached navpoints for this map first (no build if already cached)
                 if (NavPointCacheManager.TryLoad(mapId, out var cached))
                 {
                     NavPointRegistry.LoadFrom(cached);

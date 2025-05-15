@@ -58,23 +58,17 @@ namespace AIRefactored.AI.Helpers
         public static void NotifyShot(Player player)
         {
             if (!EFTPlayerUtil.IsValid(player))
-            {
                 return;
-            }
 
             string id = player.ProfileId;
             if (string.IsNullOrEmpty(id))
-            {
                 return;
-            }
 
             ShotTimestamps[id] = Time.time;
 
             Transform transform = player.Transform?.Original;
             if (transform == null)
-            {
                 return;
-            }
 
             Vector3 pos = transform.position;
             SoundZones[id] = pos;
@@ -85,23 +79,17 @@ namespace AIRefactored.AI.Helpers
         public static void NotifyStep(Player player)
         {
             if (!EFTPlayerUtil.IsValid(player))
-            {
                 return;
-            }
 
             string id = player.ProfileId;
             if (string.IsNullOrEmpty(id))
-            {
                 return;
-            }
 
             FootstepTimestamps[id] = Time.time;
 
             Transform transform = player.Transform?.Original;
             if (transform == null)
-            {
                 return;
-            }
 
             Vector3 pos = transform.position;
             SoundZones[id] = pos;
@@ -114,9 +102,7 @@ namespace AIRefactored.AI.Helpers
             time = -1f;
 
             if (!EFTPlayerUtil.IsValid(player))
-            {
                 return false;
-            }
 
             string id = player.ProfileId;
             return !string.IsNullOrEmpty(id) && ShotTimestamps.TryGetValue(id, out time);
@@ -127,9 +113,7 @@ namespace AIRefactored.AI.Helpers
             time = -1f;
 
             if (!EFTPlayerUtil.IsValid(player))
-            {
                 return false;
-            }
 
             string id = player.ProfileId;
             return !string.IsNullOrEmpty(id) && FootstepTimestamps.TryGetValue(id, out time);
@@ -140,9 +124,7 @@ namespace AIRefactored.AI.Helpers
             pos = Vector3.zero;
 
             if (!EFTPlayerUtil.IsValid(player))
-            {
                 return false;
-            }
 
             string id = player.ProfileId;
             return !string.IsNullOrEmpty(id) && SoundZones.TryGetValue(id, out pos);
@@ -159,15 +141,11 @@ namespace AIRefactored.AI.Helpers
             foreach (BotComponentCache cache in BotCacheUtility.AllActiveBots())
             {
                 if (cache?.Bot == null || cache.Bot.IsDead)
-                {
                     continue;
-                }
 
                 string id = cache.Bot.ProfileId;
                 if (string.Equals(id, sourceId))
-                {
                     continue;
-                }
 
                 Vector3 pos = cache.Bot.Position;
                 float dx = pos.x - location.x;
@@ -176,22 +154,16 @@ namespace AIRefactored.AI.Helpers
                 float distSq = (dx * dx) + (dy * dy) + (dz * dz);
 
                 if (distSq > radiusSq)
-                {
                     continue;
-                }
 
                 cache.RegisterHeardSound(location);
 
                 if (cache.GroupComms != null)
                 {
                     if (isGunshot)
-                    {
                         cache.GroupComms.SaySuppression();
-                    }
                     else
-                    {
                         cache.GroupComms.SayFallback();
-                    }
                 }
             }
         }

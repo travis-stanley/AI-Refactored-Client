@@ -49,9 +49,7 @@ namespace AIRefactored.AI.Combat
         public void Initialize(BotOwner botOwner)
         {
             if (botOwner == null)
-            {
                 throw new ArgumentNullException(nameof(botOwner));
-            }
 
             _bot = botOwner;
             _panicStartTime = -1f;
@@ -70,9 +68,7 @@ namespace AIRefactored.AI.Combat
         public void Tick(float time)
         {
             if (_hasEscalated || !IsValid() || time < _nextCheckTime)
-            {
                 return;
-            }
 
             _nextCheckTime = time + CheckInterval;
 
@@ -103,9 +99,7 @@ namespace AIRefactored.AI.Combat
         {
             BotEnemiesController controller = _bot.EnemiesController;
             if (controller?.EnemyInfos == null)
-            {
                 return false;
-            }
 
             int visibleCount = 0;
             foreach (var kv in controller.EnemyInfos)
@@ -113,12 +107,9 @@ namespace AIRefactored.AI.Combat
                 if (kv.Value != null && kv.Value.IsVisible)
                 {
                     if (++visibleCount >= 2)
-                    {
                         return true;
-                    }
                 }
             }
-
             return false;
         }
 
@@ -126,9 +117,7 @@ namespace AIRefactored.AI.Combat
         {
             BotsGroup group = _bot.BotsGroup;
             if (group == null || group.MembersCount <= 1)
-            {
                 return false;
-            }
 
             int dead = 0;
             for (int i = 0; i < group.MembersCount; i++)
@@ -179,9 +168,7 @@ namespace AIRefactored.AI.Combat
         private void ApplyEscalationTuning(BotOwner bot)
         {
             if (bot?.Settings?.FileSettings == null)
-            {
                 return;
-            }
 
             var file = bot.Settings.FileSettings;
 
@@ -209,15 +196,11 @@ namespace AIRefactored.AI.Combat
         {
             string profileId = bot.ProfileId;
             if (string.IsNullOrEmpty(profileId))
-            {
                 return;
-            }
 
             BotPersonalityProfile profile = BotRegistry.Get(profileId);
             if (profile == null)
-            {
                 return;
-            }
 
             profile.AggressionLevel = Mathf.Clamp01(profile.AggressionLevel + 0.25f);
             profile.Caution = Mathf.Clamp01(profile.Caution - 0.25f);

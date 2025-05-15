@@ -44,9 +44,7 @@ namespace AIRefactored.AI.Helpers
         public static void RetreatToCover(BotOwner bot, Vector3 threatDirection, float distance = RetreatDistance, bool sprint = true)
         {
             if (!IsEligible(bot))
-            {
                 return;
-            }
 
             Vector3 fallback = bot.Position - threatDirection.normalized * distance;
             BotComponentCache cache = BotCacheUtility.GetCache(bot);
@@ -92,23 +90,17 @@ namespace AIRefactored.AI.Helpers
         public static void SmoothLookTo(BotOwner bot, Vector3 lookTarget, float speed = DefaultLookSpeed)
         {
             if (!IsEligible(bot))
-            {
                 return;
-            }
 
             Transform transform = bot.Transform?.Original;
             if (transform == null)
-            {
                 return;
-            }
 
             Vector3 direction = lookTarget - bot.Position;
             direction.y = 0f;
 
             if (direction.sqrMagnitude < 0.01f)
-            {
                 return;
-            }
 
             Quaternion targetRotation = Quaternion.LookRotation(direction.normalized, Vector3.up);
             float t = Time.deltaTime * Mathf.Clamp(speed, 1f, 8f);
@@ -118,9 +110,7 @@ namespace AIRefactored.AI.Helpers
         public static void SmoothMoveTo(BotOwner bot, Vector3 target, bool slow = true, float cohesionScale = 1f)
         {
             if (!IsEligible(bot))
-            {
                 return;
-            }
 
             if (!BotNavValidator.Validate(bot, nameof(SmoothMoveTo)))
             {
@@ -133,9 +123,7 @@ namespace AIRefactored.AI.Helpers
             float dz = position.z - target.z;
 
             if ((dx * dx + dz * dz) < radius * radius)
-            {
                 return;
-            }
 
             bot.Mover.GoToPoint(target, slow, cohesionScale);
         }
@@ -143,9 +131,7 @@ namespace AIRefactored.AI.Helpers
         public static void SmoothMoveToSafeExit(BotOwner bot)
         {
             if (!IsEligible(bot))
-            {
                 return;
-            }
 
             Vector3 fallback = bot.Position + bot.LookDirection.normalized * 4f;
             BotComponentCache cache = BotCacheUtility.GetCache(bot);
@@ -170,9 +156,7 @@ namespace AIRefactored.AI.Helpers
         public static void SmoothStrafeFrom(BotOwner bot, Vector3 threatDirection, float scale = 1f)
         {
             if (!IsEligible(bot))
-            {
                 return;
-            }
 
             Vector3 right = Vector3.Cross(Vector3.up, threatDirection.normalized);
             if (right.sqrMagnitude < 0.01f)
@@ -194,9 +178,7 @@ namespace AIRefactored.AI.Helpers
         public static void ForceFallbackMove(BotOwner bot)
         {
             if (!IsEligible(bot))
-            {
                 return;
-            }
 
             Vector3 dir = bot.LookDirection;
             Vector3 target = bot.Position + dir.normalized * 5f;

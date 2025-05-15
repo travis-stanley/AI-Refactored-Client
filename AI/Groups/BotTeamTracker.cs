@@ -84,7 +84,7 @@ namespace AIRefactored.AI.Groups
                 }
             }
 
-            return new List<BotOwner>(TempBuffer);
+            return TempBuffer.Count == 0 ? new List<BotOwner>(0) : new List<BotOwner>(TempBuffer);
         }
 
         /// <summary>

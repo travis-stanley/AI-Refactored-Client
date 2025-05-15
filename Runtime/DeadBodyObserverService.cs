@@ -3,7 +3,7 @@
 //   Licensed under the MIT License. See LICENSE in the repository root for more information.
 //
 //   THIS FILE IS SYSTEMATICALLY MANAGED.
-//   Please follow strict StyleCop, ReSharper, and AI-Refactored code standards for all modifications.
+//   Failures in AIRefactored logic must always trigger safe fallback to EFT base AI.
 // </auto-generated>
 
 namespace AIRefactored.Runtime
@@ -158,7 +158,7 @@ namespace AIRefactored.Runtime
 				for (int i = 0; i < rawPlayers.Count; i++)
 				{
 					Player player = EFTPlayerUtil.AsEFTPlayer(rawPlayers[i]);
-					if (player != null && !player.HealthController.IsAlive)
+					if (player != null && player.HealthController != null && !player.HealthController.IsAlive)
 					{
 						deadPlayers.Add(player);
 					}

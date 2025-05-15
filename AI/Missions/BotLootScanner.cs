@@ -3,7 +3,7 @@
 //   Licensed under the MIT License. See LICENSE in the repository root for more information.
 //
 //   THIS FILE IS SYSTEMATICALLY MANAGED.
-//   Please follow strict StyleCop, ReSharper, and AI-Refactored code standards for all modifications.
+//   Failures in AIRefactored logic must always trigger safe fallback to EFT base AI.
 // </auto-generated>
 
 namespace AIRefactored.AI.Looting
@@ -211,8 +211,10 @@ namespace AIRefactored.AI.Looting
         private bool IsEligibleToLoot()
         {
             return _cache != null &&
+                   _cache.PanicHandler != null &&
                    !_cache.PanicHandler.IsPanicking &&
                    _bot != null &&
+                   _bot.Memory != null &&
                    _bot.Memory.GoalEnemy == null &&
                    (_bot.EnemiesController == null || _bot.EnemiesController.EnemyInfos.Count == 0);
         }
@@ -255,7 +257,7 @@ namespace AIRefactored.AI.Looting
             float total = 0f;
 
             List<Item> items = TempListPool.Rent<Item>();
-            items.AddRange(root.GetAllItems());
+            root.GetAllItemsNonAlloc(items);
 
             for (int i = 0; i < items.Count; i++)
             {
@@ -276,10 +278,10 @@ namespace AIRefactored.AI.Looting
 
         private bool HasLineOfSight(Vector3 target)
         {
-            Vector3 origin = _bot.WeaponRoot.position;
+            Vector3 origin = _bot.WeaponRoot != null ? _bot.WeaponRoot.position : _bot.Position;
             Vector3 direction = target - origin;
 
-            if (Vector3.Angle(_bot.WeaponRoot.forward, direction) > MaxAngle)
+            if (_bot.WeaponRoot != null && Vector3.Angle(_bot.WeaponRoot.forward, direction) > MaxAngle)
             {
                 return false;
             }

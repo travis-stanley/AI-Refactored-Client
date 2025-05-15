@@ -19,8 +19,10 @@ namespace AIRefactored.AI.Perception
     using Random = UnityEngine.Random;
 
     /// <summary>
-    /// Manages flashlight, laser, NVG, and thermal toggling.
-    /// Reacts to ambient light, fog density, and chaos-driven bait behavior.
+    /// Controls and manages tactical device toggling for bot AI:
+    /// Flashlights, lasers, NVGs, and thermals.
+    /// Handles ambient/fog-based logic and chaos-driven baiting,
+    /// ensuring full headless and multiplayer safety.
     /// </summary>
     public sealed class BotTacticalDeviceController
     {
@@ -35,17 +37,20 @@ namespace AIRefactored.AI.Perception
         #region Initialization
 
         /// <summary>
-        /// Initializes the controller with the bot's runtime cache.
+        /// Initializes the controller for the provided bot component cache.
         /// </summary>
+        /// <param name="cache">The bot's runtime component cache.</param>
+        /// <exception cref="ArgumentNullException">Thrown if cache or cache.Bot is null.</exception>
         public void Initialize(BotComponentCache cache)
         {
             if (cache == null || cache.Bot == null)
             {
-                throw new ArgumentNullException(nameof(cache));
+                throw new ArgumentNullException(nameof(cache), "BotComponentCache and Bot must not be null.");
             }
 
             _bot = cache.Bot;
             _cache = cache;
+            _nextDecisionTime = 0f;
         }
 
         #endregion
@@ -53,7 +58,8 @@ namespace AIRefactored.AI.Perception
         #region Tick
 
         /// <summary>
-        /// Ticks the logic once per frame for toggling tactical devices.
+        /// Updates tactical device logic. Must be called every frame by BotBrain.
+        /// Fully allocation- and null-safe, with pooling and headless/multiplayer support.
         /// </summary>
         public void Tick()
         {
@@ -64,7 +70,7 @@ namespace AIRefactored.AI.Perception
 
             _nextDecisionTime = Time.time + TacticalConfig.CheckInterval;
 
-            Weapon weapon = _bot.WeaponManager?.CurrentWeapon;
+            Weapon weapon = _bot.WeaponManager != null ? _bot.WeaponManager.CurrentWeapon : null;
             if (weapon == null)
             {
                 return;
@@ -73,13 +79,14 @@ namespace AIRefactored.AI.Perception
             List<LightComponent> devices = TempListPool.Rent<LightComponent>();
             try
             {
-                ScanMods(weapon, devices);
+                ScanModsForTacticalDevices(weapon, devices);
 
-                bool lowVisibility = IsLowVisibility();
-                bool baitTrigger = Random.value < GetChaosBaitChance();
-                bool shouldEnable = lowVisibility || baitTrigger;
+                bool isLowVisibility = IsLowVisibility();
+                float chaosChance = GetChaosBaitChance();
+                bool baitTrigger = Random.value < chaosChance;
+                bool shouldEnable = isLowVisibility || baitTrigger;
 
-                for (int i = 0; i < devices.Count; i++)
+                for (int i = 0, count = devices.Count; i < count; i++)
                 {
                     LightComponent device = devices[i];
                     if (device != null && device.IsActive != shouldEnable)
@@ -88,10 +95,11 @@ namespace AIRefactored.AI.Perception
                     }
                 }
 
+                // If chaos bait is triggered, flash the lights briefly, then force-off for bait
                 if (baitTrigger)
                 {
                     _nextDecisionTime = Time.time + 1.5f;
-                    for (int i = 0; i < devices.Count; i++)
+                    for (int i = 0, count = devices.Count; i < count; i++)
                     {
                         LightComponent device = devices[i];
                         if (device != null)
@@ -109,29 +117,39 @@ namespace AIRefactored.AI.Perception
 
         #endregion
 
-        #region Internal Logic
+        #region Logic
 
+        /// <summary>
+        /// Determines if tactical device logic should run this frame.
+        /// </summary>
         private bool CanThink()
         {
-            return _bot != null &&
-                   _cache != null &&
-                   !_bot.IsDead &&
-                   Time.time >= _nextDecisionTime &&
-                   EFTPlayerUtil.IsValid(_bot.GetPlayer) &&
-                   _bot.GetPlayer.IsAI;
+            return _bot != null
+                   && _cache != null
+                   && !_bot.IsDead
+                   && Time.time >= _nextDecisionTime
+                   && EFTPlayerUtil.IsValid(_bot.GetPlayer)
+                   && _bot.GetPlayer.IsAI;
         }
 
+        /// <summary>
+        /// Computes bait/chaos chance from the bot's personality.
+        /// </summary>
         private float GetChaosBaitChance()
         {
-            if (_cache.AIRefactoredBotOwner == null)
+            var owner = _cache.AIRefactoredBotOwner;
+            if (owner == null)
             {
                 return 0f;
             }
 
-            BotPersonalityProfile profile = _cache.AIRefactoredBotOwner.PersonalityProfile;
+            BotPersonalityProfile profile = owner.PersonalityProfile;
             return profile != null ? profile.ChaosFactor * 0.25f : 0f;
         }
 
+        /// <summary>
+        /// Returns true if the environment is considered low-visibility.
+        /// </summary>
         private static bool IsLowVisibility()
         {
             float ambient = RenderSettings.ambientLight.grayscale;
@@ -139,9 +157,12 @@ namespace AIRefactored.AI.Perception
             return ambient < TacticalConfig.LightThreshold || fogDensity > TacticalConfig.FogThreshold;
         }
 
-        private static void ScanMods(Weapon weapon, List<LightComponent> result)
+        /// <summary>
+        /// Adds all valid tactical devices on the weapon to the result list.
+        /// </summary>
+        private static void ScanModsForTacticalDevices(Weapon weapon, List<LightComponent> result)
         {
-            IEnumerable<Slot> slots = weapon.AllSlots;
+            var slots = weapon.AllSlots;
             if (slots == null)
             {
                 return;
@@ -166,26 +187,30 @@ namespace AIRefactored.AI.Perception
                     continue;
                 }
 
-                switch (mod)
+                if (mod is FlashlightItemClass flash && flash.Light != null)
                 {
-                    case FlashlightItemClass f when f.Light != null:
-                        result.Add(f.Light);
-                        break;
-                    case TacticalComboItemClass c when c.Light != null:
-                        result.Add(c.Light);
-                        break;
-                    case LightLaserItemClass l when l.Light != null:
-                        result.Add(l.Light);
-                        break;
+                    result.Add(flash.Light);
+                }
+                else if (mod is TacticalComboItemClass combo && combo.Light != null)
+                {
+                    result.Add(combo.Light);
+                }
+                else if (mod is LightLaserItemClass laser && laser.Light != null)
+                {
+                    result.Add(laser.Light);
                 }
             }
         }
 
+        /// <summary>
+        /// Checks if the mod name contains tactical keywords.
+        /// </summary>
         private static bool IsTacticalName(string name)
         {
-            for (int i = 0; i < TacticalConfig.Keywords.Length; i++)
+            var keywords = TacticalConfig.Keywords;
+            for (int i = 0, count = keywords.Length; i < count; i++)
             {
-                if (name.Contains(TacticalConfig.Keywords[i]))
+                if (name.Contains(keywords[i]))
                 {
                     return true;
                 }
@@ -196,8 +221,11 @@ namespace AIRefactored.AI.Perception
 
         #endregion
 
-        #region Tactical Settings
+        #region TacticalConfig
 
+        /// <summary>
+        /// Static tactical device config for thresholds and keywords.
+        /// </summary>
         private static class TacticalConfig
         {
             public const float CheckInterval = 2.0f;

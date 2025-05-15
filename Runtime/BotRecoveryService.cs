@@ -143,7 +143,6 @@ namespace AIRefactored.Runtime
 						Logger.LogWarning("[BotRecoveryService] ⚠ GameWorld not ready.");
 						_hasWarned = true;
 					}
-
 					return;
 				}
 
@@ -194,7 +193,6 @@ namespace AIRefactored.Runtime
 			for (int i = 0; i < players.Count; i++)
 			{
 				Player player = players[i];
-
 				if (!EFTPlayerUtil.IsValid(player) || !player.IsAI || player.gameObject == null)
 				{
 					continue;
@@ -210,7 +208,6 @@ namespace AIRefactored.Runtime
 						brain.enabled = true;
 						Logger.LogWarning("[BotRecoveryService] Re-enabled disabled BotBrain: " + player.ProfileId);
 					}
-
 					continue;
 				}
 

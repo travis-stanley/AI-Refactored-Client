@@ -102,7 +102,7 @@ namespace AIRefactored.AI.Combat
             if (_fallback.ShallUseNow(time))
             {
                 AssignFallbackIfNeeded();
-                _bot.BotTalk?.TrySay(EPhraseTrigger.OnBeingHurt);
+                if (_bot.BotTalk != null) _bot.BotTalk.TrySay(EPhraseTrigger.OnBeingHurt);
                 _lastStateChangeTime = time;
             }
         }
@@ -115,7 +115,7 @@ namespace AIRefactored.AI.Combat
             if (_investigate.ShallUseNow(time, _lastStateChangeTime))
             {
                 _lastStateChangeTime = time;
-                _bot.BotTalk?.TrySay(EPhraseTrigger.Cooperation);
+                if (_bot.BotTalk != null) _bot.BotTalk.TrySay(EPhraseTrigger.Cooperation);
             }
         }
 
@@ -138,7 +138,7 @@ namespace AIRefactored.AI.Combat
                 if (ShouldTriggerSuppressedFallback(time))
                 {
                     AssignFallbackIfNeeded();
-                    _bot.BotTalk?.TrySay(EPhraseTrigger.OnBeingHurt);
+                    if (_bot.BotTalk != null) _bot.BotTalk.TrySay(EPhraseTrigger.OnBeingHurt);
 
                     Vector3 fallback = _fallback.HasValidFallbackPath()
                         ? _fallback.GetFallbackPosition()
@@ -191,7 +191,6 @@ namespace AIRefactored.AI.Combat
                         _investigate.Investigate(target);
                         _lastStateChangeTime = time;
                     }
-
                     return;
                 }
 
@@ -200,7 +199,7 @@ namespace AIRefactored.AI.Combat
             catch (Exception ex)
             {
                 Plugin.LoggerInstance.LogError("[CombatStateMachine] Tick failed: " + ex);
-                BotFallbackUtility.FallbackToEFTLogic(_bot);
+                if (_bot != null) BotFallbackUtility.FallbackToEFTLogic(_bot);
             }
         }
 
@@ -210,7 +209,7 @@ namespace AIRefactored.AI.Combat
                 return;
 
             _fallback.SetFallbackTarget(fallbackPos);
-            _bot.BotTalk?.TrySay(EPhraseTrigger.OnLostVisual);
+            if (_bot.BotTalk != null) _bot.BotTalk.TrySay(EPhraseTrigger.OnLostVisual);
             _lastStateChangeTime = Time.time;
         }
 
@@ -282,7 +281,7 @@ namespace AIRefactored.AI.Combat
             if (_cache.ThreatSelector.CurrentTarget != null)
             {
                 _fallback.Cancel();
-                _bot.BotTalk?.TrySay(EPhraseTrigger.OnEnemyConversation);
+                if (_bot.BotTalk != null) _bot.BotTalk.TrySay(EPhraseTrigger.OnEnemyConversation);
                 return true;
             }
 
@@ -299,7 +298,7 @@ namespace AIRefactored.AI.Combat
                         if (dist < 12f)
                         {
                             _fallback.Cancel();
-                            _bot.BotTalk?.TrySay(EPhraseTrigger.Cooperation);
+                            if (_bot.BotTalk != null) _bot.BotTalk.TrySay(EPhraseTrigger.Cooperation);
                             return true;
                         }
                     }
@@ -309,7 +308,7 @@ namespace AIRefactored.AI.Combat
             if (time - _lastStateChangeTime > ReentryCooldown)
             {
                 _fallback.Cancel();
-                _bot.BotTalk?.TrySay(EPhraseTrigger.Ready);
+                if (_bot.BotTalk != null) _bot.BotTalk.TrySay(EPhraseTrigger.Ready);
                 return true;
             }
 

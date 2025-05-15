@@ -78,9 +78,7 @@ namespace AIRefactored.AI.Helpers
         {
             blindingLight = null;
             if (botHead == null)
-            {
                 return false;
-            }
 
             Vector3 eyePos = botHead.position + (Vector3.up * EyeRayBias);
 
@@ -88,29 +86,21 @@ namespace AIRefactored.AI.Helpers
             {
                 Light light = ActiveLights[i];
                 if (!IsValidTacticalLight(light))
-                {
                     continue;
-                }
 
                 Transform lightTransform = light.transform;
                 if (lightTransform == null)
-                {
                     continue;
-                }
 
                 Vector3 toBot = eyePos - lightTransform.position;
                 float distance = toBot.magnitude;
 
                 if (distance > customMaxDist)
-                {
                     continue;
-                }
 
                 float angle = Vector3.Angle(lightTransform.forward, toBot);
                 if (angle > ExposureConeAngle)
-                {
                     continue;
-                }
 
                 Vector3 origin = lightTransform.position;
                 Vector3 dir = toBot.normalized;

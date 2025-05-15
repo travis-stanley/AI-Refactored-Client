@@ -61,6 +61,9 @@ namespace AIRefactored.AI.Movement
 
         #region Public Methods
 
+        /// <summary>
+        /// Updates look direction every tick, enforcing smooth and realistic behavior.
+        /// </summary>
         public void Tick(float deltaTime)
         {
             try
@@ -103,6 +106,9 @@ namespace AIRefactored.AI.Movement
             }
         }
 
+        /// <summary>
+        /// Sets a persistent fallback look target.
+        /// </summary>
         public void SetLookTarget(Vector3 worldPos)
         {
             if (IsValid(worldPos))
@@ -111,16 +117,25 @@ namespace AIRefactored.AI.Movement
             }
         }
 
+        /// <summary>
+        /// Freezes look updates.
+        /// </summary>
         public void FreezeLook()
         {
             _frozen = true;
         }
 
+        /// <summary>
+        /// Resumes look updates.
+        /// </summary>
         public void ResumeLook()
         {
             _frozen = false;
         }
 
+        /// <summary>
+        /// Gets the bot's current look direction.
+        /// </summary>
         public Vector3 GetLookDirection()
         {
             return _bot != null ? _bot.LookDirection : Vector3.forward;
@@ -130,28 +145,33 @@ namespace AIRefactored.AI.Movement
 
         #region Private Methods
 
+        /// <summary>
+        /// Computes the next look target, considering blindness, panic, sound, and enemy threat.
+        /// </summary>
         private Vector3 ResolveLookTarget(Vector3 origin)
         {
             float now = Time.time;
 
-            if (_cache.IsBlinded && now < _cache.BlindUntilTime)
+            // Blind state: look around randomly within a radius.
+            if (_cache != null && _cache.IsBlinded && now < _cache.BlindUntilTime)
             {
                 Vector3 offset = UnityEngine.Random.insideUnitSphere;
                 offset.y = 0f;
                 return origin + offset.normalized * BlindLookRadius;
             }
 
-            if (_cache.Panic != null && _cache.Panic.IsPanicking)
+            // Panic state: look toward last heard sound, or fallback.
+            if (_cache != null && _cache.Panic != null && _cache.Panic.IsPanicking)
             {
                 if (_cache.HasHeardDirection)
                 {
                     return origin + _cache.LastHeardDirection.normalized * HeardDirectionWeight;
                 }
-
                 return origin + _bot.LookDirection;
             }
 
-            if (_cache.ThreatSelector != null)
+            // Target enemy.
+            if (_cache != null && _cache.ThreatSelector != null)
             {
                 string id = _cache.ThreatSelector.GetTargetProfileId();
                 if (!string.IsNullOrEmpty(id))
@@ -168,11 +188,13 @@ namespace AIRefactored.AI.Movement
                 }
             }
 
-            if (_cache.HasHeardDirection && now - _cache.LastHeardTime < SoundMemoryDuration)
+            // Heard sound direction within memory duration.
+            if (_cache != null && _cache.HasHeardDirection && now - _cache.LastHeardTime < SoundMemoryDuration)
             {
                 return origin + _cache.LastHeardDirection.normalized * HeardDirectionWeight;
             }
 
+            // Idle scanning: fallback (e.g., previously set patrol/scan direction).
             return _fallbackLookTarget;
         }
 

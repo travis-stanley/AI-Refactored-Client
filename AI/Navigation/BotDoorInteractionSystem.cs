@@ -55,9 +55,7 @@ namespace AIRefactored.AI.Navigation
         public BotDoorInteractionSystem(BotOwner bot)
         {
             if (bot == null)
-            {
                 throw new ArgumentNullException(nameof(bot), "[BotDoorInteractionSystem] Constructor: BotOwner was null.");
-            }
 
             _bot = bot;
             _log = Plugin.LoggerInstance;
@@ -74,20 +72,14 @@ namespace AIRefactored.AI.Navigation
         public void Tick(float time)
         {
             if (_bot == null || _bot.IsDead)
-            {
                 return;
-            }
 
             Player player = EFTPlayerUtil.ResolvePlayer(_bot);
             if (!EFTPlayerUtil.IsValid(player) || !player.IsAI || player.CurrentManagedState == null)
-            {
                 return;
-            }
 
             if (time < _lastDoorCheckTime + DoorCheckInterval)
-            {
                 return;
-            }
 
             _lastDoorCheckTime = time;
 
@@ -159,9 +151,7 @@ namespace AIRefactored.AI.Navigation
         public bool IsDoorBlocking(Vector3 position)
         {
             if (_currentDoor == null || !_currentDoor.enabled)
-            {
                 return false;
-            }
 
             float dist = Vector3.Distance(_currentDoor.transform.position, position);
             return dist < DoorCastRange && (_currentDoor.DoorState & EDoorState.Open) == 0;
@@ -197,14 +187,10 @@ namespace AIRefactored.AI.Navigation
         private static EInteractionType GetBestInteractionType(EDoorState state)
         {
             if ((state & EDoorState.Shut) != 0 || state == EDoorState.None)
-            {
                 return EInteractionType.Open;
-            }
 
             if ((state & EDoorState.Open) != 0)
-            {
                 return EInteractionType.Close;
-            }
 
             return EInteractionType.Open;
         }

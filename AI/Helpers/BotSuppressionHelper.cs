@@ -48,9 +48,7 @@ namespace AIRefactored.AI.Helpers
         {
             BotOwner owner = GetBotOwner(player);
             if (owner?.LookSensor == null)
-            {
                 return false;
-            }
 
             float visibleDist = owner.LookSensor.ClearVisibleDist;
 
@@ -61,7 +59,7 @@ namespace AIRefactored.AI.Helpers
             }
             catch
             {
-                // Fallback to default grayscale
+                // Use default if RenderSettings not available
             }
 
             return visibleDist < visibleDistThreshold || ambientLight < ambientThreshold;
@@ -74,17 +72,13 @@ namespace AIRefactored.AI.Helpers
         public static void TrySuppressBot(Player player, Vector3 threatPosition, IPlayer source = null)
         {
             if (!EFTPlayerUtil.IsValid(player) || !player.IsAI)
-            {
                 return;
-            }
 
             BotOwner owner = GetBotOwner(player);
             BotComponentCache cache = GetCache(player);
 
             if (owner == null || cache == null || owner.IsDead)
-            {
                 return;
-            }
 
             if (owner.Memory != null)
             {

@@ -44,12 +44,13 @@ namespace AIRefactored.AI.Movement
 
         #region Constructor
 
+        /// <summary>
+        /// Initializes a new BotMovementTrajectoryPlanner with full null-safety and validation.
+        /// </summary>
         public BotMovementTrajectoryPlanner(BotOwner bot, BotComponentCache cache)
         {
             if (!EFTPlayerUtil.IsValidBotOwner(bot) || cache == null || bot.GetPlayer == null)
-            {
                 throw new ArgumentException("[BotMovementTrajectoryPlanner] bot, player, or cache is null.");
-            }
 
             _bot = bot;
             _cache = cache;
@@ -61,6 +62,7 @@ namespace AIRefactored.AI.Movement
 
         /// <summary>
         /// Computes the adjusted trajectory vector with chaos, offset, avoidance, and velocity blending.
+        /// Bulletproof against nulls, clustering, and ensures human-like randomness.
         /// </summary>
         public Vector3 ModifyTrajectory(Vector3 targetDir, float deltaTime)
         {
@@ -108,6 +110,9 @@ namespace AIRefactored.AI.Movement
 
         #region Internal Logic
 
+        /// <summary>
+        /// Computes avoidance vector from nearby squadmates to prevent clustering/collisions.
+        /// </summary>
         private Vector3 ComputeAvoidance()
         {
             BotsGroup group = _bot.BotsGroup;
@@ -140,6 +145,10 @@ namespace AIRefactored.AI.Movement
             return count > 0 ? repulsion / count : Vector3.zero;
         }
 
+        /// <summary>
+        /// Periodically updates a chaos wobble offset to keep movement non-robotic.
+        /// Wobble is personality caution-dependent and forward-biased for realism.
+        /// </summary>
         private void UpdateChaosOffset(float now)
         {
             AIRefactoredBotOwner owner = _cache.AIRefactoredBotOwner;

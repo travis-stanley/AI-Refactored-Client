@@ -3,7 +3,7 @@
 //   Licensed under the MIT License. See LICENSE in the repository root for more information.
 //
 //   THIS FILE IS SYSTEMATICALLY MANAGED.
-//   Please follow strict StyleCop, ReSharper, and AI-Refactored code standards for all modifications.
+//   Failures in AIRefactored logic must always trigger safe fallback to EFT base AI.
 // </auto-generated>
 
 namespace AIRefactored.AI.Missions
@@ -106,12 +106,18 @@ namespace AIRefactored.AI.Missions
 
         #region Public Methods
 
+        /// <summary>
+        /// Forces the bot to follow a given mission, overriding dynamic switching.
+        /// </summary>
         public void SetForcedMission(MissionType mission)
         {
             _missionType = mission;
             _forcedMission = true;
         }
 
+        /// <summary>
+        /// Main per-frame tick for mission logic.
+        /// </summary>
         public void Tick(float time)
         {
             Player player = _bot.GetPlayer;
@@ -187,6 +193,9 @@ namespace AIRefactored.AI.Missions
 
         #region Private Methods
 
+        /// <summary>
+        /// Handles logic for when a bot reaches its current objective.
+        /// </summary>
         private void OnObjectiveReached()
         {
             if (_missionType == MissionType.Loot &&
@@ -222,6 +231,9 @@ namespace AIRefactored.AI.Missions
             _objectives.OnObjectiveReached(_missionType);
         }
 
+        /// <summary>
+        /// Switches mission to Fight state and updates squad.
+        /// </summary>
         private void SwitchToFight()
         {
             _missionType = MissionType.Fight;
@@ -235,6 +247,9 @@ namespace AIRefactored.AI.Missions
             }
         }
 
+        /// <summary>
+        /// Returns a randomized cooldown value for objective reassignment.
+        /// </summary>
         private float GetCooldown()
         {
             return 10f + Random.Range(0f, 5f);

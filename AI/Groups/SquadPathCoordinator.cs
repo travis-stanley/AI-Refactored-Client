@@ -44,9 +44,7 @@ namespace AIRefactored.AI.Groups
         public void Initialize(BotComponentCache cache)
         {
             if (cache == null || cache.Bot == null || cache.Bot.IsDead)
-            {
                 return;
-            }
 
             _bot = cache.Bot;
             _group = _bot.BotsGroup;
@@ -80,9 +78,7 @@ namespace AIRefactored.AI.Groups
         public Vector3 GetCurrentOffset()
         {
             if (_bot == null || _group == null)
-            {
                 return Vector3.zero;
-            }
 
             int currentSize = _group.MembersCount;
             if (!_offsetInitialized || currentSize != _lastGroupSize)
@@ -102,21 +98,15 @@ namespace AIRefactored.AI.Groups
         private Vector3 ComputeOffset()
         {
             if (_bot == null || _group == null || _bot.IsDead || _group.MembersCount < 2)
-            {
                 return Vector3.zero;
-            }
 
             int index = GetBotIndexInGroup(_bot, _group);
             if (index < 0)
-            {
                 return Vector3.zero;
-            }
 
             string profileId = _bot.ProfileId;
             if (string.IsNullOrEmpty(profileId))
-            {
                 return Vector3.zero;
-            }
 
             int squadSize = _group.MembersCount;
             int seed = unchecked(profileId.GetHashCode() ^ (squadSize * 397));
@@ -138,9 +128,7 @@ namespace AIRefactored.AI.Groups
         private static int GetBotIndexInGroup(BotOwner bot, BotsGroup group)
         {
             if (bot == null || group == null || string.IsNullOrEmpty(bot.ProfileId))
-            {
                 return -1;
-            }
 
             int count = group.MembersCount;
             for (int i = 0; i < count; i++)

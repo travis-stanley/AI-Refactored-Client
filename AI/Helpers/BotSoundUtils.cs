@@ -23,9 +23,7 @@ namespace AIRefactored.AI.Helpers
         public static bool DidFireRecently(BotOwner self, Player source, float recentThreshold = 1.5f, float now = -1f)
         {
             if (!EFTPlayerUtil.IsValidBotOwner(self) || !EFTPlayerUtil.IsValid(source))
-            {
                 return false;
-            }
 
             return EFTPlayerUtil.IsEnemyOf(self, source)
                    && BotSoundRegistry.FiredRecently(source, recentThreshold, now);
@@ -37,9 +35,7 @@ namespace AIRefactored.AI.Helpers
         public static bool DidStepRecently(BotOwner self, Player source, float recentThreshold = 1.2f, float now = -1f)
         {
             if (!EFTPlayerUtil.IsValidBotOwner(self) || !EFTPlayerUtil.IsValid(source))
-            {
                 return false;
-            }
 
             return EFTPlayerUtil.IsEnemyOf(self, source)
                    && BotSoundRegistry.SteppedRecently(source, recentThreshold, now);

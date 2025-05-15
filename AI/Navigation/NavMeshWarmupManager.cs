@@ -56,7 +56,6 @@ namespace AIRefactored.AI.Navigation
                 return;
             }
 
-
             _hasStarted = true;
             string mapId = GameWorldHandler.TryGetValidMapName();
 

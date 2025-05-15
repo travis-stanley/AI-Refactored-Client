@@ -42,10 +42,18 @@ namespace AIRefactored.AI.Reactions
         /// <summary>
         /// Initializes the flash component with the bot's runtime cache.
         /// </summary>
+        /// <param name="cache">The shared bot component cache. Must not be null and must have a Bot.</param>
         public void Initialize(BotComponentCache cache)
         {
-            _cache = cache ?? throw new System.ArgumentNullException(nameof(cache));
-            _bot = _cache.Bot ?? throw new System.ArgumentException("Bot reference is null.");
+            if (cache == null)
+            {
+                throw new System.ArgumentNullException(nameof(cache));
+            }
+
+            _cache = cache;
+            _bot = cache.Bot ?? throw new System.ArgumentException("Bot reference is null.");
+            _isBlinded = false;
+            _lastFlashTime = -999f;
         }
 
         #endregion
@@ -63,9 +71,11 @@ namespace AIRefactored.AI.Reactions
         /// <summary>
         /// Forces the bot into a blind state, optionally triggering suppression logic.
         /// </summary>
+        /// <param name="duration">Duration of blindness, in seconds.</param>
+        /// <param name="source">Optional: world-space position of the flash source.</param>
         public void ForceBlind(float duration = BaseBlindDuration, Vector3? source = null)
         {
-            if (_bot.IsDead)
+            if (_bot == null || _bot.IsDead)
             {
                 return;
             }
@@ -86,6 +96,7 @@ namespace AIRefactored.AI.Reactions
         /// <summary>
         /// Evaluates exposure to light and clears blindness after recovery.
         /// </summary>
+        /// <param name="time">Current time value.</param>
         public void Tick(float time)
         {
             if (_cache == null || _bot == null || _bot.IsDead)
@@ -101,7 +112,7 @@ namespace AIRefactored.AI.Reactions
 
             CheckFlashlightExposure();
 
-            if (_isBlinded && time - _lastFlashTime > GetBlindRecoveryTime())
+            if (_isBlinded && (time - _lastFlashTime) > GetBlindRecoveryTime())
             {
                 _isBlinded = false;
             }
@@ -111,6 +122,10 @@ namespace AIRefactored.AI.Reactions
 
         #region Internal
 
+        /// <summary>
+        /// Checks if the bot's head is currently being exposed by any intense flashlight sources.
+        /// If exposure is detected, sets blind state and triggers suppression logic.
+        /// </summary>
         private void CheckFlashlightExposure()
         {
             Transform head = BotCacheUtility.Head(_cache);
@@ -120,7 +135,7 @@ namespace AIRefactored.AI.Reactions
             }
 
             IReadOnlyList<Vector3> sources = FlashlightRegistry.GetLastKnownFlashlightPositions();
-            for (int i = 0; i < sources.Count; i++)
+            for (int i = 0, count = sources.Count; i < count; i++)
             {
                 if (FlashlightRegistry.IsExposingBot(head, out Light light) && light != null)
                 {
@@ -142,10 +157,13 @@ namespace AIRefactored.AI.Reactions
             }
         }
 
+        /// <summary>
+        /// Returns blind recovery time based on bot composure (panic handler).
+        /// </summary>
         private float GetBlindRecoveryTime()
         {
             float composure = 1f;
-            if (_cache.PanicHandler != null)
+            if (_cache != null && _cache.PanicHandler != null)
             {
                 composure = _cache.PanicHandler.GetComposureLevel();
             }

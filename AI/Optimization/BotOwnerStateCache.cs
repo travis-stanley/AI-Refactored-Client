@@ -23,6 +23,9 @@ namespace AIRefactored.AI.Optimization
     {
         private readonly Dictionary<string, BotStateSnapshot> _cache = new Dictionary<string, BotStateSnapshot>(64);
 
+        /// <summary>
+        /// Stores the initial tactical snapshot for this bot, if not already cached.
+        /// </summary>
         public void CacheBotOwnerState(BotOwner botOwner)
         {
             if (!IsValidBot(botOwner))
@@ -37,6 +40,9 @@ namespace AIRefactored.AI.Optimization
             }
         }
 
+        /// <summary>
+        /// Updates the tactical state cache for the bot, and applies behavior changes if the state changes.
+        /// </summary>
         public void UpdateBotOwnerStateIfNeeded(BotOwner botOwner)
         {
             if (!IsValidBot(botOwner))
@@ -116,7 +122,7 @@ namespace AIRefactored.AI.Optimization
 
         private static void TriggerZoneShift(BotOwner botOwner, bool? advance)
         {
-            if (botOwner?.Transform == null)
+            if (botOwner == null || botOwner.Transform == null)
             {
                 return;
             }

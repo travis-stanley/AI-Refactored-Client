@@ -3,7 +3,7 @@
 //   Licensed under the MIT License. See LICENSE in the repository root for more information.
 //
 //   THIS FILE IS SYSTEMATICALLY MANAGED.
-//   Please follow strict StyleCop, ReSharper, and AI-Refactored code standards for all modifications.
+//   Failures in AIRefactored logic must always trigger safe fallback to EFT base AI.
 // </auto-generated>
 
 namespace AIRefactored.AI.Hotspots
@@ -87,8 +87,13 @@ namespace AIRefactored.AI.Hotspots
         private HotspotSession AssignHotspotRoute(BotOwner bot)
         {
             BotPersonalityProfile profile = BotRegistry.Get(bot.ProfileId);
-            string map = GameWorldHandler.TryGetValidMapName();
+            if (profile == null)
+            {
+                Logger.LogWarning("[HotspotSystem] Profile not found for bot " + bot.ProfileId);
+                return null;
+            }
 
+            string map = GameWorldHandler.TryGetValidMapName();
             if (string.IsNullOrEmpty(map))
             {
                 Logger.LogWarning("[HotspotSystem] ❌ No valid map found. Falling back to default EFT behavior.");
@@ -96,14 +101,14 @@ namespace AIRefactored.AI.Hotspots
             }
 
             IReadOnlyList<HotspotRegistry.Hotspot> all = HotspotRegistry.GetAll();
-            if (all.Count == 0)
+            if (all == null || all.Count == 0)
             {
                 Logger.LogWarning("[HotspotSystem] ❌ No hotspots found for " + map);
                 return null;
             }
 
             List<HotspotRegistry.Hotspot> nearby = HotspotRegistry.QueryNearby(bot.Position, 150f, null);
-            if (nearby.Count == 0)
+            if (nearby == null || nearby.Count == 0)
             {
                 nearby = new List<HotspotRegistry.Hotspot>(all);
             }
@@ -191,7 +196,7 @@ namespace AIRefactored.AI.Hotspots
                 if (_isDefender)
                 {
                     float dist = Vector3.Distance(_bot.Position, target);
-                    float composure = _cache.PanicHandler?.GetComposureLevel() ?? 1f;
+                    float composure = _cache?.PanicHandler?.GetComposureLevel() ?? 1f;
                     float radius = BaseDefendRadius * Mathf.Clamp(1f + (1f - composure), 1f, 2f);
 
                     if (dist > radius)
@@ -214,7 +219,7 @@ namespace AIRefactored.AI.Hotspots
 
             private Vector3 AddJitterTo(Vector3 target)
             {
-                BotPersonalityProfile profile = _cache.AIRefactoredBotOwner?.PersonalityProfile;
+                BotPersonalityProfile profile = _cache?.AIRefactoredBotOwner?.PersonalityProfile;
                 if (profile == null)
                 {
                     return target;
@@ -243,8 +248,10 @@ namespace AIRefactored.AI.Hotspots
             private float GetSwitchInterval()
             {
                 BotPersonalityProfile profile = BotRegistry.Get(_bot.ProfileId);
-                float baseTime;
+                if (profile == null)
+                    return 100f;
 
+                float baseTime;
                 switch (profile.Personality)
                 {
                     case PersonalityType.Camper:
@@ -322,7 +329,7 @@ namespace AIRefactored.AI.Hotspots
             private void OnDamaged(EBodyPart part, float damage, DamageInfoStruct info)
             {
                 _lastHitTime = Time.time;
-                _cache.PanicHandler?.TriggerPanic();
+                _cache?.PanicHandler?.TriggerPanic();
             }
         }
     }

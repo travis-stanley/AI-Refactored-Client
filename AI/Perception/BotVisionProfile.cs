@@ -28,7 +28,7 @@ namespace AIRefactored.AI.Perception
         #region Properties
 
         /// <summary>
-        /// Gets or sets the speed of visual range adaptation after blindness.
+        /// Gets or sets the speed at which the bot adapts visual range after blindness.
         /// </summary>
         public float AdaptationSpeed { get; set; } = DefaultAdaptationSpeed;
 
@@ -57,8 +57,9 @@ namespace AIRefactored.AI.Perception
         #region Factory
 
         /// <summary>
-        /// Returns a new default-configured profile instance.
+        /// Returns a new default-configured vision profile.
         /// </summary>
+        /// <returns>New <see cref="BotVisionProfile"/> instance with default values.</returns>
         public static BotVisionProfile CreateDefault()
         {
             return new BotVisionProfile();
@@ -90,12 +91,12 @@ namespace AIRefactored.AI.Perception
         #region Copy
 
         /// <summary>
-        /// Sets this instance's fields based on another profile.
+        /// Copies all values from the source profile into this instance.
         /// </summary>
         /// <param name="source">Source profile to copy from.</param>
         public void SetFrom(BotVisionProfile source)
         {
-            if (source == null || ReferenceEquals(this, source))
+            if (object.ReferenceEquals(this, source) || source == null)
             {
                 return;
             }

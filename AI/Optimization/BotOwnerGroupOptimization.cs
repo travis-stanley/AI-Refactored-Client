@@ -60,7 +60,7 @@ namespace AIRefactored.AI.Optimization
                     continue;
                 }
 
-                BotSettingsComponents settings = bot.Settings?.FileSettings;
+                BotSettingsComponents settings = bot.Settings != null ? bot.Settings.FileSettings : null;
                 if (settings == null || settings.Mind == null)
                 {
                     continue;
@@ -93,7 +93,6 @@ namespace AIRefactored.AI.Optimization
             mind.ENEMY_LOOK_AT_ME_ANG = Mathf.Clamp(mind.ENEMY_LOOK_AT_ME_ANG - (profile.Cohesion * 5f), 5f, 30f);
 
             string name = bot.Profile?.Info?.Nickname ?? "Unknown";
-
             Logger.LogDebug($"[GroupOpt] {name} → Cohesion={profile.Cohesion:F2}, FRIEND_AGR_KILL={mind.FRIEND_AGR_KILL:F2}, ENEMY_ANG={mind.ENEMY_LOOK_AT_ME_ANG:F1}°");
         }
 

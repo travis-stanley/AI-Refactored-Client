@@ -45,6 +45,7 @@ namespace AIRefactored.AI.Movement
         /// </summary>
         public static FlankPositionPlanner.Side GetOptimalFlankSide(BotOwner bot, BotComponentCache cache)
         {
+            // Null-guarded: fallback always succeeds (never breaks AI stack)
             if (!EFTPlayerUtil.IsValidBotOwner(bot) || cache == null || bot.Memory == null || bot.Memory.GoalEnemy == null)
             {
                 return FlankPositionPlanner.Side.Left;
@@ -52,7 +53,6 @@ namespace AIRefactored.AI.Movement
 
             Vector3 botPos = bot.Position;
             Vector3 enemyPos = bot.Memory.GoalEnemy.CurrPosition;
-
             BifacialTransform enemyTransform = bot.Memory.GoalEnemy.Person?.Transform;
             if (enemyTransform == null)
             {
@@ -96,6 +96,7 @@ namespace AIRefactored.AI.Movement
                 rightScore -= 0.75f;
             }
 
+            // Hard fallback: always update state to avoid drift/desync
             if (leftScore >= rightScore)
             {
                 _lastLeftUseTime = now;
@@ -110,6 +111,9 @@ namespace AIRefactored.AI.Movement
 
         #region Helpers
 
+        /// <summary>
+        /// Adds a suppression bias to side selection if bot is under suppression.
+        /// </summary>
         private static float GetSuppressionBias(BotComponentCache cache)
         {
             return cache.Suppression != null && cache.Suppression.IsSuppressed()
@@ -117,6 +121,9 @@ namespace AIRefactored.AI.Movement
                 : 0f;
         }
 
+        /// <summary>
+        /// Biases away from squadmates to avoid clustering; spreads squad across angles.
+        /// </summary>
         private static float GetSquadBias(BotOwner bot, Vector3 enemyPosition)
         {
             BotsGroup group = bot.BotsGroup;

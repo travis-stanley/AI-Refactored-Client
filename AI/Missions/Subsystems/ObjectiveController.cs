@@ -3,7 +3,7 @@
 //   Licensed under the MIT License. See LICENSE in the repository root for more information.
 //
 //   THIS FILE IS SYSTEMATICALLY MANAGED.
-//   Please follow strict StyleCop, ReSharper, and AI-Refactored code standards for all modifications.
+//   Failures in AIRefactored logic must always trigger safe fallback to EFT base AI.
 // </auto-generated>
 
 using MissionType = AIRefactored.AI.Missions.BotMissionController.MissionType;
@@ -45,7 +45,6 @@ namespace AIRefactored.AI.Missions.Subsystems
             {
                 throw new ArgumentException("[ObjectiveController] Invalid BotOwner.");
             }
-
             if (cache == null)
             {
                 throw new ArgumentNullException(nameof(cache));
@@ -135,7 +134,6 @@ namespace AIRefactored.AI.Missions.Subsystems
             {
                 return _bot.Position;
             }
-
             int index = _rng.Next(0, zones.Length);
             BotZone zone = zones[index];
             return zone != null ? zone.transform.position : _bot.Position;

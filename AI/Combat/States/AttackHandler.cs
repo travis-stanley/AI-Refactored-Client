@@ -88,43 +88,59 @@ namespace AIRefactored.AI.Combat.States
         {
             try
             {
+                if (_bot == null || _cache == null)
+                    return;
+
                 Player enemy;
                 if (!TryResolveEnemy(out enemy))
-                {
                     return;
-                }
 
                 Transform enemyTransform = EFTPlayerUtil.GetTransform(enemy);
                 if (enemyTransform == null)
-                {
                     return;
-                }
 
                 Vector3 currentTargetPos = enemyTransform.position;
                 float deltaSqr = (currentTargetPos - _lastTargetPosition).sqrMagnitude;
 
+                // Only update path if target has moved enough or this is the first assignment.
                 if (!_hasLastTarget || deltaSqr > PositionUpdateThresholdSqr)
                 {
                     _lastTargetPosition = currentTargetPos;
                     _hasLastTarget = true;
 
+                    // If the squad system is active, allow formation/offset logic; else go direct.
                     Vector3 destination = (_cache.SquadPath != null)
                         ? _cache.SquadPath.ApplyOffsetTo(currentTargetPos)
                         : currentTargetPos;
 
-                    if (!BotNavValidator.Validate(_bot, "AttackHandlerTarget"))
+                    // Hardened nav/movement validation: fallback if required.
+                    bool navValid = BotNavValidator.Validate(_bot, "AttackHandlerTarget");
+                    if (!navValid)
                     {
                         destination = FallbackNavPointProvider.GetSafePoint(_bot.Position);
                     }
 
-                    BotMovementHelper.SmoothMoveTo(_bot, destination);
-                    BotCoverHelper.TrySetStanceFromNearbyCover(_cache, destination);
+                    // Full mover guard: skip if BotMover is not initialized (prevents statue bots).
+                    if (_bot.Mover != null)
+                    {
+                        BotMovementHelper.SmoothMoveTo(_bot, destination);
+                        BotCoverHelper.TrySetStanceFromNearbyCover(_cache, destination);
+                    }
+                    else
+                    {
+                        // Fallback: immediately trigger legacy AI if movement is unavailable.
+                        Plugin.LoggerInstance.LogWarning("[AttackHandler] BotMover missing or not ready. Falling back to EFT AI.");
+                        BotFallbackUtility.FallbackToEFTLogic(_bot);
+                    }
                 }
             }
             catch (Exception ex)
             {
                 Plugin.LoggerInstance.LogError("[AttackHandler] Exception in Tick: " + ex);
-                BotFallbackUtility.FallbackToEFTLogic(_bot);
+                if (_bot != null)
+                {
+                    BotFallbackUtility.FallbackToEFTLogic(_bot);
+                }
             }
         }
 
@@ -138,7 +154,10 @@ namespace AIRefactored.AI.Combat.States
         private bool TryResolveEnemy(out Player result)
         {
             result = null;
+            if (_cache == null)
+                return false;
 
+            // Prefer current threat selector target.
             BotThreatSelector selector = _cache.ThreatSelector;
             if (selector != null && EFTPlayerUtil.IsValid(selector.CurrentTarget))
             {
@@ -146,10 +165,15 @@ namespace AIRefactored.AI.Combat.States
                 return true;
             }
 
-            if (_bot.Memory?.GoalEnemy?.Person is Player fallback && EFTPlayerUtil.IsValid(fallback))
+            // Fallback to vanilla bot memory GoalEnemy if present.
+            if (_bot != null && _bot.Memory != null && _bot.Memory.GoalEnemy != null)
             {
-                result = fallback;
-                return true;
+                Player fallback = _bot.Memory.GoalEnemy.Person as Player;
+                if (EFTPlayerUtil.IsValid(fallback))
+                {
+                    result = fallback;
+                    return true;
+                }
             }
 
             return false;

@@ -23,17 +23,13 @@ namespace AIRefactored.AI.Helpers
         public static float CalculateFlashScore(Transform lightTransform, Transform botHeadTransform, float maxDistance = 20f)
         {
             if (lightTransform == null || botHeadTransform == null)
-            {
                 return 0f;
-            }
 
             Vector3 toLight = lightTransform.position - botHeadTransform.position;
             float distance = toLight.magnitude;
 
             if (distance < 0.01f || distance > maxDistance)
-            {
                 return 0f;
-            }
 
             float alignmentFactor = Mathf.Clamp01(Vector3.Dot(botHeadTransform.forward, toLight.normalized));
             float distanceFactor = 1f - Mathf.Clamp01(distance / maxDistance);
@@ -47,9 +43,7 @@ namespace AIRefactored.AI.Helpers
         public static float GetFlashIntensityFactor(Transform lightTransform, Transform botHeadTransform)
         {
             if (lightTransform == null || botHeadTransform == null)
-            {
                 return 0f;
-            }
 
             Vector3 toLight = lightTransform.position - botHeadTransform.position;
             return Mathf.Clamp01(Vector3.Dot(botHeadTransform.forward, toLight.normalized));
@@ -61,9 +55,7 @@ namespace AIRefactored.AI.Helpers
         public static bool IsBlindingLight(Transform lightTransform, Transform botHeadTransform, float angleThreshold = 30f)
         {
             if (lightTransform == null || botHeadTransform == null)
-            {
                 return false;
-            }
 
             Vector3 toLight = lightTransform.position - botHeadTransform.position;
             float angle = Vector3.Angle(botHeadTransform.forward, toLight);
@@ -77,9 +69,7 @@ namespace AIRefactored.AI.Helpers
         public static bool IsFacingTarget(Transform source, Transform target, float angleThreshold = 30f)
         {
             if (source == null || target == null)
-            {
                 return false;
-            }
 
             Vector3 toTarget = target.position - source.position;
             float angle = Vector3.Angle(source.forward, toTarget);

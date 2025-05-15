@@ -91,9 +91,7 @@ namespace AIRefactored.AI.Combat
         public void Tick(float deltaTime)
         {
             if (_targetDeafness <= 0.01f)
-            {
                 return;
-            }
 
             _elapsedTime += deltaTime;
 

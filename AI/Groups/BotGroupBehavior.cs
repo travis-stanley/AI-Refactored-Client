@@ -65,9 +65,7 @@ namespace AIRefactored.AI.Groups
         public void Initialize(BotComponentCache componentCache)
         {
             if (componentCache == null || componentCache.Bot == null)
-            {
                 throw new ArgumentException("[BotGroupBehavior] Invalid component cache.");
-            }
 
             _cache = componentCache;
             _bot = componentCache.Bot;
@@ -89,9 +87,7 @@ namespace AIRefactored.AI.Groups
         public void Tick(float deltaTime)
         {
             if (!IsEligible() || _bot.Memory == null || _bot.Memory.GoalEnemy != null)
-            {
                 return;
-            }
 
             Vector3 myPos = _bot.Position;
             Vector3 repulsion = Vector3.zero;
@@ -104,9 +100,7 @@ namespace AIRefactored.AI.Groups
             {
                 BotOwner mate = _group.Member(i);
                 if (mate == null || mate == _bot || mate.IsDead || mate.Memory == null)
-                {
                     continue;
-                }
 
                 Vector3 offset = mate.Position - myPos;
                 float distSqr = offset.sqrMagnitude;

@@ -35,9 +35,7 @@ namespace AIRefactored.AI.Navigation
         public static NavPointData FromCustom(CustomNavigationPoint custom)
         {
             if (custom == null)
-            {
                 throw new ArgumentNullException(nameof(custom), "[NavPointConverter] CustomNavigationPoint was null.");
-            }
 
             Vector3 position = custom.Position;
             float elevation = position.y;
@@ -70,18 +68,15 @@ namespace AIRefactored.AI.Navigation
 
         #region Private Methods
 
+        /// <summary>
+        /// Classifies a navpoint elevation for tactical banding (Low/Mid/High).
+        /// </summary>
         private static string ResolveElevationBand(float elevation)
         {
             if (elevation < LowBandMax)
-            {
                 return "Low";
-            }
-
             if (elevation > HighBandMin)
-            {
                 return "High";
-            }
-
             return "Mid";
         }
 

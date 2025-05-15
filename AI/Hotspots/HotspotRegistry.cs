@@ -140,9 +140,7 @@ namespace AIRefactored.AI.Hotspots
         public static IReadOnlyList<Hotspot> GetAllInZone(string zone)
         {
             if (string.IsNullOrEmpty(zone))
-            {
                 return Array.Empty<Hotspot>();
-            }
 
             return ByZone.TryGetValue(zone.Trim(), out var result) ? result : Array.Empty<Hotspot>();
         }
@@ -156,14 +154,10 @@ namespace AIRefactored.AI.Hotspots
         public static List<Hotspot> QueryNearby(Vector3 position, float radius, Predicate<Hotspot> filter)
         {
             if (_activeMode == SpatialIndexMode.Quadtree && _quadtree != null)
-            {
                 return _quadtree.Query(position, radius, filter);
-            }
 
             if (_activeMode == SpatialIndexMode.Grid && _grid != null)
-            {
                 return _grid.Query(position, radius, filter);
-            }
 
             return FallbackQuery(position, radius, filter);
         }
@@ -218,11 +212,10 @@ namespace AIRefactored.AI.Hotspots
                 Vector3 pos = All[i].Position;
                 float dist = Vector2.Distance(center, new Vector2(pos.x, pos.z));
                 if (dist > maxDist)
-                {
                     maxDist = dist;
-                }
             }
 
+            // Use next power of two for quadtree grid sizing
             return Mathf.NextPowerOfTwo(Mathf.CeilToInt(maxDist * 2f));
         }
 

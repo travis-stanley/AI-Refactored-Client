@@ -136,8 +136,8 @@ namespace AIRefactored.AI.Optimization
                 return false;
             }
 
-            string tag = collider.tag?.ToLowerInvariant() ?? string.Empty;
-            string mat = collider.sharedMaterial?.name.ToLowerInvariant() ?? string.Empty;
+            string tag = collider.tag != null ? collider.tag.ToLowerInvariant() : string.Empty;
+            string mat = collider.sharedMaterial != null ? collider.sharedMaterial.name.ToLowerInvariant() : string.Empty;
 
             if (tag.Contains("glass") || tag.Contains("foliage") || tag.Contains("banner") || tag.Contains("transparent"))
             {

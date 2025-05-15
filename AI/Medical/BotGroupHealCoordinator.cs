@@ -86,7 +86,7 @@ namespace AIRefactored.AI.Medical
                 }
 
                 IHealthController health = matePlayer.HealthController;
-                if (!health.IsAlive || !NeedsHealing(health))
+                if (health == null || !health.IsAlive || !NeedsHealing(health))
                 {
                     continue;
                 }

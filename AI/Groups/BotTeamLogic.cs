@@ -46,9 +46,7 @@ namespace AIRefactored.AI.Groups
         public BotTeamLogic(BotOwner bot)
         {
             if (!EFTPlayerUtil.IsValidBotOwner(bot))
-            {
                 throw new ArgumentException("[BotTeamLogic] Invalid or non-AI bot owner.");
-            }
 
             _bot = bot;
         }
@@ -60,15 +58,11 @@ namespace AIRefactored.AI.Groups
         public static void AddEnemy(BotOwner bot, IPlayer target)
         {
             if (!EFTPlayerUtil.IsValidBotOwner(bot) || target == null || bot.BotsGroup == null)
-            {
                 return;
-            }
 
             Player resolved = EFTPlayerUtil.ResolvePlayerById(target.ProfileId);
             if (!EFTPlayerUtil.IsValid(resolved))
-            {
                 return;
-            }
 
             IPlayer safe = EFTPlayerUtil.AsSafeIPlayer(resolved);
             int count = bot.BotsGroup.MembersCount;
@@ -86,9 +80,7 @@ namespace AIRefactored.AI.Groups
         public static void BroadcastMissionType(BotOwner bot, MissionType mission)
         {
             if (!EFTPlayerUtil.IsValidBotOwner(bot) || bot.BotsGroup == null)
-            {
                 return;
-            }
 
             int count = bot.BotsGroup.MembersCount;
             for (int i = 0; i < count; i++)
@@ -118,9 +110,7 @@ namespace AIRefactored.AI.Groups
         public void CoordinateMovement()
         {
             if (_bot == null || _bot.IsDead || _teammates.Count == 0)
-            {
                 return;
-            }
 
             Vector3 center = Vector3.zero;
             int count = 0;
@@ -136,9 +126,7 @@ namespace AIRefactored.AI.Groups
             }
 
             if (count == 0)
-            {
                 return;
-            }
 
             center /= count;
             Vector3 jitter = Random.insideUnitSphere * RegroupJitterRadius;
@@ -165,15 +153,11 @@ namespace AIRefactored.AI.Groups
 
             Player self = _bot.GetPlayer;
             if (self?.Profile?.Info == null)
-            {
                 return;
-            }
 
             string groupId = self.Profile.Info.GroupId;
             if (string.IsNullOrEmpty(groupId))
-            {
                 return;
-            }
 
             for (int i = 0; i < allBots.Count; i++)
             {
@@ -190,15 +174,11 @@ namespace AIRefactored.AI.Groups
         public void ShareTarget(IPlayer enemy)
         {
             if (enemy == null || string.IsNullOrEmpty(enemy.ProfileId))
-            {
                 return;
-            }
 
             Player resolved = EFTPlayerUtil.ResolvePlayerById(enemy.ProfileId);
             if (!EFTPlayerUtil.IsValid(resolved))
-            {
                 return;
-            }
 
             IPlayer safe = EFTPlayerUtil.AsSafeIPlayer(resolved);
 
@@ -233,9 +213,7 @@ namespace AIRefactored.AI.Groups
         private static void TriggerDelayedFallback(CombatStateMachine fsm, Vector3 point)
         {
             if (fsm == null)
-            {
                 return;
-            }
 
             Task.Run(async () =>
             {

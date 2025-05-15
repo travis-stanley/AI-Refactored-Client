@@ -37,6 +37,9 @@ namespace AIRefactored.AI.Looting
         private BotComponentCache _cache;
         private float _nextScanTime;
 
+        /// <summary>
+        /// One-time scan to pair dead players with nearby lootable containers.
+        /// </summary>
         public static void ScanAll()
         {
             if (!GameWorldHandler.IsSafeToInitialize)
@@ -93,6 +96,18 @@ namespace AIRefactored.AI.Looting
             TempListPool.Return(deadPlayers);
         }
 
+        /// <summary>
+        /// Clears all static loot/corpse memory caches. Should be called on world/raid end.
+        /// </summary>
+        public static void ClearStaticState()
+        {
+            LootTimestamps.Clear();
+            RecentlyLooted.Clear();
+        }
+
+        /// <summary>
+        /// Initializes the scanner for a specific bot and its cache.
+        /// </summary>
         public void Initialize(BotComponentCache cache)
         {
             if (cache == null || cache.Bot == null)
@@ -110,6 +125,9 @@ namespace AIRefactored.AI.Looting
             _cache = cache;
         }
 
+        /// <summary>
+        /// Ticks looting logic. Called each frame with current time.
+        /// </summary>
         public void Tick(float time)
         {
             if (time < _nextScanTime || !IsReady())
@@ -121,6 +139,9 @@ namespace AIRefactored.AI.Looting
             TryLootOnce();
         }
 
+        /// <summary>
+        /// Immediately attempts to loot a nearby corpse if ready.
+        /// </summary>
         public void TryLootNearby()
         {
             if (IsReady())
@@ -135,6 +156,7 @@ namespace AIRefactored.AI.Looting
                 && !_bot.IsDead
                 && EFTPlayerUtil.IsValid(_bot.GetPlayer)
                 && _cache != null
+                && _cache.PanicHandler != null
                 && !_cache.PanicHandler.IsPanicking;
         }
 
@@ -158,10 +180,14 @@ namespace AIRefactored.AI.Looting
 
         private Player FindLootableCorpse()
         {
-            Vector3 origin = _bot.Transform.position;
-            Vector3 forward = _bot.WeaponRoot.forward;
+            if (_bot == null || _bot.Transform == null)
+                return null;
 
-            List<Player> players = GameWorldHandler.GetAllAlivePlayers();
+            Vector3 origin = _bot.Transform.position;
+            Vector3 forward = (_bot.WeaponRoot != null) ? _bot.WeaponRoot.forward : _bot.Transform.forward;
+
+            List<Player> players = TempListPool.Rent<Player>();
+            players.AddRange(GameWorldHandler.GetAllAlivePlayers());
             for (int i = 0; i < players.Count; i++)
             {
                 Player candidate = players[i];
@@ -183,9 +209,11 @@ namespace AIRefactored.AI.Looting
                     continue;
                 }
 
+                TempListPool.Return(players);
                 return candidate;
             }
 
+            TempListPool.Return(players);
             return null;
         }
 

@@ -55,6 +55,8 @@ namespace AIRefactored.AI.Optimization
         /// <summary>
         /// Initializes the async processor for the specified bot.
         /// </summary>
+        /// <param name="botOwner">The bot owner to initialize for.</param>
+        /// <param name="cache">The shared bot component cache.</param>
         public void Initialize(BotOwner botOwner, BotComponentCache cache)
         {
             if (!GameWorldHandler.IsLocalHost() || botOwner == null || cache == null)
@@ -65,6 +67,8 @@ namespace AIRefactored.AI.Optimization
             _bot = botOwner;
             _cache = cache;
             _stateCache = new BotOwnerStateCache();
+            _hasInitialized = false;
+            _lastThinkTime = 0f;
 
             Task.Run(async () =>
             {
@@ -86,6 +90,7 @@ namespace AIRefactored.AI.Optimization
         /// <summary>
         /// Updates bot async logic based on timing and environment.
         /// </summary>
+        /// <param name="time">Current time (from main game loop).</param>
         public void Tick(float time)
         {
             if (!GameWorldHandler.IsLocalHost() || !_hasInitialized || _bot == null || _bot.IsDead)
@@ -125,7 +130,7 @@ namespace AIRefactored.AI.Optimization
 
         private async Task ApplyInitialPersonalityAsync(BotOwner bot)
         {
-            if (_hasInitialized || bot == null || bot.Profile == null || bot.Settings?.FileSettings == null)
+            if (_hasInitialized || bot == null || bot.Profile == null || bot.Settings == null || bot.Settings.FileSettings == null)
             {
                 return;
             }
@@ -155,7 +160,7 @@ namespace AIRefactored.AI.Optimization
             mind.DIST_TO_FOUND_SQRT = Mathf.Lerp(200f, 600f, 1f - personality.Cohesion);
             mind.FRIEND_AGR_KILL = Mathf.Lerp(0f, 0.4f, personality.AggressionLevel);
 
-            Logger.LogDebug("[BotAsyncProcessor] ✅ Personality initialized for bot: " + bot.Profile.Info?.Nickname);
+            Logger.LogDebug("[BotAsyncProcessor] ✅ Personality initialized for bot: " + (bot.Profile.Info?.Nickname ?? "Unknown"));
             _hasInitialized = true;
         }
 
@@ -166,6 +171,7 @@ namespace AIRefactored.AI.Optimization
                 return;
             }
 
+            // Mumble phrase simulation with ultra-low random chance.
             if (UnityEngine.Random.value < 0.008f)
             {
                 BotWorkScheduler.EnqueueToMainThread(() =>
@@ -188,7 +194,7 @@ namespace AIRefactored.AI.Optimization
 
         private void TryOptimizeGroup()
         {
-            if (_bot?.Profile?.Info == null)
+            if (_bot == null || _bot.Profile == null || _bot.Profile.Info == null)
             {
                 return;
             }

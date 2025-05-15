@@ -62,9 +62,7 @@ namespace AIRefactored.AI.Combat
         public void Initialize(BotComponentCache componentCache)
         {
             if (componentCache == null || componentCache.Bot == null)
-            {
                 throw new InvalidOperationException("[BotPanicHandler] Cannot initialize with null BotComponentCache or Bot.");
-            }
 
             _cache = componentCache;
             _bot = componentCache.Bot;
@@ -78,26 +76,19 @@ namespace AIRefactored.AI.Combat
         public void Tick(float time)
         {
             if (!IsValid())
-            {
                 return;
-            }
 
             if (_isPanicking)
             {
                 if (time - _panicStartTime > PanicDuration)
-                {
                     EndPanic(time);
-                }
-
                 return;
             }
 
             RecoverComposure(Time.deltaTime);
 
             if (time <= _lastPanicExitTime + PanicCooldown)
-            {
                 return;
-            }
 
             if (ShouldPanicFromThreat())
             {
@@ -115,15 +106,11 @@ namespace AIRefactored.AI.Combat
         public void TriggerPanic()
         {
             if (!IsValid() || _isPanicking || Time.time < _lastPanicExitTime + PanicCooldown)
-            {
                 return;
-            }
 
             var profile = _cache.AIRefactoredBotOwner?.PersonalityProfile;
             if (profile == null || profile.IsFrenzied || profile.IsStubborn)
-            {
                 return;
-            }
 
             Vector3 retreatDir = -_bot.LookDirection.normalized;
             TryStartPanic(Time.time, retreatDir);
@@ -136,23 +123,17 @@ namespace AIRefactored.AI.Combat
         private void OnDamaged(EBodyPart part, float damage, DamageInfoStruct info)
         {
             if (!IsValid() || _isPanicking || Time.time < _lastPanicExitTime + PanicCooldown)
-            {
                 return;
-            }
 
             var profile = _cache.AIRefactoredBotOwner?.PersonalityProfile;
             if (profile == null || profile.IsFrenzied || profile.IsStubborn || profile.AggressionLevel > 0.8f)
-            {
                 return;
-            }
 
             Vector3 retreatDir = (_bot.Position - info.HitPoint).normalized;
             TryStartPanic(Time.time, retreatDir);
 
             if (_bot.Memory?.GoalEnemy?.Person is Player enemy && !string.IsNullOrEmpty(enemy.ProfileId))
-            {
                 _cache.LastShotTracker?.RegisterHit(enemy.ProfileId);
-            }
 
             _cache.InjurySystem?.OnHit(part, damage);
             _cache.GroupComms?.SayHit();
@@ -162,19 +143,13 @@ namespace AIRefactored.AI.Combat
         {
             var profile = _cache.AIRefactoredBotOwner?.PersonalityProfile;
             if (profile == null || profile.IsFrenzied || profile.IsStubborn)
-            {
                 return false;
-            }
 
-            if (_cache.FlashGrenade?.IsFlashed() == true)
-            {
+            if (_cache.FlashGrenade != null && _cache.FlashGrenade.IsFlashed())
                 return true;
-            }
 
             if (_bot.HealthController == null)
-            {
                 return false;
-            }
 
             ValueStruct health = _bot.HealthController.GetBodyPartHealth(EBodyPart.Common);
             return health.Current < LowHealthThreshold;
@@ -188,9 +163,7 @@ namespace AIRefactored.AI.Combat
         private void TryStartPanic(float now, Vector3 retreatDir)
         {
             if (!IsValid())
-            {
                 return;
-            }
 
             _isPanicking = true;
             _panicStartTime = now;
@@ -204,14 +177,23 @@ namespace AIRefactored.AI.Combat
             if (_cache.Pathing != null)
             {
                 var path = BotCoverRetreatPlanner.GetCoverRetreatPath(_bot, retreatDir, _cache.Pathing);
-                if (path.Count > 0)
+                if (path != null && path.Count > 0)
                 {
                     fallback = (Vector3.Distance(path[0], _bot.Position) < 1f && path.Count > 1) ? path[1] : path[0];
                 }
             }
 
-            BotMovementHelper.SmoothMoveTo(_bot, fallback, false, cohesion);
-            BotCoverHelper.TrySetStanceFromNearbyCover(_cache, fallback);
+            if (_bot.Mover != null)
+            {
+                BotMovementHelper.SmoothMoveTo(_bot, fallback, false, cohesion);
+                BotCoverHelper.TrySetStanceFromNearbyCover(_cache, fallback);
+            }
+            else
+            {
+                Plugin.LoggerInstance.LogWarning("[BotPanicHandler] BotMover missing. Fallback to EFT AI.");
+                BotFallbackUtility.FallbackToEFTLogic(_bot);
+                return;
+            }
 
             if (GameWorldHandler.TryGetValidMapName() is string mapId)
             {
@@ -243,15 +225,11 @@ namespace AIRefactored.AI.Combat
             retreatDir = Vector3.zero;
 
             if (_bot.Profile?.Info?.GroupId == null)
-            {
                 return false;
-            }
 
             string mapId = GameWorldHandler.TryGetValidMapName();
             if (string.IsNullOrEmpty(mapId))
-            {
                 return false;
-            }
 
             Vector3 myPos = _bot.Position;
             var zones = BotMemoryStore.GetZonesForMap(mapId);

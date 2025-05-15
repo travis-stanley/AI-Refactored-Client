@@ -33,6 +33,9 @@ namespace AIRefactored.AI.Navigation
 
         #region Constructor
 
+        /// <summary>
+        /// Constructs a fully immutable navpoint with all tactical metadata.
+        /// </summary>
         public NavPointData(
             Vector3 position,
             bool isCover,
@@ -45,19 +48,11 @@ namespace AIRefactored.AI.Navigation
             string elevationBand)
         {
             if (tag == null)
-            {
                 throw new ArgumentNullException(nameof(tag), "NavPointData constructor: tag must not be null.");
-            }
-
             if (zone == null)
-            {
                 throw new ArgumentNullException(nameof(zone), "NavPointData constructor: zone must not be null.");
-            }
-
             if (elevationBand == null)
-            {
                 throw new ArgumentNullException(nameof(elevationBand), "NavPointData constructor: elevationBand must not be null.");
-            }
 
             this.Position = position;
             this.IsCover = isCover;

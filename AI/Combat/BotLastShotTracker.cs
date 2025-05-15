@@ -41,14 +41,10 @@ namespace AIRefactored.AI.Combat
         public bool DidRecentlyShoot(string profileId, float now = -1f, float memoryWindow = DefaultMemoryWindow)
         {
             if (string.IsNullOrEmpty(profileId) || string.IsNullOrEmpty(_lastTargetId))
-            {
                 return false;
-            }
 
             if (!string.Equals(_lastTargetId, profileId, StringComparison.Ordinal))
-            {
                 return false;
-            }
 
             float currentTime = now >= 0f ? now : Time.time;
             return (currentTime - _lastShotTime) <= memoryWindow;
@@ -60,14 +56,10 @@ namespace AIRefactored.AI.Combat
         public bool WasRecentlyShotBy(string profileId, float now = -1f, float memoryWindow = DefaultMemoryWindow)
         {
             if (string.IsNullOrEmpty(profileId) || string.IsNullOrEmpty(_lastAttackerId))
-            {
                 return false;
-            }
 
             if (!string.Equals(_lastAttackerId, profileId, StringComparison.Ordinal))
-            {
                 return false;
-            }
 
             float currentTime = now >= 0f ? now : Time.time;
             return (currentTime - _lastHitTime) <= memoryWindow;
@@ -78,11 +70,11 @@ namespace AIRefactored.AI.Combat
         /// </summary>
         public void RegisterHit(string profileId)
         {
-            if (!string.IsNullOrEmpty(profileId))
-            {
-                _lastAttackerId = profileId;
-                _lastHitTime = Time.time;
-            }
+            if (string.IsNullOrEmpty(profileId))
+                return;
+
+            _lastAttackerId = profileId;
+            _lastHitTime = Time.time;
         }
 
         /// <summary>
@@ -90,11 +82,11 @@ namespace AIRefactored.AI.Combat
         /// </summary>
         public void RegisterShot(string profileId)
         {
-            if (!string.IsNullOrEmpty(profileId))
-            {
-                _lastTargetId = profileId;
-                _lastShotTime = Time.time;
-            }
+            if (string.IsNullOrEmpty(profileId))
+                return;
+
+            _lastTargetId = profileId;
+            _lastShotTime = Time.time;
         }
 
         /// <summary>

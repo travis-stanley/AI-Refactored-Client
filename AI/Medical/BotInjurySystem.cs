@@ -68,7 +68,7 @@ namespace AIRefactored.AI.Medical
             }
 
             Player player = bot.GetPlayer;
-            IHealthController health = player?.HealthController;
+            IHealthController health = player != null ? player.HealthController : null;
             if (health == null)
             {
                 return;
@@ -136,12 +136,13 @@ namespace AIRefactored.AI.Medical
             }
 
             Player player = bot.GetPlayer;
-            IHealthController health = player?.HealthController;
+            IHealthController health = player != null ? player.HealthController : null;
             if (health == null || !health.IsBodyPartDestroyed(_injuredLimb))
             {
                 return;
             }
 
+            // The true surgical kit type in EFT is a derived class of Medecine, here GClass473 is the correct reflection-based EFT type.
             GClass473 surgery = bot.Medecine?.SurgicalKit as GClass473;
             if (surgery == null || !surgery.HaveWork || !surgery.ShallStartUse())
             {

@@ -69,8 +69,10 @@ namespace AIRefactored.Runtime
                 string mapId = GameWorldHandler.TryGetValidMapName();
                 if (string.IsNullOrEmpty(mapId))
                 {
-                    logger?.LogWarning("[InitPhaseRunner] ⚠ No valid map ID — NavMesh warmup skipped.");
+                    logger?.LogWarning("[InitPhaseRunner] ⚠ No valid map ID.");
                 }
+
+                // No longer attempts any NavMesh/navpoint building here—now strictly deferred!
 
                 GameWorldHandler.Initialize();
                 WorldBootstrapper.Begin(logger, mapId);

@@ -105,8 +105,16 @@ namespace AIRefactored.Runtime
                 return;
             }
 
+            // Headless/FIKA: Ensure FikaHeadlessDetector is ready, and only proceed if raid started
+            if (FikaHeadlessDetector.IsHeadless && !FikaHeadlessDetector.HasRaidStarted())
+            {
+                Logger.LogWarning("[AIRefactoredController] Skipped — Headless mode but raid not started.");
+                return;
+            }
+
             try
             {
+                // World must have registered players, all valid, and must be fully ready (no partial loads)
                 if (world.RegisteredPlayers == null || world.RegisteredPlayers.Count == 0)
                 {
                     Logger.LogWarning("[AIRefactoredController] Skipped — RegisteredPlayers not ready.");
@@ -130,9 +138,17 @@ namespace AIRefactored.Runtime
                     return;
                 }
 
+                // Only run if world/map/phase is truly ready
+                if (!GameWorldHandler.IsReady())
+                {
+                    Logger.LogWarning("[AIRefactoredController] OnRaidStarted — GameWorldHandler not ready, will retry.");
+                    // Optionally: Schedule retry logic here if desired
+                    return;
+                }
+
                 Logger.LogInfo("[AIRefactoredController] 🚀 GameWorld valid — starting AI systems.");
 
-                // *** NAVMESH/NAVPOINT BOOTSTRAP TIMING ***
+                // NAVMESH/NAVPOINT BOOTSTRAP — Strict WorldReady check
                 string mapId = GameWorldHandler.TryGetValidMapName();
                 if (string.IsNullOrEmpty(mapId))
                 {
@@ -140,9 +156,15 @@ namespace AIRefactored.Runtime
                 }
                 else
                 {
-                    // Always ensure NavMesh warmup and NavPoint registration are called here.
-                    NavMeshWarmupManager.TryPrebuildNavMesh();
-                    NavPointRegistry.RegisterAll(mapId);
+                    // Only call if not already initialized/built for this raid
+                    if (!NavMeshWarmupManager.IsNavMeshReady)
+                    {
+                        NavMeshWarmupManager.TryPrebuildNavMesh();
+                    }
+                    if (!NavPointRegistry.IsInitialized)
+                    {
+                        NavPointRegistry.RegisterAll(mapId);
+                    }
                 }
 
                 GameWorldHandler.Initialize(world);

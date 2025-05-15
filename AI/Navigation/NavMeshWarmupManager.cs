@@ -39,8 +39,15 @@ namespace AIRefactored.AI.Navigation
         /// </summary>
         public static void TryPrebuildNavMesh()
         {
-            if (_hasStarted || !GameWorldHandler.IsHost)
+            if (_hasStarted)
             {
+                Logger.LogDebug("[NavMeshWarmupManager] Already started, skipping.");
+                return;
+            }
+
+            if (!GameWorldHandler.IsHost)
+            {
+                Logger.LogWarning("[NavMeshWarmupManager] Skipped — not host.");
                 return;
             }
 
@@ -50,24 +57,24 @@ namespace AIRefactored.AI.Navigation
                 return;
             }
 
-            if (!GameWorldHandler.IsHost || !GameWorldHandler.IsInitialized)
+            if (!GameWorldHandler.IsInitialized)
             {
-                Logger.LogWarning("[NavMeshWarmupManager] Skipped — world not valid.");
+                Logger.LogWarning("[NavMeshWarmupManager] Skipped — world not initialized.");
                 return;
             }
 
-            _hasStarted = true;
-            string mapId = GameWorldHandler.TryGetValidMapName();
-
+            var mapId = GameWorldHandler.TryGetValidMapName();
             if (string.IsNullOrEmpty(mapId))
             {
                 Logger.LogWarning("[NavMeshWarmupManager] Skipped — no valid map name.");
                 return;
             }
 
+            _hasStarted = true;
+
             try
             {
-                NavMeshSurface[] surfaces = UnityEngine.Object.FindObjectsOfType<NavMeshSurface>();
+                var surfaces = UnityEngine.Object.FindObjectsOfType<NavMeshSurface>();
                 if (surfaces == null || surfaces.Length == 0)
                 {
                     Logger.LogWarning("[NavMeshWarmupManager] No NavMeshSurface found in scene.");
@@ -76,9 +83,8 @@ namespace AIRefactored.AI.Navigation
 
                 bool builtAny = false;
 
-                for (int i = 0; i < surfaces.Length; i++)
+                foreach (var surface in surfaces)
                 {
-                    NavMeshSurface surface = surfaces[i];
                     if (surface == null || !surface.enabled || !surface.gameObject.activeInHierarchy)
                     {
                         continue;

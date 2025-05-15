@@ -83,15 +83,17 @@ namespace AIRefactored.AI.Navigation
 			_registered = 0;
 			NavMeshStatus.Reset();
 
-			NavMeshSurface surface = UnityEngine.Object.FindObjectOfType<NavMeshSurface>();
-			if (surface == null)
+			// Attempt to find NavMeshSurface(s)
+			NavMeshSurface[] surfaces = UnityEngine.Object.FindObjectsOfType<NavMeshSurface>();
+			if (surfaces == null || surfaces.Length == 0)
 			{
 				Logger.LogWarning("[NavPointBootstrapper] No NavMeshSurface found.");
 				_isRunning = false;
 				return;
 			}
 
-			_center = surface.transform.position;
+			// Use the first surface as center reference
+			_center = surfaces[0].transform.position;
 			float half = ScanRadius * 0.5f;
 
 			List<Vector3> pooled = TempListPool.Rent<Vector3>();
@@ -149,11 +151,13 @@ namespace AIRefactored.AI.Navigation
 				}
 
 				Vector3 pos = hit.point;
-				if (!NavMesh.SamplePosition(pos, out NavMeshHit navHit, 1.0f, NavMesh.AllAreas))
+
+				if (!NavMesh.SamplePosition(pos, out NavMeshHit navHit, 2.5f, NavMesh.AllAreas))
 				{
 					continue;
 				}
 
+				// Check clearance above
 				if (Physics.Raycast(pos + Vector3.up * 0.5f, Vector3.up, MinNavPointClearance))
 				{
 					continue;
@@ -165,7 +169,10 @@ namespace AIRefactored.AI.Navigation
 				bool isIndoor = IsIndoorPoint(final);
 				string tag = ClassifyNavPoint(elevation, isCover, isIndoor);
 
-				NavPointRegistry.Register(final, isCover, tag, elevation, isIndoor);
+				// Added coverAngle calculation to register fully
+				float coverAngle = CalculateCoverAngle(final);
+
+				NavPointRegistry.Register(final, isCover, tag, elevation, isIndoor, true, coverAngle);
 				_registered++;
 			}
 
@@ -188,7 +195,7 @@ namespace AIRefactored.AI.Navigation
 				_isRunning = false;
 				NavMeshStatus.SetReady();
 
-				List<NavPointData> snapshot = NavPointRegistry.QueryNearby(_center, 200f, null);
+				List<NavPointData> snapshot = NavPointRegistry.QueryNearby(_center, ScanRadius, null);
 				NavPointCacheManager.Save(_mapId, snapshot);
 
 				Logger.LogDebug("[NavPointBootstrapper] ✅ Completed scan and cached " + snapshot.Count + " nav points.");
@@ -263,6 +270,20 @@ namespace AIRefactored.AI.Navigation
 			if (isIndoor) return "indoor";
 			if (elevation > 6.0f) return "roof";
 			return isCover ? "fallback" : "flank";
+		}
+
+		private static float CalculateCoverAngle(Vector3 pos)
+		{
+			Vector3 eye = pos + Vector3.up * 1.4f;
+			for (float angle = -45f; angle <= 45f; angle += 15f)
+			{
+				Vector3 dir = Quaternion.Euler(0f, angle, 0f) * Vector3.forward;
+				if (Physics.Raycast(eye, dir, ForwardCoverCheckDistance, AIRefactoredLayerMasks.HighPolyCollider))
+				{
+					return angle;
+				}
+			}
+			return 0f;
 		}
 
 		#endregion

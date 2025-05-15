@@ -70,6 +70,9 @@ namespace AIRefactored
 
         #region Public API
 
+        /// <summary>
+        /// Clears all bot personality and owner data from the registry.
+        /// </summary>
         public static void Clear()
         {
             _profileRegistry.Clear();
@@ -83,6 +86,9 @@ namespace AIRefactored
             }
         }
 
+        /// <summary>
+        /// Enables or disables debug logging.
+        /// </summary>
         public static void EnableDebug(bool enable)
         {
             _debug = enable && !FikaHeadlessDetector.IsHeadless;
@@ -92,11 +98,17 @@ namespace AIRefactored
             }
         }
 
+        /// <summary>
+        /// Returns true if a profile exists for the given profile ID.
+        /// </summary>
         public static bool Exists(string profileId)
         {
             return !string.IsNullOrEmpty(profileId) && _profileRegistry.ContainsKey(profileId);
         }
 
+        /// <summary>
+        /// Gets a bot personality profile by profile ID, or fallback if missing.
+        /// </summary>
         public static BotPersonalityProfile Get(string profileId, PersonalityType fallback = PersonalityType.Balanced)
         {
             if (string.IsNullOrEmpty(profileId))
@@ -118,9 +130,12 @@ namespace AIRefactored
             return GetFallbackProfile(fallback);
         }
 
+        /// <summary>
+        /// Registers or retrieves a personality profile for the specified bot.
+        /// </summary>
         public static BotPersonalityProfile GetOrRegister(BotOwner bot)
         {
-            if (bot?.Profile?.Info == null)
+            if (bot == null || bot.Profile == null || bot.Profile.Info == null)
             {
                 BotFallbackUtility.FallbackToEFTLogic(bot);
                 return _nullProfileFallback;
@@ -132,7 +147,7 @@ namespace AIRefactored
                 return existing;
             }
 
-            WildSpawnType role = bot.Profile.Info.Settings?.Role ?? WildSpawnType.assault;
+            WildSpawnType role = bot.Profile.Info.Settings != null ? bot.Profile.Info.Settings.Role : WildSpawnType.assault;
             PersonalityType type = _roleMap.TryGetValue(role, out var mapped) ? mapped : PersonalityType.Balanced;
             var generated = BotPersonalityPresets.GenerateProfile(type);
 
@@ -146,6 +161,9 @@ namespace AIRefactored
             return generated;
         }
 
+        /// <summary>
+        /// Gets or generates a bot personality profile for a given profile ID and type.
+        /// </summary>
         public static BotPersonalityProfile GetOrGenerate(string profileId, PersonalityType defaultType)
         {
             if (string.IsNullOrEmpty(profileId))
@@ -173,6 +191,9 @@ namespace AIRefactored
             return profile;
         }
 
+        /// <summary>
+        /// Gets or generates a bot personality profile for a given profile ID, type, and role.
+        /// </summary>
         public static BotPersonalityProfile GetOrGenerate(string profileId, PersonalityType defaultType, WildSpawnType role)
         {
             if (string.IsNullOrEmpty(profileId))
@@ -202,6 +223,9 @@ namespace AIRefactored
             return profile;
         }
 
+        /// <summary>
+        /// Registers a profile by profileId if it does not exist.
+        /// </summary>
         public static void Register(string profileId, BotPersonalityProfile profile)
         {
             if (!string.IsNullOrEmpty(profileId) && profile != null && !_profileRegistry.ContainsKey(profileId))
@@ -215,6 +239,9 @@ namespace AIRefactored
             }
         }
 
+        /// <summary>
+        /// Registers an owner by profileId if it does not exist.
+        /// </summary>
         public static void RegisterOwner(string profileId, AIRefactoredBotOwner owner)
         {
             if (!string.IsNullOrEmpty(profileId) && owner != null && !_ownerRegistry.ContainsKey(profileId))
@@ -228,6 +255,9 @@ namespace AIRefactored
             }
         }
 
+        /// <summary>
+        /// Attempts to get a profile for the specified profileId.
+        /// </summary>
         public static bool TryGet(string profileId, out BotPersonalityProfile profile)
         {
             if (!string.IsNullOrEmpty(profileId) && _profileRegistry.TryGetValue(profileId, out profile))
@@ -239,6 +269,9 @@ namespace AIRefactored
             return false;
         }
 
+        /// <summary>
+        /// Attempts to get a refactored owner by profileId.
+        /// </summary>
         public static bool TryGetRefactoredOwner(string profileId, out AIRefactoredBotOwner owner)
         {
             if (!string.IsNullOrEmpty(profileId) && _ownerRegistry.TryGetValue(profileId, out owner) && owner != null)
@@ -250,9 +283,12 @@ namespace AIRefactored
             return false;
         }
 
+        /// <summary>
+        /// Attempts to get a bot component cache by profileId.
+        /// </summary>
         public static bool TryGetCache(string profileId, out BotComponentCache cache)
         {
-            if (!string.IsNullOrEmpty(profileId) && _ownerRegistry.TryGetValue(profileId, out var owner) && owner?.Cache != null)
+            if (!string.IsNullOrEmpty(profileId) && _ownerRegistry.TryGetValue(profileId, out var owner) && owner != null && owner.Cache != null)
             {
                 cache = owner.Cache;
                 return true;

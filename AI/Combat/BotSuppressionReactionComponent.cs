@@ -46,9 +46,7 @@ namespace AIRefactored.AI.Combat
         public void Initialize(BotComponentCache componentCache)
         {
             if (componentCache == null || componentCache.Bot == null)
-            {
                 throw new ArgumentNullException(nameof(componentCache), "[Suppression] Bot or cache is null.");
-            }
 
             _cache = componentCache;
             _bot = componentCache.Bot;
@@ -70,9 +68,7 @@ namespace AIRefactored.AI.Combat
         public void Tick(float time)
         {
             if (!_isSuppressed)
-            {
                 return;
-            }
 
             if (!IsValid())
             {
@@ -92,15 +88,11 @@ namespace AIRefactored.AI.Combat
         public void TriggerSuppression(Vector3? source)
         {
             if (_isSuppressed || !IsValid())
-            {
                 return;
-            }
 
             var panic = _cache.PanicHandler;
             if (panic != null && panic.IsPanicking)
-            {
                 return;
-            }
 
             _isSuppressed = true;
             _suppressionStartTime = Time.time;
@@ -112,8 +104,17 @@ namespace AIRefactored.AI.Combat
             Vector3 fallback = ComputeFallbackPosition(retreatDir);
             float cohesion = _cache.AIRefactoredBotOwner?.PersonalityProfile?.Cohesion ?? 1f;
 
-            BotMovementHelper.SmoothMoveTo(_bot, fallback, false, cohesion);
-            _bot.Sprint(true);
+            if (_bot.Mover != null)
+            {
+                BotMovementHelper.SmoothMoveTo(_bot, fallback, false, cohesion);
+                _bot.Sprint(true);
+            }
+            else
+            {
+                Plugin.LoggerInstance.LogWarning("[BotSuppressionReaction] BotMover missing. Fallback to EFT AI.");
+                BotFallbackUtility.FallbackToEFTLogic(_bot);
+                return;
+            }
 
             panic?.TriggerPanic();
             _cache.Escalation?.NotifyPanicTriggered();
@@ -133,7 +134,7 @@ namespace AIRefactored.AI.Combat
             if (_cache.Pathing != null)
             {
                 var path = BotCoverRetreatPlanner.GetCoverRetreatPath(_bot, retreatDirection, _cache.Pathing);
-                if (path.Count > 0)
+                if (path != null && path.Count > 0)
                 {
                     return (Vector3.Distance(path[0], _bot.Position) < 1f && path.Count > 1)
                         ? path[1]

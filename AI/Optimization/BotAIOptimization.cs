@@ -42,6 +42,7 @@ namespace AIRefactored.AI.Optimization
         /// <summary>
         /// Logs current optimization-relevant settings for the bot (once per bot ID).
         /// </summary>
+        /// <param name="botOwner">The bot owner instance to optimize and log.</param>
         public void Optimize(BotOwner botOwner)
         {
             if (!GameWorldHandler.IsLocalHost() || !IsValid(botOwner))
@@ -72,6 +73,7 @@ namespace AIRefactored.AI.Optimization
         /// <summary>
         /// Allows re-logging this bot by clearing its logged flag.
         /// </summary>
+        /// <param name="botOwner">The bot owner instance to reset.</param>
         public void ResetOptimization(BotOwner botOwner)
         {
             if (!GameWorldHandler.IsLocalHost() || !IsValid(botOwner))
@@ -96,7 +98,8 @@ namespace AIRefactored.AI.Optimization
                    bot.GetPlayer.IsAI &&
                    !bot.IsDead &&
                    bot.Profile != null &&
-                   bot.Settings?.FileSettings != null;
+                   bot.Settings != null &&
+                   bot.Settings.FileSettings != null;
         }
 
         private static bool ShouldLogOptimization(BotOwner bot)

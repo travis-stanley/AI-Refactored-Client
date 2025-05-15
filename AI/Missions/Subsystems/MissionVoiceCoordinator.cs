@@ -25,7 +25,6 @@ namespace AIRefactored.AI.Missions.Subsystems
         #region Fields
 
         private static readonly ManualLogSource Logger = Plugin.LoggerInstance;
-
         private readonly BotOwner _bot;
 
         #endregion
@@ -42,7 +41,6 @@ namespace AIRefactored.AI.Missions.Subsystems
             {
                 throw new ArgumentException("[MissionVoiceCoordinator] Invalid bot reference.");
             }
-
             _bot = bot;
         }
 
@@ -80,7 +78,7 @@ namespace AIRefactored.AI.Missions.Subsystems
 
         private void TrySay(EPhraseTrigger trigger)
         {
-            if (FikaHeadlessDetector.IsHeadless)
+            if (_bot == null || FikaHeadlessDetector.IsHeadless)
             {
                 return;
             }

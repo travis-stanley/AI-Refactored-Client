@@ -50,9 +50,7 @@ namespace AIRefactored.AI.Groups
         public BotGroupComms(BotComponentCache cache)
         {
             if (cache == null || cache.Bot == null)
-            {
                 throw new ArgumentException("[BotGroupComms] Invalid cache or bot.");
-            }
 
             _cache = cache;
             _bot = cache.Bot;
@@ -107,20 +105,14 @@ namespace AIRefactored.AI.Groups
         private void TryTriggerVoice(EPhraseTrigger phrase, float chance)
         {
             if (IsMuted || _bot.BotTalk == null)
-            {
                 return;
-            }
 
             float now = Time.time;
             if (now < _nextVoiceTime)
-            {
                 return;
-            }
 
             if (chance < 1.0f && UnityEngine.Random.value > chance)
-            {
                 return;
-            }
 
             _nextVoiceTime = now + (VoiceCooldown * UnityEngine.Random.Range(0.8f, 1.2f));
             _bot.BotTalk.TrySay(phrase);
@@ -129,35 +121,25 @@ namespace AIRefactored.AI.Groups
         private bool HasNearbyAlly()
         {
             if (_bot?.Profile?.Info == null)
-            {
                 return false;
-            }
 
             string groupId = _bot.Profile.Info.GroupId;
             if (string.IsNullOrEmpty(groupId))
-            {
                 return false;
-            }
 
             Vector3 myPos = _bot.Position;
 
             foreach (BotComponentCache other in BotCacheUtility.AllActiveBots())
             {
                 if (ReferenceEquals(other, _cache) || other.Bot == null || other.Bot.IsDead)
-                {
                     continue;
-                }
 
                 Profile otherProfile = other.Bot.Profile;
                 if (otherProfile?.Info == null)
-                {
                     continue;
-                }
 
                 if (!groupId.Equals(otherProfile.Info.GroupId, StringComparison.Ordinal))
-                {
                     continue;
-                }
 
                 Vector3 offset = other.Bot.Position - myPos;
                 if (offset.sqrMagnitude <= AllyRadiusSqr)

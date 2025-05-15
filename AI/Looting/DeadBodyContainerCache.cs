@@ -78,6 +78,22 @@ namespace AIRefactored.AI.Looting
             }
         }
 
+        /// <summary>
+        /// Registers a LootableContainer for a dead body by profileId.
+        /// </summary>
+        public static void Register(string profileId, LootableContainer container)
+        {
+            if (!TryGetValidKey(profileId, out string key) || container == null)
+            {
+                return;
+            }
+
+            if (!Containers.ContainsKey(key))
+            {
+                Containers.Add(key, container);
+            }
+        }
+
         #endregion
 
         #region Helpers
@@ -85,7 +101,6 @@ namespace AIRefactored.AI.Looting
         private static bool TryGetValidKey(string profileId, out string key)
         {
             key = string.Empty;
-
             if (string.IsNullOrEmpty(profileId))
             {
                 return false;

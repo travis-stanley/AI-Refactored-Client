@@ -33,7 +33,10 @@ namespace AIRefactored.AI.Perception
 
         /// <summary>
         /// Retrieves the bot vision profile, applying role-based defaults and optional personality blending.
+        /// Always returns a non-null, fully valid profile.
         /// </summary>
+        /// <param name="bot">EFT.Player instance representing the bot.</param>
+        /// <returns>Profile for this bot, with blending if possible.</returns>
         public static BotVisionProfile Get(Player bot)
         {
             if (!EFTPlayerUtil.IsValid(bot))
@@ -41,26 +44,38 @@ namespace AIRefactored.AI.Perception
                 return DefaultProfile;
             }
 
-            WildSpawnType role = bot.Profile?.Info?.Settings?.Role ?? WildSpawnType.assault;
+            WildSpawnType role = WildSpawnType.assault;
+            var profileRef = bot.Profile;
+            if (profileRef != null && profileRef.Info != null && profileRef.Info.Settings != null)
+            {
+                role = profileRef.Info.Settings.Role;
+            }
 
             BotVisionProfile baseProfile;
-            if (!Profiles.TryGetValue(role, out baseProfile))
+            if (!Profiles.TryGetValue(role, out baseProfile) || baseProfile == null)
             {
                 baseProfile = DefaultProfile;
             }
 
             BotComponentCache cache = BotCacheUtility.GetCache(bot);
-            if (cache == null || cache.AIRefactoredBotOwner == null)
+            if (cache == null)
             {
                 return baseProfile;
             }
 
-            BotPersonalityProfile personality = cache.AIRefactoredBotOwner.PersonalityProfile;
+            var aiOwner = cache.AIRefactoredBotOwner;
+            if (aiOwner == null)
+            {
+                return baseProfile;
+            }
+
+            BotPersonalityProfile personality = aiOwner.PersonalityProfile;
             if (personality == null)
             {
                 return baseProfile;
             }
 
+            // Blending: never returns null, always clamps to safe range
             return new BotVisionProfile
             {
                 AdaptationSpeed = Mathf.Clamp(baseProfile.AdaptationSpeed + (1f - personality.Caution) * 0.5f, 0.5f, 3f),
@@ -75,6 +90,11 @@ namespace AIRefactored.AI.Perception
 
         #region Static Initialization
 
+        /// <summary>
+        /// Safely initializes the dictionary of WildSpawnType-to-Profile.
+        /// Uses pooling for temp dict, always disposes.
+        /// </summary>
+        /// <returns>Dictionary with all static bot vision profiles.</returns>
         private static Dictionary<WildSpawnType, BotVisionProfile> InitializeProfiles()
         {
             Dictionary<WildSpawnType, BotVisionProfile> temp = TempDictionaryPool.Rent<WildSpawnType, BotVisionProfile>();

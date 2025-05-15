@@ -129,9 +129,13 @@ namespace AIRefactored.AI.Optimization
 
 				int end = Mathf.Min(start + blockSize, total);
 
+				// Local copy for closure safety
+				int localStart = start;
+				int localEnd = end;
+
 				Task.Run(() =>
 				{
-					for (int i = start; i < end; i++)
+					for (int i = localStart; i < localEnd; i++)
 					{
 						IBotWorkload job = batch[i];
 						if (job == null)

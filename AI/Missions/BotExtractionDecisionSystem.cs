@@ -95,7 +95,7 @@ namespace AIRefactored.AI.Missions
                 return false;
             }
 
-            float composure = _cache.PanicHandler.GetComposureLevel();
+            float composure = _cache?.PanicHandler?.GetComposureLevel() ?? 1f;
             float panicThreshold = Mathf.Lerp(0.35f, 0.15f, _profile.Caution);
             if (composure < panicThreshold)
             {
@@ -103,7 +103,7 @@ namespace AIRefactored.AI.Missions
                 return true;
             }
 
-            float lootValue = _cache.LootScanner.TotalLootValue;
+            float lootValue = _cache?.LootScanner?.TotalLootValue ?? 0f;
             float lootThreshold = Mathf.Lerp(85000f, 50000f, _profile.Greed);
             if (lootValue >= lootThreshold)
             {
@@ -152,7 +152,10 @@ namespace AIRefactored.AI.Missions
                 return;
             }
 
-            _cache.TacticalMemory.MarkExtractionStarted();
+            if (_cache?.TacticalMemory != null)
+            {
+                _cache.TacticalMemory.MarkExtractionStarted();
+            }
             BotMovementHelper.SmoothMoveToSafeExit(_bot);
             _log.LogDebug("[ExtractDecision] ✅ Extraction initiated for: " + _bot.name);
         }

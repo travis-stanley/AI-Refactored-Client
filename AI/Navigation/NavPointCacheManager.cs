@@ -11,9 +11,7 @@ namespace AIRefactored.AI.Navigation
 	using System;
 	using System.Collections.Generic;
 	using System.IO;
-	using System.Text;
 	using AIRefactored.Core;
-	using BepInEx;
 	using BepInEx.Logging;
 	using UnityEngine;
 
@@ -34,7 +32,7 @@ namespace AIRefactored.AI.Navigation
 		#region Static
 
 		private static readonly ManualLogSource Logger = Plugin.LoggerInstance;
-		private static readonly string CacheDirPath = Path.Combine(Paths.PluginPath, FolderName, CacheDirName);
+		private static readonly string CacheDirPath = Path.Combine(AppDomain.CurrentDomain.BaseDirectory, "BepInEx", FolderName, CacheDirName);
 
 		#endregion
 
@@ -61,14 +59,15 @@ namespace AIRefactored.AI.Navigation
 					return false;
 				}
 
-				using (BinaryReader reader = new BinaryReader(File.OpenRead(file)))
+				using (var stream = File.OpenRead(file))
+				using (var reader = new BinaryReader(stream))
 				{
 					int count = reader.ReadInt32();
 					navPoints = new List<NavPointData>(count);
 
 					for (int i = 0; i < count; i++)
 					{
-						Vector3 position = ReadVector3(reader);
+						Vector3 position = new Vector3(reader.ReadSingle(), reader.ReadSingle(), reader.ReadSingle());
 						bool isCover = reader.ReadBoolean();
 						string tag = reader.ReadString();
 						float elevation = reader.ReadSingle();
@@ -104,19 +103,29 @@ namespace AIRefactored.AI.Navigation
 
 			try
 			{
-				Directory.CreateDirectory(CacheDirPath);
+				try
+				{
+					Directory.CreateDirectory(CacheDirPath);
+				}
+				catch (Exception exDir)
+				{
+					Logger.LogWarning("[NavPointCacheManager] Directory creation failed: " + exDir);
+				}
+
 				string file = GetCacheFilePath(mapId);
 				string meta = GetMetaFilePath(mapId);
 
-				using (BinaryWriter writer = new BinaryWriter(File.Create(file)))
+				using (var stream = File.Create(file))
+				using (var writer = new BinaryWriter(stream))
 				{
 					writer.Write(navPoints.Count);
 
-					for (int i = 0; i < navPoints.Count; i++)
+					foreach (var point in navPoints)
 					{
-						NavPointData point = navPoints[i];
+						writer.Write(point.Position.x);
+						writer.Write(point.Position.y);
+						writer.Write(point.Position.z);
 
-						WriteVector3(writer, point.Position);
 						writer.Write(point.IsCover);
 						writer.Write(point.Tag);
 						writer.Write(point.Elevation);
@@ -129,7 +138,7 @@ namespace AIRefactored.AI.Navigation
 				}
 
 				File.WriteAllText(meta, GenerateChecksum(mapId, navPoints.Count));
-				Logger.LogInfo("[NavPointCacheManager] 💾 Saved navpoint cache for map: " + mapId + " (" + navPoints.Count + " points)");
+				Logger.LogInfo($"[NavPointCacheManager] 💾 Saved navpoint cache for map: {mapId} ({navPoints.Count} points)");
 			}
 			catch (Exception ex)
 			{
@@ -142,47 +151,31 @@ namespace AIRefactored.AI.Navigation
 		#region Internal Helpers
 
 		private static string GetCacheFilePath(string mapId)
-		{
-			return Path.Combine(CacheDirPath, mapId + CacheExt);
-		}
+			=> Path.Combine(CacheDirPath, mapId + CacheExt);
 
 		private static string GetMetaFilePath(string mapId)
-		{
-			return Path.Combine(CacheDirPath, mapId + CacheExt + MetaExt);
-		}
+			=> Path.Combine(CacheDirPath, mapId + CacheExt + MetaExt);
 
 		private static string GenerateChecksum(string mapId, int count)
-		{
-			return mapId + ":" + count;
-		}
+			=> $"{mapId}:{count}";
 
 		private static bool VerifyChecksum(string metaPath, string mapId)
 		{
 			try
 			{
+				if (!File.Exists(metaPath))
+				{
+					return false;
+				}
+
 				string content = File.ReadAllText(metaPath);
-				string[] parts = content.Split(':');
-				return parts.Length == 2 && parts[0] == mapId && int.TryParse(parts[1], out int _);
+				var parts = content.Split(':');
+				return parts.Length == 2 && parts[0] == mapId && int.TryParse(parts[1], out _);
 			}
 			catch
 			{
 				return false;
 			}
-		}
-
-		private static void WriteVector3(BinaryWriter writer, Vector3 vec)
-		{
-			writer.Write(vec.x);
-			writer.Write(vec.y);
-			writer.Write(vec.z);
-		}
-
-		private static Vector3 ReadVector3(BinaryReader reader)
-		{
-			float x = reader.ReadSingle();
-			float y = reader.ReadSingle();
-			float z = reader.ReadSingle();
-			return new Vector3(x, y, z);
 		}
 
 		#endregion

@@ -46,6 +46,7 @@ namespace AIRefactored.AI.Reactions
         /// <summary>
         /// Links this flash reaction handler to the active bot's shared component cache.
         /// </summary>
+        /// <param name="cache">Bot component cache for this bot (never null).</param>
         public void Initialize(BotComponentCache cache)
         {
             _cache = cache ?? throw new System.ArgumentNullException(nameof(cache));
@@ -66,6 +67,7 @@ namespace AIRefactored.AI.Reactions
         /// <summary>
         /// Called every frame from BotBrain. Updates suppression state and performs exposure checks.
         /// </summary>
+        /// <param name="time">Current time value from caller.</param>
         public void Tick(float time)
         {
             if (_cache == null || _cache.Bot == null)
@@ -85,7 +87,7 @@ namespace AIRefactored.AI.Reactions
             }
 
             var lights = FlashlightRegistry.GetLastKnownFlashlightPositions();
-            for (int i = 0; i < lights.Count; i++)
+            for (int i = 0, count = lights.Count; i < count; i++)
             {
                 if (FlashlightRegistry.IsExposingBot(head, out Light light) && light != null)
                 {
@@ -102,6 +104,7 @@ namespace AIRefactored.AI.Reactions
         /// <summary>
         /// Triggers suppression, fallback, and panic based on light strength and composure.
         /// </summary>
+        /// <param name="strength">Intensity of the flash, [0,1] range is normal.</param>
         public void TriggerSuppression(float strength = 0.6f)
         {
             if (_cache == null || _cache.Bot == null)
@@ -147,6 +150,9 @@ namespace AIRefactored.AI.Reactions
 
         #region Helpers
 
+        /// <summary>
+        /// Calculates and executes bot fallback movement due to flash suppression.
+        /// </summary>
         private static void TriggerFallback(BotOwner bot)
         {
             Vector3 dir = bot.LookDirection;
@@ -165,6 +171,9 @@ namespace AIRefactored.AI.Reactions
             BotMovementHelper.SmoothMoveTo(bot, fallback);
         }
 
+        /// <summary>
+        /// Triggers bot panic event if a valid panic handler is present.
+        /// </summary>
         private static void TriggerPanic(BotComponentCache cache)
         {
             if (BotPanicUtility.TryGetPanicComponent(cache, out BotPanicHandler panic))

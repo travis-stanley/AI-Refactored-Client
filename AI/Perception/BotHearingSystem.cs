@@ -47,12 +47,16 @@ namespace AIRefactored.AI.Perception
         {
             if (cache == null || cache.Bot == null)
             {
+                _bot = null;
+                _cache = null;
                 return;
             }
 
             Player player = cache.Bot.GetPlayer;
             if (!EFTPlayerUtil.IsValid(player))
             {
+                _bot = null;
+                _cache = null;
                 return;
             }
 
@@ -82,7 +86,8 @@ namespace AIRefactored.AI.Perception
             List<Player> players = BotMemoryStore.GetNearbyPlayers(origin, BaseHearingRange);
             try
             {
-                for (int i = 0; i < players.Count; i++)
+                int count = players != null ? players.Count : 0;
+                for (int i = 0; i < count; i++)
                 {
                     Player candidate = players[i];
                     if (!IsAudibleSource(candidate, origin, rangeSqr))
@@ -102,7 +107,8 @@ namespace AIRefactored.AI.Perception
             }
             finally
             {
-                TempListPool.Return(players);
+                if (players != null)
+                    TempListPool.Return(players);
             }
         }
 
@@ -115,12 +121,16 @@ namespace AIRefactored.AI.Perception
             return _bot != null &&
                    !_bot.IsDead &&
                    EFTPlayerUtil.IsValid(_bot.GetPlayer) &&
+                   _cache != null &&
                    _cache.PanicHandler != null &&
                    !_cache.PanicHandler.IsPanicking;
         }
 
         private bool HeardSomething(Player source)
         {
+            if (source == null)
+                return false;
+
             return BotSoundUtils.DidFireRecently(_bot, source, 1f, TimeWindow) ||
                    BotSoundUtils.DidStepRecently(_bot, source, 1f, TimeWindow);
         }

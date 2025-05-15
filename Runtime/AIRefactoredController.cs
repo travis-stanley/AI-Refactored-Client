@@ -47,7 +47,6 @@ namespace AIRefactored.Runtime
                 {
                     throw new InvalidOperationException("[AIRefactoredController] Logger is not available.");
                 }
-
                 return log;
             }
         }
@@ -133,8 +132,21 @@ namespace AIRefactored.Runtime
 
                 Logger.LogInfo("[AIRefactoredController] 🚀 GameWorld valid — starting AI systems.");
 
+                // *** NAVMESH/NAVPOINT BOOTSTRAP TIMING ***
+                string mapId = GameWorldHandler.TryGetValidMapName();
+                if (string.IsNullOrEmpty(mapId))
+                {
+                    Logger.LogWarning("[AIRefactoredController] OnRaidStarted — mapId is empty.");
+                }
+                else
+                {
+                    // Always ensure NavMesh warmup and NavPoint registration are called here.
+                    NavMeshWarmupManager.TryPrebuildNavMesh();
+                    NavPointRegistry.RegisterAll(mapId);
+                }
+
                 GameWorldHandler.Initialize(world);
-                WorldBootstrapper.Begin(Logger, GameWorldHandler.TryGetValidMapName());
+                WorldBootstrapper.Begin(Logger, mapId);
 
                 s_RaidActive = true;
             }

@@ -54,9 +54,7 @@ namespace AIRefactored.AI.Helpers
             foreach (var pair in CacheRegistry)
             {
                 if (pair.Key == null)
-                {
                     continue;
-                }
 
                 string name = GetBotName(pair.Value);
                 Vector3 pos = pair.Key.Position;

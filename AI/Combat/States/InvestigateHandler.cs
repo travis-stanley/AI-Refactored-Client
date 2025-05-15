@@ -13,6 +13,7 @@ namespace AIRefactored.AI.Combat.States
     using AIRefactored.AI.Helpers;
     using AIRefactored.AI.Memory;
     using AIRefactored.AI.Navigation;
+    using AIRefactored.Core;
     using AIRefactored.Runtime;
     using EFT;
     using UnityEngine;
@@ -68,19 +69,15 @@ namespace AIRefactored.AI.Combat.States
         public Vector3 GetInvestigateTarget(Vector3 visualLastKnown)
         {
             if (IsVectorValid(visualLastKnown))
-            {
                 return visualLastKnown;
-            }
 
             if (TryGetMemoryEnemyPosition(out Vector3 memoryPos))
-            {
                 return memoryPos;
-            }
 
             Vector3 fallback = RandomNearbyPosition();
             return BotNavValidator.Validate(_bot, "InvestigateRandomFallback")
                 ? fallback
-                : FallbackNavPointProvider.GetSafePoint(_bot.Position);
+                : FallbackNavPointProvider.GetSafePoint(_bot != null ? _bot.Position : Vector3.zero);
         }
 
         /// <summary>
@@ -89,9 +86,7 @@ namespace AIRefactored.AI.Combat.States
         public void Investigate(Vector3 target)
         {
             if (_cache == null || _bot == null)
-            {
                 return;
-            }
 
             Vector3 destination = _cache.SquadPath != null
                 ? _cache.SquadPath.ApplyOffsetTo(target)
@@ -102,9 +97,18 @@ namespace AIRefactored.AI.Combat.States
                 destination = FallbackNavPointProvider.GetSafePoint(_bot.Position);
             }
 
-            BotMovementHelper.SmoothMoveTo(_bot, destination);
-            _memory.MarkCleared(destination);
-            _cache.Combat?.TrySetStanceFromNearbyCover(destination);
+            // Only move if mover is present; fallback if missing.
+            if (_bot.Mover != null)
+            {
+                BotMovementHelper.SmoothMoveTo(_bot, destination);
+                _memory.MarkCleared(destination);
+                _cache.Combat?.TrySetStanceFromNearbyCover(destination);
+            }
+            else
+            {
+                Plugin.LoggerInstance.LogWarning("[InvestigateHandler] BotMover missing. Fallback to EFT AI.");
+                BotFallbackUtility.FallbackToEFTLogic(_bot);
+            }
         }
 
         /// <summary>
@@ -112,15 +116,11 @@ namespace AIRefactored.AI.Combat.States
         /// </summary>
         public bool ShallUseNow(float time, float lastTransition)
         {
-            if (_cache?.AIRefactoredBotOwner?.PersonalityProfile == null)
-            {
+            if (_cache == null || _cache.AIRefactoredBotOwner?.PersonalityProfile == null)
                 return false;
-            }
 
             if (_cache.AIRefactoredBotOwner.PersonalityProfile.Caution < MinCaution)
-            {
                 return false;
-            }
 
             float heardTime = _cache.LastHeardTime;
             return (heardTime + SoundReactTime) > time && (time - lastTransition) > ExitDelayBuffer;
@@ -140,7 +140,7 @@ namespace AIRefactored.AI.Combat.States
         /// </summary>
         public bool IsInvestigating()
         {
-            return (Time.time - _cache.LastHeardTime) <= ActiveWindow;
+            return _cache != null && (Time.time - _cache.LastHeardTime) <= ActiveWindow;
         }
 
         #endregion
@@ -153,11 +153,8 @@ namespace AIRefactored.AI.Combat.States
         private bool TryGetMemoryEnemyPosition(out Vector3 result)
         {
             result = Vector3.zero;
-
             if (_memory == null)
-            {
                 return false;
-            }
 
             Vector3? memory = _memory.GetRecentEnemyMemory();
             if (memory.HasValue && IsVectorValid(memory.Value))
@@ -165,7 +162,6 @@ namespace AIRefactored.AI.Combat.States
                 result = memory.Value;
                 return true;
             }
-
             return false;
         }
 

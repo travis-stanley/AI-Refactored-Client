@@ -50,22 +50,20 @@ namespace AIRefactored.AI.Perception
 
         public void Initialize(BotComponentCache cache)
         {
-            if (cache == null)
-            {
+            _bot = null;
+            _cache = null;
+            _profile = null;
+
+            if (cache == null || cache.Bot == null)
                 return;
-            }
 
             BotOwner owner = cache.Bot;
-            if (owner == null || owner.IsDead || owner.GetPlayer == null || !owner.GetPlayer.IsAI)
-            {
+            if (owner.IsDead || owner.GetPlayer == null || !owner.GetPlayer.IsAI)
                 return;
-            }
 
             BotVisionProfile profile = BotVisionProfiles.Get(owner.GetPlayer);
             if (profile == null)
-            {
                 return;
-            }
 
             _bot = owner;
             _cache = cache;
@@ -79,9 +77,7 @@ namespace AIRefactored.AI.Perception
         public void Tick(float deltaTime)
         {
             if (!IsActive())
-            {
                 return;
-            }
 
             UpdateFlashlightExposure();
 
@@ -110,9 +106,7 @@ namespace AIRefactored.AI.Perception
         public void ApplyFlareExposure(float strength)
         {
             if (!IsActive())
-            {
                 return;
-            }
 
             _flareIntensity = Mathf.Clamp(strength * 0.6f, 0f, 0.8f);
         }
@@ -120,14 +114,13 @@ namespace AIRefactored.AI.Perception
         public void ApplyFlashBlindness(float intensity)
         {
             if (!IsActive())
-            {
                 return;
-            }
 
-            float added = Mathf.Clamp01(intensity * _profile.MaxBlindness);
+            float added = Mathf.Clamp01(intensity * (_profile != null ? _profile.MaxBlindness : 1f));
             _flashBlindness = Mathf.Clamp01(_flashBlindness + added);
             _blindStartTime = Time.time;
 
+            // Never run voice lines in headless/batchmode
             if (_flashBlindness > BlindSpeechThreshold && _bot.BotTalk != null && !FikaHeadlessDetector.IsHeadless)
             {
                 _bot.BotTalk.TrySay(EPhraseTrigger.OnBeingHurt);
@@ -137,11 +130,9 @@ namespace AIRefactored.AI.Perception
         public void ApplySuppression(float severity)
         {
             if (!IsActive())
-            {
                 return;
-            }
 
-            _suppressionFactor = Mathf.Clamp01(severity * _profile.AggressionResponse);
+            _suppressionFactor = Mathf.Clamp01(severity * (_profile != null ? _profile.AggressionResponse : 1f));
         }
 
         public void OnFlashExposure(Vector3 lightOrigin)
@@ -170,9 +161,7 @@ namespace AIRefactored.AI.Perception
         {
             Transform head = BotCacheUtility.Head(_cache);
             if (head == null)
-            {
                 return;
-            }
 
             if (FlashlightRegistry.IsExposingBot(head, out Light source) && source != null)
             {
@@ -186,7 +175,7 @@ namespace AIRefactored.AI.Perception
 
         private void RecoverClarity(float deltaTime)
         {
-            float recovery = _profile.ClarityRecoverySpeed;
+            float recovery = _profile != null ? _profile.ClarityRecoverySpeed : 1f;
             _flashBlindness = Mathf.MoveTowards(_flashBlindness, 0f, FlashRecoverySpeed * recovery * deltaTime);
             _flareIntensity = Mathf.MoveTowards(_flareIntensity, 0f, FlareRecoverySpeed * recovery * deltaTime);
             _suppressionFactor = Mathf.MoveTowards(_suppressionFactor, 0f, SuppressionRecoverySpeed * recovery * deltaTime);
@@ -194,10 +183,8 @@ namespace AIRefactored.AI.Perception
 
         private void TryTriggerPanic()
         {
-            if (_cache.PanicHandler == null)
-            {
+            if (_cache == null || _cache.PanicHandler == null)
                 return;
-            }
 
             float elapsed = Time.time - _blindStartTime;
             if (_flashBlindness >= PanicTriggerThreshold && elapsed < 2.5f)
@@ -208,24 +195,18 @@ namespace AIRefactored.AI.Perception
 
         private void SyncEnemyIfVisible()
         {
-            if (_cache.IsBlinded || _bot == null || _bot.Memory == null)
-            {
+            if (_cache == null || _cache.IsBlinded || _bot == null || _bot.Memory == null)
                 return;
-            }
 
             IPlayer raw = _bot.Memory.GoalEnemy?.Person;
             if (raw == null)
-            {
                 return;
-            }
 
             Player target = EFTPlayerUtil.AsEFTPlayer(raw);
             Player self = EFTPlayerUtil.ResolvePlayer(_bot);
 
             if (!EFTPlayerUtil.IsValid(target) || !EFTPlayerUtil.IsValid(self))
-            {
                 return;
-            }
 
             if (EFTPlayerUtil.IsEnemyOf(_bot, target))
             {

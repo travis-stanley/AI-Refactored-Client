@@ -54,9 +54,15 @@ namespace AIRefactored.AI.Medical
             _bot = cache.Bot;
             _nextHealCheck = Time.time;
 
+            // Safe instantiation and event subscription for squad heal logic.
             if (_bot.HealAnotherTarget == null)
             {
                 _bot.HealAnotherTarget = new BotHealAnotherTarget(_bot);
+                _bot.HealAnotherTarget.OnHealAsked += OnHealAsked;
+            }
+            else
+            {
+                _bot.HealAnotherTarget.OnHealAsked -= OnHealAsked;
                 _bot.HealAnotherTarget.OnHealAsked += OnHealAsked;
             }
 
@@ -86,12 +92,12 @@ namespace AIRefactored.AI.Medical
                 return;
             }
 
-            if (!EFTPlayerUtil.IsValidBotOwner(_bot) || _cache.PanicHandler?.IsPanicking == true)
+            if (!EFTPlayerUtil.IsValidBotOwner(_bot) || (_cache.PanicHandler != null && _cache.PanicHandler.IsPanicking))
             {
                 return;
             }
 
-            if (_bot.HealAnotherTarget?.IsInProcess == true)
+            if (_bot.HealAnotherTarget != null && _bot.HealAnotherTarget.IsInProcess)
             {
                 return;
             }
@@ -143,7 +149,9 @@ namespace AIRefactored.AI.Medical
                 }
 
                 Vector3 targetPos = EFTPlayerUtil.GetPosition(target);
-                if ((targetPos - selfPos).sqrMagnitude > HealSquadRangeSqr)
+                float dx = targetPos.x - selfPos.x;
+                float dz = targetPos.z - selfPos.z;
+                if ((dx * dx + dz * dz) > HealSquadRangeSqr)
                 {
                     continue;
                 }
@@ -169,6 +177,7 @@ namespace AIRefactored.AI.Medical
             {
                 _isHealing = true;
                 TrySay(EPhraseTrigger.StartHeal);
+                UnsubscribeFromFirstAid();
                 firstAid.OnEndApply += OnHealComplete;
                 firstAid.TryApplyToCurrentPart();
                 return;

@@ -28,8 +28,6 @@ namespace AIRefactored.AI.Optimization
 	/// </summary>
 	public static class BotCoverRetreatPlanner
 	{
-		// FULLY upgraded, multiplayer + headless-safe fallback system with NavPointRegistry integration.
-
 		private const float RetreatDistance = 12f;
 		private const float MinSpacing = 3f;
 		private const float SquadSpacingThreshold = 4.25f;

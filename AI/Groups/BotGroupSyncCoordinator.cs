@@ -64,17 +64,13 @@ namespace AIRefactored.AI.Groups
         public void Initialize(BotOwner botOwner)
         {
             if (botOwner == null || botOwner.GetPlayer == null || !botOwner.GetPlayer.IsAI)
-            {
                 throw new ArgumentException("[BotGroupSyncCoordinator] BotOwner is null or not AI.");
-            }
 
             _bot = botOwner;
             _group = botOwner.BotsGroup;
 
             if (_group == null)
-            {
                 throw new ArgumentException("[BotGroupSyncCoordinator] BotsGroup is null.");
-            }
 
             _group.OnMemberAdd += OnMemberAdded;
             _group.OnMemberRemove += OnMemberRemoved;
@@ -85,9 +81,7 @@ namespace AIRefactored.AI.Groups
         public void InjectLocalCache(BotComponentCache localCache)
         {
             if (localCache == null)
-            {
                 throw new ArgumentNullException(nameof(localCache));
-            }
 
             _cache = localCache;
         }
@@ -174,9 +168,7 @@ namespace AIRefactored.AI.Groups
         public BotComponentCache GetCache(BotOwner teammate)
         {
             if (teammate == null || !_teammateCaches.TryGetValue(teammate, out BotComponentCache cache) || cache == null)
-            {
                 throw new KeyNotFoundException($"[BotGroupSyncCoordinator] No teammate cache found for: {teammate?.ProfileId ?? "null"}");
-            }
 
             return cache;
         }
@@ -188,16 +180,12 @@ namespace AIRefactored.AI.Groups
         public void Tick(float time)
         {
             if (!IsActive || _teammateCaches.Count == 0 || time < _nextSyncTime)
-            {
                 return;
-            }
 
             _nextSyncTime = time + BaseSyncInterval * UnityEngine.Random.Range(0.85f, 1.15f);
 
             if (_cache?.PanicHandler == null || !_cache.PanicHandler.IsPanicking)
-            {
                 return;
-            }
 
             Vector3 myPos = _bot.Position;
 
@@ -219,25 +207,17 @@ namespace AIRefactored.AI.Groups
         private void OnMemberAdded(BotOwner teammate)
         {
             if (teammate == null || teammate == _bot || _teammateCaches.ContainsKey(teammate))
-            {
                 return;
-            }
 
             if (teammate.IsDead || teammate.GetPlayer?.IsAI != true)
-            {
                 return;
-            }
 
             string profileId = teammate.ProfileId;
             if (string.IsNullOrEmpty(profileId))
-            {
                 return;
-            }
 
             if (!BotRegistry.TryGetRefactoredOwner(profileId, out AIRefactoredBotOwner owner))
-            {
                 return;
-            }
 
             BotComponentCache cache = new BotComponentCache();
             cache.Initialize(teammate);
@@ -254,22 +234,19 @@ namespace AIRefactored.AI.Groups
         private static void TriggerDelayedPanic(BotComponentCache cache, float delay)
         {
             if (cache == null)
-            {
                 return;
-            }
 
             Task.Run(async () =>
             {
                 try
                 {
                     await Task.Delay((int)(delay * 1000f));
-
                     if (cache.Bot != null && !cache.Bot.IsDead && cache.PanicHandler != null && !cache.PanicHandler.IsPanicking)
                     {
                         cache.PanicHandler.TriggerPanic();
                     }
                 }
-                catch (Exception)
+                catch
                 {
                     // Fail silently; async fire-and-forget is best effort only
                 }

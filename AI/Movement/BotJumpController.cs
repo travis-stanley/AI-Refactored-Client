@@ -69,6 +69,9 @@ namespace AIRefactored.AI.Movement
 
         #region Public Methods
 
+        /// <summary>
+        /// Called every tick to evaluate and trigger jump logic.
+        /// </summary>
         public void Tick(float deltaTime)
         {
             if (!IsJumpAllowed())
@@ -103,12 +106,12 @@ namespace AIRefactored.AI.Movement
                 return false;
             }
 
-            if (!_context.IsGrounded || _context.IsInPronePose)
+            if (_context == null || !_context.IsGrounded || _context.IsInPronePose)
             {
                 return false;
             }
 
-            if (_cache.PanicHandler != null && _cache.PanicHandler.IsPanicking)
+            if (_cache != null && _cache.PanicHandler != null && _cache.PanicHandler.IsPanicking)
             {
                 return false;
             }
@@ -119,6 +122,11 @@ namespace AIRefactored.AI.Movement
 
         private void ExecuteJump(Vector3 target, float deltaTime)
         {
+            if (_context == null)
+            {
+                return;
+            }
+
             _context.OnJump();
             _lastJumpTime = Time.time;
             _hasRecentlyJumped = true;
@@ -136,6 +144,11 @@ namespace AIRefactored.AI.Movement
         private bool TryFindJumpTarget(out Vector3 target)
         {
             target = Vector3.zero;
+
+            if (_context == null)
+            {
+                return false;
+            }
 
             Vector3 origin = _context.PlayerColliderCenter + Vector3.up * 0.25f;
             Vector3 forward = _context.TransformForwardVector;

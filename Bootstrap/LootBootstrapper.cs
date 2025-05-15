@@ -137,7 +137,7 @@ namespace AIRefactored.Bootstrap
 				for (int i = 0; i < deadPlayers.Count; i++)
 				{
 					Player corpse = deadPlayers[i];
-					string profileId = corpse.Profile?.Id;
+					string profileId = corpse.Profile != null ? corpse.Profile.Id : null;
 					if (string.IsNullOrEmpty(profileId) || DeadBodyContainerCache.Contains(profileId))
 					{
 						continue;
@@ -147,7 +147,9 @@ namespace AIRefactored.Bootstrap
 					if (Vector3.Distance(containerPosition, corpsePosition) <= MaxCorpseLinkDistance)
 					{
 						DeadBodyContainerCache.Register(corpse, container);
-						string nickname = corpse.Profile?.Info?.Nickname ?? "Unnamed";
+						string nickname = corpse.Profile != null && corpse.Profile.Info != null
+							? corpse.Profile.Info.Nickname
+							: "Unnamed";
 						Logger.LogDebug("[LootBootstrapper] Linked container to corpse: " + nickname);
 						break;
 					}

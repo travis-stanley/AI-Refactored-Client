@@ -3,7 +3,7 @@
 //   Licensed under the MIT License. See LICENSE in the repository root for more information.
 //
 //   THIS FILE IS SYSTEMATICALLY MANAGED.
-//   Please follow strict StyleCop, ReSharper, and AI-Refactored code standards for all modifications.
+//   Do not modify without verifying the NavPointRegistry binary format.
 // </auto-generated>
 
 namespace AIRefactored.AI.Navigation
@@ -35,9 +35,7 @@ namespace AIRefactored.AI.Navigation
         public static NavPointData FromCustom(CustomNavigationPoint custom)
         {
             if (custom == null)
-            {
                 throw new ArgumentNullException(nameof(custom), "[NavPointConverter] CustomNavigationPoint was null.");
-            }
 
             Vector3 position = custom.Position;
             float elevation = position.y;
@@ -51,6 +49,7 @@ namespace AIRefactored.AI.Navigation
             Vector3 toWall = custom.ToWallVector;
             if (toWall.sqrMagnitude > WallVectorMinSqr)
             {
+                // Use world forward as reference since CustomNavigationPoint lacks Forward property
                 coverAngle = Vector3.Angle(Vector3.forward, toWall.normalized);
             }
 
@@ -70,18 +69,15 @@ namespace AIRefactored.AI.Navigation
 
         #region Private Methods
 
+        /// <summary>
+        /// Classifies a navpoint elevation for tactical banding (Low/Mid/High).
+        /// </summary>
         private static string ResolveElevationBand(float elevation)
         {
             if (elevation < LowBandMax)
-            {
                 return "Low";
-            }
-
             if (elevation > HighBandMin)
-            {
                 return "High";
-            }
-
             return "Mid";
         }
 

@@ -113,7 +113,8 @@ namespace AIRefactored.AI.Missions.Subsystems
             List<Item> items = TempListPool.Rent<Item>();
             try
             {
-                items.AddRange(backpackSlot.ContainedItem.GetAllItems());
+                // Zero-allocation: avoid AddRange from GetAllItems (returns new List)
+                backpackSlot.ContainedItem.GetAllItemsNonAlloc(items);
                 float fullness = (float)items.Count / LootItemCountThreshold;
                 return fullness >= _profile.RetreatThreshold;
             }
@@ -148,7 +149,7 @@ namespace AIRefactored.AI.Missions.Subsystems
                     }
                 }
 
-                if (closest != null)
+                if (closest != null && _bot.Mover != null)
                 {
                     BotMovementHelper.SmoothMoveTo(_bot, closest.transform.position);
                     Say(EPhraseTrigger.ExitLocated);
@@ -188,7 +189,7 @@ namespace AIRefactored.AI.Missions.Subsystems
 
                 Vector3 dir = _bot.LookDirection;
                 Vector3? fallback = HybridFallbackResolver.GetBestRetreatPoint(_bot, dir);
-                if (fallback.HasValue)
+                if (fallback.HasValue && _bot.Mover != null)
                 {
                     Logger.LogDebug("[MissionEvaluator] " + (_bot.Profile?.Info?.Nickname ?? "Unknown") +
                                     " fallback #" + _fallbackAttempts + " → " + fallback.Value);

@@ -59,23 +59,26 @@ namespace AIRefactored.AI.Navigation
                 return Vector3.zero;
             }
 
-            // Use runtime-registered nav points if available and not empty
             if (NavPointRegistry.IsReady && !NavPointRegistry.IsEmpty)
             {
                 List<Vector3> candidates = NavPointRegistry.QueryNearby(fromPosition, 12f, null, false);
-                for (int i = 0; i < candidates.Count; i++)
+                try
                 {
-                    Vector3 candidate = candidates[i];
-                    if (NavMesh.SamplePosition(candidate, out NavMeshHit hit, MaxFallbackSampleRadius, NavMesh.AllAreas))
+                    for (int i = 0; i < candidates.Count; i++)
                     {
-                        TempListPool.Return(candidates);
-                        return hit.position;
+                        Vector3 candidate = candidates[i];
+                        if (NavMesh.SamplePosition(candidate, out NavMeshHit hit, MaxFallbackSampleRadius, NavMesh.AllAreas))
+                        {
+                            return hit.position;
+                        }
                     }
                 }
-                TempListPool.Return(candidates);
+                finally
+                {
+                    TempListPool.Return(candidates);
+                }
             }
 
-            // Try static offsets with NavMesh validation
             for (int i = 0; i < StaticFallbackOffsets.Length; i++)
             {
                 Vector3 testPos = fromPosition + StaticFallbackOffsets[i];
@@ -86,7 +89,6 @@ namespace AIRefactored.AI.Navigation
                 }
             }
 
-            // Final emergency fallback directly forward
             Vector3 emergency = fromPosition + Vector3.forward * 4f;
             if (NavMesh.SamplePosition(emergency, out NavMeshHit finalHit, MaxFallbackSampleRadius, NavMesh.AllAreas))
             {

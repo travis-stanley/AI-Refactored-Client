@@ -15,6 +15,7 @@ namespace AIRefactored.AI.Combat.States
     using AIRefactored.AI.Hotspots;
     using AIRefactored.AI.Navigation;
     using AIRefactored.AI.Optimization;
+    using AIRefactored.Core;
     using AIRefactored.Pools;
     using AIRefactored.Runtime;
     using EFT;
@@ -74,14 +75,10 @@ namespace AIRefactored.AI.Combat.States
         public bool ShouldTransitionToInvestigate(float time)
         {
             if (_cache?.Combat == null || _cache.AIRefactoredBotOwner?.PersonalityProfile == null)
-            {
                 return false;
-            }
 
             if (_cache.AIRefactoredBotOwner.PersonalityProfile.Caution <= 0.35f)
-            {
                 return false;
-            }
 
             return (_cache.LastHeardTime + InvestigateSoundDelay > time) &&
                    (time - _cache.Combat.LastStateChangeTime > _minStateDuration);
@@ -90,14 +87,11 @@ namespace AIRefactored.AI.Combat.States
         public void Tick(float time)
         {
             if (_cache == null || _bot == null)
-            {
                 return;
-            }
 
             if (ShouldTriggerFallback())
             {
                 Vector3 fallback = TryGetFallbackPosition();
-
                 if (!BotNavValidator.Validate(_bot, "PatrolFallback"))
                 {
                     fallback = FallbackNavPointProvider.GetSafePoint(_bot.Position);
@@ -108,9 +102,7 @@ namespace AIRefactored.AI.Combat.States
             }
 
             if (time < _nextSwitchTime)
-            {
                 return;
-            }
 
             HotspotRegistry.Hotspot hotspot = HotspotRegistry.GetRandomHotspot();
             if (hotspot == null || !IsVectorValid(hotspot.Position))
@@ -135,8 +127,17 @@ namespace AIRefactored.AI.Combat.States
                 destination = FallbackNavPointProvider.GetSafePoint(_bot.Position);
             }
 
-            BotMovementHelper.SmoothMoveTo(_bot, destination);
-            BotCoverHelper.TrySetStanceFromNearbyCover(_cache, destination);
+            if (_bot.Mover != null)
+            {
+                BotMovementHelper.SmoothMoveTo(_bot, destination);
+                BotCoverHelper.TrySetStanceFromNearbyCover(_cache, destination);
+            }
+            else
+            {
+                Plugin.LoggerInstance.LogWarning("[PatrolHandler] BotMover missing. Fallback to EFT AI.");
+                BotFallbackUtility.FallbackToEFTLogic(_bot);
+                return;
+            }
 
             _nextSwitchTime = time + UnityEngine.Random.Range(_switchCooldownBase, _switchCooldownBase + 18.0f);
 
@@ -153,30 +154,20 @@ namespace AIRefactored.AI.Combat.States
         private bool ShouldTriggerFallback()
         {
             if (_cache == null || _bot == null)
-            {
                 return false;
-            }
 
-            if (_cache.PanicHandler?.GetComposureLevel() < PanicThreshold)
-            {
+            if (_cache.PanicHandler != null && _cache.PanicHandler.GetComposureLevel() < PanicThreshold)
                 return true;
-            }
 
-            if (_cache.InjurySystem?.ShouldHeal() == true)
-            {
+            if (_cache.InjurySystem != null && _cache.InjurySystem.ShouldHeal())
                 return true;
-            }
 
-            if (_cache.Suppression?.IsSuppressed() == true)
-            {
+            if (_cache.Suppression != null && _cache.Suppression.IsSuppressed())
                 return true;
-            }
 
             BotsGroup group = _bot.BotsGroup;
             if (group == null)
-            {
                 return false;
-            }
 
             Vector3 selfPos = _bot.Position;
             for (int i = 0, count = group.MembersCount; i < count; i++)
@@ -185,9 +176,7 @@ namespace AIRefactored.AI.Combat.States
                 if (member != null && member != _bot && member.IsDead)
                 {
                     if (Vector3.Distance(selfPos, member.Position) < DeadAllyRadius)
-                    {
                         return true;
-                    }
                 }
             }
 
@@ -197,17 +186,13 @@ namespace AIRefactored.AI.Combat.States
         private Vector3 TryGetFallbackPosition()
         {
             if (_cache?.Pathing == null || _bot == null)
-            {
                 return _bot != null ? _bot.Position : Vector3.zero;
-            }
 
             Vector3 direction = _bot.LookDirection.normalized;
             List<Vector3> path = BotCoverRetreatPlanner.GetCoverRetreatPath(_bot, direction, _cache.Pathing);
 
             if (path != null && path.Count >= FallbackPathMinLength)
-            {
                 return path[path.Count - 1];
-            }
 
             return FallbackNavPointProvider.GetSafePoint(_bot.Position);
         }

@@ -80,6 +80,7 @@ namespace AIRefactored.AI.Navigation
 
             if (botOwner.Mover != null && !botOwner.Mover.IsMoving)
             {
+                // Bulletproof: go-to-point fallback, strictly safe
                 botOwner.Mover.GoToPoint(
                     target,
                     slowAtTheEnd: true,

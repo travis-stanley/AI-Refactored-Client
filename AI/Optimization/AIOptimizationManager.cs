@@ -45,6 +45,7 @@ namespace AIRefactored.AI.Optimization
         /// <summary>
         /// Applies optimization logic to a bot if eligible.
         /// </summary>
+        /// <param name="bot">BotOwner to optimize.</param>
         public static void Apply(BotOwner bot)
         {
             if (!GameWorldHandler.IsLocalHost() || !IsValid(bot))
@@ -68,6 +69,7 @@ namespace AIRefactored.AI.Optimization
         /// <summary>
         /// Resets a bot's optimizations if previously applied.
         /// </summary>
+        /// <param name="bot">BotOwner to reset.</param>
         public static void Reset(BotOwner bot)
         {
             if (!GameWorldHandler.IsLocalHost() || !IsValid(bot))
@@ -91,6 +93,7 @@ namespace AIRefactored.AI.Optimization
         /// <summary>
         /// Escalates bot threat perception and responsiveness, subject to cooldown.
         /// </summary>
+        /// <param name="bot">BotOwner to escalate.</param>
         public static void TriggerEscalation(BotOwner bot)
         {
             if (!GameWorldHandler.IsLocalHost() || !IsValid(bot))

@@ -45,24 +45,23 @@ namespace AIRefactored.AI.Hotspots
 
         #region Public API
 
+        /// <summary>
+        /// Inserts a hotspot into the quadtree.
+        /// </summary>
         public void Insert(HotspotRegistry.Hotspot hotspot)
         {
             if (hotspot == null)
-            {
                 return;
-            }
 
             Vector2 pos2D = new Vector2(hotspot.Position.x, hotspot.Position.z);
-            Stack<Node> stack = TempStackPool.Rent<Node>();
+            var stack = TempStackPool.Rent<Node>();
             stack.Push(_root);
 
             while (stack.Count > 0)
             {
                 Node node = stack.Pop();
                 if (!node.Bounds.Contains(pos2D))
-                {
                     continue;
-                }
 
                 if (node.IsLeaf)
                 {
@@ -72,11 +71,11 @@ namespace AIRefactored.AI.Hotspots
                     {
                         Subdivide(node);
 
+                        // Move points to children
                         for (int i = 0; i < node.Points.Count; i++)
                         {
                             HotspotRegistry.Hotspot existing = node.Points[i];
                             Vector2 existing2D = new Vector2(existing.Position.x, existing.Position.z);
-
                             for (int j = 0; j < 4; j++)
                             {
                                 Node child = node.Children[j];
@@ -95,14 +94,15 @@ namespace AIRefactored.AI.Hotspots
                 }
 
                 for (int i = 0; i < node.Children.Length; i++)
-                {
                     stack.Push(node.Children[i]);
-                }
             }
 
             TempStackPool.Return(stack);
         }
 
+        /// <summary>
+        /// Queries all hotspots within a given radius of a position, optionally filtered.
+        /// </summary>
         public List<HotspotRegistry.Hotspot> Query(Vector3 position, float radius, Predicate<HotspotRegistry.Hotspot> filter)
         {
             List<HotspotRegistry.Hotspot> results = TempListPool.Rent<HotspotRegistry.Hotspot>();
@@ -111,7 +111,7 @@ namespace AIRefactored.AI.Hotspots
             float size = radius * 2f;
             Rect queryBounds = new Rect(pos2D.x - radius, pos2D.y - radius, size, size);
 
-            Stack<Node> stack = TempStackPool.Rent<Node>();
+            var stack = TempStackPool.Rent<Node>();
             stack.Push(_root);
 
             while (stack.Count > 0)
@@ -119,9 +119,7 @@ namespace AIRefactored.AI.Hotspots
                 Node node = stack.Pop();
 
                 if (!node.Bounds.Overlaps(queryBounds))
-                {
                     continue;
-                }
 
                 if (node.IsLeaf)
                 {
@@ -129,20 +127,16 @@ namespace AIRefactored.AI.Hotspots
                     {
                         HotspotRegistry.Hotspot h = node.Points[i];
                         Vector3 delta = h.Position - position;
-
                         if (delta.sqrMagnitude <= radiusSq && (filter == null || filter(h)))
                         {
                             results.Add(h);
                         }
                     }
-
                     continue;
                 }
 
                 for (int i = 0; i < node.Children.Length; i++)
-                {
                     stack.Push(node.Children[i]);
-                }
             }
 
             TempStackPool.Return(stack);
@@ -174,6 +168,9 @@ namespace AIRefactored.AI.Hotspots
 
         #region Node Class
 
+        /// <summary>
+        /// Internal node of the quadtree structure.
+        /// </summary>
         private sealed class Node
         {
             public readonly Rect Bounds;

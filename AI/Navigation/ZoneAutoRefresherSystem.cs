@@ -45,11 +45,13 @@ namespace AIRefactored.AI.Navigation
         /// <inheritdoc />
         public void Tick(float deltaTime)
         {
+            // No operation needed in stub implementation.
         }
 
         /// <inheritdoc />
         public void OnRaidEnd()
         {
+            // No operation needed in stub implementation.
         }
 
         /// <inheritdoc />

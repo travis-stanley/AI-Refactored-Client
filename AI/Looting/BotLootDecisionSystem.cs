@@ -82,11 +82,12 @@ namespace AIRefactored.AI.Looting
                 return false;
             }
 
-            if (_bot.EnemiesController?.EnemyInfos.Count > 0)
+            if (_bot.EnemiesController?.EnemyInfos != null && _bot.EnemiesController.EnemyInfos.Count > 0)
             {
                 return false;
             }
 
+            // Require the loot scanner to have found enough value to justify looting
             return _cache.LootScanner != null &&
                    _cache.LootScanner.TotalLootValue >= HighValueThreshold;
         }
@@ -176,7 +177,7 @@ namespace AIRefactored.AI.Looting
             for (int i = 0; i < items.Count; i++)
             {
                 Item item = items[i];
-                if (item?.Template != null && item.Template.CreditsPrice > 0f)
+                if (item != null && item.Template != null && item.Template.CreditsPrice > 0f)
                 {
                     total += item.Template.CreditsPrice;
                 }

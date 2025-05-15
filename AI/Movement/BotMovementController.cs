@@ -89,14 +89,12 @@ namespace AIRefactored.AI.Movement
 
             if (!NavMeshStatus.IsReady && !_inLootingMode)
             {
-                if (NavPointRegistry.IsEmpty)
-                {
-                    Logger.LogDebug("[Movement] NavMesh not ready, using fallback navigation logic.");
-                }
-                else
+                if (!NavPointRegistry.IsEmpty)
                 {
                     return;
                 }
+
+                // Fallback logic permitted — no log
             }
 
             _jump.Tick(deltaTime);
@@ -106,7 +104,6 @@ namespace AIRefactored.AI.Movement
                 _cache.DoorInteraction.Tick(Time.time);
                 if (_cache.DoorInteraction.IsBlockedByDoor)
                 {
-                    Logger.LogDebug("[Movement] Door blocked — waiting.");
                     return;
                 }
             }
@@ -121,7 +118,10 @@ namespace AIRefactored.AI.Movement
             SmoothLookTo(target, deltaTime);
             ApplyInertia(target, deltaTime);
 
-            if (!_inLootingMode && _bot.Memory.GoalEnemy != null && _bot.WeaponManager != null && _bot.WeaponManager.IsReady)
+            if (!_inLootingMode &&
+                _bot.Memory.GoalEnemy != null &&
+                _bot.WeaponManager != null &&
+                _bot.WeaponManager.IsReady)
             {
                 CombatStrafe(deltaTime);
                 TryCombatLean();
@@ -151,20 +151,30 @@ namespace AIRefactored.AI.Movement
                     }
                 }
             }
-            catch (Exception ex)
+            catch
             {
-                Logger.LogError("[Movement] Exception in LastTargetPoint: " + ex);
+                // Silent fail — do not log
             }
 
-            Logger.LogWarning("[Movement] Target point not valid, using fallback logic.");
+            // Fallback: registry or safe point
             if (_bot != null)
             {
-                Vector3 safe = FallbackNavPointProvider.GetSafePoint(_bot.Position);
-                return safe != Vector3.zero ? safe : _bot.Position;
+                if (NavPointRegistry.IsReady && !NavPointRegistry.IsEmpty)
+                {
+                    Vector3 closest = NavPointRegistry.GetClosestPosition(_bot.Position);
+                    if (!float.IsNaN(closest.x) && !float.IsNaN(closest.y) && !float.IsNaN(closest.z))
+                    {
+                        return closest;
+                    }
+                }
+
+                Vector3 fallback = FallbackNavPointProvider.GetSafePoint(_bot.Position);
+                return fallback != Vector3.zero ? fallback : _bot.Position;
             }
 
             return Vector3.zero;
         }
+
 
         private void ApplyInertia(Vector3 target, float deltaTime)
         {
@@ -172,21 +182,17 @@ namespace AIRefactored.AI.Movement
             toTarget.y = 0f;
 
             if (toTarget.sqrMagnitude < MinMoveThreshold * MinMoveThreshold)
-            {
                 return;
-            }
 
             Vector3 modified = _trajectory.ModifyTrajectory(toTarget, deltaTime);
             Vector3 velocity = modified.normalized * 1.65f;
 
             if (_cache.PersonalityProfile.AggressionLevel > 0.7f)
-            {
                 velocity *= 1.2f;
-            }
 
             _lastVelocity = Vector3.Lerp(_lastVelocity, velocity, InertiaWeight * deltaTime);
             Vector3 moveTo = Vector3.MoveTowards(_bot.Position, target, _lastVelocity.magnitude * deltaTime);
-            _bot.GetPlayer.CharacterController.Move(moveTo, deltaTime);
+            _bot.GetPlayer?.CharacterController?.Move(moveTo, deltaTime);
         }
 
         private void SmoothLookTo(Vector3 target, float deltaTime)
@@ -194,10 +200,9 @@ namespace AIRefactored.AI.Movement
             Vector3 direction = target - _bot.Transform.position;
             direction.y = 0f;
 
-            if (direction.sqrMagnitude < 0.01f || (_cache.Tilt != null && _cache.Tilt._coreTilt && Vector3.Angle(_bot.Transform.forward, direction) > 80f))
-            {
+            if (direction.sqrMagnitude < 0.01f ||
+                (_cache.Tilt != null && _cache.Tilt._coreTilt && Vector3.Angle(_bot.Transform.forward, direction) > 80f))
                 return;
-            }
 
             Quaternion desired = Quaternion.LookRotation(direction);
             _bot.Transform.rotation = Quaternion.Lerp(_bot.Transform.rotation, desired, LookSmoothSpeed * deltaTime);
@@ -252,21 +257,17 @@ namespace AIRefactored.AI.Movement
 
             Vector3 dir = (lateral + avoid * 1.2f).normalized;
             float speed = 1.2f + UnityEngine.Random.Range(-0.1f, 0.15f);
-            _bot.GetPlayer.CharacterController.Move(dir * speed * deltaTime, deltaTime);
+            _bot.GetPlayer?.CharacterController?.Move(dir * speed * deltaTime, deltaTime);
         }
 
         private void TryCombatLean()
         {
             if (_cache.Tilt == null || Time.time < _nextLeanAllowed)
-            {
                 return;
-            }
 
-            BotPersonalityProfile profile = _cache.PersonalityProfile;
+            var profile = _cache.PersonalityProfile;
             if (profile.LeaningStyle == LeanPreference.Never || _bot.Memory.GoalEnemy == null)
-            {
                 return;
-            }
 
             Vector3 origin = _bot.Position + Vector3.up * 1.5f;
             bool wallLeft = Physics.Raycast(origin, -_bot.Transform.right, 1.5f, AIRefactoredLayerMasks.VisionBlockers);
@@ -274,9 +275,7 @@ namespace AIRefactored.AI.Movement
             Vector3 coverPos = _bot.Memory.BotCurrentCoverInfo?.LastCover?.Position ?? Vector3.zero;
 
             if (profile.LeaningStyle == LeanPreference.Conservative && coverPos == Vector3.zero && !wallLeft && !wallRight)
-            {
                 return;
-            }
 
             if (coverPos != Vector3.zero && !BotCoverHelper.WasRecentlyUsed(coverPos))
             {
@@ -305,9 +304,7 @@ namespace AIRefactored.AI.Movement
         private void TryFlankAroundEnemy()
         {
             if (_bot.Memory.GoalEnemy == null || Time.time < _nextFlankAllowed)
-            {
                 return;
-            }
 
             float aggression = _cache.PersonalityProfile.AggressionLevel;
             float distance = Vector3.Distance(_bot.Position, _bot.Memory.GoalEnemy.CurrPosition);
@@ -340,9 +337,7 @@ namespace AIRefactored.AI.Movement
         private void DetectStuck(float deltaTime)
         {
             if (_inLootingMode || _bot.Mover == null)
-            {
                 return;
-            }
 
             Vector3 target = SafeGetTargetPoint();
             if (!ValidateNavMeshTarget(target))
@@ -352,7 +347,7 @@ namespace AIRefactored.AI.Movement
                 return;
             }
 
-            Vector3 velocity = _bot.GetPlayer.Velocity;
+            Vector3 velocity = _bot.GetPlayer?.Velocity ?? Vector3.zero;
             if (velocity.sqrMagnitude < StuckThreshold * StuckThreshold)
             {
                 _stuckTimer += deltaTime;
@@ -370,7 +365,6 @@ namespace AIRefactored.AI.Movement
                     {
                         TempVector3Pool.Return(buffer);
                     }
-
                     _stuckTimer = 0f;
                 }
             }
@@ -383,16 +377,13 @@ namespace AIRefactored.AI.Movement
         private bool ValidateNavMeshTarget(Vector3 pos)
         {
             if (!BotNavValidator.Validate(_bot, "NavTargetValidation"))
-            {
                 return false;
-            }
 
             if (NavMesh.SamplePosition(pos, out NavMeshHit hit, 1.5f, NavMesh.AllAreas))
             {
                 return (hit.position - pos).sqrMagnitude < 1.0f;
             }
 
-            Logger.LogWarning("[Movement] Invalid NavMesh target: " + pos);
             return false;
         }
 

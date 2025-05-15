@@ -95,14 +95,10 @@ namespace AIRefactored.AI.Helpers
         public static void TrySetStanceFromNearbyCover(BotComponentCache cache, Vector3 position)
         {
             if (cache?.PoseController == null)
-            {
                 return;
-            }
 
             if (!NavPointRegistry.IsReady || NavPointRegistry.IsEmpty)
-            {
                 return;
-            }
 
             BotPoseController controller = cache.PoseController;
             List<NavPointData> points = NavPointRegistry.QueryNearby(position, 4f, null);
@@ -111,14 +107,10 @@ namespace AIRefactored.AI.Helpers
             {
                 NavPointData point = points[i];
                 if (!point.IsCover)
-                {
                     continue;
-                }
 
                 if ((point.Position - position).sqrMagnitude > MaxValidDistanceSqr)
-                {
                     continue;
-                }
 
                 if (IsProneCover(point))
                 {
@@ -179,24 +171,16 @@ namespace AIRefactored.AI.Helpers
         public static bool IsValidCoverPoint(CustomNavigationPoint point, BotOwner bot, bool requireFree, bool preferIndoor)
         {
             if (point == null || bot == null)
-            {
                 return false;
-            }
 
             if (requireFree && !point.IsFreeById(bot.Id))
-            {
                 return false;
-            }
 
             if (point.IsSpotted)
-            {
                 return false;
-            }
 
             if (preferIndoor && !point.IsGoodInsideBuilding)
-            {
                 return false;
-            }
 
             return true;
         }

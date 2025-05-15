@@ -37,6 +37,10 @@ namespace AIRefactored.AI.Perception
 
         #region Constructor
 
+        /// <summary>
+        /// Constructs a new bone visibility tracker for the given bot origin transform.
+        /// </summary>
+        /// <param name="botOrigin">The bot's eye or head transform (never null).</param>
         public TrackedEnemyVisibility(Transform botOrigin)
         {
             _botOrigin = botOrigin;
@@ -58,15 +62,23 @@ namespace AIRefactored.AI.Perception
 
         #region Public Methods
 
+        /// <summary>
+        /// Returns true if any bones are currently visible and unexpired.
+        /// </summary>
         public bool CanSeeAny()
         {
             CleanExpired(Time.time);
             return _visibleBones.Count > 0;
         }
 
+        /// <summary>
+        /// Returns true if the bot has line of sight to the given bone, with slack for near-misses.
+        /// </summary>
+        /// <param name="boneName">Bone key (e.g. "Head").</param>
         public bool CanShootTo(string boneName)
         {
-            if (!_visibleBones.TryGetValue(boneName, out BoneInfo info))
+            BoneInfo info;
+            if (!_visibleBones.TryGetValue(boneName, out info))
             {
                 return false;
             }
@@ -84,11 +96,17 @@ namespace AIRefactored.AI.Perception
                    || hit.distance >= dist - LinecastSlack;
         }
 
+        /// <summary>
+        /// Updates visibility data for the given bone.
+        /// </summary>
         public void UpdateBoneVisibility(string boneName, Vector3 worldPosition)
         {
             _visibleBones[boneName] = new BoneInfo(worldPosition, Time.time);
         }
 
+        /// <summary>
+        /// Updates bone visibility, including motion bonus and ambient occlusion penalty.
+        /// </summary>
         public void UpdateBoneVisibility(string boneName, Vector3 worldPosition, float motionBonus, float ambientOcclusionFactor)
         {
             float now = Time.time;
@@ -99,40 +117,57 @@ namespace AIRefactored.AI.Perception
             _visibleBones[boneName] = new BoneInfo(worldPosition, timestamp);
         }
 
+        /// <summary>
+        /// Gradually decays all confidence values by the specified amount.
+        /// </summary>
         public void DecayConfidence(float decayAmount)
         {
             float now = Time.time;
             List<string> keys = TempListPool.Rent<string>();
-
-            foreach (KeyValuePair<string, BoneInfo> kv in _visibleBones)
+            try
             {
-                keys.Add(kv.Key);
+                foreach (KeyValuePair<string, BoneInfo> kv in _visibleBones)
+                {
+                    keys.Add(kv.Key);
+                }
+
+                for (int i = 0; i < keys.Count; i++)
+                {
+                    string key = keys[i];
+                    BoneInfo info = _visibleBones[key];
+                    float decayed = Mathf.Max(0f, info.Timestamp - decayAmount);
+                    _visibleBones[key] = new BoneInfo(info.Position, decayed);
+                }
+            }
+            finally
+            {
+                TempListPool.Return(keys);
             }
 
-            for (int i = 0; i < keys.Count; i++)
-            {
-                string key = keys[i];
-                BoneInfo info = _visibleBones[key];
-                float decayed = Mathf.Max(0f, info.Timestamp - decayAmount);
-                _visibleBones[key] = new BoneInfo(info.Position, decayed);
-            }
-
-            TempListPool.Return(keys);
             CleanExpired(now);
         }
 
+        /// <summary>
+        /// Gets the overall visibility confidence as a [0,1] value.
+        /// </summary>
         public float GetOverallConfidence()
         {
             CleanExpired(Time.time);
             return Mathf.Clamp01(_visibleBones.Count / 8f);
         }
 
+        /// <summary>
+        /// Returns the current count of exposed bones.
+        /// </summary>
         public int ExposedBoneCount()
         {
             CleanExpired(Time.time);
             return _visibleBones.Count;
         }
 
+        /// <summary>
+        /// Resets all bone visibility data.
+        /// </summary>
         public void Clear()
         {
             _visibleBones.Clear();
@@ -142,24 +177,31 @@ namespace AIRefactored.AI.Perception
 
         #region Internal Methods
 
+        /// <summary>
+        /// Removes expired bone data.
+        /// </summary>
         private void CleanExpired(float now)
         {
             List<string> expired = TempListPool.Rent<string>();
-
-            foreach (KeyValuePair<string, BoneInfo> kv in _visibleBones)
+            try
             {
-                if (now - kv.Value.Timestamp > BoneVisibilityDuration)
+                foreach (KeyValuePair<string, BoneInfo> kv in _visibleBones)
                 {
-                    expired.Add(kv.Key);
+                    if (now - kv.Value.Timestamp > BoneVisibilityDuration)
+                    {
+                        expired.Add(kv.Key);
+                    }
+                }
+
+                for (int i = 0; i < expired.Count; i++)
+                {
+                    _visibleBones.Remove(expired[i]);
                 }
             }
-
-            for (int i = 0; i < expired.Count; i++)
+            finally
             {
-                _visibleBones.Remove(expired[i]);
+                TempListPool.Return(expired);
             }
-
-            TempListPool.Return(expired);
         }
 
         #endregion

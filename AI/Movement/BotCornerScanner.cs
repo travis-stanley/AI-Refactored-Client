@@ -157,6 +157,7 @@ namespace AIRefactored.AI.Movement
                 Vector3 rayOrigin = origin + (right * offset) + (forward * EdgeCheckDistance);
                 Vector3 rayDown = rayOrigin + Vector3.down * MinFallHeight;
 
+                // Must not be over a walkable surface, and must not have navmesh beneath
                 if (!Physics.Raycast(rayOrigin, Vector3.down, MinFallHeight, AIRefactoredLayerMasks.NavObstacleMask))
                 {
                     if (!NavMesh.SamplePosition(rayDown, out NavMeshHit hit, 1.0f, NavMesh.AllAreas) || hit.distance > NavSampleTolerance)

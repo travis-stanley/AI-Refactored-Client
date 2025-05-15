@@ -55,7 +55,7 @@ namespace AIRefactored.AI.Optimization
             }
 
             string map = GameWorldHandler.TryGetValidMapName();
-            if (map.Length > 0)
+            if (!string.IsNullOrEmpty(map))
             {
                 BotMemoryStore.AddDangerZone(map, point, DangerTriggerType.Panic, 5f);
             }

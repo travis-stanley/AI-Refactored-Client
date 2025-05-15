@@ -3,7 +3,7 @@
 //   Licensed under the MIT License. See LICENSE in the repository root for more information.
 //
 //   THIS FILE IS SYSTEMATICALLY MANAGED.
-//   Please follow strict StyleCop, ReSharper, and AI-Refactored code standards for all modifications.
+//   Failures in AIRefactored logic must always trigger safe fallback to EFT base AI.
 // </auto-generated>
 
 using MissionType = AIRefactored.AI.Missions.BotMissionController.MissionType;
@@ -81,6 +81,11 @@ namespace AIRefactored.AI.Missions.Subsystems
             Action resumeQuesting,
             Func<bool> isGroupAligned)
         {
+            if (_bot == null || _cache == null || _profile == null)
+            {
+                return;
+            }
+
             if (_bot.IsDead || _bot.GetPlayer == null || !_bot.GetPlayer.IsAI)
             {
                 return;
@@ -123,7 +128,7 @@ namespace AIRefactored.AI.Missions.Subsystems
             }
 
             // Fall back to Quest if separated from squad
-            if (currentMission == MissionType.Fight && !isGroupAligned())
+            if (currentMission == MissionType.Fight && isGroupAligned != null && !isGroupAligned())
             {
                 currentMission = MissionType.Quest;
                 _lastSwitchTime = time;

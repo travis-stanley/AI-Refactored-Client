@@ -56,10 +56,20 @@ namespace AIRefactored.AI.Perception
 
         #region Initialization
 
+        /// <summary>
+        /// Initializes vision system for the given bot cache.
+        /// </summary>
+        /// <param name="cache">Bot component cache.</param>
         public void Initialize(BotComponentCache cache)
         {
             if (cache == null || cache.Bot == null || cache.TacticalMemory == null || cache.AIRefactoredBotOwner == null)
             {
+                // Hard guard for safety
+                _bot = null;
+                _cache = null;
+                _memory = null;
+                _profile = null;
+                _lastCommitTime = -999f;
                 return;
             }
 
@@ -74,6 +84,9 @@ namespace AIRefactored.AI.Perception
 
         #region Tick
 
+        /// <summary>
+        /// Ticks vision system logic.
+        /// </summary>
         public void Tick(float time)
         {
             if (!IsValid())
@@ -98,7 +111,7 @@ namespace AIRefactored.AI.Perception
             Player bestTarget = null;
             float bestDist = float.MaxValue;
 
-            for (int i = 0; i < players.Count; i++)
+            for (int i = 0, count = players.Count; i < count; i++)
             {
                 Player p = players[i];
                 if (!IsValidTarget(p))
@@ -254,7 +267,7 @@ namespace AIRefactored.AI.Perception
             try
             {
                 IReadOnlyList<BotOwner> squad = _cache.GroupSync.GetTeammates();
-                for (int i = 0; i < squad.Count; i++)
+                for (int i = 0, count = squad.Count; i < count; i++)
                 {
                     BotOwner mate = squad[i];
                     if (mate != null && BotRegistry.TryGetCache(mate.ProfileId, out BotComponentCache comp))

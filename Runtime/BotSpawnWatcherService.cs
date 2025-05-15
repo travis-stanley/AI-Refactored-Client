@@ -141,6 +141,7 @@ namespace AIRefactored.Runtime
 					GameObject go = player.gameObject;
 					int id = go.GetInstanceID();
 
+					// Only inject if not already seen and not already has BotBrain.
 					if (!SeenBotIds.Add(id))
 					{
 						continue;
@@ -151,7 +152,7 @@ namespace AIRefactored.Runtime
 						continue;
 					}
 
-					if (player.AIData?.BotOwner == null)
+					if (player.AIData == null || player.AIData.BotOwner == null)
 					{
 						continue;
 					}

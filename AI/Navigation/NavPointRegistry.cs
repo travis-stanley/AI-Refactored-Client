@@ -27,6 +27,10 @@ namespace AIRefactored.AI.Navigation
         GridAndQuadtree
     }
 
+    /// <summary>
+    /// Central registry for all tactical navigation points. Provides fast queries for pathfinding, cover, fallback, and spatial AI systems.
+    /// Enforces safe access: registry may not be used until fully built/ready.
+    /// </summary>
     public static class NavPointRegistry
     {
         #region Fields
@@ -368,6 +372,7 @@ namespace AIRefactored.AI.Navigation
             point = default;
             return false;
         }
+
         public static Vector3 GetClosestPosition(Vector3 origin)
         {
             if (Points.Count == 0)

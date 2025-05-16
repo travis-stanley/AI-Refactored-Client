@@ -9,6 +9,7 @@
 namespace AIRefactored.Core
 {
     using System.Collections.Generic;
+    using AIRefactored.AI.Core;
     using BepInEx.Logging;
     using EFT;
     using UnityEngine;
@@ -35,21 +36,23 @@ namespace AIRefactored.Core
         public static void FallbackToEFTLogic(BotOwner bot)
         {
             if (bot == null || bot.IsDead)
-            {
                 return;
-            }
 
             Player player = bot.GetPlayer;
-            if (player == null || player.Profile == null)
-            {
+            if (player == null)
                 return;
-            }
 
-            string profileId = player.Profile.Id;
-            if (string.IsNullOrEmpty(profileId) || FallbackBots.Contains(profileId))
-            {
+            Profile profile = player.Profile;
+            if (profile == null)
                 return;
-            }
+
+            string profileId = profile.Id;
+            if (string.IsNullOrEmpty(profileId))
+                return;
+
+            // Prevent duplicate fallback activation for same bot
+            if (FallbackBots.Contains(profileId))
+                return;
 
             FallbackBots.Add(profileId);
 
@@ -57,11 +60,17 @@ namespace AIRefactored.Core
             if (brain != null)
             {
                 brain.Activate();
-                Logger.LogWarning("[BotFallback] ✅ Bot " + profileId + " reverted to native EFT AI (StandartBotBrain).");
+                if (!FikaHeadlessDetector.IsHeadless)
+                {
+                    Logger.LogWarning("[BotFallback] ✅ Bot " + profileId + " reverted to native EFT AI (StandartBotBrain).");
+                }
             }
             else
             {
-                Logger.LogError("[BotFallback] ❌ Bot " + profileId + " missing StandartBotBrain — fallback failed.");
+                if (!FikaHeadlessDetector.IsHeadless)
+                {
+                    Logger.LogError("[BotFallback] ❌ Bot " + profileId + " missing StandartBotBrain — fallback failed.");
+                }
             }
         }
 

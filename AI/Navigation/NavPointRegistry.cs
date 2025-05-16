@@ -4,6 +4,7 @@
 //
 //   THIS FILE IS SYSTEMATICALLY MANAGED.
 //   Nav fallback logic must trigger EFT or static fallback when registry is empty.
+//   If registry or fallback fails, AIRefactored nav disables for the raid and vanilla logic is used.
 // </auto-generated>
 
 namespace AIRefactored.AI.Navigation
@@ -30,6 +31,7 @@ namespace AIRefactored.AI.Navigation
     /// <summary>
     /// Central registry for all tactical navigation points. Provides fast queries for pathfinding, cover, fallback, and spatial AI systems.
     /// Enforces safe access: registry may not be used until fully built/ready.
+    /// If the registry or fallback fails, disables AIRefactored nav and lets vanilla logic take over.
     /// </summary>
     public static class NavPointRegistry
     {
@@ -59,6 +61,7 @@ namespace AIRefactored.AI.Navigation
         private static SpatialNavGrid _spatialGrid;
         private static bool _useQuadtree;
         private static bool _useSpatial;
+        private static bool _aiRefactoredNavDisabled;
 
         private static ManualLogSource Logger => Plugin.LoggerInstance;
 
@@ -67,9 +70,10 @@ namespace AIRefactored.AI.Navigation
         #region Properties
 
         public static int Count => Points.Count;
-        public static bool IsReady => Points.Count > 0;
-        public static bool IsEmpty => Points.Count == 0;
+        public static bool IsReady => Points.Count > 0 && !_aiRefactoredNavDisabled;
+        public static bool IsEmpty => Points.Count == 0 || _aiRefactoredNavDisabled;
         public static bool IsInitialized { get; private set; }
+        public static bool AIRefactoredNavDisabled => _aiRefactoredNavDisabled;
 
         #endregion
 
@@ -85,6 +89,7 @@ namespace AIRefactored.AI.Navigation
             _spatialGrid = null;
             _useQuadtree = false;
             _useSpatial = false;
+            _aiRefactoredNavDisabled = false;
             IsInitialized = true;
 
             Logger.LogDebug("[NavPointRegistry] Initialized.");
@@ -96,7 +101,25 @@ namespace AIRefactored.AI.Navigation
             Unique.Clear();
             _quadtree?.Clear();
             _spatialGrid?.Clear();
+            _aiRefactoredNavDisabled = false;
             IsInitialized = false;
+        }
+
+        /// <summary>
+        /// Disables all AIRefactored nav for the rest of the session/raid.
+        /// All queries will pass control to vanilla logic.
+        /// </summary>
+        public static void Disable()
+        {
+            if (!_aiRefactoredNavDisabled)
+            {
+                _aiRefactoredNavDisabled = true;
+                Points.Clear();
+                Unique.Clear();
+                _quadtree?.Clear();
+                _spatialGrid?.Clear();
+                Logger.LogWarning("[NavPointRegistry] AIRefactored nav logic DISABLED due to fatal error. Reverting to vanilla Tarkov navigation.");
+            }
         }
 
         #endregion
@@ -105,12 +128,15 @@ namespace AIRefactored.AI.Navigation
 
         public static void LoadFrom(List<NavPointData> source)
         {
+            if (_aiRefactoredNavDisabled)
+                return;
+
             Initialize();
 
             if (source == null || source.Count == 0)
             {
                 Logger.LogWarning("[NavPointRegistry] LoadFrom failed — no points provided.");
-                IsInitialized = false;
+                Disable();
                 return;
             }
 
@@ -139,6 +165,8 @@ namespace AIRefactored.AI.Navigation
             AutoEnableIndexModeSafe();
             Logger.LogInfo("[NavPointRegistry] ✅ Loaded " + Points.Count + " points from cache.");
             IsInitialized = Points.Count > 0;
+            if (!IsInitialized)
+                Disable();
         }
 
         public static List<NavPointData> GetAllPoints()
@@ -169,6 +197,12 @@ namespace AIRefactored.AI.Navigation
 
         public static void RegisterAll(string mapId)
         {
+            if (_aiRefactoredNavDisabled)
+            {
+                Logger.LogWarning("[NavPointRegistry] RegisterAll() skipped — AIRefactored nav disabled.");
+                return;
+            }
+
             // Protect: Only register after WorldReady, and if not already ready
             if (!WorldInitState.IsInPhase(WorldPhase.WorldReady))
             {
@@ -198,12 +232,14 @@ namespace AIRefactored.AI.Navigation
                 if (UnityEngine.Object.FindObjectOfType<NavMeshSurface>() == null)
                 {
                     Logger.LogWarning("[NavPointRegistry] No NavMeshSurface found.");
+                    Disable();
                     return;
                 }
             }
             catch (Exception ex)
             {
                 Logger.LogError("[NavPointRegistry] Error checking NavMeshSurface: " + ex);
+                Disable();
                 return;
             }
 
@@ -212,14 +248,18 @@ namespace AIRefactored.AI.Navigation
             if (Count == 0)
             {
                 Logger.LogWarning("[NavPointRegistry] RegisterAll completed but point list is still empty.");
+                Disable();
             }
 
             AutoEnableIndexModeSafe();
-            IsInitialized = Points.Count > 0;
+            IsInitialized = Points.Count > 0 && !_aiRefactoredNavDisabled;
         }
 
         public static void Register(Vector3 pos, bool isCover = false, string tag = "generic", float elevation = 0f, bool isIndoor = false, bool isJumpable = false, float coverAngle = 0f)
         {
+            if (_aiRefactoredNavDisabled)
+                return;
+
             if (!IsValid(pos) || !Unique.Add(pos))
             {
                 return;
@@ -241,6 +281,13 @@ namespace AIRefactored.AI.Navigation
         public static List<Vector3> QueryNearby(Vector3 origin, float radius, Predicate<Vector3> filter = null, bool coverOnly = false)
         {
             var result = TempListPool.Rent<Vector3>();
+
+            if (_aiRefactoredNavDisabled || Points.Count == 0)
+            {
+                // Fallback to vanilla/emergency nav if registry is empty/disabled
+                return result; // Empty: do not override vanilla pathing
+            }
+
             float radiusSq = radius * radius;
 
             if (_useQuadtree && _quadtree != null)
@@ -290,6 +337,13 @@ namespace AIRefactored.AI.Navigation
         public static List<NavPointData> QueryNearby(Vector3 origin, float radius, Predicate<NavPointData> filter = null)
         {
             var result = TempListPool.Rent<NavPointData>();
+
+            if (_aiRefactoredNavDisabled || Points.Count == 0)
+            {
+                // Fallback to vanilla/emergency nav if registry is empty/disabled
+                return result; // Empty: do not override vanilla pathing
+            }
+
             float radiusSq = radius * radius;
 
             if (_useSpatial && _spatialGrid != null)
@@ -343,6 +397,9 @@ namespace AIRefactored.AI.Navigation
 
         public static void AutoEnableIndexMode(string mapId)
         {
+            if (_aiRefactoredNavDisabled)
+                return;
+
             if (string.IsNullOrEmpty(mapId))
             {
                 Logger.LogWarning("[NavPointRegistry] AutoEnableIndexMode skipped — mapId null.");
@@ -374,6 +431,9 @@ namespace AIRefactored.AI.Navigation
 
         public static void EnableSpatialIndexing(bool enableQuadtree, bool enableSpatialGrid = true)
         {
+            if (_aiRefactoredNavDisabled)
+                return;
+
             _useQuadtree = enableQuadtree;
             _useSpatial = enableSpatialGrid;
 
@@ -401,9 +461,10 @@ namespace AIRefactored.AI.Navigation
 
         public static Vector3 GetClosestPosition(Vector3 origin)
         {
-            if (Points.Count == 0)
+            if (_aiRefactoredNavDisabled || Points.Count == 0)
             {
-                return Vector3.zero;
+                // Registry empty/disabled: do not override vanilla pathing
+                return origin;
             }
 
             Vector3 closest = Vector3.zero;
@@ -451,7 +512,7 @@ namespace AIRefactored.AI.Navigation
                 }
             }
 
-            return closest;
+            return IsValid(closest) ? closest : origin; // Never return zero, just return original
         }
 
         private static bool IsValid(Vector3 pos)

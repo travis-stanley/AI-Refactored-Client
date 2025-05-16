@@ -33,7 +33,6 @@ namespace AIRefactored.Bootstrap
         public void Initialize()
         {
             _isInitialized = false;
-
             try
             {
                 HotspotRegistry.Clear();
@@ -59,7 +58,6 @@ namespace AIRefactored.Bootstrap
 
                 HotspotRegistry.Initialize(mapId);
                 _isInitialized = true;
-
                 Logger.LogDebug("[HotspotRegistry] ✅ Initialized for map: " + mapId);
             }
             catch (Exception ex)

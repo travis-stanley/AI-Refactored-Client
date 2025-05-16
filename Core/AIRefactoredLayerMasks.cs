@@ -4,6 +4,7 @@
 //
 //   THIS FILE IS SYSTEMATICALLY MANAGED.
 //   Please follow strict StyleCop, ReSharper, and AI-Refactored code standards for all modifications.
+//   All layer logic must be null/NaN-safe and multiplayer/headless compatible.
 // </auto-generated>
 
 namespace AIRefactored.Core
@@ -156,60 +157,74 @@ namespace AIRefactored.Core
 
         public static bool IsWorldGeometry(int layer)
         {
-            return layer == Terrain
+            return IsValidLayer(layer) && (
+                layer == Terrain
                 || layer == HighPolyCollider
                 || layer == LowPolyCollider
                 || layer == Door
                 || layer == DoorHighPolyCollider
-                || layer == DoorLowPolyCollider;
+                || layer == DoorLowPolyCollider
+            );
         }
 
         public static bool IsObstacleLayer(int layer)
         {
-            return layer == Terrain
+            return IsValidLayer(layer) && (
+                layer == Terrain
                 || layer == HighPolyCollider
                 || layer == LowPolyCollider
-                || layer == Foliage;
+                || layer == Foliage
+            );
         }
 
         public static bool IsPlayerLayer(int layer)
         {
-            return layer == Player;
+            return IsValidLayer(layer) && layer == Player;
         }
 
         public static bool IsDoorLayer(int layer)
         {
-            return layer == Door
+            return IsValidLayer(layer) && (
+                layer == Door
                 || layer == DoorHighPolyCollider
-                || layer == DoorLowPolyCollider;
+                || layer == DoorLowPolyCollider
+            );
         }
 
         public static bool IsLootLayer(int layer)
         {
-            return layer == Loot;
+            return IsValidLayer(layer) && layer == Loot;
         }
 
         public static bool IsInteractiveLayer(int layer)
         {
-            return layer == Interactive || layer == Trigger;
+            return IsValidLayer(layer) && (layer == Interactive || layer == Trigger);
         }
 
         public static bool IsInvisibleCollider(int layer)
         {
-            return layer == InvisibleCollider;
+            return IsValidLayer(layer) && layer == InvisibleCollider;
         }
 
         public static bool IsViewCollider(int layer)
         {
-            return layer == ViewCollider;
+            return IsValidLayer(layer) && layer == ViewCollider;
         }
 
         public static bool IsNavBlocker(int layer)
         {
-            return layer == Terrain
+            return IsValidLayer(layer) && (
+                layer == Terrain
                 || layer == HighPolyCollider
                 || layer == LowPolyCollider
-                || layer == DeadBody;
+                || layer == DeadBody
+            );
+        }
+
+        private static bool IsValidLayer(int layer)
+        {
+            // Ensures layer is in the Unity range and not -1 (which NameToLayer returns if not found)
+            return layer >= 0 && layer < 32;
         }
 
         #endregion

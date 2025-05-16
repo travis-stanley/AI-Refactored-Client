@@ -4,6 +4,7 @@
 //
 //   THIS FILE IS SYSTEMATICALLY MANAGED.
 //   Failures in AIRefactored logic must always trigger safe fallback to EFT base AI.
+//   Never block vanilla logic if registry is empty or disabled.
 // </auto-generated>
 
 namespace AIRefactored.AI.Helpers
@@ -39,15 +40,11 @@ namespace AIRefactored.AI.Helpers
         #region Cover Type Checks
 
         public static bool IsLowCover(CustomNavigationPoint point) => point != null && point.CoverLevel == CoverLevel.Sit;
-
         public static bool IsProneCover(CustomNavigationPoint point) => point != null && point.CoverLevel == CoverLevel.Lay;
-
         public static bool IsStandingCover(CustomNavigationPoint point) => point != null && point.CoverLevel == CoverLevel.Stay;
 
         public static bool IsLowCover(NavPointData point) => point.IsCover && point.ElevationBand == "Mid";
-
         public static bool IsProneCover(NavPointData point) => point.IsCover && point.ElevationBand == "Low";
-
         public static bool IsStandingCover(NavPointData point) => point.IsCover && point.ElevationBand == "High";
 
         #endregion
@@ -57,19 +54,19 @@ namespace AIRefactored.AI.Helpers
         public static void MarkUsed(CustomNavigationPoint point)
         {
             if (point != null)
-            {
                 CoverMemory[GetKey(point.Position)] = Time.time;
-            }
         }
 
         public static void MarkUsed(NavPointData point)
         {
-            CoverMemory[GetKey(point.Position)] = Time.time;
+            if (IsValidPos(point.Position))
+                CoverMemory[GetKey(point.Position)] = Time.time;
         }
 
         public static void MarkUsed(Vector3 position)
         {
-            CoverMemory[GetKey(position)] = Time.time;
+            if (IsValidPos(position))
+                CoverMemory[GetKey(position)] = Time.time;
         }
 
         public static bool WasRecentlyUsed(CustomNavigationPoint point)
@@ -132,6 +129,7 @@ namespace AIRefactored.AI.Helpers
 
         public static float Score(CustomNavigationPoint point, Vector3 botPos, Vector3 threatPos)
         {
+            if (point == null) return 0f;
             float distBot = Vector3.Distance(botPos, point.Position);
             float distThreat = Vector3.Distance(threatPos, point.Position);
             float angle = Vector3.Angle(threatPos - point.Position, botPos - point.Position);
@@ -195,6 +193,11 @@ namespace AIRefactored.AI.Helpers
             int y = Mathf.RoundToInt(position.y);
             int z = Mathf.RoundToInt(position.z);
             return $"{x}_{y}_{z}";
+        }
+
+        private static bool IsValidPos(Vector3 pos)
+        {
+            return pos != Vector3.zero && !float.IsNaN(pos.x) && !float.IsNaN(pos.y) && !float.IsNaN(pos.z);
         }
 
         #endregion

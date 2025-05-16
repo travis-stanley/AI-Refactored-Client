@@ -21,6 +21,7 @@ namespace AIRefactored.AI.Core
     using AIRefactored.AI.Optimization;
     using AIRefactored.AI.Perception;
     using AIRefactored.AI.Reactions;
+    using AIRefactored.Core;
     using AIRefactored.Runtime;
     using BepInEx.Logging;
     using EFT;
@@ -29,6 +30,7 @@ namespace AIRefactored.AI.Core
     /// <summary>
     /// Runtime container for all bot-specific AIRefactored logic systems.
     /// Managed via BotComponentCacheRegistry.
+    /// Bulletproof: if initialization fails, always triggers fallback to vanilla logic.
     /// </summary>
     public sealed class BotComponentCache
     {
@@ -133,6 +135,7 @@ namespace AIRefactored.AI.Core
             if (bot == null)
             {
                 Logger.LogError("[BotComponentCache] Initialize called with null bot.");
+                BotFallbackUtility.FallbackToEFTLogic(bot);
                 throw new ArgumentNullException(nameof(bot));
             }
 
@@ -204,6 +207,7 @@ namespace AIRefactored.AI.Core
             catch (Exception ex)
             {
                 Logger.LogError($"[BotComponentCache] Initialization failed for bot {bot.Profile?.Id ?? "null"}: {ex}");
+                BotFallbackUtility.FallbackToEFTLogic(bot);
                 throw;
             }
         }
@@ -215,6 +219,7 @@ namespace AIRefactored.AI.Core
                 if (required[i] == null)
                 {
                     Logger.LogError($"[BotComponentCache] ❌ Subsystem '{name}' missing required dependency.");
+                    BotFallbackUtility.FallbackToEFTLogic(Bot);
                     throw new InvalidOperationException($"[BotComponentCache] {name} initialization failed.");
                 }
             }
@@ -226,6 +231,7 @@ namespace AIRefactored.AI.Core
             catch (Exception ex)
             {
                 Logger.LogError($"[BotComponentCache] ❌ Init failed ({name}): {ex}");
+                BotFallbackUtility.FallbackToEFTLogic(Bot);
                 throw;
             }
         }
@@ -238,6 +244,7 @@ namespace AIRefactored.AI.Core
         {
             IsFallbackMode = true;
             Logger.LogWarning($"[BotComponentCache] Entered fallback mode for bot: {Nickname}");
+            BotFallbackUtility.FallbackToEFTLogic(Bot);
         }
 
         #endregion
@@ -249,6 +256,7 @@ namespace AIRefactored.AI.Core
             if (owner == null)
             {
                 Logger.LogError("[BotComponentCache] SetOwner() called with null.");
+                BotFallbackUtility.FallbackToEFTLogic(Bot);
                 throw new ArgumentNullException(nameof(owner));
             }
 

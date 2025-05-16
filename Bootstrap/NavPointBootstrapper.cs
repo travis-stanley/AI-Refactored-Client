@@ -29,7 +29,7 @@ namespace AIRefactored.AI.Navigation
 		#region Constants
 
 		private const float ForwardCoverCheckDistance = 4.0f;
-		private const float MaxSampleHeight = 30.0f;
+		private const float MaxSampleHeight = 4.0f; // Lowered for typical Tarkov maps, avoids overshooting floors
 		private const float MinNavPointClearance = 1.6f;
 		private const float RoofRaycastHeight = 12.0f;
 		private const float ScanRadius = 80.0f;
@@ -140,6 +140,7 @@ namespace AIRefactored.AI.Navigation
 
 			int maxPerFrame = FikaHeadlessDetector.IsHeadless ? 80 : 40;
 			int processed = 0;
+			int rejectedRaycast = 0, rejectedNavmesh = 0, rejectedClearance = 0, rejectedCheckSphere = 0;
 
 			while (ScanQueue.Count > 0 && processed++ < maxPerFrame)
 			{
@@ -147,6 +148,8 @@ namespace AIRefactored.AI.Navigation
 
 				if (!Physics.Raycast(probe, Vector3.down, out RaycastHit hit, MaxSampleHeight))
 				{
+					if (++rejectedRaycast <= 10)
+						Logger.LogWarning("[NavPointBootstrapper] Point rejected (raycast miss): " + probe + " (y=" + probe.y + ")");
 					continue;
 				}
 
@@ -154,12 +157,15 @@ namespace AIRefactored.AI.Navigation
 
 				if (!NavMesh.SamplePosition(pos, out NavMeshHit navHit, 2.5f, NavMesh.AllAreas))
 				{
+					if (++rejectedNavmesh <= 10)
+						Logger.LogWarning("[NavPointBootstrapper] Point rejected (NavMesh.SamplePosition fail): " + pos);
 					continue;
 				}
 
-				// Check clearance above
 				if (Physics.Raycast(pos + Vector3.up * 0.5f, Vector3.up, MinNavPointClearance))
 				{
+					if (++rejectedClearance <= 10)
+						Logger.LogWarning("[NavPointBootstrapper] Point rejected (blocked above): " + pos);
 					continue;
 				}
 
@@ -168,9 +174,14 @@ namespace AIRefactored.AI.Navigation
 				bool isCover = IsCoverPoint(final);
 				bool isIndoor = IsIndoorPoint(final);
 				string tag = ClassifyNavPoint(elevation, isCover, isIndoor);
-
-				// Added coverAngle calculation to register fully
 				float coverAngle = CalculateCoverAngle(final);
+
+				if (!Physics.CheckSphere(final, 0.2f, AIRefactoredLayerMasks.TerrainAndObstacles))
+				{
+					if (++rejectedCheckSphere <= 10)
+						Logger.LogWarning("[NavPointBootstrapper] Point rejected (CheckSphere failed TerrainAndObstacles): " + final);
+					continue;
+				}
 
 				NavPointRegistry.Register(final, isCover, tag, elevation, isIndoor, true, coverAngle);
 				_registered++;
@@ -198,7 +209,7 @@ namespace AIRefactored.AI.Navigation
 				List<NavPointData> snapshot = NavPointRegistry.QueryNearby(_center, ScanRadius, null);
 				NavPointCacheManager.Save(_mapId, snapshot);
 
-				Logger.LogDebug("[NavPointBootstrapper] ✅ Completed scan and cached " + snapshot.Count + " nav points.");
+				Logger.LogDebug("[NavPointBootstrapper] ✅ Completed scan and cached " + snapshot.Count + " nav points. Total registered: " + _registered);
 			}
 		}
 

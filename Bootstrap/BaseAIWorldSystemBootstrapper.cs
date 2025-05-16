@@ -13,7 +13,7 @@ namespace AIRefactored.AI.Core
 
     /// <summary>
     /// Abstract base class for AI world-level systems with lifecycle binding.
-    /// Override any method to hook into initialization, update, or shutdown.
+    /// Provides bulletproof error handling, phase gating, and tick safety.
     /// </summary>
     public abstract class BaseAIWorldSystemBootstrapper : IAIWorldSystemBootstrapper
     {
@@ -27,7 +27,7 @@ namespace AIRefactored.AI.Core
 
         /// <summary>
         /// Called every frame or tick when active.
-        /// Wraps the <see cref="OnTick"/> method in a guarded try-catch.
+        /// Wraps <see cref="OnTick"/> in guarded try-catch for maximum robustness.
         /// </summary>
         /// <param name="deltaTime">Elapsed time since last tick.</param>
         public virtual void Tick(float deltaTime)
@@ -38,20 +38,21 @@ namespace AIRefactored.AI.Core
             }
             catch (Exception ex)
             {
-                Plugin.LoggerInstance.LogError("[BaseAIWorldSystem] Tick error in " + GetType().Name + ": " + ex);
+                Plugin.LoggerInstance?.LogError("[BaseAIWorldSystem] Tick error in " + GetType().Name + ": " + ex);
             }
         }
 
         /// <summary>
-        /// Called every update cycle. Override to provide custom tick logic.
+        /// Override for per-frame/tick system logic.
         /// </summary>
-        /// <param name="deltaTime">Time since last tick.</param>
+        /// <param name="deltaTime">Elapsed time since last tick.</param>
         protected virtual void OnTick(float deltaTime)
         {
         }
 
         /// <summary>
-        /// Called when the raid ends. Wraps <see cref="Cleanup"/> in try-catch.
+        /// Called at raid end or when world is torn down.
+        /// Wraps <see cref="Cleanup"/> in try-catch to guarantee teardown.
         /// </summary>
         public virtual void OnRaidEnd()
         {
@@ -61,32 +62,29 @@ namespace AIRefactored.AI.Core
             }
             catch (Exception ex)
             {
-                Plugin.LoggerInstance.LogError("[BaseAIWorldSystem] OnRaidEnd error in " + GetType().Name + ": " + ex);
+                Plugin.LoggerInstance?.LogError("[BaseAIWorldSystem] OnRaidEnd error in " + GetType().Name + ": " + ex);
             }
         }
 
         /// <summary>
-        /// Cleans up system data and memory. Override for per-system logic.
+        /// Override to implement per-system teardown and memory cleanup.
         /// </summary>
         protected virtual void Cleanup()
         {
         }
 
         /// <summary>
-        /// Whether the system is currently valid and active.
-        /// Override to gate tick logic during runtime.
+        /// Returns true if this system is currently ready and should be ticked.
         /// </summary>
-        /// <returns>True if system is ready to tick.</returns>
         public virtual bool IsReady()
         {
             return true;
         }
 
         /// <summary>
-        /// Specifies when the system should be initialized during phase progression.
-        /// Override to require earlier phases like <see cref="WorldPhase.WorldReady"/>.
+        /// Specifies the required world phase for system initialization.
+        /// Override if earlier/later phase required.
         /// </summary>
-        /// <returns>The required initialization phase.</returns>
         public virtual WorldPhase RequiredPhase()
         {
             return WorldPhase.PostInit;

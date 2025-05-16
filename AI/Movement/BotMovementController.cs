@@ -63,6 +63,9 @@ namespace AIRefactored.AI.Movement
 
         #region Public API
 
+        /// <summary>
+        /// Initializes the movement controller with required subsystems.
+        /// </summary>
         public void Initialize(BotComponentCache cache)
         {
             if (cache == null || cache.Bot == null || cache.PersonalityProfile == null)
@@ -80,6 +83,9 @@ namespace AIRefactored.AI.Movement
             _nextFlankAllowed = Time.time;
         }
 
+        /// <summary>
+        /// Ticks the movement logic for the bot.
+        /// </summary>
         public void Tick(float deltaTime)
         {
             if (_bot == null || _cache == null || _bot.IsDead || _bot.GetPlayer == null || !_bot.GetPlayer.IsAI)
@@ -87,14 +93,18 @@ namespace AIRefactored.AI.Movement
                 return;
             }
 
+            // If AIRefactored nav is disabled, immediately yield to vanilla
+            if (NavPointRegistry.AIRefactoredNavDisabled)
+                return;
+
+            // Wait for NavMesh/registry, except in looting mode
             if (!NavMeshStatus.IsReady && !_inLootingMode)
             {
                 if (!NavPointRegistry.IsEmpty)
                 {
                     return;
                 }
-
-                // Fallback logic permitted — no log
+                // Fallback logic permitted—no log
             }
 
             _jump.Tick(deltaTime);
@@ -115,6 +125,12 @@ namespace AIRefactored.AI.Movement
             }
 
             Vector3 target = SafeGetTargetPoint();
+            if (!IsValidTarget(target))
+            {
+                // No valid movement, don't move or rotate this frame
+                return;
+            }
+
             SmoothLookTo(target, deltaTime);
             ApplyInertia(target, deltaTime);
 
@@ -138,14 +154,22 @@ namespace AIRefactored.AI.Movement
 
         #region Internal Movement
 
+        /// <summary>
+        /// Returns a safe and valid target point for movement.
+        /// If all systems fail, never returns Vector3.zero unless absolutely unavoidable.
+        /// </summary>
         private Vector3 SafeGetTargetPoint()
         {
+            // If AIRefactored nav is disabled, always yield to vanilla (never override).
+            if (NavPointRegistry.AIRefactoredNavDisabled)
+                return Vector3.zero;
+
             try
             {
                 if (_bot?.Mover != null)
                 {
                     Vector3 point = _bot.Mover.LastTargetPoint(1.0f);
-                    if (!float.IsNaN(point.x) && !float.IsNaN(point.y) && !float.IsNaN(point.z))
+                    if (IsValidTarget(point))
                     {
                         return point;
                     }
@@ -153,31 +177,39 @@ namespace AIRefactored.AI.Movement
             }
             catch
             {
-                // Silent fail — do not log
+                // Silent fail
             }
 
-            // Fallback: registry or safe point
             if (_bot != null)
             {
                 if (NavPointRegistry.IsReady && !NavPointRegistry.IsEmpty)
                 {
                     Vector3 closest = NavPointRegistry.GetClosestPosition(_bot.Position);
-                    if (!float.IsNaN(closest.x) && !float.IsNaN(closest.y) && !float.IsNaN(closest.z))
+                    if (IsValidTarget(closest))
                     {
                         return closest;
                     }
                 }
 
                 Vector3 fallback = FallbackNavPointProvider.GetSafePoint(_bot.Position);
-                return fallback != Vector3.zero ? fallback : _bot.Position;
+                if (IsValidTarget(fallback))
+                {
+                    return fallback;
+                }
+
+                // As absolute last resort, stay at current position
+                if (IsValidTarget(_bot.Position))
+                    return _bot.Position;
             }
 
             return Vector3.zero;
         }
 
-
         private void ApplyInertia(Vector3 target, float deltaTime)
         {
+            if (!IsValidTarget(target) || !IsValidTarget(_bot.Position))
+                return;
+
             Vector3 toTarget = target - _bot.Position;
             toTarget.y = 0f;
 
@@ -197,6 +229,9 @@ namespace AIRefactored.AI.Movement
 
         private void SmoothLookTo(Vector3 target, float deltaTime)
         {
+            if (!IsValidTarget(target))
+                return;
+
             Vector3 direction = target - _bot.Transform.position;
             direction.y = 0f;
 
@@ -339,11 +374,18 @@ namespace AIRefactored.AI.Movement
             if (_inLootingMode || _bot.Mover == null)
                 return;
 
+            // If nav is disabled, don't do anything — vanilla will recover.
+            if (NavPointRegistry.AIRefactoredNavDisabled)
+                return;
+
             Vector3 target = SafeGetTargetPoint();
             if (!ValidateNavMeshTarget(target))
             {
                 Vector3 safe = FallbackNavPointProvider.GetSafePoint(_bot.Position);
-                BotMovementHelper.SmoothMoveTo(_bot, safe, true);
+                if (IsValidTarget(safe))
+                {
+                    BotMovementHelper.SmoothMoveTo(_bot, safe, true);
+                }
                 return;
             }
 
@@ -358,8 +400,11 @@ namespace AIRefactored.AI.Movement
                     {
                         buffer[0] = target + UnityEngine.Random.insideUnitSphere * 1.0f;
                         buffer[0].y = target.y;
-                        BotMovementHelper.SmoothMoveTo(_bot, buffer[0], false);
-                        Logger.LogDebug("[Movement] Stuck recovery triggered.");
+                        if (IsValidTarget(buffer[0]))
+                        {
+                            BotMovementHelper.SmoothMoveTo(_bot, buffer[0], false);
+                            Logger.LogDebug("[Movement] Stuck recovery triggered.");
+                        }
                     }
                     finally
                     {
@@ -376,6 +421,9 @@ namespace AIRefactored.AI.Movement
 
         private bool ValidateNavMeshTarget(Vector3 pos)
         {
+            if (!IsValidTarget(pos))
+                return false;
+
             if (!BotNavValidator.Validate(_bot, "NavTargetValidation"))
                 return false;
 
@@ -385,6 +433,11 @@ namespace AIRefactored.AI.Movement
             }
 
             return false;
+        }
+
+        private bool IsValidTarget(Vector3 pos)
+        {
+            return pos != Vector3.zero && !float.IsNaN(pos.x) && !float.IsNaN(pos.y) && !float.IsNaN(pos.z);
         }
 
         #endregion

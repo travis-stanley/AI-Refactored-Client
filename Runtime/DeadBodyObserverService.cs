@@ -12,6 +12,7 @@ namespace AIRefactored.Runtime
 	using System.Collections.Generic;
 	using AIRefactored.AI.Core;
 	using AIRefactored.AI.Looting;
+	using AIRefactored.AI.Navigation;
 	using AIRefactored.Bootstrap;
 	using AIRefactored.Core;
 	using AIRefactored.Pools;
@@ -51,11 +52,11 @@ namespace AIRefactored.Runtime
 			{
 				Reset();
 				_hasLoggedReset = false;
-				Logger.LogDebug("[DeadBodyObserver] ✅ Initialized.");
+				LogDebug("[DeadBodyObserver] ✅ Initialized.");
 			}
 			catch (Exception ex)
 			{
-				Logger.LogError("[DeadBodyObserver] ❌ Initialize failed: " + ex);
+				LogError("[DeadBodyObserver] ❌ Initialize failed: " + ex);
 			}
 		}
 
@@ -65,11 +66,11 @@ namespace AIRefactored.Runtime
 			try
 			{
 				Reset();
-				Logger.LogDebug("[DeadBodyObserver] 🧹 Reset after raid.");
+				LogDebug("[DeadBodyObserver] 🧹 Reset after raid.");
 			}
 			catch (Exception ex)
 			{
-				Logger.LogError("[DeadBodyObserver] ❌ OnRaidEnd error: " + ex);
+				LogError("[DeadBodyObserver] ❌ OnRaidEnd error: " + ex);
 			}
 		}
 
@@ -91,16 +92,14 @@ namespace AIRefactored.Runtime
 		public static void Reset()
 		{
 			if (_hasLoggedReset)
-			{
 				return;
-			}
 
 			_nextScanTime = -1f;
 			_hasLoggedReset = true;
 
 			try
 			{
-				Logger.LogDebug("[DeadBodyObserver] 🔄 Reset complete.");
+				LogDebug("[DeadBodyObserver] 🔄 Reset complete.");
 			}
 			catch
 			{
@@ -117,24 +116,26 @@ namespace AIRefactored.Runtime
 		{
 			try
 			{
-				if (!Application.isPlaying || !GameWorldHandler.IsInitialized || !GameWorldHandler.IsHost || !GameWorldHandler.IsReady())
+				if (
+					!Application.isPlaying ||
+					!GameWorldHandler.IsInitialized ||
+					!GameWorldHandler.IsHost ||
+					!GameWorldHandler.IsReady() ||
+					NavPointRegistry.AIRefactoredNavDisabled
+				)
 				{
 					return;
 				}
 
 				float now = Time.time;
 				if (now < _nextScanTime)
-				{
 					return;
-				}
 
 				_nextScanTime = now + ScanIntervalSeconds;
 
 				GameWorld world = GameWorldHandler.Get();
 				if (world == null || world.RegisteredPlayers == null || world.RegisteredPlayers.Count == 0)
-				{
 					return;
-				}
 
 				LootableContainer[] containers;
 				try
@@ -143,14 +144,12 @@ namespace AIRefactored.Runtime
 				}
 				catch (Exception ex)
 				{
-					Logger.LogError("[DeadBodyObserver] ❌ Failed to find containers: " + ex);
+					LogError("[DeadBodyObserver] ❌ Failed to find containers: " + ex);
 					return;
 				}
 
 				if (containers == null || containers.Length == 0)
-				{
 					return;
-				}
 
 				List<IPlayer> rawPlayers = world.RegisteredPlayers;
 				List<Player> deadPlayers = TempListPool.Rent<Player>();
@@ -199,7 +198,7 @@ namespace AIRefactored.Runtime
 							LootRuntimeWatcher.Register(container.gameObject);
 
 							string nickname = player.Profile?.Info?.Nickname ?? "Unnamed";
-							Logger.LogDebug("[DeadBodyObserver] ✅ Associated container with corpse: " + nickname);
+							LogDebug("[DeadBodyObserver] ✅ Associated container with corpse: " + nickname);
 							break;
 						}
 					}
@@ -209,8 +208,24 @@ namespace AIRefactored.Runtime
 			}
 			catch (Exception ex)
 			{
-				Logger.LogError("[DeadBodyObserver] ❌ Tick error: " + ex);
+				LogError("[DeadBodyObserver] ❌ Tick error: " + ex);
 			}
+		}
+
+		#endregion
+
+		#region Log Helpers
+
+		private static void LogDebug(string msg)
+		{
+			if (!FikaHeadlessDetector.IsHeadless)
+				Logger.LogDebug(msg);
+		}
+
+		private static void LogError(string msg)
+		{
+			if (!FikaHeadlessDetector.IsHeadless)
+				Logger.LogError(msg);
 		}
 
 		#endregion

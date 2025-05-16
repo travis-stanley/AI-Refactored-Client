@@ -11,6 +11,7 @@ namespace AIRefactored.Runtime
 	using System;
 	using System.Collections.Generic;
 	using AIRefactored.AI.Core;
+	using AIRefactored.AI.Navigation;
 	using AIRefactored.AI.Threads;
 	using AIRefactored.Bootstrap;
 	using AIRefactored.Core;
@@ -49,11 +50,11 @@ namespace AIRefactored.Runtime
 			try
 			{
 				Reset();
-				Logger.LogDebug("[BotSpawnWatcher] ✅ Initialized.");
+				LogDebug("[BotSpawnWatcher] ✅ Initialized.");
 			}
 			catch (Exception ex)
 			{
-				Logger.LogError("[BotSpawnWatcher] ❌ Initialize failed: " + ex);
+				LogError("[BotSpawnWatcher] ❌ Initialize failed: " + ex);
 			}
 		}
 
@@ -63,11 +64,11 @@ namespace AIRefactored.Runtime
 			try
 			{
 				Reset();
-				Logger.LogDebug("[BotSpawnWatcher] 🧹 Reset after raid.");
+				LogDebug("[BotSpawnWatcher] 🧹 Reset after raid.");
 			}
 			catch (Exception ex)
 			{
-				Logger.LogError("[BotSpawnWatcher] ❌ OnRaidEnd error: " + ex);
+				LogError("[BotSpawnWatcher] ❌ OnRaidEnd error: " + ex);
 			}
 		}
 
@@ -82,7 +83,7 @@ namespace AIRefactored.Runtime
 
 			try
 			{
-				Logger.LogDebug("[BotSpawnWatcher] 🔄 Reset complete.");
+				LogDebug("[BotSpawnWatcher] 🔄 Reset complete.");
 			}
 			catch
 			{
@@ -103,7 +104,7 @@ namespace AIRefactored.Runtime
 				{
 					if (!_hasWarnedInvalid)
 					{
-						Logger.LogWarning("[BotSpawnWatcher] ⚠ Not ready or not host — polling deferred.");
+						LogWarn("[BotSpawnWatcher] ⚠ Not ready or not host — polling deferred.");
 						_hasWarnedInvalid = true;
 					}
 
@@ -112,7 +113,7 @@ namespace AIRefactored.Runtime
 
 				if (_hasWarnedInvalid)
 				{
-					Logger.LogDebug("[BotSpawnWatcher] ✅ Host world recovered — resuming.");
+					LogDebug("[BotSpawnWatcher] ✅ Host world recovered — resuming.");
 					_hasWarnedInvalid = false;
 				}
 
@@ -134,6 +135,12 @@ namespace AIRefactored.Runtime
 				{
 					Player player = players[i];
 					if (!EFTPlayerUtil.IsValid(player) || !player.IsAI || player.gameObject == null)
+					{
+						continue;
+					}
+
+					// Never inject AIRefactored bot brain if global nav is disabled
+					if (NavPointRegistry.AIRefactoredNavDisabled)
 					{
 						continue;
 					}
@@ -163,17 +170,17 @@ namespace AIRefactored.Runtime
 						GameWorldHandler.TryAttachBotBrain(player.AIData.BotOwner);
 
 						string name = player.Profile?.Info?.Nickname ?? player.ProfileId;
-						Logger.LogDebug("[BotSpawnWatcher] ✅ Brain injected for bot: " + name);
+						LogDebug("[BotSpawnWatcher] ✅ Brain injected for bot: " + name);
 					}
 					catch (Exception ex)
 					{
-						Logger.LogError("[BotSpawnWatcher] ❌ Brain injection failed for bot: " + ex);
+						LogError("[BotSpawnWatcher] ❌ Brain injection failed for bot: " + ex);
 					}
 				}
 			}
 			catch (Exception ex)
 			{
-				Logger.LogError("[BotSpawnWatcher] ❌ Tick error: " + ex);
+				LogError("[BotSpawnWatcher] ❌ Tick error: " + ex);
 			}
 		}
 
@@ -191,6 +198,28 @@ namespace AIRefactored.Runtime
 		public WorldPhase RequiredPhase()
 		{
 			return WorldPhase.WorldReady;
+		}
+
+		#endregion
+
+		#region Log Helpers
+
+		private static void LogDebug(string msg)
+		{
+			if (!FikaHeadlessDetector.IsHeadless)
+				Logger.LogDebug(msg);
+		}
+
+		private static void LogWarn(string msg)
+		{
+			if (!FikaHeadlessDetector.IsHeadless)
+				Logger.LogWarning(msg);
+		}
+
+		private static void LogError(string msg)
+		{
+			if (!FikaHeadlessDetector.IsHeadless)
+				Logger.LogError(msg);
 		}
 
 		#endregion

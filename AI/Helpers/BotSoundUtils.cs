@@ -14,6 +14,7 @@ namespace AIRefactored.AI.Helpers
     /// <summary>
     /// Sound-based awareness utilities for bots.
     /// Filters audio events based on recency and friend-or-foe logic.
+    /// Bulletproof: no logic in this class can break bot state or cascade into other systems.
     /// </summary>
     public static class BotSoundUtils
     {
@@ -22,11 +23,19 @@ namespace AIRefactored.AI.Helpers
         /// </summary>
         public static bool DidFireRecently(BotOwner self, Player source, float recentThreshold = 1.5f, float now = -1f)
         {
-            if (!EFTPlayerUtil.IsValidBotOwner(self) || !EFTPlayerUtil.IsValid(source))
-                return false;
+            try
+            {
+                if (!EFTPlayerUtil.IsValidBotOwner(self) || !EFTPlayerUtil.IsValid(source))
+                    return false;
 
-            return EFTPlayerUtil.IsEnemyOf(self, source)
-                   && BotSoundRegistry.FiredRecently(source, recentThreshold, now);
+                return EFTPlayerUtil.IsEnemyOf(self, source)
+                    && BotSoundRegistry.FiredRecently(source, recentThreshold, now);
+            }
+            catch
+            {
+                // Always fallback to "not detected" if any error occurs
+                return false;
+            }
         }
 
         /// <summary>
@@ -34,11 +43,19 @@ namespace AIRefactored.AI.Helpers
         /// </summary>
         public static bool DidStepRecently(BotOwner self, Player source, float recentThreshold = 1.2f, float now = -1f)
         {
-            if (!EFTPlayerUtil.IsValidBotOwner(self) || !EFTPlayerUtil.IsValid(source))
-                return false;
+            try
+            {
+                if (!EFTPlayerUtil.IsValidBotOwner(self) || !EFTPlayerUtil.IsValid(source))
+                    return false;
 
-            return EFTPlayerUtil.IsEnemyOf(self, source)
-                   && BotSoundRegistry.SteppedRecently(source, recentThreshold, now);
+                return EFTPlayerUtil.IsEnemyOf(self, source)
+                    && BotSoundRegistry.SteppedRecently(source, recentThreshold, now);
+            }
+            catch
+            {
+                // Always fallback to "not detected" if any error occurs
+                return false;
+            }
         }
     }
 }

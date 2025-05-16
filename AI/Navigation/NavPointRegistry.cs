@@ -39,7 +39,6 @@ namespace AIRefactored.AI.Navigation
 
         private static readonly List<NavPoint> Points = new List<NavPoint>(512);
         private static readonly HashSet<Vector3> Unique = new HashSet<Vector3>();
-
         private static readonly Dictionary<string, SpatialIndexMode> IndexModeMap =
             new Dictionary<string, SpatialIndexMode>(StringComparer.OrdinalIgnoreCase)
             {
@@ -91,7 +90,6 @@ namespace AIRefactored.AI.Navigation
             _useSpatial = false;
             _aiRefactoredNavDisabled = false;
             IsInitialized = true;
-
             Logger.LogDebug("[NavPointRegistry] Initialized.");
         }
 
@@ -118,6 +116,8 @@ namespace AIRefactored.AI.Navigation
                 Unique.Clear();
                 _quadtree?.Clear();
                 _spatialGrid?.Clear();
+                _quadtree = null;
+                _spatialGrid = null;
                 Logger.LogWarning("[NavPointRegistry] AIRefactored nav logic DISABLED due to fatal error. Reverting to vanilla Tarkov navigation.");
             }
         }
@@ -144,9 +144,7 @@ namespace AIRefactored.AI.Navigation
             {
                 NavPointData data = source[i];
                 if (!IsValid(data.Position) || !Unique.Add(data.Position))
-                {
                     continue;
-                }
 
                 var point = new NavPoint(
                     data.Position,
@@ -172,7 +170,6 @@ namespace AIRefactored.AI.Navigation
         public static List<NavPointData> GetAllPoints()
         {
             var result = TempListPool.Rent<NavPointData>();
-
             for (int i = 0; i < Points.Count; i++)
             {
                 var p = Points[i];
@@ -187,7 +184,6 @@ namespace AIRefactored.AI.Navigation
                     p.Zone,
                     p.ElevationBand));
             }
-
             return result;
         }
 
@@ -203,7 +199,6 @@ namespace AIRefactored.AI.Navigation
                 return;
             }
 
-            // Protect: Only register after WorldReady, and if not already ready
             if (!WorldInitState.IsInPhase(WorldPhase.WorldReady))
             {
                 Logger.LogWarning("[NavPointRegistry] RegisterAll() skipped — world not ready.");
@@ -216,7 +211,6 @@ namespace AIRefactored.AI.Navigation
                 return;
             }
 
-            // Don't re-register if already built for this raid
             if (IsInitialized && Points.Count > 0)
             {
                 Logger.LogDebug("[NavPointRegistry] Already built for this raid, skipping RegisterAll.");
@@ -243,7 +237,16 @@ namespace AIRefactored.AI.Navigation
                 return;
             }
 
-            NavPointBootstrapper.RegisterAll(mapId);
+            try
+            {
+                NavPointBootstrapper.RegisterAll(mapId);
+            }
+            catch (Exception ex)
+            {
+                Logger.LogError("[NavPointRegistry] NavPointBootstrapper.RegisterAll failed: " + ex);
+                Disable();
+                return;
+            }
 
             if (Count == 0)
             {
@@ -261,9 +264,7 @@ namespace AIRefactored.AI.Navigation
                 return;
 
             if (!IsValid(pos) || !Unique.Add(pos))
-            {
                 return;
-            }
 
             string elevationBand = GetElevationBand(elevation);
 
@@ -283,10 +284,7 @@ namespace AIRefactored.AI.Navigation
             var result = TempListPool.Rent<Vector3>();
 
             if (_aiRefactoredNavDisabled || Points.Count == 0)
-            {
-                // Fallback to vanilla/emergency nav if registry is empty/disabled
-                return result; // Empty: do not override vanilla pathing
-            }
+                return result;
 
             float radiusSq = radius * radius;
 
@@ -296,11 +294,8 @@ namespace AIRefactored.AI.Navigation
                 for (int i = 0; i < raw.Count; i++)
                 {
                     if (TryGetPoint(raw[i], out var nav) && (!coverOnly || nav.IsCover))
-                    {
                         result.Add(raw[i]);
-                    }
                 }
-
                 return result;
             }
 
@@ -311,11 +306,8 @@ namespace AIRefactored.AI.Navigation
                 {
                     Vector3 pos = raw[i].Position;
                     if ((!coverOnly || raw[i].IsCover) && (filter == null || filter(pos)))
-                    {
                         result.Add(pos);
-                    }
                 }
-
                 return result;
             }
 
@@ -325,12 +317,9 @@ namespace AIRefactored.AI.Navigation
                 if ((pos - origin).sqrMagnitude <= radiusSq && (!coverOnly || Points[i].IsCover))
                 {
                     if (filter == null || filter(pos))
-                    {
                         result.Add(pos);
-                    }
                 }
             }
-
             return result;
         }
 
@@ -339,10 +328,7 @@ namespace AIRefactored.AI.Navigation
             var result = TempListPool.Rent<NavPointData>();
 
             if (_aiRefactoredNavDisabled || Points.Count == 0)
-            {
-                // Fallback to vanilla/emergency nav if registry is empty/disabled
-                return result; // Empty: do not override vanilla pathing
-            }
+                return result;
 
             float radiusSq = radius * radius;
 
@@ -377,12 +363,9 @@ namespace AIRefactored.AI.Navigation
                         p.ElevationBand);
 
                     if (filter == null || filter(data))
-                    {
                         result.Add(data);
-                    }
                 }
             }
-
             return result;
         }
 
@@ -418,7 +401,6 @@ namespace AIRefactored.AI.Navigation
             Logger.LogDebug($"[NavPointRegistry] Indexing mode for map '{mapId}' => {mode}");
         }
 
-        // Safe wrapper: call only if points present
         private static void AutoEnableIndexModeSafe()
         {
             if (Points.Count == 0)
@@ -462,10 +444,7 @@ namespace AIRefactored.AI.Navigation
         public static Vector3 GetClosestPosition(Vector3 origin)
         {
             if (_aiRefactoredNavDisabled || Points.Count == 0)
-            {
-                // Registry empty/disabled: do not override vanilla pathing
                 return origin;
-            }
 
             Vector3 closest = Vector3.zero;
             float minDistSq = float.MaxValue;
@@ -502,17 +481,16 @@ namespace AIRefactored.AI.Navigation
                     return closest;
             }
 
-            foreach (var p in Points)
+            for (int i = 0; i < Points.Count; i++)
             {
-                float distSq = (origin - p.WorldPos).sqrMagnitude;
+                float distSq = (origin - Points[i].WorldPos).sqrMagnitude;
                 if (distSq < minDistSq)
                 {
                     minDistSq = distSq;
-                    closest = p.WorldPos;
+                    closest = Points[i].WorldPos;
                 }
             }
-
-            return IsValid(closest) ? closest : origin; // Never return zero, just return original
+            return IsValid(closest) ? closest : origin;
         }
 
         private static bool IsValid(Vector3 pos)
@@ -559,9 +537,7 @@ namespace AIRefactored.AI.Navigation
         private static QuadtreeNavGrid BuildQuadtree()
         {
             if (Points.Count == 0)
-            {
                 return null;
-            }
 
             float minX = float.MaxValue;
             float maxX = float.MinValue;

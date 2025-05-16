@@ -3,11 +3,13 @@
 //   Licensed under the MIT License. See LICENSE in the repository root for more information.
 //
 //   THIS FILE IS SYSTEMATICALLY MANAGED.
+//   Failures in AIRefactored logic must always trigger safe fallback to EFT base AI, never break the stack.
 //   Please follow strict StyleCop, ReSharper, and AI-Refactored code standards for all modifications.
 // </auto-generated>
 
 namespace AIRefactored.AI.Perception
 {
+    using System;
     using AIRefactored.AI.Core;
     using AIRefactored.AI.Groups;
     using AIRefactored.AI.Helpers;
@@ -44,30 +46,41 @@ namespace AIRefactored.AI.Perception
         private BotComponentCache _cache;
         private BotVisionProfile _profile;
 
+        private bool _failed; // disables all further logic if set
+
         #endregion
 
         #region Initialization
 
         public void Initialize(BotComponentCache cache)
         {
-            _bot = null;
-            _cache = null;
-            _profile = null;
+            try
+            {
+                _bot = null;
+                _cache = null;
+                _profile = null;
+                _failed = false;
 
-            if (cache == null || cache.Bot == null)
-                return;
+                if (cache == null || cache.Bot == null)
+                    return;
 
-            BotOwner owner = cache.Bot;
-            if (owner.IsDead || owner.GetPlayer == null || !owner.GetPlayer.IsAI)
-                return;
+                BotOwner owner = cache.Bot;
+                if (owner.IsDead || owner.GetPlayer == null || !owner.GetPlayer.IsAI)
+                    return;
 
-            BotVisionProfile profile = BotVisionProfiles.Get(owner.GetPlayer);
-            if (profile == null)
-                return;
+                BotVisionProfile profile = BotVisionProfiles.Get(owner.GetPlayer);
+                if (profile == null)
+                    return;
 
-            _bot = owner;
-            _cache = cache;
-            _profile = profile;
+                _bot = owner;
+                _cache = cache;
+                _profile = profile;
+            }
+            catch (Exception ex)
+            {
+                _failed = true;
+                Plugin.LoggerInstance.LogError($"[BotPerceptionSystem] Initialize exception: {ex}");
+            }
         }
 
         #endregion
@@ -76,27 +89,38 @@ namespace AIRefactored.AI.Perception
 
         public void Tick(float deltaTime)
         {
-            if (!IsActive())
+            if (_failed || !IsActive())
                 return;
 
-            UpdateFlashlightExposure();
-
-            float penalty = Mathf.Max(_flashBlindness, _flareIntensity, _suppressionFactor);
-            float adjustedSight = Mathf.Lerp(MinSightDistance, MaxSightDistance, 1f - penalty);
-            float visibleDist = adjustedSight * _profile.AdaptationSpeed;
-
-            if (_bot.LookSensor != null)
+            try
             {
-                _bot.LookSensor.ClearVisibleDist = visibleDist;
+                UpdateFlashlightExposure();
+
+                float penalty = Mathf.Max(_flashBlindness, _flareIntensity, _suppressionFactor);
+                float adjustedSight = Mathf.Lerp(MinSightDistance, MaxSightDistance, 1f - penalty);
+                float visibleDist = adjustedSight * (_profile != null ? _profile.AdaptationSpeed : 1f);
+
+                if (_bot.LookSensor != null)
+                {
+                    _bot.LookSensor.ClearVisibleDist = visibleDist;
+                }
+
+                float blindDuration = Mathf.Clamp01(_flashBlindness) * 3f;
+                if (_cache != null)
+                {
+                    _cache.IsBlinded = _flashBlindness > BlindSpeechThreshold;
+                    _cache.BlindUntilTime = Time.time + blindDuration;
+                }
+
+                TryTriggerPanic();
+                RecoverClarity(deltaTime);
+                SyncEnemyIfVisible();
             }
-
-            float blindDuration = Mathf.Clamp01(_flashBlindness) * 3f;
-            _cache.IsBlinded = _flashBlindness > BlindSpeechThreshold;
-            _cache.BlindUntilTime = Time.time + blindDuration;
-
-            TryTriggerPanic();
-            RecoverClarity(deltaTime);
-            SyncEnemyIfVisible();
+            catch (Exception ex)
+            {
+                _failed = true;
+                Plugin.LoggerInstance.LogError($"[BotPerceptionSystem] Tick exception: {ex}");
+            }
         }
 
         #endregion
@@ -105,41 +129,72 @@ namespace AIRefactored.AI.Perception
 
         public void ApplyFlareExposure(float strength)
         {
-            if (!IsActive())
+            if (_failed || !IsActive())
                 return;
 
-            _flareIntensity = Mathf.Clamp(strength * 0.6f, 0f, 0.8f);
+            try
+            {
+                _flareIntensity = Mathf.Clamp(strength * 0.6f, 0f, 0.8f);
+            }
+            catch (Exception ex)
+            {
+                _failed = true;
+                Plugin.LoggerInstance.LogError($"[BotPerceptionSystem] ApplyFlareExposure exception: {ex}");
+            }
         }
 
         public void ApplyFlashBlindness(float intensity)
         {
-            if (!IsActive())
+            if (_failed || !IsActive())
                 return;
 
-            float added = Mathf.Clamp01(intensity * (_profile != null ? _profile.MaxBlindness : 1f));
-            _flashBlindness = Mathf.Clamp01(_flashBlindness + added);
-            _blindStartTime = Time.time;
-
-            // Never run voice lines in headless/batchmode
-            if (_flashBlindness > BlindSpeechThreshold && _bot.BotTalk != null && !FikaHeadlessDetector.IsHeadless)
+            try
             {
-                _bot.BotTalk.TrySay(EPhraseTrigger.OnBeingHurt);
+                float added = Mathf.Clamp01(intensity * (_profile != null ? _profile.MaxBlindness : 1f));
+                _flashBlindness = Mathf.Clamp01(_flashBlindness + added);
+                _blindStartTime = Time.time;
+
+                if (_flashBlindness > BlindSpeechThreshold && _bot != null && _bot.BotTalk != null && !FikaHeadlessDetector.IsHeadless)
+                {
+                    _bot.BotTalk.TrySay(EPhraseTrigger.OnBeingHurt);
+                }
+            }
+            catch (Exception ex)
+            {
+                _failed = true;
+                Plugin.LoggerInstance.LogError($"[BotPerceptionSystem] ApplyFlashBlindness exception: {ex}");
             }
         }
 
         public void ApplySuppression(float severity)
         {
-            if (!IsActive())
+            if (_failed || !IsActive())
                 return;
 
-            _suppressionFactor = Mathf.Clamp01(severity * (_profile != null ? _profile.AggressionResponse : 1f));
+            try
+            {
+                _suppressionFactor = Mathf.Clamp01(severity * (_profile != null ? _profile.AggressionResponse : 1f));
+            }
+            catch (Exception ex)
+            {
+                _failed = true;
+                Plugin.LoggerInstance.LogError($"[BotPerceptionSystem] ApplySuppression exception: {ex}");
+            }
         }
 
         public void OnFlashExposure(Vector3 lightOrigin)
         {
-            if (IsActive())
+            if (_failed || !IsActive())
+                return;
+
+            try
             {
                 ApplyFlashBlindness(0.4f);
+            }
+            catch (Exception ex)
+            {
+                _failed = true;
+                Plugin.LoggerInstance.LogError($"[BotPerceptionSystem] OnFlashExposure exception: {ex}");
             }
         }
 
@@ -149,7 +204,8 @@ namespace AIRefactored.AI.Perception
 
         private bool IsActive()
         {
-            return _cache != null &&
+            return !_failed &&
+                   _cache != null &&
                    _bot != null &&
                    _profile != null &&
                    !_bot.IsDead &&
@@ -159,58 +215,93 @@ namespace AIRefactored.AI.Perception
 
         private void UpdateFlashlightExposure()
         {
-            Transform head = BotCacheUtility.Head(_cache);
-            if (head == null)
+            if (_failed)
                 return;
 
-            if (FlashlightRegistry.IsExposingBot(head, out Light source) && source != null)
+            try
             {
-                float score = FlashLightUtils.CalculateFlashScore(source.transform, head, 20f);
-                if (score > 0.25f)
+                Transform head = BotCacheUtility.Head(_cache);
+                if (head == null)
+                    return;
+
+                if (FlashlightRegistry.IsExposingBot(head, out Light source) && source != null)
                 {
-                    ApplyFlashBlindness(score);
+                    float score = FlashLightUtils.CalculateFlashScore(source.transform, head, 20f);
+                    if (score > 0.25f)
+                    {
+                        ApplyFlashBlindness(score);
+                    }
                 }
+            }
+            catch (Exception ex)
+            {
+                _failed = true;
+                Plugin.LoggerInstance.LogError($"[BotPerceptionSystem] UpdateFlashlightExposure exception: {ex}");
             }
         }
 
         private void RecoverClarity(float deltaTime)
         {
-            float recovery = _profile != null ? _profile.ClarityRecoverySpeed : 1f;
-            _flashBlindness = Mathf.MoveTowards(_flashBlindness, 0f, FlashRecoverySpeed * recovery * deltaTime);
-            _flareIntensity = Mathf.MoveTowards(_flareIntensity, 0f, FlareRecoverySpeed * recovery * deltaTime);
-            _suppressionFactor = Mathf.MoveTowards(_suppressionFactor, 0f, SuppressionRecoverySpeed * recovery * deltaTime);
+            try
+            {
+                float recovery = _profile != null ? _profile.ClarityRecoverySpeed : 1f;
+                _flashBlindness = Mathf.MoveTowards(_flashBlindness, 0f, FlashRecoverySpeed * recovery * deltaTime);
+                _flareIntensity = Mathf.MoveTowards(_flareIntensity, 0f, FlareRecoverySpeed * recovery * deltaTime);
+                _suppressionFactor = Mathf.MoveTowards(_suppressionFactor, 0f, SuppressionRecoverySpeed * recovery * deltaTime);
+            }
+            catch (Exception ex)
+            {
+                _failed = true;
+                Plugin.LoggerInstance.LogError($"[BotPerceptionSystem] RecoverClarity exception: {ex}");
+            }
         }
 
         private void TryTriggerPanic()
         {
-            if (_cache == null || _cache.PanicHandler == null)
-                return;
-
-            float elapsed = Time.time - _blindStartTime;
-            if (_flashBlindness >= PanicTriggerThreshold && elapsed < 2.5f)
+            try
             {
-                _cache.PanicHandler.TriggerPanic();
+                if (_cache == null || _cache.PanicHandler == null)
+                    return;
+
+                float elapsed = Time.time - _blindStartTime;
+                if (_flashBlindness >= PanicTriggerThreshold && elapsed < 2.5f)
+                {
+                    _cache.PanicHandler.TriggerPanic();
+                }
+            }
+            catch (Exception ex)
+            {
+                _failed = true;
+                Plugin.LoggerInstance.LogError($"[BotPerceptionSystem] TryTriggerPanic exception: {ex}");
             }
         }
 
         private void SyncEnemyIfVisible()
         {
-            if (_cache == null || _cache.IsBlinded || _bot == null || _bot.Memory == null)
-                return;
-
-            IPlayer raw = _bot.Memory.GoalEnemy?.Person;
-            if (raw == null)
-                return;
-
-            Player target = EFTPlayerUtil.AsEFTPlayer(raw);
-            Player self = EFTPlayerUtil.ResolvePlayer(_bot);
-
-            if (!EFTPlayerUtil.IsValid(target) || !EFTPlayerUtil.IsValid(self))
-                return;
-
-            if (EFTPlayerUtil.IsEnemyOf(_bot, target))
+            try
             {
-                BotTeamLogic.AddEnemy(_bot, raw);
+                if (_cache == null || _cache.IsBlinded || _bot == null || _bot.Memory == null)
+                    return;
+
+                IPlayer raw = _bot.Memory.GoalEnemy?.Person;
+                if (raw == null)
+                    return;
+
+                Player target = EFTPlayerUtil.AsEFTPlayer(raw);
+                Player self = EFTPlayerUtil.ResolvePlayer(_bot);
+
+                if (!EFTPlayerUtil.IsValid(target) || !EFTPlayerUtil.IsValid(self))
+                    return;
+
+                if (EFTPlayerUtil.IsEnemyOf(_bot, target))
+                {
+                    BotTeamLogic.AddEnemy(_bot, raw);
+                }
+            }
+            catch (Exception ex)
+            {
+                _failed = true;
+                Plugin.LoggerInstance.LogError($"[BotPerceptionSystem] SyncEnemyIfVisible exception: {ex}");
             }
         }
 

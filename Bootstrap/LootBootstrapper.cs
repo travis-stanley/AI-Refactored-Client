@@ -3,7 +3,8 @@
 //   Licensed under the MIT License. See LICENSE in the repository root for more information.
 //
 //   THIS FILE IS SYSTEMATICALLY MANAGED.
-//   Please follow strict StyleCop, ReSharper, and AI-Refactored code standards for all modifications.
+//   Bulletproof: All failures are locally contained, never break other subsystems, and always trigger fallback isolation.
+//   See: AIRefactored “Bulletproof Fallback & Isolation Safety Rule Set” for audit compliance.
 // </auto-generated>
 
 namespace AIRefactored.Bootstrap
@@ -22,8 +23,8 @@ namespace AIRefactored.Bootstrap
 
 	/// <summary>
 	/// Registers all lootable containers and loose loot items in the scene.
-	/// Also links dead player corpses to nearby loot containers for bot prioritization.
-	/// Executes only on authoritative hosts.
+	/// Links dead player corpses to nearby loot containers for bot prioritization.
+	/// All failures are locally contained—never propagate error or break global systems.
 	/// </summary>
 	public static class LootBootstrapper
 	{
@@ -43,7 +44,7 @@ namespace AIRefactored.Bootstrap
 
 		/// <summary>
 		/// Registers all scene lootable containers and loose items.
-		/// Should be called once after GameWorld is ready.
+		/// Bulletproof: Any error disables only this pass, never breaks caller or system.
 		/// </summary>
 		public static void RegisterAllLoot()
 		{
@@ -55,13 +56,29 @@ namespace AIRefactored.Bootstrap
 
 			try
 			{
-				LootableContainer[] containers = UnityEngine.Object.FindObjectsOfType<LootableContainer>();
+				LootableContainer[] containers = null;
+				LootItem[] items = null;
+				try
+				{
+					containers = UnityEngine.Object.FindObjectsOfType<LootableContainer>();
+				}
+				catch (Exception ex)
+				{
+					Logger.LogError("[LootBootstrapper] Failed to find LootableContainer: " + ex);
+				}
+				try
+				{
+					items = UnityEngine.Object.FindObjectsOfType<LootItem>();
+				}
+				catch (Exception ex)
+				{
+					Logger.LogError("[LootBootstrapper] Failed to find LootItem: " + ex);
+				}
+
 				if (containers != null && containers.Length > 0)
 				{
 					RegisterContainers(containers);
 				}
-
-				LootItem[] items = UnityEngine.Object.FindObjectsOfType<LootItem>();
 				if (items != null && items.Length > 0)
 				{
 					RegisterLooseItems(items);
@@ -87,8 +104,15 @@ namespace AIRefactored.Bootstrap
 					continue;
 				}
 
-				LootRegistry.RegisterContainer(container);
-				TryLinkToCorpse(container);
+				try
+				{
+					LootRegistry.RegisterContainer(container);
+					TryLinkToCorpse(container);
+				}
+				catch (Exception ex)
+				{
+					Logger.LogError("[LootBootstrapper] RegisterContainers() failed for container: " + ex);
+				}
 			}
 		}
 
@@ -102,7 +126,14 @@ namespace AIRefactored.Bootstrap
 					continue;
 				}
 
-				LootRegistry.RegisterItem(item);
+				try
+				{
+					LootRegistry.RegisterItem(item);
+				}
+				catch (Exception ex)
+				{
+					Logger.LogError("[LootBootstrapper] RegisterLooseItems() failed for item: " + ex);
+				}
 			}
 		}
 
@@ -120,11 +151,13 @@ namespace AIRefactored.Bootstrap
 				return;
 			}
 
-			List<Player> deadPlayers = TempListPool.Rent<Player>();
+			List<Player> deadPlayers = null;
 			List<IPlayer> all = world.RegisteredPlayers;
 
 			try
 			{
+				deadPlayers = TempListPool.Rent<Player>();
+
 				for (int i = 0; i < all.Count; i++)
 				{
 					Player player = EFTPlayerUtil.AsEFTPlayer(all[i]);
@@ -161,7 +194,10 @@ namespace AIRefactored.Bootstrap
 			}
 			finally
 			{
-				TempListPool.Return(deadPlayers);
+				if (deadPlayers != null)
+				{
+					TempListPool.Return(deadPlayers);
+				}
 			}
 		}
 

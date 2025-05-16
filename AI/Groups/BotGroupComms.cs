@@ -17,6 +17,7 @@ namespace AIRefactored.AI.Groups
     /// <summary>
     /// Controls squad VO communication: fallback shouts, frag calls, suppression alerts, and injury.
     /// Uses cooldowns, proximity checks, and chance modifiers to sound natural.
+    /// Bulletproof: All failures are isolated and only mute comms for this bot, never break AIRefactored.
     /// </summary>
     public sealed class BotGroupComms
     {
@@ -49,11 +50,19 @@ namespace AIRefactored.AI.Groups
 
         public BotGroupComms(BotComponentCache cache)
         {
-            if (cache == null || cache.Bot == null)
-                throw new ArgumentException("[BotGroupComms] Invalid cache or bot.");
+            try
+            {
+                if (cache == null || cache.Bot == null)
+                    throw new ArgumentException("[BotGroupComms] Invalid cache or bot.");
 
-            _cache = cache;
-            _bot = cache.Bot;
+                _cache = cache;
+                _bot = cache.Bot;
+            }
+            catch
+            {
+                // Comms are disabled for this bot if construction fails.
+                IsMuted = true;
+            }
         }
 
         #endregion
@@ -62,9 +71,16 @@ namespace AIRefactored.AI.Groups
 
         public void Say(EPhraseTrigger phrase)
         {
-            if (!IsMuted && IsEligible())
+            try
             {
-                _bot.BotTalk.TrySay(phrase);
+                if (!IsMuted && IsEligible())
+                {
+                    _bot.BotTalk.TrySay(phrase);
+                }
+            }
+            catch
+            {
+                IsMuted = true;
             }
         }
 
@@ -104,50 +120,63 @@ namespace AIRefactored.AI.Groups
 
         private void TryTriggerVoice(EPhraseTrigger phrase, float chance)
         {
-            if (IsMuted || _bot.BotTalk == null)
-                return;
+            try
+            {
+                if (IsMuted || _bot == null || _bot.BotTalk == null)
+                    return;
 
-            float now = Time.time;
-            if (now < _nextVoiceTime)
-                return;
+                float now = Time.time;
+                if (now < _nextVoiceTime)
+                    return;
 
-            if (chance < 1.0f && UnityEngine.Random.value > chance)
-                return;
+                if (chance < 1.0f && UnityEngine.Random.value > chance)
+                    return;
 
-            _nextVoiceTime = now + (VoiceCooldown * UnityEngine.Random.Range(0.8f, 1.2f));
-            _bot.BotTalk.TrySay(phrase);
+                _nextVoiceTime = now + (VoiceCooldown * UnityEngine.Random.Range(0.8f, 1.2f));
+                _bot.BotTalk.TrySay(phrase);
+            }
+            catch
+            {
+                IsMuted = true;
+            }
         }
 
         private bool HasNearbyAlly()
         {
-            if (_bot?.Profile?.Info == null)
-                return false;
-
-            string groupId = _bot.Profile.Info.GroupId;
-            if (string.IsNullOrEmpty(groupId))
-                return false;
-
-            Vector3 myPos = _bot.Position;
-
-            foreach (BotComponentCache other in BotCacheUtility.AllActiveBots())
+            try
             {
-                if (ReferenceEquals(other, _cache) || other.Bot == null || other.Bot.IsDead)
-                    continue;
+                if (_bot?.Profile?.Info == null)
+                    return false;
 
-                Profile otherProfile = other.Bot.Profile;
-                if (otherProfile?.Info == null)
-                    continue;
+                string groupId = _bot.Profile.Info.GroupId;
+                if (string.IsNullOrEmpty(groupId))
+                    return false;
 
-                if (!groupId.Equals(otherProfile.Info.GroupId, StringComparison.Ordinal))
-                    continue;
+                Vector3 myPos = _bot.Position;
 
-                Vector3 offset = other.Bot.Position - myPos;
-                if (offset.sqrMagnitude <= AllyRadiusSqr)
+                foreach (BotComponentCache other in BotCacheUtility.AllActiveBots())
                 {
-                    return true;
+                    if (ReferenceEquals(other, _cache) || other.Bot == null || other.Bot.IsDead)
+                        continue;
+
+                    Profile otherProfile = other.Bot.Profile;
+                    if (otherProfile?.Info == null)
+                        continue;
+
+                    if (!groupId.Equals(otherProfile.Info.GroupId, StringComparison.Ordinal))
+                        continue;
+
+                    Vector3 offset = other.Bot.Position - myPos;
+                    if (offset.sqrMagnitude <= AllyRadiusSqr)
+                    {
+                        return true;
+                    }
                 }
             }
-
+            catch
+            {
+                // Silent fail: treat as no ally nearby
+            }
             return false;
         }
 

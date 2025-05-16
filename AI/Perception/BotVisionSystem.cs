@@ -3,11 +3,13 @@
 //   Licensed under the MIT License. See LICENSE in the repository root for more information.
 //
 //   THIS FILE IS SYSTEMATICALLY MANAGED.
+//   Failures in AIRefactored logic must always trigger safe fallback to EFT base AI, never break the stack.
 //   Please follow strict StyleCop, ReSharper, and AI-Refactored code standards for all modifications.
 // </auto-generated>
 
 namespace AIRefactored.AI.Perception
 {
+    using System;
     using System.Collections.Generic;
     using AIRefactored.AI.Core;
     using AIRefactored.AI.Helpers;
@@ -51,6 +53,7 @@ namespace AIRefactored.AI.Perception
         private BotTacticalMemory _memory;
         private BotPersonalityProfile _profile;
         private float _lastCommitTime;
+        private bool _failed;
 
         #endregion
 
@@ -62,22 +65,31 @@ namespace AIRefactored.AI.Perception
         /// <param name="cache">Bot component cache.</param>
         public void Initialize(BotComponentCache cache)
         {
-            if (cache == null || cache.Bot == null || cache.TacticalMemory == null || cache.AIRefactoredBotOwner == null)
+            try
             {
-                // Hard guard for safety
-                _bot = null;
-                _cache = null;
-                _memory = null;
-                _profile = null;
-                _lastCommitTime = -999f;
-                return;
-            }
+                if (cache == null || cache.Bot == null || cache.TacticalMemory == null || cache.AIRefactoredBotOwner == null)
+                {
+                    _bot = null;
+                    _cache = null;
+                    _memory = null;
+                    _profile = null;
+                    _lastCommitTime = -999f;
+                    _failed = true;
+                    return;
+                }
 
-            _bot = cache.Bot;
-            _cache = cache;
-            _memory = cache.TacticalMemory;
-            _profile = cache.AIRefactoredBotOwner.PersonalityProfile;
-            _lastCommitTime = -999f;
+                _bot = cache.Bot;
+                _cache = cache;
+                _memory = cache.TacticalMemory;
+                _profile = cache.AIRefactoredBotOwner.PersonalityProfile;
+                _lastCommitTime = -999f;
+                _failed = false;
+            }
+            catch (Exception ex)
+            {
+                _failed = true;
+                Plugin.LoggerInstance.LogError($"[BotVisionSystem] Initialize exception: {ex}");
+            }
         }
 
         #endregion
@@ -89,70 +101,78 @@ namespace AIRefactored.AI.Perception
         /// </summary>
         public void Tick(float time)
         {
-            if (!IsValid())
+            if (_failed || !IsValid())
             {
                 return;
             }
 
-            Vector3 eye = _bot.Position + EyeOffset;
-            Vector3 forward = _bot.LookDirection;
-
-            float fogFactor = RenderSettings.fog ? Mathf.Clamp01(RenderSettings.fogDensity * 4f) : 0f;
-            float ambient = RenderSettings.ambientLight.grayscale;
-            float viewCone = Mathf.Lerp(BaseViewConeAngle, 60f, 1f - ambient);
-
-            Transform head = BotCacheUtility.Head(_cache);
-            if (head != null && FlashlightRegistry.IsExposingBot(head, out _))
+            try
             {
-                viewCone *= 0.6f;
-            }
+                Vector3 eye = _bot.Position + EyeOffset;
+                Vector3 forward = _bot.LookDirection;
 
-            List<Player> players = GameWorldHandler.GetAllAlivePlayers();
-            Player bestTarget = null;
-            float bestDist = float.MaxValue;
+                float fogFactor = RenderSettings.fog ? Mathf.Clamp01(RenderSettings.fogDensity * 4f) : 0f;
+                float ambient = RenderSettings.ambientLight.grayscale;
+                float viewCone = Mathf.Lerp(BaseViewConeAngle, 60f, 1f - ambient);
 
-            for (int i = 0, count = players.Count; i < count; i++)
-            {
-                Player p = players[i];
-                if (!IsValidTarget(p))
+                Transform head = BotCacheUtility.Head(_cache);
+                if (head != null && FlashlightRegistry.IsExposingBot(head, out _))
                 {
-                    continue;
+                    viewCone *= 0.6f;
                 }
 
-                Vector3 pos = EFTPlayerUtil.GetPosition(p);
-                float dist = Vector3.Distance(eye, pos);
-                float maxVis = MaxDetectionDistance * (1f - fogFactor);
+                List<Player> players = GameWorldHandler.GetAllAlivePlayers();
+                Player bestTarget = null;
+                float bestDist = float.MaxValue;
 
-                if (dist > maxVis)
+                for (int i = 0, count = players.Count; i < count; i++)
                 {
-                    continue;
-                }
-
-                bool inCone = IsInViewCone(forward, eye, pos, viewCone);
-                bool close = dist <= AutoDetectRadius;
-                bool canSee = HasLineOfSight(eye, p);
-
-                if ((inCone && canSee) || (close && canSee))
-                {
-                    if (dist < bestDist)
+                    Player p = players[i];
+                    if (!IsValidTarget(p))
                     {
-                        bestDist = dist;
-                        bestTarget = p;
+                        continue;
+                    }
+
+                    Vector3 pos = EFTPlayerUtil.GetPosition(p);
+                    float dist = Vector3.Distance(eye, pos);
+                    float maxVis = MaxDetectionDistance * (1f - fogFactor);
+
+                    if (dist > maxVis)
+                    {
+                        continue;
+                    }
+
+                    bool inCone = IsInViewCone(forward, eye, pos, viewCone);
+                    bool close = dist <= AutoDetectRadius;
+                    bool canSee = HasLineOfSight(eye, p);
+
+                    if ((inCone && canSee) || (close && canSee))
+                    {
+                        if (dist < bestDist)
+                        {
+                            bestDist = dist;
+                            bestTarget = p;
+                        }
+                    }
+                    else if ((inCone || close) && !canSee && !FikaHeadlessDetector.IsHeadless)
+                    {
+                        _bot.BotTalk?.TrySay(EPhraseTrigger.OnBeingHurt);
                     }
                 }
-                else if ((inCone || close) && !canSee && !FikaHeadlessDetector.IsHeadless)
+
+                if (bestTarget != null)
                 {
-                    _bot.BotTalk?.TrySay(EPhraseTrigger.OnBeingHurt);
+                    Vector3 pos = EFTPlayerUtil.GetPosition(bestTarget);
+                    _memory.RecordEnemyPosition(pos, "Visual", bestTarget.ProfileId);
+                    ShareMemoryToSquad(pos);
+                    TrackVisibleBones(eye, bestTarget, fogFactor);
+                    EvaluateTargetConfidence(bestTarget, time);
                 }
             }
-
-            if (bestTarget != null)
+            catch (Exception ex)
             {
-                Vector3 pos = EFTPlayerUtil.GetPosition(bestTarget);
-                _memory.RecordEnemyPosition(pos, "Visual", bestTarget.ProfileId);
-                ShareMemoryToSquad(pos);
-                TrackVisibleBones(eye, bestTarget, fogFactor);
-                EvaluateTargetConfidence(bestTarget, time);
+                _failed = true;
+                Plugin.LoggerInstance.LogError($"[BotVisionSystem] Tick exception: {ex}");
             }
         }
 
@@ -162,51 +182,67 @@ namespace AIRefactored.AI.Perception
 
         private void EvaluateTargetConfidence(Player target, float time)
         {
-            TrackedEnemyVisibility tracker = _cache.VisibilityTracker;
-            if (tracker == null || !tracker.HasEnoughData)
+            try
             {
-                return;
-            }
+                TrackedEnemyVisibility tracker = _cache.VisibilityTracker;
+                if (tracker == null || !tracker.HasEnoughData)
+                {
+                    return;
+                }
 
-            float confidence = tracker.GetOverallConfidence();
-            if (_bot.Memory.IsUnderFire && Random.value < SuppressionMissChance)
+                float confidence = tracker.GetOverallConfidence();
+                if (_bot.Memory.IsUnderFire && UnityEngine.Random.value < SuppressionMissChance)
+                {
+                    return;
+                }
+
+                if (confidence < BoneConfidenceThreshold)
+                {
+                    return;
+                }
+
+                CommitEnemyIfAllowed(target, time);
+            }
+            catch (Exception ex)
             {
-                return;
+                _failed = true;
+                Plugin.LoggerInstance.LogError($"[BotVisionSystem] EvaluateTargetConfidence exception: {ex}");
             }
-
-            if (confidence < BoneConfidenceThreshold)
-            {
-                return;
-            }
-
-            CommitEnemyIfAllowed(target, time);
         }
 
         private void CommitEnemyIfAllowed(Player target, float time)
         {
-            if (!EFTPlayerUtil.IsEnemyOf(_bot, target))
+            try
             {
-                return;
+                if (!EFTPlayerUtil.IsEnemyOf(_bot, target))
+                {
+                    return;
+                }
+
+                float delay = Mathf.Lerp(0.1f, 0.6f, 1f - _profile.ReactionTime);
+                if (time - _lastCommitTime < delay)
+                {
+                    return;
+                }
+
+                IPlayer enemy = EFTPlayerUtil.AsSafeIPlayer(target);
+                if (enemy == null || _bot.BotsGroup == null)
+                {
+                    return;
+                }
+
+                _bot.BotsGroup.AddEnemy(enemy, EBotEnemyCause.addPlayer);
+                _lastCommitTime = time;
+
+                if (!FikaHeadlessDetector.IsHeadless)
+                {
+                    _bot.BotTalk?.TrySay(EPhraseTrigger.OnEnemyConversation);
+                }
             }
-
-            float delay = Mathf.Lerp(0.1f, 0.6f, 1f - _profile.ReactionTime);
-            if (time - _lastCommitTime < delay)
+            catch (Exception ex)
             {
-                return;
-            }
-
-            IPlayer enemy = EFTPlayerUtil.AsSafeIPlayer(target);
-            if (enemy == null || _bot.BotsGroup == null)
-            {
-                return;
-            }
-
-            _bot.BotsGroup.AddEnemy(enemy, EBotEnemyCause.addPlayer);
-            _lastCommitTime = time;
-
-            if (!FikaHeadlessDetector.IsHeadless)
-            {
-                _bot.BotTalk?.TrySay(EPhraseTrigger.OnEnemyConversation);
+                _failed = true;
+                Plugin.LoggerInstance.LogError($"[BotVisionSystem] CommitEnemyIfAllowed exception: {ex}");
             }
         }
 
@@ -216,40 +252,53 @@ namespace AIRefactored.AI.Perception
 
         private void TrackVisibleBones(Vector3 eye, Player target, float fog)
         {
-            if (_cache.VisibilityTracker == null)
+            try
             {
-                _cache.VisibilityTracker = new TrackedEnemyVisibility(_bot.Transform.Original);
-            }
-
-            TrackedEnemyVisibility tracker = _cache.VisibilityTracker;
-
-            if (target.TryGetComponent<PlayerSpiritBones>(out PlayerSpiritBones bones))
-            {
-                Bounds[] bounds = TempBoundsPool.Rent(BonesToCheck.Length);
-
-                for (int i = 0; i < BonesToCheck.Length; i++)
+                if (_cache.VisibilityTracker == null)
                 {
-                    Transform bone = bones.GetBone(BonesToCheck[i]).Original;
-                    if (bone != null && !Physics.Linecast(eye, bone.position, out _, AIRefactoredLayerMasks.LineOfSightMask))
+                    _cache.VisibilityTracker = new TrackedEnemyVisibility(_bot.Transform.Original);
+                }
+
+                TrackedEnemyVisibility tracker = _cache.VisibilityTracker;
+
+                if (target.TryGetComponent<PlayerSpiritBones>(out PlayerSpiritBones bones))
+                {
+                    Bounds[] bounds = TempBoundsPool.Rent(BonesToCheck.Length);
+
+                    try
                     {
-                        bounds[i] = new Bounds(bone.position, Vector3.one * 0.2f);
-                        float boost = IsMovingFast(target) ? MotionBoost : 0f;
-                        tracker.UpdateBoneVisibility(BonesToCheck[i].ToString(), bone.position, boost, fog);
+                        for (int i = 0; i < BonesToCheck.Length; i++)
+                        {
+                            Transform bone = bones.GetBone(BonesToCheck[i]).Original;
+                            if (bone != null && !Physics.Linecast(eye, bone.position, out _, AIRefactoredLayerMasks.LineOfSightMask))
+                            {
+                                bounds[i] = new Bounds(bone.position, Vector3.one * 0.2f);
+                                float boost = IsMovingFast(target) ? MotionBoost : 0f;
+                                tracker.UpdateBoneVisibility(BonesToCheck[i].ToString(), bone.position, boost, fog);
+                            }
+                        }
+                    }
+                    finally
+                    {
+                        TempBoundsPool.Return(bounds);
+                    }
+                }
+                else
+                {
+                    Transform tf = EFTPlayerUtil.GetTransform(target);
+                    if (tf != null && !Physics.Linecast(eye, tf.position, out _, AIRefactoredLayerMasks.LineOfSightMask))
+                    {
+                        tracker.UpdateBoneVisibility("Body", tf.position);
                     }
                 }
 
-                TempBoundsPool.Return(bounds);
+                tracker.DecayConfidence(BoneConfidenceDecay * Time.deltaTime);
             }
-            else
+            catch (Exception ex)
             {
-                Transform tf = EFTPlayerUtil.GetTransform(target);
-                if (tf != null && !Physics.Linecast(eye, tf.position, out _, AIRefactoredLayerMasks.LineOfSightMask))
-                {
-                    tracker.UpdateBoneVisibility("Body", tf.position);
-                }
+                _failed = true;
+                Plugin.LoggerInstance.LogError($"[BotVisionSystem] TrackVisibleBones exception: {ex}");
             }
-
-            tracker.DecayConfidence(BoneConfidenceDecay * Time.deltaTime);
         }
 
         #endregion
@@ -313,7 +362,8 @@ namespace AIRefactored.AI.Perception
 
         private bool IsValid()
         {
-            return _bot != null &&
+            return !_failed &&
+                   _bot != null &&
                    _cache != null &&
                    _profile != null &&
                    _memory != null &&

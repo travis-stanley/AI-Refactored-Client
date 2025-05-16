@@ -19,6 +19,7 @@ namespace AIRefactored.AI.Movement
     /// <summary>
     /// Scans for edges and corners to trigger realistic lean, crouch, or pause behavior.
     /// Aggressive bots peek corners quickly, cautious bots crouch before engaging.
+    /// All failures are locally isolated; cannot break or cascade into other systems.
     /// </summary>
     public sealed class BotCornerScanner
     {
@@ -75,23 +76,30 @@ namespace AIRefactored.AI.Movement
 
         public void Initialize(BotOwner bot, BotComponentCache cache)
         {
-            if (!EFTPlayerUtil.IsValidBotOwner(bot) || cache == null || bot.Transform == null)
+            try
             {
-                Log.LogWarning("[BotCornerScanner] Initialization skipped — invalid bot or transform.");
-                return;
-            }
+                if (!EFTPlayerUtil.IsValidBotOwner(bot) || cache == null || bot.Transform == null)
+                {
+                    Log.LogWarning("[BotCornerScanner] Initialization skipped — invalid bot or transform.");
+                    return;
+                }
 
-            BotPersonalityProfile profile = cache.AIRefactoredBotOwner?.PersonalityProfile;
-            if (profile == null)
+                BotPersonalityProfile profile = cache.AIRefactoredBotOwner?.PersonalityProfile;
+                if (profile == null)
+                {
+                    Log.LogWarning("[BotCornerScanner] Initialization failed — missing personality for bot " + bot.ProfileId);
+                    return;
+                }
+
+                _bot = bot;
+                _cache = cache;
+                _profile = profile;
+                _isInitialized = true;
+            }
+            catch (Exception ex)
             {
-                Log.LogWarning("[BotCornerScanner] Initialization failed — missing personality for bot " + bot.ProfileId);
-                return;
+                Log.LogError("[BotCornerScanner] Initialize failed: " + ex);
             }
-
-            _bot = bot;
-            _cache = cache;
-            _profile = profile;
-            _isInitialized = true;
         }
 
         #endregion
@@ -100,43 +108,50 @@ namespace AIRefactored.AI.Movement
 
         public void Tick(float time)
         {
-            if (!_isInitialized || _bot == null || _cache == null || _profile == null)
+            try
             {
-                return;
-            }
+                if (!_isInitialized || _bot == null || _cache == null || _profile == null)
+                {
+                    return;
+                }
 
-            if (_bot.IsDead || _bot.Mover == null || _bot.Transform == null)
+                if (_bot.IsDead || _bot.Mover == null || _bot.Transform == null)
+                {
+                    return;
+                }
+
+                if (_cache.Tilt == null || _cache.PoseController == null)
+                {
+                    return;
+                }
+
+                if (_bot.Memory != null && _bot.Memory.GoalEnemy != null)
+                {
+                    return;
+                }
+
+                if (time < _pauseUntil || time < _prepCrouchUntil)
+                {
+                    return;
+                }
+
+                if (IsApproachingEdge())
+                {
+                    PauseMovement(time);
+                    return;
+                }
+
+                if (TryCornerPeekWithCrouch(time))
+                {
+                    return;
+                }
+
+                ResetLean(time);
+            }
+            catch (Exception ex)
             {
-                return;
+                Log.LogError("[BotCornerScanner] Tick failed: " + ex);
             }
-
-            if (_cache.Tilt == null || _cache.PoseController == null)
-            {
-                return;
-            }
-
-            if (_bot.Memory != null && _bot.Memory.GoalEnemy != null)
-            {
-                return;
-            }
-
-            if (time < _pauseUntil || time < _prepCrouchUntil)
-            {
-                return;
-            }
-
-            if (IsApproachingEdge())
-            {
-                PauseMovement(time);
-                return;
-            }
-
-            if (TryCornerPeekWithCrouch(time))
-            {
-                return;
-            }
-
-            ResetLean(time);
         }
 
         #endregion
@@ -145,46 +160,59 @@ namespace AIRefactored.AI.Movement
 
         private bool IsApproachingEdge()
         {
-            Vector3 origin = _bot.Position + Vector3.up * 0.2f;
-            Vector3 forward = _bot.Transform.forward;
-            Vector3 right = _bot.Transform.right;
-
-            int rays = Mathf.CeilToInt((EdgeCheckDistance * 2f) / EdgeRaySpacing);
-
-            for (int i = 0; i < rays; i++)
+            try
             {
-                float offset = (i - (rays * 0.5f)) * EdgeRaySpacing;
-                Vector3 rayOrigin = origin + (right * offset) + (forward * EdgeCheckDistance);
-                Vector3 rayDown = rayOrigin + Vector3.down * MinFallHeight;
+                Vector3 origin = _bot.Position + Vector3.up * 0.2f;
+                Vector3 forward = _bot.Transform.forward;
+                Vector3 right = _bot.Transform.right;
 
-                // Must not be over a walkable surface, and must not have navmesh beneath
-                if (!Physics.Raycast(rayOrigin, Vector3.down, MinFallHeight, AIRefactoredLayerMasks.NavObstacleMask))
+                int rays = Mathf.CeilToInt((EdgeCheckDistance * 2f) / EdgeRaySpacing);
+
+                for (int i = 0; i < rays; i++)
                 {
-                    if (!NavMesh.SamplePosition(rayDown, out NavMeshHit hit, 1.0f, NavMesh.AllAreas) || hit.distance > NavSampleTolerance)
+                    float offset = (i - (rays * 0.5f)) * EdgeRaySpacing;
+                    Vector3 rayOrigin = origin + (right * offset) + (forward * EdgeCheckDistance);
+                    Vector3 rayDown = rayOrigin + Vector3.down * MinFallHeight;
+
+                    // Must not be over a walkable surface, and must not have navmesh beneath
+                    if (!Physics.Raycast(rayOrigin, Vector3.down, MinFallHeight, AIRefactoredLayerMasks.NavObstacleMask))
                     {
-                        return true;
+                        if (!NavMesh.SamplePosition(rayDown, out NavMeshHit hit, 1.0f, NavMesh.AllAreas) || hit.distance > NavSampleTolerance)
+                        {
+                            return true;
+                        }
                     }
                 }
             }
-
+            catch (Exception ex)
+            {
+                Log.LogError("[BotCornerScanner] IsApproachingEdge failed: " + ex);
+            }
             return false;
         }
 
         private bool TryCornerPeekWithCrouch(float time)
         {
-            Vector3 origin = _bot.Position + Vector3.up * WallCheckHeight;
-            Vector3 right = _bot.Transform.right;
-            Vector3 left = -right;
-            float dist = BaseWallCheckDistance + ((1f - _profile.Caution) * 0.5f);
-
-            if (CheckWall(origin, left, dist))
+            try
             {
-                return TriggerLeanOrCrouch(BotTiltType.left, time);
+                Vector3 origin = _bot.Position + Vector3.up * WallCheckHeight;
+                Vector3 right = _bot.Transform.right;
+                Vector3 left = -right;
+                float dist = BaseWallCheckDistance + ((1f - _profile.Caution) * 0.5f);
+
+                if (CheckWall(origin, left, dist))
+                {
+                    return TriggerLeanOrCrouch(BotTiltType.left, time);
+                }
+
+                if (CheckWall(origin, right, dist))
+                {
+                    return TriggerLeanOrCrouch(BotTiltType.right, time);
+                }
             }
-
-            if (CheckWall(origin, right, dist))
+            catch (Exception ex)
             {
-                return TriggerLeanOrCrouch(BotTiltType.right, time);
+                Log.LogError("[BotCornerScanner] TryCornerPeekWithCrouch failed: " + ex);
             }
 
             return false;
@@ -192,41 +220,63 @@ namespace AIRefactored.AI.Movement
 
         private bool CheckWall(Vector3 origin, Vector3 dir, float dist)
         {
-            if (!Physics.Raycast(origin, dir, out RaycastHit hit, dist, AIRefactoredLayerMasks.CoverRayMask))
+            try
             {
+                if (!Physics.Raycast(origin, dir, out RaycastHit hit, dist, AIRefactoredLayerMasks.CoverRayMask))
+                {
+                    return false;
+                }
+
+                return Vector3.Dot(hit.normal, dir) < WallAngleThreshold;
+            }
+            catch (Exception ex)
+            {
+                Log.LogError("[BotCornerScanner] CheckWall failed: " + ex);
                 return false;
             }
-
-            return Vector3.Dot(hit.normal, dir) < WallAngleThreshold;
         }
 
         private bool TriggerLeanOrCrouch(BotTiltType side, float time)
         {
-            if (!_isCrouching && AttemptCrouch(time))
+            try
             {
-                _isCrouching = true;
+                if (!_isCrouching && AttemptCrouch(time))
+                {
+                    _isCrouching = true;
+                    return true;
+                }
+
+                if (!_isLeaning)
+                {
+                    _cache.Tilt.Set(side);
+                    PauseMovement(time);
+                    _isLeaning = true;
+                }
+
                 return true;
             }
-
-            if (!_isLeaning)
+            catch (Exception ex)
             {
-                _cache.Tilt.Set(side);
-                PauseMovement(time);
-                _isLeaning = true;
+                Log.LogError("[BotCornerScanner] TriggerLeanOrCrouch failed: " + ex);
+                return false;
             }
-
-            return true;
         }
 
         private bool AttemptCrouch(float time)
         {
-            if (_cache.PoseController.GetPoseLevel() > 30f)
+            try
             {
-                _cache.PoseController.SetCrouch();
-                _prepCrouchUntil = time + PrepCrouchTime;
-                return true;
+                if (_cache.PoseController.GetPoseLevel() > 30f)
+                {
+                    _cache.PoseController.SetCrouch();
+                    _prepCrouchUntil = time + PrepCrouchTime;
+                    return true;
+                }
             }
-
+            catch (Exception ex)
+            {
+                Log.LogError("[BotCornerScanner] AttemptCrouch failed: " + ex);
+            }
             return false;
         }
 
@@ -236,21 +286,35 @@ namespace AIRefactored.AI.Movement
 
         private void PauseMovement(float time)
         {
-            float duration = BasePauseDuration * Mathf.Clamp(0.5f + _profile.Caution, 0.35f, 2.0f);
-            _bot.Mover.MovementPause(duration);
-            _pauseUntil = time + duration;
+            try
+            {
+                float duration = BasePauseDuration * Mathf.Clamp(0.5f + _profile.Caution, 0.35f, 2.0f);
+                _bot.Mover.MovementPause(duration);
+                _pauseUntil = time + duration;
+            }
+            catch (Exception ex)
+            {
+                Log.LogError("[BotCornerScanner] PauseMovement failed: " + ex);
+            }
         }
 
         private void ResetLean(float time)
         {
-            if (_cache.Tilt != null && _cache.Tilt._coreTilt)
+            try
             {
-                _cache.Tilt.tiltOff = time - 1f;
-                _cache.Tilt.ManualUpdate();
-            }
+                if (_cache.Tilt != null && _cache.Tilt._coreTilt)
+                {
+                    _cache.Tilt.tiltOff = time - 1f;
+                    _cache.Tilt.ManualUpdate();
+                }
 
-            _isLeaning = false;
-            _isCrouching = false;
+                _isLeaning = false;
+                _isCrouching = false;
+            }
+            catch (Exception ex)
+            {
+                Log.LogError("[BotCornerScanner] ResetLean failed: " + ex);
+            }
         }
 
         #endregion

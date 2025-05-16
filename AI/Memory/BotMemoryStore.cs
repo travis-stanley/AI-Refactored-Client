@@ -8,14 +8,17 @@
 
 namespace AIRefactored.AI.Memory
 {
+    using System;
     using System.Collections.Generic;
     using AIRefactored.Core;
     using AIRefactored.Pools;
+    using BepInEx.Logging;
     using EFT;
     using UnityEngine;
 
     /// <summary>
     /// Centralized tactical memory for bots. Tracks short-term audio, hits, and local danger zones.
+    /// All failures are locally isolated; memory logic cannot break other subsystems or the mod.
     /// </summary>
     public static class BotMemoryStore
     {
@@ -24,6 +27,12 @@ namespace AIRefactored.AI.Memory
         private const float DangerZoneTTL = 45f;
         private const float HitMemoryDuration = 10f;
         private const int MaxZones = 256;
+
+        #endregion
+
+        #region Logging
+
+        private static readonly ManualLogSource Logger = Plugin.LoggerInstance;
 
         #endregion
 
@@ -42,69 +51,95 @@ namespace AIRefactored.AI.Memory
 
         public static void AddDangerZone(string mapId, Vector3 position, DangerTriggerType type, float radius)
         {
-            if (!TryGetSafeKey(mapId, out string key)) key = "unknown";
-
-            if (Zones.Count >= MaxZones)
+            try
             {
-                Zones.RemoveAt(0);
-            }
+                if (!TryGetSafeKey(mapId, out string key)) key = "unknown";
 
-            Zones.Add(new DangerZone(key, position, type, radius, Time.time));
+                if (Zones.Count >= MaxZones)
+                {
+                    Zones.RemoveAt(0);
+                }
+
+                Zones.Add(new DangerZone(key, position, type, radius, Time.time));
+            }
+            catch (Exception ex)
+            {
+                Logger.LogError($"[BotMemoryStore] AddDangerZone failed: {ex}");
+            }
         }
 
         public static List<DangerZone> GetZonesForMap(string mapId)
         {
             List<DangerZone> result = TempListPool.Rent<DangerZone>();
-
-            if (!TryGetSafeKey(mapId, out string key)) return result;
-
-            if (!ZoneCaches.TryGetValue(key, out List<DangerZone> cache))
+            try
             {
-                cache = TempListPool.Rent<DangerZone>();
-                ZoneCaches[key] = cache;
-            }
-            else
-            {
-                cache.Clear();
-            }
+                if (!TryGetSafeKey(mapId, out string key)) return result;
 
-            float now = Time.time;
-            for (int i = 0; i < Zones.Count; i++)
-            {
-                DangerZone zone = Zones[i];
-                if (zone.Map == key && (now - zone.Timestamp) <= DangerZoneTTL)
+                if (!ZoneCaches.TryGetValue(key, out List<DangerZone> cache))
                 {
-                    cache.Add(zone);
+                    cache = TempListPool.Rent<DangerZone>();
+                    ZoneCaches[key] = cache;
                 }
-            }
+                else
+                {
+                    cache.Clear();
+                }
 
-            result.AddRange(cache);
+                float now = Time.time;
+                for (int i = 0; i < Zones.Count; i++)
+                {
+                    DangerZone zone = Zones[i];
+                    if (zone.Map == key && (now - zone.Timestamp) <= DangerZoneTTL)
+                    {
+                        cache.Add(zone);
+                    }
+                }
+
+                result.AddRange(cache);
+            }
+            catch (Exception ex)
+            {
+                Logger.LogError($"[BotMemoryStore] GetZonesForMap failed: {ex}");
+            }
             return result;
         }
 
         public static bool IsPositionInDangerZone(string mapId, Vector3 position)
         {
-            if (!TryGetSafeKey(mapId, out string key)) return false;
-
-            float now = Time.time;
-            for (int i = 0; i < Zones.Count; i++)
+            try
             {
-                DangerZone zone = Zones[i];
-                if (zone.Map != key || now - zone.Timestamp > DangerZoneTTL) continue;
+                if (!TryGetSafeKey(mapId, out string key)) return false;
 
-                if ((zone.Position - position).sqrMagnitude <= zone.Radius * zone.Radius)
+                float now = Time.time;
+                for (int i = 0; i < Zones.Count; i++)
                 {
-                    return true;
+                    DangerZone zone = Zones[i];
+                    if (zone.Map != key || now - zone.Timestamp > DangerZoneTTL) continue;
+
+                    if ((zone.Position - position).sqrMagnitude <= zone.Radius * zone.Radius)
+                    {
+                        return true;
+                    }
                 }
             }
-
+            catch (Exception ex)
+            {
+                Logger.LogError($"[BotMemoryStore] IsPositionInDangerZone failed: {ex}");
+            }
             return false;
         }
 
         public static void ClearZones()
         {
-            Zones.Clear();
-            ZoneCaches.Clear();
+            try
+            {
+                Zones.Clear();
+                ZoneCaches.Clear();
+            }
+            catch (Exception ex)
+            {
+                Logger.LogError($"[BotMemoryStore] ClearZones failed: {ex}");
+            }
         }
 
         #endregion
@@ -113,40 +148,69 @@ namespace AIRefactored.AI.Memory
 
         public static void AddHeardSound(string profileId, Vector3 position, float time)
         {
-            if (!TryGetSafeKey(profileId, out string key)) return;
-
-            if (!ShortTermHeardSounds.TryGetValue(key, out List<HeardSound> list))
+            try
             {
-                list = TempListPool.Rent<HeardSound>();
-                ShortTermHeardSounds[key] = list;
-            }
+                if (!TryGetSafeKey(profileId, out string key)) return;
 
-            list.Add(new HeardSound(position, time));
+                if (!ShortTermHeardSounds.TryGetValue(key, out List<HeardSound> list))
+                {
+                    list = TempListPool.Rent<HeardSound>();
+                    ShortTermHeardSounds[key] = list;
+                }
+
+                list.Add(new HeardSound(position, time));
+            }
+            catch (Exception ex)
+            {
+                Logger.LogError($"[BotMemoryStore] AddHeardSound failed: {ex}");
+            }
         }
 
         public static bool TryGetHeardSound(string profileId, out HeardSound sound)
         {
             sound = default(HeardSound);
-            return TryGetSafeKey(profileId, out string key) && HeardSounds.TryGetValue(key, out sound);
+            try
+            {
+                return TryGetSafeKey(profileId, out string key) && HeardSounds.TryGetValue(key, out sound);
+            }
+            catch (Exception ex)
+            {
+                Logger.LogError($"[BotMemoryStore] TryGetHeardSound failed: {ex}");
+                return false;
+            }
         }
 
         public static void ClearHeardSound(string profileId)
         {
-            if (!TryGetSafeKey(profileId, out string key)) return;
-
-            HeardSounds.Remove(key);
-            if (ShortTermHeardSounds.TryGetValue(key, out List<HeardSound> list))
+            try
             {
-                list.Clear();
+                if (!TryGetSafeKey(profileId, out string key)) return;
+
+                HeardSounds.Remove(key);
+                if (ShortTermHeardSounds.TryGetValue(key, out List<HeardSound> list))
+                {
+                    list.Clear();
+                }
+            }
+            catch (Exception ex)
+            {
+                Logger.LogError($"[BotMemoryStore] ClearHeardSound failed: {ex}");
             }
         }
 
         public static void ClearAllHeardSounds()
         {
-            HeardSounds.Clear();
-            foreach (var entry in ShortTermHeardSounds)
+            try
             {
-                entry.Value.Clear();
+                HeardSounds.Clear();
+                foreach (var entry in ShortTermHeardSounds)
+                {
+                    entry.Value.Clear();
+                }
+            }
+            catch (Exception ex)
+            {
+                Logger.LogError($"[BotMemoryStore] ClearAllHeardSounds failed: {ex}");
             }
         }
 
@@ -156,31 +220,53 @@ namespace AIRefactored.AI.Memory
 
         public static void RegisterLastHitSource(string victimProfileId, string attackerProfileId)
         {
-            if (!TryGetSafeKey(victimProfileId, out string victim) ||
-                !TryGetSafeKey(attackerProfileId, out string attacker))
+            try
             {
-                return;
-            }
+                if (!TryGetSafeKey(victimProfileId, out string victim) ||
+                    !TryGetSafeKey(attackerProfileId, out string attacker))
+                {
+                    return;
+                }
 
-            LastHitSources[victim] = new LastHitInfo(attacker, Time.time);
+                LastHitSources[victim] = new LastHitInfo(attacker, Time.time);
+            }
+            catch (Exception ex)
+            {
+                Logger.LogError($"[BotMemoryStore] RegisterLastHitSource failed: {ex}");
+            }
         }
 
         public static bool WasRecentlyHitBy(string victimProfileId, string attackerProfileId)
         {
-            if (!TryGetSafeKey(victimProfileId, out string victim) ||
-                !TryGetSafeKey(attackerProfileId, out string attacker))
+            try
             {
+                if (!TryGetSafeKey(victimProfileId, out string victim) ||
+                    !TryGetSafeKey(attackerProfileId, out string attacker))
+                {
+                    return false;
+                }
+
+                return LastHitSources.TryGetValue(victim, out LastHitInfo hit) &&
+                       hit.AttackerId == attacker &&
+                       Time.time - hit.Time <= HitMemoryDuration;
+            }
+            catch (Exception ex)
+            {
+                Logger.LogError($"[BotMemoryStore] WasRecentlyHitBy failed: {ex}");
                 return false;
             }
-
-            return LastHitSources.TryGetValue(victim, out LastHitInfo hit) &&
-                   hit.AttackerId == attacker &&
-                   Time.time - hit.Time <= HitMemoryDuration;
         }
 
         public static void ClearHitSources()
         {
-            LastHitSources.Clear();
+            try
+            {
+                LastHitSources.Clear();
+            }
+            catch (Exception ex)
+            {
+                Logger.LogError($"[BotMemoryStore] ClearHitSources failed: {ex}");
+            }
         }
 
         #endregion
@@ -189,22 +275,44 @@ namespace AIRefactored.AI.Memory
 
         public static void SetLastFlankTime(string profileId)
         {
-            if (TryGetSafeKey(profileId, out string key))
+            try
             {
-                LastFlankTimes[key] = Time.time;
+                if (TryGetSafeKey(profileId, out string key))
+                {
+                    LastFlankTimes[key] = Time.time;
+                }
+            }
+            catch (Exception ex)
+            {
+                Logger.LogError($"[BotMemoryStore] SetLastFlankTime failed: {ex}");
             }
         }
 
         public static bool CanFlankNow(string profileId, float cooldown)
         {
-            if (!TryGetSafeKey(profileId, out string key)) return false;
+            try
+            {
+                if (!TryGetSafeKey(profileId, out string key)) return false;
 
-            return !LastFlankTimes.TryGetValue(key, out float last) || (Time.time - last >= cooldown);
+                return !LastFlankTimes.TryGetValue(key, out float last) || (Time.time - last >= cooldown);
+            }
+            catch (Exception ex)
+            {
+                Logger.LogError($"[BotMemoryStore] CanFlankNow failed: {ex}");
+                return false;
+            }
         }
 
         public static void ClearFlankCooldowns()
         {
-            LastFlankTimes.Clear();
+            try
+            {
+                LastFlankTimes.Clear();
+            }
+            catch (Exception ex)
+            {
+                Logger.LogError($"[BotMemoryStore] ClearFlankCooldowns failed: {ex}");
+            }
         }
 
         #endregion
@@ -214,24 +322,30 @@ namespace AIRefactored.AI.Memory
         public static List<Player> GetNearbyPlayers(Vector3 origin, float radius)
         {
             List<Player> result = TempListPool.Rent<Player>();
-            List<Player> players = GameWorldHandler.GetAllAlivePlayers();
-            float rangeSqr = radius * radius;
-
-            for (int i = 0; i < players.Count; i++)
+            try
             {
-                Player p = players[i];
-                if (p != null && IsRealPlayer(p))
+                List<Player> players = GameWorldHandler.GetAllAlivePlayers();
+                float rangeSqr = radius * radius;
+
+                for (int i = 0; i < players.Count; i++)
                 {
-                    Vector3 pos = EFTPlayerUtil.GetPosition(p);
-                    float dx = pos.x - origin.x;
-                    float dz = pos.z - origin.z;
-                    if ((dx * dx + dz * dz) <= rangeSqr)
+                    Player p = players[i];
+                    if (p != null && IsRealPlayer(p))
                     {
-                        result.Add(p);
+                        Vector3 pos = EFTPlayerUtil.GetPosition(p);
+                        float dx = pos.x - origin.x;
+                        float dz = pos.z - origin.z;
+                        if ((dx * dx + dz * dz) <= rangeSqr)
+                        {
+                            result.Add(p);
+                        }
                     }
                 }
             }
-
+            catch (Exception ex)
+            {
+                Logger.LogError($"[BotMemoryStore] GetNearbyPlayers failed: {ex}");
+            }
             return result;
         }
 

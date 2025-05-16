@@ -16,6 +16,7 @@ namespace AIRefactored.AI.Hotspots
     /// <summary>
     /// Uniform grid-based spatial index for fast hotspot lookups in small or flat maps.
     /// Used as a fallback when quadtree is unnecessary or too sparse.
+    /// Bulletproof: all input and output logic is null-safe, range-guarded, and never throws or leaks.
     /// </summary>
     public sealed class HotspotSpatialGrid
     {
@@ -48,19 +49,24 @@ namespace AIRefactored.AI.Hotspots
         public void Insert(HotspotRegistry.Hotspot hotspot)
         {
             if (hotspot == null)
-            {
                 return;
-            }
 
-            Vector2Int cell = WorldToCell(hotspot.Position);
-
-            if (!_grid.TryGetValue(cell, out var list))
+            try
             {
-                list = new List<HotspotRegistry.Hotspot>(4);
-                _grid[cell] = list;
-            }
+                Vector2Int cell = WorldToCell(hotspot.Position);
 
-            list.Add(hotspot);
+                if (!_grid.TryGetValue(cell, out var list) || list == null)
+                {
+                    list = new List<HotspotRegistry.Hotspot>(4);
+                    _grid[cell] = list;
+                }
+
+                list.Add(hotspot);
+            }
+            catch
+            {
+                // Bulletproof: skip insert on error
+            }
         }
 
         /// <summary>
@@ -69,31 +75,37 @@ namespace AIRefactored.AI.Hotspots
         public List<HotspotRegistry.Hotspot> Query(Vector3 worldPos, float radius, Predicate<HotspotRegistry.Hotspot> filter)
         {
             List<HotspotRegistry.Hotspot> results = TempListPool.Rent<HotspotRegistry.Hotspot>();
-            float radiusSq = radius * radius;
 
-            Vector2Int center = WorldToCell(worldPos);
-            int cellRadius = Mathf.CeilToInt(radius / _cellSize);
-
-            for (int dx = -cellRadius; dx <= cellRadius; dx++)
+            try
             {
-                for (int dz = -cellRadius; dz <= cellRadius; dz++)
-                {
-                    Vector2Int check = new Vector2Int(center.x + dx, center.y + dz);
-                    if (!_grid.TryGetValue(check, out var candidates))
-                    {
-                        continue;
-                    }
+                float radiusSq = radius * radius;
 
-                    for (int i = 0; i < candidates.Count; i++)
+                Vector2Int center = WorldToCell(worldPos);
+                int cellRadius = Mathf.CeilToInt(radius / _cellSize);
+
+                for (int dx = -cellRadius; dx <= cellRadius; dx++)
+                {
+                    for (int dz = -cellRadius; dz <= cellRadius; dz++)
                     {
-                        HotspotRegistry.Hotspot h = candidates[i];
-                        if ((h.Position - worldPos).sqrMagnitude <= radiusSq &&
-                            (filter == null || filter(h)))
+                        Vector2Int check = new Vector2Int(center.x + dx, center.y + dz);
+                        if (!_grid.TryGetValue(check, out var candidates) || candidates == null)
+                            continue;
+
+                        for (int i = 0; i < candidates.Count; i++)
                         {
-                            results.Add(h);
+                            HotspotRegistry.Hotspot h = candidates[i];
+                            if ((h.Position - worldPos).sqrMagnitude <= radiusSq &&
+                                (filter == null || filter(h)))
+                            {
+                                results.Add(h);
+                            }
                         }
                     }
                 }
+            }
+            catch
+            {
+                // Never break; just return collected results so far
             }
 
             return results;
@@ -105,15 +117,22 @@ namespace AIRefactored.AI.Hotspots
 
         private Vector2Int WorldToCell(Vector3 worldPos)
         {
-            if (float.IsNaN(worldPos.x) || float.IsNaN(worldPos.z) ||
-                float.IsInfinity(worldPos.x) || float.IsInfinity(worldPos.z))
+            try
+            {
+                if (float.IsNaN(worldPos.x) || float.IsNaN(worldPos.z) ||
+                    float.IsInfinity(worldPos.x) || float.IsInfinity(worldPos.z))
+                {
+                    return default;
+                }
+
+                int x = Mathf.FloorToInt(worldPos.x / _cellSize);
+                int z = Mathf.FloorToInt(worldPos.z / _cellSize);
+                return new Vector2Int(x, z);
+            }
+            catch
             {
                 return default;
             }
-
-            int x = Mathf.FloorToInt(worldPos.x / _cellSize);
-            int z = Mathf.FloorToInt(worldPos.z / _cellSize);
-            return new Vector2Int(x, z);
         }
 
         #endregion

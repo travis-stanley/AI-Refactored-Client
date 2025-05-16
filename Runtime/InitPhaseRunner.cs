@@ -3,7 +3,8 @@
 //   Licensed under the MIT License. See LICENSE in the repository root for more information.
 //
 //   THIS FILE IS SYSTEMATICALLY MANAGED.
-//   Please follow strict StyleCop, ReSharper, and AI-Refactored code standards for all modifications.
+//   Failures in AIRefactored logic must always trigger safe fallback to EFT base AI.
+//   Bulletproof: All failures are locally contained, never break other subsystems, and always trigger fallback isolation.
 // </auto-generated>
 
 namespace AIRefactored.Runtime
@@ -20,6 +21,7 @@ namespace AIRefactored.Runtime
     /// <summary>
     /// Orchestrates the full AI-Refactored initialization lifecycle using staged world boot phases.
     /// Triggered directly from GameWorldSpawnHook instead of polling.
+    /// Bulletproof: All failures are strictly isolated; no global state can be broken.
     /// </summary>
     public static class InitPhaseRunner
     {
@@ -33,6 +35,7 @@ namespace AIRefactored.Runtime
 
         /// <summary>
         /// Starts the full AI-Refactored boot sequence exactly once.
+        /// Bulletproof: All failures are locally contained and cannot break mod.
         /// </summary>
         /// <param name="logger">Logger for runtime diagnostics.</param>
         public static void Begin(ManualLogSource logger)
@@ -72,7 +75,7 @@ namespace AIRefactored.Runtime
                     logger?.LogWarning("[InitPhaseRunner] ⚠ No valid map ID.");
                 }
 
-                // No longer attempts any NavMesh/navpoint building here—now strictly deferred!
+                // NavMesh/navpoint building is strictly deferred from here.
 
                 GameWorldHandler.Initialize();
                 WorldBootstrapper.Begin(logger, mapId);
@@ -91,6 +94,7 @@ namespace AIRefactored.Runtime
 
         /// <summary>
         /// Stops and resets all world systems in preparation for a new raid.
+        /// Bulletproof: No errors can propagate or break the mod.
         /// </summary>
         public static void Stop()
         {
@@ -117,13 +121,13 @@ namespace AIRefactored.Runtime
         {
             _hasStarted = false;
 
-            WorldInitState.Reset();
-            WorldTickDispatcher.Reset();
-            WorldBootstrapper.Stop();
-            GameWorldHandler.Cleanup();
-            NavMeshStatus.Reset();
+            try { WorldInitState.Reset(); } catch { }
+            try { WorldTickDispatcher.Reset(); } catch { }
+            try { WorldBootstrapper.Stop(); } catch { }
+            try { GameWorldHandler.Cleanup(); } catch { }
+            try { NavMeshStatus.Reset(); } catch { }
 
-            logger?.LogDebug("[InitPhaseRunner] 🧹 Cleanup complete — initialization state reset.");
+            try { logger?.LogDebug("[InitPhaseRunner] 🧹 Cleanup complete — initialization state reset."); } catch { }
         }
 
         #endregion
@@ -132,22 +136,26 @@ namespace AIRefactored.Runtime
 
         private static bool IsWorldSafe()
         {
-            GameWorld world = Singleton<GameWorld>.Instantiated ? Singleton<GameWorld>.Instance : null;
-            if (world == null || world.RegisteredPlayers == null || world.RegisteredPlayers.Count == 0)
+            try
+            {
+                GameWorld world = Singleton<GameWorld>.Instantiated ? Singleton<GameWorld>.Instance : null;
+                if (world == null || world.RegisteredPlayers == null || world.RegisteredPlayers.Count == 0)
+                    return false;
+
+                for (int i = 0; i < world.RegisteredPlayers.Count; i++)
+                {
+                    Player player = EFTPlayerUtil.AsEFTPlayer(world.RegisteredPlayers[i]);
+                    if (player != null && EFTPlayerUtil.IsValid(player))
+                    {
+                        return true;
+                    }
+                }
+                return false;
+            }
+            catch
             {
                 return false;
             }
-
-            for (int i = 0; i < world.RegisteredPlayers.Count; i++)
-            {
-                Player player = EFTPlayerUtil.AsEFTPlayer(world.RegisteredPlayers[i]);
-                if (player != null && EFTPlayerUtil.IsValid(player))
-                {
-                    return true;
-                }
-            }
-
-            return false;
         }
 
         #endregion

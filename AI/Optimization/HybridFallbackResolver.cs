@@ -4,10 +4,12 @@
 //
 //   THIS FILE IS SYSTEMATICALLY MANAGED.
 //   Please follow strict StyleCop, ReSharper, and AI-Refactored code standards for all modifications.
+//   All resolver, pooling, and fallback logic is bulletproof and fully isolated.
 // </auto-generated>
 
 namespace AIRefactored.AI.Optimization
 {
+	using System;
 	using System.Collections.Generic;
 	using AIRefactored.AI.Helpers;
 	using AIRefactored.AI.Hotspots;
@@ -20,6 +22,7 @@ namespace AIRefactored.AI.Optimization
 	/// <summary>
 	/// Unified resolver that combines NavPoints, hotspots, cover scoring,
 	/// and fallback path planning to find realistic escape destinations.
+	/// All failures are strictly isolated; all pools are always returned.
 	/// </summary>
 	public static class HybridFallbackResolver
 	{
@@ -36,127 +39,144 @@ namespace AIRefactored.AI.Optimization
 
 		/// <summary>
 		/// Returns the best fallback retreat point for the bot based on tactical cover, hotspots, and fallback planning.
+		/// All pooling and errors are handled, never propagates.
 		/// </summary>
 		/// <param name="bot">The bot seeking retreat.</param>
 		/// <param name="threatDirection">Direction of threat or enemy fire.</param>
 		public static Vector3 GetBestRetreatPoint(BotOwner bot, Vector3 threatDirection)
 		{
-			if (bot == null || bot.Transform == null || !GameWorldHandler.IsLocalHost())
+			try
+			{
+				if (bot == null || bot.Transform == null || !GameWorldHandler.IsLocalHost())
+				{
+					return Vector3.zero;
+				}
+
+				Vector3 origin = bot.Position;
+				Vector3 retreatDirection = -threatDirection.normalized;
+
+				// === Priority 1: NavPoint-based fallback cover ===
+				if (NavMeshStatus.IsReady)
+				{
+					List<Vector3> navCoverPoints = null;
+					try
+					{
+						navCoverPoints = NavPointRegistry.QueryNearby(
+							origin,
+							NavpointSearchRadius,
+							p =>
+							{
+								Vector3 toCandidate = (p - origin).normalized;
+								return NavPointRegistry.IsCoverPoint(p) &&
+									   Vector3.Dot(toCandidate, retreatDirection) > MinDotCover;
+							},
+							true);
+
+						if (navCoverPoints.Count > 0)
+						{
+							Vector3 best = Vector3.zero;
+							float bestScore = float.MinValue;
+
+							for (int i = 0; i < navCoverPoints.Count; i++)
+							{
+								float score = CoverScorer.ScoreCoverPoint(bot, navCoverPoints[i], threatDirection);
+								if (score > bestScore)
+								{
+									bestScore = score;
+									best = navCoverPoints[i];
+								}
+							}
+
+							return best;
+						}
+					}
+					catch { /* Defensive: never propagate */ }
+					finally
+					{
+						if (navCoverPoints != null)
+							TempListPool.Return(navCoverPoints);
+					}
+				}
+
+				// === Priority 2: Tactical fallback hotspots ===
+				if (NavMeshStatus.IsReady)
+				{
+					List<HotspotRegistry.Hotspot> fallbackHotspots = null;
+					try
+					{
+						fallbackHotspots = HotspotRegistry.QueryNearby(
+							origin,
+							HotspotSearchRadius,
+							h =>
+							{
+								Vector3 toHotspot = (h.Position - origin).normalized;
+								return Vector3.Dot(toHotspot, retreatDirection) > MinDotHotspot;
+							});
+
+						if (fallbackHotspots.Count > 0)
+						{
+							Vector3 closest = Vector3.zero;
+							float minDist = float.MaxValue;
+
+							for (int i = 0; i < fallbackHotspots.Count; i++)
+							{
+								float dist = Vector3.Distance(origin, fallbackHotspots[i].Position);
+								if (dist < minDist)
+								{
+									minDist = dist;
+									closest = fallbackHotspots[i].Position;
+								}
+							}
+
+							return closest;
+						}
+					}
+					catch { /* Defensive: never propagate */ }
+					finally
+					{
+						if (fallbackHotspots != null)
+							TempListPool.Return(fallbackHotspots);
+					}
+				}
+
+				// === Priority 3: Dynamic fallback via pathing ===
+				if (NavMeshStatus.IsReady)
+				{
+					List<Vector3> path = null;
+					try
+					{
+						BotOwnerPathfindingCache pathCache = BotCacheUtility.GetCache(bot)?.Pathing;
+						if (pathCache != null)
+						{
+							path = BotCoverRetreatPlanner.GetCoverRetreatPath(bot, threatDirection, pathCache);
+							if (path.Count >= 2)
+							{
+								return path[path.Count - 1];
+							}
+						}
+					}
+					catch { /* Defensive: never propagate */ }
+					finally
+					{
+						if (path != null)
+							TempListPool.Return(path);
+					}
+				}
+
+				// === Priority 4: LOS-based fallback blocking probe ===
+				Vector3 losBreak;
+				if (TryLOSBlocker(origin, threatDirection, out losBreak))
+				{
+					return losBreak;
+				}
+
+				// Final fallback
+				return Vector3.zero;
+			}
+			catch
 			{
 				return Vector3.zero;
 			}
-
-			Vector3 origin = bot.Position;
-			Vector3 retreatDirection = -threatDirection.normalized;
-
-			// === Priority 1: NavPoint-based fallback cover ===
-			if (NavMeshStatus.IsReady)
-			{
-				List<Vector3> navCoverPoints = NavPointRegistry.QueryNearby(
-					origin,
-					NavpointSearchRadius,
-					p =>
-					{
-						Vector3 toCandidate = (p - origin).normalized;
-						return NavPointRegistry.IsCoverPoint(p) &&
-							   Vector3.Dot(toCandidate, retreatDirection) > MinDotCover;
-					},
-					true);
-
-				try
-				{
-					if (navCoverPoints.Count > 0)
-					{
-						Vector3 best = Vector3.zero;
-						float bestScore = float.MinValue;
-
-						for (int i = 0; i < navCoverPoints.Count; i++)
-						{
-							float score = CoverScorer.ScoreCoverPoint(bot, navCoverPoints[i], threatDirection);
-							if (score > bestScore)
-							{
-								bestScore = score;
-								best = navCoverPoints[i];
-							}
-						}
-
-						return best;
-					}
-				}
-				finally
-				{
-					TempListPool.Return(navCoverPoints);
-				}
-			}
-
-			// === Priority 2: Tactical fallback hotspots ===
-			if (NavMeshStatus.IsReady)
-			{
-				List<HotspotRegistry.Hotspot> fallbackHotspots = HotspotRegistry.QueryNearby(
-					origin,
-					HotspotSearchRadius,
-					h =>
-					{
-						Vector3 toHotspot = (h.Position - origin).normalized;
-						return Vector3.Dot(toHotspot, retreatDirection) > MinDotHotspot;
-					});
-
-				try
-				{
-					if (fallbackHotspots.Count > 0)
-					{
-						Vector3 closest = Vector3.zero;
-						float minDist = float.MaxValue;
-
-						for (int i = 0; i < fallbackHotspots.Count; i++)
-						{
-							float dist = Vector3.Distance(origin, fallbackHotspots[i].Position);
-							if (dist < minDist)
-							{
-								minDist = dist;
-								closest = fallbackHotspots[i].Position;
-							}
-						}
-
-						return closest;
-					}
-				}
-				finally
-				{
-					TempListPool.Return(fallbackHotspots);
-				}
-			}
-
-			// === Priority 3: Dynamic fallback via pathing ===
-			if (NavMeshStatus.IsReady)
-			{
-				BotOwnerPathfindingCache pathCache = BotCacheUtility.GetCache(bot)?.Pathing;
-				if (pathCache != null)
-				{
-					List<Vector3> path = BotCoverRetreatPlanner.GetCoverRetreatPath(bot, threatDirection, pathCache);
-					try
-					{
-						if (path.Count >= 2)
-						{
-							return path[path.Count - 1];
-						}
-					}
-					finally
-					{
-						TempListPool.Return(path);
-					}
-				}
-			}
-
-			// === Priority 4: LOS-based fallback blocking probe ===
-			Vector3 losBreak;
-			if (TryLOSBlocker(origin, threatDirection, out losBreak))
-			{
-				return losBreak;
-			}
-
-			// Final fallback
-			return Vector3.zero;
 		}
 
 		#endregion
@@ -169,12 +189,16 @@ namespace AIRefactored.AI.Optimization
 			const float MaxSearchDist = 12f;
 			const float StepSize = 1.5f;
 
-			Vector3 backwards = -threatDir.normalized;
-			Vector3 eyeOrigin = origin + Vector3.up * EyeHeight;
+			result = Vector3.zero;
+			RaycastHit[] hits = null;
 
-			RaycastHit[] hits = TempRaycastHitPool.Rent(1);
 			try
 			{
+				Vector3 backwards = -threatDir.normalized;
+				Vector3 eyeOrigin = origin + Vector3.up * EyeHeight;
+
+				hits = TempRaycastHitPool.Rent(1);
+
 				for (float dist = 2f; dist <= MaxSearchDist; dist += StepSize)
 				{
 					Vector3 probe = origin + backwards * dist + Vector3.up * EyeHeight;
@@ -189,12 +213,13 @@ namespace AIRefactored.AI.Optimization
 					}
 				}
 			}
+			catch { /* Defensive: never propagate */ }
 			finally
 			{
-				TempRaycastHitPool.Return(hits);
+				if (hits != null)
+					TempRaycastHitPool.Return(hits);
 			}
 
-			result = Vector3.zero;
 			return false;
 		}
 

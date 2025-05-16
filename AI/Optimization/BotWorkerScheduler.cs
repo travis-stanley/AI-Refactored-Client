@@ -4,6 +4,7 @@
 //
 //   THIS FILE IS SYSTEMATICALLY MANAGED.
 //   Please follow strict StyleCop, ReSharper, and AI-Refactored code standards for all modifications.
+//   All queue and tick logic is bulletproof and fully isolated.
 // </auto-generated>
 
 namespace AIRefactored.AI.Optimization
@@ -21,6 +22,7 @@ namespace AIRefactored.AI.Optimization
     /// Central dispatcher for safely queuing Unity API calls from background threads.
     /// Schedules Unity-related tasks and defers spawns to prevent frame spikes.
     /// Manual Tick(float now) must be called every frame from host.
+    /// All failures are fully isolated and logged.
     /// </summary>
     public static class BotWorkScheduler
     {
@@ -49,89 +51,113 @@ namespace AIRefactored.AI.Optimization
 
         /// <summary>
         /// Schedules a Unity-safe action to run on the next main thread tick.
+        /// Bulletproof: exceptions and overflows never break world update.
         /// </summary>
         /// <param name="action">Action to invoke from the Unity thread.</param>
         public static void EnqueueToMainThread(Action action)
         {
-            if (action == null || !GameWorldHandler.IsLocalHost())
+            try
             {
-                return;
-            }
+                if (action == null || !GameWorldHandler.IsLocalHost())
+                {
+                    return;
+                }
 
-            MainThreadQueue.Enqueue(action);
-            Interlocked.Increment(ref _queuedCount);
-            EnsureLogger().LogDebug("[BotWorkScheduler] Main thread task queued.");
+                MainThreadQueue.Enqueue(action);
+                Interlocked.Increment(ref _queuedCount);
+                EnsureLogger().LogDebug("[BotWorkScheduler] Main thread task queued.");
+            }
+            catch (Exception ex)
+            {
+                EnsureLogger().LogWarning("[BotWorkScheduler] EnqueueToMainThread failed: " + ex);
+            }
         }
 
         /// <summary>
         /// Enqueues spawn logic for deferred throttling.
+        /// Bulletproof: overflow and exceptions never break update.
         /// </summary>
         /// <param name="action">Spawn or allocation action to invoke.</param>
         public static void EnqueueSpawnSmoothed(Action action)
         {
-            if (action == null || !GameWorldHandler.IsLocalHost())
+            try
             {
-                return;
-            }
+                if (action == null || !GameWorldHandler.IsLocalHost())
+                {
+                    return;
+                }
 
-            lock (SpawnLock)
+                lock (SpawnLock)
+                {
+                    if (SpawnQueue.Count < MaxSpawnQueueSize)
+                    {
+                        SpawnQueue.Enqueue(action);
+                        EnsureLogger().LogDebug("[BotWorkScheduler] Spawn action queued.");
+                    }
+                    else
+                    {
+                        EnsureLogger().LogWarning("[BotWorkScheduler] Spawn queue full. Task dropped.");
+                    }
+                }
+            }
+            catch (Exception ex)
             {
-                if (SpawnQueue.Count < MaxSpawnQueueSize)
-                {
-                    SpawnQueue.Enqueue(action);
-                    EnsureLogger().LogDebug("[BotWorkScheduler] Spawn action queued.");
-                }
-                else
-                {
-                    EnsureLogger().LogWarning("[BotWorkScheduler] Spawn queue full. Task dropped.");
-                }
+                EnsureLogger().LogWarning("[BotWorkScheduler] EnqueueSpawnSmoothed failed: " + ex);
             }
         }
 
         /// <summary>
         /// Ticks the scheduler. Call once per frame from world update.
+        /// All queue processing is bulletproof and fully isolated.
         /// </summary>
         /// <param name="now">Current time from Time.time.</param>
         public static void Tick(float now)
         {
-            if (!GameWorldHandler.IsLocalHost())
+            try
             {
-                return;
-            }
-
-            ManualLogSource logger = EnsureLogger();
-
-            while (MainThreadQueue.TryDequeue(out Action task))
-            {
-                try
+                if (!GameWorldHandler.IsLocalHost())
                 {
-                    task();
-                    Interlocked.Increment(ref _executedCount);
+                    return;
                 }
-                catch (Exception ex)
-                {
-                    Interlocked.Increment(ref _errorCount);
-                    logger.LogWarning("[BotWorkScheduler] Task failed:\n" + ex);
-                }
-            }
 
-            int allowed = Mathf.Max(1, Mathf.FloorToInt(MaxSpawnsPerSecond * Time.unscaledDeltaTime));
-            int executed = 0;
+                ManualLogSource logger = EnsureLogger();
 
-            lock (SpawnLock)
-            {
-                while (executed < allowed && SpawnQueue.Count > 0)
+                while (MainThreadQueue.TryDequeue(out Action task))
                 {
                     try
                     {
-                        SpawnQueue.Dequeue().Invoke();
-                        executed++;
+                        task();
+                        Interlocked.Increment(ref _executedCount);
                     }
                     catch (Exception ex)
                     {
-                        logger.LogWarning("[BotWorkScheduler] Spawn failed:\n" + ex);
+                        Interlocked.Increment(ref _errorCount);
+                        logger.LogWarning("[BotWorkScheduler] Task failed:\n" + ex);
                     }
                 }
+
+                int allowed = Mathf.Max(1, Mathf.FloorToInt(MaxSpawnsPerSecond * Time.unscaledDeltaTime));
+                int executed = 0;
+
+                lock (SpawnLock)
+                {
+                    while (executed < allowed && SpawnQueue.Count > 0)
+                    {
+                        try
+                        {
+                            SpawnQueue.Dequeue().Invoke();
+                            executed++;
+                        }
+                        catch (Exception ex)
+                        {
+                            logger.LogWarning("[BotWorkScheduler] Spawn failed:\n" + ex);
+                        }
+                    }
+                }
+            }
+            catch (Exception ex)
+            {
+                EnsureLogger().LogWarning("[BotWorkScheduler] Tick() failed: " + ex);
             }
         }
 
@@ -141,10 +167,17 @@ namespace AIRefactored.AI.Optimization
         /// <returns>Formatted scheduler state.</returns>
         public static string GetStats()
         {
-            return "[BotWorkScheduler] Queued=" + _queuedCount +
-                   ", Executed=" + _executedCount +
-                   ", Errors=" + _errorCount +
-                   ", SpawnQueue=" + SpawnQueue.Count;
+            try
+            {
+                return "[BotWorkScheduler] Queued=" + _queuedCount +
+                       ", Executed=" + _executedCount +
+                       ", Errors=" + _errorCount +
+                       ", SpawnQueue=" + SpawnQueue.Count;
+            }
+            catch
+            {
+                return "[BotWorkScheduler] Stats unavailable.";
+            }
         }
 
         #endregion
@@ -157,7 +190,6 @@ namespace AIRefactored.AI.Optimization
             {
                 _logger = Plugin.LoggerInstance;
             }
-
             return _logger;
         }
 

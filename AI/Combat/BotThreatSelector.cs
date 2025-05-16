@@ -19,6 +19,7 @@ namespace AIRefactored.AI.Combat
     /// <summary>
     /// Selects and maintains the most viable enemy target based on distance, visibility, memory, and tactical realism.
     /// Prevents erratic switching and reinforces believable combat behavior.
+    /// Bulletproof: All failures are isolated and cannot propagate.
     /// </summary>
     public sealed class BotThreatSelector
     {
@@ -49,6 +50,7 @@ namespace AIRefactored.AI.Combat
         private float _lastTargetSwitchTime = -999f;
         private float _nextEvaluateTime;
         private Player _currentTarget;
+        private bool _isFallbackMode;
 
         #endregion
 
@@ -63,11 +65,16 @@ namespace AIRefactored.AI.Combat
         public BotThreatSelector(BotComponentCache cache)
         {
             if (cache == null || cache.Bot == null || cache.AIRefactoredBotOwner == null)
-                throw new ArgumentNullException(nameof(cache));
+            {
+                BotFallbackUtility.Trigger(this, null, "[BotThreatSelector] Null cache, bot, or AIRefactoredBotOwner in constructor.");
+                _isFallbackMode = true;
+                return;
+            }
 
             _cache = cache;
             _bot = cache.Bot;
             _profile = cache.AIRefactoredBotOwner.PersonalityProfile;
+            _isFallbackMode = false;
         }
 
         #endregion
@@ -76,55 +83,63 @@ namespace AIRefactored.AI.Combat
 
         public void Tick(float time)
         {
-            if (time < _nextEvaluateTime || _bot == null || _bot.IsDead || !_bot.IsAI)
+            if (_isFallbackMode || time < _nextEvaluateTime || _bot == null || _bot.IsDead || !_bot.IsAI)
                 return;
 
-            _nextEvaluateTime = time + EvaluationCooldown;
-
-            var players = GameWorldHandler.GetAllAlivePlayers();
-            if (players == null || players.Count == 0)
-                return;
-
-            Player bestTarget = null;
-            float bestScore = float.MinValue;
-
-            for (int i = 0; i < players.Count; i++)
+            try
             {
-                Player candidate = players[i];
-                if (!EFTPlayerUtil.IsValid(candidate))
-                    continue;
+                _nextEvaluateTime = time + EvaluationCooldown;
 
-                string profileId = candidate.ProfileId;
-                if (string.IsNullOrEmpty(profileId) || profileId == _bot.ProfileId)
-                    continue;
+                var players = GameWorldHandler.GetAllAlivePlayers();
+                if (players == null || players.Count == 0)
+                    return;
 
-                if (!EFTPlayerUtil.IsEnemyOf(_bot, candidate))
-                    continue;
+                Player bestTarget = null;
+                float bestScore = float.MinValue;
 
-                float score = ScoreTarget(candidate, time);
-                if (score > bestScore)
+                for (int i = 0; i < players.Count; i++)
                 {
-                    bestScore = score;
-                    bestTarget = candidate;
+                    Player candidate = players[i];
+                    if (!EFTPlayerUtil.IsValid(candidate))
+                        continue;
+
+                    string profileId = candidate.ProfileId;
+                    if (string.IsNullOrEmpty(profileId) || profileId == _bot.ProfileId)
+                        continue;
+
+                    if (!EFTPlayerUtil.IsEnemyOf(_bot, candidate))
+                        continue;
+
+                    float score = ScoreTarget(candidate, time);
+                    if (score > bestScore)
+                    {
+                        bestScore = score;
+                        bestTarget = candidate;
+                    }
+                }
+
+                if (bestTarget == null)
+                    return;
+
+                if (_currentTarget == null)
+                {
+                    SetTarget(bestTarget, time);
+                    return;
+                }
+
+                float currentScore = ScoreTarget(_currentTarget, time);
+                float cooldown = SwitchCooldown * (1f - (_profile.AggressionLevel * 0.5f));
+
+                if (bestScore > currentScore + TargetSwitchThreshold &&
+                    time > _lastTargetSwitchTime + cooldown)
+                {
+                    SetTarget(bestTarget, time);
                 }
             }
-
-            if (bestTarget == null)
-                return;
-
-            if (_currentTarget == null)
+            catch (Exception ex)
             {
-                SetTarget(bestTarget, time);
-                return;
-            }
-
-            float currentScore = ScoreTarget(_currentTarget, time);
-            float cooldown = SwitchCooldown * (1f - (_profile.AggressionLevel * 0.5f));
-
-            if (bestScore > currentScore + TargetSwitchThreshold &&
-                time > _lastTargetSwitchTime + cooldown)
-            {
-                SetTarget(bestTarget, time);
+                BotFallbackUtility.Trigger(this, _bot, "Exception in Tick.", ex);
+                _isFallbackMode = true;
             }
         }
 
@@ -135,15 +150,27 @@ namespace AIRefactored.AI.Combat
 
         public Player GetPriorityTarget()
         {
-            if (EFTPlayerUtil.IsValid(_currentTarget))
-                return _currentTarget;
-
-            string id = _cache.TacticalMemory.GetMostRecentEnemyId();
-            if (string.IsNullOrEmpty(id))
+            if (_isFallbackMode)
                 return null;
 
-            Player fallback = EFTPlayerUtil.ResolvePlayerById(id);
-            return EFTPlayerUtil.IsValid(fallback) ? fallback : null;
+            try
+            {
+                if (EFTPlayerUtil.IsValid(_currentTarget))
+                    return _currentTarget;
+
+                string id = _cache.TacticalMemory.GetMostRecentEnemyId();
+                if (string.IsNullOrEmpty(id))
+                    return null;
+
+                Player fallback = EFTPlayerUtil.ResolvePlayerById(id);
+                return EFTPlayerUtil.IsValid(fallback) ? fallback : null;
+            }
+            catch (Exception ex)
+            {
+                BotFallbackUtility.Trigger(this, _bot, "Exception in GetPriorityTarget.", ex);
+                _isFallbackMode = true;
+                return null;
+            }
         }
 
         public string GetTargetProfileId()
@@ -157,109 +184,135 @@ namespace AIRefactored.AI.Combat
 
         private float ScoreTarget(Player candidate, float time)
         {
-            Vector3 botPos = _bot.Position;
-            Vector3 targetPos = EFTPlayerUtil.GetPosition(candidate);
-            float distance = Vector3.Distance(botPos, targetPos);
-
-            if (distance > MaxScanDistance)
-                return float.MinValue;
-
-            float score = MaxScanDistance - distance;
-
-            EnemyInfo info = GetEnemyInfo(candidate);
-            if (info != null)
+            try
             {
-                if (info.IsVisible)
+                Vector3 botPos = _bot.Position;
+                Vector3 targetPos = EFTPlayerUtil.GetPosition(candidate);
+                float distance = Vector3.Distance(botPos, targetPos);
+
+                if (distance > MaxScanDistance)
+                    return float.MinValue;
+
+                float score = MaxScanDistance - distance;
+
+                EnemyInfo info = GetEnemyInfo(candidate);
+                if (info != null)
                 {
-                    score += VisibilityBonus;
-
-                    if (info.PersonalLastSeenTime + 2f > time)
-                        score += RecentSeenBonus;
-
-                    if (_profile.Caution > 0.6f)
-                        score += 5f;
-
-                    if (_cache.IsBlinded && _cache.BlindUntilTime > time)
-                        score -= BlindPenalty;
-                }
-                else
-                {
-                    score -= HiddenPenalty;
-
-                    if (_profile.AggressionLevel > 0.7f)
+                    if (info.IsVisible)
                     {
-                        float unseen = time - info.PersonalLastSeenTime;
-                        if (unseen < AggressionPersistenceWindow)
+                        score += VisibilityBonus;
+
+                        if (info.PersonalLastSeenTime + 2f > time)
+                            score += RecentSeenBonus;
+
+                        if (_profile.Caution > 0.6f)
+                            score += 5f;
+
+                        if (_cache.IsBlinded && _cache.BlindUntilTime > time)
+                            score -= BlindPenalty;
+                    }
+                    else
+                    {
+                        score -= HiddenPenalty;
+
+                        if (_profile.AggressionLevel > 0.7f)
                         {
-                            float bonus = Mathf.Lerp(0f, AggressionMaxBonus, 1f - (unseen / AggressionPersistenceWindow));
-                            score += bonus;
+                            float unseen = time - info.PersonalLastSeenTime;
+                            if (unseen < AggressionPersistenceWindow)
+                            {
+                                float bonus = Mathf.Lerp(0f, AggressionMaxBonus, 1f - (unseen / AggressionPersistenceWindow));
+                                score += bonus;
+                            }
                         }
                     }
                 }
-            }
-            else
-            {
-                score -= UnknownPenalty;
-            }
+                else
+                {
+                    score -= UnknownPenalty;
+                }
 
-            return score;
+                return score;
+            }
+            catch (Exception ex)
+            {
+                BotFallbackUtility.Trigger(this, _bot, "Exception in ScoreTarget.", ex);
+                _isFallbackMode = true;
+                return float.MinValue;
+            }
         }
 
         private EnemyInfo GetEnemyInfo(Player candidate)
         {
-            if (candidate == null || _bot.EnemiesController == null)
-                return null;
-
-            string id = candidate.ProfileId;
-            if (string.IsNullOrEmpty(id))
-                return null;
-
-            var enemyInfos = _bot.EnemiesController.EnemyInfos;
-            if (enemyInfos != null)
+            try
             {
-                foreach (var kvp in enemyInfos)
+                if (candidate == null || _bot.EnemiesController == null)
+                    return null;
+
+                string id = candidate.ProfileId;
+                if (string.IsNullOrEmpty(id))
+                    return null;
+
+                var enemyInfos = _bot.EnemiesController.EnemyInfos;
+                if (enemyInfos != null)
                 {
-                    if (kvp.Key is Player known && known.ProfileId == id)
-                        return kvp.Value;
+                    foreach (var kvp in enemyInfos)
+                    {
+                        if (kvp.Key is Player known && known.ProfileId == id)
+                            return kvp.Value;
+                    }
                 }
+
+                if (_bot.Memory?.GoalEnemy?.Person?.ProfileId == id)
+                    return _bot.Memory.GoalEnemy;
+
+                return null;
             }
-
-            if (_bot.Memory?.GoalEnemy?.Person?.ProfileId == id)
-                return _bot.Memory.GoalEnemy;
-
-            return null;
+            catch (Exception ex)
+            {
+                BotFallbackUtility.Trigger(this, _bot, "Exception in GetEnemyInfo.", ex);
+                _isFallbackMode = true;
+                return null;
+            }
         }
 
         private void SetTarget(Player target, float time)
         {
-            _currentTarget = target;
-            _lastTargetSwitchTime = time;
-
-            string id = target.ProfileId;
-            if (!string.IsNullOrEmpty(id))
+            try
             {
-                _cache.TacticalMemory.RecordEnemyPosition(EFTPlayerUtil.GetPosition(target), "Target", id);
-                _cache.LastShotTracker?.RegisterHit(id);
+                _currentTarget = target;
+                _lastTargetSwitchTime = time;
+
+                string id = target.ProfileId;
+                if (!string.IsNullOrEmpty(id))
+                {
+                    _cache.TacticalMemory.RecordEnemyPosition(EFTPlayerUtil.GetPosition(target), "Target", id);
+                    _cache.LastShotTracker?.RegisterHit(id);
+                }
+
+                if (_cache.Movement != null && !_cache.Bot.IsDead && _cache.Bot.Mover != null && !_cache.Bot.Mover.IsMoving)
+                {
+                    Vector3 fallback = Vector3.zero;
+
+                    if (NavPointRegistry.IsReady && !NavPointRegistry.IsEmpty)
+                    {
+                        fallback = NavPointRegistry.GetClosestPosition(_cache.Bot.Position);
+                    }
+
+                    if (!BotNavValidator.Validate(_cache.Bot, nameof(SetTarget)))
+                    {
+                        fallback = FallbackNavPointProvider.GetSafePoint(_cache.Bot.Position);
+                    }
+
+                    if (fallback != Vector3.zero)
+                    {
+                        _cache.Bot.Mover.GoToPoint(fallback, true, 1.0f);
+                    }
+                }
             }
-
-            if (_cache.Movement != null && !_cache.Bot.IsDead && _cache.Bot.Mover != null && !_cache.Bot.Mover.IsMoving)
+            catch (Exception ex)
             {
-                Vector3 fallback = Vector3.zero;
-
-                if (NavPointRegistry.IsReady && !NavPointRegistry.IsEmpty)
-                {
-                    fallback = NavPointRegistry.GetClosestPosition(_cache.Bot.Position);
-                }
-
-                if (!BotNavValidator.Validate(_cache.Bot, nameof(SetTarget)))
-                {
-                    fallback = FallbackNavPointProvider.GetSafePoint(_cache.Bot.Position);
-                }
-
-                if (fallback != Vector3.zero)
-                {
-                    _cache.Bot.Mover.GoToPoint(fallback, true, 1.0f);
-                }
+                BotFallbackUtility.Trigger(this, _bot, "Exception in SetTarget.", ex);
+                _isFallbackMode = true;
             }
         }
 

@@ -4,6 +4,7 @@
 //
 //   THIS FILE IS SYSTEMATICALLY MANAGED.
 //   Please follow strict StyleCop, ReSharper, and AI-Refactored code standards for all modifications.
+//   Fallback-only: never throws, always safe, always returns empty/unassigned/false.
 // </auto-generated>
 
 namespace AIRefactored.AI.Navigation
@@ -17,13 +18,13 @@ namespace AIRefactored.AI.Navigation
     /// <summary>
     /// Legacy stub. Previously assigned zone names using IZones.
     /// Now fallback-only for compatibility — always returns 'unassigned' or empty values.
-    /// Safe for all environments.
+    /// Safe for all environments. Never throws or breaks parent logic.
     /// </summary>
     public static class ZoneAssignmentHelper
     {
         #region Static Fields
 
-        private static readonly ManualLogSource Logger = Plugin.LoggerInstance;
+        private static readonly ManualLogSource Logger = SafeLogger();
         private static readonly IReadOnlyList<string> EmptyZones = Array.Empty<string>();
         private static readonly List<ISpawnPoint> EmptySpawnPoints = new List<ISpawnPoint>(0);
 
@@ -45,48 +46,67 @@ namespace AIRefactored.AI.Navigation
         /// </summary>
         public static void Clear()
         {
+            // Always safe, no-op.
         }
 
         /// <summary>
         /// Gets all known zone names (always empty).
         /// </summary>
         /// <returns>Empty string list.</returns>
-        public static IReadOnlyList<string> GetAllZoneNames() => EmptyZones;
+        public static IReadOnlyList<string> GetAllZoneNames()
+        {
+            return EmptyZones;
+        }
 
         /// <summary>
         /// Gets the nearest zone to a position (always "unassigned").
         /// </summary>
         /// <param name="position">World-space position.</param>
         /// <returns>"unassigned"</returns>
-        public static string GetNearestZone(Vector3 position) => "unassigned";
+        public static string GetNearestZone(Vector3 position)
+        {
+            return "unassigned";
+        }
 
         /// <summary>
         /// Gets all spawn points in a zone (always empty).
         /// </summary>
         /// <param name="zone">Zone name.</param>
         /// <returns>Empty spawn point list.</returns>
-        public static List<ISpawnPoint> GetSpawnPoints(string zone) => EmptySpawnPoints;
+        public static List<ISpawnPoint> GetSpawnPoints(string zone)
+        {
+            return EmptySpawnPoints;
+        }
 
         /// <summary>
         /// Gets the center of a zone (always Vector3.zero).
         /// </summary>
         /// <param name="zone">Zone name.</param>
         /// <returns>Vector3.zero</returns>
-        public static Vector3 GetZoneCenter(string zone) => Vector3.zero;
+        public static Vector3 GetZoneCenter(string zone)
+        {
+            return Vector3.zero;
+        }
 
         /// <summary>
         /// Gets the weight of a zone (always 1.0).
         /// </summary>
         /// <param name="zone">Zone name.</param>
         /// <returns>1.0f</returns>
-        public static float GetZoneWeight(string zone) => 1f;
+        public static float GetZoneWeight(string zone)
+        {
+            return 1f;
+        }
 
         /// <summary>
         /// Determines if the zone is flagged as a boss zone (always false).
         /// </summary>
         /// <param name="zone">Zone name.</param>
         /// <returns>False</returns>
-        public static bool IsBossZone(string zone) => false;
+        public static bool IsBossZone(string zone)
+        {
+            return false;
+        }
 
         /// <summary>
         /// Initializes the fallback zone system (logs stub message).
@@ -95,7 +115,27 @@ namespace AIRefactored.AI.Navigation
         /// <param name="includeSnipingZones">Unused flag.</param>
         public static void Initialize(object zones, bool includeSnipingZones = true)
         {
-            Logger.LogDebug("[ZoneAssignmentHelper] IZones is disabled. Skipping zone assignment.");
+            try
+            {
+                Logger.LogDebug("[ZoneAssignmentHelper] IZones is disabled. Skipping zone assignment.");
+            }
+            catch { /* Logging is always safe */ }
+        }
+
+        #endregion
+
+        #region Internal Helpers
+
+        private static ManualLogSource SafeLogger()
+        {
+            try
+            {
+                return Plugin.LoggerInstance ?? new ManualLogSource("ZoneAssignmentHelperStub");
+            }
+            catch
+            {
+                return new ManualLogSource("ZoneAssignmentHelperStub");
+            }
         }
 
         #endregion

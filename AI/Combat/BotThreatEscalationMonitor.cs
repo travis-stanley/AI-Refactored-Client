@@ -22,6 +22,7 @@ namespace AIRefactored.AI.Combat
     /// <summary>
     /// Tracks panic events, visible enemies, and squad losses to trigger escalation behavior.
     /// Applies tuning and personality adaptations based on threat severity.
+    /// Bulletproof: All failures are isolated and never propagate beyond this monitor.
     /// </summary>
     public sealed class BotThreatEscalationMonitor
     {
@@ -41,6 +42,7 @@ namespace AIRefactored.AI.Combat
         private float _panicStartTime = -1f;
         private float _nextCheckTime = -1f;
         private bool _hasEscalated;
+        private bool _isFallbackMode;
 
         #endregion
 
@@ -49,16 +51,24 @@ namespace AIRefactored.AI.Combat
         public void Initialize(BotOwner botOwner)
         {
             if (botOwner == null)
-                throw new ArgumentNullException(nameof(botOwner));
+            {
+                BotFallbackUtility.Trigger(this, null, "[BotThreatEscalationMonitor] BotOwner is null in Initialize.");
+                _isFallbackMode = true;
+                return;
+            }
 
             _bot = botOwner;
             _panicStartTime = -1f;
             _nextCheckTime = -1f;
             _hasEscalated = false;
+            _isFallbackMode = false;
         }
 
         public void NotifyPanicTriggered()
         {
+            if (_isFallbackMode)
+                return;
+
             if (_panicStartTime < 0f)
             {
                 _panicStartTime = Time.time;
@@ -67,14 +77,22 @@ namespace AIRefactored.AI.Combat
 
         public void Tick(float time)
         {
-            if (_hasEscalated || !IsValid() || time < _nextCheckTime)
+            if (_isFallbackMode || _hasEscalated || !IsValid() || time < _nextCheckTime)
                 return;
 
-            _nextCheckTime = time + CheckInterval;
-
-            if (ShouldEscalate(time))
+            try
             {
-                EscalateBot();
+                _nextCheckTime = time + CheckInterval;
+
+                if (ShouldEscalate(time))
+                {
+                    EscalateBot();
+                }
+            }
+            catch (Exception ex)
+            {
+                BotFallbackUtility.Trigger(this, _bot, "Exception in Tick.", ex);
+                _isFallbackMode = true;
             }
         }
 
@@ -84,10 +102,17 @@ namespace AIRefactored.AI.Combat
 
         private bool IsValid()
         {
-            return _bot != null &&
-                   !_bot.IsDead &&
-                   _bot.GetPlayer is Player player &&
-                   player.IsAI;
+            try
+            {
+                return _bot != null &&
+                       !_bot.IsDead &&
+                       _bot.GetPlayer is Player player &&
+                       player.IsAI;
+            }
+            catch
+            {
+                return false;
+            }
         }
 
         private bool PanicDurationExceeded(float time)
@@ -97,123 +122,175 @@ namespace AIRefactored.AI.Combat
 
         private bool MultipleEnemiesVisible()
         {
-            BotEnemiesController controller = _bot.EnemiesController;
-            if (controller?.EnemyInfos == null)
-                return false;
-
-            int visibleCount = 0;
-            foreach (var kv in controller.EnemyInfos)
+            try
             {
-                if (kv.Value != null && kv.Value.IsVisible)
+                BotEnemiesController controller = _bot.EnemiesController;
+                if (controller?.EnemyInfos == null)
+                    return false;
+
+                int visibleCount = 0;
+                foreach (var kv in controller.EnemyInfos)
                 {
-                    if (++visibleCount >= 2)
-                        return true;
+                    if (kv.Value != null && kv.Value.IsVisible)
+                    {
+                        if (++visibleCount >= 2)
+                            return true;
+                    }
                 }
+                return false;
             }
-            return false;
+            catch (Exception ex)
+            {
+                BotFallbackUtility.Trigger(this, _bot, "Exception in MultipleEnemiesVisible.", ex);
+                _isFallbackMode = true;
+                return false;
+            }
         }
 
         private bool SquadHasLostTeammates()
         {
-            BotsGroup group = _bot.BotsGroup;
-            if (group == null || group.MembersCount <= 1)
-                return false;
-
-            int dead = 0;
-            for (int i = 0; i < group.MembersCount; i++)
+            try
             {
-                BotOwner member = group.Member(i);
-                if (member == null || member.IsDead)
-                {
-                    dead++;
-                }
-            }
+                BotsGroup group = _bot.BotsGroup;
+                if (group == null || group.MembersCount <= 1)
+                    return false;
 
-            return dead >= Mathf.CeilToInt(group.MembersCount * SquadCasualtyThreshold);
+                int dead = 0;
+                for (int i = 0; i < group.MembersCount; i++)
+                {
+                    BotOwner member = group.Member(i);
+                    if (member == null || member.IsDead)
+                    {
+                        dead++;
+                    }
+                }
+
+                return dead >= Mathf.CeilToInt(group.MembersCount * SquadCasualtyThreshold);
+            }
+            catch (Exception ex)
+            {
+                BotFallbackUtility.Trigger(this, _bot, "Exception in SquadHasLostTeammates.", ex);
+                _isFallbackMode = true;
+                return false;
+            }
         }
 
         private bool ShouldEscalate(float time)
         {
-            return PanicDurationExceeded(time) ||
-                   MultipleEnemiesVisible() ||
-                   SquadHasLostTeammates();
+            try
+            {
+                return PanicDurationExceeded(time) ||
+                       MultipleEnemiesVisible() ||
+                       SquadHasLostTeammates();
+            }
+            catch (Exception ex)
+            {
+                BotFallbackUtility.Trigger(this, _bot, "Exception in ShouldEscalate.", ex);
+                _isFallbackMode = true;
+                return false;
+            }
         }
 
         private void EscalateBot()
         {
-            _hasEscalated = true;
-
-            string nickname = _bot.Profile?.Info?.Nickname ?? "Unknown";
-            Logger.LogDebug($"[AIRefactored-Escalation] Escalating behavior for bot '{nickname}'.");
-
-            AIOptimizationManager.Reset(_bot);
-            AIOptimizationManager.Apply(_bot);
-
-            ApplyEscalationTuning(_bot);
-            ApplyPersonalityTuning(_bot);
-
-            if (!FikaHeadlessDetector.IsHeadless && _bot.BotTalk != null)
+            try
             {
-                _bot.BotTalk.TrySay(EPhraseTrigger.OnFight);
+                _hasEscalated = true;
+
+                string nickname = _bot.Profile?.Info?.Nickname ?? "Unknown";
+                Logger.LogDebug($"[AIRefactored-Escalation] Escalating behavior for bot '{nickname}'.");
+
+                AIOptimizationManager.Reset(_bot);
+                AIOptimizationManager.Apply(_bot);
+
+                ApplyEscalationTuning(_bot);
+                ApplyPersonalityTuning(_bot);
+
+                if (!FikaHeadlessDetector.IsHeadless && _bot.BotTalk != null)
+                {
+                    try { _bot.BotTalk.TrySay(EPhraseTrigger.OnFight); }
+                    catch { /* no-op */ }
+                }
+
+                Vector3 fallback = NavPointRegistry.GetClosestPosition(_bot.Position);
+                if (fallback != Vector3.zero && _bot.Mover != null && !_bot.Mover.IsMoving)
+                {
+                    _bot.Mover.GoToPoint(fallback, true, 1.0f);
+                    Logger.LogDebug($"[AIRefactored-Escalation] Bot '{nickname}' moved to nav fallback after escalation.");
+                }
             }
-
-            Vector3 fallback = NavPointRegistry.GetClosestPosition(_bot.Position);
-            if (fallback != Vector3.zero && _bot.Mover != null && !_bot.Mover.IsMoving)
+            catch (Exception ex)
             {
-                _bot.Mover.GoToPoint(fallback, true, 1.0f);
-                Logger.LogDebug($"[AIRefactored-Escalation] Bot '{nickname}' moved to nav fallback after escalation.");
+                BotFallbackUtility.Trigger(this, _bot, "Exception in EscalateBot.", ex);
+                _isFallbackMode = true;
             }
         }
 
         private void ApplyEscalationTuning(BotOwner bot)
         {
-            if (bot?.Settings?.FileSettings == null)
-                return;
-
-            var file = bot.Settings.FileSettings;
-
-            if (file.Shoot != null)
+            try
             {
-                file.Shoot.RECOIL_PER_METER = Mathf.Clamp(file.Shoot.RECOIL_PER_METER * 0.85f, 0.1f, 2.0f);
-            }
+                if (bot?.Settings?.FileSettings == null)
+                    return;
 
-            if (file.Mind != null)
+                var file = bot.Settings.FileSettings;
+
+                if (file.Shoot != null)
+                {
+                    file.Shoot.RECOIL_PER_METER = Mathf.Clamp(file.Shoot.RECOIL_PER_METER * 0.85f, 0.1f, 2.0f);
+                }
+
+                if (file.Mind != null)
+                {
+                    file.Mind.DIST_TO_FOUND_SQRT = Mathf.Clamp(file.Mind.DIST_TO_FOUND_SQRT * 1.2f, 200f, 800f);
+                    file.Mind.ENEMY_LOOK_AT_ME_ANG = Mathf.Clamp(file.Mind.ENEMY_LOOK_AT_ME_ANG * 0.75f, 5f, 45f);
+                    file.Mind.CHANCE_TO_RUN_CAUSE_DAMAGE_0_100 = Mathf.Clamp(file.Mind.CHANCE_TO_RUN_CAUSE_DAMAGE_0_100 + 20f, 0f, 100f);
+                }
+
+                if (file.Look != null)
+                {
+                    file.Look.MAX_VISION_GRASS_METERS = Mathf.Clamp(file.Look.MAX_VISION_GRASS_METERS + 5f, 5f, 40f);
+                }
+
+                Logger.LogDebug($"[AIRefactored-Tuning] Escalation tuning applied to '{bot.Profile?.Info?.Nickname ?? "Unknown"}'.");
+            }
+            catch (Exception ex)
             {
-                file.Mind.DIST_TO_FOUND_SQRT = Mathf.Clamp(file.Mind.DIST_TO_FOUND_SQRT * 1.2f, 200f, 800f);
-                file.Mind.ENEMY_LOOK_AT_ME_ANG = Mathf.Clamp(file.Mind.ENEMY_LOOK_AT_ME_ANG * 0.75f, 5f, 45f);
-                file.Mind.CHANCE_TO_RUN_CAUSE_DAMAGE_0_100 = Mathf.Clamp(file.Mind.CHANCE_TO_RUN_CAUSE_DAMAGE_0_100 + 20f, 0f, 100f);
+                BotFallbackUtility.Trigger(this, _bot, "Exception in ApplyEscalationTuning.", ex);
+                _isFallbackMode = true;
             }
-
-            if (file.Look != null)
-            {
-                file.Look.MAX_VISION_GRASS_METERS = Mathf.Clamp(file.Look.MAX_VISION_GRASS_METERS + 5f, 5f, 40f);
-            }
-
-            Logger.LogDebug($"[AIRefactored-Tuning] Escalation tuning applied to '{bot.Profile?.Info?.Nickname ?? "Unknown"}'.");
         }
 
         private void ApplyPersonalityTuning(BotOwner bot)
         {
-            string profileId = bot.ProfileId;
-            if (string.IsNullOrEmpty(profileId))
-                return;
+            try
+            {
+                string profileId = bot.ProfileId;
+                if (string.IsNullOrEmpty(profileId))
+                    return;
 
-            BotPersonalityProfile profile = BotRegistry.Get(profileId);
-            if (profile == null)
-                return;
+                BotPersonalityProfile profile = BotRegistry.Get(profileId);
+                if (profile == null)
+                    return;
 
-            profile.AggressionLevel = Mathf.Clamp01(profile.AggressionLevel + 0.25f);
-            profile.Caution = Mathf.Clamp01(profile.Caution - 0.25f);
-            profile.SuppressionSensitivity = Mathf.Clamp01(profile.SuppressionSensitivity * 0.75f);
-            profile.AccuracyUnderFire = Mathf.Clamp01(profile.AccuracyUnderFire + 0.2f);
-            profile.CommunicationLevel = Mathf.Clamp01(profile.CommunicationLevel + 0.2f);
+                profile.AggressionLevel = Mathf.Clamp01(profile.AggressionLevel + 0.25f);
+                profile.Caution = Mathf.Clamp01(profile.Caution - 0.25f);
+                profile.SuppressionSensitivity = Mathf.Clamp01(profile.SuppressionSensitivity * 0.75f);
+                profile.AccuracyUnderFire = Mathf.Clamp01(profile.AccuracyUnderFire + 0.2f);
+                profile.CommunicationLevel = Mathf.Clamp01(profile.CommunicationLevel + 0.2f);
 
-            Logger.LogDebug(
-                $"[AIRefactored-Tuning] Personality tuned for '{bot.Profile?.Info?.Nickname ?? "Unknown"}': " +
-                $"Agg={profile.AggressionLevel:F2}, " +
-                $"Caution={profile.Caution:F2}, " +
-                $"Supp={profile.SuppressionSensitivity:F2}, " +
-                $"AccUF={profile.AccuracyUnderFire:F2}");
+                Logger.LogDebug(
+                    $"[AIRefactored-Tuning] Personality tuned for '{bot.Profile?.Info?.Nickname ?? "Unknown"}': " +
+                    $"Agg={profile.AggressionLevel:F2}, " +
+                    $"Caution={profile.Caution:F2}, " +
+                    $"Supp={profile.SuppressionSensitivity:F2}, " +
+                    $"AccUF={profile.AccuracyUnderFire:F2}");
+            }
+            catch (Exception ex)
+            {
+                BotFallbackUtility.Trigger(this, _bot, "Exception in ApplyPersonalityTuning.", ex);
+                _isFallbackMode = true;
+            }
         }
 
         #endregion

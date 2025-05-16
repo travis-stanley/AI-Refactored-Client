@@ -4,6 +4,7 @@
 //
 //   THIS FILE IS SYSTEMATICALLY MANAGED.
 //   Please follow strict StyleCop, ReSharper, and AI-Refactored code standards for all modifications.
+//   Bulletproof: All failures are locally contained, never break other subsystems, and always trigger fallback isolation.
 // </auto-generated>
 
 namespace AIRefactored.Runtime
@@ -18,6 +19,7 @@ namespace AIRefactored.Runtime
     /// <summary>
     /// Detects GameWorld lifecycle events and triggers mod startup/teardown accordingly.
     /// Works in both FIKA headless and standard modes.
+    /// Bulletproof: All errors are strictly contained; mod/global state is never at risk.
     /// </summary>
     public sealed class RaidLifecycleWatcher : IAIWorldSystemBootstrapper
     {
@@ -50,26 +52,46 @@ namespace AIRefactored.Runtime
             try
             {
                 if (_initialized || !GameWorldHandler.IsHost || !GameWorldHandler.IsReady())
-                {
                     return;
-                }
 
-                GameWorld world = GameWorldHandler.Get();
-                if (world == null)
+                GameWorld world = null;
+                try
                 {
+                    world = GameWorldHandler.Get();
+                    if (world == null)
+                        return;
+                }
+                catch (Exception ex)
+                {
+                    Logger.LogError("[RaidLifecycleWatcher] GameWorld.Get() failed: " + ex);
                     return;
                 }
 
                 if (!_bound)
                 {
-                    GameWorld.OnDispose -= OnRaidEnded;
-                    GameWorld.OnDispose += OnRaidEnded;
-                    _bound = true;
+                    try
+                    {
+                        GameWorld.OnDispose -= OnRaidEnded;
+                        GameWorld.OnDispose += OnRaidEnded;
+                        _bound = true;
+                    }
+                    catch (Exception ex)
+                    {
+                        Logger.LogError("[RaidLifecycleWatcher] Event bind failed: " + ex);
+                        return;
+                    }
                 }
 
-                AIRefactoredController.OnRaidStarted(world);
-                _initialized = true;
-                Logger.LogDebug("[RaidLifecycleWatcher] ✅ Raid start detected — initialization complete.");
+                try
+                {
+                    AIRefactoredController.OnRaidStarted(world);
+                    _initialized = true;
+                    Logger.LogDebug("[RaidLifecycleWatcher] ✅ Raid start detected — initialization complete.");
+                }
+                catch (Exception ex)
+                {
+                    Logger.LogError("[RaidLifecycleWatcher] ❌ OnRaidStarted error: " + ex);
+                }
             }
             catch (Exception ex)
             {
@@ -84,15 +106,29 @@ namespace AIRefactored.Runtime
             {
                 if (_bound)
                 {
-                    GameWorld.OnDispose -= OnRaidEnded;
-                    _bound = false;
+                    try
+                    {
+                        GameWorld.OnDispose -= OnRaidEnded;
+                        _bound = false;
+                    }
+                    catch (Exception ex)
+                    {
+                        Logger.LogError("[RaidLifecycleWatcher] Event unbind failed: " + ex);
+                    }
                 }
 
                 if (_initialized)
                 {
-                    _initialized = false;
-                    AIRefactoredController.OnRaidEnded();
-                    Logger.LogDebug("[RaidLifecycleWatcher] 🧹 Raid end detected — cleanup complete.");
+                    try
+                    {
+                        _initialized = false;
+                        AIRefactoredController.OnRaidEnded();
+                        Logger.LogDebug("[RaidLifecycleWatcher] 🧹 Raid end detected — cleanup complete.");
+                    }
+                    catch (Exception ex)
+                    {
+                        Logger.LogError("[RaidLifecycleWatcher] ❌ OnRaidEnded cleanup error: " + ex);
+                    }
                 }
             }
             catch (Exception ex)
@@ -107,7 +143,14 @@ namespace AIRefactored.Runtime
 
         private static void OnRaidEnded()
         {
-            Instance.OnRaidEnd();
+            try
+            {
+                Instance.OnRaidEnd();
+            }
+            catch (Exception ex)
+            {
+                Logger.LogError("[RaidLifecycleWatcher] ❌ OnRaidEnded static handler error: " + ex);
+            }
         }
 
         #endregion

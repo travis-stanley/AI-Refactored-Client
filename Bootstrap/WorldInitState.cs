@@ -3,7 +3,8 @@
 //   Licensed under the MIT License. See LICENSE in the repository root for more information.
 //
 //   THIS FILE IS SYSTEMATICALLY MANAGED.
-//   Please follow strict StyleCop, ReSharper, and AI-Refactored code standards for all modifications.
+//   Bulletproof: All failures are locally contained, never break other subsystems, and always trigger fallback isolation.
+//   See: AIRefactored “Bulletproof Fallback & Isolation Safety Rule Set” for audit compliance.
 // </auto-generated>
 
 namespace AIRefactored.Bootstrap
@@ -13,6 +14,7 @@ namespace AIRefactored.Bootstrap
     /// <summary>
     /// Tracks the phased lifecycle of world initialization.
     /// Allows AI systems to branch logic based on current state.
+    /// Fully bulletproof: no invalid state transitions or exceptions allowed.
     /// </summary>
     public static class WorldInitState
     {
@@ -25,6 +27,7 @@ namespace AIRefactored.Bootstrap
 
         /// <summary>
         /// Sets the current initialization phase.
+        /// Bulletproof: Logs and ignores invalid transitions.
         /// </summary>
         /// <param name="phase">The phase to assign.</param>
         public static void SetPhase(WorldPhase phase)
@@ -32,6 +35,13 @@ namespace AIRefactored.Bootstrap
             if (phase < WorldPhase.None || phase > WorldPhase.PostInit)
             {
                 Plugin.LoggerInstance.LogWarning("[WorldInitState] Invalid phase assignment attempt: " + phase);
+                return;
+            }
+
+            // Optionally: Prevent backwards transitions unless explicitly Reset()
+            if (phase < _phase && phase != WorldPhase.None)
+            {
+                Plugin.LoggerInstance.LogWarning("[WorldInitState] Ignored backward phase transition: " + _phase + " -> " + phase);
                 return;
             }
 

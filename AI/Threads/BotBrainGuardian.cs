@@ -32,83 +32,104 @@ namespace AIRefactored.AI.Threads
         /// <param name="botGameObject">The bot GameObject to sanitize.</param>
         public static void Enforce(GameObject botGameObject)
         {
-            if (botGameObject == null || !GameWorldHandler.IsLocalHost())
+            try
             {
-                return;
-            }
-
-            MonoBehaviour[] components = botGameObject.GetComponents<MonoBehaviour>();
-            if (components == null || components.Length == 0)
-            {
-                return;
-            }
-
-            for (int i = 0; i < components.Length; i++)
-            {
-                MonoBehaviour component = components[i];
-                if (component == null)
+                if (botGameObject == null || !GameWorldHandler.IsLocalHost())
                 {
-                    continue;
+                    return;
                 }
 
-                Type type = component.GetType();
-                if (type == typeof(BotBrain) || type == typeof(BotComponentCache))
+                MonoBehaviour[] components = botGameObject.GetComponents<MonoBehaviour>();
+                if (components == null || components.Length == 0)
                 {
-                    continue;
+                    return;
                 }
 
-                string name = type.Name.ToLowerInvariant();
-                string ns = type.Namespace != null ? type.Namespace.ToLowerInvariant() : string.Empty;
-
-                try
+                for (int i = 0; i < components.Length; i++)
                 {
-                    if (IsUnityOrEftSafe(name, ns))
+                    MonoBehaviour component = components[i];
+                    if (component == null)
                     {
                         continue;
                     }
 
-                    if (IsConflictingBrain(name, ns) || IsHarmonyPatched(type) || HasSuspiciousMethods(type))
+                    Type type = component.GetType();
+                    if (type == typeof(BotBrain) || type == typeof(BotComponentCache))
                     {
-                        UnityEngine.Object.Destroy(component);
-                        Logger.LogWarning("[BotBrainGuardian] ⚠ Removed unauthorized AI logic: " + type.FullName + " from: " + botGameObject.name);
+                        continue;
+                    }
+
+                    string name = type.Name.ToLowerInvariant();
+                    string ns = type.Namespace != null ? type.Namespace.ToLowerInvariant() : string.Empty;
+
+                    try
+                    {
+                        if (IsUnityOrEftSafe(name, ns))
+                        {
+                            continue;
+                        }
+
+                        if (IsConflictingBrain(name, ns) || IsHarmonyPatched(type) || HasSuspiciousMethods(type))
+                        {
+                            UnityEngine.Object.Destroy(component);
+                            Logger.LogWarning("[BotBrainGuardian] ⚠ Removed unauthorized AI logic: " + type.FullName + " from: " + botGameObject.name);
+                        }
+                    }
+                    catch (Exception ex)
+                    {
+                        Logger.LogError("[BotBrainGuardian] Component check failed for " + type.FullName + ": " + ex.Message);
                     }
                 }
-                catch (Exception ex)
-                {
-                    Logger.LogError("[BotBrainGuardian] Component check failed for " + type.FullName + ": " + ex.Message);
-                }
+            }
+            catch (Exception ex)
+            {
+                Logger.LogError("[BotBrainGuardian] Global enforcement error: " + ex.Message);
             }
         }
 
         private static bool IsUnityOrEftSafe(string name, string ns)
         {
-            return name == "fullbodybipedik"
-                || name == "charactercontrollerspawner"
-                || name == "coopbot"
-                || name == "simplecharactercontroller"
-                || name == "triggercollidersearcher"
-                || name == "botpacketsender"
-                || name == "botfirearmcontroller"
-                || ns.StartsWith("unity")
-                || ns.StartsWith("eft")
-                || ns.Contains("comfort");
+            try
+            {
+                return name == "fullbodybipedik"
+                    || name == "charactercontrollerspawner"
+                    || name == "coopbot"
+                    || name == "simplecharactercontroller"
+                    || name == "triggercollidersearcher"
+                    || name == "botpacketsender"
+                    || name == "botfirearmcontroller"
+                    || ns.StartsWith("unity")
+                    || ns.StartsWith("eft")
+                    || ns.Contains("comfort");
+            }
+            catch
+            {
+                return false;
+            }
         }
 
         private static bool IsConflictingBrain(string name, string ns)
         {
-            return name.Contains("brain")
-                || name.StartsWith("pmc")
-                || name.StartsWith("spt")
-                || name.StartsWith("lua")
-                || name.StartsWith("boss")
-                || name.StartsWith("follower")
-                || name.StartsWith("assault")
-                || name.StartsWith("exusec")
-                || ns.Contains("sain")
-                || ns.Contains("mod")
-                || ns.Contains("spt")
-                || ns.Contains("lua")
-                || (!ns.Contains("ai-refactored") && !ns.Contains("tarkov"));
+            try
+            {
+                return name.Contains("brain")
+                    || name.StartsWith("pmc")
+                    || name.StartsWith("spt")
+                    || name.StartsWith("lua")
+                    || name.StartsWith("boss")
+                    || name.StartsWith("follower")
+                    || name.StartsWith("assault")
+                    || name.StartsWith("exusec")
+                    || ns.Contains("sain")
+                    || ns.Contains("mod")
+                    || ns.Contains("spt")
+                    || ns.Contains("lua")
+                    || (!ns.Contains("ai-refactored") && !ns.Contains("tarkov"));
+            }
+            catch
+            {
+                return true; // fail safe: treat as conflict if error in string logic
+            }
         }
 
         private static bool IsHarmonyPatched(Type type)

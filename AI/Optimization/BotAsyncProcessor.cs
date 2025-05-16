@@ -3,7 +3,7 @@
 //   Licensed under the MIT License. See LICENSE in the repository root for more information.
 //
 //   THIS FILE IS SYSTEMATICALLY MANAGED.
-//   Please follow strict StyleCop, ReSharper, and AI-Refactored code standards for all modifications.
+//   All async and optimization routines are bulletproof and fully isolated.
 // </auto-generated>
 
 namespace AIRefactored.AI.Optimization
@@ -24,6 +24,7 @@ namespace AIRefactored.AI.Optimization
     /// Handles asynchronous low-frequency logic for bot behavior tuning and squad optimization.
     /// Supports thread-based workloads in headless environments.
     /// Runs only on the authoritative host (headless or client-host).
+    /// All failures are fully isolated to the affected bot instance.
     /// </summary>
     public sealed class BotAsyncProcessor
     {
@@ -54,73 +55,80 @@ namespace AIRefactored.AI.Optimization
 
         /// <summary>
         /// Initializes the async processor for the specified bot.
+        /// Bulletproof: errors affect only this bot's processor.
         /// </summary>
-        /// <param name="botOwner">The bot owner to initialize for.</param>
-        /// <param name="cache">The shared bot component cache.</param>
         public void Initialize(BotOwner botOwner, BotComponentCache cache)
         {
-            if (!GameWorldHandler.IsLocalHost() || botOwner == null || cache == null)
+            try
             {
-                return;
-            }
+                if (!GameWorldHandler.IsLocalHost() || botOwner == null || cache == null)
+                    return;
 
-            _bot = botOwner;
-            _cache = cache;
-            _stateCache = new BotOwnerStateCache();
-            _hasInitialized = false;
-            _lastThinkTime = 0f;
+                _bot = botOwner;
+                _cache = cache;
+                _stateCache = new BotOwnerStateCache();
+                _hasInitialized = false;
+                _lastThinkTime = 0f;
 
-            Task.Run(async () =>
-            {
-                try
+                Task.Run(async () =>
                 {
-                    await Task.Delay(TimeSpan.FromSeconds(InitDelaySeconds));
-                    if (!_hasInitialized)
+                    try
                     {
-                        await ApplyInitialPersonalityAsync(botOwner);
+                        await Task.Delay(TimeSpan.FromSeconds(InitDelaySeconds));
+                        if (!_hasInitialized)
+                        {
+                            await ApplyInitialPersonalityAsync(botOwner);
+                        }
                     }
-                }
-                catch (Exception ex)
-                {
-                    Logger.LogWarning("[BotAsyncProcessor] Async init failed: " + ex.Message);
-                }
-            });
+                    catch (Exception ex)
+                    {
+                        Logger.LogWarning("[BotAsyncProcessor] Async init failed: " + ex.Message);
+                    }
+                });
+            }
+            catch (Exception ex)
+            {
+                Logger.LogError("[BotAsyncProcessor] Initialize() fatal error: " + ex);
+            }
         }
 
         /// <summary>
         /// Updates bot async logic based on timing and environment.
+        /// Bulletproof: all failures are isolated to this bot.
         /// </summary>
-        /// <param name="time">Current time (from main game loop).</param>
         public void Tick(float time)
         {
-            if (!GameWorldHandler.IsLocalHost() || !_hasInitialized || _bot == null || _bot.IsDead)
+            try
             {
-                return;
-            }
+                if (!GameWorldHandler.IsLocalHost() || !_hasInitialized || _bot == null || _bot.IsDead)
+                    return;
 
-            _stateCache.UpdateBotOwnerStateIfNeeded(_bot);
-            TryOptimizeGroup();
+                try { _stateCache.UpdateBotOwnerStateIfNeeded(_bot); } catch (Exception ex) { Logger.LogWarning("[BotAsyncProcessor] StateCache update failed: " + ex.Message); }
+                try { TryOptimizeGroup(); } catch (Exception ex) { Logger.LogWarning("[BotAsyncProcessor] TryOptimizeGroup failed: " + ex.Message); }
 
-            float cooldown = FikaHeadlessDetector.IsHeadless ? ThinkCooldownHeadless : ThinkCooldownNormal;
-            if (time - _lastThinkTime < cooldown)
-            {
-                return;
-            }
+                float cooldown = FikaHeadlessDetector.IsHeadless ? ThinkCooldownHeadless : ThinkCooldownNormal;
+                if (time - _lastThinkTime < cooldown)
+                    return;
 
-            _lastThinkTime = time;
+                _lastThinkTime = time;
 
-            if (FikaHeadlessDetector.IsHeadless)
-            {
-                ThreadPool.QueueUserWorkItem(_ =>
+                if (FikaHeadlessDetector.IsHeadless)
+                {
+                    ThreadPool.QueueUserWorkItem(_ =>
+                    {
+                        try { Think(); }
+                        catch (Exception ex) { Logger.LogWarning("[BotAsyncProcessor] Async headless think failed: " + ex.Message); }
+                    });
+                }
+                else
                 {
                     try { Think(); }
-                    catch (Exception ex) { Logger.LogWarning("[BotAsyncProcessor] Async headless think failed: " + ex.Message); }
-                });
+                    catch (Exception ex) { Logger.LogWarning("[BotAsyncProcessor] Think execution failed: " + ex.Message); }
+                }
             }
-            else
+            catch (Exception ex)
             {
-                try { Think(); }
-                catch (Exception ex) { Logger.LogWarning("[BotAsyncProcessor] Think execution failed: " + ex.Message); }
+                Logger.LogError("[BotAsyncProcessor] Tick() fatal error: " + ex);
             }
         }
 
@@ -130,85 +138,95 @@ namespace AIRefactored.AI.Optimization
 
         private async Task ApplyInitialPersonalityAsync(BotOwner bot)
         {
-            if (_hasInitialized || bot == null || bot.Profile == null || bot.Settings == null || bot.Settings.FileSettings == null)
+            try
             {
-                return;
+                if (_hasInitialized || bot == null || bot.Profile == null || bot.Settings == null || bot.Settings.FileSettings == null)
+                    return;
+
+                await Task.Yield();
+
+                string profileId = "Unknown";
+                try { profileId = bot.Profile?.Id ?? "Unknown"; } catch { }
+
+                if (string.IsNullOrEmpty(profileId))
+                    return;
+
+                BotGlobalsMindSettings mind = null;
+                try { mind = bot.Settings.FileSettings.Mind; } catch { }
+                if (mind == null)
+                    return;
+
+                BotPersonalityProfile personality = null;
+                try { personality = BotRegistry.Get(profileId); } catch { }
+                if (personality == null)
+                    return;
+
+                try { mind.PANIC_RUN_WEIGHT = Mathf.Lerp(0.5f, 2.0f, personality.RiskTolerance); } catch { }
+                try { mind.PANIC_SIT_WEIGHT = Mathf.Lerp(10.0f, 80.0f, 1f - personality.RiskTolerance); } catch { }
+                try { mind.DIST_TO_FOUND_SQRT = Mathf.Lerp(200f, 600f, 1f - personality.Cohesion); } catch { }
+                try { mind.FRIEND_AGR_KILL = Mathf.Lerp(0f, 0.4f, personality.AggressionLevel); } catch { }
+
+                Logger.LogDebug("[BotAsyncProcessor] ✅ Personality initialized for bot: " + (bot.Profile?.Info?.Nickname ?? "Unknown"));
+                _hasInitialized = true;
             }
-
-            await Task.Yield();
-
-            string profileId = bot.Profile.Id;
-            if (string.IsNullOrEmpty(profileId))
+            catch (Exception ex)
             {
-                return;
+                Logger.LogWarning("[BotAsyncProcessor] ApplyInitialPersonalityAsync failed: " + ex.Message);
             }
-
-            BotGlobalsMindSettings mind = bot.Settings.FileSettings.Mind;
-            if (mind == null)
-            {
-                return;
-            }
-
-            BotPersonalityProfile personality = BotRegistry.Get(profileId);
-            if (personality == null)
-            {
-                return;
-            }
-
-            mind.PANIC_RUN_WEIGHT = Mathf.Lerp(0.5f, 2.0f, personality.RiskTolerance);
-            mind.PANIC_SIT_WEIGHT = Mathf.Lerp(10.0f, 80.0f, 1f - personality.RiskTolerance);
-            mind.DIST_TO_FOUND_SQRT = Mathf.Lerp(200f, 600f, 1f - personality.Cohesion);
-            mind.FRIEND_AGR_KILL = Mathf.Lerp(0f, 0.4f, personality.AggressionLevel);
-
-            Logger.LogDebug("[BotAsyncProcessor] ✅ Personality initialized for bot: " + (bot.Profile.Info?.Nickname ?? "Unknown"));
-            _hasInitialized = true;
         }
 
         private void Think()
         {
-            if (_bot == null || _bot.IsDead)
+            try
             {
-                return;
-            }
+                if (_bot == null || _bot.IsDead)
+                    return;
 
-            // Mumble phrase simulation with ultra-low random chance.
-            if (UnityEngine.Random.value < 0.008f)
-            {
-                BotWorkScheduler.EnqueueToMainThread(() =>
+                // Mumble phrase simulation with ultra-low random chance.
+                if (UnityEngine.Random.value < 0.008f)
                 {
-                    try
+                    BotWorkScheduler.EnqueueToMainThread(() =>
                     {
-                        EFT.Player p = _bot.GetPlayer;
-                        if (p != null)
+                        try
                         {
-                            p.Say(EPhraseTrigger.MumblePhrase);
+                            EFT.Player p = _bot.GetPlayer;
+                            if (p != null)
+                                p.Say(EPhraseTrigger.MumblePhrase);
                         }
-                    }
-                    catch (Exception ex)
-                    {
-                        Logger.LogWarning("[BotAsyncProcessor] Mumble dispatch failed: " + ex.Message);
-                    }
-                });
+                        catch (Exception ex)
+                        {
+                            Logger.LogWarning("[BotAsyncProcessor] Mumble dispatch failed: " + ex.Message);
+                        }
+                    });
+                }
+            }
+            catch (Exception ex)
+            {
+                Logger.LogWarning("[BotAsyncProcessor] Think() exception: " + ex.Message);
             }
         }
 
         private void TryOptimizeGroup()
         {
-            if (_bot == null || _bot.Profile == null || _bot.Profile.Info == null)
+            try
             {
-                return;
-            }
+                if (_bot == null || _bot.Profile == null || _bot.Profile.Info == null)
+                    return;
 
-            string groupId = _bot.Profile.Info.GroupId;
-            if (string.IsNullOrEmpty(groupId))
-            {
-                return;
-            }
+                string groupId = _bot.Profile.Info.GroupId;
+                if (string.IsNullOrEmpty(groupId))
+                    return;
 
-            List<BotOwner> squad = BotTeamTracker.GetGroup(groupId);
-            if (squad != null && squad.Count > 0)
+                List<BotOwner> squad = null;
+                try { squad = BotTeamTracker.GetGroup(groupId); } catch { }
+                if (squad != null && squad.Count > 0)
+                {
+                    try { _groupOptimizer.OptimizeGroupAI(squad); } catch (Exception ex) { Logger.LogWarning("[BotAsyncProcessor] Group optimization failed: " + ex.Message); }
+                }
+            }
+            catch (Exception ex)
             {
-                _groupOptimizer.OptimizeGroupAI(squad);
+                Logger.LogWarning("[BotAsyncProcessor] TryOptimizeGroup() exception: " + ex.Message);
             }
         }
 

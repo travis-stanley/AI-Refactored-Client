@@ -4,6 +4,7 @@
 //
 //   THIS FILE IS SYSTEMATICALLY MANAGED.
 //   Please follow strict StyleCop, ReSharper, and AI-Refactored code standards for all modifications.
+//   All failures are locally isolated; only looting logic falls back or disables itself, never affecting the rest of the bot or mod.
 // </auto-generated>
 
 namespace AIRefactored.AI.Looting
@@ -13,6 +14,7 @@ namespace AIRefactored.AI.Looting
     using AIRefactored.AI.Core;
     using AIRefactored.Pools;
     using AIRefactored.Runtime;
+    using BepInEx.Logging;
     using EFT;
     using EFT.Interactive;
     using EFT.InventoryLogic;
@@ -21,6 +23,7 @@ namespace AIRefactored.AI.Looting
     /// <summary>
     /// Makes dynamic decisions about whether a bot should loot.
     /// Considers mission context, recent threats, tactical memory, and loot value.
+    /// Bulletproof fallback: all errors and failures are isolated and never cascade.
     /// </summary>
     public sealed class BotLootDecisionSystem
     {
@@ -40,6 +43,9 @@ namespace AIRefactored.AI.Looting
 
         private readonly HashSet<string> _recentLooted = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
 
+        private bool _isActive = true;
+        private static ManualLogSource Logger => Plugin.LoggerInstance;
+
         #endregion
 
         #region Initialization
@@ -51,11 +57,14 @@ namespace AIRefactored.AI.Looting
         {
             if (cache == null || cache.Bot == null)
             {
-                throw new ArgumentNullException(nameof(cache), "[BotLootDecisionSystem] Initialization failed: cache or bot is null.");
+                _isActive = false;
+                Logger.LogError("[BotLootDecisionSystem] Initialization failed: cache or bot is null. Disabling looting logic for this bot.");
+                return;
             }
 
             _cache = cache;
             _bot = cache.Bot;
+            _isActive = true;
         }
 
         #endregion
@@ -67,29 +76,41 @@ namespace AIRefactored.AI.Looting
         /// </summary>
         public bool ShouldLootNow()
         {
-            if (_bot == null || _bot.IsDead || Time.time < _nextLootTime)
+            if (!_isActive || _bot == null || _bot.IsDead)
             {
                 return false;
             }
 
-            if (_cache.PanicHandler != null && _cache.PanicHandler.IsPanicking)
+            if (Time.time < _nextLootTime)
             {
                 return false;
             }
 
-            if (_bot.Memory?.GoalEnemy != null)
+            try
             {
+                if (_cache.PanicHandler != null && _cache.PanicHandler.IsPanicking)
+                {
+                    return false;
+                }
+
+                if (_bot.Memory != null && _bot.Memory.GoalEnemy != null)
+                {
+                    return false;
+                }
+
+                if (_bot.EnemiesController != null && _bot.EnemiesController.EnemyInfos != null && _bot.EnemiesController.EnemyInfos.Count > 0)
+                {
+                    return false;
+                }
+
+                return _cache.LootScanner != null && _cache.LootScanner.TotalLootValue >= HighValueThreshold;
+            }
+            catch (Exception ex)
+            {
+                _isActive = false;
+                Logger.LogError($"[BotLootDecisionSystem] ShouldLootNow() failed: {ex}");
                 return false;
             }
-
-            if (_bot.EnemiesController?.EnemyInfos != null && _bot.EnemiesController.EnemyInfos.Count > 0)
-            {
-                return false;
-            }
-
-            // Require the loot scanner to have found enough value to justify looting
-            return _cache.LootScanner != null &&
-                   _cache.LootScanner.TotalLootValue >= HighValueThreshold;
         }
 
         /// <summary>
@@ -97,38 +118,52 @@ namespace AIRefactored.AI.Looting
         /// </summary>
         public Vector3 GetLootDestination()
         {
-            if (_cache?.LootScanner == null || _bot == null)
+            if (!_isActive || _cache == null || _cache.LootScanner == null || _bot == null)
             {
                 return Vector3.zero;
             }
 
-            float bestValue = 0f;
-            Vector3 bestPoint = Vector3.zero;
-
-            List<LootableContainer> containers = LootRegistry.GetAllContainers();
-            for (int i = 0; i < containers.Count; i++)
+            try
             {
-                LootableContainer container = containers[i];
-                if (container == null || !container.enabled || container.transform == null)
+                float bestValue = 0f;
+                Vector3 bestPoint = Vector3.zero;
+
+                List<LootableContainer> containers = LootRegistry.GetAllContainers();
+                if (containers == null)
                 {
-                    continue;
+                    return Vector3.zero;
                 }
 
-                Vector3 pos = container.transform.position;
-                if ((pos - _bot.Position).sqrMagnitude > (MaxLootDistance * MaxLootDistance))
+                for (int i = 0; i < containers.Count; i++)
                 {
-                    continue;
+                    LootableContainer container = containers[i];
+                    if (container == null || !container.enabled || container.transform == null)
+                    {
+                        continue;
+                    }
+
+                    Vector3 pos = container.transform.position;
+                    if ((_bot.Position - pos).sqrMagnitude > (MaxLootDistance * MaxLootDistance))
+                    {
+                        continue;
+                    }
+
+                    float value = EstimateValue(container);
+                    if (value > bestValue)
+                    {
+                        bestValue = value;
+                        bestPoint = pos;
+                    }
                 }
 
-                float value = EstimateValue(container);
-                if (value > bestValue)
-                {
-                    bestValue = value;
-                    bestPoint = pos;
-                }
+                return bestValue > 0f ? bestPoint : Vector3.zero;
             }
-
-            return bestValue > 0f ? bestPoint : Vector3.zero;
+            catch (Exception ex)
+            {
+                _isActive = false;
+                Logger.LogError($"[BotLootDecisionSystem] GetLootDestination() failed: {ex}");
+                return Vector3.zero;
+            }
         }
 
         /// <summary>
@@ -136,14 +171,22 @@ namespace AIRefactored.AI.Looting
         /// </summary>
         public void MarkLooted(string lootId)
         {
-            if (string.IsNullOrWhiteSpace(lootId))
+            if (!_isActive || string.IsNullOrWhiteSpace(lootId))
             {
                 return;
             }
 
-            string id = lootId.Trim();
-            _recentLooted.Add(id);
-            _nextLootTime = Time.time + CooldownTime;
+            try
+            {
+                string id = lootId.Trim();
+                _recentLooted.Add(id);
+                _nextLootTime = Time.time + CooldownTime;
+            }
+            catch (Exception ex)
+            {
+                _isActive = false;
+                Logger.LogError($"[BotLootDecisionSystem] MarkLooted() failed: {ex}");
+            }
         }
 
         /// <summary>
@@ -151,12 +194,21 @@ namespace AIRefactored.AI.Looting
         /// </summary>
         public bool WasRecentlyLooted(string lootId)
         {
-            if (string.IsNullOrWhiteSpace(lootId))
+            if (!_isActive || string.IsNullOrWhiteSpace(lootId))
             {
                 return false;
             }
 
-            return _recentLooted.Contains(lootId.Trim());
+            try
+            {
+                return _recentLooted.Contains(lootId.Trim());
+            }
+            catch (Exception ex)
+            {
+                _isActive = false;
+                Logger.LogError($"[BotLootDecisionSystem] WasRecentlyLooted() failed: {ex}");
+                return false;
+            }
         }
 
         #endregion
@@ -165,25 +217,41 @@ namespace AIRefactored.AI.Looting
 
         private static float EstimateValue(LootableContainer container)
         {
-            if (container?.ItemOwner?.RootItem == null)
+            if (container == null || container.ItemOwner == null || container.ItemOwner.RootItem == null)
             {
                 return 0f;
             }
 
             float total = 0f;
-            List<Item> items = TempListPool.Rent<Item>();
-            container.ItemOwner.RootItem.GetAllItemsNonAlloc(items);
+            List<Item> items = null;
 
-            for (int i = 0; i < items.Count; i++)
+            try
             {
-                Item item = items[i];
-                if (item != null && item.Template != null && item.Template.CreditsPrice > 0f)
+                items = TempListPool.Rent<Item>();
+                container.ItemOwner.RootItem.GetAllItemsNonAlloc(items);
+
+                for (int i = 0; i < items.Count; i++)
                 {
-                    total += item.Template.CreditsPrice;
+                    Item item = items[i];
+                    if (item != null && item.Template != null && item.Template.CreditsPrice > 0f)
+                    {
+                        total += item.Template.CreditsPrice;
+                    }
+                }
+            }
+            catch (Exception ex)
+            {
+                Logger.LogError($"[BotLootDecisionSystem] EstimateValue() failed: {ex}");
+                return 0f;
+            }
+            finally
+            {
+                if (items != null)
+                {
+                    TempListPool.Return(items);
                 }
             }
 
-            TempListPool.Return(items);
             return total;
         }
 

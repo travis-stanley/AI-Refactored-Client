@@ -8,6 +8,7 @@
 
 namespace AIRefactored.AI.Helpers
 {
+    using System;
     using System.Collections.Generic;
     using EFT;
     using UnityEngine;
@@ -15,6 +16,7 @@ namespace AIRefactored.AI.Helpers
     /// <summary>
     /// Tracks and exposes active tactical flashlights in the scene.
     /// Used by AI perception systems for flashblindness, evasion, and visual panic triggers.
+    /// Bulletproof: errors are local and never break the bot, fallback, or system logic.
     /// </summary>
     public static class FlashlightRegistry
     {
@@ -45,19 +47,26 @@ namespace AIRefactored.AI.Helpers
             ActiveLights.Clear();
             LastKnownFlashPositions.Clear();
 
-            Light[] lights = Object.FindObjectsOfType<Light>();
-            for (int i = 0; i < lights.Length; i++)
+            try
             {
-                Light light = lights[i];
-                if (IsValidTacticalLight(light))
+                Light[] lights = UnityEngine.Object.FindObjectsOfType<Light>();
+                for (int i = 0; i < lights.Length; i++)
                 {
-                    Transform t = light.transform;
-                    if (t != null)
+                    Light light = lights[i];
+                    if (IsValidTacticalLight(light))
                     {
-                        ActiveLights.Add(light);
-                        LastKnownFlashPositions.Add(t.position);
+                        Transform t = light.transform;
+                        if (t != null)
+                        {
+                            ActiveLights.Add(light);
+                            LastKnownFlashPositions.Add(t.position);
+                        }
                     }
                 }
+            }
+            catch
+            {
+                // Never break scene scan; just return current (possibly empty) ActiveLights
             }
 
             return ActiveLights;
@@ -80,45 +89,59 @@ namespace AIRefactored.AI.Helpers
             if (botHead == null)
                 return false;
 
-            Vector3 eyePos = botHead.position + (Vector3.up * EyeRayBias);
-
-            for (int i = 0; i < ActiveLights.Count; i++)
+            try
             {
-                Light light = ActiveLights[i];
-                if (!IsValidTacticalLight(light))
-                    continue;
+                Vector3 eyePos = botHead.position + (Vector3.up * EyeRayBias);
 
-                Transform lightTransform = light.transform;
-                if (lightTransform == null)
-                    continue;
-
-                Vector3 toBot = eyePos - lightTransform.position;
-                float distance = toBot.magnitude;
-
-                if (distance > customMaxDist)
-                    continue;
-
-                float angle = Vector3.Angle(lightTransform.forward, toBot);
-                if (angle > ExposureConeAngle)
-                    continue;
-
-                Vector3 origin = lightTransform.position;
-                Vector3 dir = toBot.normalized;
-                float rayLen = distance + 0.1f;
-
-                if (Physics.Raycast(origin, dir, out RaycastHit hit, rayLen, LayerMaskClass.HighPolyWithTerrainMaskAI))
+                for (int i = 0; i < ActiveLights.Count; i++)
                 {
-                    if (ReferenceEquals(hit.transform, botHead) || ReferenceEquals(hit.collider.transform, botHead))
+                    Light light = ActiveLights[i];
+                    if (!IsValidTacticalLight(light))
+                        continue;
+
+                    Transform lightTransform = light.transform;
+                    if (lightTransform == null)
+                        continue;
+
+                    Vector3 toBot = eyePos - lightTransform.position;
+                    float distance = toBot.magnitude;
+
+                    if (distance > customMaxDist)
+                        continue;
+
+                    float angle = Vector3.Angle(lightTransform.forward, toBot);
+                    if (angle > ExposureConeAngle)
+                        continue;
+
+                    Vector3 origin = lightTransform.position;
+                    Vector3 dir = toBot.normalized;
+                    float rayLen = distance + 0.1f;
+
+                    try
                     {
-                        blindingLight = light;
-                        return true;
+                        if (Physics.Raycast(origin, dir, out RaycastHit hit, rayLen, LayerMaskClass.HighPolyWithTerrainMaskAI))
+                        {
+                            if (ReferenceEquals(hit.transform, botHead) || ReferenceEquals(hit.collider.transform, botHead))
+                            {
+                                blindingLight = light;
+                                return true;
+                            }
+                        }
+                        else if (angle < (ExposureConeAngle * 0.5f) && distance < 4.5f)
+                        {
+                            blindingLight = light;
+                            return true;
+                        }
+                    }
+                    catch
+                    {
+                        // Raycast failure is isolated
                     }
                 }
-                else if (angle < (ExposureConeAngle * 0.5f) && distance < 4.5f)
-                {
-                    blindingLight = light;
-                    return true;
-                }
+            }
+            catch
+            {
+                // Any loop or data error is isolated
             }
 
             return false;
@@ -138,12 +161,19 @@ namespace AIRefactored.AI.Helpers
 
         private static bool IsValidTacticalLight(Light light)
         {
-            return light != null &&
-                   light.enabled &&
-                   light.type == LightType.Spot &&
-                   light.intensity >= IntensityThreshold &&
-                   light.spotAngle <= AngleThreshold &&
-                   light.gameObject.activeInHierarchy;
+            try
+            {
+                return light != null &&
+                       light.enabled &&
+                       light.type == LightType.Spot &&
+                       light.intensity >= IntensityThreshold &&
+                       light.spotAngle <= AngleThreshold &&
+                       light.gameObject.activeInHierarchy;
+            }
+            catch
+            {
+                return false;
+            }
         }
 
         #endregion

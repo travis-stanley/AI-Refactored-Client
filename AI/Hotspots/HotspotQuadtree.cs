@@ -16,6 +16,7 @@ namespace AIRefactored.AI.Hotspots
     /// <summary>
     /// Spatial quadtree for hotspot lookup acceleration.
     /// Supports efficient spatial queries to reduce search time for hotspot scanning.
+    /// Bulletproof: all errors are local, pooling is always safe, and logic is null-guarded.
     /// </summary>
     public sealed class HotspotQuadtree
     {
@@ -55,49 +56,57 @@ namespace AIRefactored.AI.Hotspots
 
             Vector2 pos2D = new Vector2(hotspot.Position.x, hotspot.Position.z);
             var stack = TempStackPool.Rent<Node>();
-            stack.Push(_root);
 
-            while (stack.Count > 0)
+            try
             {
-                Node node = stack.Pop();
-                if (!node.Bounds.Contains(pos2D))
-                    continue;
+                stack.Push(_root);
 
-                if (node.IsLeaf)
+                while (stack.Count > 0)
                 {
-                    node.Points.Add(hotspot);
+                    Node node = stack.Pop();
+                    if (!node.Bounds.Contains(pos2D))
+                        continue;
 
-                    if (node.Points.Count > MaxPerNode && node.Depth < MaxDepth)
+                    if (node.IsLeaf)
                     {
-                        Subdivide(node);
+                        node.Points.Add(hotspot);
 
-                        // Move points to children
-                        for (int i = 0; i < node.Points.Count; i++)
+                        if (node.Points.Count > MaxPerNode && node.Depth < MaxDepth)
                         {
-                            HotspotRegistry.Hotspot existing = node.Points[i];
-                            Vector2 existing2D = new Vector2(existing.Position.x, existing.Position.z);
-                            for (int j = 0; j < 4; j++)
+                            Subdivide(node);
+
+                            // Move points to children
+                            for (int i = 0; i < node.Points.Count; i++)
                             {
-                                Node child = node.Children[j];
-                                if (child.Bounds.Contains(existing2D))
+                                HotspotRegistry.Hotspot existing = node.Points[i];
+                                Vector2 existing2D = new Vector2(existing.Position.x, existing.Position.z);
+                                for (int j = 0; j < 4; j++)
                                 {
-                                    child.Points.Add(existing);
-                                    break;
+                                    Node child = node.Children[j];
+                                    if (child.Bounds.Contains(existing2D))
+                                    {
+                                        child.Points.Add(existing);
+                                        break;
+                                    }
                                 }
                             }
+                            node.Points.Clear();
                         }
-
-                        node.Points.Clear();
+                        break;
                     }
 
-                    break;
+                    for (int i = 0; i < node.Children.Length; i++)
+                        stack.Push(node.Children[i]);
                 }
-
-                for (int i = 0; i < node.Children.Length; i++)
-                    stack.Push(node.Children[i]);
             }
-
-            TempStackPool.Return(stack);
+            catch
+            {
+                // All errors are local; never break pooling
+            }
+            finally
+            {
+                TempStackPool.Return(stack);
+            }
         }
 
         /// <summary>
@@ -106,40 +115,49 @@ namespace AIRefactored.AI.Hotspots
         public List<HotspotRegistry.Hotspot> Query(Vector3 position, float radius, Predicate<HotspotRegistry.Hotspot> filter)
         {
             List<HotspotRegistry.Hotspot> results = TempListPool.Rent<HotspotRegistry.Hotspot>();
-            Vector2 pos2D = new Vector2(position.x, position.z);
-            float radiusSq = radius * radius;
-            float size = radius * 2f;
-            Rect queryBounds = new Rect(pos2D.x - radius, pos2D.y - radius, size, size);
-
             var stack = TempStackPool.Rent<Node>();
-            stack.Push(_root);
-
-            while (stack.Count > 0)
+            try
             {
-                Node node = stack.Pop();
+                Vector2 pos2D = new Vector2(position.x, position.z);
+                float radiusSq = radius * radius;
+                float size = radius * 2f;
+                Rect queryBounds = new Rect(pos2D.x - radius, pos2D.y - radius, size, size);
 
-                if (!node.Bounds.Overlaps(queryBounds))
-                    continue;
+                stack.Push(_root);
 
-                if (node.IsLeaf)
+                while (stack.Count > 0)
                 {
-                    for (int i = 0; i < node.Points.Count; i++)
+                    Node node = stack.Pop();
+
+                    if (!node.Bounds.Overlaps(queryBounds))
+                        continue;
+
+                    if (node.IsLeaf)
                     {
-                        HotspotRegistry.Hotspot h = node.Points[i];
-                        Vector3 delta = h.Position - position;
-                        if (delta.sqrMagnitude <= radiusSq && (filter == null || filter(h)))
+                        for (int i = 0; i < node.Points.Count; i++)
                         {
-                            results.Add(h);
+                            HotspotRegistry.Hotspot h = node.Points[i];
+                            Vector3 delta = h.Position - position;
+                            if (delta.sqrMagnitude <= radiusSq && (filter == null || filter(h)))
+                            {
+                                results.Add(h);
+                            }
                         }
+                        continue;
                     }
-                    continue;
+
+                    for (int i = 0; i < node.Children.Length; i++)
+                        stack.Push(node.Children[i]);
                 }
-
-                for (int i = 0; i < node.Children.Length; i++)
-                    stack.Push(node.Children[i]);
             }
-
-            TempStackPool.Return(stack);
+            catch
+            {
+                // All errors are local; never break pooling
+            }
+            finally
+            {
+                TempStackPool.Return(stack);
+            }
             return results;
         }
 

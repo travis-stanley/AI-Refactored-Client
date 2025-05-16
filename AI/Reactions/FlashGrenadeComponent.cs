@@ -3,11 +3,13 @@
 //   Licensed under the MIT License. See LICENSE in the repository root for more information.
 //
 //   THIS FILE IS SYSTEMATICALLY MANAGED.
+//   Failures in AIRefactored logic must always trigger safe fallback to EFT base AI, never break the stack.
 //   Please follow strict StyleCop, ReSharper, and AI-Refactored code standards for all modifications.
 // </auto-generated>
 
 namespace AIRefactored.AI.Reactions
 {
+    using System;
     using System.Collections.Generic;
     using AIRefactored.AI.Core;
     using AIRefactored.AI.Helpers;
@@ -34,6 +36,7 @@ namespace AIRefactored.AI.Reactions
         private BotComponentCache _cache;
         private bool _isBlinded;
         private float _lastFlashTime = -999f;
+        private bool _failed;
 
         #endregion
 
@@ -45,15 +48,26 @@ namespace AIRefactored.AI.Reactions
         /// <param name="cache">The shared bot component cache. Must not be null and must have a Bot.</param>
         public void Initialize(BotComponentCache cache)
         {
-            if (cache == null)
+            try
             {
-                throw new System.ArgumentNullException(nameof(cache));
-            }
+                if (cache == null)
+                    throw new ArgumentNullException(nameof(cache));
+                if (cache.Bot == null)
+                    throw new ArgumentException("Bot reference is null.");
 
-            _cache = cache;
-            _bot = cache.Bot ?? throw new System.ArgumentException("Bot reference is null.");
-            _isBlinded = false;
-            _lastFlashTime = -999f;
+                _cache = cache;
+                _bot = cache.Bot;
+                _isBlinded = false;
+                _lastFlashTime = -999f;
+                _failed = false;
+            }
+            catch (Exception ex)
+            {
+                _bot = null;
+                _cache = null;
+                _failed = true;
+                Plugin.LoggerInstance.LogError($"[FlashGrenadeComponent] Initialize exception: {ex}");
+            }
         }
 
         #endregion
@@ -65,7 +79,7 @@ namespace AIRefactored.AI.Reactions
         /// </summary>
         public bool IsFlashed()
         {
-            return _isBlinded;
+            return !_failed && _isBlinded;
         }
 
         /// <summary>
@@ -75,21 +89,29 @@ namespace AIRefactored.AI.Reactions
         /// <param name="source">Optional: world-space position of the flash source.</param>
         public void ForceBlind(float duration = BaseBlindDuration, Vector3? source = null)
         {
-            if (_bot == null || _bot.IsDead)
+            if (_failed || _bot == null || _bot.IsDead)
             {
                 return;
             }
 
-            _lastFlashTime = Time.time;
-            _isBlinded = true;
-
-            if (source.HasValue)
+            try
             {
-                Player player = EFTPlayerUtil.ResolvePlayer(_bot);
-                if (player != null)
+                _lastFlashTime = Time.time;
+                _isBlinded = true;
+
+                if (source.HasValue)
                 {
-                    BotSuppressionHelper.TrySuppressBot(player, source.Value);
+                    Player player = EFTPlayerUtil.ResolvePlayer(_bot);
+                    if (player != null)
+                    {
+                        BotSuppressionHelper.TrySuppressBot(player, source.Value);
+                    }
                 }
+            }
+            catch (Exception ex)
+            {
+                _failed = true;
+                Plugin.LoggerInstance.LogError($"[FlashGrenadeComponent] ForceBlind exception: {ex}");
             }
         }
 
@@ -99,22 +121,30 @@ namespace AIRefactored.AI.Reactions
         /// <param name="time">Current time value.</param>
         public void Tick(float time)
         {
-            if (_cache == null || _bot == null || _bot.IsDead)
+            if (_failed || _cache == null || _bot == null || _bot.IsDead)
             {
                 return;
             }
 
-            Player player = EFTPlayerUtil.ResolvePlayer(_bot);
-            if (player == null || !player.IsAI || player.IsYourPlayer)
+            try
             {
-                return;
+                Player player = EFTPlayerUtil.ResolvePlayer(_bot);
+                if (player == null || !player.IsAI || player.IsYourPlayer)
+                {
+                    return;
+                }
+
+                CheckFlashlightExposure();
+
+                if (_isBlinded && (time - _lastFlashTime) > GetBlindRecoveryTime())
+                {
+                    _isBlinded = false;
+                }
             }
-
-            CheckFlashlightExposure();
-
-            if (_isBlinded && (time - _lastFlashTime) > GetBlindRecoveryTime())
+            catch (Exception ex)
             {
-                _isBlinded = false;
+                _failed = true;
+                Plugin.LoggerInstance.LogError($"[FlashGrenadeComponent] Tick exception: {ex}");
             }
         }
 
@@ -128,32 +158,40 @@ namespace AIRefactored.AI.Reactions
         /// </summary>
         private void CheckFlashlightExposure()
         {
-            Transform head = BotCacheUtility.Head(_cache);
-            if (head == null)
+            try
             {
-                return;
-            }
-
-            IReadOnlyList<Vector3> sources = FlashlightRegistry.GetLastKnownFlashlightPositions();
-            for (int i = 0, count = sources.Count; i < count; i++)
-            {
-                if (FlashlightRegistry.IsExposingBot(head, out Light light) && light != null)
+                Transform head = BotCacheUtility.Head(_cache);
+                if (head == null)
                 {
-                    float score = FlashLightUtils.CalculateFlashScore(light.transform, head, 20f);
-                    if (score >= TriggerScoreThreshold)
+                    return;
+                }
+
+                IReadOnlyList<Vector3> sources = FlashlightRegistry.GetLastKnownFlashlightPositions();
+                for (int i = 0, count = sources.Count; i < count; i++)
+                {
+                    if (FlashlightRegistry.IsExposingBot(head, out Light light) && light != null)
                     {
-                        _lastFlashTime = Time.time;
-                        _isBlinded = true;
-
-                        Player player = EFTPlayerUtil.ResolvePlayer(_bot);
-                        if (player != null)
+                        float score = FlashLightUtils.CalculateFlashScore(light.transform, head, 20f);
+                        if (score >= TriggerScoreThreshold)
                         {
-                            BotSuppressionHelper.TrySuppressBot(player, light.transform.position);
-                        }
+                            _lastFlashTime = Time.time;
+                            _isBlinded = true;
 
-                        return;
+                            Player player = EFTPlayerUtil.ResolvePlayer(_bot);
+                            if (player != null)
+                            {
+                                BotSuppressionHelper.TrySuppressBot(player, light.transform.position);
+                            }
+
+                            return;
+                        }
                     }
                 }
+            }
+            catch (Exception ex)
+            {
+                _failed = true;
+                Plugin.LoggerInstance.LogError($"[FlashGrenadeComponent] CheckFlashlightExposure exception: {ex}");
             }
         }
 
@@ -163,9 +201,16 @@ namespace AIRefactored.AI.Reactions
         private float GetBlindRecoveryTime()
         {
             float composure = 1f;
-            if (_cache != null && _cache.PanicHandler != null)
+            try
             {
-                composure = _cache.PanicHandler.GetComposureLevel();
+                if (_cache != null && _cache.PanicHandler != null)
+                {
+                    composure = _cache.PanicHandler.GetComposureLevel();
+                }
+            }
+            catch
+            {
+                composure = 1f;
             }
 
             return Mathf.Lerp(2f, BaseBlindDuration, 1f - composure);

@@ -18,6 +18,7 @@ namespace AIRefactored.AI.Movement
     /// <summary>
     /// Controls bot look direction using smooth rotation logic and realistic perception response.
     /// Integrates panic, blindness, sound, and enemy awareness.
+    /// All failures are locally isolated; cannot break or cascade into other systems.
     /// </summary>
     public sealed class BotLookController
     {
@@ -63,6 +64,7 @@ namespace AIRefactored.AI.Movement
 
         /// <summary>
         /// Updates look direction every tick, enforcing smooth and realistic behavior.
+        /// All failures are locally isolated and logged; system cannot break.
         /// </summary>
         public void Tick(float deltaTime)
         {
@@ -102,7 +104,7 @@ namespace AIRefactored.AI.Movement
             catch (Exception ex)
             {
                 Logger.LogError("[BotLookController] Tick failed: " + ex);
-                BotFallbackUtility.FallbackToEFTLogic(_bot);
+                try { BotFallbackUtility.FallbackToEFTLogic(_bot); } catch { }
             }
         }
 
@@ -111,9 +113,16 @@ namespace AIRefactored.AI.Movement
         /// </summary>
         public void SetLookTarget(Vector3 worldPos)
         {
-            if (IsValid(worldPos))
+            try
             {
-                _fallbackLookTarget = worldPos;
+                if (IsValid(worldPos))
+                {
+                    _fallbackLookTarget = worldPos;
+                }
+            }
+            catch (Exception ex)
+            {
+                Logger.LogError("[BotLookController] SetLookTarget failed: " + ex);
             }
         }
 
@@ -138,7 +147,14 @@ namespace AIRefactored.AI.Movement
         /// </summary>
         public Vector3 GetLookDirection()
         {
-            return _bot != null ? _bot.LookDirection : Vector3.forward;
+            try
+            {
+                return _bot != null ? _bot.LookDirection : Vector3.forward;
+            }
+            catch
+            {
+                return Vector3.forward;
+            }
         }
 
         #endregion
@@ -147,55 +163,64 @@ namespace AIRefactored.AI.Movement
 
         /// <summary>
         /// Computes the next look target, considering blindness, panic, sound, and enemy threat.
+        /// All failures are locally isolated and fallback target is always valid.
         /// </summary>
         private Vector3 ResolveLookTarget(Vector3 origin)
         {
-            float now = Time.time;
-
-            // Blind state: look around randomly within a radius.
-            if (_cache != null && _cache.IsBlinded && now < _cache.BlindUntilTime)
+            try
             {
-                Vector3 offset = UnityEngine.Random.insideUnitSphere;
-                offset.y = 0f;
-                return origin + offset.normalized * BlindLookRadius;
-            }
+                float now = Time.time;
 
-            // Panic state: look toward last heard sound, or fallback.
-            if (_cache != null && _cache.Panic != null && _cache.Panic.IsPanicking)
-            {
-                if (_cache.HasHeardDirection)
+                // Blind state: look around randomly within a radius.
+                if (_cache != null && _cache.IsBlinded && now < _cache.BlindUntilTime)
                 {
-                    return origin + _cache.LastHeardDirection.normalized * HeardDirectionWeight;
+                    Vector3 offset = UnityEngine.Random.insideUnitSphere;
+                    offset.y = 0f;
+                    return origin + offset.normalized * BlindLookRadius;
                 }
-                return origin + _bot.LookDirection;
-            }
 
-            // Target enemy.
-            if (_cache != null && _cache.ThreatSelector != null)
-            {
-                string id = _cache.ThreatSelector.GetTargetProfileId();
-                if (!string.IsNullOrEmpty(id))
+                // Panic state: look toward last heard sound, or fallback.
+                if (_cache != null && _cache.Panic != null && _cache.Panic.IsPanicking)
                 {
-                    Player enemy = EFTPlayerUtil.ResolvePlayerById(id);
-                    if (EFTPlayerUtil.IsValid(enemy))
+                    if (_cache.HasHeardDirection)
                     {
-                        Vector3 pos = EFTPlayerUtil.GetPosition(enemy);
-                        if (pos.sqrMagnitude > 0.01f)
+                        return origin + _cache.LastHeardDirection.normalized * HeardDirectionWeight;
+                    }
+                    return origin + _bot.LookDirection;
+                }
+
+                // Target enemy.
+                if (_cache != null && _cache.ThreatSelector != null)
+                {
+                    string id = _cache.ThreatSelector.GetTargetProfileId();
+                    if (!string.IsNullOrEmpty(id))
+                    {
+                        Player enemy = EFTPlayerUtil.ResolvePlayerById(id);
+                        if (EFTPlayerUtil.IsValid(enemy))
                         {
-                            return pos;
+                            Vector3 pos = EFTPlayerUtil.GetPosition(enemy);
+                            if (pos.sqrMagnitude > 0.01f)
+                            {
+                                return pos;
+                            }
                         }
                     }
                 }
-            }
 
-            // Heard sound direction within memory duration.
-            if (_cache != null && _cache.HasHeardDirection && now - _cache.LastHeardTime < SoundMemoryDuration)
+                // Heard sound direction within memory duration.
+                if (_cache != null && _cache.HasHeardDirection && now - _cache.LastHeardTime < SoundMemoryDuration)
+                {
+                    return origin + _cache.LastHeardDirection.normalized * HeardDirectionWeight;
+                }
+
+                // Idle scanning: fallback (e.g., previously set patrol/scan direction).
+                return _fallbackLookTarget;
+            }
+            catch (Exception ex)
             {
-                return origin + _cache.LastHeardDirection.normalized * HeardDirectionWeight;
+                Logger.LogError("[BotLookController] ResolveLookTarget failed: " + ex);
+                return _fallbackLookTarget;
             }
-
-            // Idle scanning: fallback (e.g., previously set patrol/scan direction).
-            return _fallbackLookTarget;
         }
 
         private static bool IsValid(Vector3 pos)

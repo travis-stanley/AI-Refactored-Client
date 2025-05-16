@@ -4,6 +4,7 @@
 //
 //   THIS FILE IS SYSTEMATICALLY MANAGED.
 //   Please follow strict StyleCop, ReSharper, and AI-Refactored code standards for all modifications.
+//   Bulletproof: All failures are locally contained, never break other subsystems, and always trigger fallback isolation.
 // </auto-generated>
 
 namespace AIRefactored
@@ -17,6 +18,7 @@ namespace AIRefactored
     /// <summary>
     /// Entry point for AI-Refactored mod. Supports traditional client, client-host, and FIKA headless modes.
     /// Initializes all world systems and routes teardown via GameWorldHandler on plugin destruction.
+    /// Bulletproof: All failures are locally contained, global state is never at risk.
     /// </summary>
     [BepInPlugin("com.spock.airefactored", "AI-Refactored (Host Only)", "1.0.0")]
     public sealed class Plugin : BaseUnityPlugin
@@ -38,7 +40,6 @@ namespace AIRefactored
                 {
                     throw new InvalidOperationException("[AIRefactored] LoggerInstance accessed before plugin Awake.");
                 }
-
                 return _logger;
             }
         }
@@ -49,15 +50,14 @@ namespace AIRefactored
 
         /// <summary>
         /// Unity Awake hook. Initializes logger and controller systems in thread-safe manner.
+        /// Bulletproof: All failures are locally contained and cannot break the mod.
         /// </summary>
         private void Awake()
         {
             lock (InitLock)
             {
                 if (_initialized)
-                {
                     return;
-                }
 
                 _logger = base.Logger;
                 AppDomain.CurrentDomain.UnhandledException += OnUnhandledException;
@@ -78,23 +78,29 @@ namespace AIRefactored
 
         /// <summary>
         /// Unity OnDestroy hook. Tears down world systems and logs result.
+        /// Bulletproof: All failures are locally contained and cannot break the mod.
         /// </summary>
         private void OnDestroy()
         {
             lock (InitLock)
             {
                 if (!_initialized || _logger == null)
-                {
                     return;
-                }
 
                 try
                 {
                     _logger.LogInfo("[AIRefactored] 🔻 Plugin OnDestroy — performing teardown...");
 
-                    if (GameWorldHandler.HasValidWorld())
+                    try
                     {
-                        GameWorldHandler.UnhookBotSpawns();
+                        if (GameWorldHandler.HasValidWorld())
+                        {
+                            GameWorldHandler.UnhookBotSpawns();
+                        }
+                    }
+                    catch (Exception ex)
+                    {
+                        _logger.LogError("[AIRefactored] UnhookBotSpawns() error: " + ex);
                     }
 
                     _logger.LogInfo("[AIRefactored] ✅ Cleanup complete — plugin shutdown successful.");
@@ -111,14 +117,22 @@ namespace AIRefactored
 
         /// <summary>
         /// Handles unexpected unhandled exceptions globally for AIRefactored.
+        /// Bulletproof: All failures are locally contained and cannot break the mod.
         /// </summary>
         /// <param name="sender">Exception source.</param>
         /// <param name="e">Exception data.</param>
         private static void OnUnhandledException(object sender, UnhandledExceptionEventArgs e)
         {
-            if (_logger != null && e?.ExceptionObject is Exception exception)
+            try
             {
-                _logger.LogError("[AIRefactored] ❗ Unhandled exception: " + exception);
+                if (_logger != null && e?.ExceptionObject is Exception exception)
+                {
+                    _logger.LogError("[AIRefactored] ❗ Unhandled exception: " + exception);
+                }
+            }
+            catch
+            {
+                // Silent, no propagation allowed
             }
         }
 

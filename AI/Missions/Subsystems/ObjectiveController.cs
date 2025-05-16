@@ -3,7 +3,7 @@
 //   Licensed under the MIT License. See LICENSE in the repository root for more information.
 //
 //   THIS FILE IS SYSTEMATICALLY MANAGED.
-//   Failures in AIRefactored logic must always trigger safe fallback to EFT base AI.
+//   Please follow strict StyleCop, ReSharper, and AI-Refactored code standards for all modifications.
 // </auto-generated>
 
 using MissionType = AIRefactored.AI.Missions.BotMissionController.MissionType;
@@ -24,6 +24,7 @@ namespace AIRefactored.AI.Missions.Subsystems
     /// <summary>
     /// Handles routing, objective assignment, and mission-based movement logic.
     /// Supports squad-aware quest paths and loot/fight transitions.
+    /// All failures are locally isolated; cannot break or cascade into other systems.
     /// </summary>
     public sealed class ObjectiveController
     {
@@ -75,9 +76,16 @@ namespace AIRefactored.AI.Missions.Subsystems
         /// </summary>
         public void OnObjectiveReached(MissionType type)
         {
-            Vector3 next = GetObjectiveTarget(type);
-            CurrentObjective = next;
-            BotMovementHelper.SmoothMoveTo(_bot, next);
+            try
+            {
+                Vector3 next = GetObjectiveTarget(type);
+                CurrentObjective = next;
+                BotMovementHelper.SmoothMoveTo(_bot, next);
+            }
+            catch (Exception ex)
+            {
+                Plugin.LoggerInstance.LogError($"[ObjectiveController] OnObjectiveReached failed: {ex}");
+            }
         }
 
         /// <summary>
@@ -85,16 +93,23 @@ namespace AIRefactored.AI.Missions.Subsystems
         /// </summary>
         public void ResumeQuesting()
         {
-            if (_questRoute.Count == 0)
+            try
             {
-                PopulateQuestRoute();
-            }
+                if (_questRoute.Count == 0)
+                {
+                    PopulateQuestRoute();
+                }
 
-            if (_questRoute.Count > 0)
+                if (_questRoute.Count > 0)
+                {
+                    Vector3 next = GetNextQuestObjective();
+                    CurrentObjective = next;
+                    BotMovementHelper.SmoothMoveTo(_bot, next);
+                }
+            }
+            catch (Exception ex)
             {
-                Vector3 next = GetNextQuestObjective();
-                CurrentObjective = next;
-                BotMovementHelper.SmoothMoveTo(_bot, next);
+                Plugin.LoggerInstance.LogError($"[ObjectiveController] ResumeQuesting failed: {ex}");
             }
         }
 
@@ -103,9 +118,16 @@ namespace AIRefactored.AI.Missions.Subsystems
         /// </summary>
         public void SetInitialObjective(MissionType type)
         {
-            Vector3 target = GetObjectiveTarget(type);
-            CurrentObjective = target;
-            BotMovementHelper.SmoothMoveTo(_bot, target);
+            try
+            {
+                Vector3 target = GetObjectiveTarget(type);
+                CurrentObjective = target;
+                BotMovementHelper.SmoothMoveTo(_bot, target);
+            }
+            catch (Exception ex)
+            {
+                Plugin.LoggerInstance.LogError($"[ObjectiveController] SetInitialObjective failed: {ex}");
+            }
         }
 
         #endregion
@@ -114,77 +136,116 @@ namespace AIRefactored.AI.Missions.Subsystems
 
         private Vector3 GetObjectiveTarget(MissionType type)
         {
-            switch (type)
+            try
             {
-                case MissionType.Quest:
-                    return GetNextQuestObjective();
-                case MissionType.Fight:
-                    return GetFightZone();
-                case MissionType.Loot:
-                    return GetLootObjective();
-                default:
-                    return _bot.Position;
+                switch (type)
+                {
+                    case MissionType.Quest:
+                        return GetNextQuestObjective();
+                    case MissionType.Fight:
+                        return GetFightZone();
+                    case MissionType.Loot:
+                        return GetLootObjective();
+                    default:
+                        return _bot.Position;
+                }
+            }
+            catch (Exception ex)
+            {
+                Plugin.LoggerInstance.LogError($"[ObjectiveController] GetObjectiveTarget failed: {ex}");
+                return _bot.Position;
             }
         }
 
         private Vector3 GetFightZone()
         {
-            BotZone[] zones = GameObject.FindObjectsOfType<BotZone>();
-            if (zones == null || zones.Length == 0)
+            try
             {
+                BotZone[] zones = GameObject.FindObjectsOfType<BotZone>();
+                if (zones == null || zones.Length == 0)
+                {
+                    return _bot.Position;
+                }
+                int index = _rng.Next(0, zones.Length);
+                BotZone zone = zones[index];
+                return zone != null ? zone.transform.position : _bot.Position;
+            }
+            catch (Exception ex)
+            {
+                Plugin.LoggerInstance.LogError($"[ObjectiveController] GetFightZone failed: {ex}");
                 return _bot.Position;
             }
-            int index = _rng.Next(0, zones.Length);
-            BotZone zone = zones[index];
-            return zone != null ? zone.transform.position : _bot.Position;
         }
 
         private Vector3 GetLootObjective()
         {
-            return _lootScanner != null
-                ? _lootScanner.GetBestLootPosition()
-                : _bot.Position;
+            try
+            {
+                return _lootScanner != null
+                    ? _lootScanner.GetBestLootPosition()
+                    : _bot.Position;
+            }
+            catch (Exception ex)
+            {
+                Plugin.LoggerInstance.LogError($"[ObjectiveController] GetLootObjective failed: {ex}");
+                return _bot.Position;
+            }
         }
 
         private Vector3 GetNextQuestObjective()
         {
-            return _questRoute.Count > 0
-                ? _questRoute.Dequeue()
-                : _bot.Position;
+            try
+            {
+                return _questRoute.Count > 0
+                    ? _questRoute.Dequeue()
+                    : _bot.Position;
+            }
+            catch (Exception ex)
+            {
+                Plugin.LoggerInstance.LogError($"[ObjectiveController] GetNextQuestObjective failed: {ex}");
+                return _bot.Position;
+            }
         }
 
         private void PopulateQuestRoute()
         {
-            _questRoute.Clear();
-
-            Vector3 origin = _bot.Position;
-            Vector3 forward = _bot.LookDirection.normalized;
-
-            Predicate<HotspotRegistry.Hotspot> directionFilter = h =>
+            try
             {
-                Vector3 dir = h.Position - origin;
-                return dir.sqrMagnitude > 1f && Vector3.Dot(dir.normalized, forward) > 0.25f;
-            };
+                _questRoute.Clear();
 
-            List<HotspotRegistry.Hotspot> candidates = HotspotRegistry.QueryNearby(origin, 100f, directionFilter);
-            if (candidates == null || candidates.Count == 0)
-            {
-                return;
-            }
+                Vector3 origin = _bot.Position;
+                Vector3 forward = _bot.LookDirection.normalized;
 
-            int desired = UnityEngine.Random.Range(2, 4);
-            HashSet<int> used = TempHashSetPool.Rent<int>();
-
-            while (_questRoute.Count < desired && used.Count < candidates.Count)
-            {
-                int index = UnityEngine.Random.Range(0, candidates.Count);
-                if (used.Add(index))
+                Predicate<HotspotRegistry.Hotspot> directionFilter = h =>
                 {
-                    _questRoute.Enqueue(candidates[index].Position);
-                }
-            }
+                    Vector3 dir = h.Position - origin;
+                    return dir.sqrMagnitude > 1f && Vector3.Dot(dir.normalized, forward) > 0.25f;
+                };
 
-            TempHashSetPool.Return(used);
+                List<HotspotRegistry.Hotspot> candidates = HotspotRegistry.QueryNearby(origin, 100f, directionFilter);
+                if (candidates == null || candidates.Count == 0)
+                {
+                    return;
+                }
+
+                int desired = UnityEngine.Random.Range(2, 4);
+                HashSet<int> used = TempHashSetPool.Rent<int>();
+
+                while (_questRoute.Count < desired && used.Count < candidates.Count)
+                {
+                    int index = UnityEngine.Random.Range(0, candidates.Count);
+                    if (used.Add(index))
+                    {
+                        _questRoute.Enqueue(candidates[index].Position);
+                    }
+                }
+
+                TempHashSetPool.Return(used);
+            }
+            catch (Exception ex)
+            {
+                Plugin.LoggerInstance.LogError($"[ObjectiveController] PopulateQuestRoute failed: {ex}");
+            }
         }
 
         #endregion

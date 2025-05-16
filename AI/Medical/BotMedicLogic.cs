@@ -11,12 +11,14 @@ namespace AIRefactored.AI.Medical
     using System;
     using AIRefactored.AI.Core;
     using AIRefactored.Core;
+    using BepInEx.Logging;
     using EFT;
     using UnityEngine;
 
     /// <summary>
     /// Controls bot healing behavior using first aid, surgery, or stimulators.
     /// Supports healing squadmates using internal EFT BotHealAnotherTarget logic.
+    /// All failures are locally isolated; medic logic cannot break other subsystems or the mod.
     /// </summary>
     public sealed class BotMedicLogic
     {
@@ -30,6 +32,8 @@ namespace AIRefactored.AI.Medical
 
         #region Fields
 
+        private static readonly ManualLogSource Logger = Plugin.LoggerInstance;
+
         private readonly BotComponentCache _cache;
         private readonly BotInjurySystem _injurySystem;
         private readonly BotOwner _bot;
@@ -37,6 +41,7 @@ namespace AIRefactored.AI.Medical
         private BotMedecine _med;
         private float _nextHealCheck;
         private bool _isHealing;
+        private bool _isActive = true;
 
         #endregion
 
@@ -46,7 +51,9 @@ namespace AIRefactored.AI.Medical
         {
             if (cache == null || injurySystem == null || cache.Bot == null)
             {
-                throw new ArgumentException("[BotMedicLogic] Invalid arguments.");
+                _isActive = false;
+                Logger.LogError("[BotMedicLogic] Initialization failed: cache, injury system, or bot is null. Disabling medic logic for this bot.");
+                return;
             }
 
             _cache = cache;
@@ -54,24 +61,32 @@ namespace AIRefactored.AI.Medical
             _bot = cache.Bot;
             _nextHealCheck = Time.time;
 
-            // Safe instantiation and event subscription for squad heal logic.
-            if (_bot.HealAnotherTarget == null)
+            try
             {
-                _bot.HealAnotherTarget = new BotHealAnotherTarget(_bot);
-                _bot.HealAnotherTarget.OnHealAsked += OnHealAsked;
-            }
-            else
-            {
-                _bot.HealAnotherTarget.OnHealAsked -= OnHealAsked;
-                _bot.HealAnotherTarget.OnHealAsked += OnHealAsked;
-            }
+                // Safe instantiation and event subscription for squad heal logic.
+                if (_bot.HealAnotherTarget == null)
+                {
+                    _bot.HealAnotherTarget = new BotHealAnotherTarget(_bot);
+                    _bot.HealAnotherTarget.OnHealAsked += OnHealAsked;
+                }
+                else
+                {
+                    _bot.HealAnotherTarget.OnHealAsked -= OnHealAsked;
+                    _bot.HealAnotherTarget.OnHealAsked += OnHealAsked;
+                }
 
-            if (_bot.HealingBySomebody == null)
-            {
-                _bot.HealingBySomebody = new BotHealingBySomebody(_bot);
-            }
+                if (_bot.HealingBySomebody == null)
+                {
+                    _bot.HealingBySomebody = new BotHealingBySomebody(_bot);
+                }
 
-            _med = _bot.Medecine ?? new BotMedecine(_bot);
+                _med = _bot.Medecine ?? new BotMedecine(_bot);
+            }
+            catch (Exception ex)
+            {
+                _isActive = false;
+                Logger.LogError($"[BotMedicLogic] Constructor failed: {ex}. Disabling medic logic for this bot.");
+            }
         }
 
         #endregion
@@ -80,38 +95,59 @@ namespace AIRefactored.AI.Medical
 
         public void Reset()
         {
-            _isHealing = false;
-            _injurySystem.Reset();
-            UnsubscribeFromFirstAid();
+            if (!_isActive)
+            {
+                return;
+            }
+
+            try
+            {
+                _isHealing = false;
+                _injurySystem.Reset();
+                UnsubscribeFromFirstAid();
+            }
+            catch (Exception ex)
+            {
+                _isActive = false;
+                Logger.LogError($"[BotMedicLogic] Reset() failed: {ex}. Disabling medic logic for this bot.");
+            }
         }
 
         public void Tick(float time)
         {
-            if (_isHealing || time < _nextHealCheck)
+            if (!_isActive || _isHealing || time < _nextHealCheck)
             {
                 return;
             }
 
-            if (!EFTPlayerUtil.IsValidBotOwner(_bot) || (_cache.PanicHandler != null && _cache.PanicHandler.IsPanicking))
+            try
             {
-                return;
-            }
+                if (!EFTPlayerUtil.IsValidBotOwner(_bot) || (_cache.PanicHandler != null && _cache.PanicHandler.IsPanicking))
+                {
+                    return;
+                }
 
-            if (_bot.HealAnotherTarget != null && _bot.HealAnotherTarget.IsInProcess)
+                if (_bot.HealAnotherTarget != null && _bot.HealAnotherTarget.IsInProcess)
+                {
+                    return;
+                }
+
+                _nextHealCheck = time + HealCheckInterval;
+
+                _injurySystem.Tick(time);
+
+                if (TryHealSquadmate())
+                {
+                    return;
+                }
+
+                TrySelfHeal();
+            }
+            catch (Exception ex)
             {
-                return;
+                _isActive = false;
+                Logger.LogError($"[BotMedicLogic] Tick() failed: {ex}. Disabling medic logic for this bot.");
             }
-
-            _nextHealCheck = time + HealCheckInterval;
-
-            _injurySystem.Tick(time);
-
-            if (TryHealSquadmate())
-            {
-                return;
-            }
-
-            TrySelfHeal();
         }
 
         #endregion
@@ -120,48 +156,55 @@ namespace AIRefactored.AI.Medical
 
         private bool TryHealSquadmate()
         {
-            if (_bot.BotsGroup == null)
+            try
             {
-                return false;
+                if (_bot.BotsGroup == null)
+                {
+                    return false;
+                }
+
+                Player self = EFTPlayerUtil.ResolvePlayer(_bot);
+                if (!EFTPlayerUtil.IsValidGroupPlayer(self))
+                {
+                    return false;
+                }
+
+                Vector3 selfPos = EFTPlayerUtil.GetPosition(self);
+                int count = _bot.BotsGroup.MembersCount;
+
+                for (int i = 0; i < count; i++)
+                {
+                    BotOwner mate = _bot.BotsGroup.Member(i);
+                    if (!EFTPlayerUtil.IsValidBotOwner(mate) || mate == _bot)
+                    {
+                        continue;
+                    }
+
+                    Player target = EFTPlayerUtil.ResolvePlayer(mate);
+                    if (!EFTPlayerUtil.IsValidGroupPlayer(target))
+                    {
+                        continue;
+                    }
+
+                    Vector3 targetPos = EFTPlayerUtil.GetPosition(target);
+                    float dx = targetPos.x - selfPos.x;
+                    float dz = targetPos.z - selfPos.z;
+                    if ((dx * dx + dz * dz) > HealSquadRangeSqr)
+                    {
+                        continue;
+                    }
+
+                    IPlayer iTarget = EFTPlayerUtil.AsSafeIPlayer(target);
+                    if (iTarget != null)
+                    {
+                        _bot.HealAnotherTarget.HealAsk(iTarget);
+                        return true;
+                    }
+                }
             }
-
-            Player self = EFTPlayerUtil.ResolvePlayer(_bot);
-            if (!EFTPlayerUtil.IsValidGroupPlayer(self))
+            catch (Exception ex)
             {
-                return false;
-            }
-
-            Vector3 selfPos = EFTPlayerUtil.GetPosition(self);
-            int count = _bot.BotsGroup.MembersCount;
-
-            for (int i = 0; i < count; i++)
-            {
-                BotOwner mate = _bot.BotsGroup.Member(i);
-                if (!EFTPlayerUtil.IsValidBotOwner(mate) || mate == _bot)
-                {
-                    continue;
-                }
-
-                Player target = EFTPlayerUtil.ResolvePlayer(mate);
-                if (!EFTPlayerUtil.IsValidGroupPlayer(target))
-                {
-                    continue;
-                }
-
-                Vector3 targetPos = EFTPlayerUtil.GetPosition(target);
-                float dx = targetPos.x - selfPos.x;
-                float dz = targetPos.z - selfPos.z;
-                if ((dx * dx + dz * dz) > HealSquadRangeSqr)
-                {
-                    continue;
-                }
-
-                IPlayer iTarget = EFTPlayerUtil.AsSafeIPlayer(target);
-                if (iTarget != null)
-                {
-                    _bot.HealAnotherTarget.HealAsk(iTarget);
-                    return true;
-                }
+                Logger.LogError($"[BotMedicLogic] TryHealSquadmate() failed: {ex}");
             }
 
             return false;
@@ -169,32 +212,40 @@ namespace AIRefactored.AI.Medical
 
         private void TrySelfHeal()
         {
-            var firstAid = _med.FirstAid as BotFirstAidClass;
-            var surgery = _med.SurgicalKit as GClass473;
-            var stim = _med.Stimulators as GClass475;
-
-            if (firstAid != null && firstAid.ShallStartUse())
+            try
             {
-                _isHealing = true;
-                TrySay(EPhraseTrigger.StartHeal);
-                UnsubscribeFromFirstAid();
-                firstAid.OnEndApply += OnHealComplete;
-                firstAid.TryApplyToCurrentPart();
-                return;
+                var firstAid = _med.FirstAid as BotFirstAidClass;
+                var surgery = _med.SurgicalKit as GClass473;
+                var stim = _med.Stimulators as GClass475;
+
+                if (firstAid != null && firstAid.ShallStartUse())
+                {
+                    _isHealing = true;
+                    TrySay(EPhraseTrigger.StartHeal);
+                    UnsubscribeFromFirstAid();
+                    firstAid.OnEndApply += OnHealComplete;
+                    firstAid.TryApplyToCurrentPart();
+                    return;
+                }
+
+                if (surgery != null && surgery.ShallStartUse())
+                {
+                    _isHealing = true;
+                    TrySay(EPhraseTrigger.StartHeal);
+                    surgery.ApplyToCurrentPart();
+                    return;
+                }
+
+                if (stim != null && stim.CanUseNow())
+                {
+                    _isHealing = true;
+                    stim.StartApplyToTarget(OnStimComplete);
+                }
             }
-
-            if (surgery != null && surgery.ShallStartUse())
+            catch (Exception ex)
             {
-                _isHealing = true;
-                TrySay(EPhraseTrigger.StartHeal);
-                surgery.ApplyToCurrentPart();
-                return;
-            }
-
-            if (stim != null && stim.CanUseNow())
-            {
-                _isHealing = true;
-                stim.StartApplyToTarget(OnStimComplete);
+                _isActive = false;
+                Logger.LogError($"[BotMedicLogic] TrySelfHeal() failed: {ex}. Disabling medic logic for this bot.");
             }
         }
 
@@ -204,20 +255,41 @@ namespace AIRefactored.AI.Medical
 
         private void OnHealAsked(IPlayer target)
         {
-            _isHealing = true;
-            TrySay(EPhraseTrigger.StartHeal);
+            try
+            {
+                _isHealing = true;
+                TrySay(EPhraseTrigger.StartHeal);
+            }
+            catch (Exception ex)
+            {
+                Logger.LogError($"[BotMedicLogic] OnHealAsked() failed: {ex}");
+            }
         }
 
         private void OnHealComplete(BotOwner _)
         {
-            _isHealing = false;
-            _injurySystem.Reset();
-            UnsubscribeFromFirstAid();
+            try
+            {
+                _isHealing = false;
+                _injurySystem.Reset();
+                UnsubscribeFromFirstAid();
+            }
+            catch (Exception ex)
+            {
+                Logger.LogError($"[BotMedicLogic] OnHealComplete() failed: {ex}");
+            }
         }
 
         private void OnStimComplete(bool success)
         {
-            _isHealing = false;
+            try
+            {
+                _isHealing = false;
+            }
+            catch (Exception ex)
+            {
+                Logger.LogError($"[BotMedicLogic] OnStimComplete() failed: {ex}");
+            }
         }
 
         #endregion
@@ -226,18 +298,32 @@ namespace AIRefactored.AI.Medical
 
         private void TrySay(EPhraseTrigger trigger)
         {
-            if (!FikaHeadlessDetector.IsHeadless && _bot.BotTalk != null)
+            try
             {
-                _bot.BotTalk.TrySay(trigger);
+                if (!FikaHeadlessDetector.IsHeadless && _bot.BotTalk != null)
+                {
+                    _bot.BotTalk.TrySay(trigger);
+                }
+            }
+            catch (Exception ex)
+            {
+                Logger.LogError($"[BotMedicLogic] TrySay() failed: {ex}");
             }
         }
 
         private void UnsubscribeFromFirstAid()
         {
-            var fa = _med.FirstAid as BotFirstAidClass;
-            if (fa != null)
+            try
             {
-                fa.OnEndApply -= OnHealComplete;
+                var fa = _med.FirstAid as BotFirstAidClass;
+                if (fa != null)
+                {
+                    fa.OnEndApply -= OnHealComplete;
+                }
+            }
+            catch (Exception ex)
+            {
+                Logger.LogError($"[BotMedicLogic] UnsubscribeFromFirstAid() failed: {ex}");
             }
         }
 

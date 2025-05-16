@@ -15,6 +15,7 @@ namespace AIRefactored.AI.Groups
     /// <summary>
     /// Tracks and manages squads of bots by GroupId for tactical queries and squad-level behaviors.
     /// Used by fallback, VO coordination, and dynamic routing systems.
+    /// Bulletproof: all calls are null-guarded and cannot propagate errors.
     /// </summary>
     public static class BotTeamTracker
     {
@@ -147,7 +148,6 @@ namespace AIRefactored.AI.Groups
                     {
                         groupToRemove = pair.Key;
                     }
-
                     break;
                 }
             }

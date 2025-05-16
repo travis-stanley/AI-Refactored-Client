@@ -8,6 +8,7 @@
 
 namespace AIRefactored.AI.Helpers
 {
+    using System;
     using System.Collections.Generic;
     using AIRefactored.AI.Core;
     using AIRefactored.Core;
@@ -32,10 +33,18 @@ namespace AIRefactored.AI.Helpers
         private static readonly Dictionary<string, float> ShotTimestamps = new Dictionary<string, float>(64);
         private static readonly Dictionary<string, Vector3> SoundZones = new Dictionary<string, Vector3>(64);
 
+        // Error state flags (rate limit log spam)
+        private static bool _hasLoggedPlayerNull;
+        private static bool _hasLoggedCacheNull;
+        private static bool _hasLoggedInvalidPosition;
+
         #endregion
 
         #region Public API
 
+        /// <summary>
+        /// Clears all stored sound events and positions.
+        /// </summary>
         public static void Clear()
         {
             FootstepTimestamps.Clear();
@@ -43,64 +52,124 @@ namespace AIRefactored.AI.Helpers
             SoundZones.Clear();
         }
 
+        /// <summary>
+        /// Checks if the player fired recently.
+        /// </summary>
         public static bool FiredRecently(Player player, float withinSeconds = 1.5f, float now = -1f)
         {
-            return TryGetLastShot(player, out float time) &&
-                   ((now >= 0f ? now : Time.time) - time <= withinSeconds);
+            if (!TryGetLastShot(player, out float time))
+                return false;
+            float checkTime = (now >= 0f ? now : Time.time);
+            return (checkTime - time) <= withinSeconds;
         }
 
+        /// <summary>
+        /// Checks if the player stepped recently.
+        /// </summary>
         public static bool SteppedRecently(Player player, float withinSeconds = 1.2f, float now = -1f)
         {
-            return TryGetLastStep(player, out float time) &&
-                   ((now >= 0f ? now : Time.time) - time <= withinSeconds);
+            if (!TryGetLastStep(player, out float time))
+                return false;
+            float checkTime = (now >= 0f ? now : Time.time);
+            return (checkTime - time) <= withinSeconds;
         }
 
+        /// <summary>
+        /// Registers a gunshot event for the given player.
+        /// </summary>
         public static void NotifyShot(Player player)
         {
-            if (!EFTPlayerUtil.IsValid(player))
-                return;
+            try
+            {
+                if (!EFTPlayerUtil.IsValid(player))
+                {
+                    if (!_hasLoggedPlayerNull)
+                    {
+                        Plugin.LoggerInstance.LogWarning("[BotSoundRegistry] NotifyShot: Null or invalid player.");
+                        _hasLoggedPlayerNull = true;
+                    }
+                    return;
+                }
 
-            string id = player.ProfileId;
-            if (string.IsNullOrEmpty(id))
-                return;
+                string id = player.ProfileId;
+                if (string.IsNullOrEmpty(id))
+                    return;
 
-            ShotTimestamps[id] = Time.time;
+                ShotTimestamps[id] = Time.time;
 
-            Transform transform = player.Transform?.Original;
-            if (transform == null)
-                return;
+                Transform transform = player.Transform?.Original;
+                if (transform == null)
+                {
+                    if (!_hasLoggedInvalidPosition)
+                    {
+                        Plugin.LoggerInstance.LogWarning("[BotSoundRegistry] NotifyShot: Player transform is null.");
+                        _hasLoggedInvalidPosition = true;
+                    }
+                    return;
+                }
 
-            Vector3 pos = transform.position;
-            SoundZones[id] = pos;
+                Vector3 pos = transform.position;
+                SoundZones[id] = pos;
 
-            TriggerSquadPing(id, pos, true);
+                TriggerSquadPing(id, pos, true);
+            }
+            catch (Exception ex)
+            {
+                Plugin.LoggerInstance.LogError($"[BotSoundRegistry] NotifyShot exception: {ex}");
+            }
         }
 
+        /// <summary>
+        /// Registers a footstep event for the given player.
+        /// </summary>
         public static void NotifyStep(Player player)
         {
-            if (!EFTPlayerUtil.IsValid(player))
-                return;
+            try
+            {
+                if (!EFTPlayerUtil.IsValid(player))
+                {
+                    if (!_hasLoggedPlayerNull)
+                    {
+                        Plugin.LoggerInstance.LogWarning("[BotSoundRegistry] NotifyStep: Null or invalid player.");
+                        _hasLoggedPlayerNull = true;
+                    }
+                    return;
+                }
 
-            string id = player.ProfileId;
-            if (string.IsNullOrEmpty(id))
-                return;
+                string id = player.ProfileId;
+                if (string.IsNullOrEmpty(id))
+                    return;
 
-            FootstepTimestamps[id] = Time.time;
+                FootstepTimestamps[id] = Time.time;
 
-            Transform transform = player.Transform?.Original;
-            if (transform == null)
-                return;
+                Transform transform = player.Transform?.Original;
+                if (transform == null)
+                {
+                    if (!_hasLoggedInvalidPosition)
+                    {
+                        Plugin.LoggerInstance.LogWarning("[BotSoundRegistry] NotifyStep: Player transform is null.");
+                        _hasLoggedInvalidPosition = true;
+                    }
+                    return;
+                }
 
-            Vector3 pos = transform.position;
-            SoundZones[id] = pos;
+                Vector3 pos = transform.position;
+                SoundZones[id] = pos;
 
-            TriggerSquadPing(id, pos, false);
+                TriggerSquadPing(id, pos, false);
+            }
+            catch (Exception ex)
+            {
+                Plugin.LoggerInstance.LogError($"[BotSoundRegistry] NotifyStep exception: {ex}");
+            }
         }
 
+        /// <summary>
+        /// Try to get last gunshot time for a player.
+        /// </summary>
         public static bool TryGetLastShot(Player player, out float time)
         {
             time = -1f;
-
             if (!EFTPlayerUtil.IsValid(player))
                 return false;
 
@@ -108,10 +177,12 @@ namespace AIRefactored.AI.Helpers
             return !string.IsNullOrEmpty(id) && ShotTimestamps.TryGetValue(id, out time);
         }
 
+        /// <summary>
+        /// Try to get last footstep time for a player.
+        /// </summary>
         public static bool TryGetLastStep(Player player, out float time)
         {
             time = -1f;
-
             if (!EFTPlayerUtil.IsValid(player))
                 return false;
 
@@ -119,10 +190,12 @@ namespace AIRefactored.AI.Helpers
             return !string.IsNullOrEmpty(id) && FootstepTimestamps.TryGetValue(id, out time);
         }
 
+        /// <summary>
+        /// Try to get last sound position for a player.
+        /// </summary>
         public static bool TryGetSoundPosition(Player player, out Vector3 pos)
         {
             pos = Vector3.zero;
-
             if (!EFTPlayerUtil.IsValid(player))
                 return false;
 
@@ -134,37 +207,60 @@ namespace AIRefactored.AI.Helpers
 
         #region Private Helpers
 
+        /// <summary>
+        /// Notifies all nearby bots (excluding the source) of a sound event.
+        /// </summary>
         private static void TriggerSquadPing(string sourceId, Vector3 location, bool isGunshot)
         {
-            float radiusSq = DefaultHearingRadius * DefaultHearingRadius;
-
-            foreach (BotComponentCache cache in BotCacheUtility.AllActiveBots())
+            try
             {
-                if (cache?.Bot == null || cache.Bot.IsDead)
-                    continue;
+                float radiusSq = DefaultHearingRadius * DefaultHearingRadius;
 
-                string id = cache.Bot.ProfileId;
-                if (string.Equals(id, sourceId))
-                    continue;
-
-                Vector3 pos = cache.Bot.Position;
-                float dx = pos.x - location.x;
-                float dy = pos.y - location.y;
-                float dz = pos.z - location.z;
-                float distSq = (dx * dx) + (dy * dy) + (dz * dz);
-
-                if (distSq > radiusSq)
-                    continue;
-
-                cache.RegisterHeardSound(location);
-
-                if (cache.GroupComms != null)
+                foreach (BotComponentCache cache in BotCacheUtility.AllActiveBots())
                 {
-                    if (isGunshot)
-                        cache.GroupComms.SaySuppression();
-                    else
-                        cache.GroupComms.SayFallback();
+                    if (cache == null || cache.Bot == null || cache.Bot.IsDead)
+                        continue;
+
+                    string id = cache.Bot.ProfileId;
+                    if (string.Equals(id, sourceId))
+                        continue;
+
+                    Vector3 pos = cache.Bot.Position;
+                    float dx = pos.x - location.x;
+                    float dy = pos.y - location.y;
+                    float dz = pos.z - location.z;
+                    float distSq = (dx * dx) + (dy * dy) + (dz * dz);
+
+                    if (distSq > radiusSq)
+                        continue;
+
+                    // Isolate cache errors (never break loop for others)
+                    try
+                    {
+                        cache.RegisterHeardSound(location);
+
+                        if (cache.GroupComms != null)
+                        {
+                            if (isGunshot)
+                                cache.GroupComms.SaySuppression();
+                            else
+                                cache.GroupComms.SayFallback();
+                        }
+                    }
+                    catch (Exception ex)
+                    {
+                        if (!_hasLoggedCacheNull)
+                        {
+                            Plugin.LoggerInstance.LogWarning($"[BotSoundRegistry] TriggerSquadPing: Exception in bot cache: {ex}");
+                            _hasLoggedCacheNull = true;
+                        }
+                        // Continue; do not break other bot notifications
+                    }
                 }
+            }
+            catch (Exception ex)
+            {
+                Plugin.LoggerInstance.LogError($"[BotSoundRegistry] TriggerSquadPing outer exception: {ex}");
             }
         }
 

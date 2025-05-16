@@ -48,11 +48,10 @@ namespace AIRefactored.AI.Navigation
         /// </summary>
         public void Clear()
         {
-            foreach (KeyValuePair<Vector2Int, List<NavPointData>> pair in _grid)
+            foreach (var pair in _grid)
             {
                 TempListPool.Return(pair.Value);
             }
-
             _grid.Clear();
         }
 
@@ -63,9 +62,7 @@ namespace AIRefactored.AI.Navigation
         public void Register(NavPointData point)
         {
             if (point == null || !IsPositionValid(point.Position))
-            {
                 return;
-            }
 
             Vector2Int cell = WorldToCell(point.Position);
 
@@ -78,9 +75,7 @@ namespace AIRefactored.AI.Navigation
             for (int i = 0; i < list.Count; i++)
             {
                 if (list[i].DistanceSqr(point.Position) < 0.01f)
-                {
-                    return; // prevent near-duplicates
-                }
+                    return; // Prevent near-duplicates
             }
 
             list.Add(point);
@@ -97,9 +92,7 @@ namespace AIRefactored.AI.Navigation
         {
             List<NavPointData> result = TempListPool.Rent<NavPointData>();
             if (!IsPositionValid(position))
-            {
                 return result;
-            }
 
             float radiusSq = radius * radius;
             Vector2Int minCell = WorldToCell(new Vector3(position.x - radius, 0f, position.z - radius));
@@ -110,11 +103,8 @@ namespace AIRefactored.AI.Navigation
                 for (int z = minCell.y; z <= maxCell.y; z++)
                 {
                     Vector2Int cell = new Vector2Int(x, z);
-
                     if (!_grid.TryGetValue(cell, out List<NavPointData> bucket))
-                    {
                         continue;
-                    }
 
                     for (int i = 0; i < bucket.Count; i++)
                     {

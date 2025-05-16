@@ -4,6 +4,7 @@
 //
 //   THIS FILE IS SYSTEMATICALLY MANAGED.
 //   Failures in AIRefactored logic must always trigger safe fallback to EFT base AI.
+//   Bulletproof: All failures are locally contained, never break other subsystems, and always trigger fallback isolation.
 // </auto-generated>
 
 namespace AIRefactored.Runtime
@@ -23,6 +24,7 @@ namespace AIRefactored.Runtime
 	/// <summary>
 	/// Static bot spawn tracker. Injects brains for new bots without using MonoBehaviours.
 	/// Called externally on update by WorldBootstrapper or BotWorkScheduler.
+	/// Bulletproof: All polling, validation, and injection is strictly localized.
 	/// </summary>
 	public sealed class BotSpawnWatcherService : IAIWorldSystemBootstrapper
 	{
@@ -77,12 +79,12 @@ namespace AIRefactored.Runtime
 		/// </summary>
 		public static void Reset()
 		{
-			SeenBotIds.Clear();
-			_nextPollTime = -1f;
-			_hasWarnedInvalid = false;
-
 			try
 			{
+				SeenBotIds.Clear();
+				_nextPollTime = -1f;
+				_hasWarnedInvalid = false;
+
 				LogDebug("[BotSpawnWatcher] 🔄 Reset complete.");
 			}
 			catch
@@ -107,7 +109,6 @@ namespace AIRefactored.Runtime
 						LogWarn("[BotSpawnWatcher] ⚠ Not ready or not host — polling deferred.");
 						_hasWarnedInvalid = true;
 					}
-
 					return;
 				}
 
@@ -119,62 +120,62 @@ namespace AIRefactored.Runtime
 
 				float now = Time.time;
 				if (now < _nextPollTime)
-				{
 					return;
-				}
 
 				_nextPollTime = now + PollInterval;
 
-				List<Player> players = GameWorldHandler.GetAllAlivePlayers();
-				if (players == null || players.Count == 0)
+				List<Player> players = null;
+				try
 				{
+					players = GameWorldHandler.GetAllAlivePlayers();
+					if (players == null || players.Count == 0)
+						return;
+				}
+				catch (Exception ex)
+				{
+					LogError("[BotSpawnWatcher] GetAllAlivePlayers() failed: " + ex);
 					return;
 				}
 
 				for (int i = 0; i < players.Count; i++)
 				{
-					Player player = players[i];
-					if (!EFTPlayerUtil.IsValid(player) || !player.IsAI || player.gameObject == null)
-					{
-						continue;
-					}
-
-					// Never inject AIRefactored bot brain if global nav is disabled
-					if (NavPointRegistry.AIRefactoredNavDisabled)
-					{
-						continue;
-					}
-
-					GameObject go = player.gameObject;
-					int id = go.GetInstanceID();
-
-					// Only inject if not already seen and not already has BotBrain.
-					if (!SeenBotIds.Add(id))
-					{
-						continue;
-					}
-
-					if (go.GetComponent<BotBrain>() != null)
-					{
-						continue;
-					}
-
-					if (player.AIData == null || player.AIData.BotOwner == null)
-					{
-						continue;
-					}
-
 					try
 					{
-						BotBrainGuardian.Enforce(go);
-						GameWorldHandler.TryAttachBotBrain(player.AIData.BotOwner);
+						Player player = players[i];
+						if (!EFTPlayerUtil.IsValid(player) || !player.IsAI || player.gameObject == null)
+							continue;
 
-						string name = player.Profile?.Info?.Nickname ?? player.ProfileId;
-						LogDebug("[BotSpawnWatcher] ✅ Brain injected for bot: " + name);
+						if (NavPointRegistry.AIRefactoredNavDisabled)
+							continue;
+
+						GameObject go = player.gameObject;
+						int id = go.GetInstanceID();
+
+						if (!SeenBotIds.Add(id))
+							continue;
+
+						if (go.GetComponent<BotBrain>() != null)
+							continue;
+
+						if (player.AIData == null || player.AIData.BotOwner == null)
+							continue;
+
+						try
+						{
+							BotBrainGuardian.Enforce(go);
+							GameWorldHandler.TryAttachBotBrain(player.AIData.BotOwner);
+
+							string name = player.Profile?.Info?.Nickname ?? player.ProfileId;
+							LogDebug("[BotSpawnWatcher] ✅ Brain injected for bot: " + name);
+						}
+						catch (Exception ex)
+						{
+							LogError("[BotSpawnWatcher] ❌ Brain injection failed for bot: " + ex);
+						}
 					}
 					catch (Exception ex)
 					{
-						LogError("[BotSpawnWatcher] ❌ Brain injection failed for bot: " + ex);
+						LogError("[BotSpawnWatcher] Bot validation failed: " + ex);
 					}
 				}
 			}

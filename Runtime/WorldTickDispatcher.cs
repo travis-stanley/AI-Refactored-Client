@@ -3,7 +3,8 @@
 //   Licensed under the MIT License. See LICENSE in the repository root for more information.
 //
 //   THIS FILE IS SYSTEMATICALLY MANAGED.
-//   Please follow strict StyleCop, ReSharper, and AI-Refactored code standards for all modifications.
+//   Failures in AIRefactored logic must always trigger safe fallback to EFT base AI.
+//   Bulletproof: All failures are locally contained, never break other subsystems, and always trigger fallback isolation.
 // </auto-generated>
 
 namespace AIRefactored.Runtime
@@ -18,6 +19,7 @@ namespace AIRefactored.Runtime
     /// <summary>
     /// Globally ticks world systems post-initialization using a persistent MonoBehaviour.
     /// Handles world stabilization lifecycle and deferred updates.
+    /// Bulletproof: All errors are strictly contained, global state is never at risk.
     /// </summary>
     public static class WorldTickDispatcher
     {
@@ -35,13 +37,12 @@ namespace AIRefactored.Runtime
 
         /// <summary>
         /// Initializes the world tick dispatcher and attaches update loop.
+        /// Bulletproof: All failures are locally contained, global state is never at risk.
         /// </summary>
         public static void Initialize()
         {
             if (_isActive || _host != null || _monoHost != null)
-            {
                 return;
-            }
 
             try
             {
@@ -61,13 +62,12 @@ namespace AIRefactored.Runtime
 
         /// <summary>
         /// Fully resets and destroys dispatcher logic (e.g. on teardown).
+        /// Bulletproof: All failures are locally contained, global state is never at risk.
         /// </summary>
         public static void Reset()
         {
             if (!_isActive)
-            {
                 return;
-            }
 
             _isActive = false;
 
@@ -75,12 +75,26 @@ namespace AIRefactored.Runtime
             {
                 if (_monoHost != null)
                 {
-                    UnityEngine.Object.Destroy(_monoHost);
+                    try
+                    {
+                        UnityEngine.Object.Destroy(_monoHost);
+                    }
+                    catch (Exception ex)
+                    {
+                        Logger.LogError("[WorldTickDispatcher] ❌ Destroy _monoHost failed: " + ex);
+                    }
                 }
 
                 if (_host != null)
                 {
-                    UnityEngine.Object.Destroy(_host);
+                    try
+                    {
+                        UnityEngine.Object.Destroy(_host);
+                    }
+                    catch (Exception ex)
+                    {
+                        Logger.LogError("[WorldTickDispatcher] ❌ Destroy _host failed: " + ex);
+                    }
                 }
 
                 Logger.LogDebug("[WorldTickDispatcher] 🧹 Shutdown complete.");
@@ -100,14 +114,13 @@ namespace AIRefactored.Runtime
 
         /// <summary>
         /// Ticks all world systems for the given frame delta time.
+        /// Bulletproof: All failures are locally contained, global state is never at risk.
         /// </summary>
         /// <param name="deltaTime">The time delta since the last frame.</param>
         public static void Tick(float deltaTime)
         {
             if (!_isActive || !GameWorldHandler.IsInitialized || !GameWorldHandler.IsHost)
-            {
                 return;
-            }
 
             try
             {

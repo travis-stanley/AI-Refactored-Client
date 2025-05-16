@@ -20,6 +20,7 @@ namespace AIRefactored.AI.Groups
     /// • Repels bots that are too close
     /// • Follows furthest idle mate if too far
     /// • Adds subtle jitter to mimic organic movement
+    /// Bulletproof: All failures are isolated and fallback to vanilla AI for movement only.
     /// </summary>
     public sealed class BotGroupBehavior
     {
@@ -64,16 +65,24 @@ namespace AIRefactored.AI.Groups
         /// <param name="componentCache">Bot component cache.</param>
         public void Initialize(BotComponentCache componentCache)
         {
-            if (componentCache == null || componentCache.Bot == null)
-                throw new ArgumentException("[BotGroupBehavior] Invalid component cache.");
+            try
+            {
+                if (componentCache == null || componentCache.Bot == null)
+                    throw new ArgumentException("[BotGroupBehavior] Invalid component cache.");
 
-            _cache = componentCache;
-            _bot = componentCache.Bot;
-            _group = _bot.BotsGroup;
+                _cache = componentCache;
+                _bot = componentCache.Bot;
+                _group = _bot.BotsGroup;
 
-            GroupSync = new BotGroupSyncCoordinator();
-            GroupSync.Initialize(_bot);
-            GroupSync.InjectLocalCache(componentCache);
+                GroupSync = new BotGroupSyncCoordinator();
+                GroupSync.Initialize(_bot);
+                GroupSync.InjectLocalCache(componentCache);
+            }
+            catch (Exception ex)
+            {
+                Plugin.LoggerInstance.LogError("[BotGroupBehavior] Initialization failed: " + ex);
+                _bot?.Mover?.GoToPoint(_bot.Position, true, 1.0f); // fallback to static point
+            }
         }
 
         #endregion
@@ -86,51 +95,59 @@ namespace AIRefactored.AI.Groups
         /// <param name="deltaTime">Frame delta time.</param>
         public void Tick(float deltaTime)
         {
-            if (!IsEligible() || _bot.Memory == null || _bot.Memory.GoalEnemy != null)
-                return;
-
-            Vector3 myPos = _bot.Position;
-            Vector3 repulsion = Vector3.zero;
-            Vector3 furthest = Vector3.zero;
-            float maxDistSqr = MinSpacingSqr;
-            bool hasFurthest = false;
-
-            int memberCount = _group.MembersCount;
-            for (int i = 0; i < memberCount; i++)
+            try
             {
-                BotOwner mate = _group.Member(i);
-                if (mate == null || mate == _bot || mate.IsDead || mate.Memory == null)
-                    continue;
+                if (!IsEligible() || _bot.Memory == null || _bot.Memory.GoalEnemy != null)
+                    return;
 
-                Vector3 offset = mate.Position - myPos;
-                float distSqr = offset.sqrMagnitude;
+                Vector3 myPos = _bot.Position;
+                Vector3 repulsion = Vector3.zero;
+                Vector3 furthest = Vector3.zero;
+                float maxDistSqr = MinSpacingSqr;
+                bool hasFurthest = false;
 
-                if (distSqr < MinSpacingSqr)
+                int memberCount = _group.MembersCount;
+                for (int i = 0; i < memberCount; i++)
                 {
-                    float push = MinSpacing - Mathf.Sqrt(distSqr);
-                    repulsion += -offset.normalized * push;
+                    BotOwner mate = _group.Member(i);
+                    if (mate == null || mate == _bot || mate.IsDead || mate.Memory == null)
+                        continue;
+
+                    Vector3 offset = mate.Position - myPos;
+                    float distSqr = offset.sqrMagnitude;
+
+                    if (distSqr < MinSpacingSqr)
+                    {
+                        float push = MinSpacing - Mathf.Sqrt(distSqr);
+                        repulsion += -offset.normalized * push;
+                    }
+                    else if (distSqr > MaxSpacingSqr && distSqr > maxDistSqr && mate.Memory.GoalEnemy == null)
+                    {
+                        maxDistSqr = distSqr;
+                        furthest = mate.Position;
+                        hasFurthest = true;
+                    }
                 }
-                else if (distSqr > MaxSpacingSqr && distSqr > maxDistSqr && mate.Memory.GoalEnemy == null)
+
+                if (repulsion.sqrMagnitude > 0.01f)
                 {
-                    maxDistSqr = distSqr;
-                    furthest = mate.Position;
-                    hasFurthest = true;
+                    IssueMove(myPos + repulsion.normalized * RepulseStrength);
+                    return;
+                }
+
+                if (hasFurthest)
+                {
+                    Vector3 dir = furthest - myPos;
+                    if (dir.sqrMagnitude > 0.001f)
+                    {
+                        IssueMove(myPos + dir.normalized * MaxSpacing);
+                    }
                 }
             }
-
-            if (repulsion.sqrMagnitude > 0.01f)
+            catch (Exception ex)
             {
-                IssueMove(myPos + repulsion.normalized * RepulseStrength);
-                return;
-            }
-
-            if (hasFurthest)
-            {
-                Vector3 dir = furthest - myPos;
-                if (dir.sqrMagnitude > 0.001f)
-                {
-                    IssueMove(myPos + dir.normalized * MaxSpacing);
-                }
+                Plugin.LoggerInstance.LogError("[BotGroupBehavior] Tick failed: " + ex);
+                _bot?.Mover?.GoToPoint(_bot.Position, true, 1.0f); // fallback to static point
             }
         }
 
@@ -148,14 +165,22 @@ namespace AIRefactored.AI.Groups
 
         private void IssueMove(Vector3 target)
         {
-            Vector3 jittered = target + UnityEngine.Random.insideUnitSphere * JitterAmount;
-            jittered.y = target.y;
-
-            if (!_hasLastTarget || Vector3.Distance(_lastMoveTarget, jittered) > SpacingTolerance)
+            try
             {
-                _lastMoveTarget = jittered;
-                _hasLastTarget = true;
-                BotMovementHelper.SmoothMoveTo(_bot, jittered, false);
+                Vector3 jittered = target + UnityEngine.Random.insideUnitSphere * JitterAmount;
+                jittered.y = target.y;
+
+                if (!_hasLastTarget || Vector3.Distance(_lastMoveTarget, jittered) > SpacingTolerance)
+                {
+                    _lastMoveTarget = jittered;
+                    _hasLastTarget = true;
+                    BotMovementHelper.SmoothMoveTo(_bot, jittered, false);
+                }
+            }
+            catch (Exception ex)
+            {
+                Plugin.LoggerInstance.LogError("[BotGroupBehavior] IssueMove failed: " + ex);
+                _bot?.Mover?.GoToPoint(_bot.Position, true, 1.0f); // fallback to static point
             }
         }
 

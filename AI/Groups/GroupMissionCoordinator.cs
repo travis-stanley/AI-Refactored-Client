@@ -17,6 +17,7 @@ namespace AIRefactored.AI.Groups
     /// <summary>
     /// Assigns and caches squad mission types per GroupId for squad-coordinated routing and objectives.
     /// Dynamically weighted based on map type, squad composition, and bot personality.
+    /// Bulletproof: all API and internal logic are null-guarded and exception-proof.
     /// </summary>
     public static class GroupMissionCoordinator
     {
@@ -39,39 +40,54 @@ namespace AIRefactored.AI.Groups
 
         public static BotMissionController.MissionType GetMissionForGroup(BotOwner bot)
         {
-            if (!EFTPlayerUtil.IsValidBotOwner(bot))
+            try
             {
+                if (!EFTPlayerUtil.IsValidBotOwner(bot))
+                {
+                    return BotMissionController.MissionType.Loot;
+                }
+
+                string groupId = bot.GetPlayer?.Profile?.Info?.GroupId;
+
+                if (string.IsNullOrEmpty(groupId))
+                {
+                    return PickMission(bot);
+                }
+
+                if (!AssignedMissions.TryGetValue(groupId, out var mission))
+                {
+                    mission = PickMission(bot);
+                    AssignedMissions[groupId] = mission;
+                }
+
+                return mission;
+            }
+            catch
+            {
+                // Always safe fallback: Loot is least risky
                 return BotMissionController.MissionType.Loot;
             }
-
-            string groupId = bot.GetPlayer?.Profile?.Info?.GroupId;
-
-            if (string.IsNullOrEmpty(groupId))
-            {
-                return PickMission(bot);
-            }
-
-            if (!AssignedMissions.TryGetValue(groupId, out var mission))
-            {
-                mission = PickMission(bot);
-                AssignedMissions[groupId] = mission;
-            }
-
-            return mission;
         }
 
         public static void RegisterFromBot(BotOwner bot)
         {
-            if (!EFTPlayerUtil.IsValidBotOwner(bot))
+            try
             {
-                return;
+                if (!EFTPlayerUtil.IsValidBotOwner(bot))
+                {
+                    return;
+                }
+
+                string groupId = bot.GetPlayer?.Profile?.Info?.GroupId;
+
+                if (!string.IsNullOrEmpty(groupId) && !AssignedMissions.ContainsKey(groupId))
+                {
+                    AssignedMissions[groupId] = PickMission(bot);
+                }
             }
-
-            string groupId = bot.GetPlayer?.Profile?.Info?.GroupId;
-
-            if (!string.IsNullOrEmpty(groupId) && !AssignedMissions.ContainsKey(groupId))
+            catch
             {
-                AssignedMissions[groupId] = PickMission(bot);
+                // Always safe
             }
         }
 
@@ -90,82 +106,89 @@ namespace AIRefactored.AI.Groups
             float fight = 1.0f;
             float quest = 1.0f;
 
-            string map = GameWorldHandler.TryGetValidMapName();
-            switch (map)
+            try
             {
-                case "factory4_day":
-                case "factory4_night":
-                    fight += 1.5f;
-                    break;
+                string map = GameWorldHandler.TryGetValidMapName();
+                switch (map)
+                {
+                    case "factory4_day":
+                    case "factory4_night":
+                        fight += 1.5f;
+                        break;
 
-                case "woods":
-                    loot += 1.5f;
-                    break;
+                    case "woods":
+                        loot += 1.5f;
+                        break;
 
-                case "bigmap":
-                    quest += 0.75f;
-                    fight += 0.25f;
-                    break;
+                    case "bigmap":
+                        quest += 0.75f;
+                        fight += 0.25f;
+                        break;
 
-                case "interchange":
-                    loot += 1.2f;
-                    break;
+                    case "interchange":
+                        loot += 1.2f;
+                        break;
 
-                case "rezervbase":
-                    fight += 1.0f;
-                    loot += 0.4f;
-                    break;
+                    case "rezervbase":
+                        fight += 1.0f;
+                        loot += 0.4f;
+                        break;
 
-                case "lighthouse":
-                    quest += 1.2f;
-                    loot += 1.0f;
-                    break;
+                    case "lighthouse":
+                        quest += 1.2f;
+                        loot += 1.0f;
+                        break;
 
-                case "shoreline":
-                    quest += 1.4f;
-                    loot += 0.6f;
-                    break;
+                    case "shoreline":
+                        quest += 1.4f;
+                        loot += 0.6f;
+                        break;
 
-                case "tarkovstreets":
-                    fight += 1.3f;
-                    loot += 0.5f;
-                    break;
+                    case "tarkovstreets":
+                        fight += 1.3f;
+                        loot += 0.5f;
+                        break;
 
-                case "laboratory":
-                    fight += 2.0f;
-                    break;
+                    case "laboratory":
+                        fight += 2.0f;
+                        break;
 
-                case "sandbox":
-                case "sandbox_high":
-                case "groundzero":
-                    loot += 1.0f;
-                    break;
+                    case "sandbox":
+                    case "sandbox_high":
+                    case "groundzero":
+                        loot += 1.0f;
+                        break;
 
-                default:
-                    loot += 0.5f;
-                    break;
+                    default:
+                        loot += 0.5f;
+                        break;
+                }
+
+                if (BotRegistry.TryGet(bot.ProfileId, out BotPersonalityProfile personality))
+                {
+                    loot += personality.Caution;
+                    quest += personality.Caution * 0.5f;
+                    fight += personality.AggressionLevel * 1.2f;
+
+                    if (personality.IsFrenzied)
+                    {
+                        fight += 1.5f;
+                    }
+
+                    if (personality.IsFearful)
+                    {
+                        loot += 1.0f;
+                    }
+
+                    if (personality.IsCamper)
+                    {
+                        quest += 0.75f;
+                    }
+                }
             }
-
-            if (BotRegistry.TryGet(bot.ProfileId, out BotPersonalityProfile personality))
+            catch
             {
-                loot += personality.Caution;
-                quest += personality.Caution * 0.5f;
-                fight += personality.AggressionLevel * 1.2f;
-
-                if (personality.IsFrenzied)
-                {
-                    fight += 1.5f;
-                }
-
-                if (personality.IsFearful)
-                {
-                    loot += 1.0f;
-                }
-
-                if (personality.IsCamper)
-                {
-                    quest += 0.75f;
-                }
+                // Use base values if anything fails
             }
 
             float total = loot + fight + quest;

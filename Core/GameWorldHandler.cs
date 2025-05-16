@@ -3,7 +3,8 @@
 //   Licensed under the MIT License. See LICENSE in the repository root for more information.
 //
 //   THIS FILE IS SYSTEMATICALLY MANAGED.
-//   Failures in AIRefactored logic must always trigger safe fallback to EFT base AI.
+//   Failures in AIRefactored logic must always trigger safe fallback to EFT base AI, never break global logic.
+//   Bulletproof: All failures are locally contained, never break other subsystems, and always trigger fallback isolation.
 // </auto-generated>
 
 namespace AIRefactored.Core
@@ -22,6 +23,10 @@ namespace AIRefactored.Core
     using EFT;
     using UnityEngine;
 
+    /// <summary>
+    /// Centralized, bulletproof handler for GameWorld state and system bootstrapping.
+    /// All logic is fully isolated; failures never cascade or break global game/mod state.
+    /// </summary>
     public static partial class GameWorldHandler
     {
         #region Fields
@@ -38,7 +43,6 @@ namespace AIRefactored.Core
         private static float _lastLootRefresh = -999f;
         private static bool _isRecovering;
         private static bool _hasShutdown;
-
         private static GameWorld _manualAssignedWorld;
 
         #endregion
@@ -68,9 +72,7 @@ namespace AIRefactored.Core
         public static bool IsLocalHost()
         {
             if (FikaHeadlessDetector.IsHeadless)
-            {
                 return true;
-            }
 
             return Singleton<ClientGameWorld>.Instantiated &&
                    Singleton<ClientGameWorld>.Instance.MainPlayer?.IsYourPlayer == true;
@@ -201,9 +203,7 @@ namespace AIRefactored.Core
             lock (GameWorldLock)
             {
                 if (_hasShutdown)
-                {
                     return;
-                }
 
                 _hasShutdown = true;
 
@@ -237,9 +237,7 @@ namespace AIRefactored.Core
         public static void Cleanup()
         {
             if (_hasShutdown)
-            {
                 return;
-            }
 
             try
             {
@@ -258,38 +256,60 @@ namespace AIRefactored.Core
 
         public static void ForceAssign(GameWorld world)
         {
-            if (world != null)
+            try
             {
-                if (!Singleton<GameWorld>.Instantiated)
+                if (world != null)
                 {
-                    LogSafe("[GameWorldHandler] Forcibly assigning fallback GameWorld.");
-                    Singleton<GameWorld>.Instance = world;
+                    if (!Singleton<GameWorld>.Instantiated)
+                    {
+                        LogSafe("[GameWorldHandler] Forcibly assigning fallback GameWorld.");
+                        Singleton<GameWorld>.Instance = world;
+                    }
+                    _manualAssignedWorld = world;
                 }
-                _manualAssignedWorld = world;
+            }
+            catch (Exception ex)
+            {
+                LogSafe("[GameWorldHandler] ForceAssign error: " + ex);
             }
         }
 
         private static GameWorld TryRecoverFromScene()
         {
-            GameWorld[] found = UnityEngine.Object.FindObjectsOfType<GameWorld>();
-            return found.Length > 0 ? found[0] : null;
+            try
+            {
+                GameWorld[] found = UnityEngine.Object.FindObjectsOfType<GameWorld>();
+                return found.Length > 0 ? found[0] : null;
+            }
+            catch (Exception ex)
+            {
+                LogSafe("[GameWorldHandler] TryRecoverFromScene() failed: " + ex);
+                return null;
+            }
         }
 
         public static bool IsReady()
         {
-            GameWorld world = TryGetGameWorld();
-
-            if (FikaHeadlessDetector.IsHeadless)
+            try
             {
+                GameWorld world = TryGetGameWorld();
+
+                if (FikaHeadlessDetector.IsHeadless)
+                {
+                    return world != null &&
+                           !string.IsNullOrEmpty(world.LocationId) &&
+                           !world.LocationId.Equals("unknown", StringComparison.OrdinalIgnoreCase);
+                }
+
                 return world != null &&
+                       world.RegisteredPlayers?.Count > 0 &&
                        !string.IsNullOrEmpty(world.LocationId) &&
                        !world.LocationId.Equals("unknown", StringComparison.OrdinalIgnoreCase);
             }
-
-            return world != null &&
-                   world.RegisteredPlayers?.Count > 0 &&
-                   !string.IsNullOrEmpty(world.LocationId) &&
-                   !world.LocationId.Equals("unknown", StringComparison.OrdinalIgnoreCase);
+            catch
+            {
+                return false;
+            }
         }
 
         public static string TryGetValidMapName()
@@ -300,27 +320,21 @@ namespace AIRefactored.Core
                 {
                     string id = Singleton<ClientGameWorld>.Instance.LocationId;
                     if (!string.IsNullOrEmpty(id) && !id.Equals("unknown", StringComparison.OrdinalIgnoreCase))
-                    {
                         return id.ToLowerInvariant();
-                    }
                 }
 
                 if (Singleton<GameWorld>.Instantiated)
                 {
                     string id = Singleton<GameWorld>.Instance.LocationId;
                     if (!string.IsNullOrEmpty(id) && !id.Equals("unknown", StringComparison.OrdinalIgnoreCase))
-                    {
                         return id.ToLowerInvariant();
-                    }
                 }
 
                 if (FikaHeadlessDetector.IsHeadless)
                 {
                     string id = FikaHeadlessDetector.RaidLocationName;
                     if (!string.IsNullOrEmpty(id) && !id.Equals("unknown", StringComparison.OrdinalIgnoreCase))
-                    {
                         return id.ToLowerInvariant();
-                    }
                 }
             }
             catch (Exception ex)
@@ -335,10 +349,17 @@ namespace AIRefactored.Core
 
         public static bool HasValidWorld()
         {
-            GameWorld world = TryGetGameWorld();
-            return world != null &&
-                   !string.IsNullOrEmpty(world.LocationId) &&
-                   !world.LocationId.Equals("unknown", StringComparison.OrdinalIgnoreCase);
+            try
+            {
+                GameWorld world = TryGetGameWorld();
+                return world != null &&
+                       !string.IsNullOrEmpty(world.LocationId) &&
+                       !world.LocationId.Equals("unknown", StringComparison.OrdinalIgnoreCase);
+            }
+            catch
+            {
+                return false;
+            }
         }
 
         #endregion
@@ -347,15 +368,20 @@ namespace AIRefactored.Core
 
         public static void TryAttachBotBrain(BotOwner bot)
         {
-            if (bot == null || bot.IsDead)
+            try
             {
-                return;
-            }
+                if (bot == null || bot.IsDead)
+                    return;
 
-            Player player = EFTPlayerUtil.ResolvePlayer(bot);
-            if (player != null && player.IsAI && player.gameObject != null)
+                Player player = EFTPlayerUtil.ResolvePlayer(bot);
+                if (player != null && player.IsAI && player.gameObject != null)
+                {
+                    WorldBootstrapper.EnforceBotBrain(player, bot);
+                }
+            }
+            catch (Exception ex)
             {
-                WorldBootstrapper.EnforceBotBrain(player, bot);
+                LogSafe("[GameWorldHandler] TryAttachBotBrain() failed: " + ex);
             }
         }
 
@@ -363,22 +389,27 @@ namespace AIRefactored.Core
         {
             GameWorld world = TryGetGameWorld();
             if (world?.AllAlivePlayersList == null)
-            {
                 return;
-            }
 
             lock (GameWorldLock)
             {
                 for (int i = 0; i < world.AllAlivePlayersList.Count; i++)
                 {
-                    Player player = world.AllAlivePlayersList[i];
-                    if (EFTPlayerUtil.IsValid(player) && player.HealthController.IsAlive)
+                    try
                     {
-                        BotOwner owner = player.GetComponent<BotOwner>();
-                        if (owner != null)
+                        Player player = world.AllAlivePlayersList[i];
+                        if (EFTPlayerUtil.IsValid(player) && player.HealthController.IsAlive)
                         {
-                            WorldBootstrapper.EnforceBotBrain(player, owner);
+                            BotOwner owner = player.GetComponent<BotOwner>();
+                            if (owner != null)
+                            {
+                                WorldBootstrapper.EnforceBotBrain(player, owner);
+                            }
                         }
+                    }
+                    catch (Exception ex)
+                    {
+                        LogSafe("[GameWorldHandler] EnforceBotBrains() failed for player: " + ex);
                     }
                 }
             }
@@ -392,34 +423,35 @@ namespace AIRefactored.Core
         {
             float now = Time.time;
             if (now - _lastCleanupTime < DeadCleanupInterval)
-            {
                 return;
-            }
 
             _lastCleanupTime = now;
 
             GameWorld world = TryGetGameWorld();
             if (world?.AllAlivePlayersList == null)
-            {
                 return;
-            }
 
             for (int i = 0; i < world.AllAlivePlayersList.Count; i++)
             {
-                Player player = world.AllAlivePlayersList[i];
-                if (!EFTPlayerUtil.IsValid(player) || !player.IsAI || player.HealthController.IsAlive)
+                try
                 {
-                    continue;
+                    Player player = world.AllAlivePlayersList[i];
+                    if (!EFTPlayerUtil.IsValid(player) || !player.IsAI || player.HealthController.IsAlive)
+                        continue;
+
+                    int id = player.GetInstanceID();
+                    if (KnownDeadBotIds.Add(id) && player.gameObject != null)
+                    {
+                        player.gameObject.SetActive(false);
+                        UnityEngine.Object.Destroy(player.gameObject, 3f);
+
+                        string nickname = player.Profile?.Info?.Nickname ?? "Unnamed";
+                        LogSafe("[GameWorldHandler] Cleaned up dead bot: " + nickname);
+                    }
                 }
-
-                int id = player.GetInstanceID();
-                if (KnownDeadBotIds.Add(id) && player.gameObject != null)
+                catch (Exception ex)
                 {
-                    player.gameObject.SetActive(false);
-                    UnityEngine.Object.Destroy(player.gameObject, 3f);
-
-                    string nickname = player.Profile?.Info?.Nickname ?? "Unnamed";
-                    LogSafe("[GameWorldHandler] Cleaned up dead bot: " + nickname);
+                    LogSafe("[GameWorldHandler] CleanupDeadBotsSmoothly() failed: " + ex);
                 }
             }
         }
@@ -427,20 +459,26 @@ namespace AIRefactored.Core
         public static List<Player> GetAllAlivePlayers()
         {
             List<Player> list = TempListPool.Rent<Player>();
-            GameWorld world = TryGetGameWorld();
-
-            if (world?.AllAlivePlayersList != null)
+            try
             {
-                for (int i = 0; i < world.AllAlivePlayersList.Count; i++)
+                GameWorld world = TryGetGameWorld();
+
+                if (world?.AllAlivePlayersList != null)
                 {
-                    Player p = world.AllAlivePlayersList[i];
-                    if (EFTPlayerUtil.IsValid(p) && p.HealthController.IsAlive)
+                    for (int i = 0; i < world.AllAlivePlayersList.Count; i++)
                     {
-                        list.Add(p);
+                        Player p = world.AllAlivePlayersList[i];
+                        if (EFTPlayerUtil.IsValid(p) && p.HealthController.IsAlive)
+                        {
+                            list.Add(p);
+                        }
                     }
                 }
             }
-
+            catch (Exception ex)
+            {
+                LogSafe("[GameWorldHandler] GetAllAlivePlayers() failed: " + ex);
+            }
             return list;
         }
 
@@ -448,15 +486,20 @@ namespace AIRefactored.Core
         {
             float now = Time.time;
             if (now - _lastLootRefresh < LootRefreshCooldown)
-            {
                 return;
-            }
 
             _lastLootRefresh = now;
             LogSafe("[GameWorldHandler] Refreshing loot registry...");
-            LootRegistry.Clear();
-            LootBootstrapper.RegisterAllLoot();
-            BotDeadBodyScanner.ScanAll();
+            try
+            {
+                LootRegistry.Clear();
+                LootBootstrapper.RegisterAllLoot();
+                BotDeadBodyScanner.ScanAll();
+            }
+            catch (Exception ex)
+            {
+                LogSafe("[GameWorldHandler] RefreshLootRegistry() failed: " + ex);
+            }
         }
 
         #endregion

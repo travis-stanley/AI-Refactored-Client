@@ -15,6 +15,7 @@ namespace AIRefactored.AI.Movement
     /// <summary>
     /// Calculates realistic flank positions around enemies.
     /// Uses NavMesh validation and dynamic spacing based on enemy distance and vertical tolerance.
+    /// All failures are locally isolated and cannot cascade or break other AIRefactored systems.
     /// </summary>
     public static class FlankPositionPlanner
     {
@@ -51,45 +52,61 @@ namespace AIRefactored.AI.Movement
         /// <summary>
         /// Attempts to find a valid flank point on a preferred side of the enemy.
         /// Falls back to the opposite side if preferred side fails.
+        /// Bulletproof: always locally isolated.
         /// </summary>
         public static bool TryFindFlankPosition(Vector3 botPos, Vector3 enemyPos, out Vector3 flankPoint, Side preferred)
         {
             flankPoint = Vector3.zero;
+            try
+            {
+                Vector3 toEnemy = enemyPos - botPos;
+                toEnemy.y = 0f;
 
-            Vector3 toEnemy = enemyPos - botPos;
-            toEnemy.y = 0f;
+                if (toEnemy.sqrMagnitude < 0.0001f)
+                    return false;
 
-            if (toEnemy.sqrMagnitude < 0.0001f)
+                toEnemy.Normalize();
+
+                if (TrySide(botPos, toEnemy, preferred, out flankPoint))
+                    return true;
+
+                Side fallback = preferred == Side.Left ? Side.Right : Side.Left;
+                return TrySide(botPos, toEnemy, fallback, out flankPoint);
+            }
+            catch
+            {
+                flankPoint = Vector3.zero;
                 return false;
-
-            toEnemy.Normalize();
-
-            if (TrySide(botPos, toEnemy, preferred, out flankPoint))
-                return true;
-
-            Side fallback = preferred == Side.Left ? Side.Right : Side.Left;
-            return TrySide(botPos, toEnemy, fallback, out flankPoint);
+            }
         }
 
         /// <summary>
         /// Uses enemy forward vector and bot position to smartly pick a flank side.
+        /// Bulletproof: always locally isolated.
         /// </summary>
         public static bool TrySmartFlank(Vector3 botPos, Vector3 enemyPos, Vector3 enemyForward, out Vector3 flankPoint)
         {
             flankPoint = Vector3.zero;
+            try
+            {
+                Vector3 toBot = botPos - enemyPos;
+                toBot.y = 0f;
 
-            Vector3 toBot = botPos - enemyPos;
-            toBot.y = 0f;
+                if (toBot.sqrMagnitude < 0.0001f)
+                    return false;
 
-            if (toBot.sqrMagnitude < 0.0001f)
+                toBot.Normalize();
+
+                float sideDot = Vector3.Dot(Vector3.Cross(enemyForward, Vector3.up), toBot);
+                Side side = sideDot >= 0f ? Side.Right : Side.Left;
+
+                return TryFindFlankPosition(botPos, enemyPos, out flankPoint, side);
+            }
+            catch
+            {
+                flankPoint = Vector3.zero;
                 return false;
-
-            toBot.Normalize();
-
-            float sideDot = Vector3.Dot(Vector3.Cross(enemyForward, Vector3.up), toBot);
-            Side side = sideDot >= 0f ? Side.Right : Side.Left;
-
-            return TryFindFlankPosition(botPos, enemyPos, out flankPoint, side);
+            }
         }
 
         #endregion
@@ -102,22 +119,28 @@ namespace AIRefactored.AI.Movement
         private static bool TrySide(Vector3 origin, Vector3 toEnemy, Side side, out Vector3 result)
         {
             result = Vector3.zero;
-            Vector3 perpendicular = Vector3.Cross(Vector3.up, toEnemy) * (side == Side.Left ? -1f : 1f);
-
-            for (int i = 0; i < MaxAttemptsPerSide; i++)
+            try
             {
-                float lateralOffset = BaseOffset + UnityEngine.Random.Range(-OffsetVariation, OffsetVariation);
-                float forwardOffset = UnityEngine.Random.Range(MinDistance, MaxDistance);
+                Vector3 perpendicular = Vector3.Cross(Vector3.up, toEnemy) * (side == Side.Left ? -1f : 1f);
 
-                Vector3 candidate = origin + (perpendicular * lateralOffset) + (toEnemy * forwardOffset);
-
-                if (IsValidFlankPoint(candidate, origin, out Vector3 valid))
+                for (int i = 0; i < MaxAttemptsPerSide; i++)
                 {
-                    result = valid;
-                    return true;
+                    float lateralOffset = BaseOffset + UnityEngine.Random.Range(-OffsetVariation, OffsetVariation);
+                    float forwardOffset = UnityEngine.Random.Range(MinDistance, MaxDistance);
+
+                    Vector3 candidate = origin + (perpendicular * lateralOffset) + (toEnemy * forwardOffset);
+
+                    if (IsValidFlankPoint(candidate, origin, out Vector3 valid))
+                    {
+                        result = valid;
+                        return true;
+                    }
                 }
             }
-
+            catch
+            {
+                result = Vector3.zero;
+            }
             return false;
         }
 
@@ -127,21 +150,28 @@ namespace AIRefactored.AI.Movement
         private static bool IsValidFlankPoint(Vector3 candidate, Vector3 origin, out Vector3 final)
         {
             final = Vector3.zero;
+            try
+            {
+                if (!NavMesh.SamplePosition(candidate, out NavMeshHit hit, NavSampleRadius, NavMesh.AllAreas))
+                    return false;
 
-            if (!NavMesh.SamplePosition(candidate, out NavMeshHit hit, NavSampleRadius, NavMesh.AllAreas))
+                float verticalDelta = Mathf.Abs(origin.y - hit.position.y);
+                float distanceSqr = (origin - hit.position).sqrMagnitude;
+
+                if (distanceSqr < MinDistance * MinDistance || distanceSqr > MaxDistance * MaxDistance)
+                    return false;
+
+                if (verticalDelta > VerticalTolerance)
+                    return false;
+
+                final = hit.position;
+                return true;
+            }
+            catch
+            {
+                final = Vector3.zero;
                 return false;
-
-            float verticalDelta = Mathf.Abs(origin.y - hit.position.y);
-            float distanceSqr = (origin - hit.position).sqrMagnitude;
-
-            if (distanceSqr < MinDistance * MinDistance || distanceSqr > MaxDistance * MaxDistance)
-                return false;
-
-            if (verticalDelta > VerticalTolerance)
-                return false;
-
-            final = hit.position;
-            return true;
+            }
         }
 
         #endregion

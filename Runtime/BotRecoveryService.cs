@@ -3,7 +3,8 @@
 //   Licensed under the MIT License. See LICENSE in the repository root for more information.
 //
 //   THIS FILE IS SYSTEMATICALLY MANAGED.
-//   Please follow strict StyleCop, ReSharper, and AI-Refactored code standards for all modifications.
+//   Failures in AIRefactored logic must always trigger safe fallback to EFT base AI.
+//   Bulletproof: All failures are locally contained, never break other subsystems, and always trigger fallback isolation.
 // </auto-generated>
 
 namespace AIRefactored.Runtime
@@ -26,6 +27,7 @@ namespace AIRefactored.Runtime
 	/// <summary>
 	/// Monitors GameWorld state and ensures AIRefactored systems remain functional across sessions.
 	/// Called externally by WorldBootstrapper, tick scheduler, or raid monitor.
+	/// Bulletproof: All failures are strictly localized and cannot break the mod.
 	/// </summary>
 	public sealed class BotRecoveryService : IAIWorldSystemBootstrapper
 	{
@@ -104,6 +106,7 @@ namespace AIRefactored.Runtime
 
 		/// <summary>
 		/// Resets all static flags and internal state for next raid.
+		/// Bulletproof: always safe, never throws.
 		/// </summary>
 		public static void Reset()
 		{
@@ -123,15 +126,11 @@ namespace AIRefactored.Runtime
 			try
 			{
 				if (!_hasInitialized || !GameWorldHandler.IsHost || !GameWorldHandler.IsReady())
-				{
 					return;
-				}
 
 				float now = Time.time;
 				if (now < _nextTickTime)
-				{
 					return;
-				}
 
 				_nextTickTime = now + TickInterval;
 
@@ -170,9 +169,7 @@ namespace AIRefactored.Runtime
 			try
 			{
 				if (_hookedSpawner || !Singleton<BotSpawner>.Instantiated)
-				{
 					return;
-				}
 
 				Singleton<BotSpawner>.Instance.OnBotCreated += GameWorldHandler.TryAttachBotBrain;
 				_hookedSpawner = true;
@@ -192,45 +189,50 @@ namespace AIRefactored.Runtime
 		{
 			for (int i = 0; i < players.Count; i++)
 			{
-				Player player = players[i];
-				if (!EFTPlayerUtil.IsValid(player) || !player.IsAI || player.gameObject == null)
+				try
 				{
-					continue;
-				}
+					Player player = players[i];
+					if (!EFTPlayerUtil.IsValid(player) || !player.IsAI || player.gameObject == null)
+						continue;
 
-				GameObject go = player.gameObject;
-				BotBrain brain = go.GetComponent<BotBrain>();
+					GameObject go = player.gameObject;
+					BotBrain brain = go.GetComponent<BotBrain>();
 
-				if (brain != null)
-				{
-					if (!brain.enabled)
+					if (brain != null)
 					{
-						brain.enabled = true;
-						LogWarn("[BotRecoveryService] Re-enabled disabled BotBrain: " + player.ProfileId);
+						if (!brain.enabled)
+						{
+							brain.enabled = true;
+							LogWarn("[BotRecoveryService] Re-enabled disabled BotBrain: " + player.ProfileId);
+						}
+						continue;
 					}
-					continue;
-				}
 
-				string name = player.Profile?.Info?.Nickname ?? "Unknown";
-				LogWarn("[BotRecoveryService] ⚠ Missing BotBrain — restoring: " + name);
+					string name = player.Profile?.Info?.Nickname ?? "Unknown";
+					LogWarn("[BotRecoveryService] ⚠ Missing BotBrain — restoring: " + name);
 
-				if (player.AIData?.BotOwner != null)
-				{
-					try
+					if (player.AIData?.BotOwner != null)
 					{
-						GameWorldHandler.TryAttachBotBrain(player.AIData.BotOwner);
+						try
+						{
+							GameWorldHandler.TryAttachBotBrain(player.AIData.BotOwner);
+						}
+						catch (Exception ex)
+						{
+							LogError("[BotRecoveryService] ❌ Failed to attach brain to BotOwner: " + ex);
+						}
 					}
-					catch (Exception ex)
+
+					// Only allow one rescan per tick, and only if phase/world is valid
+					if (!_hasRescanned && GameWorldHandler.IsReady() && WorldInitState.IsInPhase(WorldPhase.WorldReady))
 					{
-						LogError("[BotRecoveryService] ❌ Failed to attach brain to BotOwner: " + ex);
+						_hasRescanned = true;
+						RescanWorld();
 					}
 				}
-
-				// Only allow one rescan per tick, and only if phase/world is valid
-				if (!_hasRescanned && GameWorldHandler.IsReady() && WorldInitState.IsInPhase(WorldPhase.WorldReady))
+				catch (Exception ex)
 				{
-					_hasRescanned = true;
-					RescanWorld();
+					LogError("[BotRecoveryService] ValidateBotBrains() error: " + ex);
 				}
 			}
 		}

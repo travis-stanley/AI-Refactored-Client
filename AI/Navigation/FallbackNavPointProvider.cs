@@ -19,6 +19,7 @@ namespace AIRefactored.AI.Navigation
     /// <summary>
     /// Provides fallback nav points if NavPointRegistry is unavailable or empty.
     /// If all else fails, disables all AIRefactored nav logic and lets vanilla EFT take over.
+    /// All logic is bulletproof and locally isolated.
     /// </summary>
     public static class FallbackNavPointProvider
     {
@@ -57,42 +58,55 @@ namespace AIRefactored.AI.Navigation
         /// </summary>
         public static Vector3 GetSafePoint(Vector3 fromPosition)
         {
-            if (AIRefactoredNavDisabled)
-                return fromPosition;
-
-            if (!IsValid(fromPosition))
+            try
             {
-                AIRefactoredNavDisabled = true;
-                TryLogOnce("[FallbackNavPointProvider] ❌ Invalid bot position detected — disabling AIRefactored nav logic.");
-                return fromPosition;
-            }
+                if (AIRefactoredNavDisabled)
+                    return fromPosition;
 
-            if (NavPointRegistry.IsReady && !NavPointRegistry.IsEmpty)
-            {
-                List<Vector3> candidates = NavPointRegistry.QueryNearby(fromPosition, 12f, null, false);
-                try
+                if (!IsValid(fromPosition))
                 {
-                    for (int i = 0; i < candidates.Count; i++)
+                    AIRefactoredNavDisabled = true;
+                    TryLogOnce("[FallbackNavPointProvider] ❌ Invalid bot position detected — disabling AIRefactored nav logic.");
+                    return fromPosition;
+                }
+
+                if (NavPointRegistry.IsReady && !NavPointRegistry.IsEmpty)
+                {
+                    List<Vector3> candidates = NavPointRegistry.QueryNearby(fromPosition, 12f, null, false);
+                    try
                     {
-                        Vector3 candidate = candidates[i];
-                        if (NavMesh.SamplePosition(candidate, out NavMeshHit hit, MaxFallbackSampleRadius, NavMesh.AllAreas))
-                            return hit.position;
+                        for (int i = 0; i < candidates.Count; i++)
+                        {
+                            Vector3 candidate = candidates[i];
+                            if (NavMesh.SamplePosition(candidate, out NavMeshHit hit, MaxFallbackSampleRadius, NavMesh.AllAreas))
+                                return hit.position;
+                        }
+                    }
+                    finally
+                    {
+                        TempListPool.Return(candidates);
                     }
                 }
-                finally { TempListPool.Return(candidates); }
-            }
 
-            for (int i = 0; i < StaticFallbackOffsets.Length; i++)
+                for (int i = 0; i < StaticFallbackOffsets.Length; i++)
+                {
+                    Vector3 testPos = fromPosition + StaticFallbackOffsets[i];
+                    if (NavMesh.SamplePosition(testPos, out NavMeshHit hit, MaxFallbackSampleRadius, NavMesh.AllAreas))
+                        return hit.position;
+                }
+
+                // Could not find a fallback, disable all custom nav for this raid
+                AIRefactoredNavDisabled = true;
+                TryLogOnce("[FallbackNavPointProvider] ❌ No valid fallback found — disabling AIRefactored nav logic for this raid.");
+                return fromPosition;
+            }
+            catch
             {
-                Vector3 testPos = fromPosition + StaticFallbackOffsets[i];
-                if (NavMesh.SamplePosition(testPos, out NavMeshHit hit, MaxFallbackSampleRadius, NavMesh.AllAreas))
-                    return hit.position;
+                // Bulletproof: locally isolated, disables custom nav if fails
+                AIRefactoredNavDisabled = true;
+                TryLogOnce("[FallbackNavPointProvider] ❌ Exception in fallback logic — disabling AIRefactored nav logic for this raid.");
+                return fromPosition;
             }
-
-            // Could not find a fallback, disable all custom nav for this raid
-            AIRefactoredNavDisabled = true;
-            TryLogOnce("[FallbackNavPointProvider] ❌ No valid fallback found — disabling AIRefactored nav logic for this raid.");
-            return fromPosition;
         }
 
         /// <summary>

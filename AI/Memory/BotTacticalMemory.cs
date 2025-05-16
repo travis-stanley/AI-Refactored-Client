@@ -14,11 +14,13 @@ namespace AIRefactored.AI.Memory
     using AIRefactored.AI.Core;
     using AIRefactored.Core;
     using AIRefactored.Pools;
+    using BepInEx.Logging;
     using UnityEngine;
 
     /// <summary>
     /// Tracks enemy sightings and cleared tactical zones.
     /// Prevents over-investigation, supports fallback, and enables squad memory sync.
+    /// All errors are locally isolated; no method can break the bot or mod.
     /// </summary>
     public sealed class BotTacticalMemory
     {
@@ -33,6 +35,8 @@ namespace AIRefactored.AI.Memory
 
         #region Fields
 
+        private static readonly ManualLogSource Logger = Plugin.LoggerInstance;
+
         private readonly Dictionary<Vector3, float> _clearedSpots = new Dictionary<Vector3, float>(32, new Vector3EqualityComparer());
         private readonly Dictionary<string, SeenEnemyRecord> _enemyMemoryById = new Dictionary<string, SeenEnemyRecord>(4, StringComparer.OrdinalIgnoreCase);
         private readonly List<SeenEnemyRecord> _enemyMemoryList = new List<SeenEnemyRecord>(4);
@@ -46,7 +50,14 @@ namespace AIRefactored.AI.Memory
 
         public void Initialize(BotComponentCache cache)
         {
-            _cache = cache;
+            try
+            {
+                _cache = cache;
+            }
+            catch (Exception ex)
+            {
+                Logger.LogError($"[BotTacticalMemory] Initialize failed: {ex}");
+            }
         }
 
         #endregion
@@ -55,39 +66,53 @@ namespace AIRefactored.AI.Memory
 
         public void CullExpired()
         {
-            float now = Time.time;
-
-            for (int i = _enemyMemoryList.Count - 1; i >= 0; i--)
+            try
             {
-                if (now - _enemyMemoryList[i].TimeSeen > MaxMemoryTime)
+                float now = Time.time;
+
+                for (int i = _enemyMemoryList.Count - 1; i >= 0; i--)
                 {
-                    _enemyMemoryList.RemoveAt(i);
+                    if (now - _enemyMemoryList[i].TimeSeen > MaxMemoryTime)
+                    {
+                        _enemyMemoryList.RemoveAt(i);
+                    }
                 }
-            }
 
-            List<string> expired = TempListPool.Rent<string>();
-            foreach (var pair in _enemyMemoryById)
-            {
-                if (now - pair.Value.TimeSeen > MaxMemoryTime)
+                List<string> expired = TempListPool.Rent<string>();
+                foreach (var pair in _enemyMemoryById)
                 {
-                    expired.Add(pair.Key);
+                    if (now - pair.Value.TimeSeen > MaxMemoryTime)
+                    {
+                        expired.Add(pair.Key);
+                    }
                 }
-            }
 
-            for (int i = 0; i < expired.Count; i++)
+                for (int i = 0; i < expired.Count; i++)
+                {
+                    _enemyMemoryById.Remove(expired[i]);
+                }
+
+                TempListPool.Return(expired);
+            }
+            catch (Exception ex)
             {
-                _enemyMemoryById.Remove(expired[i]);
+                Logger.LogError($"[BotTacticalMemory] CullExpired failed: {ex}");
             }
-
-            TempListPool.Return(expired);
         }
 
         public void ClearAll()
         {
-            _enemyMemoryList.Clear();
-            _enemyMemoryById.Clear();
-            _clearedSpots.Clear();
-            _extractionStarted = false;
+            try
+            {
+                _enemyMemoryList.Clear();
+                _enemyMemoryById.Clear();
+                _clearedSpots.Clear();
+                _extractionStarted = false;
+            }
+            catch (Exception ex)
+            {
+                Logger.LogError($"[BotTacticalMemory] ClearAll failed: {ex}");
+            }
         }
 
         #endregion
@@ -96,68 +121,91 @@ namespace AIRefactored.AI.Memory
 
         public void RecordEnemyPosition(Vector3 position, string tag, string enemyId)
         {
-            if (_cache == null || _cache.IsBlinded || (_cache.PanicHandler?.IsPanicking == true)) return;
-
-            float now = Time.time;
-            Vector3 gridPos = SnapToGrid(position);
-            string finalTag = string.IsNullOrEmpty(tag) ? "Generic" : tag.Trim();
-
-            if (!string.IsNullOrEmpty(enemyId))
+            try
             {
-                string cleanId = enemyId.Trim();
-                if (cleanId.Length > 0)
-                {
-                    _enemyMemoryById[cleanId] = new SeenEnemyRecord(gridPos, now, finalTag);
-                }
-            }
+                if (_cache == null || _cache.IsBlinded || (_cache.PanicHandler?.IsPanicking == true)) return;
 
-            for (int i = 0; i < _enemyMemoryList.Count; i++)
+                float now = Time.time;
+                Vector3 gridPos = SnapToGrid(position);
+                string finalTag = string.IsNullOrEmpty(tag) ? "Generic" : tag.Trim();
+
+                if (!string.IsNullOrEmpty(enemyId))
+                {
+                    string cleanId = enemyId.Trim();
+                    if (cleanId.Length > 0)
+                    {
+                        _enemyMemoryById[cleanId] = new SeenEnemyRecord(gridPos, now, finalTag);
+                    }
+                }
+
+                for (int i = 0; i < _enemyMemoryList.Count; i++)
+                {
+                    if ((gridPos - _enemyMemoryList[i].Position).sqrMagnitude < PositionToleranceSqr)
+                    {
+                        _enemyMemoryList[i] = new SeenEnemyRecord(gridPos, now, finalTag);
+                        return;
+                    }
+                }
+
+                _enemyMemoryList.Add(new SeenEnemyRecord(gridPos, now, finalTag));
+            }
+            catch (Exception ex)
             {
-                if ((gridPos - _enemyMemoryList[i].Position).sqrMagnitude < PositionToleranceSqr)
-                {
-                    _enemyMemoryList[i] = new SeenEnemyRecord(gridPos, now, finalTag);
-                    return;
-                }
+                Logger.LogError($"[BotTacticalMemory] RecordEnemyPosition failed: {ex}");
             }
-
-            _enemyMemoryList.Add(new SeenEnemyRecord(gridPos, now, finalTag));
         }
 
         public Vector3 GetRecentEnemyMemory()
         {
-            float now = Time.time;
-            float latest = -1f;
-            Vector3 result = Vector3.zero;
-
-            for (int i = 0; i < _enemyMemoryList.Count; i++)
+            try
             {
-                SeenEnemyRecord record = _enemyMemoryList[i];
-                if (now - record.TimeSeen <= MaxMemoryTime && record.TimeSeen > latest)
-                {
-                    latest = record.TimeSeen;
-                    result = record.Position;
-                }
-            }
+                float now = Time.time;
+                float latest = -1f;
+                Vector3 result = Vector3.zero;
 
-            return result;
+                for (int i = 0; i < _enemyMemoryList.Count; i++)
+                {
+                    SeenEnemyRecord record = _enemyMemoryList[i];
+                    if (now - record.TimeSeen <= MaxMemoryTime && record.TimeSeen > latest)
+                    {
+                        latest = record.TimeSeen;
+                        result = record.Position;
+                    }
+                }
+
+                return result;
+            }
+            catch (Exception ex)
+            {
+                Logger.LogError($"[BotTacticalMemory] GetRecentEnemyMemory failed: {ex}");
+                return Vector3.zero;
+            }
         }
 
         public string GetMostRecentEnemyId()
         {
-            float now = Time.time;
-            float latest = -1f;
-            string result = string.Empty;
-
-            foreach (var pair in _enemyMemoryById)
+            try
             {
-                if (now - pair.Value.TimeSeen <= MaxMemoryTime && pair.Value.TimeSeen > latest)
-                {
-                    latest = pair.Value.TimeSeen;
-                    result = pair.Key;
-                }
-            }
+                float now = Time.time;
+                float latest = -1f;
+                string result = string.Empty;
 
-            return result;
+                foreach (var pair in _enemyMemoryById)
+                {
+                    if (now - pair.Value.TimeSeen <= MaxMemoryTime && pair.Value.TimeSeen > latest)
+                    {
+                        latest = pair.Value.TimeSeen;
+                        result = pair.Key;
+                    }
+                }
+
+                return result;
+            }
+            catch (Exception ex)
+            {
+                Logger.LogError($"[BotTacticalMemory] GetMostRecentEnemyId failed: {ex}");
+                return string.Empty;
+            }
         }
 
         public List<SeenEnemyRecord> GetAllMemory()
@@ -167,27 +215,41 @@ namespace AIRefactored.AI.Memory
 
         public void SyncMemory(Vector3 position)
         {
-            RecordEnemyPosition(position, "AllyEcho", string.Empty);
+            try
+            {
+                RecordEnemyPosition(position, "AllyEcho", string.Empty);
+            }
+            catch (Exception ex)
+            {
+                Logger.LogError($"[BotTacticalMemory] SyncMemory failed: {ex}");
+            }
         }
 
         public void ShareMemoryWith(List<BotComponentCache> teammates)
         {
-            if (teammates == null || teammates.Count == 0 || _cache?.Bot == null)
+            try
             {
-                return;
-            }
-
-            for (int i = 0; i < _enemyMemoryList.Count; i++)
-            {
-                SeenEnemyRecord record = _enemyMemoryList[i];
-                for (int j = 0; j < teammates.Count; j++)
+                if (teammates == null || teammates.Count == 0 || _cache?.Bot == null)
                 {
-                    BotComponentCache mate = teammates[j];
-                    if (mate?.Bot != null && mate.Bot != _cache.Bot)
+                    return;
+                }
+
+                for (int i = 0; i < _enemyMemoryList.Count; i++)
+                {
+                    SeenEnemyRecord record = _enemyMemoryList[i];
+                    for (int j = 0; j < teammates.Count; j++)
                     {
-                        mate.TacticalMemory?.SyncMemory(record.Position);
+                        BotComponentCache mate = teammates[j];
+                        if (mate?.Bot != null && mate.Bot != _cache.Bot)
+                        {
+                            mate.TacticalMemory?.SyncMemory(record.Position);
+                        }
                     }
                 }
+            }
+            catch (Exception ex)
+            {
+                Logger.LogError($"[BotTacticalMemory] ShareMemoryWith failed: {ex}");
             }
         }
 
@@ -197,52 +259,90 @@ namespace AIRefactored.AI.Memory
 
         public void MarkCleared(Vector3 position)
         {
-            _clearedSpots[SnapToGrid(position)] = Time.time;
+            try
+            {
+                _clearedSpots[SnapToGrid(position)] = Time.time;
+            }
+            catch (Exception ex)
+            {
+                Logger.LogError($"[BotTacticalMemory] MarkCleared failed: {ex}");
+            }
         }
 
         public bool WasRecentlyCleared(Vector3 position)
         {
-            Vector3 grid = SnapToGrid(position);
-            return _clearedSpots.TryGetValue(grid, out float lastTime) &&
-                   (Time.time - lastTime < ClearedMemoryDuration);
+            try
+            {
+                Vector3 grid = SnapToGrid(position);
+                return _clearedSpots.TryGetValue(grid, out float lastTime) &&
+                       (Time.time - lastTime < ClearedMemoryDuration);
+            }
+            catch (Exception ex)
+            {
+                Logger.LogError($"[BotTacticalMemory] WasRecentlyCleared failed: {ex}");
+                return false;
+            }
         }
 
         public bool IsZoneUnsafe(Vector3 position)
         {
-            if (_cache?.Bot?.Profile == null) return false;
-
-            float now = Time.time;
-            Vector3 grid = SnapToGrid(position);
-
-            for (int i = 0; i < _enemyMemoryList.Count; i++)
+            try
             {
-                if ((grid - _enemyMemoryList[i].Position).sqrMagnitude < PositionToleranceSqr)
-                {
-                    return true;
-                }
-            }
+                if (_cache?.Bot?.Profile == null) return false;
 
-            foreach (var kv in _clearedSpots)
+                float now = Time.time;
+                Vector3 grid = SnapToGrid(position);
+
+                for (int i = 0; i < _enemyMemoryList.Count; i++)
+                {
+                    if ((grid - _enemyMemoryList[i].Position).sqrMagnitude < PositionToleranceSqr)
+                    {
+                        return true;
+                    }
+                }
+
+                foreach (var kv in _clearedSpots)
+                {
+                    if ((kv.Key - grid).sqrMagnitude < PositionToleranceSqr &&
+                        (now - kv.Value) < ClearedMemoryDuration)
+                    {
+                        return true;
+                    }
+                }
+
+                string mapId = GameWorldHandler.TryGetValidMapName();
+                return mapId.Length > 0 && BotMemoryStore.IsPositionInDangerZone(mapId, position);
+            }
+            catch (Exception ex)
             {
-                if ((kv.Key - grid).sqrMagnitude < PositionToleranceSqr &&
-                    (now - kv.Value) < ClearedMemoryDuration)
-                {
-                    return true;
-                }
+                Logger.LogError($"[BotTacticalMemory] IsZoneUnsafe failed: {ex}");
+                return false;
             }
-
-            string mapId = GameWorldHandler.TryGetValidMapName();
-            return mapId.Length > 0 && BotMemoryStore.IsPositionInDangerZone(mapId, position);
         }
 
         public void MarkExtractionStarted()
         {
-            _extractionStarted = true;
+            try
+            {
+                _extractionStarted = true;
+            }
+            catch (Exception ex)
+            {
+                Logger.LogError($"[BotTacticalMemory] MarkExtractionStarted failed: {ex}");
+            }
         }
 
         public bool IsExtracting()
         {
-            return _extractionStarted;
+            try
+            {
+                return _extractionStarted;
+            }
+            catch (Exception ex)
+            {
+                Logger.LogError($"[BotTacticalMemory] IsExtracting failed: {ex}");
+                return false;
+            }
         }
 
         #endregion

@@ -19,6 +19,7 @@ namespace AIRefactored.AI.Medical
     /// <summary>
     /// Manages bot injuries, healing behavior, and surgical procedures on destroyed limbs.
     /// Prioritizes realistic timing, cover safety, and cooldown between medical actions.
+    /// All failures are locally isolated; medical logic cannot break other subsystems or the mod.
     /// </summary>
     public sealed class BotInjurySystem
     {
@@ -39,6 +40,7 @@ namespace AIRefactored.AI.Medical
         private float _nextHealTime;
         private bool _hasInjury;
         private bool _hasBlackLimb;
+        private bool _isActive = true;
 
         #endregion
 
@@ -48,11 +50,14 @@ namespace AIRefactored.AI.Medical
         {
             if (cache == null || cache.Bot == null)
             {
-                throw new ArgumentException("[BotInjurySystem] Invalid cache or missing bot.");
+                _isActive = false;
+                Logger.LogError("[BotInjurySystem] Initialization failed: cache or bot is null. Disabling injury system for this bot.");
+                return;
             }
 
             _cache = cache;
             Reset();
+            _isActive = true;
         }
 
         #endregion
@@ -61,24 +66,37 @@ namespace AIRefactored.AI.Medical
 
         public void OnHit(EBodyPart part, float damage)
         {
-            BotOwner bot = _cache.Bot;
-            if (!EFTPlayerUtil.IsValidBotOwner(bot))
+            if (!_isActive)
             {
                 return;
             }
 
-            Player player = bot.GetPlayer;
-            IHealthController health = player != null ? player.HealthController : null;
-            if (health == null)
+            try
             {
-                return;
-            }
+                BotOwner bot = _cache.Bot;
+                if (!EFTPlayerUtil.IsValidBotOwner(bot))
+                {
+                    return;
+                }
 
-            _lastHitTime = Time.time;
-            _nextHealTime = _lastHitTime + HealCooldown;
-            _injuredLimb = part;
-            _hasInjury = true;
-            _hasBlackLimb = health.IsBodyPartDestroyed(part);
+                Player player = bot.GetPlayer;
+                IHealthController health = player != null ? player.HealthController : null;
+                if (health == null)
+                {
+                    return;
+                }
+
+                _lastHitTime = Time.time;
+                _nextHealTime = _lastHitTime + HealCooldown;
+                _injuredLimb = part;
+                _hasInjury = true;
+                _hasBlackLimb = health.IsBodyPartDestroyed(part);
+            }
+            catch (Exception ex)
+            {
+                _isActive = false;
+                Logger.LogError($"[BotInjurySystem] OnHit() failed: {ex}. Disabling injury logic for this bot.");
+            }
         }
 
         public void Reset()
@@ -97,29 +115,56 @@ namespace AIRefactored.AI.Medical
 
         public bool ShouldHeal(float time)
         {
-            if (!_hasInjury || !_hasBlackLimb || time < _nextHealTime)
+            if (!_isActive)
             {
                 return false;
             }
 
-            if (_cache.PanicHandler != null && _cache.PanicHandler.IsPanicking)
+            try
             {
+                if (!_hasInjury || !_hasBlackLimb || time < _nextHealTime)
+                {
+                    return false;
+                }
+
+                if (_cache.PanicHandler != null && _cache.PanicHandler.IsPanicking)
+                {
+                    return false;
+                }
+
+                if (_cache.Combat != null && _cache.Combat.IsInCombatState())
+                {
+                    return false;
+                }
+
+                return true;
+            }
+            catch (Exception ex)
+            {
+                _isActive = false;
+                Logger.LogError($"[BotInjurySystem] ShouldHeal() failed: {ex}. Disabling injury logic for this bot.");
                 return false;
             }
-
-            if (_cache.Combat != null && _cache.Combat.IsInCombatState())
-            {
-                return false;
-            }
-
-            return true;
         }
 
         public void Tick(float time)
         {
-            if (ShouldHeal(time))
+            if (!_isActive)
             {
-                TryUseMedicine();
+                return;
+            }
+
+            try
+            {
+                if (ShouldHeal(time))
+                {
+                    TryUseMedicine();
+                }
+            }
+            catch (Exception ex)
+            {
+                _isActive = false;
+                Logger.LogError($"[BotInjurySystem] Tick() failed: {ex}. Disabling injury logic for this bot.");
             }
         }
 
@@ -129,39 +174,47 @@ namespace AIRefactored.AI.Medical
 
         private void TryUseMedicine()
         {
-            BotOwner bot = _cache.Bot;
-            if (!EFTPlayerUtil.IsValidBotOwner(bot) || !_hasInjury)
+            try
             {
-                return;
-            }
+                BotOwner bot = _cache.Bot;
+                if (!EFTPlayerUtil.IsValidBotOwner(bot) || !_hasInjury)
+                {
+                    return;
+                }
 
-            Player player = bot.GetPlayer;
-            IHealthController health = player != null ? player.HealthController : null;
-            if (health == null || !health.IsBodyPartDestroyed(_injuredLimb))
+                Player player = bot.GetPlayer;
+                IHealthController health = player != null ? player.HealthController : null;
+                if (health == null || !health.IsBodyPartDestroyed(_injuredLimb))
+                {
+                    return;
+                }
+
+                // The true surgical kit type in EFT is a derived class of Medecine, here GClass473 is the correct reflection-based EFT type.
+                GClass473 surgery = bot.Medecine?.SurgicalKit as GClass473;
+                if (surgery == null || !surgery.HaveWork || !surgery.ShallStartUse())
+                {
+                    return;
+                }
+
+                bot.Sprint(false);
+                bot.WeaponManager?.Selector?.TakePrevWeapon();
+
+                if (!FikaHeadlessDetector.IsHeadless && bot.BotTalk != null)
+                {
+                    bot.BotTalk.TrySay(EPhraseTrigger.StartHeal);
+                }
+
+                surgery.ApplyToCurrentPart();
+                Reset();
+
+                string nickname = bot.Profile?.Info?.Nickname ?? "Unknown";
+                Logger.LogDebug("[BotInjurySystem] 🛠 " + nickname + " applied surgery to " + _injuredLimb);
+            }
+            catch (Exception ex)
             {
-                return;
+                _isActive = false;
+                Logger.LogError($"[BotInjurySystem] TryUseMedicine() failed: {ex}. Disabling injury logic for this bot.");
             }
-
-            // The true surgical kit type in EFT is a derived class of Medecine, here GClass473 is the correct reflection-based EFT type.
-            GClass473 surgery = bot.Medecine?.SurgicalKit as GClass473;
-            if (surgery == null || !surgery.HaveWork || !surgery.ShallStartUse())
-            {
-                return;
-            }
-
-            bot.Sprint(false);
-            bot.WeaponManager?.Selector?.TakePrevWeapon();
-
-            if (!FikaHeadlessDetector.IsHeadless && bot.BotTalk != null)
-            {
-                bot.BotTalk.TrySay(EPhraseTrigger.StartHeal);
-            }
-
-            surgery.ApplyToCurrentPart();
-            Reset();
-
-            string nickname = bot.Profile?.Info?.Nickname ?? "Unknown";
-            Logger.LogDebug("[BotInjurySystem] 🛠 " + nickname + " applied surgery to " + _injuredLimb);
         }
 
         #endregion

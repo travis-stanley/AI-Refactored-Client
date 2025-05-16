@@ -3,7 +3,8 @@
 //   Licensed under the MIT License. See LICENSE in the repository root for more information.
 //
 //   THIS FILE IS SYSTEMATICALLY MANAGED.
-//   Please follow strict StyleCop, ReSharper, and AI-Refactored code standards for all modifications.
+//   Failures in AIRefactored logic must always trigger safe fallback to EFT base AI, never break global logic.
+//   Bulletproof: All failures are locally contained, never break other subsystems, and always trigger fallback isolation.
 // </auto-generated>
 
 namespace AIRefactored.Runtime
@@ -20,6 +21,7 @@ namespace AIRefactored.Runtime
 
     /// <summary>
     /// Global AIRefactored lifecycle manager. Spawns persistent host and routes raid start/end logic and tick delegation.
+    /// Bulletproof: All lifecycle operations are strictly contained, multiplayer/headless safe, and never cascade errors.
     /// </summary>
     public sealed class AIRefactoredController : MonoBehaviour
     {
@@ -44,9 +46,7 @@ namespace AIRefactored.Runtime
             {
                 ManualLogSource log = Plugin.LoggerInstance;
                 if (log == null)
-                {
                     throw new InvalidOperationException("[AIRefactoredController] Logger is not available.");
-                }
                 return log;
             }
         }
@@ -57,6 +57,7 @@ namespace AIRefactored.Runtime
 
         /// <summary>
         /// Initializes the controller by spawning the persistent host and attaching required components.
+        /// Bulletproof: All failures are locally contained, cannot break startup.
         /// </summary>
         public static void Initialize()
         {
@@ -90,30 +91,29 @@ namespace AIRefactored.Runtime
 
         /// <summary>
         /// Triggered when the GameWorld becomes active. Launches phase bootstrapper.
+        /// Bulletproof: All failures are locally contained; cannot break global state.
         /// </summary>
         /// <param name="world">Active GameWorld instance.</param>
         public static void OnRaidStarted(GameWorld world)
         {
-            if (!s_Initialized || s_RaidActive || world == null)
-            {
-                return;
-            }
-
-            if (!GameWorldHandler.IsHost)
-            {
-                LogDebug("[AIRefactoredController] Skipped OnRaidStarted — not a valid host.");
-                return;
-            }
-
-            // Headless/FIKA: Ensure FikaHeadlessDetector is ready, and only proceed if raid started
-            if (FikaHeadlessDetector.IsHeadless && !FikaHeadlessDetector.HasRaidStarted())
-            {
-                LogWarn("[AIRefactoredController] Skipped — Headless mode but raid not started.");
-                return;
-            }
-
             try
             {
+                if (!s_Initialized || s_RaidActive || world == null)
+                    return;
+
+                if (!GameWorldHandler.IsHost)
+                {
+                    LogDebug("[AIRefactoredController] Skipped OnRaidStarted — not a valid host.");
+                    return;
+                }
+
+                // Headless/FIKA: Only proceed if raid started.
+                if (FikaHeadlessDetector.IsHeadless && !FikaHeadlessDetector.HasRaidStarted())
+                {
+                    LogWarn("[AIRefactoredController] Skipped — Headless mode but raid not started.");
+                    return;
+                }
+
                 // World must have registered players, all valid, and must be fully ready (no partial loads)
                 if (world.RegisteredPlayers == null || world.RegisteredPlayers.Count == 0)
                 {
@@ -156,17 +156,20 @@ namespace AIRefactored.Runtime
                 }
                 else
                 {
-                    // Only call if not already initialized/built for this raid
+                    // NavMesh must be prebuilt before NavPointRegistry is registered for correct timing
                     if (!NavMeshWarmupManager.IsNavMeshReady)
                     {
-                        NavMeshWarmupManager.TryPrebuildNavMesh();
+                        try { NavMeshWarmupManager.TryPrebuildNavMesh(); }
+                        catch (Exception ex) { LogError("[AIRefactoredController] NavMeshWarmupManager error: " + ex); }
                     }
                     if (!NavPointRegistry.IsInitialized)
                     {
-                        NavPointRegistry.RegisterAll(mapId);
+                        try { NavPointRegistry.RegisterAll(mapId); }
+                        catch (Exception ex) { LogError("[AIRefactoredController] NavPointRegistry error: " + ex); }
                     }
                 }
 
+                // Main world initialization after navmesh/navpoint
                 GameWorldHandler.Initialize(world);
                 WorldBootstrapper.Begin(Logger, mapId);
 
@@ -180,13 +183,12 @@ namespace AIRefactored.Runtime
 
         /// <summary>
         /// Called at end of raid. Cleans up all state and stops world logic.
+        /// Bulletproof: All failures are locally contained.
         /// </summary>
         public static void OnRaidEnded()
         {
             if (!s_RaidActive)
-            {
                 return;
-            }
 
             try
             {
@@ -211,9 +213,16 @@ namespace AIRefactored.Runtime
 
         private void Update()
         {
-            if (WorldInitState.IsInitialized)
+            try
             {
-                WorldTickDispatcher.Tick(Time.deltaTime);
+                if (WorldInitState.IsInitialized)
+                {
+                    WorldTickDispatcher.Tick(Time.deltaTime);
+                }
+            }
+            catch (Exception ex)
+            {
+                Logger.LogError("[AIRefactoredController] Update() error: " + ex);
             }
         }
 

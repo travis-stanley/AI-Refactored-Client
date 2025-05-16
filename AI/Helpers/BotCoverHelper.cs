@@ -9,6 +9,7 @@
 
 namespace AIRefactored.AI.Helpers
 {
+    using System;
     using System.Collections.Generic;
     using AIRefactored.AI.Combat;
     using AIRefactored.AI.Core;
@@ -21,6 +22,7 @@ namespace AIRefactored.AI.Helpers
     /// <summary>
     /// Utility for scoring, checking, and tracking tactical cover positions.
     /// Supports memory cooldown, real cover posture analysis, and multiplayer-safe validation.
+    /// Bulletproof: errors are local and never break the bot or other systems.
     /// </summary>
     public static class BotCoverHelper
     {
@@ -33,19 +35,42 @@ namespace AIRefactored.AI.Helpers
 
         #region Static Memory
 
+        // Covers are keyed by rounded position, with time-stamp.
         private static readonly Dictionary<string, float> CoverMemory = new Dictionary<string, float>(128);
 
         #endregion
 
         #region Cover Type Checks
 
-        public static bool IsLowCover(CustomNavigationPoint point) => point != null && point.CoverLevel == CoverLevel.Sit;
-        public static bool IsProneCover(CustomNavigationPoint point) => point != null && point.CoverLevel == CoverLevel.Lay;
-        public static bool IsStandingCover(CustomNavigationPoint point) => point != null && point.CoverLevel == CoverLevel.Stay;
+        public static bool IsLowCover(CustomNavigationPoint point)
+        {
+            return point != null && point.CoverLevel == CoverLevel.Sit;
+        }
 
-        public static bool IsLowCover(NavPointData point) => point.IsCover && point.ElevationBand == "Mid";
-        public static bool IsProneCover(NavPointData point) => point.IsCover && point.ElevationBand == "Low";
-        public static bool IsStandingCover(NavPointData point) => point.IsCover && point.ElevationBand == "High";
+        public static bool IsProneCover(CustomNavigationPoint point)
+        {
+            return point != null && point.CoverLevel == CoverLevel.Lay;
+        }
+
+        public static bool IsStandingCover(CustomNavigationPoint point)
+        {
+            return point != null && point.CoverLevel == CoverLevel.Stay;
+        }
+
+        public static bool IsLowCover(NavPointData point)
+        {
+            return point.IsCover && point.ElevationBand == "Mid";
+        }
+
+        public static bool IsProneCover(NavPointData point)
+        {
+            return point.IsCover && point.ElevationBand == "Low";
+        }
+
+        public static bool IsStandingCover(NavPointData point)
+        {
+            return point.IsCover && point.ElevationBand == "High";
+        }
 
         #endregion
 
@@ -53,20 +78,32 @@ namespace AIRefactored.AI.Helpers
 
         public static void MarkUsed(CustomNavigationPoint point)
         {
-            if (point != null)
-                CoverMemory[GetKey(point.Position)] = Time.time;
+            if (point == null)
+                return;
+            MarkUsed(point.Position);
         }
 
         public static void MarkUsed(NavPointData point)
         {
-            if (IsValidPos(point.Position))
-                CoverMemory[GetKey(point.Position)] = Time.time;
+            if (!IsValidPos(point.Position))
+                return;
+            MarkUsed(point.Position);
         }
 
         public static void MarkUsed(Vector3 position)
         {
-            if (IsValidPos(position))
-                CoverMemory[GetKey(position)] = Time.time;
+            if (!IsValidPos(position))
+                return;
+            try
+            {
+                string key = GetKey(position);
+                if (!string.IsNullOrEmpty(key))
+                    CoverMemory[key] = Time.time;
+            }
+            catch
+            {
+                // Ignore, never break bot logic
+            }
         }
 
         public static bool WasRecentlyUsed(CustomNavigationPoint point)
@@ -81,8 +118,15 @@ namespace AIRefactored.AI.Helpers
 
         public static bool WasRecentlyUsed(Vector3 position)
         {
-            string key = GetKey(position);
-            return CoverMemory.TryGetValue(key, out float last) && (Time.time - last) < MemoryDuration;
+            try
+            {
+                string key = GetKey(position);
+                return CoverMemory.TryGetValue(key, out float last) && (Time.time - last) < MemoryDuration;
+            }
+            catch
+            {
+                return false;
+            }
         }
 
         #endregion
@@ -97,29 +141,36 @@ namespace AIRefactored.AI.Helpers
             if (!NavPointRegistry.IsReady || NavPointRegistry.IsEmpty)
                 return;
 
-            BotPoseController controller = cache.PoseController;
-            List<NavPointData> points = NavPointRegistry.QueryNearby(position, 4f, null);
-
-            for (int i = 0; i < points.Count; i++)
+            try
             {
-                NavPointData point = points[i];
-                if (!point.IsCover)
-                    continue;
+                BotPoseController controller = cache.PoseController;
+                List<NavPointData> points = NavPointRegistry.QueryNearby(position, 4f, null);
 
-                if ((point.Position - position).sqrMagnitude > MaxValidDistanceSqr)
-                    continue;
-
-                if (IsProneCover(point))
+                for (int i = 0; i < points.Count; i++)
                 {
-                    controller.SetProne(true);
-                    return;
-                }
+                    NavPointData point = points[i];
+                    if (!point.IsCover)
+                        continue;
 
-                if (IsLowCover(point))
-                {
-                    controller.SetCrouch(true);
-                    return;
+                    if ((point.Position - position).sqrMagnitude > MaxValidDistanceSqr)
+                        continue;
+
+                    if (IsProneCover(point))
+                    {
+                        controller.SetProne(true);
+                        return;
+                    }
+
+                    if (IsLowCover(point))
+                    {
+                        controller.SetCrouch(true);
+                        return;
+                    }
                 }
+            }
+            catch
+            {
+                // Never break bot logic if registry or posture fails
             }
         }
 
@@ -130,36 +181,50 @@ namespace AIRefactored.AI.Helpers
         public static float Score(CustomNavigationPoint point, Vector3 botPos, Vector3 threatPos)
         {
             if (point == null) return 0f;
-            float distBot = Vector3.Distance(botPos, point.Position);
-            float distThreat = Vector3.Distance(threatPos, point.Position);
-            float angle = Vector3.Angle(threatPos - point.Position, botPos - point.Position);
+            try
+            {
+                float distBot = Vector3.Distance(botPos, point.Position);
+                float distThreat = Vector3.Distance(threatPos, point.Position);
+                float angle = Vector3.Angle(threatPos - point.Position, botPos - point.Position);
 
-            float bonus = 0.5f;
-            if (IsProneCover(point)) bonus = 1.25f;
-            else if (IsLowCover(point)) bonus = 1.0f;
-            else if (IsStandingCover(point)) bonus = 0.85f;
+                float bonus = 0.5f;
+                if (IsProneCover(point)) bonus = 1.25f;
+                else if (IsLowCover(point)) bonus = 1.0f;
+                else if (IsStandingCover(point)) bonus = 0.85f;
 
-            float threatFactor = Mathf.Clamp01(distThreat / 20f);
-            float angleFactor = Mathf.Clamp01(angle / 180f);
+                float threatFactor = Mathf.Clamp01(distThreat / 20f);
+                float angleFactor = Mathf.Clamp01(angle / 180f);
 
-            return (bonus + threatFactor + angleFactor) / (1f + distBot * 0.15f);
+                return (bonus + threatFactor + angleFactor) / (1f + distBot * 0.15f);
+            }
+            catch
+            {
+                return 0f;
+            }
         }
 
         public static float Score(NavPointData point, Vector3 botPos, Vector3 threatPos)
         {
-            float distBot = Vector3.Distance(botPos, point.Position);
-            float distThreat = Vector3.Distance(threatPos, point.Position);
-            float angle = Vector3.Angle(threatPos - point.Position, botPos - point.Position);
+            try
+            {
+                float distBot = Vector3.Distance(botPos, point.Position);
+                float distThreat = Vector3.Distance(threatPos, point.Position);
+                float angle = Vector3.Angle(threatPos - point.Position, botPos - point.Position);
 
-            float bonus = 0.5f;
-            if (IsProneCover(point)) bonus = 1.25f;
-            else if (IsLowCover(point)) bonus = 1.0f;
-            else if (IsStandingCover(point)) bonus = 0.85f;
+                float bonus = 0.5f;
+                if (IsProneCover(point)) bonus = 1.25f;
+                else if (IsLowCover(point)) bonus = 1.0f;
+                else if (IsStandingCover(point)) bonus = 0.85f;
 
-            float threatFactor = Mathf.Clamp01(distThreat / 20f);
-            float angleFactor = Mathf.Clamp01(angle / 180f);
+                float threatFactor = Mathf.Clamp01(distThreat / 20f);
+                float angleFactor = Mathf.Clamp01(angle / 180f);
 
-            return (bonus + threatFactor + angleFactor) / (1f + distBot * 0.15f);
+                return (bonus + threatFactor + angleFactor) / (1f + distBot * 0.15f);
+            }
+            catch
+            {
+                return 0f;
+            }
         }
 
         #endregion
@@ -168,19 +233,26 @@ namespace AIRefactored.AI.Helpers
 
         public static bool IsValidCoverPoint(CustomNavigationPoint point, BotOwner bot, bool requireFree, bool preferIndoor)
         {
-            if (point == null || bot == null)
-                return false;
+            try
+            {
+                if (point == null || bot == null)
+                    return false;
 
-            if (requireFree && !point.IsFreeById(bot.Id))
-                return false;
+                if (requireFree && !point.IsFreeById(bot.Id))
+                    return false;
 
-            if (point.IsSpotted)
-                return false;
+                if (point.IsSpotted)
+                    return false;
 
-            if (preferIndoor && !point.IsGoodInsideBuilding)
-                return false;
+                if (preferIndoor && !point.IsGoodInsideBuilding)
+                    return false;
 
-            return true;
+                return true;
+            }
+            catch
+            {
+                return false;
+            }
         }
 
         #endregion

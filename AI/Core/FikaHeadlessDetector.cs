@@ -16,6 +16,7 @@ namespace AIRefactored.AI.Core
     /// <summary>
     /// Detects if the client is running in FIKA Headless Host mode (i.e., -batchmode or -nographics).
     /// Allows runtime branching for systems that must avoid Unity graphics or main-thread dependencies.
+    /// Bulletproof: All logic is strictly guarded; no error can ever break mod flow.
     /// </summary>
     public static class FikaHeadlessDetector
     {
@@ -43,7 +44,7 @@ namespace AIRefactored.AI.Core
         /// Gets a value indicating whether the headless environment has fully parsed its arguments.
         /// Used to delay logic until startup args are loaded.
         /// </summary>
-        public static bool IsReady => _isHeadless && _raidLocation.Length > 0;
+        public static bool IsReady => _isHeadless && !string.IsNullOrEmpty(_raidLocation);
 
         /// <summary>
         /// Gets a value indicating whether the raid loading phase has started.

@@ -21,6 +21,7 @@ namespace AIRefactored.AI.Combat.States
     /// <summary>
     /// Manages bot investigation behavior when sound or memory suggest enemy presence.
     /// Guides cautious, reactive movement toward enemy vicinity with adaptive stance.
+    /// Bulletproof: All failures are isolated; only this handler disables itself and triggers vanilla fallback if required.
     /// </summary>
     public sealed class InvestigateHandler
     {
@@ -41,6 +42,7 @@ namespace AIRefactored.AI.Combat.States
         private readonly BotOwner _bot;
         private readonly BotComponentCache _cache;
         private readonly BotTacticalMemory _memory;
+        private bool _isFallbackMode;
 
         #endregion
 
@@ -48,15 +50,19 @@ namespace AIRefactored.AI.Combat.States
 
         public InvestigateHandler(BotComponentCache cache)
         {
-            if (cache == null || cache.Bot == null || cache.TacticalMemory == null)
-            {
-                Plugin.LoggerInstance.LogError("[InvestigateHandler] Constructor failed: Cache or required fields are null.");
-                throw new InvalidOperationException("InvestigateHandler requires valid cache, BotOwner, and TacticalMemory.");
-            }
-
             _cache = cache;
-            _bot = cache.Bot;
-            _memory = cache.TacticalMemory;
+            _bot = cache?.Bot;
+            _memory = cache?.TacticalMemory;
+
+            if (_cache == null || _bot == null || _memory == null)
+            {
+                BotFallbackUtility.Trigger(this, _bot, "Constructor failed: Cache, Bot, or TacticalMemory is null.");
+                _isFallbackMode = true;
+            }
+            else
+            {
+                _isFallbackMode = false;
+            }
         }
 
         #endregion
@@ -68,16 +74,28 @@ namespace AIRefactored.AI.Combat.States
         /// </summary>
         public Vector3 GetInvestigateTarget(Vector3 visualLastKnown)
         {
-            if (IsVectorValid(visualLastKnown))
-                return visualLastKnown;
+            if (_isFallbackMode)
+                return _bot != null ? _bot.Position : Vector3.zero;
 
-            if (TryGetMemoryEnemyPosition(out Vector3 memoryPos))
-                return memoryPos;
+            try
+            {
+                if (IsVectorValid(visualLastKnown))
+                    return visualLastKnown;
 
-            Vector3 fallback = RandomNearbyPosition();
-            return BotNavValidator.Validate(_bot, "InvestigateRandomFallback")
-                ? fallback
-                : FallbackNavPointProvider.GetSafePoint(_bot != null ? _bot.Position : Vector3.zero);
+                if (TryGetMemoryEnemyPosition(out Vector3 memoryPos))
+                    return memoryPos;
+
+                Vector3 fallback = RandomNearbyPosition();
+                return BotNavValidator.Validate(_bot, "InvestigateRandomFallback")
+                    ? fallback
+                    : FallbackNavPointProvider.GetSafePoint(_bot != null ? _bot.Position : Vector3.zero);
+            }
+            catch (Exception ex)
+            {
+                BotFallbackUtility.Trigger(this, _bot, "Exception in GetInvestigateTarget.", ex);
+                _isFallbackMode = true;
+                return _bot != null ? _bot.Position : Vector3.zero;
+            }
         }
 
         /// <summary>
@@ -85,29 +103,64 @@ namespace AIRefactored.AI.Combat.States
         /// </summary>
         public void Investigate(Vector3 target)
         {
-            if (_cache == null || _bot == null)
+            if (_isFallbackMode || _cache == null || _bot == null)
                 return;
 
-            Vector3 destination = _cache.SquadPath != null
-                ? _cache.SquadPath.ApplyOffsetTo(target)
-                : target;
+            try
+            {
+                Vector3 destination = _cache.SquadPath != null
+                    ? _cache.SquadPath.ApplyOffsetTo(target)
+                    : target;
 
-            if (!IsVectorValid(destination) || !BotNavValidator.Validate(_bot, "InvestigateDestination"))
-            {
-                destination = FallbackNavPointProvider.GetSafePoint(_bot.Position);
-            }
+                bool navValid = false;
+                if (!IsVectorValid(destination))
+                {
+                    navValid = false;
+                }
+                else
+                {
+                    try
+                    {
+                        navValid = BotNavValidator.Validate(_bot, "InvestigateDestination");
+                    }
+                    catch (Exception ex)
+                    {
+                        BotFallbackUtility.Trigger(this, _bot, "NavValidator exception in Investigate.", ex);
+                        navValid = false;
+                    }
+                }
 
-            // Only move if mover is present; fallback if missing.
-            if (_bot.Mover != null)
-            {
-                BotMovementHelper.SmoothMoveTo(_bot, destination);
-                _memory.MarkCleared(destination);
-                _cache.Combat?.TrySetStanceFromNearbyCover(destination);
+                if (!navValid)
+                {
+                    destination = FallbackNavPointProvider.GetSafePoint(_bot.Position);
+                }
+
+                if (_bot.Mover != null)
+                {
+                    try
+                    {
+                        BotMovementHelper.SmoothMoveTo(_bot, destination);
+                        _memory.MarkCleared(destination);
+                        _cache.Combat?.TrySetStanceFromNearbyCover(destination);
+                    }
+                    catch (Exception ex)
+                    {
+                        BotFallbackUtility.Trigger(this, _bot, "Exception in SmoothMoveTo/MarkCleared.", ex);
+                        _isFallbackMode = true;
+                        BotFallbackUtility.FallbackToEFTLogic(_bot);
+                    }
+                }
+                else
+                {
+                    BotFallbackUtility.Trigger(this, _bot, "BotMover missing. Fallback to EFT AI.");
+                    _isFallbackMode = true;
+                    BotFallbackUtility.FallbackToEFTLogic(_bot);
+                }
             }
-            else
+            catch (Exception ex)
             {
-                Plugin.LoggerInstance.LogWarning("[InvestigateHandler] BotMover missing. Fallback to EFT AI.");
-                BotFallbackUtility.FallbackToEFTLogic(_bot);
+                BotFallbackUtility.Trigger(this, _bot, "General exception in Investigate.", ex);
+                _isFallbackMode = true;
             }
         }
 
@@ -116,14 +169,23 @@ namespace AIRefactored.AI.Combat.States
         /// </summary>
         public bool ShallUseNow(float time, float lastTransition)
         {
-            if (_cache == null || _cache.AIRefactoredBotOwner?.PersonalityProfile == null)
+            if (_isFallbackMode || _cache == null || _cache.AIRefactoredBotOwner?.PersonalityProfile == null)
                 return false;
 
-            if (_cache.AIRefactoredBotOwner.PersonalityProfile.Caution < MinCaution)
-                return false;
+            try
+            {
+                if (_cache.AIRefactoredBotOwner.PersonalityProfile.Caution < MinCaution)
+                    return false;
 
-            float heardTime = _cache.LastHeardTime;
-            return (heardTime + SoundReactTime) > time && (time - lastTransition) > ExitDelayBuffer;
+                float heardTime = _cache.LastHeardTime;
+                return (heardTime + SoundReactTime) > time && (time - lastTransition) > ExitDelayBuffer;
+            }
+            catch (Exception ex)
+            {
+                BotFallbackUtility.Trigger(this, _bot, "Exception in ShallUseNow.", ex);
+                _isFallbackMode = true;
+                return false;
+            }
         }
 
         /// <summary>
@@ -131,8 +193,20 @@ namespace AIRefactored.AI.Combat.States
         /// </summary>
         public bool ShouldExit(float now, float lastHitTime, float cooldown)
         {
-            float elapsed = now - lastHitTime;
-            return elapsed > cooldown || elapsed > MaxInvestigateTime;
+            if (_isFallbackMode)
+                return true;
+
+            try
+            {
+                float elapsed = now - lastHitTime;
+                return elapsed > cooldown || elapsed > MaxInvestigateTime;
+            }
+            catch (Exception ex)
+            {
+                BotFallbackUtility.Trigger(this, _bot, "Exception in ShouldExit.", ex);
+                _isFallbackMode = true;
+                return true;
+            }
         }
 
         /// <summary>
@@ -140,7 +214,19 @@ namespace AIRefactored.AI.Combat.States
         /// </summary>
         public bool IsInvestigating()
         {
-            return _cache != null && (Time.time - _cache.LastHeardTime) <= ActiveWindow;
+            if (_isFallbackMode || _cache == null)
+                return false;
+
+            try
+            {
+                return (Time.time - _cache.LastHeardTime) <= ActiveWindow;
+            }
+            catch (Exception ex)
+            {
+                BotFallbackUtility.Trigger(this, _bot, "Exception in IsInvestigating.", ex);
+                _isFallbackMode = true;
+                return false;
+            }
         }
 
         #endregion
@@ -156,11 +242,19 @@ namespace AIRefactored.AI.Combat.States
             if (_memory == null)
                 return false;
 
-            Vector3? memory = _memory.GetRecentEnemyMemory();
-            if (memory.HasValue && IsVectorValid(memory.Value))
+            try
             {
-                result = memory.Value;
-                return true;
+                Vector3? memory = _memory.GetRecentEnemyMemory();
+                if (memory.HasValue && IsVectorValid(memory.Value))
+                {
+                    result = memory.Value;
+                    return true;
+                }
+            }
+            catch (Exception ex)
+            {
+                BotFallbackUtility.Trigger(this, _bot, "Exception in TryGetMemoryEnemyPosition.", ex);
+                _isFallbackMode = true;
             }
             return false;
         }

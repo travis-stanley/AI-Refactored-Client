@@ -19,6 +19,17 @@ namespace AIRefactored.AI.Navigation
     {
         #region Fields
 
+        public static readonly NavPointData Empty = new NavPointData(
+            Vector3.zero,
+            false,
+            string.Empty,
+            0f,
+            false,
+            false,
+            0f,
+            string.Empty,
+            string.Empty);
+
         public readonly Vector3 Position;
         public readonly bool IsCover;
         public readonly string Tag;

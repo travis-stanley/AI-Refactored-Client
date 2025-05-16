@@ -59,7 +59,7 @@ namespace AIRefactored.AI.Navigation
                         Subdivide(node);
                         for (int i = 0; i < tempPoints.Count; i++)
                         {
-                            Insert(tempPoints[i]); // Re-insert into new tree
+                            Insert(tempPoints[i]);
                         }
                         TempListPool.Return(tempPoints);
                         node.NavPoints = TempListPool.Rent<NavPointData>();
@@ -97,7 +97,7 @@ namespace AIRefactored.AI.Navigation
                         Subdivide(node);
                         for (int i = 0; i < tempRaw.Count; i++)
                         {
-                            Insert(tempRaw[i]); // Re-insert
+                            Insert(tempRaw[i]);
                         }
                         TempListPool.Return(tempRaw);
                         node.RawPoints = TempListPool.Rent<Vector3>();

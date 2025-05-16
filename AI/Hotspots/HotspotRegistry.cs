@@ -19,6 +19,7 @@ namespace AIRefactored.AI.Hotspots
     /// <summary>
     /// Global registry for map-specific hotspots (loot zones, patrol targets, tactical nodes).
     /// Dynamically builds spatial indexes (quadtree or grid) depending on map type.
+    /// Bulletproof: all initialization, query, and builder logic is isolation-safe and never cascades or breaks the mod.
     /// </summary>
     public static class HotspotRegistry
     {
@@ -68,67 +69,85 @@ namespace AIRefactored.AI.Hotspots
 
         public static void Initialize(string mapId)
         {
-            if (!WorldInitState.IsInPhase(WorldPhase.WorldReady))
+            try
             {
-                Logger.LogWarning("[HotspotRegistry] ⚠ Initialization attempted outside of WorldReady phase. Skipping.");
-                return;
-            }
-
-            if (string.IsNullOrEmpty(mapId))
-            {
-                Logger.LogWarning("[HotspotRegistry] ⚠ Null mapId passed to Initialize.");
-                return;
-            }
-
-            string normalizedMapId = mapId.Trim().ToLowerInvariant();
-            if (_loadedMap.Equals(normalizedMapId, StringComparison.OrdinalIgnoreCase))
-            {
-                return;
-            }
-
-            Clear();
-            _loadedMap = normalizedMapId;
-            _activeMode = IndexModeMap.TryGetValue(_loadedMap, out var mode) ? mode : SpatialIndexMode.None;
-
-            HotspotSet set = HardcodedHotspots.GetForMap(_loadedMap);
-            if (set == null || set.Points == null || set.Points.Count == 0)
-            {
-                Logger.LogWarning($"[HotspotRegistry] ⚠ No hotspots found for map '{_loadedMap}'");
-                return;
-            }
-
-            for (int i = 0; i < set.Points.Count; i++)
-            {
-                HotspotData data = set.Points[i];
-                if (data == null || string.IsNullOrWhiteSpace(data.Zone))
+                if (!WorldInitState.IsInPhase(WorldPhase.WorldReady))
                 {
-                    continue;
+                    Logger.LogWarning("[HotspotRegistry] ⚠ Initialization attempted outside of WorldReady phase. Skipping.");
+                    return;
                 }
 
-                string zone = data.Zone.Trim();
-                Hotspot h = new Hotspot(data.Position, zone);
-                All.Add(h);
-
-                if (!ByZone.TryGetValue(zone, out var list))
+                if (string.IsNullOrEmpty(mapId))
                 {
-                    list = new List<Hotspot>(8);
-                    ByZone[zone] = list;
+                    Logger.LogWarning("[HotspotRegistry] ⚠ Null mapId passed to Initialize.");
+                    return;
                 }
 
-                list.Add(h);
-            }
+                string normalizedMapId = mapId.Trim().ToLowerInvariant();
+                if (_loadedMap.Equals(normalizedMapId, StringComparison.OrdinalIgnoreCase))
+                {
+                    return;
+                }
 
-            switch (_activeMode)
+                Clear();
+                _loadedMap = normalizedMapId;
+                _activeMode = IndexModeMap.TryGetValue(_loadedMap, out var mode) ? mode : SpatialIndexMode.None;
+
+                HotspotSet set = HardcodedHotspots.GetForMap(_loadedMap);
+                if (set == null || set.Points == null || set.Points.Count == 0)
+                {
+                    Logger.LogWarning($"[HotspotRegistry] ⚠ No hotspots found for map '{_loadedMap}'");
+                    return;
+                }
+
+                for (int i = 0; i < set.Points.Count; i++)
+                {
+                    HotspotData data = set.Points[i];
+                    if (data == null || string.IsNullOrWhiteSpace(data.Zone))
+                    {
+                        continue;
+                    }
+
+                    string zone = data.Zone.Trim();
+                    Hotspot h = new Hotspot(data.Position, zone);
+                    All.Add(h);
+
+                    if (!ByZone.TryGetValue(zone, out var list))
+                    {
+                        list = new List<Hotspot>(8);
+                        ByZone[zone] = list;
+                    }
+
+                    list.Add(h);
+                }
+
+                try
+                {
+                    switch (_activeMode)
+                    {
+                        case SpatialIndexMode.Quadtree:
+                            BuildQuadtree();
+                            break;
+                        case SpatialIndexMode.Grid:
+                            BuildGrid();
+                            break;
+                    }
+                }
+                catch (Exception ex)
+                {
+                    Logger.LogWarning($"[HotspotRegistry] Index builder failed for map '{_loadedMap}': {ex.Message}");
+                    _quadtree = null;
+                    _grid = null;
+                    _activeMode = SpatialIndexMode.None;
+                }
+
+                Logger.LogDebug($"[HotspotRegistry] ✅ Registered {All.Count} hotspots for map '{_loadedMap}' using {_activeMode}");
+            }
+            catch (Exception ex)
             {
-                case SpatialIndexMode.Quadtree:
-                    BuildQuadtree();
-                    break;
-                case SpatialIndexMode.Grid:
-                    BuildGrid();
-                    break;
+                Logger.LogError($"[HotspotRegistry] Unexpected error in Initialize: {ex}");
+                Clear();
             }
-
-            Logger.LogDebug($"[HotspotRegistry] ✅ Registered {All.Count} hotspots for map '{_loadedMap}' using {_activeMode}");
         }
 
         #endregion
@@ -153,13 +172,20 @@ namespace AIRefactored.AI.Hotspots
 
         public static List<Hotspot> QueryNearby(Vector3 position, float radius, Predicate<Hotspot> filter)
         {
-            if (_activeMode == SpatialIndexMode.Quadtree && _quadtree != null)
-                return _quadtree.Query(position, radius, filter);
+            try
+            {
+                if (_activeMode == SpatialIndexMode.Quadtree && _quadtree != null)
+                    return _quadtree.Query(position, radius, filter);
 
-            if (_activeMode == SpatialIndexMode.Grid && _grid != null)
-                return _grid.Query(position, radius, filter);
+                if (_activeMode == SpatialIndexMode.Grid && _grid != null)
+                    return _grid.Query(position, radius, filter);
 
-            return FallbackQuery(position, radius, filter);
+                return FallbackQuery(position, radius, filter);
+            }
+            catch
+            {
+                return FallbackQuery(position, radius, filter);
+            }
         }
 
         #endregion
@@ -168,22 +194,36 @@ namespace AIRefactored.AI.Hotspots
 
         private static void BuildQuadtree()
         {
-            Vector2 center = EstimateCenter();
-            float size = EstimateBoundsSize(center);
-
-            _quadtree = new HotspotQuadtree(center, size);
-            for (int i = 0; i < All.Count; i++)
+            try
             {
-                _quadtree.Insert(All[i]);
+                Vector2 center = EstimateCenter();
+                float size = EstimateBoundsSize(center);
+
+                _quadtree = new HotspotQuadtree(center, size);
+                for (int i = 0; i < All.Count; i++)
+                {
+                    _quadtree.Insert(All[i]);
+                }
+            }
+            catch
+            {
+                _quadtree = null;
             }
         }
 
         private static void BuildGrid()
         {
-            _grid = new HotspotSpatialGrid(10f);
-            for (int i = 0; i < All.Count; i++)
+            try
             {
-                _grid.Insert(All[i]);
+                _grid = new HotspotSpatialGrid(10f);
+                for (int i = 0; i < All.Count; i++)
+                {
+                    _grid.Insert(All[i]);
+                }
+            }
+            catch
+            {
+                _grid = null;
             }
         }
 

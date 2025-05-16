@@ -3,11 +3,13 @@
 //   Licensed under the MIT License. See LICENSE in the repository root for more information.
 //
 //   THIS FILE IS SYSTEMATICALLY MANAGED.
-//   Failures in AIRefactored logic must always trigger safe fallback to EFT base AI.
+//   Failures in AIRefactored logic must always trigger safe fallback to EFT base AI, never break global logic.
+//   Bulletproof: All failures are locally contained, never break other subsystems, and always trigger fallback isolation.
 // </auto-generated>
 
 namespace AIRefactored.Core
 {
+    using System;
     using System.Collections.Generic;
     using AIRefactored.AI.Core;
     using BepInEx.Logging;
@@ -15,8 +17,9 @@ namespace AIRefactored.Core
     using UnityEngine;
 
     /// <summary>
-    /// Provides safe fallback to native EFT bot AI when AIRefactored systems fail.
-    /// Prevents dead bots by enabling native logic on exception or critical failure.
+    /// Provides safe fallback to native EFT bot AI when AIRefactored systems fail for a specific bot.
+    /// Ensures only that bot reverts to vanilla logic; all other bots and AIRefactored remain operational.
+    /// Bulletproof: All failures are locally contained and never propagate.
     /// </summary>
     public static class BotFallbackUtility
     {
@@ -30,47 +33,98 @@ namespace AIRefactored.Core
         #region API
 
         /// <summary>
-        /// Fully disables AIRefactored logic and activates base EFT AI for this bot.
+        /// Fully disables AIRefactored logic for this bot and activates base EFT AI. No effect on other bots or mod systems.
+        /// Bulletproof: All failures are locally contained; no double fallback; multiplayer/headless safe.
         /// </summary>
         /// <param name="bot">The bot owner instance.</param>
         public static void FallbackToEFTLogic(BotOwner bot)
         {
-            if (bot == null || bot.IsDead)
-                return;
-
-            Player player = bot.GetPlayer;
-            if (player == null)
-                return;
-
-            Profile profile = player.Profile;
-            if (profile == null)
-                return;
-
-            string profileId = profile.Id;
-            if (string.IsNullOrEmpty(profileId))
-                return;
-
-            // Prevent duplicate fallback activation for same bot
-            if (FallbackBots.Contains(profileId))
-                return;
-
-            FallbackBots.Add(profileId);
-
-            StandartBotBrain brain = player.GetComponent<StandartBotBrain>();
-            if (brain != null)
+            try
             {
-                brain.Activate();
-                if (!FikaHeadlessDetector.IsHeadless)
+                if (bot == null || bot.IsDead)
+                    return;
+
+                Player player = bot.GetPlayer;
+                if (player == null)
+                    return;
+
+                Profile profile = player.Profile;
+                if (profile == null)
+                    return;
+
+                string profileId = profile.Id;
+                if (string.IsNullOrEmpty(profileId))
+                    return;
+
+                lock (FallbackBots)
                 {
-                    Logger.LogWarning("[BotFallback] ✅ Bot " + profileId + " reverted to native EFT AI (StandartBotBrain).");
+                    // Prevent duplicate fallback activation for same bot
+                    if (FallbackBots.Contains(profileId))
+                        return;
+
+                    FallbackBots.Add(profileId);
+                }
+
+                StandartBotBrain brain = null;
+                try
+                {
+                    brain = player.GetComponent<StandartBotBrain>();
+                }
+                catch (Exception ex)
+                {
+                    if (!FikaHeadlessDetector.IsHeadless)
+                        Logger.LogError("[BotFallback] ❌ StandartBotBrain lookup failed for " + profileId + ": " + ex);
+                }
+
+                if (brain != null)
+                {
+                    try
+                    {
+                        brain.Activate();
+                        if (!FikaHeadlessDetector.IsHeadless)
+                            Logger.LogWarning("[BotFallback] ✅ Bot " + profileId + " reverted to native EFT AI (StandartBotBrain).");
+                    }
+                    catch (Exception ex)
+                    {
+                        if (!FikaHeadlessDetector.IsHeadless)
+                            Logger.LogError("[BotFallback] ❌ StandartBotBrain.Activate() failed for " + profileId + ": " + ex);
+                    }
+                }
+                else
+                {
+                    if (!FikaHeadlessDetector.IsHeadless)
+                        Logger.LogError("[BotFallback] ❌ Bot " + profileId + " missing StandartBotBrain — fallback failed.");
                 }
             }
-            else
+            catch (Exception ex)
             {
-                if (!FikaHeadlessDetector.IsHeadless)
-                {
-                    Logger.LogError("[BotFallback] ❌ Bot " + profileId + " missing StandartBotBrain — fallback failed.");
-                }
+                Logger.LogError("[BotFallback] ❌ Unhandled exception in FallbackToEFTLogic: " + ex);
+            }
+        }
+
+        /// <summary>
+        /// Universal bulletproof fallback helper for any subsystem: disables only the current aspect and logs error.
+        /// </summary>
+        /// <param name="subsystem">Calling subsystem instance (for log context).</param>
+        /// <param name="bot">BotOwner instance.</param>
+        /// <param name="reason">Reason for fallback.</param>
+        /// <param name="ex">Optional exception.</param>
+        public static void Trigger(object subsystem, BotOwner bot, string reason, Exception ex = null)
+        {
+            try
+            {
+                string subsystemName = subsystem?.GetType().Name ?? "UnknownSubsystem";
+                string botId = bot?.Profile?.Id ?? "null";
+                string message = $"[Fallback] {subsystemName} on bot {botId}: {reason}";
+                if (ex != null)
+                    message += $"\nException: {ex}";
+
+                Logger.LogWarning(message);
+                FallbackToEFTLogic(bot);
+            }
+            catch (Exception err)
+            {
+                Logger.LogError("[BotFallback] ❌ Trigger() unhandled exception: " + err);
             }
         }
 

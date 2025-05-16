@@ -4,10 +4,12 @@
 //
 //   THIS FILE IS SYSTEMATICALLY MANAGED.
 //   Please follow strict StyleCop, ReSharper, and AI-Refactored code standards for all modifications.
+//   All scoring and pool logic is bulletproof and fully isolated.
 // </auto-generated>
 
 namespace AIRefactored.AI.Optimization
 {
+    using System;
     using System.Collections.Generic;
     using AIRefactored.Pools;
     using AIRefactored.Runtime;
@@ -18,6 +20,7 @@ namespace AIRefactored.AI.Optimization
     /// <summary>
     /// Scores fallback points based on terrain, threat exposure, wall coverage, and distance.
     /// Used by AI retreat and cover systems to evaluate safe fallback zones under fire.
+    /// All failures are strictly isolated; all pools are always returned.
     /// </summary>
     public static class CoverScorer
     {
@@ -58,20 +61,23 @@ namespace AIRefactored.AI.Optimization
         /// <returns>Score between 1 and 10 based on tactical safety.</returns>
         public static float ScoreCoverPoint(BotOwner bot, Vector3 candidate, Vector3 threatDirection)
         {
-            if (bot == null || bot.Transform == null)
-            {
-                return MinScore;
-            }
-
-            Vector3 eyePos = candidate + Vector3.up * EyeHeightOffset;
-            Vector3 toThreat = threatDirection.normalized;
-            Vector3 fromThreat = -toThreat;
-
-            float score = 1.0f;
-
-            RaycastHit[] hits = TempRaycastHitPool.Rent(5);
+            float score = MinScore;
+            RaycastHit[] hits = null;
             try
             {
+                if (bot == null || bot.Transform == null)
+                {
+                    return MinScore;
+                }
+
+                Vector3 eyePos = candidate + Vector3.up * EyeHeightOffset;
+                Vector3 toThreat = threatDirection.normalized;
+                Vector3 fromThreat = -toThreat;
+
+                score = 1.0f;
+
+                hits = TempRaycastHitPool.Rent(5);
+
                 // Back wall bonus
                 if (Physics.Raycast(eyePos, fromThreat, out hits[0], BackWallDistance) && IsSolid(hits[0].collider))
                 {
@@ -96,20 +102,36 @@ namespace AIRefactored.AI.Optimization
                     }
                 }
             }
+            catch (Exception ex)
+            {
+                Logger.LogWarning("[CoverScorer] ScoreCoverPoint failed: " + ex);
+                // Fail-safe: never break AI logic for any bot.
+                score = MinScore;
+            }
             finally
             {
-                TempRaycastHitPool.Return(hits);
+                if (hits != null)
+                {
+                    TempRaycastHitPool.Return(hits);
+                }
             }
 
-            // Distance penalty
-            float dist = Vector3.Distance(bot.Position, candidate);
-            if (dist > IdealFallbackDistance)
+            try
             {
-                float excess = dist - IdealFallbackDistance;
-                score -= Mathf.Min(excess * 0.25f, 3.0f);
-            }
+                // Distance penalty
+                if (bot != null)
+                {
+                    float dist = Vector3.Distance(bot.Position, candidate);
+                    if (dist > IdealFallbackDistance)
+                    {
+                        float excess = dist - IdealFallbackDistance;
+                        score -= Mathf.Min(excess * 0.25f, 3.0f);
+                    }
+                }
 
-            Logger.LogDebug($"[CoverScorer] Score={score:F2} @ {candidate} | From={bot.Position} | Dir={toThreat}");
+                Logger.LogDebug($"[CoverScorer] Score={score:F2} @ {candidate} | From={(bot != null ? bot.Position.ToString() : "null")} | Dir={threatDirection.normalized}");
+            }
+            catch { /* No-op on log or penalty error */ }
 
             return Mathf.Clamp(score, MinScore, MaxScore);
         }
@@ -126,31 +148,38 @@ namespace AIRefactored.AI.Optimization
         /// <returns>True if considered solid tactical cover.</returns>
         internal static bool IsSolid(Collider collider)
         {
-            if (collider == null || collider.isTrigger)
+            try
+            {
+                if (collider == null || collider.isTrigger)
+                {
+                    return false;
+                }
+
+                if (collider.bounds.size.magnitude < 0.2f)
+                {
+                    return false;
+                }
+
+                string tag = collider.tag != null ? collider.tag.ToLowerInvariant() : string.Empty;
+                string mat = collider.sharedMaterial != null ? collider.sharedMaterial.name.ToLowerInvariant() : string.Empty;
+
+                if (tag.Contains("glass") || tag.Contains("foliage") || tag.Contains("banner") || tag.Contains("transparent"))
+                {
+                    return false;
+                }
+
+                if (mat.Contains("leaf") || mat.Contains("bush") || mat.Contains("net") ||
+                    mat.Contains("fabric") || mat.Contains("cloth") || mat.Contains("tarp"))
+                {
+                    return false;
+                }
+
+                return true;
+            }
+            catch
             {
                 return false;
             }
-
-            if (collider.bounds.size.magnitude < 0.2f)
-            {
-                return false;
-            }
-
-            string tag = collider.tag != null ? collider.tag.ToLowerInvariant() : string.Empty;
-            string mat = collider.sharedMaterial != null ? collider.sharedMaterial.name.ToLowerInvariant() : string.Empty;
-
-            if (tag.Contains("glass") || tag.Contains("foliage") || tag.Contains("banner") || tag.Contains("transparent"))
-            {
-                return false;
-            }
-
-            if (mat.Contains("leaf") || mat.Contains("bush") || mat.Contains("net") ||
-                mat.Contains("fabric") || mat.Contains("cloth") || mat.Contains("tarp"))
-            {
-                return false;
-            }
-
-            return true;
         }
 
         #endregion

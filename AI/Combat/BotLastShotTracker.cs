@@ -14,6 +14,7 @@ namespace AIRefactored.AI.Combat
     /// <summary>
     /// Tracks recent shot and hit interactions for a bot.
     /// Used to inform suppression, retaliation, and fallback logic.
+    /// Bulletproof: All logic is strictly null-guarded, errors never propagate.
     /// </summary>
     public sealed class BotLastShotTracker
     {
@@ -40,14 +41,22 @@ namespace AIRefactored.AI.Combat
         /// </summary>
         public bool DidRecentlyShoot(string profileId, float now = -1f, float memoryWindow = DefaultMemoryWindow)
         {
-            if (string.IsNullOrEmpty(profileId) || string.IsNullOrEmpty(_lastTargetId))
-                return false;
+            try
+            {
+                if (string.IsNullOrEmpty(profileId) || string.IsNullOrEmpty(_lastTargetId))
+                    return false;
 
-            if (!string.Equals(_lastTargetId, profileId, StringComparison.Ordinal))
-                return false;
+                if (!string.Equals(_lastTargetId, profileId, StringComparison.Ordinal))
+                    return false;
 
-            float currentTime = now >= 0f ? now : Time.time;
-            return (currentTime - _lastShotTime) <= memoryWindow;
+                float currentTime = now >= 0f ? now : Time.time;
+                return (currentTime - _lastShotTime) <= memoryWindow;
+            }
+            catch
+            {
+                // Always fail safely, never break the caller.
+                return false;
+            }
         }
 
         /// <summary>
@@ -55,14 +64,21 @@ namespace AIRefactored.AI.Combat
         /// </summary>
         public bool WasRecentlyShotBy(string profileId, float now = -1f, float memoryWindow = DefaultMemoryWindow)
         {
-            if (string.IsNullOrEmpty(profileId) || string.IsNullOrEmpty(_lastAttackerId))
-                return false;
+            try
+            {
+                if (string.IsNullOrEmpty(profileId) || string.IsNullOrEmpty(_lastAttackerId))
+                    return false;
 
-            if (!string.Equals(_lastAttackerId, profileId, StringComparison.Ordinal))
-                return false;
+                if (!string.Equals(_lastAttackerId, profileId, StringComparison.Ordinal))
+                    return false;
 
-            float currentTime = now >= 0f ? now : Time.time;
-            return (currentTime - _lastHitTime) <= memoryWindow;
+                float currentTime = now >= 0f ? now : Time.time;
+                return (currentTime - _lastHitTime) <= memoryWindow;
+            }
+            catch
+            {
+                return false;
+            }
         }
 
         /// <summary>

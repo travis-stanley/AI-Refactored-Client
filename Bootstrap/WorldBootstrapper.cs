@@ -151,9 +151,7 @@ namespace AIRefactored.Bootstrap
         public static void Tick(float deltaTime)
         {
             if (!_hasInitialized)
-            {
                 return;
-            }
 
             try
             {

@@ -99,20 +99,20 @@ namespace AIRefactored.AI.Movement
             try
             {
                 if (_bot == null || _cache == null || _bot.IsDead || _bot.GetPlayer == null || !_bot.GetPlayer.IsAI)
+                    return;
+
+                // If the registry disables nav, skip all custom nav and fallback to EFT
+                if (NavPointRegistry.AIRefactoredNavDisabled)
                 {
+                    BotFallbackUtility.FallbackToEFTLogic(_bot);
                     return;
                 }
 
-                if (NavPointRegistry.AIRefactoredNavDisabled)
-                    return;
-
+                // NavMesh not ready (still building), allow looting mode or fallback
                 if (!NavMeshStatus.IsReady && !_inLootingMode)
                 {
                     if (!NavPointRegistry.IsEmpty)
-                    {
                         return;
-                    }
-                    // Fallback logic permitted—no log
                 }
 
                 _jump.Tick(deltaTime);
@@ -121,9 +121,7 @@ namespace AIRefactored.AI.Movement
                 {
                     _cache.DoorInteraction.Tick(Time.time);
                     if (_cache.DoorInteraction.IsBlockedByDoor)
-                    {
                         return;
-                    }
                 }
 
                 if (Time.time >= _nextScanTime)
@@ -135,6 +133,7 @@ namespace AIRefactored.AI.Movement
                 Vector3 target = SafeGetTargetPoint();
                 if (!IsValidTarget(target))
                 {
+                    BotFallbackUtility.FallbackToEFTLogic(_bot);
                     return;
                 }
 
@@ -169,48 +168,71 @@ namespace AIRefactored.AI.Movement
 
         /// <summary>
         /// Returns a safe and valid target point for movement.
-        /// If all systems fail, never returns Vector3.zero unless absolutely unavoidable.
+        /// Bulletproof: never throws, always attempts fallback, never returns NaN.
         /// </summary>
         private Vector3 SafeGetTargetPoint()
         {
+            // 1. Always fallback to vanilla logic if nav system is disabled for this raid
             if (NavPointRegistry.AIRefactoredNavDisabled)
                 return Vector3.zero;
 
+            // 2. EFT BotMover/PathController fallback (null-guarded)
             try
             {
                 if (_bot?.Mover != null)
                 {
-                    Vector3 point = _bot.Mover.LastTargetPoint(1.0f);
-                    if (IsValidTarget(point))
+                    // Prefer direct call if signature exists
+                    try
                     {
-                        return point;
+                        Vector3 eftTarget = _bot.Mover.LastTargetPoint(1.0f);
+                        if (IsValidTarget(eftTarget))
+                            return eftTarget;
                     }
+                    catch { }
+
+                    // Use reflection as backup for internal EFT path controller
+                    try
+                    {
+                        var moverType = _bot.Mover.GetType();
+                        var controllerProp = moverType.GetProperty("PathController");
+                        if (controllerProp != null)
+                        {
+                            object pathController = controllerProp.GetValue(_bot.Mover, null);
+                            if (pathController != null)
+                            {
+                                var lastTargetMethod = moverType.GetMethod("LastTargetPoint");
+                                if (lastTargetMethod != null)
+                                {
+                                    Vector3 point = (Vector3)lastTargetMethod.Invoke(_bot.Mover, new object[] { 1.0f });
+                                    if (IsValidTarget(point))
+                                        return point;
+                                }
+                            }
+                        }
+                    }
+                    catch { }
                 }
             }
             catch { }
 
+            // 3. NavPointRegistry position (if ready)
             try
             {
-                if (_bot != null)
+                if (_bot != null && NavPointRegistry.IsReady && !NavPointRegistry.IsEmpty)
                 {
-                    if (NavPointRegistry.IsReady && !NavPointRegistry.IsEmpty)
-                    {
-                        Vector3 closest = NavPointRegistry.GetClosestPosition(_bot.Position);
-                        if (IsValidTarget(closest))
-                        {
-                            return closest;
-                        }
-                    }
-
-                    Vector3 fallback = FallbackNavPointProvider.GetSafePoint(_bot.Position);
-                    if (IsValidTarget(fallback))
-                    {
-                        return fallback;
-                    }
-
-                    if (IsValidTarget(_bot.Position))
-                        return _bot.Position;
+                    Vector3 closest = NavPointRegistry.GetClosestPosition(_bot.Position);
+                    if (IsValidTarget(closest))
+                        return closest;
                 }
+
+                // 4. Fallback static nav provider
+                Vector3 fallback = FallbackNavPointProvider.GetSafePoint(_bot.Position);
+                if (IsValidTarget(fallback))
+                    return fallback;
+
+                // 5. Default to current bot position
+                if (_bot != null && IsValidTarget(_bot.Position))
+                    return _bot.Position;
             }
             catch (Exception ex)
             {
@@ -241,7 +263,13 @@ namespace AIRefactored.AI.Movement
 
                 _lastVelocity = Vector3.Lerp(_lastVelocity, velocity, InertiaWeight * deltaTime);
                 Vector3 moveTo = Vector3.MoveTowards(_bot.Position, target, _lastVelocity.magnitude * deltaTime);
-                _bot.GetPlayer?.CharacterController?.Move(moveTo, deltaTime);
+
+                // Full bulletproofing: CharacterController may be missing/null (EFT bot loss), must null-guard
+                try
+                {
+                    _bot.GetPlayer?.CharacterController?.Move(moveTo, deltaTime);
+                }
+                catch { }
             }
             catch (Exception ex)
             {
@@ -321,16 +349,18 @@ namespace AIRefactored.AI.Movement
                         {
                             float dist = Vector3.Distance(_bot.Position, mate.Position);
                             if (dist < 2f && dist > 0.01f)
-                            {
                                 avoid += (_bot.Position - mate.Position).normalized / dist;
-                            }
                         }
                     }
                 }
 
                 Vector3 dir = (lateral + avoid * 1.2f).normalized;
                 float speed = 1.2f + UnityEngine.Random.Range(-0.1f, 0.15f);
-                _bot.GetPlayer?.CharacterController?.Move(dir * speed * deltaTime, deltaTime);
+                try
+                {
+                    _bot.GetPlayer?.CharacterController?.Move(dir * speed * deltaTime, deltaTime);
+                }
+                catch { }
             }
             catch (Exception ex)
             {

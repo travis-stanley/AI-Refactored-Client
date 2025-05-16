@@ -23,6 +23,10 @@ namespace AIRefactored.Core
     using EFT;
     using UnityEngine;
 
+    /// <summary>
+    /// Centralized, bulletproof handler for GameWorld state and system bootstrapping.
+    /// All logic is fully isolated; failures never cascade or break global game/mod state.
+    /// </summary>
     public static partial class GameWorldHandler
     {
         #region Fields
@@ -39,7 +43,6 @@ namespace AIRefactored.Core
         private static float _lastLootRefresh = -999f;
         private static bool _isRecovering;
         private static bool _hasShutdown;
-
         private static GameWorld _manualAssignedWorld;
 
         #endregion
@@ -69,9 +72,7 @@ namespace AIRefactored.Core
         public static bool IsLocalHost()
         {
             if (FikaHeadlessDetector.IsHeadless)
-            {
                 return true;
-            }
 
             return Singleton<ClientGameWorld>.Instantiated &&
                    Singleton<ClientGameWorld>.Instance.MainPlayer?.IsYourPlayer == true;
@@ -202,9 +203,7 @@ namespace AIRefactored.Core
             lock (GameWorldLock)
             {
                 if (_hasShutdown)
-                {
                     return;
-                }
 
                 _hasShutdown = true;
 
@@ -238,9 +237,7 @@ namespace AIRefactored.Core
         public static void Cleanup()
         {
             if (_hasShutdown)
-            {
                 return;
-            }
 
             try
             {
@@ -323,27 +320,21 @@ namespace AIRefactored.Core
                 {
                     string id = Singleton<ClientGameWorld>.Instance.LocationId;
                     if (!string.IsNullOrEmpty(id) && !id.Equals("unknown", StringComparison.OrdinalIgnoreCase))
-                    {
                         return id.ToLowerInvariant();
-                    }
                 }
 
                 if (Singleton<GameWorld>.Instantiated)
                 {
                     string id = Singleton<GameWorld>.Instance.LocationId;
                     if (!string.IsNullOrEmpty(id) && !id.Equals("unknown", StringComparison.OrdinalIgnoreCase))
-                    {
                         return id.ToLowerInvariant();
-                    }
                 }
 
                 if (FikaHeadlessDetector.IsHeadless)
                 {
                     string id = FikaHeadlessDetector.RaidLocationName;
                     if (!string.IsNullOrEmpty(id) && !id.Equals("unknown", StringComparison.OrdinalIgnoreCase))
-                    {
                         return id.ToLowerInvariant();
-                    }
                 }
             }
             catch (Exception ex)
@@ -398,9 +389,7 @@ namespace AIRefactored.Core
         {
             GameWorld world = TryGetGameWorld();
             if (world?.AllAlivePlayersList == null)
-            {
                 return;
-            }
 
             lock (GameWorldLock)
             {
@@ -434,17 +423,13 @@ namespace AIRefactored.Core
         {
             float now = Time.time;
             if (now - _lastCleanupTime < DeadCleanupInterval)
-            {
                 return;
-            }
 
             _lastCleanupTime = now;
 
             GameWorld world = TryGetGameWorld();
             if (world?.AllAlivePlayersList == null)
-            {
                 return;
-            }
 
             for (int i = 0; i < world.AllAlivePlayersList.Count; i++)
             {
@@ -452,9 +437,7 @@ namespace AIRefactored.Core
                 {
                     Player player = world.AllAlivePlayersList[i];
                     if (!EFTPlayerUtil.IsValid(player) || !player.IsAI || player.HealthController.IsAlive)
-                    {
                         continue;
-                    }
 
                     int id = player.GetInstanceID();
                     if (KnownDeadBotIds.Add(id) && player.gameObject != null)
@@ -503,9 +486,7 @@ namespace AIRefactored.Core
         {
             float now = Time.time;
             if (now - _lastLootRefresh < LootRefreshCooldown)
-            {
                 return;
-            }
 
             _lastLootRefresh = now;
             LogSafe("[GameWorldHandler] Refreshing loot registry...");

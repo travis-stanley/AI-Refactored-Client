@@ -107,7 +107,7 @@ namespace AIRefactored.Runtime
                     return;
                 }
 
-                // Headless/FIKA: Ensure FikaHeadlessDetector is ready, and only proceed if raid started
+                // Headless/FIKA: Only proceed if raid started.
                 if (FikaHeadlessDetector.IsHeadless && !FikaHeadlessDetector.HasRaidStarted())
                 {
                     LogWarn("[AIRefactoredController] Skipped — Headless mode but raid not started.");
@@ -156,7 +156,7 @@ namespace AIRefactored.Runtime
                 }
                 else
                 {
-                    // Only call if not already initialized/built for this raid
+                    // NavMesh must be prebuilt before NavPointRegistry is registered for correct timing
                     if (!NavMeshWarmupManager.IsNavMeshReady)
                     {
                         try { NavMeshWarmupManager.TryPrebuildNavMesh(); }
@@ -169,6 +169,7 @@ namespace AIRefactored.Runtime
                     }
                 }
 
+                // Main world initialization after navmesh/navpoint
                 GameWorldHandler.Initialize(world);
                 WorldBootstrapper.Begin(Logger, mapId);
 

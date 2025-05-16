@@ -3,7 +3,6 @@
 //   Licensed under the MIT License. See LICENSE in the repository root for more information.
 //
 //   THIS FILE IS SYSTEMATICALLY MANAGED.
-//   Please follow strict StyleCop, ReSharper, and AI-Refactored code standards for all modifications.
 //   All navigation and fallback logic is bulletproof and fully isolated.
 // </auto-generated>
 
@@ -77,15 +76,14 @@ namespace AIRefactored.AI.Optimization
 			try
 			{
 				if (!GameWorldHandler.IsLocalHost() || bot == null)
-				{
 					return null;
-				}
 
 				List<NavPointData> exits = null;
 				try
 				{
 					exits = NavPointRegistry.QueryNearby(bot.Position, 50f, p =>
-						p.Tag != null && p.Tag.Contains("extract") || (p.Zone != null && p.Zone.Contains("exit")));
+						(!string.IsNullOrEmpty(p.Tag) && p.Tag.Contains("extract")) ||
+						(!string.IsNullOrEmpty(p.Zone) && p.Zone.Contains("exit")));
 				}
 				catch
 				{
@@ -99,10 +97,7 @@ namespace AIRefactored.AI.Optimization
 				{
 					Vector3 pos = exits[i].Position;
 					if (IsPositionUnsafe(bot, pos))
-					{
 						continue;
-					}
-
 					float dist = Vector3.Distance(bot.Position, pos);
 					if (dist < bestScore)
 					{
@@ -126,15 +121,11 @@ namespace AIRefactored.AI.Optimization
 			try
 			{
 				if (!GameWorldHandler.IsLocalHost() || bot == null || bot.Transform == null || pathCache == null || !IsAIBot(bot))
-				{
 					return result;
-				}
 
 				string map = GameWorldHandler.TryGetValidMapName();
 				if (string.IsNullOrEmpty(map))
-				{
 					return result;
-				}
 
 				ClearExpiredCache();
 
@@ -187,15 +178,11 @@ namespace AIRefactored.AI.Optimization
 					Vector3 probe = origin + dir * effectiveDist;
 
 					if (!NavMesh.SamplePosition(probe, out NavMeshHit hit, NavSampleRadius, NavMesh.AllAreas))
-					{
 						continue;
-					}
 
 					Vector3 pos = hit.position;
 					if (!IsFarEnough(pos, candidates.Keys) || HasSquadConflict(bot, pos) || IsPositionUnsafe(bot, pos))
-					{
 						continue;
-					}
 
 					float score = ScoreFallbackPoint(bot, pos, threatDir, profile, composure, map);
 					candidates[pos] = score;
@@ -206,6 +193,7 @@ namespace AIRefactored.AI.Optimization
 				{
 					tactical = NavPointRegistry.QueryNearby(origin, 25f, p =>
 						Vector3.Dot((p.Position - origin).normalized, away) > 0.4f &&
+						!string.IsNullOrEmpty(ZoneAssignmentHelper.GetNearestZone(origin)) &&
 						ZoneAssignmentHelper.GetNearestZone(origin) != p.Zone);
 				}
 				catch
@@ -217,9 +205,7 @@ namespace AIRefactored.AI.Optimization
 				{
 					Vector3 pos = tactical[i].Position;
 					if (!IsFarEnough(pos, candidates.Keys))
-					{
 						continue;
-					}
 
 					float score = ScoreNavPoint(bot, tactical[i], threatDir, profile, composure, map);
 					candidates[pos] = score;
@@ -326,9 +312,7 @@ namespace AIRefactored.AI.Optimization
 				for (int i = 0; i < buffer.Count; i++)
 				{
 					if (Vector3.Distance(buffer[i].Position, pos) < buffer[i].Radius)
-					{
 						return DangerZonePenalty;
-					}
 				}
 			}
 			catch { }
@@ -358,11 +342,8 @@ namespace AIRefactored.AI.Optimization
 			foreach (Vector3 other in others)
 			{
 				if ((other - pos).sqrMagnitude < MinSpacing * MinSpacing)
-				{
 					return false;
-				}
 			}
-
 			return true;
 		}
 
@@ -371,31 +352,21 @@ namespace AIRefactored.AI.Optimization
 			try
 			{
 				if (bot == null)
-				{
 					return false;
-				}
 
 				BotsGroup group = bot.BotsGroup;
 				if (group == null)
-				{
 					return false;
-				}
 
 				for (int i = 0; i < group.MembersCount; i++)
 				{
 					BotOwner mate = group.Member(i);
 					if (mate != null && mate != bot && !mate.IsDead && Vector3.Distance(mate.Position, pos) < SquadSpacingThreshold)
-					{
 						return true;
-					}
 				}
-
 				return false;
 			}
-			catch
-			{
-				return false;
-			}
+			catch { return false; }
 		}
 
 		private static bool IsPathBlockedByDoor(List<Vector3> path)
@@ -403,9 +374,7 @@ namespace AIRefactored.AI.Optimization
 			try
 			{
 				if (path.Count < 2)
-				{
 					return false;
-				}
 
 				Vector3 origin = path[0] + Vector3.up * 1.2f;
 				Vector3 target = path[1];
@@ -413,16 +382,11 @@ namespace AIRefactored.AI.Optimization
 				float dist = Vector3.Distance(path[0], target) + 0.5f;
 
 				if (Physics.Raycast(origin, dir, out RaycastHit hit, dist, AIRefactoredLayerMasks.DoorColliderMask))
-				{
 					return AIRefactoredLayerMasks.IsDoorLayer(hit.collider.gameObject.layer);
-				}
 
 				return false;
 			}
-			catch
-			{
-				return false;
-			}
+			catch { return false; }
 		}
 
 		private static bool IsPathUnsafe(BotOwner bot, List<Vector3> path)
@@ -430,30 +394,20 @@ namespace AIRefactored.AI.Optimization
 			try
 			{
 				if (bot == null || path == null || path.Count == 0)
-				{
 					return false;
-				}
 
 				BotComponentCache cache = BotCacheUtility.GetCache(bot);
 				if (cache == null || cache.TacticalMemory == null)
-				{
 					return false;
-				}
 
 				for (int i = 0; i < path.Count; i++)
 				{
 					if (cache.TacticalMemory.IsZoneUnsafe(path[i]))
-					{
 						return true;
-					}
 				}
-
 				return false;
 			}
-			catch
-			{
-				return false;
-			}
+			catch { return false; }
 		}
 
 		private static bool IsPositionUnsafe(BotOwner bot, Vector3 pos)
@@ -462,16 +416,11 @@ namespace AIRefactored.AI.Optimization
 			{
 				BotComponentCache cache = BotCacheUtility.GetCache(bot);
 				if (cache == null || cache.TacticalMemory == null)
-				{
 					return false;
-				}
 
 				return cache.TacticalMemory.IsZoneUnsafe(pos);
 			}
-			catch
-			{
-				return false;
-			}
+			catch { return false; }
 		}
 
 		private static bool IsAIBot(BotOwner bot)
@@ -481,10 +430,7 @@ namespace AIRefactored.AI.Optimization
 				Player player = bot.GetPlayer;
 				return player != null && player.IsAI && !player.IsYourPlayer;
 			}
-			catch
-			{
-				return false;
-			}
+			catch { return false; }
 		}
 
 		#endregion

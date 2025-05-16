@@ -73,9 +73,7 @@ namespace AIRefactored.Core
                 catch (Exception ex)
                 {
                     if (!FikaHeadlessDetector.IsHeadless)
-                    {
                         Logger.LogError("[BotFallback] ❌ StandartBotBrain lookup failed for " + profileId + ": " + ex);
-                    }
                 }
 
                 if (brain != null)
@@ -84,24 +82,18 @@ namespace AIRefactored.Core
                     {
                         brain.Activate();
                         if (!FikaHeadlessDetector.IsHeadless)
-                        {
                             Logger.LogWarning("[BotFallback] ✅ Bot " + profileId + " reverted to native EFT AI (StandartBotBrain).");
-                        }
                     }
                     catch (Exception ex)
                     {
                         if (!FikaHeadlessDetector.IsHeadless)
-                        {
                             Logger.LogError("[BotFallback] ❌ StandartBotBrain.Activate() failed for " + profileId + ": " + ex);
-                        }
                     }
                 }
                 else
                 {
                     if (!FikaHeadlessDetector.IsHeadless)
-                    {
                         Logger.LogError("[BotFallback] ❌ Bot " + profileId + " missing StandartBotBrain — fallback failed.");
-                    }
                 }
             }
             catch (Exception ex)

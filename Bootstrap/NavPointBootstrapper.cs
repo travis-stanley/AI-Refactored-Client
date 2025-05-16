@@ -92,6 +92,7 @@ namespace AIRefactored.AI.Navigation
 			{
 				_hasFailed = true;
 				Logger.LogError("[NavPointBootstrapper] Failed loading cache: " + ex);
+				NavPointRegistry.Disable();
 				return;
 			}
 
@@ -109,6 +110,7 @@ namespace AIRefactored.AI.Navigation
 				_hasFailed = true;
 				Logger.LogError("[NavPointBootstrapper] Find NavMeshSurface failed: " + ex);
 				_isRunning = false;
+				NavPointRegistry.Disable();
 				return;
 			}
 
@@ -116,6 +118,7 @@ namespace AIRefactored.AI.Navigation
 			{
 				Logger.LogWarning("[NavPointBootstrapper] No NavMeshSurface found.");
 				_isRunning = false;
+				NavPointRegistry.Disable();
 				return;
 			}
 
@@ -143,6 +146,7 @@ namespace AIRefactored.AI.Navigation
 				_hasFailed = true;
 				Logger.LogError("[NavPointBootstrapper] Grid point prequeue failed: " + ex);
 				_isRunning = false;
+				NavPointRegistry.Disable();
 			}
 			finally
 			{
@@ -169,15 +173,12 @@ namespace AIRefactored.AI.Navigation
 		public static void Tick()
 		{
 			if (!_isRunning || !GameWorldHandler.IsHost || _hasFailed)
-			{
 				return;
-			}
 
 			try
 			{
 				int maxPerFrame = FikaHeadlessDetector.IsHeadless ? 80 : 40;
 				int processed = 0;
-
 				int rejectedRaycast = 0, rejectedNavmesh = 0, rejectedClearance = 0, rejectedCheckSphere = 0;
 
 				while (ScanQueue.Count > 0 && processed++ < maxPerFrame)
@@ -188,7 +189,7 @@ namespace AIRefactored.AI.Navigation
 					{
 						if (!Physics.Raycast(probe, Vector3.down, out RaycastHit hit, MaxSampleHeight))
 						{
-							if (++rejectedRaycast <= 10)
+							if (++rejectedRaycast <= 2)
 								Logger.LogWarning("[NavPointBootstrapper] Point rejected (raycast miss): " + probe + " (y=" + probe.y + ")");
 							continue;
 						}
@@ -197,14 +198,14 @@ namespace AIRefactored.AI.Navigation
 
 						if (!NavMesh.SamplePosition(pos, out NavMeshHit navHit, 2.5f, NavMesh.AllAreas))
 						{
-							if (++rejectedNavmesh <= 10)
+							if (++rejectedNavmesh <= 2)
 								Logger.LogWarning("[NavPointBootstrapper] Point rejected (NavMesh.SamplePosition fail): " + pos);
 							continue;
 						}
 
 						if (Physics.Raycast(pos + Vector3.up * 0.5f, Vector3.up, MinNavPointClearance))
 						{
-							if (++rejectedClearance <= 10)
+							if (++rejectedClearance <= 2)
 								Logger.LogWarning("[NavPointBootstrapper] Point rejected (blocked above): " + pos);
 							continue;
 						}
@@ -218,7 +219,7 @@ namespace AIRefactored.AI.Navigation
 
 						if (!Physics.CheckSphere(final, 0.2f, AIRefactoredLayerMasks.TerrainAndObstacles))
 						{
-							if (++rejectedCheckSphere <= 10)
+							if (++rejectedCheckSphere <= 2)
 								Logger.LogWarning("[NavPointBootstrapper] Point rejected (CheckSphere failed TerrainAndObstacles): " + final);
 							continue;
 						}
@@ -266,9 +267,7 @@ namespace AIRefactored.AI.Navigation
 					finally
 					{
 						if (snapshot != null)
-						{
 							TempListPool.Return(snapshot);
-						}
 					}
 				}
 			}
@@ -277,6 +276,7 @@ namespace AIRefactored.AI.Navigation
 				_hasFailed = true;
 				Logger.LogError("[NavPointBootstrapper] Tick() failed: " + ex);
 				_isRunning = false;
+				NavPointRegistry.Disable();
 			}
 		}
 

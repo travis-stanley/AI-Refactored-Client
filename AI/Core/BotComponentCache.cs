@@ -51,13 +51,9 @@ namespace AIRefactored.AI.Core
         #region Core References
 
         public BotOwner Bot { get; internal set; }
-
         public AIRefactoredBotOwner AIRefactoredBotOwner => _owner;
-
         public BotMemoryClass Memory => Bot?.Memory;
-
         public string Nickname => Bot?.Profile?.Info?.Nickname ?? "Unknown";
-
         public Vector3 Position => Bot != null ? Bot.Position : Vector3.zero;
 
         #endregion
@@ -73,11 +69,9 @@ namespace AIRefactored.AI.Core
         public bool IsBlinded { get; set; }
         public float BlindUntilTime { get; set; }
         public float LastFlashTime { get; set; }
-
         public float LastHeardTime { get; private set; } = -999f;
         public Vector3 LastHeardDirection { get; private set; }
         public bool HasHeardDirection { get; private set; }
-
         public bool IsFallbackMode { get; private set; }
 
         #endregion
@@ -150,11 +144,11 @@ namespace AIRefactored.AI.Core
             InitializedBots.Add(id);
             Bot = bot;
 
-            // All initialization wrapped per-subsystem: any part that fails disables only that part.
             WildSpawnType role = bot.Profile?.Info?.Settings?.Role ?? WildSpawnType.assault;
             PersonalityProfile = BotRegistry.GetOrGenerate(id, PersonalityType.Balanced, role);
             Logger.LogDebug($"[BotComponentCache] Loaded personality for bot {id}: {PersonalityProfile.Personality}");
 
+            // Each init wrapped for isolation, no cascade. Only that subsystem is skipped on error.
             TryInit(() => Pathing = new BotOwnerPathfindingCache(), "Pathing");
             TryInit(() => { TacticalMemory = new BotTacticalMemory(); TacticalMemory.Initialize(this); }, "TacticalMemory");
             TryInit(() => { Combat = new CombatStateMachine(); Combat.Initialize(this); }, "Combat");

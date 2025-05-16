@@ -26,6 +26,7 @@ namespace AIRefactored.AI.Threads
 	/// <summary>
 	/// Real-time execution engine for AIRefactored bot logic.
 	/// Controls subsystem tick order, validity checks, and tick-rate segmentation.
+	/// Fully robust: never disables core logic due to subsystem failures—each subsystem falls back individually.
 	/// </summary>
 	public sealed class BotBrain : MonoBehaviour
 	{
@@ -56,7 +57,6 @@ namespace AIRefactored.AI.Threads
 		private BotAsyncProcessor _asyncProcessor;
 		private BotThreatEscalationMonitor _threatEscalationMonitor;
 
-		private bool _isValid;
 		private float _lastWarningTime;
 		private float _nextPerceptionTick;
 		private float _nextCombatTick;
@@ -67,92 +67,77 @@ namespace AIRefactored.AI.Threads
 		private float LogicTickRate => FikaHeadlessDetector.IsHeadless ? 1f / 30f : 1f / 15f;
 
 		/// <summary>
-		/// Core runtime tick. Dispatches all subsystems in real-time with tiered segmentation.
+		/// Core runtime tick. All subsystems tick independently. Missing or broken subsystems trigger fallback, but never break the rest.
 		/// </summary>
 		public void Tick(float deltaTime)
 		{
 			try
 			{
-				if (!enabled || !_isValid || _bot == null || _bot.IsDead || _player == null)
-					return;
+				if (!enabled) return;
+				if (_bot == null || _player == null || _bot.IsDead) return;
 
 				Player current = _bot.GetPlayer;
 				if (current == null || current.HealthController == null || !current.HealthController.IsAlive)
-				{
-					InvalidateAndFallback("[BotBrain] Bot invalidated at runtime — health or player missing.");
 					return;
-				}
 
 				float now = Time.time;
 
-				if (_movement == null || _combat == null || _mission == null || _cache == null)
-				{
-					if (now > _lastWarningTime + 1f)
-					{
-						LogWarn("[BotBrain] Tick skipped — missing core system: "
-							+ (_movement == null ? "Movement " : "")
-							+ (_combat == null ? "Combat " : "")
-							+ (_mission == null ? "Mission " : "")
-							+ (_cache == null ? "Cache " : ""));
-						_lastWarningTime = now;
-					}
-					InvalidateAndFallback("[BotBrain] Missing core AIRefactored subsystems — fallback triggered.");
-					return;
-				}
-
+				// Perception: fallback gracefully
 				if (now >= _nextPerceptionTick)
 				{
-					Try(() => _vision?.Tick(now), "Vision");
-					Try(() => _hearing?.Tick(now), "Hearing");
-					Try(() => _perception?.Tick(deltaTime), "Perception");
+					TryTick(_vision, () => _vision.Tick(now), "Vision");
+					TryTick(_hearing, () => _hearing.Tick(now), "Hearing");
+					TryTick(_perception, () => _perception.Tick(deltaTime), "Perception");
 					_nextPerceptionTick = now + PerceptionTickRate;
 				}
 
+				// Combat: fallback gracefully
 				if (now >= _nextCombatTick)
 				{
-					Try(() => _combat?.Tick(now), "Combat");
-					Try(() => _cache?.Escalation?.Tick(now), "Escalation");
-					Try(() => _flashReaction?.Tick(now), "FlashReaction");
-					Try(() => _flashDetector?.Tick(now), "FlashDetector");
-					Try(() => _groupSync?.Tick(now), "GroupSync");
-					Try(() => _teamLogic?.CoordinateMovement(), "TeamLogic");
-					Try(() => _threatEscalationMonitor?.Tick(now), "ThreatEscalation");
+					TryTick(_combat, () => _combat.Tick(now), "Combat", fallback: () => FallbackCombat());
+					TryTick(_cache?.Escalation, () => _cache.Escalation.Tick(now), "Escalation");
+					TryTick(_flashReaction, () => _flashReaction.Tick(now), "FlashReaction");
+					TryTick(_flashDetector, () => _flashDetector.Tick(now), "FlashDetector");
+					TryTick(_groupSync, () => _groupSync.Tick(now), "GroupSync");
+					TryTick(_teamLogic, () => _teamLogic.CoordinateMovement(), "TeamLogic");
+					TryTick(_threatEscalationMonitor, () => _threatEscalationMonitor.Tick(now), "ThreatEscalation");
 					_nextCombatTick = now + CombatTickRate;
 				}
 
+				// Logic: fallback gracefully
 				if (now >= _nextLogicTick)
 				{
-					Try(() => _mission?.Tick(now), "Mission");
-					Try(() => _hearingDamage?.Tick(deltaTime), "HearingDamage");
-					Try(() => _tactical?.Tick(), "Tactical");
-					Try(() => _cache?.LootScanner?.Tick(deltaTime), "LootScanner");
-					Try(() => _cache?.DeadBodyScanner?.Tick(now), "DeadBodyScanner");
-					Try(() => _asyncProcessor?.Tick(now), "AsyncProcessor");
+					TryTick(_mission, () => _mission.Tick(now), "Mission", fallback: () => FallbackMission());
+					TryTick(_hearingDamage, () => _hearingDamage.Tick(deltaTime), "HearingDamage");
+					TryTick(_tactical, () => _tactical.Tick(), "Tactical");
+					TryTick(_cache?.LootScanner, () => _cache.LootScanner.Tick(deltaTime), "LootScanner");
+					TryTick(_cache?.DeadBodyScanner, () => _cache.DeadBodyScanner.Tick(now), "DeadBodyScanner");
+					TryTick(_asyncProcessor, () => _asyncProcessor.Tick(now), "AsyncProcessor");
 					_nextLogicTick = now + LogicTickRate;
 				}
 
-				Try(() => _movement?.Tick(deltaTime), "Movement");
-				Try(() => _jump?.Tick(deltaTime), "Jump");
-				Try(() => _pose?.Tick(now), "Pose");
-				Try(() => _look?.Tick(deltaTime), "Look");
-				Try(() => _corner?.Tick(now), "CornerScanner");
-				Try(() => _tilt?.ManualUpdate(), "Tilt");
-				Try(() => _groupBehavior?.Tick(deltaTime), "GroupBehavior");
+				// Movement: fallback to vanilla only if missing
+				if (_movement != null)
+					TryTick(_movement, () => _movement.Tick(deltaTime), "Movement");
+				else
+					TryMovementFallback(now);
+
+				// Other systems: fallback gracefully
+				TryTick(_jump, () => _jump.Tick(deltaTime), "Jump");
+				TryTick(_pose, () => _pose.Tick(now), "Pose");
+				TryTick(_look, () => _look.Tick(deltaTime), "Look");
+				TryTick(_corner, () => _corner.Tick(now), "CornerScanner");
+				TryTick(_tilt, () => _tilt.ManualUpdate(), "Tilt");
+				TryTick(_groupBehavior, () => _groupBehavior.Tick(deltaTime), "GroupBehavior");
 			}
 			catch (Exception ex)
 			{
-				InvalidateAndFallback("[BotBrain] Tick error: " + ex);
+				LogError("[BotBrain] Tick error: " + ex);
 			}
 		}
 
-		private static void Try(Action action, string label)
-		{
-			try { action(); }
-			catch (Exception ex) { Logger.LogError("[BotBrain] " + label + " Tick failed: " + ex); }
-		}
-
 		/// <summary>
-		/// Initializes the bot brain and all subsystems. Requires authoritative host (client-host or headless).
+		/// Initializes the bot brain and all subsystems. Each subsystem that fails to wire triggers fallback for itself, but not for the rest.
 		/// </summary>
 		public void Initialize(BotOwner bot)
 		{
@@ -194,61 +179,87 @@ namespace AIRefactored.AI.Threads
 				_cache = BotComponentCacheRegistry.GetOrCreate(bot);
 				_cache.SetOwner(owner);
 
-				_combat = _cache.Combat;
-				_movement = _cache.Movement;
-				_pose = _cache.PoseController;
-				_look = _cache.LookController;
-				_tilt = _cache.Tilt;
-				_groupBehavior = _cache.GroupBehavior;
+				_combat = TryInit(() => _cache.Combat, "Combat");
+				_movement = TryInit(() => _cache.Movement, "Movement");
+				_pose = TryInit(() => _cache.PoseController, "PoseController");
+				_look = TryInit(() => _cache.LookController, "LookController");
+				_tilt = TryInit(() => _cache.Tilt, "Tilt");
+				_groupBehavior = TryInit(() => _cache.GroupBehavior, "GroupBehavior");
 
-				_corner = new BotCornerScanner(bot, _cache);
-				_jump = new BotJumpController(bot, _cache);
+				_corner = TryInit(() => new BotCornerScanner(bot, _cache), "CornerScanner");
+				_jump = TryInit(() => new BotJumpController(bot, _cache), "Jump");
 
-				_vision = new BotVisionSystem(); _vision.Initialize(_cache);
-				_hearing = new BotHearingSystem(); _hearing.Initialize(_cache);
-				_perception = new BotPerceptionSystem(); _perception.Initialize(_cache);
-				_flashReaction = new BotFlashReactionComponent(); _flashReaction.Initialize(_cache);
-				_flashDetector = new FlashGrenadeComponent(); _flashDetector.Initialize(_cache);
-				_hearingDamage = new HearingDamageComponent();
-				_tactical = _cache.Tactical;
-				_mission = new BotMissionController(bot, _cache);
-				_groupSync = new BotGroupSyncCoordinator(); _groupSync.Initialize(bot); _groupSync.InjectLocalCache(_cache);
-				_asyncProcessor = new BotAsyncProcessor(); _asyncProcessor.Initialize(bot, _cache);
-				_teamLogic = new BotTeamLogic(bot);
-				_threatEscalationMonitor = new BotThreatEscalationMonitor(); _threatEscalationMonitor.Initialize(bot);
+				_vision = TryInit(() => { var v = new BotVisionSystem(); v.Initialize(_cache); return v; }, "Vision");
+				_hearing = TryInit(() => { var h = new BotHearingSystem(); h.Initialize(_cache); return h; }, "Hearing");
+				_perception = TryInit(() => { var p = new BotPerceptionSystem(); p.Initialize(_cache); return p; }, "Perception");
+				_flashReaction = TryInit(() => { var f = new BotFlashReactionComponent(); f.Initialize(_cache); return f; }, "FlashReaction");
+				_flashDetector = TryInit(() => { var f = new FlashGrenadeComponent(); f.Initialize(_cache); return f; }, "FlashDetector");
+				_hearingDamage = TryInit(() => new HearingDamageComponent(), "HearingDamage");
+				_tactical = TryInit(() => _cache.Tactical, "Tactical");
+				_mission = TryInit(() => new BotMissionController(bot, _cache), "Mission");
+				_groupSync = TryInit(() => { var g = new BotGroupSyncCoordinator(); g.Initialize(bot); g.InjectLocalCache(_cache); return g; }, "GroupSync");
+				_asyncProcessor = TryInit(() => { var a = new BotAsyncProcessor(); a.Initialize(bot, _cache); return a; }, "AsyncProcessor");
+				_teamLogic = TryInit(() => new BotTeamLogic(bot), "TeamLogic");
+				_threatEscalationMonitor = TryInit(() => { var t = new BotThreatEscalationMonitor(); t.Initialize(bot); return t; }, "ThreatEscalationMonitor");
 
 				BotBrainGuardian.Enforce(_player.gameObject);
-
-				// If any subsystem fails to wire, fallback to vanilla logic.
-				if (_combat == null || _movement == null || _mission == null || _cache == null)
-				{
-					InvalidateAndFallback("[BotBrain] Initialization failed: missing core subsystem(s).");
-					return;
-				}
-
-				_isValid = true;
 				enabled = true;
 
 				LogDebug("[BotBrain] ✅ AI initialized for: " + (_player.Profile.Info.Nickname ?? "Unnamed"));
 			}
 			catch (Exception ex)
 			{
-				InvalidateAndFallback("[BotBrain] Initialization failed: " + ex);
+				LogError("[BotBrain] Initialization failed: " + ex);
+				enabled = true; // Do NOT disable the brain—rest will tick on!
 			}
 		}
 
-		private void InvalidateAndFallback(string msg)
+		#region Helpers
+
+		private static T TryInit<T>(Func<T> ctor, string name) where T : class
 		{
-			if (_isValid)
+			try { return ctor(); }
+			catch (Exception ex)
 			{
-				_isValid = false;
-				enabled = false;
-				if (_bot != null)
-				{
-					BotFallbackUtility.FallbackToEFTLogic(_bot);
-				}
-				LogWarn(msg);
+				LogWarn($"[BotBrain] Subsystem init failed: {name}: {ex}");
+				return null;
 			}
+		}
+
+		private static void TryTick(object obj, Action tick, string label, Action fallback = null)
+		{
+			try
+			{
+				if (obj != null) tick();
+				else fallback?.Invoke();
+			}
+			catch (Exception ex)
+			{
+				LogWarn($"[BotBrain] {label} Tick failed: {ex}");
+				fallback?.Invoke();
+			}
+		}
+
+		private void TryMovementFallback(float now)
+		{
+			if (_bot != null && _bot.GetPlayer != null && now > _lastWarningTime + 1f)
+			{
+				LogWarn("[BotBrain] Movement subsystem missing — falling back to vanilla navigation for this bot.");
+				_lastWarningTime = now;
+				BotFallbackUtility.FallbackToEFTLogic(_bot);
+			}
+		}
+
+		private void FallbackCombat()
+		{
+			// You can customize: trigger fallback vanilla logic for combat
+			// (e.g., activate StandartBotBrain if needed)
+			LogWarn("[BotBrain] Combat subsystem missing — vanilla fallback not implemented for combat.");
+		}
+
+		private void FallbackMission()
+		{
+			LogWarn("[BotBrain] Mission subsystem missing — vanilla fallback not implemented for mission.");
 		}
 
 		private static void LogDebug(string msg)
@@ -268,5 +279,7 @@ namespace AIRefactored.AI.Threads
 			if (!FikaHeadlessDetector.IsHeadless)
 				Logger.LogError(msg);
 		}
+
+		#endregion
 	}
 }

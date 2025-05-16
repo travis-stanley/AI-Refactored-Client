@@ -21,6 +21,7 @@ namespace AIRefactored.AI.Combat.States
     /// <summary>
     /// Controls direct combat engagement logic.
     /// Pushes toward the enemy, recalculates stance and movement based on distance, visibility, and cover presence.
+    /// Fully bulletproof: all failures are isolated and fallback to vanilla AI when required.
     /// </summary>
     public sealed class AttackHandler
     {
@@ -38,6 +39,8 @@ namespace AIRefactored.AI.Combat.States
         private Vector3 _lastTargetPosition;
         private bool _hasLastTarget;
 
+        private bool _isFallbackMode;
+
         #endregion
 
         #region Constructor
@@ -50,13 +53,15 @@ namespace AIRefactored.AI.Combat.States
             if (cache == null || cache.Bot == null)
             {
                 Plugin.LoggerInstance.LogError("[AttackHandler] Null cache or BotOwner during construction.");
-                throw new ArgumentException("AttackHandler requires a valid cache with BotOwner.");
+                _isFallbackMode = true;
+                return;
             }
 
             _cache = cache;
             _bot = cache.Bot;
             _lastTargetPosition = Vector3.zero;
             _hasLastTarget = false;
+            _isFallbackMode = false;
         }
 
         #endregion
@@ -77,19 +82,29 @@ namespace AIRefactored.AI.Combat.States
         /// </summary>
         public bool ShallUseNow()
         {
+            if (_isFallbackMode)
+                return false;
+
             Player _;
             return TryResolveEnemy(out _);
         }
 
         /// <summary>
         /// Executes per-frame attack logic: move toward enemy and adjust stance.
+        /// Bulletproof: on any failure, disables only attack and falls back, never breaks other AI.
         /// </summary>
         public void Tick(float deltaTime)
         {
+            if (_isFallbackMode)
+                return;
+
             try
             {
                 if (_bot == null || _cache == null)
+                {
+                    EnterFallback("Null bot or cache in Tick.");
                     return;
+                }
 
                 Player enemy;
                 if (!TryResolveEnemy(out enemy))
@@ -114,7 +129,17 @@ namespace AIRefactored.AI.Combat.States
                         : currentTargetPos;
 
                     // Hardened nav/movement validation: fallback if required.
-                    bool navValid = BotNavValidator.Validate(_bot, "AttackHandlerTarget");
+                    bool navValid = false;
+                    try
+                    {
+                        navValid = BotNavValidator.Validate(_bot, "AttackHandlerTarget");
+                    }
+                    catch (Exception ex)
+                    {
+                        Plugin.LoggerInstance.LogError("[AttackHandler] BotNavValidator.Validate exception: " + ex);
+                        navValid = false;
+                    }
+
                     if (!navValid)
                     {
                         destination = FallbackNavPointProvider.GetSafePoint(_bot.Position);
@@ -123,24 +148,28 @@ namespace AIRefactored.AI.Combat.States
                     // Full mover guard: skip if BotMover is not initialized (prevents statue bots).
                     if (_bot.Mover != null)
                     {
-                        BotMovementHelper.SmoothMoveTo(_bot, destination);
-                        BotCoverHelper.TrySetStanceFromNearbyCover(_cache, destination);
+                        try
+                        {
+                            BotMovementHelper.SmoothMoveTo(_bot, destination);
+                            BotCoverHelper.TrySetStanceFromNearbyCover(_cache, destination);
+                        }
+                        catch (Exception ex)
+                        {
+                            Plugin.LoggerInstance.LogError("[AttackHandler] SmoothMoveTo or TrySetStance exception: " + ex);
+                            EnterFallback("SmoothMoveTo or stance logic failed.");
+                        }
                     }
                     else
                     {
                         // Fallback: immediately trigger legacy AI if movement is unavailable.
-                        Plugin.LoggerInstance.LogWarning("[AttackHandler] BotMover missing or not ready. Falling back to EFT AI.");
-                        BotFallbackUtility.FallbackToEFTLogic(_bot);
+                        EnterFallback("BotMover missing or not ready. Falling back to EFT AI.");
                     }
                 }
             }
             catch (Exception ex)
             {
                 Plugin.LoggerInstance.LogError("[AttackHandler] Exception in Tick: " + ex);
-                if (_bot != null)
-                {
-                    BotFallbackUtility.FallbackToEFTLogic(_bot);
-                }
+                EnterFallback("General Tick failure.");
             }
         }
 
@@ -154,7 +183,7 @@ namespace AIRefactored.AI.Combat.States
         private bool TryResolveEnemy(out Player result)
         {
             result = null;
-            if (_cache == null)
+            if (_isFallbackMode || _cache == null)
                 return false;
 
             // Prefer current threat selector target.
@@ -177,6 +206,22 @@ namespace AIRefactored.AI.Combat.States
             }
 
             return false;
+        }
+
+        /// <summary>
+        /// Enters fallback mode for this attack handler only. Never disables or breaks other bot logic.
+        /// </summary>
+        private void EnterFallback(string reason)
+        {
+            if (!_isFallbackMode)
+            {
+                _isFallbackMode = true;
+                if (_bot != null)
+                {
+                    Plugin.LoggerInstance.LogWarning("[AttackHandler] Entering fallback: " + reason);
+                    BotFallbackUtility.FallbackToEFTLogic(_bot);
+                }
+            }
         }
 
         #endregion

@@ -3,7 +3,7 @@
 //   Licensed under the MIT License. See LICENSE in the repository root for more information.
 //
 //   THIS FILE IS SYSTEMATICALLY MANAGED.
-//   Nav fallback logic must never assume registry is valid.
+//   Nav fallback logic must never assume registry is valid or override vanilla if disabled.
 // </auto-generated>
 
 namespace AIRefactored.AI.Navigation
@@ -17,6 +17,7 @@ namespace AIRefactored.AI.Navigation
     /// <summary>
     /// Validates bot navigation state at runtime. If nav data is invalid or missing,
     /// attempts fallback assignment or safely aborts further pathing logic.
+    /// If AIRefactored nav is disabled, immediately yields to vanilla Tarkov logic.
     /// </summary>
     public static class BotNavValidator
     {
@@ -33,9 +34,14 @@ namespace AIRefactored.AI.Navigation
         /// <summary>
         /// Validates whether the bot has valid nav system backing and positioning.
         /// If not, attempts fallback assignment or returns false.
+        /// If AIRefactored nav is disabled, lets vanilla handle navigation.
         /// </summary>
         public static bool Validate(BotOwner botOwner, string context)
         {
+            // If AIRefactored nav is disabled, do nothing—vanilla logic takes over
+            if (NavPointRegistry.AIRefactoredNavDisabled)
+                return false;
+
             if (botOwner == null)
             {
                 TryLogOnce("[BotNavValidator] ❌ Null BotOwner in context: " + context);
@@ -55,40 +61,32 @@ namespace AIRefactored.AI.Navigation
                 return false;
             }
 
-            Vector3 target = Vector3.zero;
-
-            if (NavPointRegistry.IsReady && !NavPointRegistry.IsEmpty)
-            {
-                target = NavPointRegistry.GetClosestPosition(position);
-                if (!IsValidPosition(target))
-                {
-                    TryLogOnce("[BotNavValidator] ❌ Closest nav point is invalid — context: " + context);
-                    target = FallbackNavPointProvider.GetSafePoint(position);
-                }
-            }
-            else
-            {
-                TryLogOnce("[BotNavValidator] ⚠ Registry not ready or empty — using fallback — bot: " + GetBotName(botOwner) + ", context: " + context);
-                target = FallbackNavPointProvider.GetSafePoint(position);
-            }
-
-            if (!IsValidPosition(target))
-            {
-                TryLogOnce("[BotNavValidator] ❌ No valid fallback found — context: " + context);
+            // Only act if registry is actually ready and usable
+            if (!NavPointRegistry.IsReady || NavPointRegistry.IsEmpty)
                 return false;
-            }
 
+            Vector3 target = NavPointRegistry.GetClosestPosition(position);
+            if (!IsValidPosition(target) || target == Vector3.zero)
+                return false;
+
+            // Only issue path move if the bot is not already moving (prevents AI-vs-vanilla thrash)
             if (botOwner.Mover != null && !botOwner.Mover.IsMoving)
             {
-                // Bulletproof: go-to-point fallback, strictly safe
-                botOwner.Mover.GoToPoint(
-                    target,
-                    slowAtTheEnd: true,
-                    reachDist: 1.0f,
-                    getUpWithCheck: false,
-                    mustHaveWay: true,
-                    onlyShortTrie: false,
-                    force: true);
+                try
+                {
+                    botOwner.Mover.GoToPoint(
+                        target,
+                        slowAtTheEnd: true,
+                        reachDist: 1.0f,
+                        getUpWithCheck: false,
+                        mustHaveWay: true,
+                        onlyShortTrie: false,
+                        force: true);
+                }
+                catch
+                {
+                    // If GoToPoint throws, fail gracefully (vanilla will handle)
+                }
             }
 
             return true;
@@ -104,12 +102,6 @@ namespace AIRefactored.AI.Navigation
                    !float.IsNaN(pos.x) &&
                    !float.IsNaN(pos.y) &&
                    !float.IsNaN(pos.z);
-        }
-
-        private static string GetBotName(BotOwner bot)
-        {
-            var info = bot.Profile?.Info;
-            return info != null && !string.IsNullOrEmpty(info.Nickname) ? info.Nickname : "Unnamed";
         }
 
         private static void TryLogOnce(string msg)

@@ -43,7 +43,7 @@ namespace AIRefactored.AI.Helpers
 
         public static void RetreatToCover(BotOwner bot, Vector3 threatDirection, float distance = RetreatDistance, bool sprint = true)
         {
-            if (!IsEligible(bot))
+            if (!IsEligible(bot) || NavPointRegistry.AIRefactoredNavDisabled)
                 return;
 
             Vector3 fallback = bot.Position - threatDirection.normalized * distance;
@@ -54,7 +54,7 @@ namespace AIRefactored.AI.Helpers
                 List<Vector3> path = BotCoverRetreatPlanner.GetCoverRetreatPath(bot, threatDirection, cache.Pathing);
                 for (int i = path.Count - 1; i >= 0; i--)
                 {
-                    if (!BotCoverHelper.WasRecentlyUsed(path[i]))
+                    if (!BotCoverHelper.WasRecentlyUsed(path[i]) && IsValidTarget(path[i]))
                     {
                         fallback = path[i];
                         break;
@@ -64,10 +64,13 @@ namespace AIRefactored.AI.Helpers
                 BotCoverHelper.MarkUsed(fallback);
             }
 
-            if (!BotNavValidator.Validate(bot, nameof(RetreatToCover)))
+            if (!IsValidTarget(fallback) || !BotNavValidator.Validate(bot, nameof(RetreatToCover)))
             {
                 fallback = FallbackNavPointProvider.GetSafePoint(bot.Position);
             }
+
+            if (!IsValidTarget(fallback)) // Final absolute guard
+                fallback = bot.Position;
 
             float cohesion = 1f;
             if (BotRegistry.TryGet(bot.ProfileId, out BotPersonalityProfile profile))
@@ -89,7 +92,7 @@ namespace AIRefactored.AI.Helpers
 
         public static void SmoothLookTo(BotOwner bot, Vector3 lookTarget, float speed = DefaultLookSpeed)
         {
-            if (!IsEligible(bot))
+            if (!IsEligible(bot) || !IsValidTarget(lookTarget) || NavPointRegistry.AIRefactoredNavDisabled)
                 return;
 
             Transform transform = bot.Transform?.Original;
@@ -109,13 +112,15 @@ namespace AIRefactored.AI.Helpers
 
         public static void SmoothMoveTo(BotOwner bot, Vector3 target, bool slow = true, float cohesionScale = 1f)
         {
-            if (!IsEligible(bot))
+            if (!IsEligible(bot) || !IsValidTarget(target) || NavPointRegistry.AIRefactoredNavDisabled)
                 return;
 
             if (!BotNavValidator.Validate(bot, nameof(SmoothMoveTo)))
             {
                 target = FallbackNavPointProvider.GetSafePoint(bot.Position);
             }
+            if (!IsValidTarget(target))
+                target = bot.Position;
 
             Vector3 position = bot.Position;
             float radius = DefaultRadius * Mathf.Clamp(cohesionScale, 0.7f, 1.3f);
@@ -130,7 +135,7 @@ namespace AIRefactored.AI.Helpers
 
         public static void SmoothMoveToSafeExit(BotOwner bot)
         {
-            if (!IsEligible(bot))
+            if (!IsEligible(bot) || NavPointRegistry.AIRefactoredNavDisabled)
                 return;
 
             Vector3 fallback = bot.Position + bot.LookDirection.normalized * 4f;
@@ -139,23 +144,25 @@ namespace AIRefactored.AI.Helpers
             if (NavMeshStatus.IsReady && cache?.Pathing != null)
             {
                 Vector3? point = BotCoverRetreatPlanner.GetSafeExtractionPoint(bot, cache.Pathing);
-                if (point.HasValue)
+                if (point.HasValue && IsValidTarget(point.Value))
                 {
                     fallback = point.Value;
                 }
             }
 
-            if (!BotNavValidator.Validate(bot, nameof(SmoothMoveToSafeExit)))
+            if (!IsValidTarget(fallback) || !BotNavValidator.Validate(bot, nameof(SmoothMoveToSafeExit)))
             {
                 fallback = FallbackNavPointProvider.GetSafePoint(bot.Position);
             }
+            if (!IsValidTarget(fallback))
+                fallback = bot.Position;
 
             bot.Mover.GoToPoint(fallback, true, 1f);
         }
 
         public static void SmoothStrafeFrom(BotOwner bot, Vector3 threatDirection, float scale = 1f)
         {
-            if (!IsEligible(bot))
+            if (!IsEligible(bot) || NavPointRegistry.AIRefactoredNavDisabled)
                 return;
 
             Vector3 right = Vector3.Cross(Vector3.up, threatDirection.normalized);
@@ -167,17 +174,19 @@ namespace AIRefactored.AI.Helpers
             Vector3 offset = right.normalized * DefaultStrafeDistance * Mathf.Clamp(scale, 0.75f, 1.25f);
             Vector3 target = bot.Position + offset;
 
-            if (!BotNavValidator.Validate(bot, nameof(SmoothStrafeFrom)))
+            if (!IsValidTarget(target) || !BotNavValidator.Validate(bot, nameof(SmoothStrafeFrom)))
             {
                 target = FallbackNavPointProvider.GetSafePoint(bot.Position);
             }
+            if (!IsValidTarget(target))
+                target = bot.Position;
 
             bot.Mover.GoToPoint(target, false, 1f);
         }
 
         public static void ForceFallbackMove(BotOwner bot)
         {
-            if (!IsEligible(bot))
+            if (!IsEligible(bot) || NavPointRegistry.AIRefactoredNavDisabled)
                 return;
 
             Vector3 dir = bot.LookDirection;
@@ -186,16 +195,18 @@ namespace AIRefactored.AI.Helpers
             if (NavMeshStatus.IsReady)
             {
                 Vector3? point = HybridFallbackResolver.GetBestRetreatPoint(bot, dir);
-                if (point.HasValue)
+                if (point.HasValue && IsValidTarget(point.Value))
                 {
                     target = point.Value;
                 }
             }
 
-            if (!BotNavValidator.Validate(bot, nameof(ForceFallbackMove)))
+            if (!IsValidTarget(target) || !BotNavValidator.Validate(bot, nameof(ForceFallbackMove)))
             {
                 target = FallbackNavPointProvider.GetSafePoint(bot.Position);
             }
+            if (!IsValidTarget(target))
+                target = bot.Position;
 
             bot.Mover.GoToPoint(target, true, 1f);
         }
@@ -211,6 +222,14 @@ namespace AIRefactored.AI.Helpers
                    bot.GetPlayer.IsAI &&
                    !bot.IsDead &&
                    bot.Mover != null;
+        }
+
+        private static bool IsValidTarget(Vector3 pos)
+        {
+            return pos != Vector3.zero &&
+                   !float.IsNaN(pos.x) &&
+                   !float.IsNaN(pos.y) &&
+                   !float.IsNaN(pos.z);
         }
 
         #endregion

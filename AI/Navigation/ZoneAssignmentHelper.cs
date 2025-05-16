@@ -51,60 +51,42 @@ namespace AIRefactored.AI.Navigation
         /// Gets all known zone names (always empty).
         /// </summary>
         /// <returns>Empty string list.</returns>
-        public static IReadOnlyList<string> GetAllZoneNames()
-        {
-            return EmptyZones;
-        }
+        public static IReadOnlyList<string> GetAllZoneNames() => EmptyZones;
 
         /// <summary>
         /// Gets the nearest zone to a position (always "unassigned").
         /// </summary>
         /// <param name="position">World-space position.</param>
         /// <returns>"unassigned"</returns>
-        public static string GetNearestZone(Vector3 position)
-        {
-            return "unassigned";
-        }
+        public static string GetNearestZone(Vector3 position) => "unassigned";
 
         /// <summary>
         /// Gets all spawn points in a zone (always empty).
         /// </summary>
         /// <param name="zone">Zone name.</param>
         /// <returns>Empty spawn point list.</returns>
-        public static List<ISpawnPoint> GetSpawnPoints(string zone)
-        {
-            return EmptySpawnPoints;
-        }
+        public static List<ISpawnPoint> GetSpawnPoints(string zone) => EmptySpawnPoints;
 
         /// <summary>
         /// Gets the center of a zone (always Vector3.zero).
         /// </summary>
         /// <param name="zone">Zone name.</param>
         /// <returns>Vector3.zero</returns>
-        public static Vector3 GetZoneCenter(string zone)
-        {
-            return Vector3.zero;
-        }
+        public static Vector3 GetZoneCenter(string zone) => Vector3.zero;
 
         /// <summary>
         /// Gets the weight of a zone (always 1.0).
         /// </summary>
         /// <param name="zone">Zone name.</param>
         /// <returns>1.0f</returns>
-        public static float GetZoneWeight(string zone)
-        {
-            return 1f;
-        }
+        public static float GetZoneWeight(string zone) => 1f;
 
         /// <summary>
         /// Determines if the zone is flagged as a boss zone (always false).
         /// </summary>
         /// <param name="zone">Zone name.</param>
         /// <returns>False</returns>
-        public static bool IsBossZone(string zone)
-        {
-            return false;
-        }
+        public static bool IsBossZone(string zone) => false;
 
         /// <summary>
         /// Initializes the fallback zone system (logs stub message).

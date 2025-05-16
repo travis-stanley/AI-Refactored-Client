@@ -74,15 +74,12 @@ namespace AIRefactored.AI.Threads
 			try
 			{
 				if (!enabled || !_isValid || _bot == null || _bot.IsDead || _player == null)
-				{
 					return;
-				}
 
 				Player current = _bot.GetPlayer;
 				if (current == null || current.HealthController == null || !current.HealthController.IsAlive)
 				{
-					_isValid = false;
-					Logger.LogWarning("[BotBrain] Bot invalidated at runtime — health or player missing.");
+					InvalidateAndFallback("[BotBrain] Bot invalidated at runtime — health or player missing.");
 					return;
 				}
 
@@ -92,13 +89,14 @@ namespace AIRefactored.AI.Threads
 				{
 					if (now > _lastWarningTime + 1f)
 					{
-						Logger.LogWarning("[BotBrain] Tick skipped — missing core system: "
+						LogWarn("[BotBrain] Tick skipped — missing core system: "
 							+ (_movement == null ? "Movement " : "")
 							+ (_combat == null ? "Combat " : "")
 							+ (_mission == null ? "Mission " : "")
 							+ (_cache == null ? "Cache " : ""));
 						_lastWarningTime = now;
 					}
+					InvalidateAndFallback("[BotBrain] Missing core AIRefactored subsystems — fallback triggered.");
 					return;
 				}
 
@@ -143,7 +141,7 @@ namespace AIRefactored.AI.Threads
 			}
 			catch (Exception ex)
 			{
-				Logger.LogError("[BotBrain] Tick error: " + ex);
+				InvalidateAndFallback("[BotBrain] Tick error: " + ex);
 			}
 		}
 
@@ -160,20 +158,23 @@ namespace AIRefactored.AI.Threads
 		{
 			if (!GameWorldHandler.IsLocalHost())
 			{
-				Logger.LogWarning("[BotBrain] Initialization skipped: not authoritative host.");
+				LogWarn("[BotBrain] Initialization skipped: not authoritative host.");
+				enabled = false;
 				return;
 			}
 
 			if (bot == null)
 			{
-				Logger.LogError("[BotBrain] Initialization failed: null bot.");
+				LogError("[BotBrain] Initialization failed: null bot.");
+				enabled = false;
 				return;
 			}
 
 			Player player = bot.GetPlayer;
 			if (player == null || !player.IsAI || player.IsYourPlayer || bot.IsDead || player.Profile?.Info == null)
 			{
-				Logger.LogWarning("[BotBrain] Initialization rejected: invalid or non-AI player.");
+				LogWarn("[BotBrain] Initialization rejected: invalid or non-AI player.");
+				enabled = false;
 				return;
 			}
 
@@ -217,16 +218,55 @@ namespace AIRefactored.AI.Threads
 				_threatEscalationMonitor = new BotThreatEscalationMonitor(); _threatEscalationMonitor.Initialize(bot);
 
 				BotBrainGuardian.Enforce(_player.gameObject);
+
+				// If any subsystem fails to wire, fallback to vanilla logic.
+				if (_combat == null || _movement == null || _mission == null || _cache == null)
+				{
+					InvalidateAndFallback("[BotBrain] Initialization failed: missing core subsystem(s).");
+					return;
+				}
+
 				_isValid = true;
 				enabled = true;
 
-				Logger.LogDebug("[BotBrain] ✅ AI initialized for: " + (_player.Profile.Info.Nickname ?? "Unnamed"));
+				LogDebug("[BotBrain] ✅ AI initialized for: " + (_player.Profile.Info.Nickname ?? "Unnamed"));
 			}
 			catch (Exception ex)
 			{
-				Logger.LogError("[BotBrain] Initialization failed: " + ex);
-				_isValid = false;
+				InvalidateAndFallback("[BotBrain] Initialization failed: " + ex);
 			}
+		}
+
+		private void InvalidateAndFallback(string msg)
+		{
+			if (_isValid)
+			{
+				_isValid = false;
+				enabled = false;
+				if (_bot != null)
+				{
+					BotFallbackUtility.FallbackToEFTLogic(_bot);
+				}
+				LogWarn(msg);
+			}
+		}
+
+		private static void LogDebug(string msg)
+		{
+			if (!FikaHeadlessDetector.IsHeadless)
+				Logger.LogDebug(msg);
+		}
+
+		private static void LogWarn(string msg)
+		{
+			if (!FikaHeadlessDetector.IsHeadless)
+				Logger.LogWarning(msg);
+		}
+
+		private static void LogError(string msg)
+		{
+			if (!FikaHeadlessDetector.IsHeadless)
+				Logger.LogError(msg);
 		}
 	}
 }

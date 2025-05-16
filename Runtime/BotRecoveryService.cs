@@ -61,11 +61,11 @@ namespace AIRefactored.Runtime
 			{
 				Reset();
 				_hasInitialized = true;
-				Logger.LogDebug("[BotRecoveryService] ✅ Initialized.");
+				LogDebug("[BotRecoveryService] ✅ Initialized.");
 			}
 			catch (Exception ex)
 			{
-				Logger.LogError("[BotRecoveryService] ❌ Initialize failed: " + ex);
+				LogError("[BotRecoveryService] ❌ Initialize failed: " + ex);
 			}
 		}
 
@@ -82,11 +82,11 @@ namespace AIRefactored.Runtime
 
 				Reset();
 				_hasInitialized = false;
-				Logger.LogDebug("[BotRecoveryService] 🧹 Reset on raid end.");
+				LogDebug("[BotRecoveryService] 🧹 Reset on raid end.");
 			}
 			catch (Exception ex)
 			{
-				Logger.LogError("[BotRecoveryService] ❌ OnRaidEnd error: " + ex);
+				LogError("[BotRecoveryService] ❌ OnRaidEnd error: " + ex);
 			}
 		}
 
@@ -140,7 +140,7 @@ namespace AIRefactored.Runtime
 				{
 					if (!_hasWarned)
 					{
-						Logger.LogWarning("[BotRecoveryService] ⚠ GameWorld not ready.");
+						LogWarn("[BotRecoveryService] ⚠ GameWorld not ready.");
 						_hasWarned = true;
 					}
 					return;
@@ -149,7 +149,7 @@ namespace AIRefactored.Runtime
 				if (_hasWarned)
 				{
 					_hasWarned = false;
-					Logger.LogDebug("[BotRecoveryService] ✅ GameWorld recovered.");
+					LogDebug("[BotRecoveryService] ✅ GameWorld recovered.");
 				}
 
 				EnsureSpawnHook();
@@ -157,7 +157,7 @@ namespace AIRefactored.Runtime
 			}
 			catch (Exception ex)
 			{
-				Logger.LogError("[BotRecoveryService] ❌ Tick error: " + ex);
+				LogError("[BotRecoveryService] ❌ Tick error: " + ex);
 			}
 		}
 
@@ -176,11 +176,11 @@ namespace AIRefactored.Runtime
 
 				Singleton<BotSpawner>.Instance.OnBotCreated += GameWorldHandler.TryAttachBotBrain;
 				_hookedSpawner = true;
-				Logger.LogDebug("[BotRecoveryService] ✅ BotSpawner hook attached.");
+				LogDebug("[BotRecoveryService] ✅ BotSpawner hook attached.");
 			}
 			catch (Exception ex)
 			{
-				Logger.LogError("[BotRecoveryService] ❌ EnsureSpawnHook error: " + ex);
+				LogError("[BotRecoveryService] ❌ EnsureSpawnHook error: " + ex);
 			}
 		}
 
@@ -206,13 +206,13 @@ namespace AIRefactored.Runtime
 					if (!brain.enabled)
 					{
 						brain.enabled = true;
-						Logger.LogWarning("[BotRecoveryService] Re-enabled disabled BotBrain: " + player.ProfileId);
+						LogWarn("[BotRecoveryService] Re-enabled disabled BotBrain: " + player.ProfileId);
 					}
 					continue;
 				}
 
 				string name = player.Profile?.Info?.Nickname ?? "Unknown";
-				Logger.LogWarning("[BotRecoveryService] ⚠ Missing BotBrain — restoring: " + name);
+				LogWarn("[BotRecoveryService] ⚠ Missing BotBrain — restoring: " + name);
 
 				if (player.AIData?.BotOwner != null)
 				{
@@ -222,7 +222,7 @@ namespace AIRefactored.Runtime
 					}
 					catch (Exception ex)
 					{
-						Logger.LogError("[BotRecoveryService] ❌ Failed to attach brain to BotOwner: " + ex);
+						LogError("[BotRecoveryService] ❌ Failed to attach brain to BotOwner: " + ex);
 					}
 				}
 
@@ -245,18 +245,18 @@ namespace AIRefactored.Runtime
 			{
 				if (!GameWorldHandler.IsReady() || !WorldInitState.IsInPhase(WorldPhase.WorldReady))
 				{
-					Logger.LogWarning("[BotRecoveryService] ❌ Rescan aborted — world or phase not ready.");
+					LogWarn("[BotRecoveryService] ❌ Rescan aborted — world or phase not ready.");
 					return;
 				}
 
 				string mapId = GameWorldHandler.TryGetValidMapName();
 				if (string.IsNullOrEmpty(mapId))
 				{
-					Logger.LogWarning("[BotRecoveryService] ❌ Rescan aborted — mapId missing or invalid.");
+					LogWarn("[BotRecoveryService] ❌ Rescan aborted — mapId missing or invalid.");
 					return;
 				}
 
-				Logger.LogDebug("[BotRecoveryService] 🔄 Rescanning world systems for map: " + mapId);
+				LogDebug("[BotRecoveryService] 🔄 Rescanning world systems for map: " + mapId);
 
 				HotspotRegistry.Clear();
 				HotspotRegistry.Initialize(mapId);
@@ -268,12 +268,34 @@ namespace AIRefactored.Runtime
 				NavPointRegistry.Clear();
 				NavPointRegistry.RegisterAll(mapId);
 
-				Logger.LogDebug("[BotRecoveryService] ✅ World rescan complete.");
+				LogDebug("[BotRecoveryService] ✅ World rescan complete.");
 			}
 			catch (Exception ex)
 			{
-				Logger.LogError("[BotRecoveryService] ❌ RescanWorld error: " + ex);
+				LogError("[BotRecoveryService] ❌ RescanWorld error: " + ex);
 			}
+		}
+
+		#endregion
+
+		#region Log Helpers
+
+		private static void LogDebug(string msg)
+		{
+			if (!FikaHeadlessDetector.IsHeadless)
+				Logger.LogDebug(msg);
+		}
+
+		private static void LogWarn(string msg)
+		{
+			if (!FikaHeadlessDetector.IsHeadless)
+				Logger.LogWarning(msg);
+		}
+
+		private static void LogError(string msg)
+		{
+			if (!FikaHeadlessDetector.IsHeadless)
+				Logger.LogError(msg);
 		}
 
 		#endregion

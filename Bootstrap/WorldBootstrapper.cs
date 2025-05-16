@@ -46,6 +46,9 @@ namespace AIRefactored.Bootstrap
 
         #region Lifecycle
 
+        /// <summary>
+        /// Begins world system initialization. Does NOT register navmesh or navpoints.
+        /// </summary>
         public static void Begin(ManualLogSource logger, string mapId)
         {
             _loggerInstance = logger ?? Plugin.LoggerInstance;
@@ -61,7 +64,7 @@ namespace AIRefactored.Bootstrap
                 _hasShutdownLogged = false;
                 Systems.Clear();
 
-                // Global resets
+                // Global resets: never triggers navmesh/navpoint population here!
                 BotRecoveryService.Reset();
                 BotSpawnWatcherService.Reset();
                 LootRuntimeWatcher.Reset();
@@ -71,10 +74,7 @@ namespace AIRefactored.Bootstrap
                 HotspotRegistry.Clear();
                 NavPointRegistry.Clear();
 
-                // NavMesh and navpoint registration are now handled EXCLUSIVELY in AIRefactoredController.OnRaidStarted
-                // This script never builds NavMesh or registers navpoints directly.
-                // Registries are ONLY initialized (not populated) here.
-
+                // Only initialize HotspotRegistry if mapId is valid.
                 if (!string.IsNullOrEmpty(mapId))
                 {
                     HotspotRegistry.Initialize(mapId);
@@ -84,7 +84,7 @@ namespace AIRefactored.Bootstrap
                     Logger.LogWarning("[WorldBootstrapper] Cannot initialize registries — mapId is invalid.");
                 }
 
-                // Register world systems
+                // Register world systems (do not add navmesh/navpoint managers here)
                 RegisterSystem(new RaidLifecycleWatcher());
                 RegisterSystem(new BotRecoveryService());
                 RegisterSystem(new BotSpawnWatcherService());
@@ -108,6 +108,9 @@ namespace AIRefactored.Bootstrap
             }
         }
 
+        /// <summary>
+        /// Stops and tears down world systems. Does not touch navmesh/navpoint state.
+        /// </summary>
         public static void Stop()
         {
             if (!_hasInitialized) return;
@@ -139,6 +142,9 @@ namespace AIRefactored.Bootstrap
 
         #region Tick
 
+        /// <summary>
+        /// Ticks all registered world systems and attached BotBrains (per frame/tick).
+        /// </summary>
         public static void Tick(float deltaTime)
         {
             if (!_hasInitialized)
@@ -209,6 +215,9 @@ namespace AIRefactored.Bootstrap
 
         #region BotBrain Injection
 
+        /// <summary>
+        /// Ensures the given player has a BotBrain attached and initialized.
+        /// </summary>
         public static void EnforceBotBrain(Player player, BotOwner bot)
         {
             if (!EFTPlayerUtil.IsValid(player) || !player.IsAI) return;

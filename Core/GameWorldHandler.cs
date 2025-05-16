@@ -39,6 +39,8 @@ namespace AIRefactored.Core
         private static bool _isRecovering;
         private static bool _hasShutdown;
 
+        private static GameWorld _manualAssignedWorld;
+
         #endregion
 
         #region State Accessors
@@ -89,19 +91,16 @@ namespace AIRefactored.Core
                 lock (GameWorldLock)
                 {
                     if (_isRecovering)
-                    {
                         return null;
-                    }
+
+                    if (_manualAssignedWorld != null)
+                        return _manualAssignedWorld;
 
                     if (!FikaHeadlessDetector.IsHeadless && Singleton<ClientGameWorld>.Instantiated)
-                    {
                         return Singleton<ClientGameWorld>.Instance;
-                    }
 
                     if (FikaHeadlessDetector.IsHeadless && Singleton<GameWorld>.Instantiated)
-                    {
                         return Singleton<GameWorld>.Instance;
-                    }
 
                     if (FikaHeadlessDetector.IsHeadless)
                     {
@@ -163,8 +162,11 @@ namespace AIRefactored.Core
                     LogSafe("[GameWorldHandler] Invalid mapId during initialization.");
                 }
 
-                _bootstrapHost = new GameObject("AIRefactored.BootstrapHost");
-                UnityEngine.Object.DontDestroyOnLoad(_bootstrapHost);
+                if (_bootstrapHost == null)
+                {
+                    _bootstrapHost = new GameObject("AIRefactored.BootstrapHost");
+                    UnityEngine.Object.DontDestroyOnLoad(_bootstrapHost);
+                }
 
                 WorldBootstrapper.Begin(Logger, mapId);
                 IsInitialized = true;
@@ -221,6 +223,7 @@ namespace AIRefactored.Core
 
                     _isRecovering = false;
                     IsInitialized = false;
+                    _manualAssignedWorld = null;
 
                     LogSafe("[GameWorldHandler] 🔻 All runtime systems cleaned up.");
                 }
@@ -255,10 +258,14 @@ namespace AIRefactored.Core
 
         public static void ForceAssign(GameWorld world)
         {
-            if (world != null && !Singleton<GameWorld>.Instantiated)
+            if (world != null)
             {
-                LogSafe("[GameWorldHandler] Forcibly assigning fallback GameWorld.");
-                Singleton<GameWorld>.Instance = world;
+                if (!Singleton<GameWorld>.Instantiated)
+                {
+                    LogSafe("[GameWorldHandler] Forcibly assigning fallback GameWorld.");
+                    Singleton<GameWorld>.Instance = world;
+                }
+                _manualAssignedWorld = world;
             }
         }
 
@@ -326,10 +333,6 @@ namespace AIRefactored.Core
 
         public static bool TryForceResolveMapName() => TryGetValidMapName().Length > 0;
 
-        /// <summary>
-        /// Checks whether the current game world is valid and ready.
-        /// Used for safe teardown during plugin unload.
-        /// </summary>
         public static bool HasValidWorld()
         {
             GameWorld world = TryGetGameWorld();

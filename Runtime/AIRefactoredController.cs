@@ -101,14 +101,14 @@ namespace AIRefactored.Runtime
 
             if (!GameWorldHandler.IsHost)
             {
-                Logger.LogDebug("[AIRefactoredController] Skipped OnRaidStarted — not a valid host.");
+                LogDebug("[AIRefactoredController] Skipped OnRaidStarted — not a valid host.");
                 return;
             }
 
             // Headless/FIKA: Ensure FikaHeadlessDetector is ready, and only proceed if raid started
             if (FikaHeadlessDetector.IsHeadless && !FikaHeadlessDetector.HasRaidStarted())
             {
-                Logger.LogWarning("[AIRefactoredController] Skipped — Headless mode but raid not started.");
+                LogWarn("[AIRefactoredController] Skipped — Headless mode but raid not started.");
                 return;
             }
 
@@ -117,7 +117,7 @@ namespace AIRefactored.Runtime
                 // World must have registered players, all valid, and must be fully ready (no partial loads)
                 if (world.RegisteredPlayers == null || world.RegisteredPlayers.Count == 0)
                 {
-                    Logger.LogWarning("[AIRefactoredController] Skipped — RegisteredPlayers not ready.");
+                    LogWarn("[AIRefactoredController] Skipped — RegisteredPlayers not ready.");
                     return;
                 }
 
@@ -134,25 +134,25 @@ namespace AIRefactored.Runtime
 
                 if (!hasValidPlayer)
                 {
-                    Logger.LogWarning("[AIRefactoredController] Skipped — no valid EFT.Player found.");
+                    LogWarn("[AIRefactoredController] Skipped — no valid EFT.Player found.");
                     return;
                 }
 
                 // Only run if world/map/phase is truly ready
                 if (!GameWorldHandler.IsReady())
                 {
-                    Logger.LogWarning("[AIRefactoredController] OnRaidStarted — GameWorldHandler not ready, will retry.");
+                    LogWarn("[AIRefactoredController] OnRaidStarted — GameWorldHandler not ready, will retry.");
                     // Optionally: Schedule retry logic here if desired
                     return;
                 }
 
-                Logger.LogInfo("[AIRefactoredController] 🚀 GameWorld valid — starting AI systems.");
+                LogInfo("[AIRefactoredController] 🚀 GameWorld valid — starting AI systems.");
 
                 // NAVMESH/NAVPOINT BOOTSTRAP — Strict WorldReady check
                 string mapId = GameWorldHandler.TryGetValidMapName();
                 if (string.IsNullOrEmpty(mapId))
                 {
-                    Logger.LogWarning("[AIRefactoredController] OnRaidStarted — mapId is empty.");
+                    LogWarn("[AIRefactoredController] OnRaidStarted — mapId is empty.");
                 }
                 else
                 {
@@ -174,7 +174,7 @@ namespace AIRefactored.Runtime
             }
             catch (Exception ex)
             {
-                Logger.LogError("[AIRefactoredController] ❌ OnRaidStarted error: " + ex);
+                LogError("[AIRefactoredController] ❌ OnRaidStarted error: " + ex);
             }
         }
 
@@ -190,7 +190,7 @@ namespace AIRefactored.Runtime
 
             try
             {
-                Logger.LogInfo("[AIRefactoredController] 🧹 Raid ended — cleaning up world systems...");
+                LogInfo("[AIRefactoredController] 🧹 Raid ended — cleaning up world systems...");
 
                 InitPhaseRunner.Stop();
                 WorldBootstrapper.Stop();
@@ -201,7 +201,7 @@ namespace AIRefactored.Runtime
             }
             catch (Exception ex)
             {
-                Logger.LogError("[AIRefactoredController] ❌ OnRaidEnded error: " + ex);
+                LogError("[AIRefactoredController] ❌ OnRaidEnded error: " + ex);
             }
         }
 
@@ -221,7 +221,7 @@ namespace AIRefactored.Runtime
         {
             try
             {
-                Logger.LogInfo("[AIRefactoredController] 🔻 OnDestroy — executing full shutdown.");
+                LogInfo("[AIRefactoredController] 🔻 OnDestroy — executing full shutdown.");
 
                 InitPhaseRunner.Stop();
                 WorldBootstrapper.Stop();
@@ -231,12 +231,40 @@ namespace AIRefactored.Runtime
                 s_Initialized = false;
                 s_RaidActive = false;
 
-                Logger.LogInfo("[AIRefactoredController] ✅ AIRefactoredController teardown complete.");
+                LogInfo("[AIRefactoredController] ✅ AIRefactoredController teardown complete.");
             }
             catch (Exception ex)
             {
-                Logger.LogError("[AIRefactoredController] ❌ OnDestroy error: " + ex);
+                LogError("[AIRefactoredController] ❌ OnDestroy error: " + ex);
             }
+        }
+
+        #endregion
+
+        #region Log Helpers
+
+        private static void LogInfo(string msg)
+        {
+            if (!FikaHeadlessDetector.IsHeadless)
+                Logger.LogInfo(msg);
+        }
+
+        private static void LogWarn(string msg)
+        {
+            if (!FikaHeadlessDetector.IsHeadless)
+                Logger.LogWarning(msg);
+        }
+
+        private static void LogError(string msg)
+        {
+            if (!FikaHeadlessDetector.IsHeadless)
+                Logger.LogError(msg);
+        }
+
+        private static void LogDebug(string msg)
+        {
+            if (!FikaHeadlessDetector.IsHeadless)
+                Logger.LogDebug(msg);
         }
 
         #endregion

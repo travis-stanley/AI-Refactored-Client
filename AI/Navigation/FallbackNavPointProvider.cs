@@ -18,7 +18,7 @@ namespace AIRefactored.AI.Navigation
 
     /// <summary>
     /// Provides fallback nav points if NavPointRegistry is unavailable or empty.
-    /// Useful for custom maps, corrupt navmesh, or minimal spawn recovery.
+    /// If all else fails, disables all AIRefactored nav logic and lets vanilla EFT take over.
     /// </summary>
     public static class FallbackNavPointProvider
     {
@@ -44,19 +44,27 @@ namespace AIRefactored.AI.Navigation
 
         private static float _lastLogTime;
 
+        // Global flag: if true, disables all AIRefactored nav logic for this raid.
+        public static bool AIRefactoredNavDisabled { get; private set; }
+
         #endregion
 
         #region Public API
 
         /// <summary>
         /// Returns a fallback nav point offset from a base position.
-        /// Uses NavPointRegistry if available, otherwise falls back to static offset with NavMesh validation.
+        /// If all else fails, disables all AIRefactored nav and lets vanilla take over.
         /// </summary>
         public static Vector3 GetSafePoint(Vector3 fromPosition)
         {
+            if (AIRefactoredNavDisabled)
+                return fromPosition;
+
             if (!IsValid(fromPosition))
             {
-                return Vector3.zero;
+                AIRefactoredNavDisabled = true;
+                TryLogOnce("[FallbackNavPointProvider] ❌ Invalid bot position detected — disabling AIRefactored nav logic.");
+                return fromPosition;
             }
 
             if (NavPointRegistry.IsReady && !NavPointRegistry.IsEmpty)
@@ -68,35 +76,22 @@ namespace AIRefactored.AI.Navigation
                     {
                         Vector3 candidate = candidates[i];
                         if (NavMesh.SamplePosition(candidate, out NavMeshHit hit, MaxFallbackSampleRadius, NavMesh.AllAreas))
-                        {
                             return hit.position;
-                        }
                     }
                 }
-                finally
-                {
-                    TempListPool.Return(candidates);
-                }
+                finally { TempListPool.Return(candidates); }
             }
 
             for (int i = 0; i < StaticFallbackOffsets.Length; i++)
             {
                 Vector3 testPos = fromPosition + StaticFallbackOffsets[i];
                 if (NavMesh.SamplePosition(testPos, out NavMeshHit hit, MaxFallbackSampleRadius, NavMesh.AllAreas))
-                {
-                    TryLogOnce("[FallbackNavPointProvider] ⚠ Using static fallback at: " + hit.position.ToString("F1"));
                     return hit.position;
-                }
             }
 
-            Vector3 emergency = fromPosition + Vector3.forward * 4f;
-            if (NavMesh.SamplePosition(emergency, out NavMeshHit finalHit, MaxFallbackSampleRadius, NavMesh.AllAreas))
-            {
-                TryLogOnce("[FallbackNavPointProvider] ⚠ Using emergency fallback at: " + finalHit.position.ToString("F1"));
-                return finalHit.position;
-            }
-
-            TryLogOnce("[FallbackNavPointProvider] ❌ No valid fallback found, returning origin.");
+            // Could not find a fallback, disable all custom nav for this raid
+            AIRefactoredNavDisabled = true;
+            TryLogOnce("[FallbackNavPointProvider] ❌ No valid fallback found — disabling AIRefactored nav logic for this raid.");
             return fromPosition;
         }
 
@@ -105,9 +100,15 @@ namespace AIRefactored.AI.Navigation
         /// </summary>
         public static Vector3 GetSafeWorldPoint()
         {
-            Vector3 fallback = new Vector3(5f, 0f, 5f);
-            TryLogOnce("[FallbackNavPointProvider] ⚠ Global fallback used: " + fallback.ToString("F1"));
-            return fallback;
+            return new Vector3(5f, 1f, 5f);
+        }
+
+        /// <summary>
+        /// Resets nav disable flag on new raid/load.
+        /// </summary>
+        public static void ResetNavDisableFlag()
+        {
+            AIRefactoredNavDisabled = false;
         }
 
         #endregion

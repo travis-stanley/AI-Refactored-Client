@@ -18,6 +18,7 @@ namespace AIRefactored.AI.Core
     /// <summary>
     /// Central static registry for storing and accessing BotComponentCache instances.
     /// Replaces MonoBehaviour access with pure C# class lookup.
+    /// Bulletproof: any error triggers fallback to vanilla logic.
     /// </summary>
     public static class BotComponentCacheRegistry
     {
@@ -29,6 +30,7 @@ namespace AIRefactored.AI.Core
 
         /// <summary>
         /// Returns the cache for a bot if it exists; otherwise creates and registers a new one.
+        /// Bulletproof: If bot or profile is invalid, triggers fallback and returns a minimal cache.
         /// </summary>
         public static BotComponentCache GetOrCreate(BotOwner bot)
         {
@@ -73,7 +75,7 @@ namespace AIRefactored.AI.Core
         }
 
         /// <summary>
-        /// Gets the cache for a profile ID if it exists.
+        /// Gets the cache for a profile ID if it exists. If not, returns false and fallback cache.
         /// </summary>
         public static bool TryGet(string profileId, out BotComponentCache cache)
         {

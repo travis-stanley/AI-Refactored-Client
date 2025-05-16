@@ -15,6 +15,7 @@ namespace AIRefactored.AI.Groups
     /// <summary>
     /// Controls squad-based movement offsets to prevent clumping and collisions.
     /// Dynamically spaces bots based on squad size and formation pattern.
+    /// Bulletproof: all offsets are safe; errors affect only this feature, never cascade.
     /// </summary>
     public sealed class SquadPathCoordinator
     {
@@ -44,7 +45,14 @@ namespace AIRefactored.AI.Groups
         public void Initialize(BotComponentCache cache)
         {
             if (cache == null || cache.Bot == null || cache.Bot.IsDead)
+            {
+                _bot = null;
+                _group = null;
+                _offsetInitialized = false;
+                _lastGroupSize = -1;
+                _cachedOffset = Vector3.zero;
                 return;
+            }
 
             _bot = cache.Bot;
             _group = _bot.BotsGroup;
@@ -52,6 +60,9 @@ namespace AIRefactored.AI.Groups
             if (_group == null)
             {
                 _bot = null;
+                _offsetInitialized = false;
+                _lastGroupSize = -1;
+                _cachedOffset = Vector3.zero;
                 return;
             }
 
@@ -97,32 +108,40 @@ namespace AIRefactored.AI.Groups
 
         private Vector3 ComputeOffset()
         {
-            if (_bot == null || _group == null || _bot.IsDead || _group.MembersCount < 2)
+            try
+            {
+                if (_bot == null || _group == null || _bot.IsDead || _group.MembersCount < 2)
+                    return Vector3.zero;
+
+                int index = GetBotIndexInGroup(_bot, _group);
+                if (index < 0)
+                    return Vector3.zero;
+
+                string profileId = _bot.ProfileId;
+                if (string.IsNullOrEmpty(profileId))
+                    return Vector3.zero;
+
+                int squadSize = _group.MembersCount;
+                int seed = unchecked(profileId.GetHashCode() ^ (squadSize * 397));
+                Random.InitState(seed);
+
+                float baseNoise = Random.Range(-0.4f, 0.4f);
+                float spacing = Mathf.Clamp(BaseSpacing + baseNoise, MinSpacing, MaxSpacing);
+
+                float angleStep = 360f / squadSize;
+                float angle = (index * angleStep) + Random.Range(-8f, 8f);
+                float radians = angle * Mathf.Deg2Rad;
+
+                float x = Mathf.Cos(radians) * spacing;
+                float z = Mathf.Sin(radians) * spacing;
+
+                return new Vector3(x, 0f, z);
+            }
+            catch
+            {
+                // If anything fails, disable offset for this bot only (zero offset)
                 return Vector3.zero;
-
-            int index = GetBotIndexInGroup(_bot, _group);
-            if (index < 0)
-                return Vector3.zero;
-
-            string profileId = _bot.ProfileId;
-            if (string.IsNullOrEmpty(profileId))
-                return Vector3.zero;
-
-            int squadSize = _group.MembersCount;
-            int seed = unchecked(profileId.GetHashCode() ^ (squadSize * 397));
-            Random.InitState(seed);
-
-            float baseNoise = Random.Range(-0.4f, 0.4f);
-            float spacing = Mathf.Clamp(BaseSpacing + baseNoise, MinSpacing, MaxSpacing);
-
-            float angleStep = 360f / squadSize;
-            float angle = (index * angleStep) + Random.Range(-8f, 8f);
-            float radians = angle * Mathf.Deg2Rad;
-
-            float x = Mathf.Cos(radians) * spacing;
-            float z = Mathf.Sin(radians) * spacing;
-
-            return new Vector3(x, 0f, z);
+            }
         }
 
         private static int GetBotIndexInGroup(BotOwner bot, BotsGroup group)

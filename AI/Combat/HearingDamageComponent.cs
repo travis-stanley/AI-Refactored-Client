@@ -8,11 +8,13 @@
 
 namespace AIRefactored.AI.Combat
 {
+    using System;
     using UnityEngine;
 
     /// <summary>
     /// Simulates hearing damage effects such as deafness after loud sounds.
     /// Fades gradually over time to mimic realistic ear recovery.
+    /// Bulletproof: all logic is local and cannot break parent systems.
     /// </summary>
     public sealed class HearingDamageComponent
     {
@@ -61,15 +63,23 @@ namespace AIRefactored.AI.Combat
         /// <param name="duration">Duration in seconds (min 0.1s).</param>
         public void ApplyDeafness(float intensity, float duration)
         {
-            float newIntensity = Mathf.Clamp01(intensity);
-            float newDuration = duration < 0.1f ? 0.1f : duration;
-
-            if (newIntensity > _targetDeafness)
+            try
             {
-                _targetDeafness = newIntensity;
-                _deafDuration = newDuration;
-                _elapsedTime = 0f;
-                _deafnessLevel = newIntensity;
+                float newIntensity = Mathf.Clamp01(intensity);
+                float newDuration = duration < 0.1f ? 0.1f : duration;
+
+                if (newIntensity > _targetDeafness)
+                {
+                    _targetDeafness = newIntensity;
+                    _deafDuration = newDuration;
+                    _elapsedTime = 0f;
+                    _deafnessLevel = newIntensity;
+                }
+            }
+            catch
+            {
+                // Silent fail — never break parent systems
+                Clear();
             }
         }
 
@@ -90,19 +100,27 @@ namespace AIRefactored.AI.Combat
         /// <param name="deltaTime">Delta time in seconds.</param>
         public void Tick(float deltaTime)
         {
-            if (_targetDeafness <= 0.01f)
-                return;
-
-            _elapsedTime += deltaTime;
-
-            if (_elapsedTime >= _deafDuration)
+            try
             {
-                Clear();
-                return;
-            }
+                if (_targetDeafness <= 0.01f)
+                    return;
 
-            float ratio = Mathf.Clamp01(1f - (_elapsedTime / _deafDuration));
-            _deafnessLevel = _targetDeafness * ratio;
+                _elapsedTime += deltaTime;
+
+                if (_elapsedTime >= _deafDuration)
+                {
+                    Clear();
+                    return;
+                }
+
+                float ratio = Mathf.Clamp01(1f - (_elapsedTime / _deafDuration));
+                _deafnessLevel = _targetDeafness * ratio;
+            }
+            catch
+            {
+                // Silent fail — always safe
+                Clear();
+            }
         }
 
         #endregion

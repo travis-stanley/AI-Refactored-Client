@@ -3,11 +3,13 @@
 //   Licensed under the MIT License. See LICENSE in the repository root for more information.
 //
 //   THIS FILE IS SYSTEMATICALLY MANAGED.
+//   Failures in AIRefactored logic must always trigger safe fallback to EFT base AI, never break the stack.
 //   Please follow strict StyleCop, ReSharper, and AI-Refactored code standards for all modifications.
 // </auto-generated>
 
 namespace AIRefactored.AI.Perception
 {
+    using System;
     using System.Collections.Generic;
     using AIRefactored.AI.Core;
     using AIRefactored.AI.Helpers;
@@ -45,23 +47,32 @@ namespace AIRefactored.AI.Perception
         /// <param name="cache">Runtime bot cache.</param>
         public void Initialize(BotComponentCache cache)
         {
-            if (cache == null || cache.Bot == null)
+            try
+            {
+                if (cache == null || cache.Bot == null)
+                {
+                    _bot = null;
+                    _cache = null;
+                    return;
+                }
+
+                Player player = cache.Bot.GetPlayer;
+                if (!EFTPlayerUtil.IsValid(player))
+                {
+                    _bot = null;
+                    _cache = null;
+                    return;
+                }
+
+                _bot = cache.Bot;
+                _cache = cache;
+            }
+            catch (Exception ex)
             {
                 _bot = null;
                 _cache = null;
-                return;
+                Plugin.LoggerInstance.LogError($"[BotHearingSystem] Initialize exception: {ex}");
             }
-
-            Player player = cache.Bot.GetPlayer;
-            if (!EFTPlayerUtil.IsValid(player))
-            {
-                _bot = null;
-                _cache = null;
-                return;
-            }
-
-            _bot = cache.Bot;
-            _cache = cache;
         }
 
         /// <summary>
@@ -70,45 +81,58 @@ namespace AIRefactored.AI.Perception
         /// <param name="deltaTime">Frame time in seconds.</param>
         public void Tick(float deltaTime)
         {
-            if (!GameWorldHandler.IsSafeToInitialize || _bot == null || _cache == null)
-            {
-                return;
-            }
-
-            if (!IsActive())
-            {
-                return;
-            }
-
-            Vector3 origin = _bot.Position;
-            float rangeSqr = BaseHearingRange * BaseHearingRange;
-
-            List<Player> players = BotMemoryStore.GetNearbyPlayers(origin, BaseHearingRange);
             try
             {
-                int count = players != null ? players.Count : 0;
-                for (int i = 0; i < count; i++)
+                if (!GameWorldHandler.IsSafeToInitialize || _bot == null || _cache == null)
                 {
-                    Player candidate = players[i];
-                    if (!IsAudibleSource(candidate, origin, rangeSqr))
-                    {
-                        continue;
-                    }
+                    return;
+                }
 
-                    if (HeardSomething(candidate))
+                if (!IsActive())
+                {
+                    return;
+                }
+
+                Vector3 origin = _bot.Position;
+                float rangeSqr = BaseHearingRange * BaseHearingRange;
+
+                List<Player> players = null;
+                try
+                {
+                    players = BotMemoryStore.GetNearbyPlayers(origin, BaseHearingRange);
+                    int count = players != null ? players.Count : 0;
+                    for (int i = 0; i < count; i++)
                     {
-                        Vector3 pos = EFTPlayerUtil.GetPosition(candidate);
-                        if (pos.sqrMagnitude > 0.01f)
+                        Player candidate = players[i];
+                        if (!IsAudibleSource(candidate, origin, rangeSqr))
                         {
-                            _cache.RegisterHeardSound(pos);
+                            continue;
+                        }
+
+                        if (HeardSomething(candidate))
+                        {
+                            Vector3 pos = EFTPlayerUtil.GetPosition(candidate);
+                            if (pos.sqrMagnitude > 0.01f)
+                            {
+                                _cache.RegisterHeardSound(pos);
+                            }
                         }
                     }
                 }
+                finally
+                {
+                    if (players != null)
+                    {
+                        TempListPool.Return(players);
+                    }
+                }
             }
-            finally
+            catch (Exception ex)
             {
-                if (players != null)
-                    TempListPool.Return(players);
+                Plugin.LoggerInstance.LogError($"[BotHearingSystem] Tick exception: {ex}");
+                // Never break or nullify other systems. Only disable hearing for this bot if repeated exceptions occur.
+                _bot = null;
+                _cache = null;
             }
         }
 

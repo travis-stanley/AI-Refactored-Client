@@ -70,26 +70,17 @@ namespace AIRefactored.AI
         /// <summary>
         /// Gets a value indicating whether this personality supports flanking behavior.
         /// </summary>
-        public bool CanFlank
-        {
-            get { return this.FlankBias > 0.05f; }
-        }
+        public bool CanFlank => this.FlankBias > 0.05f;
 
         /// <summary>
         /// Gets a value indicating whether this personality supports tactical retreats.
         /// </summary>
-        public bool CanRetreat
-        {
-            get { return this.RetreatThreshold > 0.05f; }
-        }
+        public bool CanRetreat => this.RetreatThreshold > 0.05f;
 
         /// <summary>
         /// Gets a value indicating whether this personality will use suppressive fire.
         /// </summary>
-        public bool CanSuppress
-        {
-            get { return this.SuppressiveFireBias > 0.05f; }
-        }
+        public bool CanSuppress => this.SuppressiveFireBias > 0.05f;
 
         #endregion
 

@@ -24,13 +24,8 @@ namespace AIRefactored.AI.Hotspots
         /// <param name="zone">Label or tactical area name associated with this hotspot.</param>
         public HotspotData(Vector3 position, string zone)
         {
-            if (string.IsNullOrEmpty(zone))
-            {
-                throw new ArgumentException("Zone label cannot be null or empty.", nameof(zone));
-            }
-
             this.Position = position;
-            this.Zone = zone.Trim();
+            this.Zone = string.IsNullOrEmpty(zone) ? "unknown" : zone.Trim();
         }
 
         /// <summary>
@@ -55,18 +50,16 @@ namespace AIRefactored.AI.Hotspots
         /// <param name="points">The list of hotspot data points.</param>
         public HotspotSet(List<HotspotData> points)
         {
-            if (points == null)
+            this.Points = points != null ? new List<HotspotData>(points.Count) : new List<HotspotData>();
+            if (points != null)
             {
-                throw new ArgumentNullException(nameof(points));
-            }
-
-            this.Points = new List<HotspotData>(points.Count);
-            for (int i = 0; i < points.Count; i++)
-            {
-                HotspotData entry = points[i];
-                if (entry != null)
+                for (int i = 0; i < points.Count; i++)
                 {
-                    this.Points.Add(entry);
+                    HotspotData entry = points[i];
+                    if (entry != null)
+                    {
+                        this.Points.Add(entry);
+                    }
                 }
             }
         }
@@ -80,12 +73,13 @@ namespace AIRefactored.AI.Hotspots
     /// <summary>
     /// Static memory-backed registry of tactical hotspot locations for each map.
     /// Compiled to avoid runtime JSON parsing or I/O costs.
+    /// Bulletproof: returns empty sets for missing maps; never throws, never null.
     /// </summary>
     public static class HardcodedHotspots
     {
         private static readonly Dictionary<string, List<HotspotData>> Hotspots = new Dictionary<string, List<HotspotData>>
-            {
-                ["bigmap"] = new List<HotspotData>
+        {
+            ["bigmap"] = new List<HotspotData>
                                  {
                                      new HotspotData(new Vector3(352.19f, 1.23f, -39.12f), "checkpoint"),
                                      new HotspotData(new Vector3(173.10f, 5.83f, 184.54f), "fortress"),
@@ -453,33 +447,36 @@ namespace AIRefactored.AI.Hotspots
 
             };
 
+        private static readonly HotspotSet EmptySet = new HotspotSet(new List<HotspotData>(0));
+
         /// <summary>
         /// Returns a <see cref="HotspotSet"/> for the specified map ID.
-        /// Throws an exception if the map ID is invalid or not found.
+        /// Never throws or returns null. If missing, returns an empty set.
         /// </summary>
         /// <param name="mapId">The map ID string, e.g., "bigmap", "factory4_day".</param>
-        /// <returns>The corresponding <see cref="HotspotSet"/>.</returns>
+        /// <returns>The corresponding <see cref="HotspotSet"/>. If not found, returns an empty set.</returns>
         public static HotspotSet GetForMap(string mapId)
         {
-            if (string.IsNullOrEmpty(mapId))
+            try
             {
-                throw new ArgumentException("Map ID cannot be null or empty.", nameof(mapId));
-            }
+                if (string.IsNullOrEmpty(mapId))
+                    return EmptySet;
 
-            string key = mapId.Trim().ToLowerInvariant();
-            if (key.Length == 0)
+                string key = mapId.Trim().ToLowerInvariant();
+                if (key.Length == 0)
+                    return EmptySet;
+
+                List<HotspotData> points;
+                if (Hotspots.TryGetValue(key, out points))
+                {
+                    return new HotspotSet(points);
+                }
+                return EmptySet;
+            }
+            catch
             {
-                throw new ArgumentException("Map ID cannot be whitespace.", nameof(mapId));
+                return EmptySet;
             }
-
-            List<HotspotData> points;
-            if (Hotspots.TryGetValue(key, out points))
-            {
-                return new HotspotSet(points);
-            }
-
-            throw new KeyNotFoundException($"Hotspot set for map ID '{mapId}' not found.");
         }
-
     }
 }

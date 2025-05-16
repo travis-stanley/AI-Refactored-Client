@@ -3,11 +3,13 @@
 //   Licensed under the MIT License. See LICENSE in the repository root for more information.
 //
 //   THIS FILE IS SYSTEMATICALLY MANAGED.
+//   Failures in AIRefactored logic must always trigger safe fallback to EFT base AI, never break the stack.
 //   Please follow strict StyleCop, ReSharper, and AI-Refactored code standards for all modifications.
 // </auto-generated>
 
 namespace AIRefactored.AI.Perception
 {
+    using System;
     using System.Collections.Generic;
     using AIRefactored.Core;
     using AIRefactored.Pools;
@@ -67,8 +69,15 @@ namespace AIRefactored.AI.Perception
         /// </summary>
         public bool CanSeeAny()
         {
-            CleanExpired(Time.time);
-            return _visibleBones.Count > 0;
+            try
+            {
+                CleanExpired(Time.time);
+                return _visibleBones.Count > 0;
+            }
+            catch
+            {
+                return false;
+            }
         }
 
         /// <summary>
@@ -77,23 +86,33 @@ namespace AIRefactored.AI.Perception
         /// <param name="boneName">Bone key (e.g. "Head").</param>
         public bool CanShootTo(string boneName)
         {
-            BoneInfo info;
-            if (!_visibleBones.TryGetValue(boneName, out info))
+            try
+            {
+                if (_botOrigin == null)
+                    return false;
+
+                BoneInfo info;
+                if (!_visibleBones.TryGetValue(boneName, out info))
+                {
+                    return false;
+                }
+
+                float now = Time.time;
+                if (now - info.Timestamp > BoneVisibilityDuration)
+                {
+                    return false;
+                }
+
+                Vector3 eye = _botOrigin.position + EyeOffset;
+                float dist = Vector3.Distance(eye, info.Position);
+
+                return !Physics.Linecast(eye, info.Position, out RaycastHit hit, AIRefactoredLayerMasks.LineOfSightMask)
+                       || hit.distance >= dist - LinecastSlack;
+            }
+            catch
             {
                 return false;
             }
-
-            float now = Time.time;
-            if (now - info.Timestamp > BoneVisibilityDuration)
-            {
-                return false;
-            }
-
-            Vector3 eye = _botOrigin.position + EyeOffset;
-            float dist = Vector3.Distance(eye, info.Position);
-
-            return !Physics.Linecast(eye, info.Position, out RaycastHit hit, AIRefactoredLayerMasks.LineOfSightMask)
-                   || hit.distance >= dist - LinecastSlack;
         }
 
         /// <summary>
@@ -101,7 +120,11 @@ namespace AIRefactored.AI.Perception
         /// </summary>
         public void UpdateBoneVisibility(string boneName, Vector3 worldPosition)
         {
-            _visibleBones[boneName] = new BoneInfo(worldPosition, Time.time);
+            try
+            {
+                _visibleBones[boneName] = new BoneInfo(worldPosition, Time.time);
+            }
+            catch { }
         }
 
         /// <summary>
@@ -109,12 +132,15 @@ namespace AIRefactored.AI.Perception
         /// </summary>
         public void UpdateBoneVisibility(string boneName, Vector3 worldPosition, float motionBonus, float ambientOcclusionFactor)
         {
-            float now = Time.time;
-            float extra = Mathf.Clamp(motionBonus, 0f, 0.4f);
-            float penalty = Mathf.Lerp(0f, 0.2f, 1f - ambientOcclusionFactor);
-            float timestamp = now + extra - penalty;
-
-            _visibleBones[boneName] = new BoneInfo(worldPosition, timestamp);
+            try
+            {
+                float now = Time.time;
+                float extra = Mathf.Clamp(motionBonus, 0f, 0.4f);
+                float penalty = Mathf.Lerp(0f, 0.2f, 1f - ambientOcclusionFactor);
+                float timestamp = now + extra - penalty;
+                _visibleBones[boneName] = new BoneInfo(worldPosition, timestamp);
+            }
+            catch { }
         }
 
         /// <summary>
@@ -139,12 +165,12 @@ namespace AIRefactored.AI.Perception
                     _visibleBones[key] = new BoneInfo(info.Position, decayed);
                 }
             }
+            catch { }
             finally
             {
                 TempListPool.Return(keys);
+                CleanExpired(now);
             }
-
-            CleanExpired(now);
         }
 
         /// <summary>
@@ -152,8 +178,15 @@ namespace AIRefactored.AI.Perception
         /// </summary>
         public float GetOverallConfidence()
         {
-            CleanExpired(Time.time);
-            return Mathf.Clamp01(_visibleBones.Count / 8f);
+            try
+            {
+                CleanExpired(Time.time);
+                return Mathf.Clamp01(_visibleBones.Count / 8f);
+            }
+            catch
+            {
+                return 0f;
+            }
         }
 
         /// <summary>
@@ -161,8 +194,15 @@ namespace AIRefactored.AI.Perception
         /// </summary>
         public int ExposedBoneCount()
         {
-            CleanExpired(Time.time);
-            return _visibleBones.Count;
+            try
+            {
+                CleanExpired(Time.time);
+                return _visibleBones.Count;
+            }
+            catch
+            {
+                return 0;
+            }
         }
 
         /// <summary>
@@ -170,7 +210,11 @@ namespace AIRefactored.AI.Perception
         /// </summary>
         public void Clear()
         {
-            _visibleBones.Clear();
+            try
+            {
+                _visibleBones.Clear();
+            }
+            catch { }
         }
 
         #endregion
@@ -198,6 +242,7 @@ namespace AIRefactored.AI.Perception
                     _visibleBones.Remove(expired[i]);
                 }
             }
+            catch { }
             finally
             {
                 TempListPool.Return(expired);

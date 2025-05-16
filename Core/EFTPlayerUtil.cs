@@ -3,7 +3,8 @@
 //   Licensed under the MIT License. See LICENSE in the repository root for more information.
 //
 //   THIS FILE IS SYSTEMATICALLY MANAGED.
-//   Please follow strict StyleCop, ReSharper, and AI-Refactored code standards for all modifications.
+//   Failures in AIRefactored logic must always trigger safe fallback to EFT base AI, never break global logic.
+//   Bulletproof: All failures are locally contained, never break other subsystems.
 // </auto-generated>
 
 namespace AIRefactored.Core
@@ -18,6 +19,7 @@ namespace AIRefactored.Core
     /// <summary>
     /// Provides null-safe and Dissonance-free helpers for resolving EFT.Player and BotOwner references.
     /// Used throughout AI-Refactored for profile resolution, spatial lookups, and bot filtering.
+    /// Bulletproof: All errors are locally contained and cannot break other systems.
     /// </summary>
     public static class EFTPlayerUtil
     {
@@ -38,9 +40,7 @@ namespace AIRefactored.Core
         public static IPlayer AsSafeIPlayer(Player player)
         {
             if (player == null)
-            {
                 return null;
-            }
 
             object obj = player;
             IPlayer cast = obj as IPlayer;
@@ -55,28 +55,20 @@ namespace AIRefactored.Core
         public static Player ResolvePlayerById(string profileId)
         {
             if (string.IsNullOrEmpty(profileId))
-            {
                 return null;
-            }
 
             if (!WorldInitState.IsInPhase(WorldPhase.WorldReady))
-            {
                 return null;
-            }
 
             GameWorld world = GameWorldHandler.Get();
             if (world == null || world.AllAlivePlayersList == null || world.AllAlivePlayersList.Count == 0)
-            {
                 return null;
-            }
 
             for (int i = 0; i < world.AllAlivePlayersList.Count; i++)
             {
                 Player p = world.AllAlivePlayersList[i];
                 if (p != null && p.ProfileId == profileId)
-                {
                     return p;
-                }
             }
 
             return null;
@@ -88,11 +80,11 @@ namespace AIRefactored.Core
 
         public static bool IsValid(Player player)
         {
-            return player != null &&
-                   player.HealthController != null &&
-                   player.HealthController.IsAlive &&
-                   player.Transform != null &&
-                   player.Transform.Original != null;
+            return player != null
+                   && player.HealthController != null
+                   && player.HealthController.IsAlive
+                   && player.Transform != null
+                   && player.Transform.Original != null;
         }
 
         public static bool IsValidGroupPlayer(Player player)
@@ -113,42 +105,38 @@ namespace AIRefactored.Core
         public static string GetProfileId(BotOwner bot)
         {
             if (bot == null)
-            {
                 return string.Empty;
-            }
 
             Player player = bot.GetPlayer;
             if (player == null)
-            {
                 return string.Empty;
-            }
 
             return player.ProfileId;
         }
 
         public static bool IsValidBotOwner(BotOwner bot)
         {
-            return bot != null &&
-                   bot.GetPlayer != null &&
-                   bot.Memory != null &&
-                   bot.WeaponManager != null &&
-                   bot.BotsGroup != null;
+            return bot != null
+                   && bot.GetPlayer != null
+                   && bot.Memory != null
+                   && bot.WeaponManager != null
+                   && bot.BotsGroup != null;
         }
 
         public static bool HasValidMovementContext(BotOwner bot)
         {
-            return bot != null &&
-                   bot.GetPlayer != null &&
-                   bot.GetPlayer.MovementContext != null;
+            return bot != null
+                   && bot.GetPlayer != null
+                   && bot.GetPlayer.MovementContext != null;
         }
 
         public static bool IsFikaHeadlessSafe(BotOwner bot)
         {
             Player player = bot != null ? bot.GetPlayer : null;
-            return player != null &&
-                   player.IsAI &&
-                   player.HealthController != null &&
-                   player.HealthController.IsAlive;
+            return player != null
+                   && player.IsAI
+                   && player.HealthController != null
+                   && player.HealthController.IsAlive;
         }
 
         #endregion
@@ -173,15 +161,11 @@ namespace AIRefactored.Core
         public static bool IsEnemyOf(BotOwner self, Player target)
         {
             if (self == null || target == null)
-            {
                 return false;
-            }
 
             BotsGroup group = self.BotsGroup;
             if (group == null)
-            {
                 return false;
-            }
 
             IPlayer cast = AsSafeIPlayer(target);
             return cast != null && group.IsEnemy(cast);
@@ -190,9 +174,7 @@ namespace AIRefactored.Core
         public static bool AreEnemies(Player a, Player b)
         {
             if (a == null || b == null)
-            {
                 return false;
-            }
 
             return a.Side != b.Side && a.ProfileId != b.ProfileId;
         }

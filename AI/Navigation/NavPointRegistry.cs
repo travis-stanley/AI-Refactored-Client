@@ -91,7 +91,6 @@ namespace AIRefactored.AI.Navigation
             _useSpatial = false;
             _aiRefactoredNavDisabled = false;
             IsInitialized = true;
-
             Logger.LogDebug("[NavPointRegistry] Initialized.");
         }
 
@@ -172,7 +171,6 @@ namespace AIRefactored.AI.Navigation
         public static List<NavPointData> GetAllPoints()
         {
             var result = TempListPool.Rent<NavPointData>();
-
             for (int i = 0; i < Points.Count; i++)
             {
                 var p = Points[i];
@@ -187,7 +185,6 @@ namespace AIRefactored.AI.Navigation
                     p.Zone,
                     p.ElevationBand));
             }
-
             return result;
         }
 
@@ -203,7 +200,6 @@ namespace AIRefactored.AI.Navigation
                 return;
             }
 
-            // Protect: Only register after WorldReady, and if not already ready
             if (!WorldInitState.IsInPhase(WorldPhase.WorldReady))
             {
                 Logger.LogWarning("[NavPointRegistry] RegisterAll() skipped — world not ready.");
@@ -216,7 +212,6 @@ namespace AIRefactored.AI.Navigation
                 return;
             }
 
-            // Don't re-register if already built for this raid
             if (IsInitialized && Points.Count > 0)
             {
                 Logger.LogDebug("[NavPointRegistry] Already built for this raid, skipping RegisterAll.");
@@ -284,8 +279,7 @@ namespace AIRefactored.AI.Navigation
 
             if (_aiRefactoredNavDisabled || Points.Count == 0)
             {
-                // Fallback to vanilla/emergency nav if registry is empty/disabled
-                return result; // Empty: do not override vanilla pathing
+                return result;
             }
 
             float radiusSq = radius * radius;
@@ -300,7 +294,6 @@ namespace AIRefactored.AI.Navigation
                         result.Add(raw[i]);
                     }
                 }
-
                 return result;
             }
 
@@ -315,7 +308,6 @@ namespace AIRefactored.AI.Navigation
                         result.Add(pos);
                     }
                 }
-
                 return result;
             }
 
@@ -330,7 +322,6 @@ namespace AIRefactored.AI.Navigation
                     }
                 }
             }
-
             return result;
         }
 
@@ -340,8 +331,7 @@ namespace AIRefactored.AI.Navigation
 
             if (_aiRefactoredNavDisabled || Points.Count == 0)
             {
-                // Fallback to vanilla/emergency nav if registry is empty/disabled
-                return result; // Empty: do not override vanilla pathing
+                return result;
             }
 
             float radiusSq = radius * radius;
@@ -382,7 +372,6 @@ namespace AIRefactored.AI.Navigation
                     }
                 }
             }
-
             return result;
         }
 
@@ -418,7 +407,6 @@ namespace AIRefactored.AI.Navigation
             Logger.LogDebug($"[NavPointRegistry] Indexing mode for map '{mapId}' => {mode}");
         }
 
-        // Safe wrapper: call only if points present
         private static void AutoEnableIndexModeSafe()
         {
             if (Points.Count == 0)
@@ -463,7 +451,6 @@ namespace AIRefactored.AI.Navigation
         {
             if (_aiRefactoredNavDisabled || Points.Count == 0)
             {
-                // Registry empty/disabled: do not override vanilla pathing
                 return origin;
             }
 
@@ -511,8 +498,7 @@ namespace AIRefactored.AI.Navigation
                     closest = p.WorldPos;
                 }
             }
-
-            return IsValid(closest) ? closest : origin; // Never return zero, just return original
+            return IsValid(closest) ? closest : origin;
         }
 
         private static bool IsValid(Vector3 pos)

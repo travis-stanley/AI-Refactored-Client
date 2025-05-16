@@ -4,10 +4,12 @@
 //
 //   THIS FILE IS SYSTEMATICALLY MANAGED.
 //   Please follow strict StyleCop, ReSharper, and AI-Refactored code standards for all modifications.
+//   All squad optimization logic is bulletproof and fully isolated.
 // </auto-generated>
 
 namespace AIRefactored.AI.Optimization
 {
+    using System;
     using System.Collections.Generic;
     using AIRefactored.Core;
     using AIRefactored.Runtime;
@@ -31,6 +33,7 @@ namespace AIRefactored.AI.Optimization
 
         /// <summary>
         /// Applies group cohesion and perception modifiers to all valid AI bots in a squad.
+        /// All failures are isolated—no exception can break squad or system.
         /// </summary>
         /// <param name="botOwners">List of bots in the same squad or group context.</param>
         public void OptimizeGroupAI(List<BotOwner> botOwners)
@@ -42,38 +45,54 @@ namespace AIRefactored.AI.Optimization
 
             for (int i = 0; i < botOwners.Count; i++)
             {
-                BotOwner bot = botOwners[i];
-                if (bot == null || bot.IsDead)
+                try
                 {
-                    continue;
-                }
+                    BotOwner bot = botOwners[i];
+                    if (bot == null || bot.IsDead)
+                    {
+                        continue;
+                    }
 
-                Player player = bot.GetPlayer;
-                if (player == null || !player.IsAI || player.IsYourPlayer)
+                    Player player = bot.GetPlayer;
+                    if (player == null || !player.IsAI || player.IsYourPlayer)
+                    {
+                        continue;
+                    }
+
+                    Profile profile = bot.Profile;
+                    if (profile == null || string.IsNullOrEmpty(profile.Id))
+                    {
+                        continue;
+                    }
+
+                    BotSettingsComponents settings = null;
+                    try { settings = bot.Settings != null ? bot.Settings.FileSettings : null; } catch { }
+                    if (settings == null || settings.Mind == null)
+                    {
+                        continue;
+                    }
+
+                    BotGlobalsMindSettings mind = settings.Mind;
+                    BotPersonalityProfile personality = null;
+                    try { personality = BotRegistry.Get(profile.Id); } catch { }
+                    if (personality == null)
+                    {
+                        continue;
+                    }
+
+                    try
+                    {
+                        ApplyModifiers(bot, personality, mind);
+                    }
+                    catch (Exception ex)
+                    {
+                        Logger.LogWarning("[GroupOpt] ApplyModifiers failed for bot: " + (bot.Profile?.Info?.Nickname ?? "Unknown") + " Exception: " + ex);
+                    }
+                }
+                catch (Exception ex)
                 {
-                    continue;
+                    Logger.LogWarning("[GroupOpt] OptimizeGroupAI: Bot index " + i + " exception: " + ex);
                 }
-
-                Profile profile = bot.Profile;
-                if (profile == null || string.IsNullOrEmpty(profile.Id))
-                {
-                    continue;
-                }
-
-                BotSettingsComponents settings = bot.Settings != null ? bot.Settings.FileSettings : null;
-                if (settings == null || settings.Mind == null)
-                {
-                    continue;
-                }
-
-                BotGlobalsMindSettings mind = settings.Mind;
-                BotPersonalityProfile personality = BotRegistry.Get(profile.Id);
-                if (personality == null)
-                {
-                    continue;
-                }
-
-                ApplyModifiers(bot, personality, mind);
             }
         }
 
@@ -83,17 +102,24 @@ namespace AIRefactored.AI.Optimization
 
         private static void ApplyModifiers(BotOwner bot, BotPersonalityProfile profile, BotGlobalsMindSettings mind)
         {
-            // Adjust perception distance based on squad cohesion
-            mind.DIST_TO_FOUND_SQRT = Mathf.Lerp(300f, 600f, 1f - profile.Cohesion);
+            try
+            {
+                // Adjust perception distance based on squad cohesion
+                mind.DIST_TO_FOUND_SQRT = Mathf.Lerp(300f, 600f, 1f - profile.Cohesion);
 
-            // Add aggression weight for retaliatory behavior
-            mind.FRIEND_AGR_KILL = Mathf.Clamp(mind.FRIEND_AGR_KILL + (profile.AggressionLevel * 0.15f), 0f, 1f);
+                // Add aggression weight for retaliatory behavior
+                mind.FRIEND_AGR_KILL = Mathf.Clamp(mind.FRIEND_AGR_KILL + (profile.AggressionLevel * 0.15f), 0f, 1f);
 
-            // Narrow vision cone slightly for higher cohesion squads
-            mind.ENEMY_LOOK_AT_ME_ANG = Mathf.Clamp(mind.ENEMY_LOOK_AT_ME_ANG - (profile.Cohesion * 5f), 5f, 30f);
+                // Narrow vision cone slightly for higher cohesion squads
+                mind.ENEMY_LOOK_AT_ME_ANG = Mathf.Clamp(mind.ENEMY_LOOK_AT_ME_ANG - (profile.Cohesion * 5f), 5f, 30f);
 
-            string name = bot.Profile?.Info?.Nickname ?? "Unknown";
-            Logger.LogDebug($"[GroupOpt] {name} → Cohesion={profile.Cohesion:F2}, FRIEND_AGR_KILL={mind.FRIEND_AGR_KILL:F2}, ENEMY_ANG={mind.ENEMY_LOOK_AT_ME_ANG:F1}°");
+                string name = bot.Profile?.Info?.Nickname ?? "Unknown";
+                Logger.LogDebug($"[GroupOpt] {name} → Cohesion={profile.Cohesion:F2}, FRIEND_AGR_KILL={mind.FRIEND_AGR_KILL:F2}, ENEMY_ANG={mind.ENEMY_LOOK_AT_ME_ANG:F1}°");
+            }
+            catch (Exception ex)
+            {
+                Logger.LogWarning("[GroupOpt] ApplyModifiers: Exception for bot " + (bot?.Profile?.Info?.Nickname ?? "Unknown") + ": " + ex);
+            }
         }
 
         #endregion

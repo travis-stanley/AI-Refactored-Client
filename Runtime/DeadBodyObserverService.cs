@@ -4,6 +4,7 @@
 //
 //   THIS FILE IS SYSTEMATICALLY MANAGED.
 //   Failures in AIRefactored logic must always trigger safe fallback to EFT base AI.
+//   Bulletproof: All failures are locally contained, never break other subsystems, and always trigger fallback isolation.
 // </auto-generated>
 
 namespace AIRefactored.Runtime
@@ -24,6 +25,7 @@ namespace AIRefactored.Runtime
 	/// <summary>
 	/// Scans for dead players and associates them with nearby loot containers.
 	/// Executed as a runtime service from WorldBootstrapper or BotWorkScheduler.
+	/// Bulletproof: All errors are strictly contained, never cascade or break the mod.
 	/// </summary>
 	public sealed class DeadBodyObserverService : IAIWorldSystemBootstrapper
 	{
@@ -133,11 +135,21 @@ namespace AIRefactored.Runtime
 
 				_nextScanTime = now + ScanIntervalSeconds;
 
-				GameWorld world = GameWorldHandler.Get();
+				GameWorld world = null;
+				try
+				{
+					world = GameWorldHandler.Get();
+				}
+				catch (Exception ex)
+				{
+					LogError("[DeadBodyObserver] ❌ GameWorldHandler.Get() failed: " + ex);
+					return;
+				}
+
 				if (world == null || world.RegisteredPlayers == null || world.RegisteredPlayers.Count == 0)
 					return;
 
-				LootableContainer[] containers;
+				LootableContainer[] containers = null;
 				try
 				{
 					containers = UnityEngine.Object.FindObjectsOfType<LootableContainer>();
@@ -154,57 +166,73 @@ namespace AIRefactored.Runtime
 				List<IPlayer> rawPlayers = world.RegisteredPlayers;
 				List<Player> deadPlayers = TempListPool.Rent<Player>();
 
-				for (int i = 0; i < rawPlayers.Count; i++)
+				try
 				{
-					Player player = EFTPlayerUtil.AsEFTPlayer(rawPlayers[i]);
-					if (player != null && player.HealthController != null && !player.HealthController.IsAlive)
+					for (int i = 0; i < rawPlayers.Count; i++)
 					{
-						deadPlayers.Add(player);
-					}
-				}
-
-				for (int i = 0; i < deadPlayers.Count; i++)
-				{
-					Player player = deadPlayers[i];
-					string profileId = player.ProfileId;
-
-					if (string.IsNullOrEmpty(profileId) || DeadBodyContainerCache.Contains(profileId))
-					{
-						continue;
+						Player player = EFTPlayerUtil.AsEFTPlayer(rawPlayers[i]);
+						if (player != null && player.HealthController != null && !player.HealthController.IsAlive)
+						{
+							deadPlayers.Add(player);
+						}
 					}
 
-					Transform root = player.Transform?.Original?.root;
-					if (root == null)
+					for (int i = 0; i < deadPlayers.Count; i++)
 					{
-						continue;
-					}
+						Player player = deadPlayers[i];
+						string profileId = player.ProfileId;
 
-					Vector3 corpsePos = EFTPlayerUtil.GetPosition(player);
-
-					for (int j = 0; j < containers.Length; j++)
-					{
-						LootableContainer container = containers[j];
-						if (container == null || !container.enabled || container.transform == null)
+						if (string.IsNullOrEmpty(profileId) || DeadBodyContainerCache.Contains(profileId))
 						{
 							continue;
 						}
 
-						bool sameRoot = container.transform.root == root;
-						bool closeEnough = Vector3.Distance(container.transform.position, corpsePos) <= AssociationRadius;
-
-						if (sameRoot || closeEnough)
+						Transform root = player.Transform?.Original?.root;
+						if (root == null)
 						{
-							DeadBodyContainerCache.Register(player, container);
-							LootRuntimeWatcher.Register(container.gameObject);
+							continue;
+						}
 
-							string nickname = player.Profile?.Info?.Nickname ?? "Unnamed";
-							LogDebug("[DeadBodyObserver] ✅ Associated container with corpse: " + nickname);
-							break;
+						Vector3 corpsePos = EFTPlayerUtil.GetPosition(player);
+
+						for (int j = 0; j < containers.Length; j++)
+						{
+							LootableContainer container = containers[j];
+							if (container == null || !container.enabled || container.transform == null)
+							{
+								continue;
+							}
+
+							bool sameRoot = container.transform.root == root;
+							bool closeEnough = Vector3.Distance(container.transform.position, corpsePos) <= AssociationRadius;
+
+							if (sameRoot || closeEnough)
+							{
+								try
+								{
+									DeadBodyContainerCache.Register(player, container);
+									LootRuntimeWatcher.Register(container.gameObject);
+
+									string nickname = player.Profile?.Info?.Nickname ?? "Unnamed";
+									LogDebug("[DeadBodyObserver] ✅ Associated container with corpse: " + nickname);
+								}
+								catch (Exception ex)
+								{
+									LogError("[DeadBodyObserver] Register association failed: " + ex);
+								}
+								break;
+							}
 						}
 					}
 				}
-
-				TempListPool.Return(deadPlayers);
+				catch (Exception ex)
+				{
+					LogError("[DeadBodyObserver] Dead player scan failed: " + ex);
+				}
+				finally
+				{
+					TempListPool.Return(deadPlayers);
+				}
 			}
 			catch (Exception ex)
 			{

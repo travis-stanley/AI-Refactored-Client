@@ -21,6 +21,7 @@ namespace AIRefactored.AI.Combat
     /// <summary>
     /// Handles bot suppression, flash, injury, and squad danger panic behavior.
     /// Manages composure, retreat direction, danger zones, and voice triggers.
+    /// Bulletproof: All failures are isolated; only this handler disables itself and triggers vanilla fallback if required.
     /// </summary>
     public sealed class BotPanicHandler
     {
@@ -43,6 +44,7 @@ namespace AIRefactored.AI.Combat
         private float _panicStartTime = -1f;
         private float _lastPanicExitTime = -99f;
         private bool _isPanicking;
+        private bool _isFallbackMode;
 
         #endregion
 
@@ -62,58 +64,87 @@ namespace AIRefactored.AI.Combat
         public void Initialize(BotComponentCache componentCache)
         {
             if (componentCache == null || componentCache.Bot == null)
-                throw new InvalidOperationException("[BotPanicHandler] Cannot initialize with null BotComponentCache or Bot.");
+            {
+                BotFallbackUtility.Trigger(this, null, "[BotPanicHandler] Cannot initialize with null BotComponentCache or Bot.");
+                _isFallbackMode = true;
+                return;
+            }
 
             _cache = componentCache;
             _bot = componentCache.Bot;
+            _isFallbackMode = false;
 
-            if (_bot.GetPlayer is Player player && player.HealthController != null)
+            try
             {
-                player.HealthController.ApplyDamageEvent += OnDamaged;
+                if (_bot.GetPlayer is Player player && player.HealthController != null)
+                {
+                    player.HealthController.ApplyDamageEvent += OnDamaged;
+                }
+            }
+            catch (Exception ex)
+            {
+                BotFallbackUtility.Trigger(this, _bot, "Exception subscribing to ApplyDamageEvent.", ex);
+                _isFallbackMode = true;
             }
         }
 
         public void Tick(float time)
         {
-            if (!IsValid())
+            if (_isFallbackMode || !IsValid())
                 return;
 
-            if (_isPanicking)
+            try
             {
-                if (time - _panicStartTime > PanicDuration)
-                    EndPanic(time);
-                return;
+                if (_isPanicking)
+                {
+                    if (time - _panicStartTime > PanicDuration)
+                        EndPanic(time);
+                    return;
+                }
+
+                RecoverComposure(Time.deltaTime);
+
+                if (time <= _lastPanicExitTime + PanicCooldown)
+                    return;
+
+                if (ShouldPanicFromThreat())
+                {
+                    Vector3 retreat = -_bot.LookDirection.normalized;
+                    TryStartPanic(time, retreat);
+                    return;
+                }
+
+                if (CheckNearbySquadDanger(out Vector3 squadDir))
+                {
+                    TryStartPanic(time, squadDir);
+                }
             }
-
-            RecoverComposure(Time.deltaTime);
-
-            if (time <= _lastPanicExitTime + PanicCooldown)
-                return;
-
-            if (ShouldPanicFromThreat())
+            catch (Exception ex)
             {
-                Vector3 retreat = -_bot.LookDirection.normalized;
-                TryStartPanic(time, retreat);
-                return;
-            }
-
-            if (CheckNearbySquadDanger(out Vector3 squadDir))
-            {
-                TryStartPanic(time, squadDir);
+                BotFallbackUtility.Trigger(this, _bot, "Exception in Tick.", ex);
+                _isFallbackMode = true;
             }
         }
 
         public void TriggerPanic()
         {
-            if (!IsValid() || _isPanicking || Time.time < _lastPanicExitTime + PanicCooldown)
+            if (_isFallbackMode || !IsValid() || _isPanicking || Time.time < _lastPanicExitTime + PanicCooldown)
                 return;
 
-            var profile = _cache.AIRefactoredBotOwner?.PersonalityProfile;
-            if (profile == null || profile.IsFrenzied || profile.IsStubborn)
-                return;
+            try
+            {
+                var profile = _cache.AIRefactoredBotOwner?.PersonalityProfile;
+                if (profile == null || profile.IsFrenzied || profile.IsStubborn)
+                    return;
 
-            Vector3 retreatDir = -_bot.LookDirection.normalized;
-            TryStartPanic(Time.time, retreatDir);
+                Vector3 retreatDir = -_bot.LookDirection.normalized;
+                TryStartPanic(Time.time, retreatDir);
+            }
+            catch (Exception ex)
+            {
+                BotFallbackUtility.Trigger(this, _bot, "Exception in TriggerPanic.", ex);
+                _isFallbackMode = true;
+            }
         }
 
         #endregion
@@ -122,101 +153,144 @@ namespace AIRefactored.AI.Combat
 
         private void OnDamaged(EBodyPart part, float damage, DamageInfoStruct info)
         {
-            if (!IsValid() || _isPanicking || Time.time < _lastPanicExitTime + PanicCooldown)
+            if (_isFallbackMode || !IsValid() || _isPanicking || Time.time < _lastPanicExitTime + PanicCooldown)
                 return;
 
-            var profile = _cache.AIRefactoredBotOwner?.PersonalityProfile;
-            if (profile == null || profile.IsFrenzied || profile.IsStubborn || profile.AggressionLevel > 0.8f)
-                return;
+            try
+            {
+                var profile = _cache.AIRefactoredBotOwner?.PersonalityProfile;
+                if (profile == null || profile.IsFrenzied || profile.IsStubborn || profile.AggressionLevel > 0.8f)
+                    return;
 
-            Vector3 retreatDir = (_bot.Position - info.HitPoint).normalized;
-            TryStartPanic(Time.time, retreatDir);
+                Vector3 retreatDir = (_bot.Position - info.HitPoint).normalized;
+                TryStartPanic(Time.time, retreatDir);
 
-            if (_bot.Memory?.GoalEnemy?.Person is Player enemy && !string.IsNullOrEmpty(enemy.ProfileId))
-                _cache.LastShotTracker?.RegisterHit(enemy.ProfileId);
+                if (_bot.Memory?.GoalEnemy?.Person is Player enemy && !string.IsNullOrEmpty(enemy.ProfileId))
+                    _cache.LastShotTracker?.RegisterHit(enemy.ProfileId);
 
-            _cache.InjurySystem?.OnHit(part, damage);
-            _cache.GroupComms?.SayHit();
+                _cache.InjurySystem?.OnHit(part, damage);
+                _cache.GroupComms?.SayHit();
+            }
+            catch (Exception ex)
+            {
+                BotFallbackUtility.Trigger(this, _bot, "Exception in OnDamaged.", ex);
+                _isFallbackMode = true;
+            }
         }
 
         private bool ShouldPanicFromThreat()
         {
-            var profile = _cache.AIRefactoredBotOwner?.PersonalityProfile;
-            if (profile == null || profile.IsFrenzied || profile.IsStubborn)
+            try
+            {
+                var profile = _cache.AIRefactoredBotOwner?.PersonalityProfile;
+                if (profile == null || profile.IsFrenzied || profile.IsStubborn)
+                    return false;
+
+                if (_cache.FlashGrenade != null && _cache.FlashGrenade.IsFlashed())
+                    return true;
+
+                if (_bot.HealthController == null)
+                    return false;
+
+                ValueStruct health = _bot.HealthController.GetBodyPartHealth(EBodyPart.Common);
+                return health.Current < LowHealthThreshold;
+            }
+            catch (Exception ex)
+            {
+                BotFallbackUtility.Trigger(this, _bot, "Exception in ShouldPanicFromThreat.", ex);
+                _isFallbackMode = true;
                 return false;
-
-            if (_cache.FlashGrenade != null && _cache.FlashGrenade.IsFlashed())
-                return true;
-
-            if (_bot.HealthController == null)
-                return false;
-
-            ValueStruct health = _bot.HealthController.GetBodyPartHealth(EBodyPart.Common);
-            return health.Current < LowHealthThreshold;
+            }
         }
 
         private void RecoverComposure(float deltaTime)
         {
-            _composureLevel = Mathf.Clamp01(_composureLevel + deltaTime * RecoverySpeed);
+            try
+            {
+                _composureLevel = Mathf.Clamp01(_composureLevel + deltaTime * RecoverySpeed);
+            }
+            catch (Exception ex)
+            {
+                BotFallbackUtility.Trigger(this, _bot, "Exception in RecoverComposure.", ex);
+                _isFallbackMode = true;
+            }
         }
 
         private void TryStartPanic(float now, Vector3 retreatDir)
         {
-            if (!IsValid())
+            if (_isFallbackMode || !IsValid())
                 return;
 
-            _isPanicking = true;
-            _panicStartTime = now;
-            _composureLevel = 0f;
-
-            _cache.Escalation?.NotifyPanicTriggered();
-
-            float cohesion = _cache.AIRefactoredBotOwner?.PersonalityProfile?.Cohesion ?? 1f;
-            Vector3 fallback = _bot.Position + retreatDir.normalized * 8f;
-
-            if (_cache.Pathing != null)
+            try
             {
-                var path = BotCoverRetreatPlanner.GetCoverRetreatPath(_bot, retreatDir, _cache.Pathing);
-                if (path != null && path.Count > 0)
+                _isPanicking = true;
+                _panicStartTime = now;
+                _composureLevel = 0f;
+
+                _cache.Escalation?.NotifyPanicTriggered();
+
+                float cohesion = _cache.AIRefactoredBotOwner?.PersonalityProfile?.Cohesion ?? 1f;
+                Vector3 fallback = _bot.Position + retreatDir.normalized * 8f;
+
+                if (_cache.Pathing != null)
                 {
-                    fallback = (Vector3.Distance(path[0], _bot.Position) < 1f && path.Count > 1) ? path[1] : path[0];
+                    var path = BotCoverRetreatPlanner.GetCoverRetreatPath(_bot, retreatDir, _cache.Pathing);
+                    if (path != null && path.Count > 0)
+                    {
+                        fallback = (Vector3.Distance(path[0], _bot.Position) < 1f && path.Count > 1) ? path[1] : path[0];
+                    }
+                }
+
+                if (_bot.Mover != null)
+                {
+                    BotMovementHelper.SmoothMoveTo(_bot, fallback, false, cohesion);
+                    BotCoverHelper.TrySetStanceFromNearbyCover(_cache, fallback);
+                }
+                else
+                {
+                    BotFallbackUtility.Trigger(this, _bot, "BotMover missing. Fallback to EFT AI.");
+                    _isFallbackMode = true;
+                    BotFallbackUtility.FallbackToEFTLogic(_bot);
+                    return;
+                }
+
+                if (GameWorldHandler.TryGetValidMapName() is string mapId)
+                {
+                    BotMemoryStore.AddDangerZone(mapId, _bot.Position, DangerTriggerType.Panic, 0.6f);
+                }
+
+                _bot.Sprint(true);
+
+                if (!FikaHeadlessDetector.IsHeadless && _bot.BotTalk != null)
+                {
+                    try { _bot.BotTalk.TrySay(EPhraseTrigger.OnBeingHurt); }
+                    catch { /* no-op */ }
                 }
             }
-
-            if (_bot.Mover != null)
+            catch (Exception ex)
             {
-                BotMovementHelper.SmoothMoveTo(_bot, fallback, false, cohesion);
-                BotCoverHelper.TrySetStanceFromNearbyCover(_cache, fallback);
-            }
-            else
-            {
-                Plugin.LoggerInstance.LogWarning("[BotPanicHandler] BotMover missing. Fallback to EFT AI.");
-                BotFallbackUtility.FallbackToEFTLogic(_bot);
-                return;
-            }
-
-            if (GameWorldHandler.TryGetValidMapName() is string mapId)
-            {
-                BotMemoryStore.AddDangerZone(mapId, _bot.Position, DangerTriggerType.Panic, 0.6f);
-            }
-
-            _bot.Sprint(true);
-
-            if (!FikaHeadlessDetector.IsHeadless && _bot.BotTalk != null)
-            {
-                _bot.BotTalk.TrySay(EPhraseTrigger.OnBeingHurt);
+                BotFallbackUtility.Trigger(this, _bot, "Exception in TryStartPanic.", ex);
+                _isFallbackMode = true;
             }
         }
 
         private void EndPanic(float now)
         {
-            _isPanicking = false;
-            _lastPanicExitTime = now;
-
-            if (_bot.Memory != null)
+            try
             {
-                _bot.Memory.SetLastTimeSeeEnemy();
-                _bot.Memory.CheckIsPeace();
+                _isPanicking = false;
+                _lastPanicExitTime = now;
+
+                if (_bot.Memory != null)
+                {
+                    _bot.Memory.SetLastTimeSeeEnemy();
+                    _bot.Memory.CheckIsPeace();
+                }
+            }
+            catch (Exception ex)
+            {
+                BotFallbackUtility.Trigger(this, _bot, "Exception in EndPanic.", ex);
+                _isFallbackMode = true;
             }
         }
 
@@ -224,23 +298,31 @@ namespace AIRefactored.AI.Combat
         {
             retreatDir = Vector3.zero;
 
-            if (_bot.Profile?.Info?.GroupId == null)
-                return false;
-
-            string mapId = GameWorldHandler.TryGetValidMapName();
-            if (string.IsNullOrEmpty(mapId))
-                return false;
-
-            Vector3 myPos = _bot.Position;
-            var zones = BotMemoryStore.GetZonesForMap(mapId);
-
-            for (int i = 0; i < zones.Count; i++)
+            try
             {
-                if ((zones[i].Position - myPos).sqrMagnitude <= SquadRadiusSqr)
+                if (_bot.Profile?.Info?.GroupId == null)
+                    return false;
+
+                string mapId = GameWorldHandler.TryGetValidMapName();
+                if (string.IsNullOrEmpty(mapId))
+                    return false;
+
+                Vector3 myPos = _bot.Position;
+                var zones = BotMemoryStore.GetZonesForMap(mapId);
+
+                for (int i = 0; i < zones.Count; i++)
                 {
-                    retreatDir = (myPos - zones[i].Position).normalized;
-                    return true;
+                    if ((zones[i].Position - myPos).sqrMagnitude <= SquadRadiusSqr)
+                    {
+                        retreatDir = (myPos - zones[i].Position).normalized;
+                        return true;
+                    }
                 }
+            }
+            catch (Exception ex)
+            {
+                BotFallbackUtility.Trigger(this, _bot, "Exception in CheckNearbySquadDanger.", ex);
+                _isFallbackMode = true;
             }
 
             return false;
@@ -248,11 +330,18 @@ namespace AIRefactored.AI.Combat
 
         private bool IsValid()
         {
-            return _bot != null &&
-                   _cache != null &&
-                   !_bot.IsDead &&
-                   _bot.GetPlayer is Player player &&
-                   player.IsAI;
+            try
+            {
+                return _bot != null &&
+                       _cache != null &&
+                       !_bot.IsDead &&
+                       _bot.GetPlayer is Player player &&
+                       player.IsAI;
+            }
+            catch
+            {
+                return false;
+            }
         }
 
         #endregion

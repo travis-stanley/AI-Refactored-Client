@@ -126,7 +126,15 @@ namespace AIRefactored.AI.Core
 
         private static BotComponentCache GetFallbackOrNew(string profileId)
         {
-            return BotRegistry.TryGetCache(profileId, out var fallback) ? fallback : new BotComponentCache();
+            try
+            {
+                return BotRegistry.TryGetCache(profileId, out var fallback) ? fallback : new BotComponentCache();
+            }
+            catch
+            {
+                // Always return a fresh cache if fallback registry fails.
+                return new BotComponentCache();
+            }
         }
     }
 }

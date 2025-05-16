@@ -26,6 +26,7 @@ namespace AIRefactored.AI.Combat
     /// <summary>
     /// Controls bot firing, aiming, fire mode selection, and fallback behavior.
     /// Dynamically adjusts based on distance, suppression, weapon state, and bot personality.
+    /// Bulletproof: all failures are isolated and fallback to vanilla AI when required.
     /// </summary>
     public sealed class BotFireLogic
     {
@@ -56,6 +57,7 @@ namespace AIRefactored.AI.Combat
         private Vector3 _idleLookDirection = Vector3.forward;
         private float _lastLookAroundTime;
         private float _nextDecisionTime;
+        private bool _isFallbackMode;
 
         #endregion
 
@@ -63,14 +65,18 @@ namespace AIRefactored.AI.Combat
 
         public BotFireLogic(BotOwner bot, BotComponentCache cache)
         {
-            if (bot == null || cache == null)
-            {
-                Plugin.LoggerInstance.LogError("[BotFireLogic] Null bot or cache during construction.");
-                throw new ArgumentNullException("BotFireLogic requires a valid BotOwner and BotComponentCache.");
-            }
-
             _bot = bot;
             _cache = cache;
+
+            if (_bot == null || _cache == null)
+            {
+                BotFallbackUtility.Trigger(this, _bot, "Null bot or cache during construction.");
+                _isFallbackMode = true;
+            }
+            else
+            {
+                _isFallbackMode = false;
+            }
         }
 
         #endregion
@@ -79,72 +85,81 @@ namespace AIRefactored.AI.Combat
 
         public void Tick(float time)
         {
-            if (_bot == null || _cache == null || _bot.IsDead || !_bot.IsAI || _bot.Memory == null)
+            if (_isFallbackMode || _bot == null || _cache == null || _bot.IsDead || !_bot.IsAI || _bot.Memory == null)
                 return;
 
-            BotWeaponManager weaponManager = _bot.WeaponManager;
-            ShootData shootData = _bot.ShootData;
-            BotWeaponInfo weaponInfo = weaponManager?._currentWeaponInfo;
-            Weapon weapon = weaponInfo?.weapon;
-            GClass592 settings = _bot.Settings?.FileSettings?.Core;
-            BotPersonalityProfile profile = _cache.AIRefactoredBotOwner?.PersonalityProfile;
-
-            if (weaponManager == null || shootData == null || weaponInfo == null || weapon == null || settings == null || profile == null)
-                return;
-
-            if (!TryResolveEnemy(out Player target))
-                return;
-
-            Vector3 aimPosition = GetValidatedAimPosition(target, time);
-            UpdateBotAiming(aimPosition);
-
-            if (!EFTPlayerUtil.IsValid(target))
-                return;
-
-            float distance = Vector3.Distance(_bot.Position, aimPosition);
-            float weaponRange = EstimateWeaponRange(weapon);
-            float maxRange = Mathf.Min(profile.EngagementRange, weaponRange, 200f);
-
-            // Panic fallback
-            if (_bot.Memory.IsUnderFire && GetHealthRatio() <= profile.RetreatThreshold)
+            try
             {
-                TriggerFallback();
-                return;
-            }
+                BotWeaponManager weaponManager = _bot.WeaponManager;
+                ShootData shootData = _bot.ShootData;
+                BotWeaponInfo weaponInfo = weaponManager?._currentWeaponInfo;
+                Weapon weapon = weaponInfo?.weapon;
+                GClass592 settings = _bot.Settings?.FileSettings?.Core;
+                BotPersonalityProfile profile = _cache.AIRefactoredBotOwner?.PersonalityProfile;
 
-            // Out of range, move closer if chaos/personality allows
-            if (distance > maxRange)
-            {
-                if (profile.ChaosFactor > 0f && Random.value < profile.ChaosFactor)
+                if (weaponManager == null || shootData == null || weaponInfo == null || weapon == null || settings == null || profile == null)
+                    return;
+
+                if (!TryResolveEnemy(out Player target))
+                    return;
+
+                Vector3 aimPosition = GetValidatedAimPosition(target, time);
+                UpdateBotAiming(aimPosition);
+
+                if (!EFTPlayerUtil.IsValid(target))
+                    return;
+
+                float distance = Vector3.Distance(_bot.Position, aimPosition);
+                float weaponRange = EstimateWeaponRange(weapon);
+                float maxRange = Mathf.Min(profile.EngagementRange, weaponRange, 200f);
+
+                // Panic fallback
+                if (_bot.Memory.IsUnderFire && GetHealthRatio() <= profile.RetreatThreshold)
                 {
-                    BotMovementHelper.SmoothMoveTo(_bot, aimPosition, false, profile.Cohesion);
+                    TriggerFallback();
+                    return;
                 }
-                return;
-            }
 
-            // Fire cadence
-            if (time < _nextDecisionTime)
-                return;
-
-            _nextDecisionTime = time + GetBurstCadence(profile);
-
-            if (weaponInfo.BulletCount <= 0 && !weaponInfo.CheckHaveAmmoForReload())
-            {
-                weaponManager.Selector?.TryChangeWeaponCauseNoAmmo();
-                weaponManager.Melee?.Activate();
-                return;
-            }
-
-            ApplyFireMode(weaponInfo, weapon, distance, profile, settings);
-
-            if (weaponManager.IsWeaponReady)
-            {
-                shootData.Shoot();
-
-                if (_cache.LastShotTracker != null && !string.IsNullOrEmpty(target.ProfileId))
+                // Out of range, move closer if chaos/personality allows
+                if (distance > maxRange)
                 {
-                    _cache.LastShotTracker.RegisterShot(target.ProfileId);
+                    if (profile.ChaosFactor > 0f && Random.value < profile.ChaosFactor)
+                    {
+                        BotMovementHelper.SmoothMoveTo(_bot, aimPosition, false, profile.Cohesion);
+                    }
+                    return;
                 }
+
+                // Fire cadence
+                if (time < _nextDecisionTime)
+                    return;
+
+                _nextDecisionTime = time + GetBurstCadence(profile);
+
+                if (weaponInfo.BulletCount <= 0 && !weaponInfo.CheckHaveAmmoForReload())
+                {
+                    weaponManager.Selector?.TryChangeWeaponCauseNoAmmo();
+                    weaponManager.Melee?.Activate();
+                    return;
+                }
+
+                ApplyFireMode(weaponInfo, weapon, distance, profile, settings);
+
+                if (weaponManager.IsWeaponReady)
+                {
+                    shootData.Shoot();
+
+                    if (_cache.LastShotTracker != null && !string.IsNullOrEmpty(target.ProfileId))
+                    {
+                        _cache.LastShotTracker.RegisterShot(target.ProfileId);
+                    }
+                }
+            }
+            catch (Exception ex)
+            {
+                BotFallbackUtility.Trigger(this, _bot, "Exception in Tick.", ex);
+                _isFallbackMode = true;
+                BotFallbackUtility.FallbackToEFTLogic(_bot);
             }
         }
 
@@ -154,198 +169,309 @@ namespace AIRefactored.AI.Combat
 
         private void UpdateBotAiming(Vector3 aimPosition)
         {
-            Vector3 dir = aimPosition - _bot.Position;
-            if (dir.sqrMagnitude < 0.01f)
-                return;
+            try
+            {
+                Vector3 dir = aimPosition - _bot.Position;
+                if (dir.sqrMagnitude < 0.01f)
+                    return;
 
-            Quaternion rot = Quaternion.LookRotation(dir);
-            float pitch = rot.eulerAngles.x > 180f ? rot.eulerAngles.x - 360f : rot.eulerAngles.x;
-            pitch = Mathf.Clamp(pitch, -MaxAimPitch, MaxAimPitch);
+                Quaternion rot = Quaternion.LookRotation(dir);
+                float pitch = rot.eulerAngles.x > 180f ? rot.eulerAngles.x - 360f : rot.eulerAngles.x;
+                pitch = Mathf.Clamp(pitch, -MaxAimPitch, MaxAimPitch);
 
-            Vector3 forward = Quaternion.Euler(pitch, rot.eulerAngles.y, 0f) * Vector3.forward;
-            _bot.AimingManager?.CurrentAiming?.SetTarget(forward);
+                Vector3 forward = Quaternion.Euler(pitch, rot.eulerAngles.y, 0f) * Vector3.forward;
+                _bot.AimingManager?.CurrentAiming?.SetTarget(forward);
+            }
+            catch (Exception ex)
+            {
+                BotFallbackUtility.Trigger(this, _bot, "Exception in UpdateBotAiming.", ex);
+                _isFallbackMode = true;
+            }
         }
 
         private Vector3 GetValidatedAimPosition(Player target, float time)
         {
-            if (EFTPlayerUtil.IsValid(target))
+            try
             {
-                return EFTPlayerUtil.GetPosition(target);
-            }
+                if (EFTPlayerUtil.IsValid(target))
+                {
+                    return EFTPlayerUtil.GetPosition(target);
+                }
 
-            Vector3 memory = _bot.Memory.LastEnemy?.CurrPosition ?? Vector3.zero;
-            if (memory != Vector3.zero)
+                Vector3 memory = _bot.Memory.LastEnemy?.CurrPosition ?? Vector3.zero;
+                if (memory != Vector3.zero)
+                {
+                    return memory;
+                }
+
+                // Look around randomly when no enemy seen
+                if (time - _lastLookAroundTime > 1.5f)
+                {
+                    float yaw = Random.Range(-75f, 75f);
+                    float pitch = Random.Range(-10f, 10f);
+                    Quaternion q = Quaternion.Euler(pitch, yaw, 0f);
+                    Vector3 baseDir = _bot.Transform != null ? _bot.Transform.forward : Vector3.forward;
+                    _idleLookDirection = q * baseDir;
+                    _lastLookAroundTime = time;
+                }
+
+                return _bot.Position + _idleLookDirection.normalized * 10f;
+            }
+            catch (Exception ex)
             {
-                return memory;
+                BotFallbackUtility.Trigger(this, _bot, "Exception in GetValidatedAimPosition.", ex);
+                _isFallbackMode = true;
+                return _bot.Position;
             }
-
-            // Look around randomly when no enemy seen
-            if (time - _lastLookAroundTime > 1.5f)
-            {
-                float yaw = Random.Range(-75f, 75f);
-                float pitch = Random.Range(-10f, 10f);
-                Quaternion q = Quaternion.Euler(pitch, yaw, 0f);
-                Vector3 baseDir = _bot.Transform != null ? _bot.Transform.forward : Vector3.forward;
-                _idleLookDirection = q * baseDir;
-                _lastLookAroundTime = time;
-            }
-
-            return _bot.Position + _idleLookDirection.normalized * 10f;
         }
 
         private void ApplyFireMode(BotWeaponInfo info, Weapon weapon, float distance, BotPersonalityProfile profile, GClass592 settings)
         {
-            if (distance <= 40f)
+            try
             {
-                SetFireMode(info, Weapon.EFireMode.fullauto);
-                RecoverAccuracy(settings);
+                if (distance <= 40f)
+                {
+                    SetFireMode(info, Weapon.EFireMode.fullauto);
+                    RecoverAccuracy(settings);
+                }
+                else if (distance <= 100f && SupportsFireMode(weapon, Weapon.EFireMode.burst))
+                {
+                    SetFireMode(info, Weapon.EFireMode.burst);
+                    ApplyScatter(settings, true, profile);
+                }
+                else
+                {
+                    SetFireMode(info, Weapon.EFireMode.single);
+                    ApplyScatter(settings, true, profile);
+                }
             }
-            else if (distance <= 100f && SupportsFireMode(weapon, Weapon.EFireMode.burst))
+            catch (Exception ex)
             {
-                SetFireMode(info, Weapon.EFireMode.burst);
-                ApplyScatter(settings, true, profile);
-            }
-            else
-            {
-                SetFireMode(info, Weapon.EFireMode.single);
-                ApplyScatter(settings, true, profile);
+                BotFallbackUtility.Trigger(this, _bot, "Exception in ApplyFireMode.", ex);
+                _isFallbackMode = true;
             }
         }
 
         private void SetFireMode(BotWeaponInfo info, Weapon.EFireMode mode)
         {
-            if (info.weapon.SelectedFireMode != mode)
+            try
             {
-                info.ChangeFireMode(mode);
+                if (info.weapon.SelectedFireMode != mode)
+                {
+                    info.ChangeFireMode(mode);
+                }
+            }
+            catch (Exception ex)
+            {
+                BotFallbackUtility.Trigger(this, _bot, "Exception in SetFireMode.", ex);
+                _isFallbackMode = true;
             }
         }
 
         private bool SupportsFireMode(Weapon weapon, Weapon.EFireMode mode)
         {
-            Weapon.EFireMode[] modes = weapon.WeapFireType;
-            for (int i = 0; i < modes.Length; i++)
+            try
             {
-                if (modes[i] == mode)
+                Weapon.EFireMode[] modes = weapon.WeapFireType;
+                for (int i = 0; i < modes.Length; i++)
                 {
-                    return true;
+                    if (modes[i] == mode)
+                    {
+                        return true;
+                    }
                 }
+            }
+            catch (Exception ex)
+            {
+                BotFallbackUtility.Trigger(this, _bot, "Exception in SupportsFireMode.", ex);
+                _isFallbackMode = true;
             }
             return false;
         }
 
         private void RecoverAccuracy(GClass592 settings)
         {
-            settings.ScatteringPerMeter = Mathf.Clamp(settings.ScatteringPerMeter * 0.95f, 0.4f, 3.0f);
+            try
+            {
+                settings.ScatteringPerMeter = Mathf.Clamp(settings.ScatteringPerMeter * 0.95f, 0.4f, 3.0f);
+            }
+            catch (Exception ex)
+            {
+                BotFallbackUtility.Trigger(this, _bot, "Exception in RecoverAccuracy.", ex);
+                _isFallbackMode = true;
+            }
         }
 
         private void ApplyScatter(GClass592 settings, bool underFire, BotPersonalityProfile profile)
         {
-            float composure = _cache.PanicHandler != null ? _cache.PanicHandler.GetComposureLevel() : 1f;
-            float scatterPenalty = underFire ? (1f - profile.AccuracyUnderFire) * (1f - composure) : 0f;
-            float scatterFactor = 1.1f + scatterPenalty;
+            try
+            {
+                float composure = _cache.PanicHandler != null ? _cache.PanicHandler.GetComposureLevel() : 1f;
+                float scatterPenalty = underFire ? (1f - profile.AccuracyUnderFire) * (1f - composure) : 0f;
+                float scatterFactor = 1.1f + scatterPenalty;
 
-            settings.ScatteringPerMeter = Mathf.Clamp(settings.ScatteringPerMeter * scatterFactor, 0.6f, 3.5f);
+                settings.ScatteringPerMeter = Mathf.Clamp(settings.ScatteringPerMeter * scatterFactor, 0.6f, 3.5f);
+            }
+            catch (Exception ex)
+            {
+                BotFallbackUtility.Trigger(this, _bot, "Exception in ApplyScatter.", ex);
+                _isFallbackMode = true;
+            }
         }
 
         private float EstimateWeaponRange(Weapon weapon)
         {
-            ItemTemplate template = weapon.Template;
-            if (template == null || string.IsNullOrEmpty(template.Name))
+            try
             {
+                ItemTemplate template = weapon.Template;
+                if (template == null || string.IsNullOrEmpty(template.Name))
+                {
+                    return 90f;
+                }
+
+                foreach (var kv in WeaponTypeRanges)
+                {
+                    if (template.Name.IndexOf(kv.Key, StringComparison.OrdinalIgnoreCase) >= 0)
+                    {
+                        return kv.Value;
+                    }
+                }
+
                 return 90f;
             }
-
-            foreach (var kv in WeaponTypeRanges)
+            catch (Exception ex)
             {
-                if (template.Name.IndexOf(kv.Key, StringComparison.OrdinalIgnoreCase) >= 0)
-                {
-                    return kv.Value;
-                }
+                BotFallbackUtility.Trigger(this, _bot, "Exception in EstimateWeaponRange.", ex);
+                _isFallbackMode = true;
+                return 90f;
             }
-
-            return 90f;
         }
 
         private float GetBurstCadence(BotPersonalityProfile profile)
         {
-            float baseDelay = Mathf.Lerp(0.75f, 0.25f, profile.AggressionLevel);
-            float reactionDelay = Mathf.Lerp(0.15f, 0.35f, 1f - profile.ReactionTime);
-            float chaosOffset = Random.Range(-0.08f, 0.2f) * profile.ChaosFactor;
+            try
+            {
+                float baseDelay = Mathf.Lerp(0.75f, 0.25f, profile.AggressionLevel);
+                float reactionDelay = Mathf.Lerp(0.15f, 0.35f, 1f - profile.ReactionTime);
+                float chaosOffset = Random.Range(-0.08f, 0.2f) * profile.ChaosFactor;
 
-            return Mathf.Clamp(baseDelay + reactionDelay + chaosOffset, 0.15f, 1.1f);
+                return Mathf.Clamp(baseDelay + reactionDelay + chaosOffset, 0.15f, 1.1f);
+            }
+            catch (Exception ex)
+            {
+                BotFallbackUtility.Trigger(this, _bot, "Exception in GetBurstCadence.", ex);
+                _isFallbackMode = true;
+                return 0.45f;
+            }
         }
 
         private float GetHealthRatio()
         {
-            HealthControllerClass hc = _bot.HealthController as HealthControllerClass;
-            if (hc == null || hc.Dictionary_0 == null)
-                return 1f;
-
-            float current = 0f;
-            float max = 0f;
-
-            for (int i = 0; i < AllBodyParts.Length; i++)
+            try
             {
-                EBodyPart part = AllBodyParts[i];
-                if (hc.Dictionary_0.TryGetValue(part, out var state) && state.Health != null)
-                {
-                    current += state.Health.Current;
-                    max += state.Health.Maximum;
-                }
-            }
+                HealthControllerClass hc = _bot.HealthController as HealthControllerClass;
+                if (hc == null || hc.Dictionary_0 == null)
+                    return 1f;
 
-            return max > 0f ? current / max : 1f;
+                float current = 0f;
+                float max = 0f;
+
+                for (int i = 0; i < AllBodyParts.Length; i++)
+                {
+                    EBodyPart part = AllBodyParts[i];
+                    if (hc.Dictionary_0.TryGetValue(part, out var state) && state.Health != null)
+                    {
+                        current += state.Health.Current;
+                        max += state.Health.Maximum;
+                    }
+                }
+
+                return max > 0f ? current / max : 1f;
+            }
+            catch (Exception ex)
+            {
+                BotFallbackUtility.Trigger(this, _bot, "Exception in GetHealthRatio.", ex);
+                _isFallbackMode = true;
+                return 1f;
+            }
         }
 
         private void TriggerFallback()
         {
-            if (_cache == null || _cache.Pathing == null || _bot == null)
-                return;
-
-            List<Vector3> retreatPath = BotCoverRetreatPlanner.GetCoverRetreatPath(_bot, _bot.LookDirection.normalized, _cache.Pathing);
-            if (retreatPath == null || retreatPath.Count < 2)
-                return;
-
-            Vector3 fallback = retreatPath[retreatPath.Count - 1];
-            if (!BotNavValidator.Validate(_bot, "BotFireLogic::TriggerFallback"))
+            try
             {
-                fallback = FallbackNavPointProvider.GetSafePoint(_bot.Position);
+                if (_cache == null || _cache.Pathing == null || _bot == null)
+                    return;
+
+                List<Vector3> retreatPath = BotCoverRetreatPlanner.GetCoverRetreatPath(_bot, _bot.LookDirection.normalized, _cache.Pathing);
+                if (retreatPath == null || retreatPath.Count < 2)
+                    return;
+
+                Vector3 fallback = retreatPath[retreatPath.Count - 1];
+                bool navValid = false;
+                try
+                {
+                    navValid = BotNavValidator.Validate(_bot, "BotFireLogic::TriggerFallback");
+                }
+                catch (Exception ex)
+                {
+                    BotFallbackUtility.Trigger(this, _bot, "Nav validation exception in TriggerFallback.", ex);
+                    navValid = false;
+                }
+
+                if (!navValid)
+                {
+                    fallback = FallbackNavPointProvider.GetSafePoint(_bot.Position);
+                }
+
+                if (_bot.Mover != null)
+                {
+                    BotMovementHelper.SmoothMoveTo(_bot, fallback, false);
+                    BotCoverHelper.TrySetStanceFromNearbyCover(_cache, fallback);
+                }
+                else
+                {
+                    BotFallbackUtility.Trigger(this, _bot, "BotMover missing. Fallback to EFT AI.");
+                    _isFallbackMode = true;
+                    BotFallbackUtility.FallbackToEFTLogic(_bot);
+                    return;
+                }
+
+                if (!FikaHeadlessDetector.IsHeadless && _bot.BotTalk != null)
+                {
+                    try { _bot.BotTalk.TrySay(EPhraseTrigger.OnLostVisual); }
+                    catch { /* no-op */ }
+                }
             }
-
-            if (_bot.Mover != null)
+            catch (Exception ex)
             {
-                BotMovementHelper.SmoothMoveTo(_bot, fallback, false);
-                BotCoverHelper.TrySetStanceFromNearbyCover(_cache, fallback);
-            }
-            else
-            {
-                Plugin.LoggerInstance.LogWarning("[BotFireLogic] BotMover missing. Fallback to EFT AI.");
-                BotFallbackUtility.FallbackToEFTLogic(_bot);
-                return;
-            }
-
-            if (!FikaHeadlessDetector.IsHeadless && _bot.BotTalk != null)
-            {
-                _bot.BotTalk.TrySay(EPhraseTrigger.OnLostVisual);
+                BotFallbackUtility.Trigger(this, _bot, "Exception in TriggerFallback.", ex);
+                _isFallbackMode = true;
             }
         }
 
         private bool TryResolveEnemy(out Player result)
         {
             result = null;
-
-            if (_cache.ThreatSelector?.CurrentTarget is Player direct && EFTPlayerUtil.IsValid(direct))
+            try
             {
-                result = direct;
-                return true;
-            }
+                if (_cache.ThreatSelector?.CurrentTarget is Player direct && EFTPlayerUtil.IsValid(direct))
+                {
+                    result = direct;
+                    return true;
+                }
 
-            if (_bot.Memory?.GoalEnemy?.Person is Player fallback && EFTPlayerUtil.IsValid(fallback))
+                if (_bot.Memory?.GoalEnemy?.Person is Player fallback && EFTPlayerUtil.IsValid(fallback))
+                {
+                    result = fallback;
+                    return true;
+                }
+            }
+            catch (Exception ex)
             {
-                result = fallback;
-                return true;
+                BotFallbackUtility.Trigger(this, _bot, "Exception in TryResolveEnemy.", ex);
+                _isFallbackMode = true;
             }
-
             return false;
         }
 

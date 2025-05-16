@@ -17,6 +17,7 @@ namespace AIRefactored.AI.Movement
     /// <summary>
     /// Modifies a bot’s movement vector by applying chaos wobble, squad staggering offsets,
     /// and teammate collision avoidance. Produces natural movement flow and reduces clustering.
+    /// All failures are locally isolated; cannot break or cascade into other systems.
     /// </summary>
     public sealed class BotMovementTrajectoryPlanner
     {
@@ -66,44 +67,57 @@ namespace AIRefactored.AI.Movement
         /// </summary>
         public Vector3 ModifyTrajectory(Vector3 targetDir, float deltaTime)
         {
-            float now = Time.unscaledTime;
-
-            if (now >= _nextChaosUpdate)
+            try
             {
-                UpdateChaosOffset(now);
-            }
+                float now = Time.unscaledTime;
 
-            Vector3 baseDir = targetDir.sqrMagnitude > MinMagnitude ? targetDir.normalized : Vector3.forward;
-            Vector3 adjusted = baseDir;
-
-            if (_chaosOffset.sqrMagnitude > MinMagnitude)
-            {
-                adjusted += _chaosOffset;
-            }
-
-            if (_cache.SquadPath != null)
-            {
-                Vector3 squadOffset = _cache.SquadPath.GetCurrentOffset();
-                if (squadOffset.sqrMagnitude > MinMagnitude)
+                if (now >= _nextChaosUpdate)
                 {
-                    adjusted += squadOffset.normalized * SquadOffsetScale;
+                    UpdateChaosOffset(now);
                 }
-            }
 
-            Vector3 avoidVector = ComputeAvoidance();
-            if (avoidVector.sqrMagnitude > MinMagnitude)
+                Vector3 baseDir = targetDir.sqrMagnitude > MinMagnitude ? targetDir.normalized : Vector3.forward;
+                Vector3 adjusted = baseDir;
+
+                if (_chaosOffset.sqrMagnitude > MinMagnitude)
+                {
+                    adjusted += _chaosOffset;
+                }
+
+                if (_cache.SquadPath != null)
+                {
+                    Vector3 squadOffset = _cache.SquadPath.GetCurrentOffset();
+                    if (squadOffset.sqrMagnitude > MinMagnitude)
+                    {
+                        adjusted += squadOffset.normalized * SquadOffsetScale;
+                    }
+                }
+
+                Vector3 avoidVector = ComputeAvoidance();
+                if (avoidVector.sqrMagnitude > MinMagnitude)
+                {
+                    adjusted += avoidVector.normalized * AvoidanceScale;
+                }
+
+                Vector3 velocity = Vector3.zero;
+                try
+                {
+                    velocity = _bot.GetPlayer?.Velocity ?? Vector3.zero;
+                }
+                catch { }
+
+                if (velocity.sqrMagnitude > MinMagnitude)
+                {
+                    adjusted += velocity.normalized * VelocityFactor;
+                }
+
+                adjusted.y = 0f;
+                return adjusted.sqrMagnitude > MinMagnitude ? adjusted.normalized : baseDir;
+            }
+            catch (Exception)
             {
-                adjusted += avoidVector.normalized * AvoidanceScale;
+                return Vector3.forward;
             }
-
-            Vector3 velocity = _bot.GetPlayer.Velocity;
-            if (velocity.sqrMagnitude > MinMagnitude)
-            {
-                adjusted += velocity.normalized * VelocityFactor;
-            }
-
-            adjusted.y = 0f;
-            return adjusted.sqrMagnitude > MinMagnitude ? adjusted.normalized : baseDir;
         }
 
         #endregion
@@ -115,34 +129,41 @@ namespace AIRefactored.AI.Movement
         /// </summary>
         private Vector3 ComputeAvoidance()
         {
-            BotsGroup group = _bot.BotsGroup;
-            if (group == null || group.MembersCount <= 1)
+            try
+            {
+                BotsGroup group = _bot.BotsGroup;
+                if (group == null || group.MembersCount <= 1)
+                {
+                    return Vector3.zero;
+                }
+
+                Vector3 self = _bot.Position;
+                Vector3 repulsion = Vector3.zero;
+                int count = 0;
+
+                for (int i = 0; i < group.MembersCount; i++)
+                {
+                    BotOwner other = group.Member(i);
+                    if (other == null || other == _bot || other.IsDead)
+                    {
+                        continue;
+                    }
+
+                    Vector3 offset = self - other.Position;
+                    float dist = offset.magnitude;
+                    if (dist < AvoidanceRadius && dist > 0.01f)
+                    {
+                        repulsion += offset.normalized / dist;
+                        count++;
+                    }
+                }
+
+                return count > 0 ? repulsion / count : Vector3.zero;
+            }
+            catch
             {
                 return Vector3.zero;
             }
-
-            Vector3 self = _bot.Position;
-            Vector3 repulsion = Vector3.zero;
-            int count = 0;
-
-            for (int i = 0; i < group.MembersCount; i++)
-            {
-                BotOwner other = group.Member(i);
-                if (other == null || other == _bot || other.IsDead)
-                {
-                    continue;
-                }
-
-                Vector3 offset = self - other.Position;
-                float dist = offset.magnitude;
-                if (dist < AvoidanceRadius && dist > 0.01f)
-                {
-                    repulsion += offset.normalized / dist;
-                    count++;
-                }
-            }
-
-            return count > 0 ? repulsion / count : Vector3.zero;
         }
 
         /// <summary>
@@ -151,22 +172,30 @@ namespace AIRefactored.AI.Movement
         /// </summary>
         private void UpdateChaosOffset(float now)
         {
-            AIRefactoredBotOwner owner = _cache.AIRefactoredBotOwner;
-            if (owner == null || owner.PersonalityProfile == null)
+            try
+            {
+                AIRefactoredBotOwner owner = _cache.AIRefactoredBotOwner;
+                if (owner == null || owner.PersonalityProfile == null)
+                {
+                    _chaosOffset = Vector3.zero;
+                    _nextChaosUpdate = now + ChaosInterval;
+                    return;
+                }
+
+                float caution = Mathf.Clamp01(owner.PersonalityProfile.Caution);
+                float chaosRange = ChaosRadius * (1f - caution);
+
+                float x = UnityEngine.Random.Range(-chaosRange * 0.5f, chaosRange * 0.5f);
+                float z = UnityEngine.Random.Range(0.05f, chaosRange); // forward-biased
+
+                _chaosOffset = new Vector3(x, 0f, z);
+                _nextChaosUpdate = now + ChaosInterval;
+            }
+            catch
             {
                 _chaosOffset = Vector3.zero;
                 _nextChaosUpdate = now + ChaosInterval;
-                return;
             }
-
-            float caution = Mathf.Clamp01(owner.PersonalityProfile.Caution);
-            float chaosRange = ChaosRadius * (1f - caution);
-
-            float x = UnityEngine.Random.Range(-chaosRange * 0.5f, chaosRange * 0.5f);
-            float z = UnityEngine.Random.Range(0.05f, chaosRange); // forward-biased
-
-            _chaosOffset = new Vector3(x, 0f, z);
-            _nextChaosUpdate = now + ChaosInterval;
         }
 
         #endregion

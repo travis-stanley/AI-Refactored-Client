@@ -18,6 +18,7 @@ namespace AIRefactored.AI.Navigation
     /// Validates bot navigation state at runtime. If nav data is invalid or missing,
     /// attempts fallback assignment or safely aborts further pathing logic.
     /// If AIRefactored nav is disabled, immediately yields to vanilla Tarkov logic.
+    /// All logic is bulletproof and locally isolated.
     /// </summary>
     public static class BotNavValidator
     {
@@ -35,61 +36,70 @@ namespace AIRefactored.AI.Navigation
         /// Validates whether the bot has valid nav system backing and positioning.
         /// If not, attempts fallback assignment or returns false.
         /// If AIRefactored nav is disabled, lets vanilla handle navigation.
+        /// Bulletproof: locally isolated, never cascades or breaks stack.
         /// </summary>
         public static bool Validate(BotOwner botOwner, string context)
         {
-            // If AIRefactored nav is disabled, do nothing—vanilla logic takes over
-            if (NavPointRegistry.AIRefactoredNavDisabled)
-                return false;
-
-            if (botOwner == null)
+            try
             {
-                TryLogOnce("[BotNavValidator] ❌ Null BotOwner in context: " + context);
-                return false;
-            }
+                // If AIRefactored nav is disabled, do nothing—vanilla logic takes over
+                if (NavPointRegistry.AIRefactoredNavDisabled)
+                    return false;
 
-            if (botOwner.Transform == null || botOwner.GetPlayer == null || botOwner.IsDead)
-            {
-                TryLogOnce("[BotNavValidator] ❌ Invalid bot state — dead or missing transform — context: " + context);
-                return false;
-            }
-
-            Vector3 position = botOwner.Position;
-            if (!IsValidPosition(position))
-            {
-                TryLogOnce("[BotNavValidator] ❌ Bot has invalid position — context: " + context);
-                return false;
-            }
-
-            // Only act if registry is actually ready and usable
-            if (!NavPointRegistry.IsReady || NavPointRegistry.IsEmpty)
-                return false;
-
-            Vector3 target = NavPointRegistry.GetClosestPosition(position);
-            if (!IsValidPosition(target) || target == Vector3.zero)
-                return false;
-
-            // Only issue path move if the bot is not already moving (prevents AI-vs-vanilla thrash)
-            if (botOwner.Mover != null && !botOwner.Mover.IsMoving)
-            {
-                try
+                if (botOwner == null)
                 {
-                    botOwner.Mover.GoToPoint(
-                        target,
-                        slowAtTheEnd: true,
-                        reachDist: 1.0f,
-                        getUpWithCheck: false,
-                        mustHaveWay: true,
-                        onlyShortTrie: false,
-                        force: true);
+                    TryLogOnce("[BotNavValidator] ❌ Null BotOwner in context: " + context);
+                    return false;
                 }
-                catch
-                {
-                    // If GoToPoint throws, fail gracefully (vanilla will handle)
-                }
-            }
 
-            return true;
+                if (botOwner.Transform == null || botOwner.GetPlayer == null || botOwner.IsDead)
+                {
+                    TryLogOnce("[BotNavValidator] ❌ Invalid bot state — dead or missing transform — context: " + context);
+                    return false;
+                }
+
+                Vector3 position = botOwner.Position;
+                if (!IsValidPosition(position))
+                {
+                    TryLogOnce("[BotNavValidator] ❌ Bot has invalid position — context: " + context);
+                    return false;
+                }
+
+                // Only act if registry is actually ready and usable
+                if (!NavPointRegistry.IsReady || NavPointRegistry.IsEmpty)
+                    return false;
+
+                Vector3 target = NavPointRegistry.GetClosestPosition(position);
+                if (!IsValidPosition(target) || target == Vector3.zero)
+                    return false;
+
+                // Only issue path move if the bot is not already moving (prevents AI-vs-vanilla thrash)
+                if (botOwner.Mover != null && !botOwner.Mover.IsMoving)
+                {
+                    try
+                    {
+                        botOwner.Mover.GoToPoint(
+                            target,
+                            slowAtTheEnd: true,
+                            reachDist: 1.0f,
+                            getUpWithCheck: false,
+                            mustHaveWay: true,
+                            onlyShortTrie: false,
+                            force: true);
+                    }
+                    catch
+                    {
+                        // If GoToPoint throws, fail gracefully (vanilla will handle)
+                    }
+                }
+
+                return true;
+            }
+            catch
+            {
+                // Bulletproof: locally isolated, never propagates failure.
+                return false;
+            }
         }
 
         #endregion
@@ -106,11 +116,18 @@ namespace AIRefactored.AI.Navigation
 
         private static void TryLogOnce(string msg)
         {
-            float now = Time.time;
-            if (now - _lastLogTime > LogCooldown)
+            try
             {
-                Logger.LogWarning(msg);
-                _lastLogTime = now;
+                float now = Time.time;
+                if (now - _lastLogTime > LogCooldown)
+                {
+                    Logger.LogWarning(msg);
+                    _lastLogTime = now;
+                }
+            }
+            catch
+            {
+                // Do nothing—never allow log to break anything.
             }
         }
 

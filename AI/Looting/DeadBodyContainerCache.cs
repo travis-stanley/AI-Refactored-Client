@@ -4,24 +4,28 @@
 //
 //   THIS FILE IS SYSTEMATICALLY MANAGED.
 //   Please follow strict StyleCop, ReSharper, and AI-Refactored code standards for all modifications.
+//   All errors are locally isolated; container cache never affects the rest of the mod or bot logic.
 // </auto-generated>
 
 namespace AIRefactored.AI.Looting
 {
+    using System;
     using System.Collections.Generic;
     using AIRefactored.Core;
+    using BepInEx.Logging;
     using EFT;
     using EFT.Interactive;
 
     /// <summary>
     /// Caches LootableContainer references for dead player bodies to avoid expensive runtime lookups.
-    /// Safe for repeated reads by AI loot systems.
+    /// Safe for repeated reads by AI loot systems. Bulletproof error isolation.
     /// </summary>
     public static class DeadBodyContainerCache
     {
         #region Fields
 
         private static readonly Dictionary<string, LootableContainer> Containers = new Dictionary<string, LootableContainer>(64);
+        private static ManualLogSource Logger => Plugin.LoggerInstance;
 
         #endregion
 
@@ -32,7 +36,14 @@ namespace AIRefactored.AI.Looting
         /// </summary>
         public static void Clear()
         {
-            Containers.Clear();
+            try
+            {
+                Containers.Clear();
+            }
+            catch (Exception ex)
+            {
+                Logger.LogError($"[DeadBodyContainerCache] Clear() failed: {ex}");
+            }
         }
 
         /// <summary>
@@ -40,7 +51,15 @@ namespace AIRefactored.AI.Looting
         /// </summary>
         public static bool Contains(string profileId)
         {
-            return TryGetValidKey(profileId, out string key) && Containers.ContainsKey(key);
+            try
+            {
+                return TryGetValidKey(profileId, out string key) && Containers.ContainsKey(key);
+            }
+            catch (Exception ex)
+            {
+                Logger.LogError($"[DeadBodyContainerCache] Contains({profileId}) failed: {ex}");
+                return false;
+            }
         }
 
         /// <summary>
@@ -48,13 +67,21 @@ namespace AIRefactored.AI.Looting
         /// </summary>
         public static LootableContainer Get(string profileId)
         {
-            if (!TryGetValidKey(profileId, out string key))
+            try
             {
+                if (!TryGetValidKey(profileId, out string key))
+                {
+                    return null;
+                }
+
+                Containers.TryGetValue(key, out var result);
+                return result;
+            }
+            catch (Exception ex)
+            {
+                Logger.LogError($"[DeadBodyContainerCache] Get({profileId}) failed: {ex}");
                 return null;
             }
-
-            Containers.TryGetValue(key, out var result);
-            return result;
         }
 
         /// <summary>
@@ -62,19 +89,26 @@ namespace AIRefactored.AI.Looting
         /// </summary>
         public static void Register(Player player, LootableContainer container)
         {
-            if (!EFTPlayerUtil.IsValid(player) || container == null)
+            try
             {
-                return;
-            }
+                if (!EFTPlayerUtil.IsValid(player) || container == null)
+                {
+                    return;
+                }
 
-            if (!TryGetValidKey(player.ProfileId, out string key))
-            {
-                return;
-            }
+                if (!TryGetValidKey(player.ProfileId, out string key))
+                {
+                    return;
+                }
 
-            if (!Containers.ContainsKey(key))
+                if (!Containers.ContainsKey(key))
+                {
+                    Containers.Add(key, container);
+                }
+            }
+            catch (Exception ex)
             {
-                Containers.Add(key, container);
+                Logger.LogError($"[DeadBodyContainerCache] Register(Player, Container) failed: {ex}");
             }
         }
 
@@ -83,14 +117,21 @@ namespace AIRefactored.AI.Looting
         /// </summary>
         public static void Register(string profileId, LootableContainer container)
         {
-            if (!TryGetValidKey(profileId, out string key) || container == null)
+            try
             {
-                return;
-            }
+                if (!TryGetValidKey(profileId, out string key) || container == null)
+                {
+                    return;
+                }
 
-            if (!Containers.ContainsKey(key))
+                if (!Containers.ContainsKey(key))
+                {
+                    Containers.Add(key, container);
+                }
+            }
+            catch (Exception ex)
             {
-                Containers.Add(key, container);
+                Logger.LogError($"[DeadBodyContainerCache] Register(profileId, Container) failed: {ex}");
             }
         }
 

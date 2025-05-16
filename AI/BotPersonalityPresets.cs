@@ -3,7 +3,7 @@
 //   Licensed under the MIT License. See LICENSE in the repository root for more information.
 //
 //   THIS FILE IS SYSTEMATICALLY MANAGED.
-//   Please follow strict StyleCop, ReSharper, and AI-Refactored code standards for all modifications.
+//   Failures in AIRefactored logic must always trigger safe fallback to EFT base AI.
 // </auto-generated>
 
 namespace AIRefactored.AI
@@ -29,8 +29,15 @@ namespace AIRefactored.AI
             Presets = new Dictionary<PersonalityType, BotPersonalityProfile>(types.Length);
             for (int i = 0; i < types.Length; i++)
             {
-                PersonalityType type = types[i];
-                Presets[type] = GenerateProfile(type);
+                try
+                {
+                    PersonalityType type = types[i];
+                    Presets[type] = GenerateProfile(type);
+                }
+                catch (Exception ex)
+                {
+                    Debug.LogError("[BotPersonalityPresets] Failed to generate profile for " + types[i] + ": " + ex);
+                }
             }
         }
 
@@ -78,407 +85,393 @@ namespace AIRefactored.AI
                 IsDumb = false
             };
 
-            // Apply traits based on type (this switch covers all PersonalityType values)
-            switch (type)
+            try
             {
-                case PersonalityType.Adaptive:
-                    p.Caution = 0.5f;
-                    p.AggressionLevel = 0.6f;
-                    p.CommunicationLevel = 0.8f;
-                    p.ReactionSpeed = 0.75f;
-                    p.SuppressiveFireBias = 0.4f;
-                    break;
-                case PersonalityType.Aggressive:
-                    p.AggressionLevel = 1f;
-                    p.RetreatThreshold = 0.05f;
-                    p.CommunicationLevel = 0.6f;
-                    p.SuppressiveFireBias = 0.5f;
-                    p.LeaningStyle = LeanPreference.Aggressive;
-                    p.Greed = 0.4f;
-                    p.StuckTolerance = 0.3f;
-                    break;
-                case PersonalityType.Balanced:
-                    p.Accuracy = 0.7f;
-                    p.AggressionLevel = 0.6f;
-                    p.Caution = 0.5f;
-                    p.Greed = 0.6f;
-                    p.StuckTolerance = 0.6f;
-                    break;
-                case PersonalityType.Camper:
-                    p.IsCamper = true;
-                    p.EngagementRange = 120f;
-                    p.Accuracy = 0.85f;
-                    p.SuppressionSensitivity = 0.7f;
-                    p.PreferredMission = MissionBias.Loot;
-                    p.LeaningStyle = LeanPreference.Never;
-                    p.SuppressiveFireBias = 0.8f;
-                    p.Greed = 0.8f;
-                    p.StuckTolerance = 0.2f;
-                    break;
-                case PersonalityType.Cautious:
-                    p.Caution = 0.95f;
-                    p.RetreatThreshold = 0.6f;
-                    p.ReactionTime = 0.3f;
-                    p.SuppressiveFireBias = 0.3f;
-                    p.Greed = 0.4f;
-                    p.StuckTolerance = 0.3f;
-                    break;
-                case PersonalityType.ColdBlooded:
-                    p.FlinchThreshold = 1f;
-                    p.ReactionTime = 0.3f;
-                    p.Caution = 0.8f;
-                    p.SuppressiveFireBias = 0.4f;
-                    p.Greed = 0.3f;
-                    p.StuckTolerance = 0.9f;
-                    break;
-                case PersonalityType.Defensive:
-                    p.Caution = 0.8f;
-                    p.CommunicationLevel = 0.9f;
-                    p.RetreatThreshold = 0.5f;
-                    p.SuppressiveFireBias = 0.5f;
-                    p.Greed = 0.3f;
-                    p.StuckTolerance = 0.7f;
-                    break;
-                case PersonalityType.Dumb:
-                    p.IsDumb = true;
-                    p.Accuracy = 0.3f;
-                    p.AggressionLevel = 0.2f;
-                    p.ReactionSpeed = 0.25f;
-                    p.LeaningStyle = LeanPreference.Never;
-                    p.SuppressiveFireBias = 0.1f;
-                    p.Greed = 0.2f;
-                    p.StuckTolerance = 0.1f;
-                    break;
-                case PersonalityType.Explorer:
-                    p.EngagementRange = 110f;
-                    p.RiskTolerance = 0.9f;
-                    p.Caution = 0.3f;
-                    p.PreferredMission = MissionBias.Quest;
-                    p.LeaningStyle = LeanPreference.Aggressive;
-                    p.SuppressiveFireBias = 0.4f;
-                    p.Greed = 0.6f;
-                    p.StuckTolerance = 0.8f;
-                    break;
-                case PersonalityType.Fearful:
-                    p.IsFearful = true;
-                    p.Accuracy = 0.4f;
-                    p.RetreatThreshold = 0.7f;
-                    p.Caution = 0.9f;
-                    p.AggressionLevel = 0.1f;
-                    p.PreferredMission = MissionBias.Loot;
-                    p.SuppressiveFireBias = 0.25f;
-                    p.Greed = 0.5f;
-                    p.StuckTolerance = 0.2f;
-                    break;
-                case PersonalityType.Frenzied:
-                    p.IsFrenzied = true;
-                    p.AggressionLevel = 1f;
-                    p.ChaosFactor = 1f;
-                    p.Accuracy = 0.45f;
-                    p.AccuracyUnderFire = 0.2f;
-                    p.PreferredMission = MissionBias.Fight;
-                    p.LeaningStyle = LeanPreference.Aggressive;
-                    p.SuppressiveFireBias = 0.1f;
-                    p.Greed = 0.3f;
-                    p.StuckTolerance = 0.1f;
-                    break;
-                case PersonalityType.Greedy:
-                    p.RiskTolerance = 0.8f;
-                    p.Cohesion = 0.4f;
-                    p.PreferredMission = MissionBias.Loot;
-                    p.SuppressiveFireBias = 0.3f;
-                    p.Greed = 1f;
-                    p.StuckTolerance = 0.4f;
-                    break;
-
-                case PersonalityType.Heroic:
-                    p.AggressionLevel = 0.8f;
-                    p.RiskTolerance = 0.85f;
-                    p.CommunicationLevel = 1f;
-                    p.Cohesion = 1f;
-                    p.FlankBias = 0.6f;
-                    p.LeaningStyle = LeanPreference.Aggressive;
-                    p.SuppressiveFireBias = 0.7f;
-                    p.Greed = 0.5f;
-                    p.StuckTolerance = 0.8f;
-                    break;
-
-                case PersonalityType.Loner:
-                    p.Cohesion = 0f;
-                    p.CommunicationLevel = 0.1f;
-                    p.SuppressiveFireBias = 0.1f;
-                    p.Greed = 0.4f;
-                    p.StuckTolerance = 0.3f;
-                    break;
-
-                case PersonalityType.Methodical:
-                    p.Caution = 0.75f;
-                    p.MovementJitter = 0.1f;
-                    p.LeanPeekFrequency = 0.7f;
-                    p.CornerCheckPauseTime = 0.5f;
-                    p.SuppressiveFireBias = 0.6f;
-                    p.Greed = 0.5f;
-                    p.StuckTolerance = 0.6f;
-                    break;
-
-                case PersonalityType.Paranoid:
-                    p.ReactionSpeed = 0.85f;
-                    p.Caution = 0.95f;
-                    p.FlinchThreshold = 0.9f;
-                    p.SideStepBias = 0.6f;
-                    p.SuppressiveFireBias = 0.5f;
-                    p.Greed = 0.3f;
-                    p.StuckTolerance = 0.4f;
-                    break;
-
-                case PersonalityType.Patient:
-                    p.ReactionTime = 0.5f;
-                    p.Accuracy = 0.9f;
-                    p.SuppressiveFireBias = 0.4f;
-                    p.Greed = 0.4f;
-                    p.StuckTolerance = 0.7f;
-                    break;
-
-                case PersonalityType.Reckless:
-                    p.AggressionLevel = 0.95f;
-                    p.RetreatThreshold = 0f;
-                    p.ChaosFactor = 0.8f;
-                    p.SuppressiveFireBias = 0.3f;
-                    p.Greed = 0.4f;
-                    p.StuckTolerance = 0.2f;
-                    break;
-
-                case PersonalityType.RiskTaker:
-                    p.RiskTolerance = 1f;
-                    p.RetreatThreshold = 0.1f;
-                    p.AggressionLevel = 0.7f;
-                    p.SuppressiveFireBias = 0.35f;
-                    p.Greed = 0.6f;
-                    p.StuckTolerance = 0.3f;
-                    break;
-
-                case PersonalityType.SilentHunter:
-                    p.IsSilentHunter = true;
-                    p.Accuracy = 0.95f;
-                    p.CommunicationLevel = 0.1f;
-                    p.PreferredMission = MissionBias.Quest;
-                    p.LeaningStyle = LeanPreference.Never;
-                    p.SuppressiveFireBias = 0.0f;
-                    p.Greed = 0.3f;
-                    p.StuckTolerance = 0.7f;
-                    break;
-
-                case PersonalityType.Sniper:
-                    p.EngagementRange = 130f;
-                    p.Accuracy = 0.95f;
-                    p.FlinchThreshold = 0.2f;
-                    p.LeaningStyle = LeanPreference.Aggressive;
-                    p.SuppressiveFireBias = 0.3f;
-                    p.Greed = 0.4f;
-                    p.StuckTolerance = 0.6f;
-                    break;
-
-                case PersonalityType.Strategic:
-                    p.Caution = 0.7f;
-                    p.CommunicationLevel = 0.9f;
-                    p.FlankBias = 0.8f;
-                    p.SuppressiveFireBias = 0.5f;
-                    p.Greed = 0.5f;
-                    p.StuckTolerance = 0.7f;
-                    break;
-
-                case PersonalityType.Stubborn:
-                    p.IsStubborn = true;
-                    p.RetreatThreshold = 0f;
-                    p.Cohesion = 0.2f;
-                    p.SuppressiveFireBias = 0.5f;
-                    p.Greed = 0.3f;
-                    p.StuckTolerance = 0.8f;
-                    break;
-
-                case PersonalityType.Tactical:
-                    p.Accuracy = 0.85f;
-                    p.FlinchThreshold = 0.6f;
-                    p.RepositionPriority = 0.9f;
-                    p.SuppressiveFireBias = 0.6f;
-                    p.Greed = 0.6f;
-                    p.StuckTolerance = 0.7f;
-                    break;
-
-                case PersonalityType.TeamPlayer:
-                    p.CommunicationLevel = 1f;
-                    p.Cohesion = 1f;
-                    p.RiskTolerance = 0.5f;
-                    p.SuppressiveFireBias = 0.45f;
-                    p.Greed = 0.5f;
-                    p.StuckTolerance = 0.8f;
-                    break;
-
-                case PersonalityType.Unpredictable:
-                    p.ChaosFactor = 1f;
-                    p.SuppressiveFireBias = 0.3f;
-                    p.Greed = 0.5f;
-                    p.StuckTolerance = 0.3f;
-                    break;
-
-                case PersonalityType.Vengeful:
-                    p.AggressionLevel = 0.9f;
-                    p.CommunicationLevel = 0.2f;
-                    p.RetreatThreshold = 0.1f;
-                    p.SuppressiveFireBias = 0.4f;
-                    p.Greed = 0.6f;
-                    p.StuckTolerance = 0.6f;
-                    break;
-
-                case PersonalityType.Vigilant:
-                    p.ReactionSpeed = 1f;
-                    p.ReactionTime = 0.15f;
-                    p.FlinchThreshold = 0.65f;
-                    p.Greed = 0.4f;
-                    p.StuckTolerance = 0.7f;
-                    break;
-
-                case PersonalityType.Calculating:
-                    p.FlinchThreshold = 0.8f;
-                    p.Caution = 0.7f;
-                    p.RepositionPriority = 1f;
-                    p.SuppressiveFireBias = 0.5f;
-                    p.Greed = 0.4f;
-                    p.StuckTolerance = 0.9f;
-                    break;
-
-                case PersonalityType.Panicked:
-                    p.FlinchThreshold = 0.1f;
-                    p.ReactionSpeed = 0.95f;
-                    p.Caution = 1f;
-                    p.ChaosFactor = 1f;
-                    p.RetreatThreshold = 0.9f;
-                    p.SuppressiveFireBias = 0.2f;
-                    p.LeaningStyle = LeanPreference.Never;
-                    p.Greed = 0.3f;
-                    p.StuckTolerance = 0.2f;
-                    break;
-
-                case PersonalityType.Stoic:
-                    p.FlinchThreshold = 1f;
-                    p.ReactionTime = 0.35f;
-                    p.MovementJitter = 0f;
-                    p.SuppressiveFireBias = 0.3f;
-                    p.Greed = 0.4f;
-                    p.StuckTolerance = 0.8f;
-                    break;
-
-                case PersonalityType.Bulldozer:
-                    p.AggressionLevel = 1f;
-                    p.RetreatThreshold = 0f;
-                    p.FlinchThreshold = 0.9f;
-                    p.SuppressiveFireBias = 0.6f;
-                    p.Greed = 0.5f;
-                    p.StuckTolerance = 0.3f;
-                    break;
-
-                case PersonalityType.Covert:
-                    p.PreferredMission = MissionBias.Quest;
-                    p.CommunicationLevel = 0.1f;
-                    p.SuppressiveFireBias = 0.1f;
-                    p.LeaningStyle = LeanPreference.Never;
-                    p.Greed = 0.3f;
-                    p.StuckTolerance = 0.6f;
-                    break;
-
-                case PersonalityType.Cowardly:
-                    p.Caution = 1f;
-                    p.RetreatThreshold = 1f;
-                    p.AggressionLevel = 0f;
-                    p.SuppressiveFireBias = 0.0f;
-                    p.LeaningStyle = LeanPreference.Never;
-                    p.Greed = 0.2f;
-                    p.StuckTolerance = 0.2f;
-                    break;
-
-                case PersonalityType.Disruptor:
-                    p.ChaosFactor = 1f;
-                    p.AggressionLevel = 0.6f;
-                    p.SuppressiveFireBias = 0.7f;
-                    p.Greed = 0.5f;
-                    p.StuckTolerance = 0.4f;
-                    break;
-
-                case PersonalityType.Supportive:
-                    p.CommunicationLevel = 1f;
-                    p.FlankBias = 0.5f;
-                    p.SuppressiveFireBias = 0.75f;
-                    p.Cohesion = 1f;
-                    p.Greed = 0.5f;
-                    p.StuckTolerance = 0.9f;
-                    break;
-
-                case PersonalityType.Hunter:
-                    p.Accuracy = 0.85f;
-                    p.PreferredMission = MissionBias.Fight;
-                    p.SuppressiveFireBias = 0.4f;
-                    p.Greed = 0.5f;
-                    p.StuckTolerance = 0.6f;
-                    break;
-
-                case PersonalityType.Stalker:
-                    p.Accuracy = 0.8f;
-                    p.Caution = 0.6f;
-                    p.SuppressiveFireBias = 0.3f;
-                    p.Greed = 0.6f;
-                    p.StuckTolerance = 0.6f;
-                    break;
-
-                case PersonalityType.Vigilante:
-                    p.AggressionLevel = 0.7f;
-                    p.FlankBias = 0.7f;
-                    p.SuppressiveFireBias = 0.6f;
-                    p.LeaningStyle = LeanPreference.Aggressive;
-                    p.Greed = 0.5f;
-                    p.StuckTolerance = 0.7f;
-                    break;
-
-                case PersonalityType.Sentinel:
-                    p.RepositionPriority = 0f;
-                    p.Cohesion = 0.8f;
-                    p.SuppressiveFireBias = 0.6f;
-                    p.Greed = 0.4f;
-                    p.StuckTolerance = 0.8f;
-                    break;
-
-                case PersonalityType.Erratic:
-                    p.ChaosFactor = 1f;
-                    p.AggressionLevel = 0.5f;
-                    p.Caution = 0.5f;
-                    p.SuppressiveFireBias = 0.4f;
-                    p.Greed = 0.5f;
-                    p.StuckTolerance = 0.4f;
-                    break;
-
-                case PersonalityType.Cowboy:
-                    p.AggressionLevel = 0.9f;
-                    p.Cohesion = 0.1f;
-                    p.SuppressiveFireBias = 0.2f;
-                    p.LeaningStyle = LeanPreference.Aggressive;
-                    p.Greed = 0.4f;
-                    p.StuckTolerance = 0.5f;
-                    break;
-
-                case PersonalityType.Saboteur:
-                    p.PreferredMission = MissionBias.Loot;
-                    p.CommunicationLevel = 0.3f;
-                    p.RiskTolerance = 0.9f;
-                    p.SuppressiveFireBias = 0.2f;
-                    p.LeaningStyle = LeanPreference.Never;
-                    p.Greed = 0.9f;
-                    p.StuckTolerance = 0.3f;
-                    break;
-
+                // Apply traits based on type (full switch block)
+                switch (type)
+                {
+                    case PersonalityType.Adaptive:
+                        p.Caution = 0.5f;
+                        p.AggressionLevel = 0.6f;
+                        p.CommunicationLevel = 0.8f;
+                        p.ReactionSpeed = 0.75f;
+                        p.SuppressiveFireBias = 0.4f;
+                        break;
+                    case PersonalityType.Aggressive:
+                        p.AggressionLevel = 1f;
+                        p.RetreatThreshold = 0.05f;
+                        p.CommunicationLevel = 0.6f;
+                        p.SuppressiveFireBias = 0.5f;
+                        p.LeaningStyle = LeanPreference.Aggressive;
+                        p.Greed = 0.4f;
+                        p.StuckTolerance = 0.3f;
+                        break;
+                    case PersonalityType.Balanced:
+                        p.Accuracy = 0.7f;
+                        p.AggressionLevel = 0.6f;
+                        p.Caution = 0.5f;
+                        p.Greed = 0.6f;
+                        p.StuckTolerance = 0.6f;
+                        break;
+                    case PersonalityType.Camper:
+                        p.IsCamper = true;
+                        p.EngagementRange = 120f;
+                        p.Accuracy = 0.85f;
+                        p.SuppressionSensitivity = 0.7f;
+                        p.PreferredMission = MissionBias.Loot;
+                        p.LeaningStyle = LeanPreference.Never;
+                        p.SuppressiveFireBias = 0.8f;
+                        p.Greed = 0.8f;
+                        p.StuckTolerance = 0.2f;
+                        break;
+                    case PersonalityType.Cautious:
+                        p.Caution = 0.95f;
+                        p.RetreatThreshold = 0.6f;
+                        p.ReactionTime = 0.3f;
+                        p.SuppressiveFireBias = 0.3f;
+                        p.Greed = 0.4f;
+                        p.StuckTolerance = 0.3f;
+                        break;
+                    case PersonalityType.ColdBlooded:
+                        p.FlinchThreshold = 1f;
+                        p.ReactionTime = 0.3f;
+                        p.Caution = 0.8f;
+                        p.SuppressiveFireBias = 0.4f;
+                        p.Greed = 0.3f;
+                        p.StuckTolerance = 0.9f;
+                        break;
+                    case PersonalityType.Defensive:
+                        p.Caution = 0.8f;
+                        p.CommunicationLevel = 0.9f;
+                        p.RetreatThreshold = 0.5f;
+                        p.SuppressiveFireBias = 0.5f;
+                        p.Greed = 0.3f;
+                        p.StuckTolerance = 0.7f;
+                        break;
+                    case PersonalityType.Dumb:
+                        p.IsDumb = true;
+                        p.Accuracy = 0.3f;
+                        p.AggressionLevel = 0.2f;
+                        p.ReactionSpeed = 0.25f;
+                        p.LeaningStyle = LeanPreference.Never;
+                        p.SuppressiveFireBias = 0.1f;
+                        p.Greed = 0.2f;
+                        p.StuckTolerance = 0.1f;
+                        break;
+                    case PersonalityType.Explorer:
+                        p.EngagementRange = 110f;
+                        p.RiskTolerance = 0.9f;
+                        p.Caution = 0.3f;
+                        p.PreferredMission = MissionBias.Quest;
+                        p.LeaningStyle = LeanPreference.Aggressive;
+                        p.SuppressiveFireBias = 0.4f;
+                        p.Greed = 0.6f;
+                        p.StuckTolerance = 0.8f;
+                        break;
+                    case PersonalityType.Fearful:
+                        p.IsFearful = true;
+                        p.Accuracy = 0.4f;
+                        p.RetreatThreshold = 0.7f;
+                        p.Caution = 0.9f;
+                        p.AggressionLevel = 0.1f;
+                        p.PreferredMission = MissionBias.Loot;
+                        p.SuppressiveFireBias = 0.25f;
+                        p.Greed = 0.5f;
+                        p.StuckTolerance = 0.2f;
+                        break;
+                    case PersonalityType.Frenzied:
+                        p.IsFrenzied = true;
+                        p.AggressionLevel = 1f;
+                        p.ChaosFactor = 1f;
+                        p.Accuracy = 0.45f;
+                        p.AccuracyUnderFire = 0.2f;
+                        p.PreferredMission = MissionBias.Fight;
+                        p.LeaningStyle = LeanPreference.Aggressive;
+                        p.SuppressiveFireBias = 0.1f;
+                        p.Greed = 0.3f;
+                        p.StuckTolerance = 0.1f;
+                        break;
+                    case PersonalityType.Greedy:
+                        p.RiskTolerance = 0.8f;
+                        p.Cohesion = 0.4f;
+                        p.PreferredMission = MissionBias.Loot;
+                        p.SuppressiveFireBias = 0.3f;
+                        p.Greed = 1f;
+                        p.StuckTolerance = 0.4f;
+                        break;
+                    case PersonalityType.Heroic:
+                        p.AggressionLevel = 0.8f;
+                        p.RiskTolerance = 0.85f;
+                        p.CommunicationLevel = 1f;
+                        p.Cohesion = 1f;
+                        p.FlankBias = 0.6f;
+                        p.LeaningStyle = LeanPreference.Aggressive;
+                        p.SuppressiveFireBias = 0.7f;
+                        p.Greed = 0.5f;
+                        p.StuckTolerance = 0.8f;
+                        break;
+                    case PersonalityType.Loner:
+                        p.Cohesion = 0f;
+                        p.CommunicationLevel = 0.1f;
+                        p.SuppressiveFireBias = 0.1f;
+                        p.Greed = 0.4f;
+                        p.StuckTolerance = 0.3f;
+                        break;
+                    case PersonalityType.Methodical:
+                        p.Caution = 0.75f;
+                        p.MovementJitter = 0.1f;
+                        p.LeanPeekFrequency = 0.7f;
+                        p.CornerCheckPauseTime = 0.5f;
+                        p.SuppressiveFireBias = 0.6f;
+                        p.Greed = 0.5f;
+                        p.StuckTolerance = 0.6f;
+                        break;
+                    case PersonalityType.Paranoid:
+                        p.ReactionSpeed = 0.85f;
+                        p.Caution = 0.95f;
+                        p.FlinchThreshold = 0.9f;
+                        p.SideStepBias = 0.6f;
+                        p.SuppressiveFireBias = 0.5f;
+                        p.Greed = 0.3f;
+                        p.StuckTolerance = 0.4f;
+                        break;
+                    case PersonalityType.Patient:
+                        p.ReactionTime = 0.5f;
+                        p.Accuracy = 0.9f;
+                        p.SuppressiveFireBias = 0.4f;
+                        p.Greed = 0.4f;
+                        p.StuckTolerance = 0.7f;
+                        break;
+                    case PersonalityType.Reckless:
+                        p.AggressionLevel = 0.95f;
+                        p.RetreatThreshold = 0f;
+                        p.ChaosFactor = 0.8f;
+                        p.SuppressiveFireBias = 0.3f;
+                        p.Greed = 0.4f;
+                        p.StuckTolerance = 0.2f;
+                        break;
+                    case PersonalityType.RiskTaker:
+                        p.RiskTolerance = 1f;
+                        p.RetreatThreshold = 0.1f;
+                        p.AggressionLevel = 0.7f;
+                        p.SuppressiveFireBias = 0.35f;
+                        p.Greed = 0.6f;
+                        p.StuckTolerance = 0.3f;
+                        break;
+                    case PersonalityType.SilentHunter:
+                        p.IsSilentHunter = true;
+                        p.Accuracy = 0.95f;
+                        p.CommunicationLevel = 0.1f;
+                        p.PreferredMission = MissionBias.Quest;
+                        p.LeaningStyle = LeanPreference.Never;
+                        p.SuppressiveFireBias = 0.0f;
+                        p.Greed = 0.3f;
+                        p.StuckTolerance = 0.7f;
+                        break;
+                    case PersonalityType.Sniper:
+                        p.EngagementRange = 130f;
+                        p.Accuracy = 0.95f;
+                        p.FlinchThreshold = 0.2f;
+                        p.LeaningStyle = LeanPreference.Aggressive;
+                        p.SuppressiveFireBias = 0.3f;
+                        p.Greed = 0.4f;
+                        p.StuckTolerance = 0.6f;
+                        break;
+                    case PersonalityType.Strategic:
+                        p.Caution = 0.7f;
+                        p.CommunicationLevel = 0.9f;
+                        p.FlankBias = 0.8f;
+                        p.SuppressiveFireBias = 0.5f;
+                        p.Greed = 0.5f;
+                        p.StuckTolerance = 0.7f;
+                        break;
+                    case PersonalityType.Stubborn:
+                        p.IsStubborn = true;
+                        p.RetreatThreshold = 0f;
+                        p.Cohesion = 0.2f;
+                        p.SuppressiveFireBias = 0.5f;
+                        p.Greed = 0.3f;
+                        p.StuckTolerance = 0.8f;
+                        break;
+                    case PersonalityType.Tactical:
+                        p.Accuracy = 0.85f;
+                        p.FlinchThreshold = 0.6f;
+                        p.RepositionPriority = 0.9f;
+                        p.SuppressiveFireBias = 0.6f;
+                        p.Greed = 0.6f;
+                        p.StuckTolerance = 0.7f;
+                        break;
+                    case PersonalityType.TeamPlayer:
+                        p.CommunicationLevel = 1f;
+                        p.Cohesion = 1f;
+                        p.RiskTolerance = 0.5f;
+                        p.SuppressiveFireBias = 0.45f;
+                        p.Greed = 0.5f;
+                        p.StuckTolerance = 0.8f;
+                        break;
+                    case PersonalityType.Unpredictable:
+                        p.ChaosFactor = 1f;
+                        p.SuppressiveFireBias = 0.3f;
+                        p.Greed = 0.5f;
+                        p.StuckTolerance = 0.3f;
+                        break;
+                    case PersonalityType.Vengeful:
+                        p.AggressionLevel = 0.9f;
+                        p.CommunicationLevel = 0.2f;
+                        p.RetreatThreshold = 0.1f;
+                        p.SuppressiveFireBias = 0.4f;
+                        p.Greed = 0.6f;
+                        p.StuckTolerance = 0.6f;
+                        break;
+                    case PersonalityType.Vigilant:
+                        p.ReactionSpeed = 1f;
+                        p.ReactionTime = 0.15f;
+                        p.FlinchThreshold = 0.65f;
+                        p.Greed = 0.4f;
+                        p.StuckTolerance = 0.7f;
+                        break;
+                    case PersonalityType.Calculating:
+                        p.FlinchThreshold = 0.8f;
+                        p.Caution = 0.7f;
+                        p.RepositionPriority = 1f;
+                        p.SuppressiveFireBias = 0.5f;
+                        p.Greed = 0.4f;
+                        p.StuckTolerance = 0.9f;
+                        break;
+                    case PersonalityType.Panicked:
+                        p.FlinchThreshold = 0.1f;
+                        p.ReactionSpeed = 0.95f;
+                        p.Caution = 1f;
+                        p.ChaosFactor = 1f;
+                        p.RetreatThreshold = 0.9f;
+                        p.SuppressiveFireBias = 0.2f;
+                        p.LeaningStyle = LeanPreference.Never;
+                        p.Greed = 0.3f;
+                        p.StuckTolerance = 0.2f;
+                        break;
+                    case PersonalityType.Stoic:
+                        p.FlinchThreshold = 1f;
+                        p.ReactionTime = 0.35f;
+                        p.MovementJitter = 0f;
+                        p.SuppressiveFireBias = 0.3f;
+                        p.Greed = 0.4f;
+                        p.StuckTolerance = 0.8f;
+                        break;
+                    case PersonalityType.Bulldozer:
+                        p.AggressionLevel = 1f;
+                        p.RetreatThreshold = 0f;
+                        p.FlinchThreshold = 0.9f;
+                        p.SuppressiveFireBias = 0.6f;
+                        p.Greed = 0.5f;
+                        p.StuckTolerance = 0.3f;
+                        break;
+                    case PersonalityType.Covert:
+                        p.PreferredMission = MissionBias.Quest;
+                        p.CommunicationLevel = 0.1f;
+                        p.SuppressiveFireBias = 0.1f;
+                        p.LeaningStyle = LeanPreference.Never;
+                        p.Greed = 0.3f;
+                        p.StuckTolerance = 0.6f;
+                        break;
+                    case PersonalityType.Cowardly:
+                        p.Caution = 1f;
+                        p.RetreatThreshold = 1f;
+                        p.AggressionLevel = 0f;
+                        p.SuppressiveFireBias = 0.0f;
+                        p.LeaningStyle = LeanPreference.Never;
+                        p.Greed = 0.2f;
+                        p.StuckTolerance = 0.2f;
+                        break;
+                    case PersonalityType.Disruptor:
+                        p.ChaosFactor = 1f;
+                        p.AggressionLevel = 0.6f;
+                        p.SuppressiveFireBias = 0.7f;
+                        p.Greed = 0.5f;
+                        p.StuckTolerance = 0.4f;
+                        break;
+                    case PersonalityType.Supportive:
+                        p.CommunicationLevel = 1f;
+                        p.FlankBias = 0.5f;
+                        p.SuppressiveFireBias = 0.75f;
+                        p.Cohesion = 1f;
+                        p.Greed = 0.5f;
+                        p.StuckTolerance = 0.9f;
+                        break;
+                    case PersonalityType.Hunter:
+                        p.Accuracy = 0.85f;
+                        p.PreferredMission = MissionBias.Fight;
+                        p.SuppressiveFireBias = 0.4f;
+                        p.Greed = 0.5f;
+                        p.StuckTolerance = 0.6f;
+                        break;
+                    case PersonalityType.Stalker:
+                        p.Accuracy = 0.8f;
+                        p.Caution = 0.6f;
+                        p.SuppressiveFireBias = 0.3f;
+                        p.Greed = 0.6f;
+                        p.StuckTolerance = 0.6f;
+                        break;
+                    case PersonalityType.Vigilante:
+                        p.AggressionLevel = 0.7f;
+                        p.FlankBias = 0.7f;
+                        p.SuppressiveFireBias = 0.6f;
+                        p.LeaningStyle = LeanPreference.Aggressive;
+                        p.Greed = 0.5f;
+                        p.StuckTolerance = 0.7f;
+                        break;
+                    case PersonalityType.Sentinel:
+                        p.RepositionPriority = 0f;
+                        p.Cohesion = 0.8f;
+                        p.SuppressiveFireBias = 0.6f;
+                        p.Greed = 0.4f;
+                        p.StuckTolerance = 0.8f;
+                        break;
+                    case PersonalityType.Erratic:
+                        p.ChaosFactor = 1f;
+                        p.AggressionLevel = 0.5f;
+                        p.Caution = 0.5f;
+                        p.SuppressiveFireBias = 0.4f;
+                        p.Greed = 0.5f;
+                        p.StuckTolerance = 0.4f;
+                        break;
+                    case PersonalityType.Cowboy:
+                        p.AggressionLevel = 0.9f;
+                        p.Cohesion = 0.1f;
+                        p.SuppressiveFireBias = 0.2f;
+                        p.LeaningStyle = LeanPreference.Aggressive;
+                        p.Greed = 0.4f;
+                        p.StuckTolerance = 0.5f;
+                        break;
+                    case PersonalityType.Saboteur:
+                        p.PreferredMission = MissionBias.Loot;
+                        p.CommunicationLevel = 0.3f;
+                        p.RiskTolerance = 0.9f;
+                        p.SuppressiveFireBias = 0.2f;
+                        p.LeaningStyle = LeanPreference.Never;
+                        p.Greed = 0.9f;
+                        p.StuckTolerance = 0.3f;
+                        break;
+                        // Unknown/future enum values safely use defaults.
+                }
+            }
+            catch (Exception ex)
+            {
+                Debug.LogError("[BotPersonalityPresets] GenerateProfile trait switch failed for " + type + ": " + ex);
+                // Profile p is still valid, using defaults.
             }
 
-            ApplyRandomBlend(p);
+            try
+            {
+                ApplyRandomBlend(p);
+            }
+            catch (Exception ex)
+            {
+                Debug.LogError("[BotPersonalityPresets] GenerateProfile ApplyRandomBlend failed: " + ex);
+            }
+
             return p;
         }
+
 
         /// <summary>
         /// Applies randomized trait blending to add variance within safe bounds.
@@ -490,45 +483,60 @@ namespace AIRefactored.AI
             const float Min = 0f;
             const float Max = 1f;
 
-            p.Accuracy += UnityEngine.Random.Range(-0.1f, 0.15f);
-            p.AggressionLevel += UnityEngine.Random.Range(-0.1f, 0.15f);
-            p.Cohesion += UnityEngine.Random.Range(-0.2f, 0.2f);
-            p.CommunicationLevel += UnityEngine.Random.Range(-0.1f, 0.15f);
-            p.MovementJitter += UnityEngine.Random.Range(-0.1f, 0.15f);
-            p.LeanPeekFrequency += UnityEngine.Random.Range(-0.2f, 0.2f);
-            p.CornerCheckPauseTime += UnityEngine.Random.Range(-0.1f, 0.15f);
-            p.SideStepBias += UnityEngine.Random.Range(-0.15f, 0.2f);
-            p.ReactionSpeed += UnityEngine.Random.Range(-0.1f, 0.1f);
-            p.ReactionTime += UnityEngine.Random.Range(-0.05f, 0.1f);
-            p.FlankBias += UnityEngine.Random.Range(-0.1f, 0.15f);
-            p.SuppressionSensitivity += UnityEngine.Random.Range(-0.1f, 0.1f);
-            p.FlinchThreshold += UnityEngine.Random.Range(-0.1f, 0.1f);
-            p.RetreatThreshold += UnityEngine.Random.Range(-0.1f, 0.1f);
-            p.RepositionPriority += UnityEngine.Random.Range(-0.1f, 0.1f);
-            p.RiskTolerance += UnityEngine.Random.Range(-0.1f, 0.1f);
-            p.SuppressiveFireBias += UnityEngine.Random.Range(-0.05f, 0.1f);
-            p.Greed += UnityEngine.Random.Range(-0.1f, 0.15f);
-            p.StuckTolerance += UnityEngine.Random.Range(-0.1f, 0.15f);
+            try
+            {
+                p.Accuracy += UnityEngine.Random.Range(-0.1f, 0.15f);
+                p.AggressionLevel += UnityEngine.Random.Range(-0.1f, 0.15f);
+                p.Cohesion += UnityEngine.Random.Range(-0.2f, 0.2f);
+                p.CommunicationLevel += UnityEngine.Random.Range(-0.1f, 0.15f);
+                p.MovementJitter += UnityEngine.Random.Range(-0.1f, 0.15f);
+                p.LeanPeekFrequency += UnityEngine.Random.Range(-0.2f, 0.2f);
+                p.CornerCheckPauseTime += UnityEngine.Random.Range(-0.1f, 0.15f);
+                p.SideStepBias += UnityEngine.Random.Range(-0.15f, 0.2f);
+                p.ReactionSpeed += UnityEngine.Random.Range(-0.1f, 0.1f);
+                p.ReactionTime += UnityEngine.Random.Range(-0.05f, 0.1f);
+                p.FlankBias += UnityEngine.Random.Range(-0.1f, 0.15f);
+                p.SuppressionSensitivity += UnityEngine.Random.Range(-0.1f, 0.1f);
+                p.FlinchThreshold += UnityEngine.Random.Range(-0.1f, 0.1f);
+                p.RetreatThreshold += UnityEngine.Random.Range(-0.1f, 0.1f);
+                p.RepositionPriority += UnityEngine.Random.Range(-0.1f, 0.1f);
+                p.RiskTolerance += UnityEngine.Random.Range(-0.1f, 0.1f);
+                p.SuppressiveFireBias += UnityEngine.Random.Range(-0.05f, 0.1f);
+                p.Greed += UnityEngine.Random.Range(-0.1f, 0.15f);
+                p.StuckTolerance += UnityEngine.Random.Range(-0.1f, 0.15f);
+            }
+            catch (Exception ex)
+            {
+                Debug.LogError("[BotPersonalityPresets] ApplyRandomBlend: Randomization failed: " + ex);
+            }
 
-            p.Accuracy = Mathf.Clamp(p.Accuracy, Min, Max);
-            p.AggressionLevel = Mathf.Clamp(p.AggressionLevel, Min, Max);
-            p.Cohesion = Mathf.Clamp(p.Cohesion, Min, Max);
-            p.CommunicationLevel = Mathf.Clamp(p.CommunicationLevel, Min, Max);
-            p.MovementJitter = Mathf.Clamp(p.MovementJitter, 0f, 0.5f);
-            p.LeanPeekFrequency = Mathf.Clamp(p.LeanPeekFrequency, Min, Max);
-            p.CornerCheckPauseTime = Mathf.Clamp(p.CornerCheckPauseTime, 0.1f, 0.6f);
-            p.SideStepBias = Mathf.Clamp(p.SideStepBias, Min, Max);
-            p.ReactionSpeed = Mathf.Clamp(p.ReactionSpeed, Min, Max);
-            p.ReactionTime = Mathf.Clamp(p.ReactionTime, 0.1f, 0.5f);
-            p.FlankBias = Mathf.Clamp(p.FlankBias, Min, Max);
-            p.SuppressionSensitivity = Mathf.Clamp(p.SuppressionSensitivity, Min, Max);
-            p.FlinchThreshold = Mathf.Clamp(p.FlinchThreshold, Min, Max);
-            p.RetreatThreshold = Mathf.Clamp(p.RetreatThreshold, Min, Max);
-            p.RepositionPriority = Mathf.Clamp(p.RepositionPriority, Min, Max);
-            p.RiskTolerance = Mathf.Clamp(p.RiskTolerance, Min, Max);
-            p.SuppressiveFireBias = Mathf.Clamp(p.SuppressiveFireBias, Min, Max);
-            p.Greed = Mathf.Clamp(p.Greed, Min, Max);
-            p.StuckTolerance = Mathf.Clamp(p.StuckTolerance, Min, Max);
+            // Always clamp, even if exception occurred above (all clamps are infallible)
+            try
+            {
+                p.Accuracy = Mathf.Clamp(p.Accuracy, Min, Max);
+                p.AggressionLevel = Mathf.Clamp(p.AggressionLevel, Min, Max);
+                p.Cohesion = Mathf.Clamp(p.Cohesion, Min, Max);
+                p.CommunicationLevel = Mathf.Clamp(p.CommunicationLevel, Min, Max);
+                p.MovementJitter = Mathf.Clamp(p.MovementJitter, 0f, 0.5f);
+                p.LeanPeekFrequency = Mathf.Clamp(p.LeanPeekFrequency, Min, Max);
+                p.CornerCheckPauseTime = Mathf.Clamp(p.CornerCheckPauseTime, 0.1f, 0.6f);
+                p.SideStepBias = Mathf.Clamp(p.SideStepBias, Min, Max);
+                p.ReactionSpeed = Mathf.Clamp(p.ReactionSpeed, Min, Max);
+                p.ReactionTime = Mathf.Clamp(p.ReactionTime, 0.1f, 0.5f);
+                p.FlankBias = Mathf.Clamp(p.FlankBias, Min, Max);
+                p.SuppressionSensitivity = Mathf.Clamp(p.SuppressionSensitivity, Min, Max);
+                p.FlinchThreshold = Mathf.Clamp(p.FlinchThreshold, Min, Max);
+                p.RetreatThreshold = Mathf.Clamp(p.RetreatThreshold, Min, Max);
+                p.RepositionPriority = Mathf.Clamp(p.RepositionPriority, Min, Max);
+                p.RiskTolerance = Mathf.Clamp(p.RiskTolerance, Min, Max);
+                p.SuppressiveFireBias = Mathf.Clamp(p.SuppressiveFireBias, Min, Max);
+                p.Greed = Mathf.Clamp(p.Greed, Min, Max);
+                p.StuckTolerance = Mathf.Clamp(p.StuckTolerance, Min, Max);
+            }
+            catch (Exception ex)
+            {
+                Debug.LogError("[BotPersonalityPresets] ApplyRandomBlend: Clamping failed: " + ex);
+            }
         }
 
     }

@@ -13,6 +13,7 @@ namespace AIRefactored.AI.Helpers
     /// <summary>
     /// Evaluates directional exposure to high-intensity light sources like flashlights and flares.
     /// Used by AI vision systems for flashblindness detection, light evasion, and behavioral reactions.
+    /// Bulletproof: all logic is null-guarded and outputs are safe and deterministic.
     /// </summary>
     public static class FlashLightUtils
     {
@@ -22,19 +23,29 @@ namespace AIRefactored.AI.Helpers
         /// </summary>
         public static float CalculateFlashScore(Transform lightTransform, Transform botHeadTransform, float maxDistance = 20f)
         {
-            if (lightTransform == null || botHeadTransform == null)
+            try
+            {
+                if (lightTransform == null || botHeadTransform == null)
+                    return 0f;
+
+                Vector3 toLight = lightTransform.position - botHeadTransform.position;
+                float distance = toLight.magnitude;
+
+                if (distance < 0.01f || distance > maxDistance || float.IsNaN(distance))
+                    return 0f;
+
+                float alignmentFactor = Mathf.Clamp01(Vector3.Dot(botHeadTransform.forward, toLight.normalized));
+                float distanceFactor = 1f - Mathf.Clamp01(distance / maxDistance);
+
+                if (float.IsNaN(alignmentFactor) || float.IsNaN(distanceFactor))
+                    return 0f;
+
+                return alignmentFactor * distanceFactor;
+            }
+            catch
+            {
                 return 0f;
-
-            Vector3 toLight = lightTransform.position - botHeadTransform.position;
-            float distance = toLight.magnitude;
-
-            if (distance < 0.01f || distance > maxDistance)
-                return 0f;
-
-            float alignmentFactor = Mathf.Clamp01(Vector3.Dot(botHeadTransform.forward, toLight.normalized));
-            float distanceFactor = 1f - Mathf.Clamp01(distance / maxDistance);
-
-            return alignmentFactor * distanceFactor;
+            }
         }
 
         /// <summary>
@@ -42,11 +53,23 @@ namespace AIRefactored.AI.Helpers
         /// </summary>
         public static float GetFlashIntensityFactor(Transform lightTransform, Transform botHeadTransform)
         {
-            if (lightTransform == null || botHeadTransform == null)
-                return 0f;
+            try
+            {
+                if (lightTransform == null || botHeadTransform == null)
+                    return 0f;
 
-            Vector3 toLight = lightTransform.position - botHeadTransform.position;
-            return Mathf.Clamp01(Vector3.Dot(botHeadTransform.forward, toLight.normalized));
+                Vector3 toLight = lightTransform.position - botHeadTransform.position;
+                float dot = Vector3.Dot(botHeadTransform.forward, toLight.normalized);
+
+                if (float.IsNaN(dot))
+                    return 0f;
+
+                return Mathf.Clamp01(dot);
+            }
+            catch
+            {
+                return 0f;
+            }
         }
 
         /// <summary>
@@ -54,13 +77,23 @@ namespace AIRefactored.AI.Helpers
         /// </summary>
         public static bool IsBlindingLight(Transform lightTransform, Transform botHeadTransform, float angleThreshold = 30f)
         {
-            if (lightTransform == null || botHeadTransform == null)
+            try
+            {
+                if (lightTransform == null || botHeadTransform == null)
+                    return false;
+
+                Vector3 toLight = lightTransform.position - botHeadTransform.position;
+                float angle = Vector3.Angle(botHeadTransform.forward, toLight);
+
+                if (float.IsNaN(angle))
+                    return false;
+
+                return angle <= angleThreshold;
+            }
+            catch
+            {
                 return false;
-
-            Vector3 toLight = lightTransform.position - botHeadTransform.position;
-            float angle = Vector3.Angle(botHeadTransform.forward, toLight);
-
-            return angle <= angleThreshold;
+            }
         }
 
         /// <summary>
@@ -68,13 +101,23 @@ namespace AIRefactored.AI.Helpers
         /// </summary>
         public static bool IsFacingTarget(Transform source, Transform target, float angleThreshold = 30f)
         {
-            if (source == null || target == null)
+            try
+            {
+                if (source == null || target == null)
+                    return false;
+
+                Vector3 toTarget = target.position - source.position;
+                float angle = Vector3.Angle(source.forward, toTarget);
+
+                if (float.IsNaN(angle))
+                    return false;
+
+                return angle <= angleThreshold;
+            }
+            catch
+            {
                 return false;
-
-            Vector3 toTarget = target.position - source.position;
-            float angle = Vector3.Angle(source.forward, toTarget);
-
-            return angle <= angleThreshold;
+            }
         }
     }
 }

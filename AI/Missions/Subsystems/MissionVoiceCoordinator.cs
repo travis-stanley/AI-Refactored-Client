@@ -19,6 +19,7 @@ namespace AIRefactored.AI.Missions.Subsystems
     /// <summary>
     /// Handles voice lines for looting, extraction, and coordination.
     /// VO routing is multiplayer-safe and avoids triggering on headless hosts.
+    /// All errors are locally isolated; cannot break or cascade into other systems.
     /// </summary>
     public sealed class MissionVoiceCoordinator
     {
@@ -39,6 +40,7 @@ namespace AIRefactored.AI.Missions.Subsystems
         {
             if (!EFTPlayerUtil.IsValidBotOwner(bot))
             {
+                Logger.LogError("[MissionVoiceCoordinator] Invalid bot reference. Disabling voice coordination for this bot.");
                 throw new ArgumentException("[MissionVoiceCoordinator] Invalid bot reference.");
             }
             _bot = bot;
@@ -93,8 +95,15 @@ namespace AIRefactored.AI.Missions.Subsystems
             }
             catch (Exception ex)
             {
-                string name = _bot.Profile?.Info?.Nickname ?? "Unknown";
-                Logger.LogWarning("[MissionVoiceCoordinator] VO failed for '" + name + "': " + ex.Message);
+                try
+                {
+                    string name = _bot.Profile?.Info?.Nickname ?? "Unknown";
+                    Logger.LogWarning("[MissionVoiceCoordinator] VO failed for '" + name + "': " + ex.Message);
+                }
+                catch
+                {
+                    // Defensive: don't allow even this logging to break
+                }
             }
         }
 

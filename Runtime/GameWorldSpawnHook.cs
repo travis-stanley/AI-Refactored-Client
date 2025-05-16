@@ -4,6 +4,7 @@
 //
 //   THIS FILE IS SYSTEMATICALLY MANAGED.
 //   Please follow strict StyleCop, ReSharper, and AI-Refactored code standards for all modifications.
+//   Bulletproof: All failures are locally contained, never break other subsystems, and always trigger fallback isolation.
 // </auto-generated>
 
 namespace AIRefactored.Runtime
@@ -22,6 +23,7 @@ namespace AIRefactored.Runtime
     /// <summary>
     /// Detects the creation of a GameWorld and immediately invokes InitPhaseRunner when ready.
     /// Hooks into EFT world lifecycle to bypass polling.
+    /// Bulletproof: All errors are strictly contained; global state and mod safety is never at risk.
     /// </summary>
     public sealed class GameWorldSpawnHook : MonoBehaviour
     {
@@ -41,7 +43,16 @@ namespace AIRefactored.Runtime
 
                 Logger.LogDebug("[GameWorldSpawnHook] Hooking GameWorld.OnGameStarted...");
 
-                MethodInfo method = AccessTools.Method(typeof(GameWorld), "OnGameStarted");
+                MethodInfo method = null;
+                try
+                {
+                    method = AccessTools.Method(typeof(GameWorld), "OnGameStarted");
+                }
+                catch (Exception ex)
+                {
+                    Logger.LogError("[GameWorldSpawnHook] ❌ AccessTools.Method exception: " + ex);
+                }
+
                 if (method == null)
                 {
                     Logger.LogError("[GameWorldSpawnHook] ❌ Failed to locate GameWorld.OnGameStarted.");
@@ -49,8 +60,17 @@ namespace AIRefactored.Runtime
                     return;
                 }
 
-                Harmony harmony = new Harmony("ai.refactored.spawnhook");
-                harmony.Patch(method, postfix: new HarmonyMethod(typeof(GameWorldSpawnPatch), nameof(GameWorldSpawnPatch.Postfix)));
+                try
+                {
+                    Harmony harmony = new Harmony("ai.refactored.spawnhook");
+                    harmony.Patch(method, postfix: new HarmonyMethod(typeof(GameWorldSpawnPatch), nameof(GameWorldSpawnPatch.Postfix)));
+                }
+                catch (Exception ex)
+                {
+                    Logger.LogError("[GameWorldSpawnHook] ❌ Harmony patch exception: " + ex);
+                    Destroy(this);
+                    return;
+                }
 
                 _hooked = true;
                 Logger.LogDebug("[GameWorldSpawnHook] ✅ Harmony patch installed.");
@@ -68,6 +88,7 @@ namespace AIRefactored.Runtime
 
         /// <summary>
         /// Harmony patch for GameWorld.OnGameStarted to trigger InitPhaseRunner.
+        /// Bulletproof: all errors are locally contained.
         /// </summary>
         private static class GameWorldSpawnPatch
         {

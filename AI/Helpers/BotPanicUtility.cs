@@ -8,6 +8,7 @@
 
 namespace AIRefactored.AI.Helpers
 {
+    using System;
     using System.Collections.Generic;
     using AIRefactored.AI.Combat;
     using AIRefactored.AI.Core;
@@ -17,6 +18,7 @@ namespace AIRefactored.AI.Helpers
     /// <summary>
     /// Utility class for resolving and triggering panic behavior in bots and squads.
     /// Used by flash, suppression, auditory, and damage systems to propagate fear.
+    /// Bulletproof: all failures are local, no cascade or cross-bot error is possible.
     /// </summary>
     public static class BotPanicUtility
     {
@@ -27,56 +29,73 @@ namespace AIRefactored.AI.Helpers
         /// </summary>
         public static void Trigger(BotComponentCache cache)
         {
-            if (IsEligible(cache))
+            try
             {
-                cache.PanicHandler.TriggerPanic();
+                if (IsEligible(cache))
+                {
+                    cache.PanicHandler.TriggerPanic();
+                }
+            }
+            catch
+            {
+                // Never propagate error; skip only this bot
             }
         }
 
         /// <summary>
         /// Triggers panic across an entire squad or cache group.
+        /// All failures are local; one bot's error cannot affect the rest.
         /// </summary>
         public static void TriggerGroup(List<BotComponentCache> group)
         {
             if (group == null)
-            {
                 return;
-            }
 
             for (int i = 0; i < group.Count; i++)
             {
-                Trigger(group[i]);
+                try
+                {
+                    Trigger(group[i]);
+                }
+                catch
+                {
+                    // Never break group iteration
+                }
             }
         }
 
         /// <summary>
         /// Triggers panic in all bots within a radius of the given origin.
+        /// All failures are local; each bot handled independently.
         /// </summary>
         public static void TriggerNearby(Vector3 origin, float radius)
         {
             if (radius <= 0f)
-            {
                 return;
-            }
 
             float radiusSqr = radius * radius;
 
             foreach (BotComponentCache cache in BotCacheUtility.AllActiveBots())
             {
-                if (!IsEligible(cache))
+                try
                 {
-                    continue;
+                    if (!IsEligible(cache))
+                        continue;
+
+                    Vector3 pos = cache.Bot.Position;
+                    float dx = pos.x - origin.x;
+                    float dy = pos.y - origin.y;
+                    float dz = pos.z - origin.z;
+                    float distSqr = (dx * dx) + (dy * dy) + (dz * dz);
+
+                    if (distSqr <= radiusSqr)
+                    {
+                        cache.PanicHandler.TriggerPanic();
+                    }
                 }
-
-                Vector3 pos = cache.Bot.Position;
-                float dx = pos.x - origin.x;
-                float dy = pos.y - origin.y;
-                float dz = pos.z - origin.z;
-                float distSqr = (dx * dx) + (dy * dy) + (dz * dz);
-
-                if (distSqr <= radiusSqr)
+                catch
                 {
-                    cache.PanicHandler.TriggerPanic();
+                    // Never break; continue other bots
                 }
             }
         }
@@ -108,6 +127,9 @@ namespace AIRefactored.AI.Helpers
 
         #region Internal Helpers
 
+        /// <summary>
+        /// Returns true if cache and panic handler are present, bot is alive, and not already panicking.
+        /// </summary>
         private static bool IsEligible(BotComponentCache cache)
         {
             return cache != null &&

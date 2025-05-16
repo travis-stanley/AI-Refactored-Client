@@ -3,7 +3,7 @@
 //   Licensed under the MIT License. See LICENSE in the repository root for more information.
 //
 //   THIS FILE IS SYSTEMATICALLY MANAGED.
-//   Failures in AIRefactored logic must always trigger safe fallback to EFT base AI.
+//   Bulletproof fallback: all subsystem failures are isolated, trigger vanilla fallback, and never propagate.
 // </auto-generated>
 
 namespace AIRefactored.AI.Combat.States
@@ -50,18 +50,20 @@ namespace AIRefactored.AI.Combat.States
         /// </summary>
         public AttackHandler(BotComponentCache cache)
         {
-            if (cache == null || cache.Bot == null)
-            {
-                Plugin.LoggerInstance.LogError("[AttackHandler] Null cache or BotOwner during construction.");
-                _isFallbackMode = true;
-                return;
-            }
-
             _cache = cache;
-            _bot = cache.Bot;
+            _bot = cache?.Bot;
             _lastTargetPosition = Vector3.zero;
             _hasLastTarget = false;
-            _isFallbackMode = false;
+
+            if (_cache == null || _bot == null)
+            {
+                BotFallbackUtility.Trigger(this, _bot, "Null cache or BotOwner during construction.");
+                _isFallbackMode = true;
+            }
+            else
+            {
+                _isFallbackMode = false;
+            }
         }
 
         #endregion
@@ -73,6 +75,9 @@ namespace AIRefactored.AI.Combat.States
         /// </summary>
         public void ClearTarget()
         {
+            if (_isFallbackMode)
+                return;
+
             _hasLastTarget = false;
             _lastTargetPosition = Vector3.zero;
         }
@@ -128,7 +133,6 @@ namespace AIRefactored.AI.Combat.States
                         ? _cache.SquadPath.ApplyOffsetTo(currentTargetPos)
                         : currentTargetPos;
 
-                    // Hardened nav/movement validation: fallback if required.
                     bool navValid = false;
                     try
                     {
@@ -136,7 +140,7 @@ namespace AIRefactored.AI.Combat.States
                     }
                     catch (Exception ex)
                     {
-                        Plugin.LoggerInstance.LogError("[AttackHandler] BotNavValidator.Validate exception: " + ex);
+                        BotFallbackUtility.Trigger(this, _bot, "BotNavValidator.Validate exception.", ex);
                         navValid = false;
                     }
 
@@ -145,7 +149,6 @@ namespace AIRefactored.AI.Combat.States
                         destination = FallbackNavPointProvider.GetSafePoint(_bot.Position);
                     }
 
-                    // Full mover guard: skip if BotMover is not initialized (prevents statue bots).
                     if (_bot.Mover != null)
                     {
                         try
@@ -155,20 +158,19 @@ namespace AIRefactored.AI.Combat.States
                         }
                         catch (Exception ex)
                         {
-                            Plugin.LoggerInstance.LogError("[AttackHandler] SmoothMoveTo or TrySetStance exception: " + ex);
+                            BotFallbackUtility.Trigger(this, _bot, "SmoothMoveTo or stance logic failed.", ex);
                             EnterFallback("SmoothMoveTo or stance logic failed.");
                         }
                     }
                     else
                     {
-                        // Fallback: immediately trigger legacy AI if movement is unavailable.
                         EnterFallback("BotMover missing or not ready. Falling back to EFT AI.");
                     }
                 }
             }
             catch (Exception ex)
             {
-                Plugin.LoggerInstance.LogError("[AttackHandler] Exception in Tick: " + ex);
+                BotFallbackUtility.Trigger(this, _bot, "General Tick failure.", ex);
                 EnterFallback("General Tick failure.");
             }
         }
@@ -216,11 +218,7 @@ namespace AIRefactored.AI.Combat.States
             if (!_isFallbackMode)
             {
                 _isFallbackMode = true;
-                if (_bot != null)
-                {
-                    Plugin.LoggerInstance.LogWarning("[AttackHandler] Entering fallback: " + reason);
-                    BotFallbackUtility.FallbackToEFTLogic(_bot);
-                }
+                BotFallbackUtility.Trigger(this, _bot, reason);
             }
         }
 

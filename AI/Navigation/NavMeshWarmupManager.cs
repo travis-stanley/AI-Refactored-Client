@@ -21,6 +21,7 @@ namespace AIRefactored.AI.Navigation
     /// Immediately builds NavMesh surfaces once the map is known.
     /// Ensures NavMeshStatus is flagged and safe before bot AI is initialized.
     /// Also supports navpoint cache loading or generation.
+    /// All errors and state are strictly localized; never breaks outside navigation systems.
     /// </summary>
     public static class NavMeshWarmupManager
     {
@@ -45,6 +46,7 @@ namespace AIRefactored.AI.Navigation
         /// <summary>
         /// Attempts to build the NavMesh and register navpoints after GameWorld is ready.
         /// Called from AIRefactoredController.OnRaidStarted ONLY.
+        /// All errors are isolated—never break or cascade beyond navigation.
         /// </summary>
         public static void TryPrebuildNavMesh()
         {
@@ -60,14 +62,12 @@ namespace AIRefactored.AI.Navigation
                 return;
             }
 
-            // Headless/FIKA: Only build if raid fully started
             if (FikaHeadlessDetector.IsHeadless && !FikaHeadlessDetector.HasRaidStarted())
             {
                 Logger.LogWarning("[NavMeshWarmupManager] Skipped — raid not started in headless mode.");
                 return;
             }
 
-            // GameWorld must be initialized and ready (including all surface objects present)
             if (!GameWorldHandler.IsReady())
             {
                 Logger.LogWarning("[NavMeshWarmupManager] Skipped — GameWorldHandler not ready.");
@@ -101,11 +101,17 @@ namespace AIRefactored.AI.Navigation
                         continue;
                     }
 
-                    surface.BuildNavMesh();
-                    BotCoverRetreatPlanner.RegisterSurface(mapId, surface);
-                    builtAny = true;
-
-                    Logger.LogDebug("[NavMeshWarmupManager] Built NavMeshSurface: " + surface.name);
+                    try
+                    {
+                        surface.BuildNavMesh();
+                        BotCoverRetreatPlanner.RegisterSurface(mapId, surface);
+                        builtAny = true;
+                        Logger.LogDebug("[NavMeshWarmupManager] Built NavMeshSurface: " + surface.name);
+                    }
+                    catch (Exception navEx)
+                    {
+                        Logger.LogWarning("[NavMeshWarmupManager] NavMeshSurface build failed: " + navEx.Message);
+                    }
                 }
 
                 if (!builtAny)
@@ -117,25 +123,31 @@ namespace AIRefactored.AI.Navigation
                 Logger.LogInfo("[NavMeshWarmupManager] ✅ NavMesh warmup complete.");
                 NavMeshStatus.SetReady();
 
-                // Try to load cached navpoints for this map first (no build if already cached)
-                if (NavPointCacheManager.TryLoad(mapId, out var cached))
+                try
                 {
-                    NavPointRegistry.LoadFrom(cached);
-                    Logger.LogInfo("[NavMeshWarmupManager] ✅ Loaded cached navpoints for: " + mapId);
-                    return;
-                }
+                    if (NavPointCacheManager.TryLoad(mapId, out var cached))
+                    {
+                        NavPointRegistry.LoadFrom(cached);
+                        Logger.LogInfo("[NavMeshWarmupManager] ✅ Loaded cached navpoints for: " + mapId);
+                        return;
+                    }
 
-                NavPointRegistry.RegisterAll(mapId);
+                    NavPointRegistry.RegisterAll(mapId);
 
-                if (NavPointRegistry.IsReady)
-                {
-                    var points = NavPointRegistry.GetAllPoints();
-                    NavPointCacheManager.Save(mapId, points);
-                    Logger.LogInfo("[NavMeshWarmupManager] ✅ Cached new navpoints for: " + mapId);
+                    if (NavPointRegistry.IsReady)
+                    {
+                        var points = NavPointRegistry.GetAllPoints();
+                        NavPointCacheManager.Save(mapId, points);
+                        Logger.LogInfo("[NavMeshWarmupManager] ✅ Cached new navpoints for: " + mapId);
+                    }
+                    else
+                    {
+                        Logger.LogWarning("[NavMeshWarmupManager] ⚠ NavPointRegistry was empty after build.");
+                    }
                 }
-                else
+                catch (Exception cacheEx)
                 {
-                    Logger.LogWarning("[NavMeshWarmupManager] ⚠ NavPointRegistry was empty after build.");
+                    Logger.LogWarning("[NavMeshWarmupManager] Navpoint cache/build failed: " + cacheEx.Message);
                 }
             }
             catch (Exception ex)

@@ -4,6 +4,7 @@
 //
 //   THIS FILE IS SYSTEMATICALLY MANAGED.
 //   Please follow strict StyleCop, ReSharper, and AI-Refactored code standards for all modifications.
+//   All stub/legacy logic is bulletproof and isolation-safe.
 // </auto-generated>
 
 namespace AIRefactored.AI.Navigation
@@ -16,13 +17,14 @@ namespace AIRefactored.AI.Navigation
     /// <summary>
     /// Legacy stub. Previously refreshed NavPointRegistry zone tags using IZones.
     /// Now permanently disabled — IZones are no longer used in AIRefactored.
+    /// All calls are safe, no-op, and never break the system.
     /// </summary>
     public sealed class ZoneAutoRefresherSystem : IAIWorldSystemBootstrapper
     {
         #region Static
 
         private static readonly ZoneAutoRefresherSystem _instance = new ZoneAutoRefresherSystem();
-        private static readonly ManualLogSource _logger = Plugin.LoggerInstance;
+        private static readonly ManualLogSource _logger = SafeLogger();
 
         /// <summary>
         /// Gets the singleton instance of the disabled refresher system.
@@ -39,7 +41,11 @@ namespace AIRefactored.AI.Navigation
         /// <inheritdoc />
         public void Initialize()
         {
-            _logger.LogDebug("[ZoneAutoRefresherSystem] Skipped — IZones system is disabled. No tag refresh performed.");
+            try
+            {
+                _logger.LogDebug("[ZoneAutoRefresherSystem] Skipped — IZones system is disabled. No tag refresh performed.");
+            }
+            catch { /* Logging is always safe */ }
         }
 
         /// <inheritdoc />
@@ -64,6 +70,22 @@ namespace AIRefactored.AI.Navigation
         public WorldPhase RequiredPhase()
         {
             return WorldPhase.WorldReady;
+        }
+
+        #endregion
+
+        #region Helpers
+
+        private static ManualLogSource SafeLogger()
+        {
+            try
+            {
+                return Plugin.LoggerInstance ?? new ManualLogSource("ZoneAutoRefresherSystemStub");
+            }
+            catch
+            {
+                return new ManualLogSource("ZoneAutoRefresherSystemStub");
+            }
         }
 
         #endregion

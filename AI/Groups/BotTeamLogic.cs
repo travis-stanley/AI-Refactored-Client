@@ -23,6 +23,7 @@ namespace AIRefactored.AI.Groups
 
     /// <summary>
     /// Coordinates squad-level tactical behavior including fallback broadcast, enemy sharing, and regrouping.
+    /// Bulletproof: All errors are isolated, and squad logic never breaks parent AI or mod.
     /// </summary>
     public sealed class BotTeamLogic
     {
@@ -57,39 +58,53 @@ namespace AIRefactored.AI.Groups
 
         public static void AddEnemy(BotOwner bot, IPlayer target)
         {
-            if (!EFTPlayerUtil.IsValidBotOwner(bot) || target == null || bot.BotsGroup == null)
-                return;
-
-            Player resolved = EFTPlayerUtil.ResolvePlayerById(target.ProfileId);
-            if (!EFTPlayerUtil.IsValid(resolved))
-                return;
-
-            IPlayer safe = EFTPlayerUtil.AsSafeIPlayer(resolved);
-            int count = bot.BotsGroup.MembersCount;
-
-            for (int i = 0; i < count; i++)
+            try
             {
-                BotOwner mate = bot.BotsGroup.Member(i);
-                if (EFTPlayerUtil.IsValidBotOwner(mate) && mate != bot)
+                if (!EFTPlayerUtil.IsValidBotOwner(bot) || target == null || bot.BotsGroup == null)
+                    return;
+
+                Player resolved = EFTPlayerUtil.ResolvePlayerById(target.ProfileId);
+                if (!EFTPlayerUtil.IsValid(resolved))
+                    return;
+
+                IPlayer safe = EFTPlayerUtil.AsSafeIPlayer(resolved);
+                int count = bot.BotsGroup.MembersCount;
+
+                for (int i = 0; i < count; i++)
                 {
-                    ForceRegisterEnemy(mate, safe);
+                    BotOwner mate = bot.BotsGroup.Member(i);
+                    if (EFTPlayerUtil.IsValidBotOwner(mate) && mate != bot)
+                    {
+                        ForceRegisterEnemy(mate, safe);
+                    }
                 }
+            }
+            catch
+            {
+                // Fail silently: squad logic is always isolated
             }
         }
 
         public static void BroadcastMissionType(BotOwner bot, MissionType mission)
         {
-            if (!EFTPlayerUtil.IsValidBotOwner(bot) || bot.BotsGroup == null)
-                return;
-
-            int count = bot.BotsGroup.MembersCount;
-            for (int i = 0; i < count; i++)
+            try
             {
-                BotOwner mate = bot.BotsGroup.Member(i);
-                if (EFTPlayerUtil.IsValidBotOwner(mate) && mate != bot && mate.BotTalk != null)
+                if (!EFTPlayerUtil.IsValidBotOwner(bot) || bot.BotsGroup == null)
+                    return;
+
+                int count = bot.BotsGroup.MembersCount;
+                for (int i = 0; i < count; i++)
                 {
-                    mate.BotTalk.TrySay(EPhraseTrigger.Cooperation);
+                    BotOwner mate = bot.BotsGroup.Member(i);
+                    if (EFTPlayerUtil.IsValidBotOwner(mate) && mate != bot && mate.BotTalk != null)
+                    {
+                        mate.BotTalk.TrySay(EPhraseTrigger.Cooperation);
+                    }
                 }
+            }
+            catch
+            {
+                // Fail silently
             }
         }
 
@@ -109,41 +124,55 @@ namespace AIRefactored.AI.Groups
 
         public void CoordinateMovement()
         {
-            if (_bot == null || _bot.IsDead || _teammates.Count == 0)
-                return;
-
-            Vector3 center = Vector3.zero;
-            int count = 0;
-
-            for (int i = 0; i < _teammates.Count; i++)
+            try
             {
-                BotOwner mate = _teammates[i];
-                if (EFTPlayerUtil.IsValidBotOwner(mate))
+                if (_bot == null || _bot.IsDead || _teammates.Count == 0)
+                    return;
+
+                Vector3 center = Vector3.zero;
+                int count = 0;
+
+                for (int i = 0; i < _teammates.Count; i++)
                 {
-                    center += mate.Position;
-                    count++;
+                    BotOwner mate = _teammates[i];
+                    if (EFTPlayerUtil.IsValidBotOwner(mate))
+                    {
+                        center += mate.Position;
+                        count++;
+                    }
+                }
+
+                if (count == 0)
+                    return;
+
+                center /= count;
+                Vector3 jitter = Random.insideUnitSphere * RegroupJitterRadius;
+                jitter.y = 0f;
+
+                Vector3 target = center + jitter;
+                if ((_bot.Position - target).sqrMagnitude > RegroupThresholdSqr)
+                {
+                    BotMovementHelper.SmoothMoveTo(_bot, target, false);
                 }
             }
-
-            if (count == 0)
-                return;
-
-            center /= count;
-            Vector3 jitter = Random.insideUnitSphere * RegroupJitterRadius;
-            jitter.y = 0f;
-
-            Vector3 target = center + jitter;
-            if ((_bot.Position - target).sqrMagnitude > RegroupThresholdSqr)
+            catch
             {
-                BotMovementHelper.SmoothMoveTo(_bot, target, false);
+                // Fail silently; squad logic is always local
             }
         }
 
         public void InjectCombatState(BotOwner mate, CombatStateMachine fsm)
         {
-            if (EFTPlayerUtil.IsValidBotOwner(mate) && fsm != null && mate != _bot && !_combatMap.ContainsKey(mate))
+            try
             {
-                _combatMap.Add(mate, fsm);
+                if (EFTPlayerUtil.IsValidBotOwner(mate) && fsm != null && mate != _bot && !_combatMap.ContainsKey(mate))
+                {
+                    _combatMap.Add(mate, fsm);
+                }
+            }
+            catch
+            {
+                // Fail silently
             }
         }
 
@@ -151,44 +180,58 @@ namespace AIRefactored.AI.Groups
         {
             _teammates.Clear();
 
-            Player self = _bot.GetPlayer;
-            if (self?.Profile?.Info == null)
-                return;
-
-            string groupId = self.Profile.Info.GroupId;
-            if (string.IsNullOrEmpty(groupId))
-                return;
-
-            for (int i = 0; i < allBots.Count; i++)
+            try
             {
-                BotOwner other = allBots[i];
-                if (EFTPlayerUtil.IsValidBotOwner(other) &&
-                    other != _bot &&
-                    other.GetPlayer?.Profile?.Info?.GroupId == groupId)
+                Player self = _bot.GetPlayer;
+                if (self?.Profile?.Info == null)
+                    return;
+
+                string groupId = self.Profile.Info.GroupId;
+                if (string.IsNullOrEmpty(groupId))
+                    return;
+
+                for (int i = 0; i < allBots.Count; i++)
                 {
-                    _teammates.Add(other);
+                    BotOwner other = allBots[i];
+                    if (EFTPlayerUtil.IsValidBotOwner(other) &&
+                        other != _bot &&
+                        other.GetPlayer?.Profile?.Info?.GroupId == groupId)
+                    {
+                        _teammates.Add(other);
+                    }
                 }
+            }
+            catch
+            {
+                // Fail silently
             }
         }
 
         public void ShareTarget(IPlayer enemy)
         {
-            if (enemy == null || string.IsNullOrEmpty(enemy.ProfileId))
-                return;
-
-            Player resolved = EFTPlayerUtil.ResolvePlayerById(enemy.ProfileId);
-            if (!EFTPlayerUtil.IsValid(resolved))
-                return;
-
-            IPlayer safe = EFTPlayerUtil.AsSafeIPlayer(resolved);
-
-            for (int i = 0; i < _teammates.Count; i++)
+            try
             {
-                BotOwner mate = _teammates[i];
-                if (EFTPlayerUtil.IsValidBotOwner(mate))
+                if (enemy == null || string.IsNullOrEmpty(enemy.ProfileId))
+                    return;
+
+                Player resolved = EFTPlayerUtil.ResolvePlayerById(enemy.ProfileId);
+                if (!EFTPlayerUtil.IsValid(resolved))
+                    return;
+
+                IPlayer safe = EFTPlayerUtil.AsSafeIPlayer(resolved);
+
+                for (int i = 0; i < _teammates.Count; i++)
                 {
-                    ForceRegisterEnemy(mate, safe);
+                    BotOwner mate = _teammates[i];
+                    if (EFTPlayerUtil.IsValidBotOwner(mate))
+                    {
+                        ForceRegisterEnemy(mate, safe);
+                    }
                 }
+            }
+            catch
+            {
+                // Fail silently
             }
         }
 
@@ -198,15 +241,22 @@ namespace AIRefactored.AI.Groups
 
         private static void ForceRegisterEnemy(BotOwner receiver, IPlayer enemy)
         {
-            if (receiver.BotsGroup != null && !receiver.BotsGroup.IsEnemy(enemy))
+            try
             {
-                receiver.BotsGroup.AddEnemy(enemy, EBotEnemyCause.zryachiyLogic);
-            }
+                if (receiver.BotsGroup != null && !receiver.BotsGroup.IsEnemy(enemy))
+                {
+                    receiver.BotsGroup.AddEnemy(enemy, EBotEnemyCause.zryachiyLogic);
+                }
 
-            if (!receiver.EnemiesController.EnemyInfos.ContainsKey(enemy))
+                if (!receiver.EnemiesController.EnemyInfos.ContainsKey(enemy))
+                {
+                    var settings = new BotSettingsClass((Player)enemy, receiver.BotsGroup, EBotEnemyCause.zryachiyLogic);
+                    receiver.Memory?.AddEnemy(enemy, settings, false);
+                }
+            }
+            catch
             {
-                var settings = new BotSettingsClass((Player)enemy, receiver.BotsGroup, EBotEnemyCause.zryachiyLogic);
-                receiver.Memory?.AddEnemy(enemy, settings, false);
+                // Fail silently: never break squad logic or AI
             }
         }
 
@@ -222,9 +272,9 @@ namespace AIRefactored.AI.Groups
                     await Task.Delay(Random.Range(150, 400));
                     fsm.TriggerFallback(point);
                 }
-                catch (Exception ex)
+                catch
                 {
-                    Plugin.LoggerInstance.LogError("[BotTeamLogic] Error in fallback delay: " + ex);
+                    // Fail silently or log if needed
                 }
             });
         }

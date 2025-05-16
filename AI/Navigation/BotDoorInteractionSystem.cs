@@ -18,6 +18,7 @@ namespace AIRefactored.AI.Navigation
     /// <summary>
     /// Handles door interactions for bots using fallback-agnostic, deadlock-free logic.
     /// Replaces EFT.BotDoorInteraction with fully AIRefactored logic.
+    /// All failures are locally isolated; cannot break or cascade into other systems.
     /// </summary>
     public sealed class BotDoorInteractionSystem
     {
@@ -71,77 +72,85 @@ namespace AIRefactored.AI.Navigation
         /// <param name="time">Current time (Time.time).</param>
         public void Tick(float time)
         {
-            if (_bot == null || _bot.IsDead)
-                return;
-
-            Player player = EFTPlayerUtil.ResolvePlayer(_bot);
-            if (!EFTPlayerUtil.IsValid(player) || !player.IsAI || player.CurrentManagedState == null)
-                return;
-
-            if (time < _lastDoorCheckTime + DoorCheckInterval)
-                return;
-
-            _lastDoorCheckTime = time;
-
-            Vector3 origin = _bot.Position + Vector3.up * 1.2f;
-            Vector3 forward = _bot.LookDirection;
-
-            RaycastHit hit;
-            if (!Physics.SphereCast(origin, DoorCastRadius, forward, out hit, DoorCastRange, AIRefactoredLayerMasks.Interactive))
-            {
-                ClearDoorState();
-                return;
-            }
-
-            Collider col = hit.collider;
-            if (col == null)
-            {
-                ClearDoorState();
-                return;
-            }
-
-            Door door = col.GetComponentInParent<Door>();
-            if (door == null || !door.enabled || !door.Operatable)
-            {
-                ClearDoorState();
-                return;
-            }
-
-            EDoorState state = door.DoorState;
-            if ((state & EDoorState.Open) != 0 || (state & EDoorState.Breaching) != 0)
-            {
-                ClearDoorState();
-                return;
-            }
-
-            if (state == EDoorState.Interacting)
-            {
-                MarkBlocked(door);
-                return;
-            }
-
-            if (time < _nextRetryTime)
-            {
-                MarkBlocked(door);
-                return;
-            }
-
             try
             {
-                EInteractionType interactionType = GetBestInteractionType(state);
-                InteractionResult result = new InteractionResult(interactionType);
-                player.CurrentManagedState.StartDoorInteraction(door, result, null);
+                if (_bot == null || _bot.IsDead)
+                    return;
 
-                _log.LogDebug("[BotDoorInteraction] " + _bot.name + " → " + interactionType + " door " + door.name);
+                Player player = EFTPlayerUtil.ResolvePlayer(_bot);
+                if (!EFTPlayerUtil.IsValid(player) || !player.IsAI || player.CurrentManagedState == null)
+                    return;
+
+                if (time < _lastDoorCheckTime + DoorCheckInterval)
+                    return;
+
+                _lastDoorCheckTime = time;
+
+                Vector3 origin = _bot.Position + Vector3.up * 1.2f;
+                Vector3 forward = _bot.LookDirection;
+
+                RaycastHit hit;
+                if (!Physics.SphereCast(origin, DoorCastRadius, forward, out hit, DoorCastRange, AIRefactoredLayerMasks.Interactive))
+                {
+                    ClearDoorState();
+                    return;
+                }
+
+                Collider col = hit.collider;
+                if (col == null)
+                {
+                    ClearDoorState();
+                    return;
+                }
+
+                Door door = col.GetComponentInParent<Door>();
+                if (door == null || !door.enabled || !door.Operatable)
+                {
+                    ClearDoorState();
+                    return;
+                }
+
+                EDoorState state = door.DoorState;
+                if ((state & EDoorState.Open) != 0 || (state & EDoorState.Breaching) != 0)
+                {
+                    ClearDoorState();
+                    return;
+                }
+
+                if (state == EDoorState.Interacting)
+                {
+                    MarkBlocked(door);
+                    return;
+                }
+
+                if (time < _nextRetryTime)
+                {
+                    MarkBlocked(door);
+                    return;
+                }
+
+                try
+                {
+                    EInteractionType interactionType = GetBestInteractionType(state);
+                    InteractionResult result = new InteractionResult(interactionType);
+                    player.CurrentManagedState.StartDoorInteraction(door, result, null);
+
+                    _log.LogDebug("[BotDoorInteraction] " + _bot.name + " → " + interactionType + " door " + door.name);
+                }
+                catch (Exception ex)
+                {
+                    _log.LogError("[BotDoorInteraction] Door interaction failed: " + ex);
+                }
+
+                _nextRetryTime = time + DoorRetryCooldown;
+                _currentDoor = door;
+                IsBlockedByDoor = true;
             }
-            catch (Exception ex)
+            catch (Exception)
             {
-                _log.LogError("[BotDoorInteraction] Door interaction failed: " + ex);
+                // Locally isolated. Cannot break or cascade.
+                ClearDoorState();
             }
-
-            _nextRetryTime = time + DoorRetryCooldown;
-            _currentDoor = door;
-            IsBlockedByDoor = true;
         }
 
         /// <summary>
@@ -150,11 +159,18 @@ namespace AIRefactored.AI.Navigation
         /// <param name="position">The bot's current position.</param>
         public bool IsDoorBlocking(Vector3 position)
         {
-            if (_currentDoor == null || !_currentDoor.enabled)
-                return false;
+            try
+            {
+                if (_currentDoor == null || !_currentDoor.enabled)
+                    return false;
 
-            float dist = Vector3.Distance(_currentDoor.transform.position, position);
-            return dist < DoorCastRange && (_currentDoor.DoorState & EDoorState.Open) == 0;
+                float dist = Vector3.Distance(_currentDoor.transform.position, position);
+                return dist < DoorCastRange && (_currentDoor.DoorState & EDoorState.Open) == 0;
+            }
+            catch
+            {
+                return false;
+            }
         }
 
         /// <summary>

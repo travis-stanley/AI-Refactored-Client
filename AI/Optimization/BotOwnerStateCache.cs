@@ -4,10 +4,12 @@
 //
 //   THIS FILE IS SYSTEMATICALLY MANAGED.
 //   Please follow strict StyleCop, ReSharper, and AI-Refactored code standards for all modifications.
+//   All personality cache/shift logic is bulletproof and fully isolated.
 // </auto-generated>
 
 namespace AIRefactored.AI.Optimization
 {
+    using System;
     using System.Collections.Generic;
     using AIRefactored.AI.Core;
     using AIRefactored.AI.Helpers;
@@ -18,6 +20,7 @@ namespace AIRefactored.AI.Optimization
     /// <summary>
     /// Tracks tactical state deltas (aggression, caution, sneaky) and triggers behavior shifts.
     /// Used to detect and respond to mid-mission personality changes.
+    /// All failures are isolated to the current bot and never propagate.
     /// </summary>
     public sealed class BotOwnerStateCache
     {
@@ -28,58 +31,77 @@ namespace AIRefactored.AI.Optimization
         /// </summary>
         public void CacheBotOwnerState(BotOwner botOwner)
         {
-            if (!IsValidBot(botOwner))
+            try
             {
-                return;
-            }
+                if (!IsValidBot(botOwner))
+                {
+                    return;
+                }
 
-            string id = botOwner.Profile.Id;
-            if (!_cache.ContainsKey(id))
-            {
-                _cache[id] = CaptureSnapshot(botOwner);
+                string id = botOwner.Profile.Id;
+                if (!_cache.ContainsKey(id))
+                {
+                    _cache[id] = CaptureSnapshot(botOwner);
+                }
             }
+            catch { /* Never propagate error */ }
         }
 
         /// <summary>
         /// Updates the tactical state cache for the bot, and applies behavior changes if the state changes.
+        /// All errors are fully isolated and do not affect mod/systems.
         /// </summary>
         public void UpdateBotOwnerStateIfNeeded(BotOwner botOwner)
         {
-            if (!IsValidBot(botOwner))
+            try
             {
-                return;
-            }
+                if (!IsValidBot(botOwner))
+                {
+                    return;
+                }
 
-            string id = botOwner.Profile.Id;
-            BotStateSnapshot current = CaptureSnapshot(botOwner);
+                string id = botOwner.Profile.Id;
+                BotStateSnapshot current = CaptureSnapshot(botOwner);
 
-            if (_cache.TryGetValue(id, out BotStateSnapshot previous))
-            {
-                if (!previous.Equals(current))
+                if (_cache.TryGetValue(id, out BotStateSnapshot previous))
+                {
+                    if (!previous.Equals(current))
+                    {
+                        _cache[id] = current;
+                        try { ApplyStateChange(botOwner, current); }
+                        catch { /* Never break update loop */ }
+                    }
+                }
+                else
                 {
                     _cache[id] = current;
-                    ApplyStateChange(botOwner, current);
                 }
             }
-            else
-            {
-                _cache[id] = current;
-            }
+            catch { /* Fully bulletproof, never break update or mod */ }
         }
 
         private static bool IsValidBot(BotOwner bot)
         {
-            return bot != null &&
-                   bot.Profile != null &&
-                   bot.GetPlayer != null &&
-                   bot.GetPlayer.IsAI &&
-                   !bot.GetPlayer.IsYourPlayer;
+            try
+            {
+                return bot != null &&
+                       bot.Profile != null &&
+                       bot.GetPlayer != null &&
+                       bot.GetPlayer.IsAI &&
+                       !bot.GetPlayer.IsYourPlayer;
+            }
+            catch
+            {
+                return false;
+            }
         }
 
         private static BotStateSnapshot CaptureSnapshot(BotOwner botOwner)
         {
-            BotPersonalityProfile profile = BotRegistry.Get(botOwner.ProfileId);
-            BotComponentCache cache = BotCacheUtility.GetCache(botOwner);
+            BotPersonalityProfile profile = null;
+            BotComponentCache cache = null;
+            try { profile = BotRegistry.Get(botOwner.ProfileId); } catch { }
+            try { cache = BotCacheUtility.GetCache(botOwner); } catch { }
 
             float aggression = 0.5f;
             float caution = 0.5f;
@@ -95,7 +117,7 @@ namespace AIRefactored.AI.Optimization
 
             if (cache != null && cache.PanicHandler != null)
             {
-                composure = cache.PanicHandler.GetComposureLevel();
+                try { composure = cache.PanicHandler.GetComposureLevel(); } catch { }
             }
 
             return new BotStateSnapshot(aggression, caution, composure, isSneaky);
@@ -103,46 +125,55 @@ namespace AIRefactored.AI.Optimization
 
         private void ApplyStateChange(BotOwner botOwner, BotStateSnapshot snapshot)
         {
-            bool aggressive = snapshot.Aggression > 0.7f && snapshot.Composure > 0.8f;
-            bool cautious = snapshot.Caution > 0.6f || snapshot.Composure < 0.35f;
+            try
+            {
+                bool aggressive = snapshot.Aggression > 0.7f && snapshot.Composure > 0.8f;
+                bool cautious = snapshot.Caution > 0.6f || snapshot.Composure < 0.35f;
 
-            if (aggressive)
-            {
-                TriggerZoneShift(botOwner, true);
+                if (aggressive)
+                {
+                    TriggerZoneShift(botOwner, true);
+                }
+                else if (cautious)
+                {
+                    TriggerZoneShift(botOwner, false);
+                }
+                else
+                {
+                    TriggerZoneShift(botOwner, null);
+                }
             }
-            else if (cautious)
-            {
-                TriggerZoneShift(botOwner, false);
-            }
-            else
-            {
-                TriggerZoneShift(botOwner, null);
-            }
+            catch { /* No error can break calling logic */ }
         }
 
         private static void TriggerZoneShift(BotOwner botOwner, bool? advance)
         {
-            if (botOwner == null || botOwner.Transform == null)
+            try
             {
-                return;
-            }
+                if (botOwner == null || botOwner.Transform == null)
+                {
+                    return;
+                }
 
-            Vector3 shift = Vector3.zero;
+                Vector3 shift = Vector3.zero;
 
-            if (advance == true)
-            {
-                shift = botOwner.Transform.forward * 8f;
-            }
-            else if (advance == false)
-            {
-                shift = -botOwner.Transform.forward * 6f;
-            }
+                if (advance == true)
+                {
+                    shift = botOwner.Transform.forward * 8f;
+                }
+                else if (advance == false)
+                {
+                    shift = -botOwner.Transform.forward * 6f;
+                }
 
-            if (shift.sqrMagnitude > 0.01f)
-            {
-                Vector3 target = botOwner.Position + shift;
-                BotMovementHelper.SmoothMoveTo(botOwner, target);
+                if (shift.sqrMagnitude > 0.01f)
+                {
+                    Vector3 target = botOwner.Position + shift;
+                    try { BotMovementHelper.SmoothMoveTo(botOwner, target); }
+                    catch { /* Never break parent or mod on move fail */ }
+                }
             }
+            catch { /* Bulletproof: never break outer call */ }
         }
 
         private struct BotStateSnapshot

@@ -16,6 +16,7 @@ namespace AIRefactored.AI.Helpers
     /// <summary>
     /// Triggers suppression and panic behavior in AIRefactored bots.
     /// Simulates enemy fire pressure and flash-based fear effects.
+    /// Bulletproof: all errors and edge cases are local; never break the AI stack.
     /// </summary>
     public static class BotSuppressionHelper
     {
@@ -26,9 +27,16 @@ namespace AIRefactored.AI.Helpers
         /// </summary>
         public static BotOwner GetBotOwner(Player player)
         {
-            return EFTPlayerUtil.IsValid(player) && player.IsAI
-                ? player.AIData?.BotOwner
-                : null;
+            try
+            {
+                return EFTPlayerUtil.IsValid(player) && player.IsAI
+                    ? player.AIData?.BotOwner
+                    : null;
+            }
+            catch
+            {
+                return null;
+            }
         }
 
         /// <summary>
@@ -36,9 +44,16 @@ namespace AIRefactored.AI.Helpers
         /// </summary>
         public static BotComponentCache GetCache(Player player)
         {
-            return EFTPlayerUtil.IsValid(player) && player.IsAI
-                ? BotCacheUtility.GetCache(player)
-                : null;
+            try
+            {
+                return EFTPlayerUtil.IsValid(player) && player.IsAI
+                    ? BotCacheUtility.GetCache(player)
+                    : null;
+            }
+            catch
+            {
+                return null;
+            }
         }
 
         /// <summary>
@@ -46,23 +61,30 @@ namespace AIRefactored.AI.Helpers
         /// </summary>
         public static bool ShouldTriggerSuppression(Player player, float visibleDistThreshold = 12f, float ambientThreshold = 0.25f)
         {
-            BotOwner owner = GetBotOwner(player);
-            if (owner?.LookSensor == null)
-                return false;
-
-            float visibleDist = owner.LookSensor.ClearVisibleDist;
-
-            float ambientLight = 0.5f;
             try
             {
-                ambientLight = RenderSettings.ambientLight.grayscale;
+                BotOwner owner = GetBotOwner(player);
+                if (owner?.LookSensor == null)
+                    return false;
+
+                float visibleDist = owner.LookSensor.ClearVisibleDist;
+
+                float ambientLight = 0.5f;
+                try
+                {
+                    ambientLight = RenderSettings.ambientLight.grayscale;
+                }
+                catch
+                {
+                    // Use default if RenderSettings not available
+                }
+
+                return visibleDist < visibleDistThreshold || ambientLight < ambientThreshold;
             }
             catch
             {
-                // Use default if RenderSettings not available
+                return false;
             }
-
-            return visibleDist < visibleDistThreshold || ambientLight < ambientThreshold;
         }
 
         /// <summary>
@@ -71,29 +93,36 @@ namespace AIRefactored.AI.Helpers
         /// </summary>
         public static void TrySuppressBot(Player player, Vector3 threatPosition, IPlayer source = null)
         {
-            if (!EFTPlayerUtil.IsValid(player) || !player.IsAI)
-                return;
-
-            BotOwner owner = GetBotOwner(player);
-            BotComponentCache cache = GetCache(player);
-
-            if (owner == null || cache == null || owner.IsDead)
-                return;
-
-            if (owner.Memory != null)
+            try
             {
-                owner.Memory.SetUnderFire(source);
+                if (!EFTPlayerUtil.IsValid(player) || !player.IsAI)
+                    return;
+
+                BotOwner owner = GetBotOwner(player);
+                BotComponentCache cache = GetCache(player);
+
+                if (owner == null || cache == null || owner.IsDead)
+                    return;
+
+                if (owner.Memory != null)
+                {
+                    try { owner.Memory.SetUnderFire(source); } catch { }
+                }
+
+                if (cache.PanicHandler != null && !cache.PanicHandler.IsPanicking)
+                {
+                    try { cache.PanicHandler.TriggerPanic(); } catch { }
+                    return;
+                }
+
+                if (cache.FlashGrenade != null)
+                {
+                    try { cache.FlashGrenade.ForceBlind(); } catch { }
+                }
             }
-
-            if (cache.PanicHandler != null && !cache.PanicHandler.IsPanicking)
+            catch
             {
-                cache.PanicHandler.TriggerPanic();
-                return;
-            }
-
-            if (cache.FlashGrenade != null)
-            {
-                cache.FlashGrenade.ForceBlind();
+                // All failures are local; never break caller logic.
             }
         }
     }

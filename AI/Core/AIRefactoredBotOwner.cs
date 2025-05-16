@@ -19,6 +19,7 @@ namespace AIRefactored.AI.Core
     /// <summary>
     /// Holds AIRefactored-specific metadata for a bot, including personality, zone, tuning, and runtime behavior state.
     /// Always yields to vanilla logic if any core field is invalid. Never disables the owner.
+    /// Bulletproof: all failures are isolated, never cascade.
     /// </summary>
     public sealed class AIRefactoredBotOwner
     {
@@ -47,7 +48,6 @@ namespace AIRefactored.AI.Core
                 {
                     Logger.LogError("[AIRefactoredBotOwner] Bot accessed before initialization — fallback triggered.");
                     BotFallbackUtility.FallbackToEFTLogic(_bot);
-                    // Return null, but owner logic is not broken.
                     return null;
                 }
                 return _bot;
@@ -62,7 +62,6 @@ namespace AIRefactored.AI.Core
                 {
                     Logger.LogError("[AIRefactoredBotOwner] Cache accessed before initialization — fallback triggered.");
                     BotFallbackUtility.FallbackToEFTLogic(_bot);
-                    // Return empty cache, owner logic not broken.
                     return BotComponentCache.Empty;
                 }
                 return _cache;
@@ -77,16 +76,13 @@ namespace AIRefactored.AI.Core
                 {
                     Logger.LogError("[AIRefactoredBotOwner] MissionController is null — fallback triggered.");
                     BotFallbackUtility.FallbackToEFTLogic(_bot);
-                    // Still return null, does not break owner.
                 }
                 return _missionController;
             }
         }
 
         public BotPersonalityProfile PersonalityProfile { get; private set; }
-
         public string PersonalityName { get; private set; }
-
         public string AssignedZone { get; private set; }
 
         #endregion
@@ -110,6 +106,7 @@ namespace AIRefactored.AI.Core
             {
                 Logger.LogError("[AIRefactoredBotOwner] Initialization failed: bot is null.");
                 BotFallbackUtility.FallbackToEFTLogic(bot);
+                _isInitialized = false;
                 return;
             }
             if (_isInitialized)
@@ -140,6 +137,7 @@ namespace AIRefactored.AI.Core
             {
                 Logger.LogError($"[AIRefactoredBotOwner] Initialization failed: {ex}");
                 BotFallbackUtility.FallbackToEFTLogic(bot);
+                _isInitialized = false;
             }
         }
 
@@ -172,37 +170,55 @@ namespace AIRefactored.AI.Core
             {
                 Logger.LogError($"[AIRefactoredBotOwner] InitProfile failed: {ex}");
                 BotFallbackUtility.FallbackToEFTLogic(_bot);
+                PersonalityProfile = new BotPersonalityProfile();
+                PersonalityName = "Default";
             }
         }
 
         public void InitProfile(BotPersonalityProfile profile, string name)
         {
-            if (profile == null)
+            try
             {
-                Logger.LogError("[AIRefactoredBotOwner] InitProfile failed: profile is null.");
+                if (profile == null)
+                {
+                    Logger.LogError("[AIRefactoredBotOwner] InitProfile failed: profile is null.");
+                    BotFallbackUtility.FallbackToEFTLogic(_bot);
+                    PersonalityProfile = new BotPersonalityProfile();
+                    PersonalityName = "Default";
+                    return;
+                }
+                PersonalityProfile = profile;
+                PersonalityName = string.IsNullOrEmpty(name) ? "Custom" : name;
+
+                if (!FikaHeadlessDetector.IsHeadless)
+                {
+                    Logger.LogDebug($"[AIRefactoredBotOwner] Custom profile assigned: {PersonalityName}");
+                }
+            }
+            catch (Exception ex)
+            {
+                Logger.LogError($"[AIRefactoredBotOwner] Exception in InitProfile(profile,name): {ex}");
                 BotFallbackUtility.FallbackToEFTLogic(_bot);
-                // Still assign a default to ensure owner continues.
                 PersonalityProfile = new BotPersonalityProfile();
                 PersonalityName = "Default";
-                return;
-            }
-            PersonalityProfile = profile;
-            PersonalityName = string.IsNullOrEmpty(name) ? "Custom" : name;
-
-            if (!FikaHeadlessDetector.IsHeadless)
-            {
-                Logger.LogDebug($"[AIRefactoredBotOwner] Custom profile assigned: {PersonalityName}");
             }
         }
 
         public void ClearPersonality()
         {
-            PersonalityProfile = new BotPersonalityProfile();
-            PersonalityName = "Cleared";
-
-            if (!FikaHeadlessDetector.IsHeadless)
+            try
             {
-                Logger.LogDebug("[AIRefactoredBotOwner] Personality cleared.");
+                PersonalityProfile = new BotPersonalityProfile();
+                PersonalityName = "Cleared";
+
+                if (!FikaHeadlessDetector.IsHeadless)
+                {
+                    Logger.LogDebug("[AIRefactoredBotOwner] Personality cleared.");
+                }
+            }
+            catch
+            {
+                // Silent fail
             }
         }
 
@@ -217,29 +233,43 @@ namespace AIRefactored.AI.Core
 
         public void SetZone(string zoneName)
         {
-            if (string.IsNullOrEmpty(zoneName))
+            try
             {
-                Logger.LogWarning("[AIRefactoredBotOwner] Ignored empty zone assignment.");
-                return;
-            }
-            AssignedZone = zoneName;
+                if (string.IsNullOrEmpty(zoneName))
+                {
+                    Logger.LogWarning("[AIRefactoredBotOwner] Ignored empty zone assignment.");
+                    return;
+                }
+                AssignedZone = zoneName;
 
-            if (!FikaHeadlessDetector.IsHeadless)
+                if (!FikaHeadlessDetector.IsHeadless)
+                {
+                    Logger.LogDebug($"[AIRefactoredBotOwner] Zone assigned: {zoneName}");
+                }
+            }
+            catch (Exception ex)
             {
-                Logger.LogDebug($"[AIRefactoredBotOwner] Zone assigned: {zoneName}");
+                Logger.LogError($"[AIRefactoredBotOwner] Exception in SetZone: {ex}");
             }
         }
 
         public void SetMissionController(BotMissionController controller)
         {
-            if (controller == null)
+            try
             {
-                Logger.LogError("[AIRefactoredBotOwner] SetMissionController failed: controller is null.");
-                BotFallbackUtility.FallbackToEFTLogic(_bot);
-                // Do not break the owner, just skip the assignment.
-                return;
+                if (controller == null)
+                {
+                    Logger.LogError("[AIRefactoredBotOwner] SetMissionController failed: controller is null.");
+                    BotFallbackUtility.FallbackToEFTLogic(_bot);
+                    return;
+                }
+                _missionController = controller;
             }
-            _missionController = controller;
+            catch (Exception ex)
+            {
+                Logger.LogError($"[AIRefactoredBotOwner] Exception in SetMissionController: {ex}");
+                BotFallbackUtility.FallbackToEFTLogic(_bot);
+            }
         }
 
         #endregion

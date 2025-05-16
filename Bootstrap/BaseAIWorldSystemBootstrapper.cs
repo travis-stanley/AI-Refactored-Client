@@ -3,7 +3,8 @@
 //   Licensed under the MIT License. See LICENSE in the repository root for more information.
 //
 //   THIS FILE IS SYSTEMATICALLY MANAGED.
-//   Please follow strict StyleCop, ReSharper, and AI-Refactored code standards for all modifications.
+//   Fallback and isolation logic: All errors are locally contained; no failures may cascade or break global AIRefactored state.
+//   See: AIRefactored “Bulletproof Fallback & Isolation Safety Rule Set” for all refactor and patch work.
 // </auto-generated>
 
 namespace AIRefactored.AI.Core
@@ -12,33 +13,62 @@ namespace AIRefactored.AI.Core
     using AIRefactored.Bootstrap;
 
     /// <summary>
-    /// Abstract base class for AI world-level systems with lifecycle binding.
-    /// Provides bulletproof error handling, phase gating, and tick safety.
+    /// Abstract base class for all AI world-level systems.
+    /// Provides diamond-standard lifecycle binding, tick gating, and bulletproof fallback isolation.
     /// </summary>
     public abstract class BaseAIWorldSystemBootstrapper : IAIWorldSystemBootstrapper
     {
+        private volatile bool _hasFailed;
+
         /// <summary>
         /// Called once when the system is initialized at its required phase.
-        /// Override to perform system setup logic.
+        /// Localizes all exceptions and marks system as failed if any error occurs.
         /// </summary>
         public virtual void Initialize()
+        {
+            if (_hasFailed)
+            {
+                return;
+            }
+            try
+            {
+                OnInitialize();
+            }
+            catch (Exception ex)
+            {
+                _hasFailed = true;
+                Plugin.LoggerInstance?.LogError("[BaseAIWorldSystem] Initialize error in " + GetType().Name + ": " + ex);
+                OnFailover();
+            }
+        }
+
+        /// <summary>
+        /// Override for system-specific initialization logic.
+        /// </summary>
+        protected virtual void OnInitialize()
         {
         }
 
         /// <summary>
-        /// Called every frame or tick when active.
-        /// Wraps <see cref="OnTick"/> in guarded try-catch for maximum robustness.
+        /// Called every frame or tick if active and not failed.
+        /// Wraps <see cref="OnTick"/> in a hard try-catch and disables future ticks on error.
         /// </summary>
         /// <param name="deltaTime">Elapsed time since last tick.</param>
         public virtual void Tick(float deltaTime)
         {
+            if (_hasFailed)
+            {
+                return;
+            }
             try
             {
                 OnTick(deltaTime);
             }
             catch (Exception ex)
             {
+                _hasFailed = true;
                 Plugin.LoggerInstance?.LogError("[BaseAIWorldSystem] Tick error in " + GetType().Name + ": " + ex);
+                OnFailover();
             }
         }
 
@@ -51,18 +81,23 @@ namespace AIRefactored.AI.Core
         }
 
         /// <summary>
-        /// Called at raid end or when world is torn down.
-        /// Wraps <see cref="Cleanup"/> in try-catch to guarantee teardown.
+        /// Called at raid end or world teardown. Always guarded, disables system if failed.
         /// </summary>
         public virtual void OnRaidEnd()
         {
+            if (_hasFailed)
+            {
+                return;
+            }
             try
             {
                 Cleanup();
             }
             catch (Exception ex)
             {
+                _hasFailed = true;
                 Plugin.LoggerInstance?.LogError("[BaseAIWorldSystem] OnRaidEnd error in " + GetType().Name + ": " + ex);
+                OnFailover();
             }
         }
 
@@ -74,9 +109,17 @@ namespace AIRefactored.AI.Core
         }
 
         /// <summary>
-        /// Returns true if this system is currently ready and should be ticked.
+        /// Returns true if this system is ready and not failed, and should be ticked.
         /// </summary>
         public virtual bool IsReady()
+        {
+            return !_hasFailed && OnIsReady();
+        }
+
+        /// <summary>
+        /// Override for custom ready gating logic.
+        /// </summary>
+        protected virtual bool OnIsReady()
         {
             return true;
         }
@@ -88,6 +131,15 @@ namespace AIRefactored.AI.Core
         public virtual WorldPhase RequiredPhase()
         {
             return WorldPhase.PostInit;
+        }
+
+        /// <summary>
+        /// Called when a fatal exception occurs; disables system and triggers local fallback only.
+        /// </summary>
+        protected virtual void OnFailover()
+        {
+            // Optionally trigger fallback to vanilla logic for this system if needed.
+            // Never disable parent systems, never affect other bots or global mod state.
         }
     }
 }

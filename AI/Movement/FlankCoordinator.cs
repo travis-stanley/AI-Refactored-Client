@@ -18,6 +18,7 @@ namespace AIRefactored.AI.Movement
     /// <summary>
     /// Determines the optimal flank side and path for a bot based on enemy state, squad angle, and prior usage.
     /// Prevents flank clustering and simulates intelligent side selection.
+    /// All failures are locally isolated; cannot break or cascade into other systems.
     /// </summary>
     public static class FlankCoordinator
     {
@@ -45,66 +46,74 @@ namespace AIRefactored.AI.Movement
         /// </summary>
         public static FlankPositionPlanner.Side GetOptimalFlankSide(BotOwner bot, BotComponentCache cache)
         {
-            // Null-guarded: fallback always succeeds (never breaks AI stack)
-            if (!EFTPlayerUtil.IsValidBotOwner(bot) || cache == null || bot.Memory == null || bot.Memory.GoalEnemy == null)
+            try
             {
+                // Null-guarded: fallback always succeeds (never breaks AI stack)
+                if (!EFTPlayerUtil.IsValidBotOwner(bot) || cache == null || bot.Memory == null || bot.Memory.GoalEnemy == null)
+                {
+                    return FlankPositionPlanner.Side.Left;
+                }
+
+                Vector3 botPos = bot.Position;
+                Vector3 enemyPos = bot.Memory.GoalEnemy.CurrPosition;
+                BifacialTransform enemyTransform = bot.Memory.GoalEnemy.Person?.Transform;
+                if (enemyTransform == null)
+                {
+                    return FlankPositionPlanner.Side.Left;
+                }
+
+                float now = Time.time;
+                Vector3 enemyForward = enemyTransform.forward;
+                Vector3 toBot = botPos - enemyPos;
+
+                float angle = Vector3.SignedAngle(enemyForward, toBot, Vector3.up);
+                float squadBias = GetSquadBias(bot, enemyPos);
+                float suppressionBias = GetSuppressionBias(cache);
+
+                float leftCooldown = now - _lastLeftUseTime;
+                float rightCooldown = now - _lastRightUseTime;
+
+                float leftScore = 0f;
+                float rightScore = 0f;
+
+                if (angle > FlankAngleThreshold)
+                {
+                    leftScore += 1f;
+                }
+                else if (angle < -FlankAngleThreshold)
+                {
+                    rightScore += 1f;
+                }
+
+                leftScore += squadBias + suppressionBias;
+                rightScore -= squadBias;
+                rightScore += suppressionBias;
+
+                if (leftCooldown < RecentlyUsedFlankCooldown)
+                {
+                    leftScore -= 0.75f;
+                }
+
+                if (rightCooldown < RecentlyUsedFlankCooldown)
+                {
+                    rightScore -= 0.75f;
+                }
+
+                // Hard fallback: always update state to avoid drift/desync
+                if (leftScore >= rightScore)
+                {
+                    _lastLeftUseTime = now;
+                    return FlankPositionPlanner.Side.Left;
+                }
+
+                _lastRightUseTime = now;
+                return FlankPositionPlanner.Side.Right;
+            }
+            catch
+            {
+                // Bulletproof fallback
                 return FlankPositionPlanner.Side.Left;
             }
-
-            Vector3 botPos = bot.Position;
-            Vector3 enemyPos = bot.Memory.GoalEnemy.CurrPosition;
-            BifacialTransform enemyTransform = bot.Memory.GoalEnemy.Person?.Transform;
-            if (enemyTransform == null)
-            {
-                return FlankPositionPlanner.Side.Left;
-            }
-
-            float now = Time.time;
-            Vector3 enemyForward = enemyTransform.forward;
-            Vector3 toBot = botPos - enemyPos;
-
-            float angle = Vector3.SignedAngle(enemyForward, toBot, Vector3.up);
-            float squadBias = GetSquadBias(bot, enemyPos);
-            float suppressionBias = GetSuppressionBias(cache);
-
-            float leftCooldown = now - _lastLeftUseTime;
-            float rightCooldown = now - _lastRightUseTime;
-
-            float leftScore = 0f;
-            float rightScore = 0f;
-
-            if (angle > FlankAngleThreshold)
-            {
-                leftScore += 1f;
-            }
-            else if (angle < -FlankAngleThreshold)
-            {
-                rightScore += 1f;
-            }
-
-            leftScore += squadBias + suppressionBias;
-            rightScore -= squadBias;
-            rightScore += suppressionBias;
-
-            if (leftCooldown < RecentlyUsedFlankCooldown)
-            {
-                leftScore -= 0.75f;
-            }
-
-            if (rightCooldown < RecentlyUsedFlankCooldown)
-            {
-                rightScore -= 0.75f;
-            }
-
-            // Hard fallback: always update state to avoid drift/desync
-            if (leftScore >= rightScore)
-            {
-                _lastLeftUseTime = now;
-                return FlankPositionPlanner.Side.Left;
-            }
-
-            _lastRightUseTime = now;
-            return FlankPositionPlanner.Side.Right;
         }
 
         #endregion
@@ -116,9 +125,16 @@ namespace AIRefactored.AI.Movement
         /// </summary>
         private static float GetSuppressionBias(BotComponentCache cache)
         {
-            return cache.Suppression != null && cache.Suppression.IsSuppressed()
-                ? SuppressionBiasWeight
-                : 0f;
+            try
+            {
+                return cache != null && cache.Suppression != null && cache.Suppression.IsSuppressed()
+                    ? SuppressionBiasWeight
+                    : 0f;
+            }
+            catch
+            {
+                return 0f;
+            }
         }
 
         /// <summary>
@@ -126,35 +142,42 @@ namespace AIRefactored.AI.Movement
         /// </summary>
         private static float GetSquadBias(BotOwner bot, Vector3 enemyPosition)
         {
-            BotsGroup group = bot.BotsGroup;
-            if (group == null || group.MembersCount <= 1)
+            try
+            {
+                BotsGroup group = bot.BotsGroup;
+                if (group == null || group.MembersCount <= 1)
+                {
+                    return 0f;
+                }
+
+                Vector3 selfOffset = bot.Position - enemyPosition;
+                Vector3 normSelf = selfOffset.sqrMagnitude > 0.001f ? selfOffset.normalized : Vector3.forward;
+
+                float dotSum = 0f;
+                int contributors = 0;
+
+                for (int i = 0; i < group.MembersCount; i++)
+                {
+                    BotOwner mate = group.Member(i);
+                    if (mate == null || mate == bot || mate.IsDead)
+                    {
+                        continue;
+                    }
+
+                    Vector3 toMate = mate.Position - enemyPosition;
+                    if (toMate.sqrMagnitude > 0.001f)
+                    {
+                        dotSum += Vector3.Dot(normSelf, toMate.normalized);
+                        contributors++;
+                    }
+                }
+
+                return contributors > 0 ? (dotSum / contributors) * SquadSpreadBias : 0f;
+            }
+            catch
             {
                 return 0f;
             }
-
-            Vector3 selfOffset = bot.Position - enemyPosition;
-            Vector3 normSelf = selfOffset.sqrMagnitude > 0.001f ? selfOffset.normalized : Vector3.forward;
-
-            float dotSum = 0f;
-            int contributors = 0;
-
-            for (int i = 0; i < group.MembersCount; i++)
-            {
-                BotOwner mate = group.Member(i);
-                if (mate == null || mate == bot || mate.IsDead)
-                {
-                    continue;
-                }
-
-                Vector3 toMate = mate.Position - enemyPosition;
-                if (toMate.sqrMagnitude > 0.001f)
-                {
-                    dotSum += Vector3.Dot(normSelf, toMate.normalized);
-                    contributors++;
-                }
-            }
-
-            return contributors > 0 ? (dotSum / contributors) * SquadSpreadBias : 0f;
         }
 
         #endregion

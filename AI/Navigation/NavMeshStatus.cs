@@ -14,6 +14,7 @@ namespace AIRefactored.AI.Navigation
     /// <summary>
     /// Tracks global NavMesh readiness for AIRefactored movement systems.
     /// Prevents bots from executing navigation before mesh is baked.
+    /// Thread-safe and bulletproof—cannot break or cascade errors.
     /// </summary>
     public static class NavMeshStatus
     {

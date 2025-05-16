@@ -8,6 +8,7 @@
 
 namespace AIRefactored.AI.Hotspots
 {
+    using System;
     using System.Collections.Generic;
     using AIRefactored.Pools;
     using UnityEngine;
@@ -15,6 +16,7 @@ namespace AIRefactored.AI.Hotspots
     /// <summary>
     /// Tracks recently visited hotspot positions on a per-map basis.
     /// Prevents bots from repeatedly targeting the same tactical zones.
+    /// Bulletproof: all logic is null-safe, never throws, never cascades, and always releases pooled dictionaries.
     /// </summary>
     internal static class HotspotMemory
     {
@@ -42,13 +44,26 @@ namespace AIRefactored.AI.Hotspots
         /// </summary>
         public static void Clear()
         {
-            foreach (KeyValuePair<string, Dictionary<Vector3, float>> kv in VisitedMap)
+            try
             {
-                kv.Value.Clear();
-                TempDictionaryPool.Return(kv.Value);
+                foreach (KeyValuePair<string, Dictionary<Vector3, float>> kv in VisitedMap)
+                {
+                    try
+                    {
+                        kv.Value.Clear();
+                        TempDictionaryPool.Return(kv.Value);
+                    }
+                    catch
+                    {
+                        // Never break; always continue clearing/returning pools
+                    }
+                }
+                VisitedMap.Clear();
             }
-
-            VisitedMap.Clear();
+            catch
+            {
+                // Never break or cascade on clear
+            }
         }
 
         /// <summary>
@@ -56,7 +71,14 @@ namespace AIRefactored.AI.Hotspots
         /// </summary>
         public static float GetVisitCount(string mapId, Vector3 position)
         {
-            return WasVisitedWithin(mapId, position, DefaultVisitLifetime) ? 1f : 0f;
+            try
+            {
+                return WasVisitedWithin(mapId, position, DefaultVisitLifetime) ? 1f : 0f;
+            }
+            catch
+            {
+                return 0f;
+            }
         }
 
         /// <summary>
@@ -64,25 +86,28 @@ namespace AIRefactored.AI.Hotspots
         /// </summary>
         public static void MarkVisited(string mapId, Vector3 position)
         {
-            if (string.IsNullOrEmpty(mapId))
+            try
             {
-                return;
-            }
+                if (string.IsNullOrEmpty(mapId))
+                    return;
 
-            string key = mapId.Trim().ToLowerInvariant();
-            if (key.Length == 0)
+                string key = mapId.Trim().ToLowerInvariant();
+                if (key.Length == 0)
+                    return;
+
+                Dictionary<Vector3, float> visits;
+                if (!VisitedMap.TryGetValue(key, out visits) || visits == null)
+                {
+                    visits = TempDictionaryPool.Rent<Vector3, float>();
+                    VisitedMap[key] = visits;
+                }
+
+                visits[position] = Time.time;
+            }
+            catch
             {
-                return;
+                // Never break; skip if error
             }
-
-            Dictionary<Vector3, float> visits;
-            if (!VisitedMap.TryGetValue(key, out visits))
-            {
-                visits = TempDictionaryPool.Rent<Vector3, float>();
-                VisitedMap.Add(key, visits);
-            }
-
-            visits[position] = Time.time;
         }
 
         /// <summary>
@@ -90,7 +115,14 @@ namespace AIRefactored.AI.Hotspots
         /// </summary>
         public static bool WasVisitedRecently(string mapId, Vector3 position, float cooldownSeconds)
         {
-            return WasVisitedWithin(mapId, position, cooldownSeconds);
+            try
+            {
+                return WasVisitedWithin(mapId, position, cooldownSeconds);
+            }
+            catch
+            {
+                return false;
+            }
         }
 
         #endregion
@@ -100,27 +132,19 @@ namespace AIRefactored.AI.Hotspots
         private static bool WasVisitedWithin(string mapId, Vector3 position, float cooldown)
         {
             if (string.IsNullOrEmpty(mapId))
-            {
                 return false;
-            }
 
             string key = mapId.Trim().ToLowerInvariant();
             if (key.Length == 0)
-            {
                 return false;
-            }
 
             Dictionary<Vector3, float> visits;
-            if (!VisitedMap.TryGetValue(key, out visits))
-            {
+            if (!VisitedMap.TryGetValue(key, out visits) || visits == null)
                 return false;
-            }
 
             float lastSeen;
             if (!visits.TryGetValue(position, out lastSeen))
-            {
                 return false;
-            }
 
             return (Time.time - lastSeen) < cooldown;
         }

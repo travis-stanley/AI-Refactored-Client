@@ -3,13 +3,13 @@
 //   Licensed under the MIT License. See LICENSE in the repository root for more information.
 //
 //   THIS FILE IS SYSTEMATICALLY MANAGED.
-//   Please follow strict StyleCop, ReSharper, and AI-Refactored code standards for all modifications.
+//   Bulletproof: All failures are locally contained, never break other subsystems, and always trigger fallback isolation.
+//   See: AIRefactored “Bulletproof Fallback & Isolation Safety Rule Set” for audit compliance.
 // </auto-generated>
 
 namespace AIRefactored.Bootstrap
 {
     using System;
-    using System.Collections;
     using System.Collections.Generic;
     using AIRefactored.AI.Core;
     using AIRefactored.AI.Hotspots;
@@ -26,7 +26,8 @@ namespace AIRefactored.Bootstrap
     using UnityEngine;
 
     /// <summary>
-    /// Main coordinator for AIRefactored world systems. Handles initialization, updates, and teardown.
+    /// Main coordinator for AIRefactored world systems. Handles initialization, tick/update, and teardown.
+    /// Fully bulletproof: all errors are locally contained and never break the AIRefactored stack.
     /// </summary>
     public static class WorldBootstrapper
     {
@@ -48,6 +49,7 @@ namespace AIRefactored.Bootstrap
 
         /// <summary>
         /// Begins world system initialization. Does NOT register navmesh or navpoints.
+        /// Bulletproof: all exceptions contained, never cascades or breaks global mod state.
         /// </summary>
         public static void Begin(ManualLogSource logger, string mapId)
         {
@@ -64,20 +66,20 @@ namespace AIRefactored.Bootstrap
                 _hasShutdownLogged = false;
                 Systems.Clear();
 
-                // Global resets: never triggers navmesh/navpoint population here!
-                BotRecoveryService.Reset();
-                BotSpawnWatcherService.Reset();
-                LootRuntimeWatcher.Reset();
-                DeadBodyObserverService.Reset();
-                DeadBodyContainerCache.Clear();
-                LootRegistry.Clear();
-                HotspotRegistry.Clear();
-                NavPointRegistry.Clear();
+                // Bulletproof global resets: never triggers navmesh/navpoint population here!
+                TrySafe(BotRecoveryService.Reset, "[WorldBootstrapper] BotRecoveryService.Reset() failed: ");
+                TrySafe(BotSpawnWatcherService.Reset, "[WorldBootstrapper] BotSpawnWatcherService.Reset() failed: ");
+                TrySafe(LootRuntimeWatcher.Reset, "[WorldBootstrapper] LootRuntimeWatcher.Reset() failed: ");
+                TrySafe(DeadBodyObserverService.Reset, "[WorldBootstrapper] DeadBodyObserverService.Reset() failed: ");
+                TrySafe(DeadBodyContainerCache.Clear, "[WorldBootstrapper] DeadBodyContainerCache.Clear() failed: ");
+                TrySafe(LootRegistry.Clear, "[WorldBootstrapper] LootRegistry.Clear() failed: ");
+                TrySafe(HotspotRegistry.Clear, "[WorldBootstrapper] HotspotRegistry.Clear() failed: ");
+                TrySafe(NavPointRegistry.Clear, "[WorldBootstrapper] NavPointRegistry.Clear() failed: ");
 
                 // Only initialize HotspotRegistry if mapId is valid.
                 if (!string.IsNullOrEmpty(mapId))
                 {
-                    HotspotRegistry.Initialize(mapId);
+                    TrySafe(() => HotspotRegistry.Initialize(mapId), "[WorldBootstrapper] HotspotRegistry.Initialize() failed: ");
                 }
                 else
                 {
@@ -85,18 +87,18 @@ namespace AIRefactored.Bootstrap
                 }
 
                 // Register world systems (do not add navmesh/navpoint managers here)
-                RegisterSystem(new RaidLifecycleWatcher());
-                RegisterSystem(new BotRecoveryService());
-                RegisterSystem(new BotSpawnWatcherService());
-                RegisterSystem(new LootRuntimeWatcher());
-                RegisterSystem(new DeadBodyObserverService());
-                RegisterSystem(new HotspotRegistryBootstrapper());
+                RegisterSystemSafe(new RaidLifecycleWatcher());
+                RegisterSystemSafe(new BotRecoveryService());
+                RegisterSystemSafe(new BotSpawnWatcherService());
+                RegisterSystemSafe(new LootRuntimeWatcher());
+                RegisterSystemSafe(new DeadBodyObserverService());
+                RegisterSystemSafe(new HotspotRegistryBootstrapper());
 
-                // Initialize all systems
+                // Initialize all systems (never break loop on single error)
                 for (int i = 0; i < Systems.Count; i++)
                 {
-                    try { Systems[i].Initialize(); }
-                    catch (Exception ex) { Logger.LogError("[WorldBootstrapper] Failed to initialize system: " + ex); }
+                    IAIWorldSystemBootstrapper sys = Systems[i];
+                    TrySafe(sys.Initialize, $"[WorldBootstrapper] Failed to initialize {sys.GetType().Name}: ");
                 }
 
                 _hasInitialized = true;
@@ -119,8 +121,8 @@ namespace AIRefactored.Bootstrap
             {
                 for (int i = 0; i < Systems.Count; i++)
                 {
-                    try { Systems[i].OnRaidEnd(); }
-                    catch (Exception ex) { Logger.LogError("[WorldBootstrapper] OnRaidEnd error in system: " + ex); }
+                    IAIWorldSystemBootstrapper sys = Systems[i];
+                    TrySafe(sys.OnRaidEnd, $"[WorldBootstrapper] OnRaidEnd error in {sys.GetType().Name}: ");
                 }
 
                 Systems.Clear();
@@ -144,6 +146,7 @@ namespace AIRefactored.Bootstrap
 
         /// <summary>
         /// Ticks all registered world systems and attached BotBrains (per frame/tick).
+        /// Bulletproof: all tick errors are contained and never propagate.
         /// </summary>
         public static void Tick(float deltaTime)
         {
@@ -170,7 +173,7 @@ namespace AIRefactored.Bootstrap
                     }
                     catch (Exception ex)
                     {
-                        Logger.LogError("[WorldBootstrapper] System Tick() error: " + ex);
+                        Logger.LogError("[WorldBootstrapper] System Tick() error in " + system.GetType().Name + ": " + ex);
                     }
                 }
 
@@ -201,8 +204,8 @@ namespace AIRefactored.Bootstrap
                 if (now - _lastSweep >= SweepInterval)
                 {
                     _lastSweep = now;
-                    GameWorldHandler.EnforceBotBrains();
-                    GameWorldHandler.CleanupDeadBotsSmoothly();
+                    TrySafe(GameWorldHandler.EnforceBotBrains, "[WorldBootstrapper] EnforceBotBrains() failed: ");
+                    TrySafe(GameWorldHandler.CleanupDeadBotsSmoothly, "[WorldBootstrapper] CleanupDeadBotsSmoothly() failed: ");
                 }
             }
             catch (Exception ex)
@@ -252,10 +255,32 @@ namespace AIRefactored.Bootstrap
 
         #region System Registration
 
+        private static void RegisterSystemSafe(IAIWorldSystemBootstrapper system)
+        {
+            try
+            {
+                if (system == null || Systems.Contains(system)) return;
+                Systems.Add(system);
+            }
+            catch (Exception ex)
+            {
+                Logger.LogError("[WorldBootstrapper] RegisterSystemSafe() failed: " + ex);
+            }
+        }
+
         public static void RegisterSystem(IAIWorldSystemBootstrapper system)
         {
-            if (system == null || Systems.Contains(system)) return;
-            Systems.Add(system);
+            RegisterSystemSafe(system);
+        }
+
+        #endregion
+
+        #region Helpers
+
+        private static void TrySafe(Action action, string errorPrefix)
+        {
+            try { action(); }
+            catch (Exception ex) { Logger.LogError(errorPrefix + ex); }
         }
 
         #endregion

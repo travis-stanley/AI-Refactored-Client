@@ -3,6 +3,7 @@
 //   Licensed under the MIT License. See LICENSE in the repository root for more information.
 //
 //   THIS FILE IS SYSTEMATICALLY MANAGED.
+//   Failures in AIRefactored logic must always trigger safe fallback to EFT base AI, never break the stack.
 //   Please follow strict StyleCop, ReSharper, and AI-Refactored code standards for all modifications.
 // </auto-generated>
 
@@ -31,6 +32,7 @@ namespace AIRefactored.AI.Perception
         private BotOwner _bot;
         private BotComponentCache _cache;
         private float _nextDecisionTime;
+        private bool _failed; // disables this subsystem on hard error
 
         #endregion
 
@@ -40,17 +42,26 @@ namespace AIRefactored.AI.Perception
         /// Initializes the controller for the provided bot component cache.
         /// </summary>
         /// <param name="cache">The bot's runtime component cache.</param>
-        /// <exception cref="ArgumentNullException">Thrown if cache or cache.Bot is null.</exception>
         public void Initialize(BotComponentCache cache)
         {
-            if (cache == null || cache.Bot == null)
+            try
             {
-                throw new ArgumentNullException(nameof(cache), "BotComponentCache and Bot must not be null.");
-            }
+                _failed = false;
+                if (cache == null || cache.Bot == null)
+                {
+                    _failed = true;
+                    return;
+                }
 
-            _bot = cache.Bot;
-            _cache = cache;
-            _nextDecisionTime = 0f;
+                _bot = cache.Bot;
+                _cache = cache;
+                _nextDecisionTime = 0f;
+            }
+            catch (Exception ex)
+            {
+                _failed = true;
+                Plugin.LoggerInstance.LogError($"[BotTacticalDeviceController] Initialize exception: {ex}");
+            }
         }
 
         #endregion
@@ -63,55 +74,63 @@ namespace AIRefactored.AI.Perception
         /// </summary>
         public void Tick()
         {
-            if (!CanThink())
+            if (_failed || !CanThink())
             {
                 return;
             }
 
-            _nextDecisionTime = Time.time + TacticalConfig.CheckInterval;
-
-            Weapon weapon = _bot.WeaponManager != null ? _bot.WeaponManager.CurrentWeapon : null;
-            if (weapon == null)
-            {
-                return;
-            }
-
-            List<LightComponent> devices = TempListPool.Rent<LightComponent>();
             try
             {
-                ScanModsForTacticalDevices(weapon, devices);
+                _nextDecisionTime = Time.time + TacticalConfig.CheckInterval;
 
-                bool isLowVisibility = IsLowVisibility();
-                float chaosChance = GetChaosBaitChance();
-                bool baitTrigger = Random.value < chaosChance;
-                bool shouldEnable = isLowVisibility || baitTrigger;
-
-                for (int i = 0, count = devices.Count; i < count; i++)
+                Weapon weapon = _bot.WeaponManager != null ? _bot.WeaponManager.CurrentWeapon : null;
+                if (weapon == null)
                 {
-                    LightComponent device = devices[i];
-                    if (device != null && device.IsActive != shouldEnable)
-                    {
-                        device.IsActive = shouldEnable;
-                    }
+                    return;
                 }
 
-                // If chaos bait is triggered, flash the lights briefly, then force-off for bait
-                if (baitTrigger)
+                List<LightComponent> devices = TempListPool.Rent<LightComponent>();
+                try
                 {
-                    _nextDecisionTime = Time.time + 1.5f;
+                    ScanModsForTacticalDevices(weapon, devices);
+
+                    bool isLowVisibility = IsLowVisibility();
+                    float chaosChance = GetChaosBaitChance();
+                    bool baitTrigger = Random.value < chaosChance;
+                    bool shouldEnable = isLowVisibility || baitTrigger;
+
                     for (int i = 0, count = devices.Count; i < count; i++)
                     {
                         LightComponent device = devices[i];
-                        if (device != null)
+                        if (device != null && device.IsActive != shouldEnable)
                         {
-                            device.IsActive = false;
+                            device.IsActive = shouldEnable;
+                        }
+                    }
+
+                    // If chaos bait is triggered, flash the lights briefly, then force-off for bait
+                    if (baitTrigger)
+                    {
+                        _nextDecisionTime = Time.time + 1.5f;
+                        for (int i = 0, count = devices.Count; i < count; i++)
+                        {
+                            LightComponent device = devices[i];
+                            if (device != null)
+                            {
+                                device.IsActive = false;
+                            }
                         }
                     }
                 }
+                finally
+                {
+                    TempListPool.Return(devices);
+                }
             }
-            finally
+            catch (Exception ex)
             {
-                TempListPool.Return(devices);
+                _failed = true;
+                Plugin.LoggerInstance.LogError($"[BotTacticalDeviceController] Tick exception: {ex}");
             }
         }
 
@@ -124,12 +143,13 @@ namespace AIRefactored.AI.Perception
         /// </summary>
         private bool CanThink()
         {
-            return _bot != null
-                   && _cache != null
-                   && !_bot.IsDead
-                   && Time.time >= _nextDecisionTime
-                   && EFTPlayerUtil.IsValid(_bot.GetPlayer)
-                   && _bot.GetPlayer.IsAI;
+            return !_failed
+                && _bot != null
+                && _cache != null
+                && !_bot.IsDead
+                && Time.time >= _nextDecisionTime
+                && EFTPlayerUtil.IsValid(_bot.GetPlayer)
+                && _bot.GetPlayer.IsAI;
         }
 
         /// <summary>
@@ -137,14 +157,23 @@ namespace AIRefactored.AI.Perception
         /// </summary>
         private float GetChaosBaitChance()
         {
-            var owner = _cache.AIRefactoredBotOwner;
-            if (owner == null)
+            try
             {
+                var owner = _cache != null ? _cache.AIRefactoredBotOwner : null;
+                if (owner == null)
+                {
+                    return 0f;
+                }
+
+                BotPersonalityProfile profile = owner.PersonalityProfile;
+                return profile != null ? profile.ChaosFactor * 0.25f : 0f;
+            }
+            catch (Exception ex)
+            {
+                _failed = true;
+                Plugin.LoggerInstance.LogError($"[BotTacticalDeviceController] GetChaosBaitChance exception: {ex}");
                 return 0f;
             }
-
-            BotPersonalityProfile profile = owner.PersonalityProfile;
-            return profile != null ? profile.ChaosFactor * 0.25f : 0f;
         }
 
         /// <summary>
@@ -152,9 +181,17 @@ namespace AIRefactored.AI.Perception
         /// </summary>
         private static bool IsLowVisibility()
         {
-            float ambient = RenderSettings.ambientLight.grayscale;
-            float fogDensity = RenderSettings.fog ? RenderSettings.fogDensity : 0f;
-            return ambient < TacticalConfig.LightThreshold || fogDensity > TacticalConfig.FogThreshold;
+            try
+            {
+                float ambient = RenderSettings.ambientLight.grayscale;
+                float fogDensity = RenderSettings.fog ? RenderSettings.fogDensity : 0f;
+                return ambient < TacticalConfig.LightThreshold || fogDensity > TacticalConfig.FogThreshold;
+            }
+            catch
+            {
+                // On RenderSettings/graphics API error, default to false (safe for headless)
+                return false;
+            }
         }
 
         /// <summary>
@@ -162,6 +199,11 @@ namespace AIRefactored.AI.Perception
         /// </summary>
         private static void ScanModsForTacticalDevices(Weapon weapon, List<LightComponent> result)
         {
+            if (weapon == null || result == null)
+            {
+                return;
+            }
+
             var slots = weapon.AllSlots;
             if (slots == null)
             {
@@ -215,7 +257,6 @@ namespace AIRefactored.AI.Perception
                     return true;
                 }
             }
-
             return false;
         }
 

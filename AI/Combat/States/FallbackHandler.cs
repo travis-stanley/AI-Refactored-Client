@@ -20,6 +20,7 @@ namespace AIRefactored.AI.Combat.States
 
     /// <summary>
     /// Handles suppression fallback, retreat routing, and cover movement during engagements.
+    /// Bulletproof: All failures are isolated; only this handler disables itself and triggers vanilla fallback if required.
     /// </summary>
     public sealed class FallbackHandler : IDisposable
     {
@@ -36,6 +37,7 @@ namespace AIRefactored.AI.Combat.States
         private readonly List<Vector3> _currentFallbackPath;
 
         private Vector3 _fallbackTarget;
+        private bool _isFallbackMode;
 
         #endregion
 
@@ -43,16 +45,20 @@ namespace AIRefactored.AI.Combat.States
 
         public FallbackHandler(BotComponentCache cache)
         {
-            if (cache == null || cache.Bot == null)
-            {
-                Plugin.LoggerInstance.LogError("[FallbackHandler] Null Bot or cache during initialization.");
-                throw new ArgumentException("FallbackHandler requires a valid cache with BotOwner.");
-            }
-
             _cache = cache;
-            _bot = cache.Bot;
-            _fallbackTarget = _bot.Position;
+            _bot = cache?.Bot;
+            _fallbackTarget = _bot != null ? _bot.Position : Vector3.zero;
             _currentFallbackPath = TempListPool.Rent<Vector3>();
+
+            if (_cache == null || _bot == null)
+            {
+                BotFallbackUtility.Trigger(this, _bot, "Null Bot or cache during initialization.");
+                _isFallbackMode = true;
+            }
+            else
+            {
+                _isFallbackMode = false;
+            }
         }
 
         #endregion
@@ -88,9 +94,12 @@ namespace AIRefactored.AI.Combat.States
         /// </summary>
         public void SetFallbackTarget(Vector3 target)
         {
+            if (_isFallbackMode)
+                return;
+
             if (!IsVectorValid(target))
             {
-                Plugin.LoggerInstance.LogWarning("[FallbackHandler] Ignored fallback target with invalid vector.");
+                BotFallbackUtility.Trigger(this, _bot, "Ignored fallback target with invalid vector.");
                 return;
             }
 
@@ -102,9 +111,12 @@ namespace AIRefactored.AI.Combat.States
         /// </summary>
         public void SetFallbackPath(List<Vector3> path)
         {
+            if (_isFallbackMode)
+                return;
+
             if (path == null || path.Count < 2)
             {
-                Plugin.LoggerInstance.LogWarning("[FallbackHandler] Rejected fallback path: path too short.");
+                BotFallbackUtility.Trigger(this, _bot, "Rejected fallback path: path too short.");
                 return;
             }
 
@@ -125,7 +137,7 @@ namespace AIRefactored.AI.Combat.States
             }
             else
             {
-                Plugin.LoggerInstance.LogWarning("[FallbackHandler] Final fallback path was invalid.");
+                BotFallbackUtility.Trigger(this, _bot, "Final fallback path was invalid.");
             }
         }
 
@@ -134,6 +146,9 @@ namespace AIRefactored.AI.Combat.States
         /// </summary>
         public bool ShallUseNow(float time)
         {
+            if (_isFallbackMode)
+                return false;
+
             return !_cache.IsFallbackMode &&
                    _bot != null &&
                    IsVectorValid(_fallbackTarget) &&
@@ -145,6 +160,9 @@ namespace AIRefactored.AI.Combat.States
         /// </summary>
         public bool ShouldTriggerSuppressedFallback(float now, float lastStateChangeTime, float minStateDuration)
         {
+            if (_isFallbackMode)
+                return false;
+
             return _cache.Suppression != null &&
                    _cache.Suppression.IsSuppressed() &&
                    (now - lastStateChangeTime) >= minStateDuration;
@@ -155,36 +173,56 @@ namespace AIRefactored.AI.Combat.States
         /// </summary>
         public void Tick(float time, Action<CombatState, float> forceState)
         {
-            if (_cache.IsFallbackMode || _bot == null || !IsVectorValid(_fallbackTarget))
+            if (_isFallbackMode || _cache.IsFallbackMode || _bot == null || !IsVectorValid(_fallbackTarget))
                 return;
 
-            Player player = _bot.GetPlayer;
-            if (!EFTPlayerUtil.IsValid(player))
+            try
             {
-                Plugin.LoggerInstance.LogWarning("[FallbackHandler] Tick skipped: bot player invalid.");
-                return;
-            }
-
-            if (_bot.Mover != null)
-            {
-                BotMovementHelper.SmoothMoveTo(_bot, _fallbackTarget);
-                BotCoverHelper.TrySetStanceFromNearbyCover(_cache, _fallbackTarget);
-            }
-            else
-            {
-                Plugin.LoggerInstance.LogWarning("[FallbackHandler] BotMover missing. Fallback to EFT AI.");
-                BotFallbackUtility.FallbackToEFTLogic(_bot);
-                return;
-            }
-
-            if (Vector3.Distance(_bot.Position, _fallbackTarget) < MinArrivalDistance)
-            {
-                forceState?.Invoke(CombatState.Patrol, time);
-
-                if (!FikaHeadlessDetector.IsHeadless && _bot.BotTalk != null)
+                Player player = _bot.GetPlayer;
+                if (!EFTPlayerUtil.IsValid(player))
                 {
-                    _bot.BotTalk.TrySay(EPhraseTrigger.NeedHelp);
+                    BotFallbackUtility.Trigger(this, _bot, "Tick skipped: bot player invalid.");
+                    return;
                 }
+
+                if (_bot.Mover != null)
+                {
+                    try
+                    {
+                        BotMovementHelper.SmoothMoveTo(_bot, _fallbackTarget);
+                        BotCoverHelper.TrySetStanceFromNearbyCover(_cache, _fallbackTarget);
+                    }
+                    catch (Exception ex)
+                    {
+                        BotFallbackUtility.Trigger(this, _bot, "SmoothMoveTo or stance logic failed.", ex);
+                        _isFallbackMode = true;
+                        BotFallbackUtility.FallbackToEFTLogic(_bot);
+                        return;
+                    }
+                }
+                else
+                {
+                    BotFallbackUtility.Trigger(this, _bot, "BotMover missing. Fallback to EFT AI.");
+                    _isFallbackMode = true;
+                    BotFallbackUtility.FallbackToEFTLogic(_bot);
+                    return;
+                }
+
+                if (Vector3.Distance(_bot.Position, _fallbackTarget) < MinArrivalDistance)
+                {
+                    forceState?.Invoke(CombatState.Patrol, time);
+
+                    if (!FikaHeadlessDetector.IsHeadless && _bot.BotTalk != null)
+                    {
+                        try { _bot.BotTalk.TrySay(EPhraseTrigger.NeedHelp); }
+                        catch { /* no-op */ }
+                    }
+                }
+            }
+            catch (Exception ex)
+            {
+                BotFallbackUtility.Trigger(this, _bot, "General Tick exception.", ex);
+                _isFallbackMode = true;
             }
         }
 
@@ -193,6 +231,9 @@ namespace AIRefactored.AI.Combat.States
         /// </summary>
         public bool IsActive()
         {
+            if (_isFallbackMode)
+                return false;
+
             return _bot != null &&
                    EFTPlayerUtil.IsValid(_bot.GetPlayer) &&
                    IsVectorValid(_fallbackTarget) &&
@@ -204,6 +245,9 @@ namespace AIRefactored.AI.Combat.States
         /// </summary>
         public void Cancel()
         {
+            if (_isFallbackMode)
+                return;
+
             _fallbackTarget = (_bot != null) ? _bot.Position : Vector3.zero;
             _currentFallbackPath.Clear();
         }

@@ -3,11 +3,13 @@
 //   Licensed under the MIT License. See LICENSE in the repository root for more information.
 //
 //   THIS FILE IS SYSTEMATICALLY MANAGED.
+//   Failures in AIRefactored logic must always trigger safe fallback to EFT base AI, never break the stack.
 //   Please follow strict StyleCop, ReSharper, and AI-Refactored code standards for all modifications.
 // </auto-generated>
 
 namespace AIRefactored.AI.Reactions
 {
+    using System;
     using AIRefactored.AI.Combat;
     using AIRefactored.AI.Core;
     using AIRefactored.AI.Helpers;
@@ -38,6 +40,7 @@ namespace AIRefactored.AI.Reactions
         private BotComponentCache _cache;
         private float _lastTriggerTime = -1f;
         private float _suppressedUntil = -1f;
+        private bool _failed;
 
         #endregion
 
@@ -49,7 +52,17 @@ namespace AIRefactored.AI.Reactions
         /// <param name="cache">Bot component cache for this bot (never null).</param>
         public void Initialize(BotComponentCache cache)
         {
-            _cache = cache ?? throw new System.ArgumentNullException(nameof(cache));
+            try
+            {
+                _cache = cache ?? throw new ArgumentNullException(nameof(cache));
+                _failed = false;
+            }
+            catch (Exception ex)
+            {
+                _cache = null;
+                _failed = true;
+                Plugin.LoggerInstance.LogError($"[BotFlashReactionComponent] Initialize exception: {ex}");
+            }
         }
 
         #endregion
@@ -61,7 +74,7 @@ namespace AIRefactored.AI.Reactions
         /// </summary>
         public bool IsSuppressed()
         {
-            return Time.time < _suppressedUntil;
+            return !_failed && Time.time < _suppressedUntil;
         }
 
         /// <summary>
@@ -70,34 +83,42 @@ namespace AIRefactored.AI.Reactions
         /// <param name="time">Current time value from caller.</param>
         public void Tick(float time)
         {
-            if (_cache == null || _cache.Bot == null)
+            if (_failed || _cache == null || _cache.Bot == null)
             {
                 return;
             }
 
-            if (time >= _suppressedUntil)
+            try
             {
-                _suppressedUntil = -1f;
-            }
-
-            Transform head = BotCacheUtility.Head(_cache);
-            if (head == null)
-            {
-                return;
-            }
-
-            var lights = FlashlightRegistry.GetLastKnownFlashlightPositions();
-            for (int i = 0, count = lights.Count; i < count; i++)
-            {
-                if (FlashlightRegistry.IsExposingBot(head, out Light light) && light != null)
+                if (time >= _suppressedUntil)
                 {
-                    float score = FlashLightUtils.CalculateFlashScore(light.transform, head, 20f);
-                    if (score >= TriggerIntensityThreshold)
+                    _suppressedUntil = -1f;
+                }
+
+                Transform head = BotCacheUtility.Head(_cache);
+                if (head == null)
+                {
+                    return;
+                }
+
+                var lights = FlashlightRegistry.GetLastKnownFlashlightPositions();
+                for (int i = 0, count = lights.Count; i < count; i++)
+                {
+                    if (FlashlightRegistry.IsExposingBot(head, out Light light) && light != null)
                     {
-                        TriggerSuppression(score);
-                        return;
+                        float score = FlashLightUtils.CalculateFlashScore(light.transform, head, 20f);
+                        if (score >= TriggerIntensityThreshold)
+                        {
+                            TriggerSuppression(score);
+                            return;
+                        }
                     }
                 }
+            }
+            catch (Exception ex)
+            {
+                _failed = true;
+                Plugin.LoggerInstance.LogError($"[BotFlashReactionComponent] Tick exception: {ex}");
             }
         }
 
@@ -107,43 +128,51 @@ namespace AIRefactored.AI.Reactions
         /// <param name="strength">Intensity of the flash, [0,1] range is normal.</param>
         public void TriggerSuppression(float strength = 0.6f)
         {
-            if (_cache == null || _cache.Bot == null)
+            if (_failed || _cache == null || _cache.Bot == null)
             {
                 return;
             }
 
-            BotOwner bot = _cache.Bot;
-            if (bot.IsDead)
+            try
             {
-                return;
-            }
+                BotOwner bot = _cache.Bot;
+                if (bot.IsDead)
+                {
+                    return;
+                }
 
-            Player player = bot.GetPlayer;
-            if (player == null || !player.IsAI || player.IsYourPlayer)
+                Player player = bot.GetPlayer;
+                if (player == null || !player.IsAI || player.IsYourPlayer)
+                {
+                    return;
+                }
+
+                float now = Time.time;
+                if (now - _lastTriggerTime < ReactionCooldown)
+                {
+                    return;
+                }
+
+                _lastTriggerTime = now;
+
+                float composure = 1f;
+                if (_cache.PanicHandler != null)
+                {
+                    composure = _cache.PanicHandler.GetComposureLevel();
+                }
+
+                float scaled = Mathf.Clamp01(strength) * composure;
+                float duration = Mathf.Lerp(MinSuppressionDuration, MaxSuppressionDuration, scaled);
+                _suppressedUntil = now + duration;
+
+                TriggerFallback(bot);
+                TriggerPanic(_cache);
+            }
+            catch (Exception ex)
             {
-                return;
+                _failed = true;
+                Plugin.LoggerInstance.LogError($"[BotFlashReactionComponent] TriggerSuppression exception: {ex}");
             }
-
-            float now = Time.time;
-            if (now - _lastTriggerTime < ReactionCooldown)
-            {
-                return;
-            }
-
-            _lastTriggerTime = now;
-
-            float composure = 1f;
-            if (_cache.PanicHandler != null)
-            {
-                composure = _cache.PanicHandler.GetComposureLevel();
-            }
-
-            float scaled = Mathf.Clamp01(strength) * composure;
-            float duration = Mathf.Lerp(MinSuppressionDuration, MaxSuppressionDuration, scaled);
-            _suppressedUntil = now + duration;
-
-            TriggerFallback(bot);
-            TriggerPanic(_cache);
         }
 
         #endregion
@@ -155,20 +184,24 @@ namespace AIRefactored.AI.Reactions
         /// </summary>
         private static void TriggerFallback(BotOwner bot)
         {
-            Vector3 dir = bot.LookDirection;
-            Vector3? retreat = HybridFallbackResolver.GetBestRetreatPoint(bot, dir);
-
-            if (retreat.HasValue)
+            try
             {
-                BotMovementHelper.SmoothMoveTo(bot, retreat.Value);
-                return;
+                Vector3 dir = bot.LookDirection;
+                Vector3? retreat = HybridFallbackResolver.GetBestRetreatPoint(bot, dir);
+
+                if (retreat.HasValue)
+                {
+                    BotMovementHelper.SmoothMoveTo(bot, retreat.Value);
+                    return;
+                }
+
+                Vector3 lateral = new Vector3(-dir.x, 0f, -dir.z).normalized;
+                Vector3 fallback = bot.Position + lateral * FallbackDistance + UnityEngine.Random.insideUnitSphere * FallbackJitter;
+                fallback.y = bot.Position.y;
+
+                BotMovementHelper.SmoothMoveTo(bot, fallback);
             }
-
-            Vector3 lateral = new Vector3(-dir.x, 0f, -dir.z).normalized;
-            Vector3 fallback = bot.Position + lateral * FallbackDistance + Random.insideUnitSphere * FallbackJitter;
-            fallback.y = bot.Position.y;
-
-            BotMovementHelper.SmoothMoveTo(bot, fallback);
+            catch { }
         }
 
         /// <summary>
@@ -176,10 +209,14 @@ namespace AIRefactored.AI.Reactions
         /// </summary>
         private static void TriggerPanic(BotComponentCache cache)
         {
-            if (BotPanicUtility.TryGetPanicComponent(cache, out BotPanicHandler panic))
+            try
             {
-                panic.TriggerPanic();
+                if (BotPanicUtility.TryGetPanicComponent(cache, out BotPanicHandler panic))
+                {
+                    panic.TriggerPanic();
+                }
             }
+            catch { }
         }
 
         #endregion

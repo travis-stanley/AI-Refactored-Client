@@ -4,6 +4,7 @@
 //
 //   THIS FILE IS SYSTEMATICALLY MANAGED.
 //   Please follow strict StyleCop, ReSharper, and AI-Refactored code standards for all modifications.
+//   All errors are locally isolated; registry logic never affects other systems or causes global faults.
 // </auto-generated>
 
 namespace AIRefactored.AI.Looting
@@ -20,6 +21,7 @@ namespace AIRefactored.AI.Looting
     /// Centralized registry for all lootables in the scene.
     /// Bots query this instead of using expensive GetComponent calls.
     /// Tracks timestamp metadata for prioritization and pruning.
+    /// Bulletproof error and isolation standards enforced.
     /// </summary>
     public static class LootRegistry
     {
@@ -54,16 +56,30 @@ namespace AIRefactored.AI.Looting
 
         public static void Initialize()
         {
-            Clear();
-            LootRuntimeWatcher.Reset();
-            Logger.LogDebug("[LootRegistry] Initialized loot tracking system.");
+            try
+            {
+                Clear();
+                LootRuntimeWatcher.Reset();
+                Logger.LogDebug("[LootRegistry] Initialized loot tracking system.");
+            }
+            catch (Exception ex)
+            {
+                Logger.LogError($"[LootRegistry] Initialize() failed: {ex}");
+            }
         }
 
         public static void Clear()
         {
-            Containers.Clear();
-            Items.Clear();
-            WatchedInstanceIds.Clear();
+            try
+            {
+                Containers.Clear();
+                Items.Clear();
+                WatchedInstanceIds.Clear();
+            }
+            catch (Exception ex)
+            {
+                Logger.LogError($"[LootRegistry] Clear() failed: {ex}");
+            }
         }
 
         #endregion
@@ -73,12 +89,19 @@ namespace AIRefactored.AI.Looting
         public static List<LootableContainer> GetAllContainers()
         {
             List<LootableContainer> list = TempListPool.Rent<LootableContainer>();
-            foreach (var kv in Containers)
+            try
             {
-                if (kv.Key != null)
+                foreach (var kv in Containers)
                 {
-                    list.Add(kv.Key);
+                    if (kv.Key != null)
+                    {
+                        list.Add(kv.Key);
+                    }
                 }
+            }
+            catch (Exception ex)
+            {
+                Logger.LogError($"[LootRegistry] GetAllContainers() failed: {ex}");
             }
             return list;
         }
@@ -86,12 +109,19 @@ namespace AIRefactored.AI.Looting
         public static List<LootItem> GetAllItems()
         {
             List<LootItem> list = TempListPool.Rent<LootItem>();
-            foreach (var kv in Items)
+            try
             {
-                if (kv.Key != null)
+                foreach (var kv in Items)
                 {
-                    list.Add(kv.Key);
+                    if (kv.Key != null)
+                    {
+                        list.Add(kv.Key);
+                    }
                 }
+            }
+            catch (Exception ex)
+            {
+                Logger.LogError($"[LootRegistry] GetAllItems() failed: {ex}");
             }
             return list;
         }
@@ -99,34 +129,44 @@ namespace AIRefactored.AI.Looting
         public static List<LootableContainer> GetNearbyContainers(Vector3 origin, float radius)
         {
             List<LootableContainer> result = TempListPool.Rent<LootableContainer>();
-            float radiusSqr = radius * radius;
-
-            foreach (var kv in Containers)
+            try
             {
-                Transform tf = kv.Value.Transform;
-                if (tf != null && (tf.position - origin).sqrMagnitude <= radiusSqr)
+                float radiusSqr = radius * radius;
+                foreach (var kv in Containers)
                 {
-                    result.Add(kv.Value.Container);
+                    Transform tf = kv.Value.Transform;
+                    if (tf != null && (tf.position - origin).sqrMagnitude <= radiusSqr)
+                    {
+                        result.Add(kv.Value.Container);
+                    }
                 }
             }
-
+            catch (Exception ex)
+            {
+                Logger.LogError($"[LootRegistry] GetNearbyContainers() failed: {ex}");
+            }
             return result;
         }
 
         public static List<LootItem> GetNearbyItems(Vector3 origin, float radius)
         {
             List<LootItem> result = TempListPool.Rent<LootItem>();
-            float radiusSqr = radius * radius;
-
-            foreach (var kv in Items)
+            try
             {
-                Transform tf = kv.Value.Transform;
-                if (tf != null && (tf.position - origin).sqrMagnitude <= radiusSqr)
+                float radiusSqr = radius * radius;
+                foreach (var kv in Items)
                 {
-                    result.Add(kv.Value.Item);
+                    Transform tf = kv.Value.Transform;
+                    if (tf != null && (tf.position - origin).sqrMagnitude <= radiusSqr)
+                    {
+                        result.Add(kv.Value.Item);
+                    }
                 }
             }
-
+            catch (Exception ex)
+            {
+                Logger.LogError($"[LootRegistry] GetNearbyItems() failed: {ex}");
+            }
             return result;
         }
 
@@ -136,36 +176,50 @@ namespace AIRefactored.AI.Looting
 
         public static void RegisterContainer(LootableContainer container)
         {
-            if (container == null || container.transform == null)
+            try
             {
-                return;
+                if (container == null || container.transform == null)
+                {
+                    return;
+                }
+
+                Containers[container] = new TrackedContainer
+                {
+                    Container = container,
+                    Transform = container.transform,
+                    LastSeenTime = Time.time
+                };
+
+                InjectWatcherIfNeeded(container.gameObject);
             }
-
-            Containers[container] = new TrackedContainer
+            catch (Exception ex)
             {
-                Container = container,
-                Transform = container.transform,
-                LastSeenTime = Time.time
-            };
-
-            InjectWatcherIfNeeded(container.gameObject);
+                Logger.LogError($"[LootRegistry] RegisterContainer() failed: {ex}");
+            }
         }
 
         public static void RegisterItem(LootItem item)
         {
-            if (item == null || item.transform == null)
+            try
             {
-                return;
+                if (item == null || item.transform == null)
+                {
+                    return;
+                }
+
+                Items[item] = new TrackedItem
+                {
+                    Item = item,
+                    Transform = item.transform,
+                    LastSeenTime = Time.time
+                };
+
+                InjectWatcherIfNeeded(item.gameObject);
             }
-
-            Items[item] = new TrackedItem
+            catch (Exception ex)
             {
-                Item = item,
-                Transform = item.transform,
-                LastSeenTime = Time.time
-            };
-
-            InjectWatcherIfNeeded(item.gameObject);
+                Logger.LogError($"[LootRegistry] RegisterItem() failed: {ex}");
+            }
         }
 
         #endregion
@@ -175,64 +229,88 @@ namespace AIRefactored.AI.Looting
         public static bool TryGetContainerByName(string name, out LootableContainer found)
         {
             found = null;
-            if (string.IsNullOrWhiteSpace(name))
+            try
             {
-                return false;
-            }
-
-            foreach (var kv in Containers)
-            {
-                if (kv.Key != null && string.Equals(kv.Key.name, name.Trim(), StringComparison.OrdinalIgnoreCase))
+                if (string.IsNullOrWhiteSpace(name))
                 {
-                    found = kv.Key;
-                    return true;
+                    return false;
+                }
+
+                foreach (var kv in Containers)
+                {
+                    if (kv.Key != null && string.Equals(kv.Key.name, name.Trim(), StringComparison.OrdinalIgnoreCase))
+                    {
+                        found = kv.Key;
+                        return true;
+                    }
                 }
             }
-
+            catch (Exception ex)
+            {
+                Logger.LogError($"[LootRegistry] TryGetContainerByName() failed: {ex}");
+            }
             return false;
         }
 
         public static bool TryGetItemByName(string name, out LootItem found)
         {
             found = null;
-            if (string.IsNullOrWhiteSpace(name))
+            try
             {
-                return false;
-            }
-
-            foreach (var kv in Items)
-            {
-                if (kv.Key != null && string.Equals(kv.Key.name, name.Trim(), StringComparison.OrdinalIgnoreCase))
+                if (string.IsNullOrWhiteSpace(name))
                 {
-                    found = kv.Key;
-                    return true;
+                    return false;
+                }
+
+                foreach (var kv in Items)
+                {
+                    if (kv.Key != null && string.Equals(kv.Key.name, name.Trim(), StringComparison.OrdinalIgnoreCase))
+                    {
+                        found = kv.Key;
+                        return true;
+                    }
                 }
             }
-
+            catch (Exception ex)
+            {
+                Logger.LogError($"[LootRegistry] TryGetItemByName() failed: {ex}");
+            }
             return false;
         }
 
         public static bool TryGetLastSeenTime(LootableContainer container, out float time)
         {
-            if (container != null && Containers.TryGetValue(container, out var tracked))
-            {
-                time = tracked.LastSeenTime;
-                return true;
-            }
-
             time = 0f;
+            try
+            {
+                if (container != null && Containers.TryGetValue(container, out var tracked))
+                {
+                    time = tracked.LastSeenTime;
+                    return true;
+                }
+            }
+            catch (Exception ex)
+            {
+                Logger.LogError($"[LootRegistry] TryGetLastSeenTime(container) failed: {ex}");
+            }
             return false;
         }
 
         public static bool TryGetLastSeenTime(LootItem item, out float time)
         {
-            if (item != null && Items.TryGetValue(item, out var tracked))
-            {
-                time = tracked.LastSeenTime;
-                return true;
-            }
-
             time = 0f;
+            try
+            {
+                if (item != null && Items.TryGetValue(item, out var tracked))
+                {
+                    time = tracked.LastSeenTime;
+                    return true;
+                }
+            }
+            catch (Exception ex)
+            {
+                Logger.LogError($"[LootRegistry] TryGetLastSeenTime(item) failed: {ex}");
+            }
             return false;
         }
 
@@ -242,23 +320,36 @@ namespace AIRefactored.AI.Looting
 
         public static void PruneStale(float olderThanSeconds)
         {
-            float cutoff = Time.time - olderThanSeconds;
-
-            RemoveWhere(Containers, kv => kv.Value.LastSeenTime < cutoff);
-            RemoveWhere(Items, kv => kv.Value.LastSeenTime < cutoff);
+            try
+            {
+                float cutoff = Time.time - olderThanSeconds;
+                RemoveWhere(Containers, kv => kv.Value.LastSeenTime < cutoff);
+                RemoveWhere(Items, kv => kv.Value.LastSeenTime < cutoff);
+            }
+            catch (Exception ex)
+            {
+                Logger.LogError($"[LootRegistry] PruneStale() failed: {ex}");
+            }
         }
 
         private static void InjectWatcherIfNeeded(GameObject go)
         {
-            if (go == null)
+            try
             {
-                return;
-            }
+                if (go == null)
+                {
+                    return;
+                }
 
-            int id = go.GetInstanceID();
-            if (WatchedInstanceIds.Add(id))
+                int id = go.GetInstanceID();
+                if (WatchedInstanceIds.Add(id))
+                {
+                    LootRuntimeWatcher.Register(go);
+                }
+            }
+            catch (Exception ex)
             {
-                LootRuntimeWatcher.Register(go);
+                Logger.LogError($"[LootRegistry] InjectWatcherIfNeeded() failed: {ex}");
             }
         }
 
@@ -279,6 +370,10 @@ namespace AIRefactored.AI.Looting
                 {
                     dict.Remove(toRemove[i]);
                 }
+            }
+            catch (Exception ex)
+            {
+                Logger.LogError($"[LootRegistry] RemoveWhere() failed: {ex}");
             }
             finally
             {

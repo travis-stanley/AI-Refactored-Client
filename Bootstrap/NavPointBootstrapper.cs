@@ -3,7 +3,8 @@
 //   Licensed under the MIT License. See LICENSE in the repository root for more information.
 //
 //   THIS FILE IS SYSTEMATICALLY MANAGED.
-//   Runtime-safe, deferred bootstrap with cache support.
+//   Bulletproof: All failures are locally contained, never break other subsystems, and always trigger fallback isolation.
+//   See: AIRefactored “Bulletproof Fallback & Isolation Safety Rule Set” for audit compliance.
 // </auto-generated>
 
 namespace AIRefactored.AI.Navigation
@@ -22,14 +23,14 @@ namespace AIRefactored.AI.Navigation
 
 	/// <summary>
 	/// Dynamically scans valid AI navigation points including cover, rooftop, flank, and fallback zones.
-	/// Headless-safe, memory-safe, and cache-enabled for runtime performance.
+	/// Headless-safe, memory-safe, pooling enforced, and bulletproof isolation for runtime safety.
 	/// </summary>
 	public static class NavPointBootstrapper
 	{
 		#region Constants
 
 		private const float ForwardCoverCheckDistance = 4.0f;
-		private const float MaxSampleHeight = 4.0f; // Lowered for typical Tarkov maps, avoids overshooting floors
+		private const float MaxSampleHeight = 4.0f;
 		private const float MinNavPointClearance = 1.6f;
 		private const float RoofRaycastHeight = 12.0f;
 		private const float ScanRadius = 80.0f;
@@ -50,15 +51,21 @@ namespace AIRefactored.AI.Navigation
 		private static bool _isTaskRunning;
 		private static int _registered;
 		private static string _mapId = string.Empty;
+		private static bool _hasFailed;
 
 		#endregion
 
 		#region Public API
 
+		/// <summary>
+		/// Registers all navigation points for the given mapId.
+		/// Bulletproof: Any error disables only this scan, never breaks system or cascades error.
+		/// </summary>
 		public static void RegisterAll(string mapId)
 		{
 			Reset();
 			_mapId = mapId;
+			_hasFailed = false;
 
 			if (!GameWorldHandler.IsHost || !GameWorldHandler.IsInitialized)
 			{
@@ -66,16 +73,25 @@ namespace AIRefactored.AI.Navigation
 				return;
 			}
 
-			if (NavPointCacheManager.TryLoad(mapId, out var cached))
+			try
 			{
-				for (int i = 0; i < cached.Count; i++)
+				if (NavPointCacheManager.TryLoad(mapId, out var cached))
 				{
-					var p = cached[i];
-					NavPointRegistry.Register(p.Position, p.IsCover, p.Tag, p.Elevation, p.IsIndoor, p.IsJumpable, p.CoverAngle);
-				}
+					for (int i = 0; i < cached.Count; i++)
+					{
+						var p = cached[i];
+						NavPointRegistry.Register(p.Position, p.IsCover, p.Tag, p.Elevation, p.IsIndoor, p.IsJumpable, p.CoverAngle);
+					}
 
-				NavMeshStatus.SetReady();
-				Logger.LogDebug("[NavPointBootstrapper] ✅ Loaded from cache: " + cached.Count + " points.");
+					NavMeshStatus.SetReady();
+					Logger.LogDebug("[NavPointBootstrapper] ✅ Loaded from cache: " + cached.Count + " points.");
+					return;
+				}
+			}
+			catch (Exception ex)
+			{
+				_hasFailed = true;
+				Logger.LogError("[NavPointBootstrapper] Failed loading cache: " + ex);
 				return;
 			}
 
@@ -83,8 +99,19 @@ namespace AIRefactored.AI.Navigation
 			_registered = 0;
 			NavMeshStatus.Reset();
 
-			// Attempt to find NavMeshSurface(s)
-			NavMeshSurface[] surfaces = UnityEngine.Object.FindObjectsOfType<NavMeshSurface>();
+			NavMeshSurface[] surfaces = null;
+			try
+			{
+				surfaces = UnityEngine.Object.FindObjectsOfType<NavMeshSurface>();
+			}
+			catch (Exception ex)
+			{
+				_hasFailed = true;
+				Logger.LogError("[NavPointBootstrapper] Find NavMeshSurface failed: " + ex);
+				_isRunning = false;
+				return;
+			}
+
 			if (surfaces == null || surfaces.Length == 0)
 			{
 				Logger.LogWarning("[NavPointBootstrapper] No NavMeshSurface found.");
@@ -92,7 +119,6 @@ namespace AIRefactored.AI.Navigation
 				return;
 			}
 
-			// Use the first surface as center reference
 			_center = surfaces[0].transform.position;
 			float half = ScanRadius * 0.5f;
 
@@ -111,6 +137,12 @@ namespace AIRefactored.AI.Navigation
 				{
 					ScanQueue.Enqueue(pooled[i]);
 				}
+			}
+			catch (Exception ex)
+			{
+				_hasFailed = true;
+				Logger.LogError("[NavPointBootstrapper] Grid point prequeue failed: " + ex);
+				_isRunning = false;
 			}
 			finally
 			{
@@ -131,97 +163,143 @@ namespace AIRefactored.AI.Navigation
 			}
 		}
 
+		/// <summary>
+		/// Processes nav point scan queue in real-time. Bulletproof: all errors localized, no crashes.
+		/// </summary>
 		public static void Tick()
 		{
-			if (!_isRunning || !GameWorldHandler.IsHost)
+			if (!_isRunning || !GameWorldHandler.IsHost || _hasFailed)
 			{
 				return;
 			}
 
-			int maxPerFrame = FikaHeadlessDetector.IsHeadless ? 80 : 40;
-			int processed = 0;
-			int rejectedRaycast = 0, rejectedNavmesh = 0, rejectedClearance = 0, rejectedCheckSphere = 0;
-
-			while (ScanQueue.Count > 0 && processed++ < maxPerFrame)
+			try
 			{
-				Vector3 probe = ScanQueue.Dequeue();
+				int maxPerFrame = FikaHeadlessDetector.IsHeadless ? 80 : 40;
+				int processed = 0;
 
-				if (!Physics.Raycast(probe, Vector3.down, out RaycastHit hit, MaxSampleHeight))
+				int rejectedRaycast = 0, rejectedNavmesh = 0, rejectedClearance = 0, rejectedCheckSphere = 0;
+
+				while (ScanQueue.Count > 0 && processed++ < maxPerFrame)
 				{
-					if (++rejectedRaycast <= 10)
-						Logger.LogWarning("[NavPointBootstrapper] Point rejected (raycast miss): " + probe + " (y=" + probe.y + ")");
-					continue;
-				}
+					Vector3 probe = ScanQueue.Dequeue();
 
-				Vector3 pos = hit.point;
-
-				if (!NavMesh.SamplePosition(pos, out NavMeshHit navHit, 2.5f, NavMesh.AllAreas))
-				{
-					if (++rejectedNavmesh <= 10)
-						Logger.LogWarning("[NavPointBootstrapper] Point rejected (NavMesh.SamplePosition fail): " + pos);
-					continue;
-				}
-
-				if (Physics.Raycast(pos + Vector3.up * 0.5f, Vector3.up, MinNavPointClearance))
-				{
-					if (++rejectedClearance <= 10)
-						Logger.LogWarning("[NavPointBootstrapper] Point rejected (blocked above): " + pos);
-					continue;
-				}
-
-				Vector3 final = navHit.position;
-				float elevation = final.y - _center.y;
-				bool isCover = IsCoverPoint(final);
-				bool isIndoor = IsIndoorPoint(final);
-				string tag = ClassifyNavPoint(elevation, isCover, isIndoor);
-				float coverAngle = CalculateCoverAngle(final);
-
-				if (!Physics.CheckSphere(final, 0.2f, AIRefactoredLayerMasks.TerrainAndObstacles))
-				{
-					if (++rejectedCheckSphere <= 10)
-						Logger.LogWarning("[NavPointBootstrapper] Point rejected (CheckSphere failed TerrainAndObstacles): " + final);
-					continue;
-				}
-
-				NavPointRegistry.Register(final, isCover, tag, elevation, isIndoor, true, coverAngle);
-				_registered++;
-			}
-
-			if (ScanQueue.Count == 0 && BackgroundPending.Count > 0)
-			{
-				lock (BackgroundPending)
-				{
-					for (int i = 0; i < BackgroundPending.Count; i++)
+					try
 					{
-						ScanQueue.Enqueue(BackgroundPending[i]);
+						if (!Physics.Raycast(probe, Vector3.down, out RaycastHit hit, MaxSampleHeight))
+						{
+							if (++rejectedRaycast <= 10)
+								Logger.LogWarning("[NavPointBootstrapper] Point rejected (raycast miss): " + probe + " (y=" + probe.y + ")");
+							continue;
+						}
+
+						Vector3 pos = hit.point;
+
+						if (!NavMesh.SamplePosition(pos, out NavMeshHit navHit, 2.5f, NavMesh.AllAreas))
+						{
+							if (++rejectedNavmesh <= 10)
+								Logger.LogWarning("[NavPointBootstrapper] Point rejected (NavMesh.SamplePosition fail): " + pos);
+							continue;
+						}
+
+						if (Physics.Raycast(pos + Vector3.up * 0.5f, Vector3.up, MinNavPointClearance))
+						{
+							if (++rejectedClearance <= 10)
+								Logger.LogWarning("[NavPointBootstrapper] Point rejected (blocked above): " + pos);
+							continue;
+						}
+
+						Vector3 final = navHit.position;
+						float elevation = final.y - _center.y;
+						bool isCover = IsCoverPoint(final);
+						bool isIndoor = IsIndoorPoint(final);
+						string tag = ClassifyNavPoint(elevation, isCover, isIndoor);
+						float coverAngle = CalculateCoverAngle(final);
+
+						if (!Physics.CheckSphere(final, 0.2f, AIRefactoredLayerMasks.TerrainAndObstacles))
+						{
+							if (++rejectedCheckSphere <= 10)
+								Logger.LogWarning("[NavPointBootstrapper] Point rejected (CheckSphere failed TerrainAndObstacles): " + final);
+							continue;
+						}
+
+						NavPointRegistry.Register(final, isCover, tag, elevation, isIndoor, true, coverAngle);
+						_registered++;
 					}
-					BackgroundPending.Clear();
+					catch (Exception ex)
+					{
+						Logger.LogError("[NavPointBootstrapper] ScanQueue processing error: " + ex);
+						continue; // always localize error, continue scanning
+					}
 				}
 
-				Logger.LogDebug("[NavPointBootstrapper] Queued vertical fallback points.");
+				if (ScanQueue.Count == 0 && BackgroundPending.Count > 0)
+				{
+					lock (BackgroundPending)
+					{
+						for (int i = 0; i < BackgroundPending.Count; i++)
+						{
+							ScanQueue.Enqueue(BackgroundPending[i]);
+						}
+						BackgroundPending.Clear();
+					}
+
+					Logger.LogDebug("[NavPointBootstrapper] Queued vertical fallback points.");
+				}
+
+				if (ScanQueue.Count == 0 && !_isTaskRunning)
+				{
+					_isRunning = false;
+					NavMeshStatus.SetReady();
+
+					List<NavPointData> snapshot = null;
+					try
+					{
+						snapshot = NavPointRegistry.QueryNearby(_center, ScanRadius, null);
+						NavPointCacheManager.Save(_mapId, snapshot);
+						Logger.LogDebug("[NavPointBootstrapper] ✅ Completed scan and cached " + (snapshot?.Count ?? 0) + " nav points. Total registered: " + _registered);
+					}
+					catch (Exception ex)
+					{
+						Logger.LogError("[NavPointBootstrapper] Snapshot/cache error: " + ex);
+					}
+					finally
+					{
+						if (snapshot != null)
+						{
+							TempListPool.Return(snapshot);
+						}
+					}
+				}
 			}
-
-			if (ScanQueue.Count == 0 && !_isTaskRunning)
+			catch (Exception ex)
 			{
+				_hasFailed = true;
+				Logger.LogError("[NavPointBootstrapper] Tick() failed: " + ex);
 				_isRunning = false;
-				NavMeshStatus.SetReady();
-
-				List<NavPointData> snapshot = NavPointRegistry.QueryNearby(_center, ScanRadius, null);
-				NavPointCacheManager.Save(_mapId, snapshot);
-
-				Logger.LogDebug("[NavPointBootstrapper] ✅ Completed scan and cached " + snapshot.Count + " nav points. Total registered: " + _registered);
 			}
 		}
 
+		/// <summary>
+		/// Resets the scan and clears all queued points and state.
+		/// </summary>
 		public static void Reset()
 		{
-			ScanQueue.Clear();
-			BackgroundPending.Clear();
-			_registered = 0;
-			_isRunning = false;
-			_isTaskRunning = false;
-			NavMeshStatus.Reset();
-			_mapId = string.Empty;
+			try
+			{
+				ScanQueue.Clear();
+				BackgroundPending.Clear();
+				_registered = 0;
+				_isRunning = false;
+				_isTaskRunning = false;
+				_hasFailed = false;
+				NavMeshStatus.Reset();
+				_mapId = string.Empty;
+			}
+			catch (Exception ex)
+			{
+				Logger.LogError("[NavPointBootstrapper] Reset() failed: " + ex);
+			}
 		}
 
 		#endregion
@@ -251,6 +329,10 @@ namespace AIRefactored.AI.Navigation
 					BackgroundPending.AddRange(tempList);
 				}
 			}
+			catch (Exception ex)
+			{
+				Logger.LogError("[NavPointBootstrapper] PrequeueVerticalPoints() failed: " + ex);
+			}
 			finally
 			{
 				TempListPool.Return(tempList);
@@ -262,10 +344,17 @@ namespace AIRefactored.AI.Navigation
 			Vector3 eye = pos + Vector3.up * 1.4f;
 			for (float angle = -45f; angle <= 45f; angle += 15f)
 			{
-				Vector3 dir = Quaternion.Euler(0f, angle, 0f) * Vector3.forward;
-				if (Physics.Raycast(eye, dir, ForwardCoverCheckDistance, AIRefactoredLayerMasks.HighPolyCollider))
+				try
 				{
-					return true;
+					Vector3 dir = Quaternion.Euler(0f, angle, 0f) * Vector3.forward;
+					if (Physics.Raycast(eye, dir, ForwardCoverCheckDistance, AIRefactoredLayerMasks.HighPolyCollider))
+					{
+						return true;
+					}
+				}
+				catch (Exception ex)
+				{
+					Logger.LogError("[NavPointBootstrapper] IsCoverPoint() failed: " + ex);
 				}
 			}
 			return false;
@@ -273,7 +362,15 @@ namespace AIRefactored.AI.Navigation
 
 		private static bool IsIndoorPoint(Vector3 pos)
 		{
-			return Physics.Raycast(pos + Vector3.up * 1.4f, Vector3.up, RoofRaycastHeight);
+			try
+			{
+				return Physics.Raycast(pos + Vector3.up * 1.4f, Vector3.up, RoofRaycastHeight);
+			}
+			catch (Exception ex)
+			{
+				Logger.LogError("[NavPointBootstrapper] IsIndoorPoint() failed: " + ex);
+				return false;
+			}
 		}
 
 		private static string ClassifyNavPoint(float elevation, bool isCover, bool isIndoor)
@@ -288,10 +385,17 @@ namespace AIRefactored.AI.Navigation
 			Vector3 eye = pos + Vector3.up * 1.4f;
 			for (float angle = -45f; angle <= 45f; angle += 15f)
 			{
-				Vector3 dir = Quaternion.Euler(0f, angle, 0f) * Vector3.forward;
-				if (Physics.Raycast(eye, dir, ForwardCoverCheckDistance, AIRefactoredLayerMasks.HighPolyCollider))
+				try
 				{
-					return angle;
+					Vector3 dir = Quaternion.Euler(0f, angle, 0f) * Vector3.forward;
+					if (Physics.Raycast(eye, dir, ForwardCoverCheckDistance, AIRefactoredLayerMasks.HighPolyCollider))
+					{
+						return angle;
+					}
+				}
+				catch (Exception ex)
+				{
+					Logger.LogError("[NavPointBootstrapper] CalculateCoverAngle() failed: " + ex);
 				}
 			}
 			return 0f;

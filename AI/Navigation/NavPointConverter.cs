@@ -29,13 +29,14 @@ namespace AIRefactored.AI.Navigation
 
         /// <summary>
         /// Converts a <see cref="CustomNavigationPoint"/> into a standardized <see cref="NavPointData"/> format.
+        /// Returns a valid, always-initialized struct; never throws or returns null data.
         /// </summary>
         /// <param name="custom">The original EFT navigation point (must not be null).</param>
         /// <returns>Converted <see cref="NavPointData"/> for AI tactical use.</returns>
         public static NavPointData FromCustom(CustomNavigationPoint custom)
         {
             if (custom == null)
-                throw new ArgumentNullException(nameof(custom), "[NavPointConverter] CustomNavigationPoint was null.");
+                return NavPointData.Empty;
 
             Vector3 position = custom.Position;
             float elevation = position.y;
@@ -49,10 +50,11 @@ namespace AIRefactored.AI.Navigation
             Vector3 toWall = custom.ToWallVector;
             if (toWall.sqrMagnitude > WallVectorMinSqr)
             {
-                // Use world forward as reference since CustomNavigationPoint lacks Forward property
+                // Use world forward as reference (since CustomNavigationPoint lacks Forward property)
                 coverAngle = Vector3.Angle(Vector3.forward, toWall.normalized);
             }
 
+            // Defensive guards: assign explicit values if EFT types are null/missing
             return new NavPointData(
                 position: position,
                 isCover: isCover,
@@ -62,7 +64,8 @@ namespace AIRefactored.AI.Navigation
                 isJumpable: true,
                 coverAngle: coverAngle,
                 zone: "Unassigned",
-                elevationBand: ResolveElevationBand(elevation));
+                elevationBand: ResolveElevationBand(elevation)
+            );
         }
 
         #endregion

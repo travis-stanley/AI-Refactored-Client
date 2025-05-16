@@ -13,6 +13,7 @@ namespace AIRefactored.AI.Combat.States
     using AIRefactored.AI.Helpers;
     using AIRefactored.AI.Navigation;
     using AIRefactored.Runtime;
+    using AIRefactored.Core;
     using EFT;
     using UnityEngine;
 
@@ -48,15 +49,17 @@ namespace AIRefactored.AI.Combat.States
 
         public EchoCoordinator(BotComponentCache cache)
         {
-            if (cache == null || cache.Bot == null)
-            {
-                Plugin.LoggerInstance.LogError("[EchoCoordinator] Initialization failed: cache or Bot is null.");
-                _isFallbackMode = true;
-                return;
-            }
             _cache = cache;
-            _bot = cache.Bot;
-            _isFallbackMode = false;
+            _bot = cache?.Bot;
+            if (_cache == null || _bot == null)
+            {
+                BotFallbackUtility.Trigger(this, _bot, "Initialization failed: cache or Bot is null.");
+                _isFallbackMode = true;
+            }
+            else
+            {
+                _isFallbackMode = false;
+            }
         }
 
         #endregion
@@ -107,8 +110,15 @@ namespace AIRefactored.AI.Combat.States
 
                     Vector3 destination = mate.Position - fallbackDir * BaseFallbackDistance + chaos;
                     bool navValid = false;
-                    try { navValid = BotNavValidator.Validate(mate, "EchoFallback"); }
-                    catch (Exception ex) { Plugin.LoggerInstance.LogError("[EchoCoordinator] Nav validation error: " + ex); navValid = false; }
+                    try
+                    {
+                        navValid = BotNavValidator.Validate(mate, "EchoFallback");
+                    }
+                    catch (Exception ex)
+                    {
+                        BotFallbackUtility.Trigger(this, mate, "Nav validation error in EchoFallback.", ex);
+                        navValid = false;
+                    }
                     if (!navValid)
                     {
                         destination = FallbackNavPointProvider.GetSafePoint(mate.Position);
@@ -120,18 +130,25 @@ namespace AIRefactored.AI.Combat.States
                     }
                     catch (Exception ex)
                     {
-                        Plugin.LoggerInstance.LogError("[EchoCoordinator] TriggerFallback error: " + ex);
+                        BotFallbackUtility.Trigger(this, mate, "TriggerFallback error in EchoFallback.", ex);
                         mateCache.EnterFallback();
                     }
 
                     if (!FikaHeadlessDetector.IsHeadless && mate.BotTalk != null)
                     {
-                        try { mate.BotTalk.TrySay(EPhraseTrigger.CoverMe); } catch { /* no-op */ }
+                        try
+                        {
+                            mate.BotTalk.TrySay(EPhraseTrigger.CoverMe);
+                        }
+                        catch
+                        {
+                            // no-op
+                        }
                     }
                 }
                 catch (Exception ex)
                 {
-                    Plugin.LoggerInstance.LogError("[EchoCoordinator] EchoFallbackToSquad member loop error: " + ex);
+                    BotFallbackUtility.Trigger(this, _bot, "EchoFallbackToSquad member loop error.", ex);
                     // Never break loop, keep echoing to remaining squadmates.
                 }
             }
@@ -166,17 +183,31 @@ namespace AIRefactored.AI.Combat.States
                     if (mateCache == null || mateCache.IsFallbackMode || mateCache.Combat == null || !CanAcceptEcho(mateCache))
                         continue;
 
-                    try { mateCache.Combat.NotifyEchoInvestigate(); }
-                    catch (Exception ex) { Plugin.LoggerInstance.LogError("[EchoCoordinator] NotifyEchoInvestigate error: " + ex); mateCache.EnterFallback(); }
+                    try
+                    {
+                        mateCache.Combat.NotifyEchoInvestigate();
+                    }
+                    catch (Exception ex)
+                    {
+                        BotFallbackUtility.Trigger(this, mate, "NotifyEchoInvestigate error in EchoInvestigateToSquad.", ex);
+                        mateCache.EnterFallback();
+                    }
 
                     if (!FikaHeadlessDetector.IsHeadless && mate.BotTalk != null)
                     {
-                        try { mate.BotTalk.TrySay(EPhraseTrigger.CheckHim); } catch { /* no-op */ }
+                        try
+                        {
+                            mate.BotTalk.TrySay(EPhraseTrigger.CheckHim);
+                        }
+                        catch
+                        {
+                            // no-op
+                        }
                     }
                 }
                 catch (Exception ex)
                 {
-                    Plugin.LoggerInstance.LogError("[EchoCoordinator] EchoInvestigateToSquad member loop error: " + ex);
+                    BotFallbackUtility.Trigger(this, _bot, "EchoInvestigateToSquad member loop error.", ex);
                 }
             }
 
@@ -211,12 +242,19 @@ namespace AIRefactored.AI.Combat.States
                     if (mateCache == null || mateCache.IsFallbackMode || mateCache.TacticalMemory == null)
                         continue;
 
-                    try { mateCache.TacticalMemory.RecordEnemyPosition(enemyPosition, "SquadEcho", enemyId); }
-                    catch (Exception ex) { Plugin.LoggerInstance.LogError("[EchoCoordinator] RecordEnemyPosition error: " + ex); mateCache.EnterFallback(); }
+                    try
+                    {
+                        mateCache.TacticalMemory.RecordEnemyPosition(enemyPosition, "SquadEcho", enemyId);
+                    }
+                    catch (Exception ex)
+                    {
+                        BotFallbackUtility.Trigger(this, mate, "RecordEnemyPosition error in EchoSpottedEnemyToSquad.", ex);
+                        mateCache.EnterFallback();
+                    }
                 }
                 catch (Exception ex)
                 {
-                    Plugin.LoggerInstance.LogError("[EchoCoordinator] EchoSpottedEnemyToSquad member loop error: " + ex);
+                    BotFallbackUtility.Trigger(this, _bot, "EchoSpottedEnemyToSquad member loop error.", ex);
                 }
             }
         }

@@ -3,8 +3,8 @@
 //   Licensed under the MIT License. See LICENSE in the repository root for more information.
 //
 //   THIS FILE IS SYSTEMATICALLY MANAGED.
-//   Please follow strict StyleCop, ReSharper, and AI-Refactored code standards for all modifications.
 //   All layer logic must be null/NaN-safe and multiplayer/headless compatible.
+//   Bulletproof: All failures are locally contained, never break other subsystems.
 // </auto-generated>
 
 namespace AIRefactored.Core
@@ -14,146 +14,176 @@ namespace AIRefactored.Core
     /// <summary>
     /// Centralized layer mask definitions aligned with Tarkov's internal physics layers.
     /// Used for vision checks, suppression rays, navigation safety, and collision awareness.
+    /// Bulletproof: All logic is null/NaN safe and multiplayer/headless compatible.
     /// </summary>
     public static class AIRefactoredLayerMasks
     {
         #region Layer Indices
 
-        public static readonly int Default = LayerMask.NameToLayer("Default");
-        public static readonly int TransparentFX = LayerMask.NameToLayer("TransparentFX");
-        public static readonly int IgnoreRaycast = LayerMask.NameToLayer("Ignore Raycast");
-        public static readonly int Water = LayerMask.NameToLayer("Water");
-        public static readonly int UI = LayerMask.NameToLayer("UI");
+        public static readonly int Default = SafeLayer("Default");
+        public static readonly int TransparentFX = SafeLayer("TransparentFX");
+        public static readonly int IgnoreRaycast = SafeLayer("Ignore Raycast");
+        public static readonly int Water = SafeLayer("Water");
+        public static readonly int UI = SafeLayer("UI");
 
-        public static readonly int Terrain = LayerMask.NameToLayer("Terrain");
-        public static readonly int Foliage = LayerMask.NameToLayer("Grass");
-        public static readonly int HighPolyCollider = LayerMask.NameToLayer("HighPolyCollider");
-        public static readonly int LowPolyCollider = LayerMask.NameToLayer("LowPolyCollider");
-        public static readonly int DeadBody = LayerMask.NameToLayer("Deadbody");
-        public static readonly int HitCollider = LayerMask.NameToLayer("HitCollider");
+        public static readonly int Terrain = SafeLayer("Terrain");
+        public static readonly int Foliage = SafeLayer("Grass");
+        public static readonly int HighPolyCollider = SafeLayer("HighPolyCollider");
+        public static readonly int LowPolyCollider = SafeLayer("LowPolyCollider");
+        public static readonly int DeadBody = SafeLayer("Deadbody");
+        public static readonly int HitCollider = SafeLayer("HitCollider");
 
-        public static readonly int DoorHighPolyCollider = LayerMask.NameToLayer("DoorHighPolyCollider");
-        public static readonly int DoorLowPolyCollider = LayerMask.NameToLayer("DoorLowPolyCollider");
-        public static readonly int Door = LayerMask.NameToLayer("Door");
+        public static readonly int DoorHighPolyCollider = SafeLayer("DoorHighPolyCollider");
+        public static readonly int DoorLowPolyCollider = SafeLayer("DoorLowPolyCollider");
+        public static readonly int Door = SafeLayer("Door");
 
-        public static readonly int InvisibleCollider = LayerMask.NameToLayer("InvisibleCollider");
-        public static readonly int ViewCollider = LayerMask.NameToLayer("ViewCollider");
-        public static readonly int Trigger = LayerMask.NameToLayer("Triggers");
-        public static readonly int Interactive = LayerMask.NameToLayer("Interactive");
-        public static readonly int Loot = LayerMask.NameToLayer("Loot");
-        public static readonly int Player = LayerMask.NameToLayer("Player");
-        public static readonly int Shells = LayerMask.NameToLayer("Shells");
-        public static readonly int WeaponPreview = LayerMask.NameToLayer("WeaponPreview");
-        public static readonly int PlayerCollisionTest = LayerMask.NameToLayer("PlayerCollisionTest");
-        public static readonly int DisablerCullingObject = LayerMask.NameToLayer("DisablerCullingObject");
+        public static readonly int InvisibleCollider = SafeLayer("InvisibleCollider");
+        public static readonly int ViewCollider = SafeLayer("ViewCollider");
+        public static readonly int Trigger = SafeLayer("Triggers");
+        public static readonly int Interactive = SafeLayer("Interactive");
+        public static readonly int Loot = SafeLayer("Loot");
+        public static readonly int Player = SafeLayer("Player");
+        public static readonly int Shells = SafeLayer("Shells");
+        public static readonly int WeaponPreview = SafeLayer("WeaponPreview");
+        public static readonly int PlayerCollisionTest = SafeLayer("PlayerCollisionTest");
+        public static readonly int DisablerCullingObject = SafeLayer("DisablerCullingObject");
 
         #endregion
 
         #region Precomputed LayerMasks
 
-        public static readonly LayerMask PlayerMask = 1 << Player;
-        public static readonly LayerMask DefaultMask = 1 << Default;
-        public static readonly LayerMask HitColliderMask = 1 << HitCollider;
-        public static readonly LayerMask LootLayerMask = 1 << Loot;
-        public static readonly LayerMask InteractiveMask = 1 << Interactive;
-        public static readonly LayerMask TriggersMask = 1 << Trigger;
-        public static readonly LayerMask TransparentMask = 1 << TransparentFX;
-        public static readonly LayerMask TerrainMask = 1 << Terrain;
-        public static readonly LayerMask DisablerCullingObjectMask = 1 << DisablerCullingObject;
+        public static readonly LayerMask PlayerMask = MaskSafe(Player);
+        public static readonly LayerMask DefaultMask = MaskSafe(Default);
+        public static readonly LayerMask HitColliderMask = MaskSafe(HitCollider);
+        public static readonly LayerMask LootLayerMask = MaskSafe(Loot);
+        public static readonly LayerMask InteractiveMask = MaskSafe(Interactive);
+        public static readonly LayerMask TriggersMask = MaskSafe(Trigger);
+        public static readonly LayerMask TransparentMask = MaskSafe(TransparentFX);
+        public static readonly LayerMask TerrainMask = MaskSafe(Terrain);
+        public static readonly LayerMask DisablerCullingObjectMask = MaskSafe(DisablerCullingObject);
 
         #endregion
 
         #region Compound Masks
 
         public static readonly LayerMask HighPolyWithTerrainMask =
-            (1 << Terrain) | (1 << HighPolyCollider);
+            MaskSafe(Terrain) | MaskSafe(HighPolyCollider);
 
         public static readonly LayerMask HighPolyWithTerrainNoGrassMask =
-            HighPolyWithTerrainMask | (1 << Foliage);
+            HighPolyWithTerrainMask | MaskSafe(Foliage);
 
         public static readonly LayerMask HighPolyWithTerrainMaskAI =
-            HighPolyWithTerrainNoGrassMask | (1 << LowPolyCollider);
+            HighPolyWithTerrainNoGrassMask | MaskSafe(LowPolyCollider);
 
         public static readonly LayerMask TripwireCheckLayerMaskNoPlayer =
-            TerrainMask | (1 << Door) | LootLayerMask | DefaultMask | HighPolyWithTerrainMask;
+            TerrainMask | MaskSafe(Door) | LootLayerMask | DefaultMask | HighPolyWithTerrainMask;
 
         public static readonly LayerMask TripwireCheckLayerMask =
             TripwireCheckLayerMaskNoPlayer | PlayerMask;
 
-        public static readonly LayerMask AllColliders = LayerMask.GetMask(
+        public static readonly LayerMask AllColliders = SafeGetMask(
             "Terrain", "HighPolyCollider", "LowPolyCollider", "DoorHighPolyCollider", "DoorLowPolyCollider");
 
-        public static readonly LayerMask SuppressionMask = LayerMask.GetMask(
+        public static readonly LayerMask SuppressionMask = SafeGetMask(
             "Terrain", "HighPolyCollider", "LowPolyCollider", "Grass");
 
-        public static readonly LayerMask VisionBlockers = LayerMask.GetMask(
+        public static readonly LayerMask VisionBlockers = SafeGetMask(
             "HighPolyCollider", "DoorHighPolyCollider", "Terrain", "InvisibleCollider");
 
-        public static readonly LayerMask LineOfSightMask = LayerMask.GetMask(
+        public static readonly LayerMask LineOfSightMask = SafeGetMask(
             "HighPolyCollider", "DoorHighPolyCollider", "Terrain");
 
-        public static readonly LayerMask AimRayMask = LayerMask.GetMask(
+        public static readonly LayerMask AimRayMask = SafeGetMask(
             "HighPolyCollider", "LowPolyCollider", "Deadbody");
 
-        public static readonly LayerMask EdgeCheckMask = LayerMask.GetMask(
+        public static readonly LayerMask EdgeCheckMask = SafeGetMask(
             "Terrain", "HighPolyCollider", "LowPolyCollider");
 
-        public static readonly LayerMask CoverRayMask = LayerMask.GetMask(
+        public static readonly LayerMask CoverRayMask = SafeGetMask(
             "HighPolyCollider", "LowPolyCollider", "DoorLowPolyCollider", "Terrain");
 
-        public static readonly LayerMask NavObstacleMask = LayerMask.GetMask(
+        public static readonly LayerMask NavObstacleMask = SafeGetMask(
             "Terrain", "HighPolyCollider", "LowPolyCollider", "Deadbody");
 
-        public static readonly LayerMask LootObstructionMask = LayerMask.GetMask(
+        public static readonly LayerMask LootObstructionMask = SafeGetMask(
             "HighPolyCollider", "LowPolyCollider", "Deadbody");
 
-        public static readonly LayerMask LootRaycastMask = LayerMask.GetMask(
+        public static readonly LayerMask LootRaycastMask = SafeGetMask(
             "Loot", "Interactive", "Player");
 
-        public static readonly LayerMask OcclusionRaycastMask = LayerMask.GetMask(
+        public static readonly LayerMask OcclusionRaycastMask = SafeGetMask(
             "HighPolyCollider", "Terrain", "InvisibleCollider");
 
-        public static readonly LayerMask JumpRayMask = LayerMask.GetMask(
+        public static readonly LayerMask JumpRayMask = SafeGetMask(
             "Terrain", "HighPolyCollider", "LowPolyCollider");
 
-        public static readonly LayerMask ObstacleRayMask = LayerMask.GetMask(
+        public static readonly LayerMask ObstacleRayMask = SafeGetMask(
             "Terrain", "HighPolyCollider", "LowPolyCollider", "Grass");
 
-        public static readonly LayerMask DoorColliderMask = LayerMask.GetMask(
+        public static readonly LayerMask DoorColliderMask = SafeGetMask(
             "Door", "DoorHighPolyCollider", "DoorLowPolyCollider");
 
-        public static readonly LayerMask PlayerStaticDoorMask = LayerMask.GetMask("Door");
+        public static readonly LayerMask PlayerStaticDoorMask = SafeGetMask("Door");
 
-        public static readonly LayerMask PlayerCollisionTestMask = LayerMask.GetMask(
+        public static readonly LayerMask PlayerCollisionTestMask = SafeGetMask(
             "LowPolyCollider", "Door", "Terrain", "Player");
 
-        public static readonly LayerMask GrenadeAffectedMask = LayerMask.GetMask(
+        public static readonly LayerMask GrenadeAffectedMask = SafeGetMask(
             "Player", "Interactive");
 
-        public static readonly LayerMask GrenadeObstaclesColliderMask = LayerMask.GetMask(
+        public static readonly LayerMask GrenadeObstaclesColliderMask = SafeGetMask(
             "HighPolyCollider", "Door", "Terrain");
 
-        public static readonly LayerMask TerrainAndObstacles = LayerMask.GetMask(
+        public static readonly LayerMask TerrainAndObstacles = SafeGetMask(
             "Terrain", "HighPolyCollider", "LowPolyCollider", "Door", "DoorHighPolyCollider", "DoorLowPolyCollider");
 
-        public static readonly LayerMask JumpSafeMask = LayerMask.GetMask(
+        public static readonly LayerMask JumpSafeMask = SafeGetMask(
             "Terrain", "HighPolyCollider", "LowPolyCollider");
 
-        public static readonly LayerMask ClimbObstructionMask = LayerMask.GetMask(
+        public static readonly LayerMask ClimbObstructionMask = SafeGetMask(
             "Terrain", "HighPolyCollider", "LowPolyCollider", "Door", "InvisibleCollider");
 
-        public static readonly LayerMask NavRaycastMask = LayerMask.GetMask(
+        public static readonly LayerMask NavRaycastMask = SafeGetMask(
             "Terrain", "HighPolyCollider", "LowPolyCollider", "InvisibleCollider", "Door");
 
-        public static readonly LayerMask MovementBlockerMask = LayerMask.GetMask(
+        public static readonly LayerMask MovementBlockerMask = SafeGetMask(
             "Terrain", "HighPolyCollider", "LowPolyCollider", "Door", "DoorHighPolyCollider", "DoorLowPolyCollider");
 
-        public static readonly LayerMask NavPointScanMask = LayerMask.GetMask(
+        public static readonly LayerMask NavPointScanMask = SafeGetMask(
             "Terrain", "HighPolyCollider", "LowPolyCollider", "InvisibleCollider", "Door");
 
         #endregion
 
         #region Utilities
+
+        private static int SafeLayer(string name)
+        {
+            int layer = LayerMask.NameToLayer(name);
+            if (layer < 0 || layer > 31)
+            {
+                Plugin.LoggerInstance?.LogWarning("[AIRefactoredLayerMasks] Layer not found or invalid: " + name);
+                return 0; // fallback to Default
+            }
+            return layer;
+        }
+
+        private static LayerMask MaskSafe(int layer)
+        {
+            return (layer >= 0 && layer < 32) ? (1 << layer) : 0;
+        }
+
+        private static LayerMask SafeGetMask(params string[] names)
+        {
+            try
+            {
+                return LayerMask.GetMask(names);
+            }
+            catch
+            {
+                Plugin.LoggerInstance?.LogWarning("[AIRefactoredLayerMasks] SafeGetMask failed for: " + string.Join(",", names));
+                return 0;
+            }
+        }
 
         public static bool IsWorldGeometry(int layer)
         {
@@ -223,7 +253,7 @@ namespace AIRefactored.Core
 
         private static bool IsValidLayer(int layer)
         {
-            // Ensures layer is in the Unity range and not -1 (which NameToLayer returns if not found)
+            // Ensures layer is in Unity range and not -1 (which NameToLayer returns if not found)
             return layer >= 0 && layer < 32;
         }
 

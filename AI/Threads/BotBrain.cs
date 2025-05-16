@@ -252,8 +252,6 @@ namespace AIRefactored.AI.Threads
 
 		private void FallbackCombat()
 		{
-			// You can customize: trigger fallback vanilla logic for combat
-			// (e.g., activate StandartBotBrain if needed)
 			LogWarn("[BotBrain] Combat subsystem missing — vanilla fallback not implemented for combat.");
 		}
 

@@ -18,7 +18,7 @@ namespace AIRefactored.AI.Core
 
     /// <summary>
     /// Holds AIRefactored-specific metadata for a bot, including personality, zone, tuning, and runtime behavior state.
-    /// Always yields to vanilla logic if any core field is invalid.
+    /// Always yields to vanilla logic if any core field is invalid. Never disables the owner.
     /// </summary>
     public sealed class AIRefactoredBotOwner
     {
@@ -47,6 +47,7 @@ namespace AIRefactored.AI.Core
                 {
                     Logger.LogError("[AIRefactoredBotOwner] Bot accessed before initialization — fallback triggered.");
                     BotFallbackUtility.FallbackToEFTLogic(_bot);
+                    // Return null, but owner logic is not broken.
                     return null;
                 }
                 return _bot;
@@ -61,6 +62,7 @@ namespace AIRefactored.AI.Core
                 {
                     Logger.LogError("[AIRefactoredBotOwner] Cache accessed before initialization — fallback triggered.");
                     BotFallbackUtility.FallbackToEFTLogic(_bot);
+                    // Return empty cache, owner logic not broken.
                     return BotComponentCache.Empty;
                 }
                 return _cache;
@@ -75,6 +77,7 @@ namespace AIRefactored.AI.Core
                 {
                     Logger.LogError("[AIRefactoredBotOwner] MissionController is null — fallback triggered.");
                     BotFallbackUtility.FallbackToEFTLogic(_bot);
+                    // Still return null, does not break owner.
                 }
                 return _missionController;
             }
@@ -178,6 +181,9 @@ namespace AIRefactored.AI.Core
             {
                 Logger.LogError("[AIRefactoredBotOwner] InitProfile failed: profile is null.");
                 BotFallbackUtility.FallbackToEFTLogic(_bot);
+                // Still assign a default to ensure owner continues.
+                PersonalityProfile = new BotPersonalityProfile();
+                PersonalityName = "Default";
                 return;
             }
             PersonalityProfile = profile;
@@ -230,6 +236,7 @@ namespace AIRefactored.AI.Core
             {
                 Logger.LogError("[AIRefactoredBotOwner] SetMissionController failed: controller is null.");
                 BotFallbackUtility.FallbackToEFTLogic(_bot);
+                // Do not break the owner, just skip the assignment.
                 return;
             }
             _missionController = controller;

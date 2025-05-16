@@ -30,7 +30,7 @@ namespace AIRefactored.AI.Core
     /// <summary>
     /// Runtime container for all bot-specific AIRefactored logic systems.
     /// Managed via BotComponentCacheRegistry.
-    /// Bulletproof: if initialization fails, always triggers fallback to vanilla logic.
+    /// Bulletproof: If any component fails, falls back to vanilla logic for that part only.
     /// </summary>
     public sealed class BotComponentCache
     {
@@ -136,7 +136,7 @@ namespace AIRefactored.AI.Core
             {
                 Logger.LogError("[BotComponentCache] Initialize called with null bot.");
                 BotFallbackUtility.FallbackToEFTLogic(bot);
-                throw new ArgumentNullException(nameof(bot));
+                return;
             }
 
             string id = bot.Profile?.Id ?? "null";
@@ -150,90 +150,43 @@ namespace AIRefactored.AI.Core
             InitializedBots.Add(id);
             Bot = bot;
 
-            try
-            {
-                WildSpawnType role = bot.Profile?.Info?.Settings?.Role ?? WildSpawnType.assault;
-                PersonalityProfile = BotRegistry.GetOrGenerate(id, PersonalityType.Balanced, role);
-                Logger.LogDebug($"[BotComponentCache] Loaded personality for bot {id}: {PersonalityProfile.Personality}");
+            // All initialization wrapped per-subsystem: any part that fails disables only that part.
+            WildSpawnType role = bot.Profile?.Info?.Settings?.Role ?? WildSpawnType.assault;
+            PersonalityProfile = BotRegistry.GetOrGenerate(id, PersonalityType.Balanced, role);
+            Logger.LogDebug($"[BotComponentCache] Loaded personality for bot {id}: {PersonalityProfile.Personality}");
 
-                Pathing = new BotOwnerPathfindingCache();
-                TacticalMemory = new BotTacticalMemory(); TacticalMemory.Initialize(this);
+            try { Pathing = new BotOwnerPathfindingCache(); } catch (Exception ex) { LogAndFallback("Pathing", ex); Pathing = null; }
+            try { TacticalMemory = new BotTacticalMemory(); TacticalMemory.Initialize(this); } catch (Exception ex) { LogAndFallback("TacticalMemory", ex); TacticalMemory = null; }
+            try { Combat = new CombatStateMachine(); Combat.Initialize(this); } catch (Exception ex) { LogAndFallback("Combat", ex); Combat = null; }
+            try { FlashGrenade = new FlashGrenadeComponent(); FlashGrenade.Initialize(this); } catch (Exception ex) { LogAndFallback("FlashGrenade", ex); FlashGrenade = null; }
+            try { PanicHandler = new BotPanicHandler(); PanicHandler.Initialize(this); } catch (Exception ex) { LogAndFallback("PanicHandler", ex); PanicHandler = null; }
+            try { Suppression = new BotSuppressionReactionComponent(); Suppression.Initialize(this); } catch (Exception ex) { LogAndFallback("Suppression", ex); Suppression = null; }
+            try { Escalation = new BotThreatEscalationMonitor(); Escalation.Initialize(bot); } catch (Exception ex) { LogAndFallback("Escalation", ex); Escalation = null; }
+            try { GroupBehavior = new BotGroupBehavior(); GroupBehavior.Initialize(this); } catch (Exception ex) { LogAndFallback("GroupBehavior", ex); GroupBehavior = null; }
+            try { Movement = new BotMovementController(); Movement.Initialize(this); } catch (Exception ex) { LogAndFallback("Movement", ex); Movement = null; }
+            try { LookController = new BotLookController(bot, this); } catch (Exception ex) { LogAndFallback("LookController", ex); LookController = null; }
+            try { Tactical = new BotTacticalDeviceController(); Tactical.Initialize(this); } catch (Exception ex) { LogAndFallback("Tactical", ex); Tactical = null; }
+            try { PoseController = new BotPoseController(bot, this); } catch (Exception ex) { LogAndFallback("PoseController", ex); PoseController = null; }
+            try { Tilt = new BotTilt(bot); } catch (Exception ex) { LogAndFallback("Tilt", ex); Tilt = null; }
+            try { HearingDamage = new HearingDamageComponent(); } catch (Exception ex) { LogAndFallback("HearingDamage", ex); HearingDamage = null; }
+            try { SquadPath = new SquadPathCoordinator(); SquadPath.Initialize(this); } catch (Exception ex) { LogAndFallback("SquadPath", ex); SquadPath = null; }
+            try { LootScanner = new BotLootScanner(); LootScanner.Initialize(this); } catch (Exception ex) { LogAndFallback("LootScanner", ex); LootScanner = null; }
+            try { LootDecisionSystem = new BotLootDecisionSystem(); LootDecisionSystem.Initialize(this); } catch (Exception ex) { LogAndFallback("LootDecisionSystem", ex); LootDecisionSystem = null; }
+            try { DeadBodyScanner = new BotDeadBodyScanner(); DeadBodyScanner.Initialize(this); } catch (Exception ex) { LogAndFallback("DeadBodyScanner", ex); DeadBodyScanner = null; }
+            try { DoorInteraction = new BotDoorInteractionSystem(bot); } catch (Exception ex) { LogAndFallback("DoorInteraction", ex); DoorInteraction = null; }
+            try { InjurySystem = new BotInjurySystem(this); } catch (Exception ex) { LogAndFallback("InjurySystem", ex); InjurySystem = null; }
+            try { LastShotTracker = new BotLastShotTracker(); } catch (Exception ex) { LogAndFallback("LastShotTracker", ex); LastShotTracker = null; }
+            try { GroupComms = new BotGroupComms(this); } catch (Exception ex) { LogAndFallback("GroupComms", ex); GroupComms = null; }
+            try { SquadHealer = bot.HealAnotherTarget ?? new BotHealAnotherTarget(bot); } catch (Exception ex) { LogAndFallback("SquadHealer", ex); SquadHealer = null; }
+            try { HealReceiver = bot.HealingBySomebody ?? new BotHealingBySomebody(bot); } catch (Exception ex) { LogAndFallback("HealReceiver", ex); HealReceiver = null; }
 
-                TryInitSubsystem(nameof(Combat), () => Combat = new CombatStateMachine(), TacticalMemory);
-                Combat.Initialize(this);
-
-                TryInitSubsystem(nameof(FlashGrenade), () => FlashGrenade = new FlashGrenadeComponent());
-                FlashGrenade.Initialize(this);
-
-                TryInitSubsystem(nameof(PanicHandler), () => PanicHandler = new BotPanicHandler());
-                PanicHandler.Initialize(this);
-
-                TryInitSubsystem(nameof(Suppression), () => Suppression = new BotSuppressionReactionComponent());
-                Suppression.Initialize(this);
-
-                TryInitSubsystem(nameof(Escalation), () => Escalation = new BotThreatEscalationMonitor());
-                Escalation.Initialize(bot);
-
-                TryInitSubsystem(nameof(GroupBehavior), () => GroupBehavior = new BotGroupBehavior(), PanicHandler);
-                GroupBehavior.Initialize(this);
-
-                TryInitSubsystem(nameof(Movement), () => Movement = new BotMovementController());
-                Movement.Initialize(this);
-
-                TryInitSubsystem(nameof(LookController), () => LookController = new BotLookController(bot, this));
-
-                TryInitSubsystem(nameof(Tactical), () => Tactical = new BotTacticalDeviceController());
-                Tactical.Initialize(this);
-
-                PoseController = new BotPoseController(bot, this);
-                Tilt = new BotTilt(bot);
-                HearingDamage = new HearingDamageComponent();
-                SquadPath = new SquadPathCoordinator(); SquadPath.Initialize(this);
-
-                LootScanner = new BotLootScanner(); LootScanner.Initialize(this);
-                LootDecisionSystem = new BotLootDecisionSystem(); LootDecisionSystem.Initialize(this);
-                DeadBodyScanner = new BotDeadBodyScanner(); DeadBodyScanner.Initialize(this);
-
-                DoorInteraction = new BotDoorInteractionSystem(bot);
-                InjurySystem = new BotInjurySystem(this);
-                LastShotTracker = new BotLastShotTracker();
-                GroupComms = new BotGroupComms(this);
-
-                SquadHealer = bot.HealAnotherTarget ?? new BotHealAnotherTarget(bot);
-                HealReceiver = bot.HealingBySomebody ?? new BotHealingBySomebody(bot);
-
-                Logger.LogDebug($"[BotComponentCache] ✅ Initialized for bot: {Nickname}");
-            }
-            catch (Exception ex)
-            {
-                Logger.LogError($"[BotComponentCache] Initialization failed for bot {bot.Profile?.Id ?? "null"}: {ex}");
-                BotFallbackUtility.FallbackToEFTLogic(bot);
-                throw;
-            }
+            Logger.LogDebug($"[BotComponentCache] ✅ Initialized for bot: {Nickname}");
         }
 
-        private void TryInitSubsystem(string name, Action init, params object[] required)
+        private void LogAndFallback(string subsystem, Exception ex)
         {
-            for (int i = 0; i < required.Length; i++)
-            {
-                if (required[i] == null)
-                {
-                    Logger.LogError($"[BotComponentCache] ❌ Subsystem '{name}' missing required dependency.");
-                    BotFallbackUtility.FallbackToEFTLogic(Bot);
-                    throw new InvalidOperationException($"[BotComponentCache] {name} initialization failed.");
-                }
-            }
-
-            try
-            {
-                init.Invoke();
-            }
-            catch (Exception ex)
-            {
-                Logger.LogError($"[BotComponentCache] ❌ Init failed ({name}): {ex}");
-                BotFallbackUtility.FallbackToEFTLogic(Bot);
-                throw;
-            }
+            Logger.LogError($"[BotComponentCache] Subsystem {subsystem} failed: {ex}");
+            BotFallbackUtility.FallbackToEFTLogic(Bot);
         }
 
         #endregion
@@ -257,14 +210,20 @@ namespace AIRefactored.AI.Core
             {
                 Logger.LogError("[BotComponentCache] SetOwner() called with null.");
                 BotFallbackUtility.FallbackToEFTLogic(Bot);
-                throw new ArgumentNullException(nameof(owner));
+                return;
             }
 
             _owner = owner;
 
             if (ThreatSelector == null)
             {
-                ThreatSelector = new BotThreatSelector(this);
+                try { ThreatSelector = new BotThreatSelector(this); }
+                catch (Exception ex)
+                {
+                    Logger.LogError("[BotComponentCache] ThreatSelector failed: " + ex);
+                    ThreatSelector = null;
+                    BotFallbackUtility.FallbackToEFTLogic(Bot);
+                }
             }
         }
 

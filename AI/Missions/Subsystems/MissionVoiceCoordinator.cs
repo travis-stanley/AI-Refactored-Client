@@ -81,9 +81,7 @@ namespace AIRefactored.AI.Missions.Subsystems
         private void TrySay(EPhraseTrigger trigger)
         {
             if (_bot == null || FikaHeadlessDetector.IsHeadless)
-            {
                 return;
-            }
 
             try
             {

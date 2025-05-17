@@ -133,12 +133,15 @@ namespace AIRefactored.AI.Helpers
 
         #region Pose Application
 
+        /// <summary>
+        /// Sets stance based on nearby cover—never applies if NavPointRegistry is not ready, empty, or disabled.
+        /// </summary>
         public static void TrySetStanceFromNearbyCover(BotComponentCache cache, Vector3 position)
         {
             if (cache?.PoseController == null)
                 return;
 
-            if (!NavPointRegistry.IsReady || NavPointRegistry.IsEmpty)
+            if (!NavPointRegistry.IsReady || NavPointRegistry.IsEmpty || NavPointRegistry.AIRefactoredNavDisabled)
                 return;
 
             try

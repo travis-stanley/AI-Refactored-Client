@@ -12,6 +12,7 @@ namespace AIRefactored.AI.Combat
     using AIRefactored.AI.Core;
     using AIRefactored.AI.Helpers;
     using AIRefactored.AI.Memory;
+    using AIRefactored.AI.Navigation;
     using AIRefactored.AI.Optimization;
     using AIRefactored.Core;
     using EFT;
@@ -230,8 +231,9 @@ namespace AIRefactored.AI.Combat
                 _cache.Escalation?.NotifyPanicTriggered();
 
                 float cohesion = _cache.AIRefactoredBotOwner?.PersonalityProfile?.Cohesion ?? 1f;
-                Vector3 fallback = _bot.Position + retreatDir.normalized * 8f;
 
+                // Robust: always get safe fallback point using EFTPathFallbackHelper
+                Vector3 fallback = _bot.Position + retreatDir.normalized * 8f;
                 if (_cache.Pathing != null)
                 {
                     var path = BotCoverRetreatPlanner.GetCoverRetreatPath(_bot, retreatDir, _cache.Pathing);
@@ -240,6 +242,13 @@ namespace AIRefactored.AI.Combat
                         fallback = (Vector3.Distance(path[0], _bot.Position) < 1f && path.Count > 1) ? path[1] : path[0];
                     }
                 }
+                if (!BotNavValidator.Validate(_bot, "BotPanicHandler::TryStartPanic"))
+                {
+                    if (!EFTPathFallbackHelper.TryGetSafeTarget(_bot, out fallback))
+                        fallback = EFTPathFallbackHelper.GetFallbackNavPoint(_bot.Position);
+                }
+                if (!IsVectorValid(fallback))
+                    fallback = EFTPathFallbackHelper.GetFallbackNavPoint(_bot.Position);
 
                 if (_bot.Mover != null)
                 {
@@ -342,6 +351,11 @@ namespace AIRefactored.AI.Combat
             {
                 return false;
             }
+        }
+
+        private static bool IsVectorValid(Vector3 v)
+        {
+            return !float.IsNaN(v.x) && !float.IsNaN(v.y) && !float.IsNaN(v.z);
         }
 
         #endregion

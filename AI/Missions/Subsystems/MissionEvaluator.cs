@@ -82,10 +82,12 @@ namespace AIRefactored.AI.Missions.Subsystems
         {
             try
             {
-                if (_group == null) return true;
+                if (_group == null)
+                    return true;
 
                 IReadOnlyList<BotOwner> squad = _group.GetTeammates();
-                if (squad == null || squad.Count == 0) return true;
+                if (squad == null || squad.Count == 0)
+                    return true;
 
                 int nearby = 0;
                 Vector3 selfPos = _bot.Position;
@@ -95,9 +97,7 @@ namespace AIRefactored.AI.Missions.Subsystems
                 {
                     BotOwner mate = squad[i];
                     if (mate != null && !mate.IsDead && (mate.Position - selfPos).sqrMagnitude <= sqrRange)
-                    {
                         nearby++;
-                    }
                 }
 
                 int required = Mathf.CeilToInt(squad.Count * 0.6f);
@@ -114,13 +114,16 @@ namespace AIRefactored.AI.Missions.Subsystems
         {
             try
             {
-                if (_profile.IsFrenzied || _profile.Caution <= 0.6f) return false;
+                if (_profile.IsFrenzied || _profile.Caution <= 0.6f)
+                    return false;
 
                 Player player = _bot.GetPlayer;
-                if (player?.Inventory?.Equipment == null) return false;
+                if (player?.Inventory?.Equipment == null)
+                    return false;
 
                 Slot backpackSlot = player.Inventory.Equipment.GetSlot(EquipmentSlot.Backpack);
-                if (backpackSlot?.ContainedItem == null) return false;
+                if (backpackSlot?.ContainedItem == null)
+                    return false;
 
                 List<Item> items = TempListPool.Rent<Item>();
                 try
@@ -146,7 +149,8 @@ namespace AIRefactored.AI.Missions.Subsystems
             try
             {
                 ExfiltrationPoint[] allPoints = GameObject.FindObjectsOfType<ExfiltrationPoint>();
-                if (allPoints == null || allPoints.Length == 0) return;
+                if (allPoints == null || allPoints.Length == 0)
+                    return;
 
                 ExfiltrationPoint closest = null;
                 float minDist = float.MaxValue;

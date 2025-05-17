@@ -38,7 +38,6 @@ namespace AIRefactored.AI.Combat.States
 
         private Vector3 _lastTargetPosition;
         private bool _hasLastTarget;
-
         private bool _isFallbackMode;
 
         #endregion
@@ -128,25 +127,28 @@ namespace AIRefactored.AI.Combat.States
                     _lastTargetPosition = currentTargetPos;
                     _hasLastTarget = true;
 
-                    // If the squad system is active, allow formation/offset logic; else go direct.
                     Vector3 destination = (_cache.SquadPath != null)
                         ? _cache.SquadPath.ApplyOffsetTo(currentTargetPos)
                         : currentTargetPos;
 
-                    bool navValid = false;
                     try
                     {
-                        navValid = BotNavValidator.Validate(_bot, "AttackHandlerTarget");
+                        // Use EFTPathFallbackHelper for bulletproof movement target
+                        if (!BotNavValidator.Validate(_bot, "AttackHandlerTarget"))
+                        {
+                            if (!EFTPathFallbackHelper.TryGetSafeTarget(_bot, out destination))
+                                destination = EFTPathFallbackHelper.GetFallbackNavPoint(_bot.Position);
+                        }
                     }
                     catch (Exception ex)
                     {
-                        BotFallbackUtility.Trigger(this, _bot, "BotNavValidator.Validate exception.", ex);
-                        navValid = false;
+                        BotFallbackUtility.Trigger(this, _bot, "BotNavValidator/EFTPathFallbackHelper exception.", ex);
+                        destination = EFTPathFallbackHelper.GetFallbackNavPoint(_bot.Position);
                     }
 
-                    if (!navValid)
+                    if (!IsValidTarget(destination))
                     {
-                        destination = FallbackNavPointProvider.GetSafePoint(_bot.Position);
+                        destination = EFTPathFallbackHelper.GetFallbackNavPoint(_bot.Position);
                     }
 
                     if (_bot.Mover != null)
@@ -220,6 +222,17 @@ namespace AIRefactored.AI.Combat.States
                 _isFallbackMode = true;
                 BotFallbackUtility.Trigger(this, _bot, reason);
             }
+        }
+
+        /// <summary>
+        /// Checks if a Vector3 is valid for navigation.
+        /// </summary>
+        private static bool IsValidTarget(Vector3 pos)
+        {
+            return pos != Vector3.zero &&
+                   !float.IsNaN(pos.x) &&
+                   !float.IsNaN(pos.y) &&
+                   !float.IsNaN(pos.z);
         }
 
         #endregion

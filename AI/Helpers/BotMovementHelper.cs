@@ -50,8 +50,8 @@ namespace AIRefactored.AI.Helpers
 
             try
             {
-                Vector3 fallback = bot.Position - threatDirection.normalized * distance;
                 BotComponentCache cache = BotCacheUtility.GetCache(bot);
+                Vector3 fallback = bot.Position - threatDirection.normalized * distance;
 
                 if (NavMeshStatus.IsReady && cache?.Pathing != null)
                 {
@@ -67,9 +67,11 @@ namespace AIRefactored.AI.Helpers
                     BotCoverHelper.MarkUsed(fallback);
                 }
 
+                // Use EFTPathFallbackHelper for ultimate bulletproof fallback logic.
                 if (!IsValidTarget(fallback) || !BotNavValidator.Validate(bot, nameof(RetreatToCover)))
                 {
-                    fallback = FallbackNavPointProvider.GetSafePoint(bot.Position);
+                    if (!EFTPathFallbackHelper.TryGetSafeTarget(bot, out fallback))
+                        fallback = EFTPathFallbackHelper.GetFallbackNavPoint(bot.Position);
                 }
                 if (!IsValidTarget(fallback))
                     fallback = bot.Position;
@@ -132,9 +134,11 @@ namespace AIRefactored.AI.Helpers
 
             try
             {
+                // Use robust path validation & fallback via helper
                 if (!BotNavValidator.Validate(bot, nameof(SmoothMoveTo)))
                 {
-                    target = FallbackNavPointProvider.GetSafePoint(bot.Position);
+                    if (!EFTPathFallbackHelper.TryGetSafeTarget(bot, out target))
+                        target = EFTPathFallbackHelper.GetFallbackNavPoint(bot.Position);
                 }
                 if (!IsValidTarget(target))
                     target = bot.Position;
@@ -183,7 +187,8 @@ namespace AIRefactored.AI.Helpers
 
                 if (!IsValidTarget(fallback) || !BotNavValidator.Validate(bot, nameof(SmoothMoveToSafeExit)))
                 {
-                    fallback = FallbackNavPointProvider.GetSafePoint(bot.Position);
+                    if (!EFTPathFallbackHelper.TryGetSafeTarget(bot, out fallback))
+                        fallback = EFTPathFallbackHelper.GetFallbackNavPoint(bot.Position);
                 }
                 if (!IsValidTarget(fallback))
                     fallback = bot.Position;
@@ -212,16 +217,16 @@ namespace AIRefactored.AI.Helpers
             {
                 Vector3 right = Vector3.Cross(Vector3.up, threatDirection.normalized);
                 if (right.sqrMagnitude < 0.01f)
-                {
                     right = Vector3.right;
-                }
 
                 Vector3 offset = right.normalized * DefaultStrafeDistance * Mathf.Clamp(scale, 0.75f, 1.25f);
                 Vector3 target = bot.Position + offset;
 
-                if (!IsValidTarget(target) || !BotNavValidator.Validate(bot, nameof(SmoothStrafeFrom)))
+                // Use robust path validation & fallback via helper
+                if (!BotNavValidator.Validate(bot, nameof(SmoothStrafeFrom)))
                 {
-                    target = FallbackNavPointProvider.GetSafePoint(bot.Position);
+                    if (!EFTPathFallbackHelper.TryGetSafeTarget(bot, out target))
+                        target = EFTPathFallbackHelper.GetFallbackNavPoint(bot.Position);
                 }
                 if (!IsValidTarget(target))
                     target = bot.Position;
@@ -251,18 +256,11 @@ namespace AIRefactored.AI.Helpers
                 Vector3 dir = bot.LookDirection;
                 Vector3 target = bot.Position + dir.normalized * 5f;
 
-                if (NavMeshStatus.IsReady)
+                // Use robust path validation & fallback via helper
+                if (!BotNavValidator.Validate(bot, nameof(ForceFallbackMove)))
                 {
-                    Vector3? point = HybridFallbackResolver.GetBestRetreatPoint(bot, dir);
-                    if (point.HasValue && IsValidTarget(point.Value))
-                    {
-                        target = point.Value;
-                    }
-                }
-
-                if (!IsValidTarget(target) || !BotNavValidator.Validate(bot, nameof(ForceFallbackMove)))
-                {
-                    target = FallbackNavPointProvider.GetSafePoint(bot.Position);
+                    if (!EFTPathFallbackHelper.TryGetSafeTarget(bot, out target))
+                        target = EFTPathFallbackHelper.GetFallbackNavPoint(bot.Position);
                 }
                 if (!IsValidTarget(target))
                     target = bot.Position;

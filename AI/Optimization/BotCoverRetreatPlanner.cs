@@ -24,6 +24,7 @@ namespace AIRefactored.AI.Optimization
 	/// <summary>
 	/// Provides fallback path planning and zone-aware retreat evaluation for AI bots.
 	/// Supports tactical scoring, cover detection, NavPointRegistry integration, and native core graph fallback.
+	/// All path/cover/fallback logic is routed through EFTPathFallbackHelper and squad-safe helpers.
 	/// Only runs on the authoritative host (headless, local-host, or client-host).
 	/// All failures are strictly isolated to the affected bot and do not break parent or system logic.
 	/// </summary>
@@ -136,6 +137,7 @@ namespace AIRefactored.AI.Optimization
 					_squadRetreatCache[map] = squadCache;
 				}
 
+				// --- 1. Try cached squad retreat if not blocked/unsafe ---
 				if (squadCache.TryGetValue(squadId, out List<Vector3> cached) &&
 					cached.Count >= 2 &&
 					!IsPathBlockedByDoor(cached) &&
@@ -147,6 +149,16 @@ namespace AIRefactored.AI.Optimization
 
 				squadCache.Remove(squadId);
 
+				// --- 2. Try EFT native retreat path (uses helper, supports tactical preview) ---
+				List<Vector3> squadSafe = EFTPathFallbackHelper.GetSquadSafePathPoints(bot, 6, SquadSpacingThreshold);
+				if (squadSafe != null && squadSafe.Count >= 2)
+				{
+					squadCache[squadId] = squadSafe;
+					result.AddRange(squadSafe);
+					return result;
+				}
+
+				// --- 3. Try fallback via NavMesh core graph ---
 				if (TryNativeFallbackViaCoreGraph(bot, threatDir, out List<Vector3> nativePath))
 				{
 					squadCache[squadId] = nativePath;
@@ -154,6 +166,7 @@ namespace AIRefactored.AI.Optimization
 					return result;
 				}
 
+				// --- 4. Try local/tactical point/zone-based scoring ---
 				Vector3 origin = bot.Position;
 				Vector3 away = -threatDir.normalized;
 				BotComponentCache cache = null;

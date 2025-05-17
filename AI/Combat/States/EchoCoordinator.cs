@@ -109,20 +109,15 @@ namespace AIRefactored.AI.Combat.States
                     chaos.y = 0f;
 
                     Vector3 destination = mate.Position - fallbackDir * BaseFallbackDistance + chaos;
-                    bool navValid = false;
-                    try
+
+                    // Route through robust fallback helper
+                    if (!BotNavValidator.Validate(mate, "EchoFallback"))
                     {
-                        navValid = BotNavValidator.Validate(mate, "EchoFallback");
+                        if (!EFTPathFallbackHelper.TryGetSafeTarget(mate, out destination))
+                            destination = EFTPathFallbackHelper.GetFallbackNavPoint(mate.Position);
                     }
-                    catch (Exception ex)
-                    {
-                        BotFallbackUtility.Trigger(this, mate, "Nav validation error in EchoFallback.", ex);
-                        navValid = false;
-                    }
-                    if (!navValid)
-                    {
-                        destination = FallbackNavPointProvider.GetSafePoint(mate.Position);
-                    }
+                    if (!IsValidTarget(destination))
+                        destination = EFTPathFallbackHelper.GetFallbackNavPoint(mate.Position);
 
                     try
                     {
@@ -279,6 +274,14 @@ namespace AIRefactored.AI.Combat.States
             if (mate == null || mate == _bot || mate.IsDead)
                 return false;
             return (mate.Position - origin).sqrMagnitude <= MaxEchoRangeSqr;
+        }
+
+        private static bool IsValidTarget(Vector3 pos)
+        {
+            return pos != Vector3.zero &&
+                   !float.IsNaN(pos.x) &&
+                   !float.IsNaN(pos.y) &&
+                   !float.IsNaN(pos.z);
         }
 
         #endregion

@@ -20,7 +20,10 @@ namespace AIRefactored.AI.Combat
     {
         #region Constants
 
-        private const float DefaultMemoryWindow = 10f;
+        /// <summary>
+        /// Default time (in seconds) to remember shots and hits.
+        /// </summary>
+        private static readonly float DefaultMemoryWindow = 10f;
 
         #endregion
 
@@ -39,7 +42,10 @@ namespace AIRefactored.AI.Combat
         /// <summary>
         /// Returns true if the specified profile was shot at recently by this bot.
         /// </summary>
-        public bool DidRecentlyShoot(string profileId, float now = -1f, float memoryWindow = DefaultMemoryWindow)
+        /// <param name="profileId">Target profile ID.</param>
+        /// <param name="now">Override time, or -1 for Time.time.</param>
+        /// <param name="memoryWindow">Memory window in seconds.</param>
+        public bool DidRecentlyShoot(string profileId, float now = -1f, float memoryWindow = -1f)
         {
             try
             {
@@ -49,12 +55,13 @@ namespace AIRefactored.AI.Combat
                 if (!string.Equals(_lastTargetId, profileId, StringComparison.Ordinal))
                     return false;
 
-                float currentTime = now >= 0f ? now : Time.time;
-                return (currentTime - _lastShotTime) <= memoryWindow;
+                float timeWindow = memoryWindow > 0f ? memoryWindow : DefaultMemoryWindow;
+                float currentTime = now >= 0f ? now : GetTime();
+
+                return (currentTime - _lastShotTime) <= timeWindow;
             }
             catch
             {
-                // Always fail safely, never break the caller.
                 return false;
             }
         }
@@ -62,7 +69,10 @@ namespace AIRefactored.AI.Combat
         /// <summary>
         /// Returns true if this bot was recently hit by the specified profile.
         /// </summary>
-        public bool WasRecentlyShotBy(string profileId, float now = -1f, float memoryWindow = DefaultMemoryWindow)
+        /// <param name="profileId">Attacker profile ID.</param>
+        /// <param name="now">Override time, or -1 for Time.time.</param>
+        /// <param name="memoryWindow">Memory window in seconds.</param>
+        public bool WasRecentlyShotBy(string profileId, float now = -1f, float memoryWindow = -1f)
         {
             try
             {
@@ -72,8 +82,10 @@ namespace AIRefactored.AI.Combat
                 if (!string.Equals(_lastAttackerId, profileId, StringComparison.Ordinal))
                     return false;
 
-                float currentTime = now >= 0f ? now : Time.time;
-                return (currentTime - _lastHitTime) <= memoryWindow;
+                float timeWindow = memoryWindow > 0f ? memoryWindow : DefaultMemoryWindow;
+                float currentTime = now >= 0f ? now : GetTime();
+
+                return (currentTime - _lastHitTime) <= timeWindow;
             }
             catch
             {
@@ -84,25 +96,27 @@ namespace AIRefactored.AI.Combat
         /// <summary>
         /// Registers that this bot was hit by the specified profile ID.
         /// </summary>
+        /// <param name="profileId">Attacker profile ID.</param>
         public void RegisterHit(string profileId)
         {
             if (string.IsNullOrEmpty(profileId))
                 return;
 
             _lastAttackerId = profileId;
-            _lastHitTime = Time.time;
+            _lastHitTime = GetTime();
         }
 
         /// <summary>
         /// Registers a shot fired by this bot at the specified profile ID.
         /// </summary>
+        /// <param name="profileId">Target profile ID.</param>
         public void RegisterShot(string profileId)
         {
             if (string.IsNullOrEmpty(profileId))
                 return;
 
             _lastTargetId = profileId;
-            _lastShotTime = Time.time;
+            _lastShotTime = GetTime();
         }
 
         /// <summary>
@@ -114,6 +128,18 @@ namespace AIRefactored.AI.Combat
             _lastTargetId = string.Empty;
             _lastHitTime = float.NegativeInfinity;
             _lastShotTime = float.NegativeInfinity;
+        }
+
+        #endregion
+
+        #region Private Helpers
+
+        /// <summary>
+        /// Gets current time in seconds.
+        /// </summary>
+        private static float GetTime()
+        {
+            return Time.time;
         }
 
         #endregion

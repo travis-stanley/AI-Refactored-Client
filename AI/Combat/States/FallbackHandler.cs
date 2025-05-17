@@ -12,6 +12,7 @@ namespace AIRefactored.AI.Combat.States
     using System.Collections.Generic;
     using AIRefactored.AI.Core;
     using AIRefactored.AI.Helpers;
+    using AIRefactored.AI.Navigation;
     using AIRefactored.Core;
     using AIRefactored.Pools;
     using AIRefactored.Runtime;
@@ -185,12 +186,23 @@ namespace AIRefactored.AI.Combat.States
                     return;
                 }
 
+                Vector3 fallbackPoint = _fallbackTarget;
+
+                // Route fallback through bulletproof helper.
+                if (!BotNavValidator.Validate(_bot, nameof(FallbackHandler)))
+                {
+                    if (!EFTPathFallbackHelper.TryGetSafeTarget(_bot, out fallbackPoint))
+                        fallbackPoint = EFTPathFallbackHelper.GetFallbackNavPoint(_bot.Position);
+                }
+                if (!IsVectorValid(fallbackPoint))
+                    fallbackPoint = EFTPathFallbackHelper.GetFallbackNavPoint(_bot.Position);
+
                 if (_bot.Mover != null)
                 {
                     try
                     {
-                        BotMovementHelper.SmoothMoveTo(_bot, _fallbackTarget);
-                        BotCoverHelper.TrySetStanceFromNearbyCover(_cache, _fallbackTarget);
+                        BotMovementHelper.SmoothMoveTo(_bot, fallbackPoint);
+                        BotCoverHelper.TrySetStanceFromNearbyCover(_cache, fallbackPoint);
                     }
                     catch (Exception ex)
                     {
@@ -208,7 +220,7 @@ namespace AIRefactored.AI.Combat.States
                     return;
                 }
 
-                if (Vector3.Distance(_bot.Position, _fallbackTarget) < MinArrivalDistance)
+                if (Vector3.Distance(_bot.Position, fallbackPoint) < MinArrivalDistance)
                 {
                     forceState?.Invoke(CombatState.Patrol, time);
 

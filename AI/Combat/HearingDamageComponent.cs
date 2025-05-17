@@ -68,7 +68,9 @@ namespace AIRefactored.AI.Combat
                 float newIntensity = Mathf.Clamp01(intensity);
                 float newDuration = duration < 0.1f ? 0.1f : duration;
 
-                if (newIntensity > _targetDeafness)
+                // Only override if new effect is stronger or will last longer with equal intensity
+                if (newIntensity > _targetDeafness ||
+                    (newIntensity == _targetDeafness && newDuration > _deafDuration - _elapsedTime))
                 {
                     _targetDeafness = newIntensity;
                     _deafDuration = newDuration;
@@ -78,7 +80,7 @@ namespace AIRefactored.AI.Combat
             }
             catch
             {
-                // Silent fail — never break parent systems
+                // Never propagate failure
                 Clear();
             }
         }
@@ -102,10 +104,13 @@ namespace AIRefactored.AI.Combat
         {
             try
             {
-                if (_targetDeafness <= 0.01f)
+                if (_targetDeafness <= 0.01f || _deafDuration <= 0f)
+                {
+                    Clear();
                     return;
+                }
 
-                _elapsedTime += deltaTime;
+                _elapsedTime += deltaTime > 0f ? deltaTime : 0f;
 
                 if (_elapsedTime >= _deafDuration)
                 {
@@ -118,7 +123,7 @@ namespace AIRefactored.AI.Combat
             }
             catch
             {
-                // Silent fail — always safe
+                // Always self-heal if something breaks
                 Clear();
             }
         }

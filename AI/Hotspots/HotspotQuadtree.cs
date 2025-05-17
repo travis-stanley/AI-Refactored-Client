@@ -75,7 +75,7 @@ namespace AIRefactored.AI.Hotspots
                         {
                             Subdivide(node);
 
-                            // Move points to children
+                            // Move all points to children
                             for (int i = 0; i < node.Points.Count; i++)
                             {
                                 HotspotRegistry.Hotspot existing = node.Points[i];
@@ -111,6 +111,7 @@ namespace AIRefactored.AI.Hotspots
 
         /// <summary>
         /// Queries all hotspots within a given radius of a position, optionally filtered.
+        /// Returns a pooled list (callers must not hold/reuse this list).
         /// </summary>
         public List<HotspotRegistry.Hotspot> Query(Vector3 position, float radius, Predicate<HotspotRegistry.Hotspot> filter)
         {

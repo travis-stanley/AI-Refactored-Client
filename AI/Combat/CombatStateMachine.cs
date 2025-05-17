@@ -317,7 +317,10 @@ namespace AIRefactored.AI.Combat
                     }
                     else
                     {
-                        BotFallbackUtility.Trigger(this, _bot, "[CombatStateMachine] Fallback path not found.");
+                        // Fallback to bulletproof nav fallback helper
+                        Vector3 fallback = EFTPathFallbackHelper.GetFallbackNavPoint(_bot.Position);
+                        _fallback.SetFallbackTarget(fallback);
+                        TrySetStanceFromNearbyCover(fallback);
                     }
                 }
                 catch (Exception ex)

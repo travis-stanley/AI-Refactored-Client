@@ -71,9 +71,7 @@ namespace AIRefactored.AI.Medical
         public void Tick(float time)
         {
             if (!_isActive || _bot == null || _bot.IsDead || _bot.BotsGroup == null || time < _nextCheckTime)
-            {
                 return;
-            }
 
             try
             {
@@ -84,21 +82,15 @@ namespace AIRefactored.AI.Medical
                 {
                     BotOwner mate = _bot.BotsGroup.Member(i);
                     if (!IsValidMate(mate))
-                    {
                         continue;
-                    }
 
                     Player matePlayer = EFTPlayerUtil.ResolvePlayer(mate);
                     if (!EFTPlayerUtil.IsValidGroupPlayer(matePlayer))
-                    {
                         continue;
-                    }
 
                     IHealthController health = matePlayer.HealthController;
                     if (health == null || !health.IsAlive || !NeedsHealing(health))
-                    {
                         continue;
-                    }
 
                     if (_cache.SquadHealer != null && !_cache.SquadHealer.IsInProcess)
                     {
@@ -125,18 +117,14 @@ namespace AIRefactored.AI.Medical
         private bool IsValidMate(BotOwner mate)
         {
             if (mate == null || mate.IsDead || ReferenceEquals(mate, _bot))
-            {
                 return false;
-            }
 
             try
             {
                 Player selfPlayer = EFTPlayerUtil.ResolvePlayer(_bot);
                 Player matePlayer = EFTPlayerUtil.ResolvePlayer(mate);
                 if (selfPlayer == null || matePlayer == null)
-                {
                     return false;
-                }
 
                 Vector3 selfPos = EFTPlayerUtil.GetPosition(selfPlayer);
                 Vector3 matePos = EFTPlayerUtil.GetPosition(matePlayer);
@@ -162,16 +150,13 @@ namespace AIRefactored.AI.Medical
                     EBodyPart part = BodyParts[i];
                     ValueStruct hp = health.GetBodyPartHealth(part);
                     if (hp.Maximum > 0f && hp.Current < hp.Maximum * HealthThreshold)
-                    {
                         return true;
-                    }
                 }
             }
             catch (Exception ex)
             {
                 Logger.LogError($"[BotGroupHealCoordinator] NeedsHealing() failed: {ex}");
             }
-
             return false;
         }
 

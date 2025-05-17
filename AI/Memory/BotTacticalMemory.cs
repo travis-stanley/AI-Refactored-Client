@@ -182,6 +182,9 @@ namespace AIRefactored.AI.Memory
             }
         }
 
+        /// <summary>
+        /// Returns the most recently seen enemy's ID, or empty if none. Safe for use in threat fallback logic.
+        /// </summary>
         public string GetMostRecentEnemyId()
         {
             try

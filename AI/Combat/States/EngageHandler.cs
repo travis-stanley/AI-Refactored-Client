@@ -121,28 +121,27 @@ namespace AIRefactored.AI.Combat.States
                     ? _cache.SquadPath.ApplyOffsetTo(enemyPos)
                     : enemyPos;
 
-                bool navValid = false;
                 if (!IsValid(destination))
-                {
-                    navValid = false;
-                }
+                    destination = EFTPathFallbackHelper.GetFallbackNavPoint(_bot.Position);
                 else
                 {
                     try
                     {
-                        navValid = BotNavValidator.Validate(_bot, "EngageHandlerDestination");
+                        if (!BotNavValidator.Validate(_bot, "EngageHandlerDestination"))
+                        {
+                            if (!EFTPathFallbackHelper.TryGetSafeTarget(_bot, out destination))
+                                destination = EFTPathFallbackHelper.GetFallbackNavPoint(_bot.Position);
+                        }
                     }
                     catch (Exception ex)
                     {
-                        BotFallbackUtility.Trigger(this, _bot, "NavValidator exception in Tick.", ex);
-                        navValid = false;
+                        BotFallbackUtility.Trigger(this, _bot, "NavValidator/EFTPathFallbackHelper exception in Tick.", ex);
+                        destination = EFTPathFallbackHelper.GetFallbackNavPoint(_bot.Position);
                     }
                 }
 
-                if (!navValid)
-                {
-                    destination = FallbackNavPointProvider.GetSafePoint(_bot.Position);
-                }
+                if (!IsValid(destination))
+                    destination = EFTPathFallbackHelper.GetFallbackNavPoint(_bot.Position);
 
                 if (_bot.Mover != null)
                 {

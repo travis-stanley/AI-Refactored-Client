@@ -289,24 +289,16 @@ namespace AIRefactored.AI.Combat
                     _cache.LastShotTracker?.RegisterHit(id);
                 }
 
+                // Use hardened fallback nav for safety and bulletproof logic.
                 if (_cache.Movement != null && !_cache.Bot.IsDead && _cache.Bot.Mover != null && !_cache.Bot.Mover.IsMoving)
                 {
-                    Vector3 fallback = Vector3.zero;
+                    Vector3 fallback;
+                    if (!EFTPathFallbackHelper.TryGetSafeTarget(_cache.Bot, out fallback))
+                        fallback = EFTPathFallbackHelper.GetFallbackNavPoint(_cache.Bot.Position);
+                    if (!IsVectorValid(fallback))
+                        fallback = EFTPathFallbackHelper.GetFallbackNavPoint(_cache.Bot.Position);
 
-                    if (NavPointRegistry.IsReady && !NavPointRegistry.IsEmpty)
-                    {
-                        fallback = NavPointRegistry.GetClosestPosition(_cache.Bot.Position);
-                    }
-
-                    if (!BotNavValidator.Validate(_cache.Bot, nameof(SetTarget)))
-                    {
-                        fallback = FallbackNavPointProvider.GetSafePoint(_cache.Bot.Position);
-                    }
-
-                    if (fallback != Vector3.zero)
-                    {
-                        _cache.Bot.Mover.GoToPoint(fallback, true, 1.0f);
-                    }
+                    _cache.Bot.Mover.GoToPoint(fallback, true, 1.0f);
                 }
             }
             catch (Exception ex)
@@ -314,6 +306,11 @@ namespace AIRefactored.AI.Combat
                 BotFallbackUtility.Trigger(this, _bot, "Exception in SetTarget.", ex);
                 _isFallbackMode = true;
             }
+        }
+
+        private static bool IsVectorValid(Vector3 v)
+        {
+            return !float.IsNaN(v.x) && !float.IsNaN(v.y) && !float.IsNaN(v.z);
         }
 
         #endregion

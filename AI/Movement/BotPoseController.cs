@@ -20,8 +20,7 @@ namespace AIRefactored.AI.Movement
 
     /// <summary>
     /// Controls bot stance transitions (standing, crouching, prone) based on combat, panic, suppression, and cover logic.
-    /// Smoothly blends transitions for realistic animation flow.
-    /// All failures are locally isolated; cannot break or cascade into other systems.
+    /// Smoothly blends transitions for realistic animation flow. All failures are locally isolated; never propagate.
     /// </summary>
     public sealed class BotPoseController
     {
@@ -61,18 +60,15 @@ namespace AIRefactored.AI.Movement
         /// </summary>
         public BotPoseController(BotOwner bot, BotComponentCache cache)
         {
-            if (!EFTPlayerUtil.IsValidBotOwner(bot) || cache == null || cache.PersonalityProfile == null)
-                throw new ArgumentException("[BotPoseController] Invalid initialization.");
-
+            if (!EFTPlayerUtil.IsValidBotOwner(bot)) throw new ArgumentException("[BotPoseController] Invalid bot.");
+            if (cache == null || cache.PersonalityProfile == null) throw new ArgumentException("[BotPoseController] Cache/personality is null.");
             MovementContext movement = bot.GetPlayer?.MovementContext;
-            if (movement == null)
-                throw new ArgumentException("[BotPoseController] Missing MovementContext.");
+            if (movement == null) throw new ArgumentException("[BotPoseController] Missing MovementContext.");
 
             _bot = bot;
             _cache = cache;
             _movement = movement;
             _personality = cache.PersonalityProfile;
-
             _currentPoseLevel = _movement.PoseLevel;
             _targetPoseLevel = _currentPoseLevel;
             _lastTickTime = Time.time;
@@ -90,7 +86,7 @@ namespace AIRefactored.AI.Movement
         {
             try
             {
-                return _movement?.PoseLevel ?? StandPose;
+                return _movement.PoseLevel;
             }
             catch
             {
@@ -166,9 +162,9 @@ namespace AIRefactored.AI.Movement
 
                 BlendPose(deltaTime);
             }
-            catch (Exception)
+            catch
             {
-                // Pose failures are isolated; never cascade or break.
+                // Bulletproof: failures are isolated
             }
         }
 
@@ -189,7 +185,7 @@ namespace AIRefactored.AI.Movement
                                (BotCoverHelper.IsProneCover(p) || BotCoverHelper.IsLowCover(p));
                     });
 
-                for (int i = 0; i < points.Count; i++)
+                for (int i = 0, n = points.Count; i < n; i++)
                 {
                     NavPointData p = points[i];
                     if (BotCoverHelper.IsProneCover(p))
@@ -209,7 +205,7 @@ namespace AIRefactored.AI.Movement
             }
             catch
             {
-                // Isolated: never cascades or breaks system
+                // Isolated: never propagates
             }
         }
 
@@ -311,7 +307,7 @@ namespace AIRefactored.AI.Movement
             }
             catch
             {
-                // Isolated: never cascades or breaks system
+                // Isolated: never propagates
             }
         }
 

@@ -77,31 +77,21 @@ namespace AIRefactored.AI.Looting
         public bool ShouldLootNow()
         {
             if (!_isActive || _bot == null || _bot.IsDead)
-            {
                 return false;
-            }
 
             if (Time.time < _nextLootTime)
-            {
                 return false;
-            }
 
             try
             {
                 if (_cache.PanicHandler != null && _cache.PanicHandler.IsPanicking)
-                {
                     return false;
-                }
 
                 if (_bot.Memory != null && _bot.Memory.GoalEnemy != null)
-                {
                     return false;
-                }
 
                 if (_bot.EnemiesController != null && _bot.EnemiesController.EnemyInfos != null && _bot.EnemiesController.EnemyInfos.Count > 0)
-                {
                     return false;
-                }
 
                 return _cache.LootScanner != null && _cache.LootScanner.TotalLootValue >= HighValueThreshold;
             }
@@ -119,9 +109,7 @@ namespace AIRefactored.AI.Looting
         public Vector3 GetLootDestination()
         {
             if (!_isActive || _cache == null || _cache.LootScanner == null || _bot == null)
-            {
                 return Vector3.zero;
-            }
 
             try
             {
@@ -130,23 +118,17 @@ namespace AIRefactored.AI.Looting
 
                 List<LootableContainer> containers = LootRegistry.GetAllContainers();
                 if (containers == null)
-                {
                     return Vector3.zero;
-                }
 
                 for (int i = 0; i < containers.Count; i++)
                 {
                     LootableContainer container = containers[i];
                     if (container == null || !container.enabled || container.transform == null)
-                    {
                         continue;
-                    }
 
                     Vector3 pos = container.transform.position;
                     if ((_bot.Position - pos).sqrMagnitude > (MaxLootDistance * MaxLootDistance))
-                    {
                         continue;
-                    }
 
                     float value = EstimateValue(container);
                     if (value > bestValue)
@@ -172,9 +154,7 @@ namespace AIRefactored.AI.Looting
         public void MarkLooted(string lootId)
         {
             if (!_isActive || string.IsNullOrWhiteSpace(lootId))
-            {
                 return;
-            }
 
             try
             {
@@ -195,9 +175,7 @@ namespace AIRefactored.AI.Looting
         public bool WasRecentlyLooted(string lootId)
         {
             if (!_isActive || string.IsNullOrWhiteSpace(lootId))
-            {
                 return false;
-            }
 
             try
             {
@@ -218,9 +196,7 @@ namespace AIRefactored.AI.Looting
         private static float EstimateValue(LootableContainer container)
         {
             if (container == null || container.ItemOwner == null || container.ItemOwner.RootItem == null)
-            {
                 return 0f;
-            }
 
             float total = 0f;
             List<Item> items = null;
@@ -234,9 +210,7 @@ namespace AIRefactored.AI.Looting
                 {
                     Item item = items[i];
                     if (item != null && item.Template != null && item.Template.CreditsPrice > 0f)
-                    {
                         total += item.Template.CreditsPrice;
-                    }
                 }
             }
             catch (Exception ex)
@@ -247,9 +221,7 @@ namespace AIRefactored.AI.Looting
             finally
             {
                 if (items != null)
-                {
                     TempListPool.Return(items);
-                }
             }
 
             return total;

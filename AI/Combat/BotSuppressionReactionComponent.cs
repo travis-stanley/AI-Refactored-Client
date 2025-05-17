@@ -12,6 +12,7 @@ namespace AIRefactored.AI.Combat
     using AIRefactored.AI.Core;
     using AIRefactored.AI.Helpers;
     using AIRefactored.AI.Optimization;
+    using AIRefactored.AI.Navigation;
     using AIRefactored.Core;
     using EFT;
     using UnityEngine;
@@ -125,6 +126,15 @@ namespace AIRefactored.AI.Combat
                 Vector3 fallback = ComputeFallbackPosition(retreatDir);
                 float cohesion = _cache.AIRefactoredBotOwner?.PersonalityProfile?.Cohesion ?? 1f;
 
+                // Robust: always use EFTPathFallbackHelper for bulletproof nav
+                if (!BotNavValidator.Validate(_bot, "BotSuppression::TriggerSuppression"))
+                {
+                    if (!EFTPathFallbackHelper.TryGetSafeTarget(_bot, out fallback))
+                        fallback = EFTPathFallbackHelper.GetFallbackNavPoint(_bot.Position);
+                }
+                if (!IsVectorValid(fallback))
+                    fallback = EFTPathFallbackHelper.GetFallbackNavPoint(_bot.Position);
+
                 if (_bot.Mover != null)
                 {
                     BotMovementHelper.SmoothMoveTo(_bot, fallback, false, cohesion);
@@ -202,6 +212,11 @@ namespace AIRefactored.AI.Combat
             {
                 return false;
             }
+        }
+
+        private static bool IsVectorValid(Vector3 v)
+        {
+            return !float.IsNaN(v.x) && !float.IsNaN(v.y) && !float.IsNaN(v.z);
         }
 
         #endregion

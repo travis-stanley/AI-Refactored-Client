@@ -86,9 +86,14 @@ namespace AIRefactored.AI.Combat.States
                     return memoryPos;
 
                 Vector3 fallback = RandomNearbyPosition();
-                return BotNavValidator.Validate(_bot, "InvestigateRandomFallback")
-                    ? fallback
-                    : FallbackNavPointProvider.GetSafePoint(_bot != null ? _bot.Position : Vector3.zero);
+                if (!BotNavValidator.Validate(_bot, "InvestigateRandomFallback"))
+                {
+                    if (!EFTPathFallbackHelper.TryGetSafeTarget(_bot, out fallback))
+                        fallback = EFTPathFallbackHelper.GetFallbackNavPoint(_bot != null ? _bot.Position : Vector3.zero);
+                }
+                if (!IsVectorValid(fallback))
+                    fallback = _bot != null ? _bot.Position : Vector3.zero;
+                return fallback;
             }
             catch (Exception ex)
             {
@@ -112,28 +117,15 @@ namespace AIRefactored.AI.Combat.States
                     ? _cache.SquadPath.ApplyOffsetTo(target)
                     : target;
 
-                bool navValid = false;
-                if (!IsVectorValid(destination))
+                if (!IsVectorValid(destination) ||
+                    !BotNavValidator.Validate(_bot, "InvestigateDestination"))
                 {
-                    navValid = false;
-                }
-                else
-                {
-                    try
-                    {
-                        navValid = BotNavValidator.Validate(_bot, "InvestigateDestination");
-                    }
-                    catch (Exception ex)
-                    {
-                        BotFallbackUtility.Trigger(this, _bot, "NavValidator exception in Investigate.", ex);
-                        navValid = false;
-                    }
+                    if (!EFTPathFallbackHelper.TryGetSafeTarget(_bot, out destination))
+                        destination = EFTPathFallbackHelper.GetFallbackNavPoint(_bot.Position);
                 }
 
-                if (!navValid)
-                {
-                    destination = FallbackNavPointProvider.GetSafePoint(_bot.Position);
-                }
+                if (!IsVectorValid(destination))
+                    destination = _bot.Position;
 
                 if (_bot.Mover != null)
                 {

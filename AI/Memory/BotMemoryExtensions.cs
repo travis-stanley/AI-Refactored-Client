@@ -105,29 +105,21 @@ namespace AIRefactored.AI.Memory
             try
             {
                 if (!EFTPlayerUtil.IsValidBotOwner(bot))
-                {
                     return;
-                }
 
                 EnemyInfo goal = bot.Memory?.GoalEnemy;
                 if (goal == null || !goal.IsVisible)
-                {
                     return;
-                }
 
                 Vector3 toEnemy = goal.CurrPosition - bot.Position;
                 float sqrDist = toEnemy.sqrMagnitude;
 
                 if (sqrDist < EnemyTooCloseSqr)
-                {
                     return;
-                }
 
                 float angle = Vector3.Angle(bot.LookDirection, toEnemy.normalized);
                 if (angle >= 20f || sqrDist >= InvestigateRangeSqr)
-                {
                     return;
-                }
 
                 Vector3 fallback = bot.Position - (toEnemy.normalized * 5f);
                 Vector3 destination = new Vector3(fallback.x, bot.Position.y, fallback.z);
@@ -218,20 +210,14 @@ namespace AIRefactored.AI.Memory
             try
             {
                 if (!EFTPlayerUtil.IsValidBotOwner(bot) || !EFTPlayerUtil.IsValid(source))
-                {
                     return;
-                }
 
                 if (bot.ProfileId == source.ProfileId)
-                {
                     return;
-                }
 
                 Vector3 sourcePos = EFTPlayerUtil.GetPosition(source);
                 if (sourcePos.sqrMagnitude < 0.01f)
-                {
                     return;
-                }
 
                 BotMemoryStore.AddHeardSound(bot.ProfileId, sourcePos, Time.time);
 
@@ -259,29 +245,21 @@ namespace AIRefactored.AI.Memory
             try
             {
                 if (!EFTPlayerUtil.IsValidBotOwner(bot))
-                {
                     return Vector3.zero;
-                }
 
                 EnemyInfo goal = bot.Memory?.GoalEnemy;
                 if (goal == null)
-                {
                     return Vector3.zero;
-                }
 
                 Vector3 toEnemy = goal.CurrPosition - bot.Position;
                 if (toEnemy.sqrMagnitude < MinMoveThreshold)
-                {
                     return Vector3.zero;
-                }
 
                 Vector3 enemyDir = toEnemy.normalized;
                 Vector3 botDir = bot.LookDirection.normalized;
 
                 if (Vector3.Dot(botDir, enemyDir) < FlankDotThreshold)
-                {
                     return Vector3.zero;
-                }
 
                 success = true;
                 return Vector3.Cross(enemyDir, Vector3.up);

@@ -212,11 +212,16 @@ namespace AIRefactored.AI.Combat
                     catch { /* no-op */ }
                 }
 
-                Vector3 fallback = NavPointRegistry.GetClosestPosition(_bot.Position);
-                if (fallback != Vector3.zero && _bot.Mover != null && !_bot.Mover.IsMoving)
+                Vector3 fallback;
+                if (!EFTPathFallbackHelper.TryGetSafeTarget(_bot, out fallback))
+                    fallback = EFTPathFallbackHelper.GetFallbackNavPoint(_bot.Position);
+                if (!IsVectorValid(fallback))
+                    fallback = EFTPathFallbackHelper.GetFallbackNavPoint(_bot.Position);
+
+                if (_bot.Mover != null && !_bot.Mover.IsMoving)
                 {
                     _bot.Mover.GoToPoint(fallback, true, 1.0f);
-                    Logger.LogDebug($"[AIRefactored-Escalation] Bot '{nickname}' moved to nav fallback after escalation.");
+                    Logger.LogDebug($"[AIRefactored-Escalation] Bot '{nickname}' moved to fallback after escalation.");
                 }
             }
             catch (Exception ex)
@@ -291,6 +296,11 @@ namespace AIRefactored.AI.Combat
                 BotFallbackUtility.Trigger(this, _bot, "Exception in ApplyPersonalityTuning.", ex);
                 _isFallbackMode = true;
             }
+        }
+
+        private static bool IsVectorValid(Vector3 v)
+        {
+            return !float.IsNaN(v.x) && !float.IsNaN(v.y) && !float.IsNaN(v.z);
         }
 
         #endregion

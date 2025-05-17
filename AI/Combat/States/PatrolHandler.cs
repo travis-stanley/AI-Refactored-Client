@@ -111,21 +111,14 @@ namespace AIRefactored.AI.Combat.States
                 if (ShouldTriggerFallback())
                 {
                     Vector3 fallback = TryGetFallbackPosition();
-                    bool navValid = false;
-                    try
-                    {
-                        navValid = BotNavValidator.Validate(_bot, "PatrolFallback");
-                    }
-                    catch (Exception ex)
-                    {
-                        BotFallbackUtility.Trigger(this, _bot, "Nav validation exception in Tick.", ex);
-                        navValid = false;
-                    }
 
-                    if (!navValid)
+                    if (!BotNavValidator.Validate(_bot, "PatrolFallback"))
                     {
-                        fallback = FallbackNavPointProvider.GetSafePoint(_bot.Position);
+                        if (!EFTPathFallbackHelper.TryGetSafeTarget(_bot, out fallback))
+                            fallback = EFTPathFallbackHelper.GetFallbackNavPoint(_bot.Position);
                     }
+                    if (!IsVectorValid(fallback))
+                        fallback = EFTPathFallbackHelper.GetFallbackNavPoint(_bot.Position);
 
                     try
                     {
@@ -167,27 +160,14 @@ namespace AIRefactored.AI.Combat.States
                     ? _cache.SquadPath.ApplyOffsetTo(target)
                     : target;
 
+                if (!IsVectorValid(destination) ||
+                    !BotNavValidator.Validate(_bot, "PatrolDestination"))
+                {
+                    if (!EFTPathFallbackHelper.TryGetSafeTarget(_bot, out destination))
+                        destination = EFTPathFallbackHelper.GetFallbackNavPoint(_bot.Position);
+                }
                 if (!IsVectorValid(destination))
-                {
-                    BotFallbackUtility.Trigger(this, _bot, "Skipped patrol move: destination contains NaN.");
-                    return;
-                }
-
-                bool navValid2 = false;
-                try
-                {
-                    navValid2 = BotNavValidator.Validate(_bot, "PatrolDestination");
-                }
-                catch (Exception ex)
-                {
-                    BotFallbackUtility.Trigger(this, _bot, "Nav validation exception (destination) in Tick.", ex);
-                    navValid2 = false;
-                }
-
-                if (!navValid2)
-                {
-                    destination = FallbackNavPointProvider.GetSafePoint(_bot.Position);
-                }
+                    destination = EFTPathFallbackHelper.GetFallbackNavPoint(_bot.Position);
 
                 if (_bot.Mover != null)
                 {

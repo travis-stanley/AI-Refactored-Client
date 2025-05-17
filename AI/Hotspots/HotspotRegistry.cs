@@ -104,9 +104,7 @@ namespace AIRefactored.AI.Hotspots
                 {
                     HotspotData data = set.Points[i];
                     if (data == null || string.IsNullOrWhiteSpace(data.Zone))
-                    {
                         continue;
-                    }
 
                     string zone = data.Zone.Trim();
                     Hotspot h = new Hotspot(data.Position, zone);

@@ -125,6 +125,15 @@ namespace AIRefactored.AI.Combat
                 {
                     if (profile.ChaosFactor > 0f && Random.value < profile.ChaosFactor)
                     {
+                        // Move to aimPosition using bulletproof fallback helpers
+                        if (!BotNavValidator.Validate(_bot, "FireLogicAdvance"))
+                        {
+                            if (!EFTPathFallbackHelper.TryGetSafeTarget(_bot, out aimPosition))
+                                aimPosition = EFTPathFallbackHelper.GetFallbackNavPoint(_bot.Position);
+                        }
+                        if (!IsVectorValid(aimPosition))
+                            aimPosition = EFTPathFallbackHelper.GetFallbackNavPoint(_bot.Position);
+
                         BotMovementHelper.SmoothMoveTo(_bot, aimPosition, false, profile.Cohesion);
                     }
                     return;
@@ -404,25 +413,20 @@ namespace AIRefactored.AI.Combat
                     return;
 
                 List<Vector3> retreatPath = BotCoverRetreatPlanner.GetCoverRetreatPath(_bot, _bot.LookDirection.normalized, _cache.Pathing);
-                if (retreatPath == null || retreatPath.Count < 2)
-                    return;
 
-                Vector3 fallback = retreatPath[retreatPath.Count - 1];
-                bool navValid = false;
-                try
+                Vector3 fallback = (_bot != null) ? _bot.Position : Vector3.zero;
+                if (retreatPath != null && retreatPath.Count >= 2)
                 {
-                    navValid = BotNavValidator.Validate(_bot, "BotFireLogic::TriggerFallback");
-                }
-                catch (Exception ex)
-                {
-                    BotFallbackUtility.Trigger(this, _bot, "Nav validation exception in TriggerFallback.", ex);
-                    navValid = false;
+                    fallback = retreatPath[retreatPath.Count - 1];
                 }
 
-                if (!navValid)
+                if (!BotNavValidator.Validate(_bot, "BotFireLogic::TriggerFallback"))
                 {
-                    fallback = FallbackNavPointProvider.GetSafePoint(_bot.Position);
+                    if (!EFTPathFallbackHelper.TryGetSafeTarget(_bot, out fallback))
+                        fallback = EFTPathFallbackHelper.GetFallbackNavPoint(_bot.Position);
                 }
+                if (!IsVectorValid(fallback))
+                    fallback = EFTPathFallbackHelper.GetFallbackNavPoint(_bot.Position);
 
                 if (_bot.Mover != null)
                 {
@@ -473,6 +477,11 @@ namespace AIRefactored.AI.Combat
                 _isFallbackMode = true;
             }
             return false;
+        }
+
+        private static bool IsVectorValid(Vector3 v)
+        {
+            return !float.IsNaN(v.x) && !float.IsNaN(v.y) && !float.IsNaN(v.z);
         }
 
         #endregion

@@ -90,6 +90,7 @@ namespace AIRefactored.AI.Core
             PersonalityProfile = new BotPersonalityProfile();
             PersonalityName = "Unknown";
             AssignedZone = "unknown";
+            _isInitialized = false;
         }
 
         #endregion
@@ -97,7 +98,8 @@ namespace AIRefactored.AI.Core
         #region Initialization
 
         /// <summary>
-        /// Atomic initialization: only runs if cache is present, never leaves unwired.
+        /// Atomic initialization: always retries until bot and cache are both available, and owner/cache are fully wired.
+        /// Never leaves a partial or broken state; never disables itself or triggers fallback.
         /// </summary>
         public void Initialize(BotOwner bot)
         {
@@ -116,14 +118,15 @@ namespace AIRefactored.AI.Core
 
             try
             {
-                if (!BotComponentCacheRegistry.TryGet(id, out _cache) || _cache == null)
+                // Atomic cache/owner wiring: always waits for cache, then wires self
+                _cache = BotComponentCacheRegistry.GetOrCreate(bot);
+                if (_cache == null)
                 {
                     Logger.LogError($"[AIRefactoredBotOwner] Cache not found for bot {id} — will retry until available.");
                     _isInitialized = false;
                     return;
                 }
 
-                // Always ensure atomic wiring
                 if (_cache.AIRefactoredBotOwner != this)
                 {
                     _cache.SetOwner(this);

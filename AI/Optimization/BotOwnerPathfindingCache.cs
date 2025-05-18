@@ -17,7 +17,6 @@ namespace AIRefactored.AI.Optimization
     using AIRefactored.Runtime;
     using BepInEx.Logging;
     using EFT;
-    using Unity.AI.Navigation;
     using UnityEngine;
     using UnityEngine.AI;
 

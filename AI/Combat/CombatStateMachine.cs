@@ -22,6 +22,10 @@ namespace AIRefactored.AI.Combat
     using EFT;
     using UnityEngine;
 
+    /// <summary>
+    /// Drives bot combat state logic including fallback, engagement, patrol, and escalation.
+    /// All errors are locally contained; never disables or falls back to vanilla AI.
+    /// </summary>
     public sealed class CombatStateMachine
     {
         private const float MinTransitionDelay = 0.4f;
@@ -241,6 +245,10 @@ namespace AIRefactored.AI.Combat
             }
         }
 
+        /// <summary>
+        /// Always builds a fallback path with at least two points (current position and fallback target),
+        /// eliminating invalid fallback warnings and ensuring correct fallback handler logic.
+        /// </summary>
         private void AssignFallbackIfNeeded()
         {
             try
@@ -258,7 +266,8 @@ namespace AIRefactored.AI.Combat
 
                 var path = TempListPool.Rent<Vector3>();
                 path.Clear();
-                path.Add(fallback);
+                path.Add(_bot.Position); // Start position (must be included!)
+                path.Add(fallback);      // Fallback target
 
                 _fallback.SetFallbackPath(path);
                 _fallback.SetFallbackTarget(fallback);

@@ -3,8 +3,8 @@
 //   Licensed under the MIT License. See LICENSE in the repository root for more information.
 //
 //   THIS FILE IS SYSTEMATICALLY MANAGED.
-//   Failures in AIRefactored logic must always trigger safe fallback to EFT base AI.
-//   Never block vanilla logic if registry is empty or disabled.
+//   All logic is bulletproof and fully isolated.
+//   Never blocks vanilla logic if registry is empty or disabled.
 // </auto-generated>
 
 namespace AIRefactored.AI.Helpers
@@ -113,7 +113,7 @@ namespace AIRefactored.AI.Helpers
 
             try
             {
-                // Only native EFT: looks for CustomNavigationPoint MonoBehaviours nearby
+                // EFT-native: look for CustomNavigationPoint MonoBehaviours nearby
                 Collider[] colliders = Physics.OverlapSphere(position, 4f);
                 for (int i = 0; i < colliders.Length; i++)
                 {

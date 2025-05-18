@@ -76,9 +76,10 @@ namespace AIRefactored.AI.Combat.States
 
                     Vector3 destination = currentTargetPos;
 
+                    // Use internal EFT/Unity logic if custom nav fails
                     if (!BotNavHelper.TryGetSafeTarget(_bot, out destination) || !IsValidTarget(destination))
                     {
-                        destination = currentTargetPos;
+                        destination = GetSafeRandomAttackPoint(_bot, currentTargetPos);
                     }
 
                     if (_bot.Mover != null)
@@ -141,6 +142,29 @@ namespace AIRefactored.AI.Combat.States
                    !float.IsNaN(pos.x) &&
                    !float.IsNaN(pos.y) &&
                    !float.IsNaN(pos.z);
+        }
+
+        /// <summary>
+        /// Returns a safe target for attack movement using only internal EFT/Unity logic.
+        /// </summary>
+        private static Vector3 GetSafeRandomAttackPoint(BotOwner bot, Vector3 fallback)
+        {
+            if (bot != null && bot.PatrollingData != null)
+            {
+                Vector3 patrol = bot.PatrollingData.CurTargetPoint;
+                if (IsValidTarget(patrol) && Vector3.Distance(patrol, fallback) > 1.0f)
+                    return patrol;
+            }
+
+            // Use NavMesh to sample a point near fallback
+            Vector3 candidate = fallback + UnityEngine.Random.onUnitSphere * 2.0f;
+            candidate.y = fallback.y;
+
+            UnityEngine.AI.NavMeshHit hit;
+            if (UnityEngine.AI.NavMesh.SamplePosition(candidate, out hit, 2.5f, UnityEngine.AI.NavMesh.AllAreas))
+                candidate = hit.position;
+
+            return IsValidTarget(candidate) ? candidate : fallback + Vector3.forward * 0.25f;
         }
     }
 }

@@ -17,6 +17,7 @@ namespace AIRefactored.AI.Combat.States
     using AIRefactored.Pools;
     using EFT;
     using UnityEngine;
+    using UnityEngine.AI;
 
     /// <summary>
     /// Handles suppression fallback, retreat routing, and cover movement during engagements.
@@ -63,11 +64,9 @@ namespace AIRefactored.AI.Combat.States
 
         public void SetFallbackPath(List<Vector3> path)
         {
+            // Silently ignore too-short or invalid paths
             if (path == null || path.Count < 2)
             {
-                string posStr = _bot != null ? _bot.Position.ToString("F3") : "null";
-                string tgtStr = (path != null && path.Count > 0) ? path[path.Count - 1].ToString("F3") : "null";
-                Plugin.LoggerInstance.LogWarning($"[FallbackHandler] Rejected fallback path: path too short (src={posStr}, tgt={tgtStr})");
                 return;
             }
 
@@ -85,9 +84,7 @@ namespace AIRefactored.AI.Combat.States
             }
             else
             {
-                string posStr = _bot != null ? _bot.Position.ToString("F3") : "null";
-                string tgtStr = _currentFallbackPath.Count > 0 ? _currentFallbackPath[_currentFallbackPath.Count - 1].ToString("F3") : "null";
-                Plugin.LoggerInstance.LogWarning($"[FallbackHandler] Final fallback path was invalid (src={posStr}, tgt={tgtStr})");
+                // Do not log: final fallback path was invalid
             }
         }
 
@@ -117,7 +114,9 @@ namespace AIRefactored.AI.Combat.States
 
                 Vector3 fallbackPoint = _fallbackTarget;
                 if (!BotNavHelper.TryGetSafeTarget(_bot, out fallbackPoint) || !IsVectorValid(fallbackPoint))
-                    fallbackPoint = _fallbackTarget;
+                {
+                    fallbackPoint = GetSafeRandomFallback(_bot.Position);
+                }
 
                 if (_bot.Mover != null)
                 {
@@ -174,6 +173,30 @@ namespace AIRefactored.AI.Combat.States
                    !float.IsNaN(v.y) &&
                    !float.IsNaN(v.z) &&
                    v != Vector3.zero;
+        }
+
+        /// <summary>
+        /// Returns a random valid fallback position using only internal EFT/Unity logic, never PathController.
+        /// </summary>
+        private Vector3 GetSafeRandomFallback(Vector3 origin)
+        {
+            // Use PatrollingData.CurTargetPoint if valid and not too close.
+            if (_bot != null && _bot.PatrollingData != null)
+            {
+                Vector3 curPatrolTarget = _bot.PatrollingData.CurTargetPoint;
+                if (IsVectorValid(curPatrolTarget) && Vector3.Distance(curPatrolTarget, origin) > 1.0f)
+                    return curPatrolTarget;
+            }
+
+            // Otherwise, use NavMesh to sample a nearby point.
+            Vector3 candidate = origin + UnityEngine.Random.onUnitSphere * 2.0f;
+            candidate.y = origin.y;
+
+            NavMeshHit hit;
+            if (NavMesh.SamplePosition(candidate, out hit, 2.5f, NavMesh.AllAreas))
+                candidate = hit.position;
+
+            return IsVectorValid(candidate) ? candidate : origin + Vector3.forward * 0.25f;
         }
     }
 }

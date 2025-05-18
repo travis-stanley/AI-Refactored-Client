@@ -16,6 +16,7 @@ namespace AIRefactored.AI.Combat.States
     using AIRefactored.Core;
     using EFT;
     using UnityEngine;
+    using UnityEngine.AI;
 
     /// <summary>
     /// Manages bot investigation behavior when sound or memory suggest enemy presence.
@@ -53,11 +54,7 @@ namespace AIRefactored.AI.Combat.States
                 if (TryGetMemoryEnemyPosition(out Vector3 memoryPos))
                     return memoryPos;
 
-                Vector3 fallback = RandomNearbyPosition();
-
-                if (!BotNavHelper.TryGetSafeTarget(_bot, out fallback) || !IsVectorValid(fallback))
-                    fallback = _bot != null ? _bot.Position : Vector3.zero;
-
+                Vector3 fallback = GetSafeNearbyPosition();
                 return fallback;
             }
             catch (Exception ex)
@@ -74,10 +71,14 @@ namespace AIRefactored.AI.Combat.States
 
             try
             {
-                Vector3 destination = _cache.SquadPath != null
-                    ? _cache.SquadPath.ApplyOffsetTo(target)
-                    : target;
+                Vector3 destination = target;
+                if (_cache.SquadPath != null)
+                {
+                    try { destination = _cache.SquadPath.ApplyOffsetTo(target); }
+                    catch { destination = target; }
+                }
 
+                // Only use safe targets validated by internal nav logic
                 if (!BotNavHelper.TryGetSafeTarget(_bot, out destination) || !IsVectorValid(destination))
                     destination = _bot.Position;
 
@@ -177,12 +178,26 @@ namespace AIRefactored.AI.Combat.States
             return false;
         }
 
-        private Vector3 RandomNearbyPosition()
+        /// <summary>
+        /// Uses EFT internal nav logic to sample a valid random nearby position.
+        /// Never returns an invalid or off-mesh result.
+        /// </summary>
+        private Vector3 GetSafeNearbyPosition()
         {
             Vector3 basePos = _bot != null ? _bot.Position : Vector3.zero;
-            Vector3 offset = UnityEngine.Random.insideUnitSphere * ScanRadius;
-            offset.y = 0f;
-            return basePos + offset;
+
+            Vector3 candidate = basePos + UnityEngine.Random.insideUnitSphere * ScanRadius;
+            candidate.y = basePos.y; // flatten for ground nav
+
+            NavMeshHit hit;
+            if (UnityEngine.AI.NavMesh.SamplePosition(candidate, out hit, ScanRadius, NavMesh.AllAreas))
+            {
+                if (IsVectorValid(hit.position))
+                    return hit.position;
+            }
+
+            // Fallback: nudge forward
+            return IsVectorValid(basePos) ? basePos + Vector3.forward * 0.15f : Vector3.zero;
         }
 
         private static bool IsVectorValid(Vector3 v)

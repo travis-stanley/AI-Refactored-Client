@@ -80,19 +80,25 @@ namespace AIRefactored.AI.Combat.States
                 if (!TryGetLastKnownEnemy(out Vector3 enemyPos))
                     return;
 
-                Vector3 destination = _cache.SquadPath != null
-                    ? _cache.SquadPath.ApplyOffsetTo(enemyPos)
-                    : enemyPos;
-
-                if (!IsValid(destination) ||
-                    !BotNavHelper.TryGetSafeTarget(_bot, out destination) ||
-                    !IsValid(destination))
+                Vector3 destination = enemyPos;
+                // SquadPath is a tactical offset, never replaces vanilla nav
+                if (_cache.SquadPath != null)
                 {
-                    destination = _cache.SquadPath != null
-                        ? _cache.SquadPath.ApplyOffsetTo(enemyPos)
-                        : enemyPos;
+                    try
+                    {
+                        destination = _cache.SquadPath.ApplyOffsetTo(enemyPos);
+                    }
+                    catch
+                    {
+                        destination = enemyPos;
+                    }
                 }
 
+                // Only valid positions allowed
+                if (!IsValid(destination))
+                    return;
+
+                // Use vanilla EFT-compatible movement helper, never custom fallback
                 if (_bot.Mover != null)
                 {
                     try
@@ -140,10 +146,7 @@ namespace AIRefactored.AI.Combat.States
         private bool TryGetLastKnownEnemy(out Vector3 result)
         {
             result = _cache?.Combat?.LastKnownEnemyPos ?? Vector3.zero;
-            return result != Vector3.zero &&
-                   !float.IsNaN(result.x) &&
-                   !float.IsNaN(result.y) &&
-                   !float.IsNaN(result.z);
+            return IsValid(result) && result != Vector3.zero;
         }
 
         private bool IsWithinRange(Vector3 enemyPos)
@@ -153,7 +156,10 @@ namespace AIRefactored.AI.Combat.States
 
         private static bool IsValid(Vector3 pos)
         {
-            return !float.IsNaN(pos.x) && !float.IsNaN(pos.y) && !float.IsNaN(pos.z);
+            return pos != Vector3.zero &&
+                   !float.IsNaN(pos.x) &&
+                   !float.IsNaN(pos.y) &&
+                   !float.IsNaN(pos.z);
         }
     }
 }

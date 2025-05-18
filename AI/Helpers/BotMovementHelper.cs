@@ -48,7 +48,6 @@ namespace AIRefactored.AI.Helpers
             try
             {
                 Vector3 fallback = bot.Position - threatDirection.normalized * distance;
-
                 if (!BotNavHelper.TryGetSafeTarget(bot, out fallback))
                 {
                     fallback = bot.Position - threatDirection.normalized * distance;

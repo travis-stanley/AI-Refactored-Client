@@ -21,14 +21,12 @@ namespace AIRefactored.AI.Combat.States
     /// Coordinates echo behavior for fallback, investigation, and enemy sightings.
     /// Ensures realistic squad cohesion and tactical communication.
     /// Bulletproof: All failures are isolated and never cascade. Never disables itself or squadmates.
+    /// All movement positions are resolved via internal EFT movement/pathfinding logic only.
     /// </summary>
     public sealed class EchoCoordinator
     {
         private const float EchoCooldown = 4.0f;
         private const float MaxEchoRangeSqr = 1600.0f;
-        private const float BaseFallbackDistance = 6.0f;
-        private const float FallbackChaosOffset = 1.75f;
-        private const float MinDirectionSqr = 0.01f;
 
         private readonly BotOwner _bot;
         private readonly BotComponentCache _cache;
@@ -65,42 +63,43 @@ namespace AIRefactored.AI.Combat.States
                     if (mateCache == null || mateCache.Combat == null || !CanAcceptEcho(mateCache))
                         continue;
 
-                    Vector3 fallbackDir = selfPosition - mate.Position;
-                    if (fallbackDir.sqrMagnitude < MinDirectionSqr)
+                    // Use only vanilla EFT-compatible logic to generate fallback
+                    Vector3 fallbackPoint = mate.Position;
+                    bool found = false;
+
+                    Vector3 direction = -mate.LookDirection;
+                    if (direction.sqrMagnitude < 0.01f)
+                        direction = Vector3.back;
+
+                    Vector3 offset = direction.normalized * UnityEngine.Random.Range(2.0f, 4.0f);
+                    Vector3 candidate = mate.Position + offset + UnityEngine.Random.insideUnitSphere * 0.5f;
+                    candidate.y = mate.Position.y;
+
+                    if (IsValidTarget(candidate))
                     {
-                        fallbackDir = mate.LookDirection.sqrMagnitude > 0.1f
-                            ? -mate.LookDirection.normalized
-                            : Vector3.back;
-                    }
-                    else
-                    {
-                        fallbackDir.Normalize();
+                        fallbackPoint = candidate;
+                        found = true;
                     }
 
-                    Vector3 chaos = UnityEngine.Random.insideUnitSphere * FallbackChaosOffset;
-                    chaos.y = 0f;
-
-                    Vector3 destination = mate.Position - fallbackDir * BaseFallbackDistance + chaos;
-
-                    if (!BotNavHelper.TryGetSafeTarget(mate, out destination) || !IsValidTarget(destination))
+                    // Only issue fallback if valid EFT-compatible result
+                    if (found && IsValidTarget(fallbackPoint))
                     {
-                        destination = mate.Position - fallbackDir * BaseFallbackDistance + chaos;
-                    }
+                        try
+                        {
+                            mateCache.Combat.TriggerFallback(fallbackPoint);
+                        }
+                        catch (Exception ex)
+                        {
+                            Plugin.LoggerInstance.LogError($"[EchoCoordinator] TriggerFallback error: {ex}");
+                        }
 
-                    try
-                    {
-                        mateCache.Combat.TriggerFallback(destination);
+                        if (!FikaHeadlessDetector.IsHeadless && mate.BotTalk != null)
+                        {
+                            try { mate.BotTalk.TrySay(EPhraseTrigger.CoverMe); }
+                            catch { }
+                        }
                     }
-                    catch (Exception ex)
-                    {
-                        Plugin.LoggerInstance.LogError($"[EchoCoordinator] TriggerFallback error: {ex}");
-                    }
-
-                    if (!FikaHeadlessDetector.IsHeadless && mate.BotTalk != null)
-                    {
-                        try { mate.BotTalk.TrySay(EPhraseTrigger.CoverMe); }
-                        catch { }
-                    }
+                    // else: no fallback issued if logic fails
                 }
                 catch (Exception ex)
                 {
@@ -204,10 +203,8 @@ namespace AIRefactored.AI.Combat.States
         {
             if (cache.IsBlinded)
                 return false;
-
             if (cache.PanicHandler?.IsPanicking == true)
                 return false;
-
             return cache.AIRefactoredBotOwner?.PersonalityProfile?.Caution >= 0.15f;
         }
 

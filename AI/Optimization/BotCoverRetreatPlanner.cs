@@ -17,7 +17,6 @@ namespace AIRefactored.AI.Optimization
 	using AIRefactored.Core;
 	using AIRefactored.Pools;
 	using EFT;
-	using Unity.AI.Navigation;
 	using UnityEngine;
 	using UnityEngine.AI;
 
@@ -108,11 +107,17 @@ namespace AIRefactored.AI.Optimization
 					return result;
 				}
 
-				// 4. Final fallback: move directly away, add chaos offset
+				// 4. Final fallback: move directly away, add chaos offset, sample position on navmesh
 				Vector3 origin = bot.Position;
 				Vector3 away = -threatDir.normalized;
 				Vector3 fallback = origin + away * RetreatDistance + UnityEngine.Random.insideUnitSphere * ChaosOffsetRadius;
 				fallback.y = origin.y; // Keep same height for stability
+
+				// Use NavMesh sampling for the fallback point
+				NavMeshHit hit;
+				if (NavMesh.SamplePosition(fallback, out hit, NavSampleRadius, NavMesh.AllAreas))
+					fallback = hit.position;
+
 				result.Add(origin);
 				result.Add(fallback);
 				return result;

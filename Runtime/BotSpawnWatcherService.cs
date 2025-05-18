@@ -119,20 +119,28 @@ namespace AIRefactored.Runtime
 					try
 					{
 						Player player = players[i];
-						if (!EFTPlayerUtil.IsValid(player) || !player.IsAI || player.gameObject == null)
+						if (!EFTPlayerUtil.IsValid(player) || !player.IsAI || player.gameObject == null || player.HealthController == null || !player.HealthController.IsAlive)
 							continue;
 
 						GameObject go = player.gameObject;
 						int id = go.GetInstanceID();
 						string profileId = player.ProfileId ?? player.Profile?.Id;
 
-						if (!SeenBotIds.Add(id))
-							continue;
-						if (!string.IsNullOrEmpty(profileId) && !SeenProfileIds.Add(profileId))
-							continue;
+						// Always retry on every tick for non-fully-injected bots (atomic enforcement)
+						bool seenThisBot = SeenBotIds.Contains(id);
+						bool seenThisProfile = !string.IsNullOrEmpty(profileId) && SeenProfileIds.Contains(profileId);
 
+						// Only skip if this bot already has a working BotBrain
 						if (go.GetComponent<BotBrain>() != null)
+						{
+							if (!seenThisBot) SeenBotIds.Add(id);
+							if (!string.IsNullOrEmpty(profileId) && !seenThisProfile) SeenProfileIds.Add(profileId);
 							continue;
+						}
+
+						// Valid bot and profile required
+						if (!seenThisBot) SeenBotIds.Add(id);
+						if (!string.IsNullOrEmpty(profileId) && !seenThisProfile) SeenProfileIds.Add(profileId);
 
 						if (player.AIData == null || player.AIData.BotOwner == null)
 							continue;
@@ -140,7 +148,6 @@ namespace AIRefactored.Runtime
 						// --- Atomic brain+cache+owner injection start ---
 						try
 						{
-							// Always ensure atomic creation of cache and owner
 							var botOwner = player.AIData.BotOwner;
 							var cache = BotComponentCacheRegistry.GetOrCreate(botOwner);
 							if (cache == null)

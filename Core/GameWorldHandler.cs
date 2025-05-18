@@ -199,15 +199,23 @@ namespace AIRefactored.Core
             }
         }
 
+        /// <summary>
+        /// Determines if a bot is safe and ready for injection.
+        /// </summary>
+        private static bool IsBotReadyForInjection(BotOwner bot)
+        {
+            return bot != null &&
+                   bot.Profile != null &&
+                   bot.Profile.Info != null &&
+                   !string.IsNullOrEmpty(bot.Profile.Id) &&
+                   !bot.IsDead;
+        }
+
         public static void TryAttachBotBrain(BotOwner bot)
         {
             try
             {
-                if (bot == null || bot.IsDead)
-                    return;
-
-                string profileId = bot.Profile?.Id;
-                if (string.IsNullOrEmpty(profileId))
+                if (!IsBotReadyForInjection(bot))
                     return;
 
                 Player player = EFTPlayerUtil.ResolvePlayer(bot);
@@ -238,11 +246,10 @@ namespace AIRefactored.Core
                         if (EFTPlayerUtil.IsValid(player) && player.HealthController.IsAlive)
                         {
                             BotOwner owner = player.GetComponent<BotOwner>();
-                            string profileId = owner?.Profile?.Id;
-                            if (owner != null && !string.IsNullOrEmpty(profileId))
-                            {
-                                WorldBootstrapper.EnforceBotBrain(player, owner);
-                            }
+                            if (!IsBotReadyForInjection(owner))
+                                continue;
+
+                            WorldBootstrapper.EnforceBotBrain(player, owner);
                         }
                     }
                     catch (Exception ex)

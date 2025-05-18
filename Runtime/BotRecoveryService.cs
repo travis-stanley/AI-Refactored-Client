@@ -147,7 +147,7 @@ namespace AIRefactored.Runtime
 				try
 				{
 					Player player = players[i];
-					if (!EFTPlayerUtil.IsValid(player) || !player.IsAI || player.gameObject == null)
+					if (!EFTPlayerUtil.IsValid(player) || !player.IsAI || player.gameObject == null || player.HealthController == null || !player.HealthController.IsAlive)
 						continue;
 
 					string profileId = player.ProfileId ?? player.Profile?.Id;

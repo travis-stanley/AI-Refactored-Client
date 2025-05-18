@@ -372,6 +372,7 @@ namespace AIRefactored.Core
 
         #region Bot Logic
 
+
         public static void TryAttachBotBrain(BotOwner bot)
         {
             try
@@ -380,7 +381,7 @@ namespace AIRefactored.Core
                     return;
 
                 string profileId = bot.Profile?.Id;
-                if (string.IsNullOrEmpty(profileId) || BotRegistry.IsFallbackBot(profileId))
+                if (string.IsNullOrEmpty(profileId))
                     return;
 
                 Player player = EFTPlayerUtil.ResolvePlayer(bot);
@@ -412,7 +413,7 @@ namespace AIRefactored.Core
                         {
                             BotOwner owner = player.GetComponent<BotOwner>();
                             string profileId = owner?.Profile?.Id;
-                            if (owner != null && !string.IsNullOrEmpty(profileId) && !BotRegistry.IsFallbackBot(profileId))
+                            if (owner != null && !string.IsNullOrEmpty(profileId))
                             {
                                 WorldBootstrapper.EnforceBotBrain(player, owner);
                             }

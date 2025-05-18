@@ -3,7 +3,7 @@
 //   Licensed under the MIT License. See LICENSE in the repository root for more information.
 //
 //   THIS FILE IS SYSTEMATICALLY MANAGED.
-//   Failures in AIRefactored logic must always trigger safe fallback to EFT base AI.
+//   Bulletproof: No fallback logic. All navigation and stuck correction failures are locally contained and only log or skip.
 // </auto-generated>
 
 namespace AIRefactored.AI.Missions.Subsystems
@@ -223,10 +223,6 @@ namespace AIRefactored.AI.Missions.Subsystems
                         Logger.LogDebug("[MissionEvaluator] " + (_bot.Profile?.Info?.Nickname ?? "Unknown") +
                                         " fallback #" + _fallbackAttempts + " → " + target);
                         BotMovementHelper.SmoothMoveTo(_bot, target);
-                    }
-                    else
-                    {
-                        BotFallbackUtility.FallbackToEFTLogic(_bot);
                     }
                 }
             }

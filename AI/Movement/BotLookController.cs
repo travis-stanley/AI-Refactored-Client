@@ -3,7 +3,7 @@
 //   Licensed under the MIT License. See LICENSE in the repository root for more information.
 //
 //   THIS FILE IS SYSTEMATICALLY MANAGED.
-//   Failures in AIRefactored logic must always trigger safe fallback to EFT base AI.
+//   Bulletproof: No fallback logic. All look direction and update failures are locally logged and isolated only.
 // </auto-generated>
 
 namespace AIRefactored.AI.Movement
@@ -106,7 +106,7 @@ namespace AIRefactored.AI.Movement
             catch (Exception ex)
             {
                 Logger.LogError("[BotLookController] Tick failed: " + ex);
-                try { BotFallbackUtility.FallbackToEFTLogic(_bot); } catch { }
+                // Fallback logic removed; log only.
             }
         }
 

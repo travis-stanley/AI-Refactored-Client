@@ -3,7 +3,8 @@
 //   Licensed under the MIT License. See LICENSE in the repository root for more information.
 //
 //   THIS FILE IS SYSTEMATICALLY MANAGED.
-//   Failures in AIRefactored logic must always trigger safe fallback to EFT base AI.
+//   All failures are locally logged; no subsystem can trigger fallback to vanilla EFT AI.
+//   Please follow strict StyleCop, ReSharper, and AI-Refactored code standards for all modifications.
 // </auto-generated>
 
 namespace AIRefactored.AI.Threads
@@ -26,7 +27,8 @@ namespace AIRefactored.AI.Threads
 	/// <summary>
 	/// Real-time execution engine for AIRefactored bot logic.
 	/// Controls subsystem tick order, validity checks, and tick-rate segmentation.
-	/// Fully robust: never disables core logic due to subsystem failures—each subsystem falls back individually.
+	/// Fully robust: never disables core logic due to subsystem failures—each subsystem logs its own errors.
+	/// No fallback to vanilla AI is ever triggered.
 	/// </summary>
 	public sealed class BotBrain : MonoBehaviour
 	{
@@ -67,7 +69,7 @@ namespace AIRefactored.AI.Threads
 		private float LogicTickRate => FikaHeadlessDetector.IsHeadless ? 1f / 30f : 1f / 15f;
 
 		/// <summary>
-		/// Core runtime tick. All subsystems tick independently. Missing or broken subsystems trigger fallback, but never break the rest.
+		/// Core runtime tick. All subsystems tick independently. Missing or broken subsystems only log warnings, never fallback.
 		/// </summary>
 		public void Tick(float deltaTime)
 		{
@@ -82,7 +84,7 @@ namespace AIRefactored.AI.Threads
 
 				float now = Time.time;
 
-				// Perception: fallback gracefully
+				// Perception
 				if (now >= _nextPerceptionTick)
 				{
 					TryTick(_vision, () => _vision.Tick(now), "Vision");
@@ -91,10 +93,10 @@ namespace AIRefactored.AI.Threads
 					_nextPerceptionTick = now + PerceptionTickRate;
 				}
 
-				// Combat: fallback gracefully
+				// Combat
 				if (now >= _nextCombatTick)
 				{
-					TryTick(_combat, () => _combat.Tick(now), "Combat", fallback: () => FallbackCombat());
+					TryTick(_combat, () => _combat.Tick(now), "Combat", fallback: () => LogWarn("[BotBrain] Combat subsystem missing — vanilla fallback not implemented for combat."));
 					TryTick(_cache?.Escalation, () => _cache.Escalation.Tick(now), "Escalation");
 					TryTick(_flashReaction, () => _flashReaction.Tick(now), "FlashReaction");
 					TryTick(_flashDetector, () => _flashDetector.Tick(now), "FlashDetector");
@@ -104,10 +106,10 @@ namespace AIRefactored.AI.Threads
 					_nextCombatTick = now + CombatTickRate;
 				}
 
-				// Logic: fallback gracefully
+				// Logic
 				if (now >= _nextLogicTick)
 				{
-					TryTick(_mission, () => _mission.Tick(now), "Mission", fallback: () => FallbackMission());
+					TryTick(_mission, () => _mission.Tick(now), "Mission", fallback: () => LogWarn("[BotBrain] Mission subsystem missing — vanilla fallback not implemented for mission."));
 					TryTick(_hearingDamage, () => _hearingDamage.Tick(deltaTime), "HearingDamage");
 					TryTick(_tactical, () => _tactical.Tick(), "Tactical");
 					TryTick(_cache?.LootScanner, () => _cache.LootScanner.Tick(deltaTime), "LootScanner");
@@ -116,13 +118,13 @@ namespace AIRefactored.AI.Threads
 					_nextLogicTick = now + LogicTickRate;
 				}
 
-				// Movement: fallback to vanilla only if missing
+				// Movement: only log warning if missing
 				if (_movement != null)
 					TryTick(_movement, () => _movement.Tick(deltaTime), "Movement");
 				else
-					TryMovementFallback(now);
+					TryMovementWarning(now);
 
-				// Other systems: fallback gracefully
+				// Other systems: just log warnings on failure
 				TryTick(_jump, () => _jump.Tick(deltaTime), "Jump");
 				TryTick(_pose, () => _pose.Tick(now), "Pose");
 				TryTick(_look, () => _look.Tick(deltaTime), "Look");
@@ -137,7 +139,7 @@ namespace AIRefactored.AI.Threads
 		}
 
 		/// <summary>
-		/// Initializes the bot brain and all subsystems. Each subsystem that fails to wire triggers fallback for itself, but not for the rest.
+		/// Initializes the bot brain and all subsystems. Each subsystem that fails to wire logs its own errors.
 		/// </summary>
 		public void Initialize(BotOwner bot)
 		{
@@ -211,7 +213,7 @@ namespace AIRefactored.AI.Threads
 			catch (Exception ex)
 			{
 				LogError("[BotBrain] Initialization failed: " + ex);
-				enabled = true; // Do NOT disable the brain—rest will tick on!
+				enabled = true; // Never disable the brain—rest will tick on!
 			}
 		}
 
@@ -241,24 +243,13 @@ namespace AIRefactored.AI.Threads
 			}
 		}
 
-		private void TryMovementFallback(float now)
+		private void TryMovementWarning(float now)
 		{
 			if (_bot != null && _bot.GetPlayer != null && now > _lastWarningTime + 1f)
 			{
-				LogWarn("[BotBrain] Movement subsystem missing — falling back to vanilla navigation for this bot.");
+				LogWarn("[BotBrain] Movement subsystem missing — cannot execute bot movement logic.");
 				_lastWarningTime = now;
-				BotFallbackUtility.FallbackToEFTLogic(_bot);
 			}
-		}
-
-		private void FallbackCombat()
-		{
-			LogWarn("[BotBrain] Combat subsystem missing — vanilla fallback not implemented for combat.");
-		}
-
-		private void FallbackMission()
-		{
-			LogWarn("[BotBrain] Mission subsystem missing — vanilla fallback not implemented for mission.");
 		}
 
 		private static void LogDebug(string msg)

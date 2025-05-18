@@ -3,8 +3,7 @@
 //   Licensed under the MIT License. See LICENSE in the repository root for more information.
 //
 //   THIS FILE IS SYSTEMATICALLY MANAGED.
-//   Please follow strict StyleCop, ReSharper, and AI-Refactored code standards for all modifications.
-//   Bulletproof: All failures are locally contained, never break other subsystems, and always trigger fallback isolation.
+//   All fallback lockouts removed: All bots are always eligible for injection and participation.
 // </auto-generated>
 
 namespace AIRefactored.Runtime
@@ -84,10 +83,10 @@ namespace AIRefactored.Runtime
                     }
                 }
 
-                // Only initialize if world is unique and not fallback
+                // Only initialize if world is unique (fallback lockouts removed)
                 if (!IsWorldSafeAndUnique(world))
                 {
-                    Logger.LogWarning("[RaidLifecycleWatcher] Unsafe/duplicate/fallback world state, skipping initialization.");
+                    Logger.LogWarning("[RaidLifecycleWatcher] Unsafe or duplicate world state, skipping initialization.");
                     return;
                 }
 
@@ -183,7 +182,8 @@ namespace AIRefactored.Runtime
         #region Validation
 
         /// <summary>
-        /// Returns true only if world has unique, non-fallback players.
+        /// Returns true only if world has unique (non-duplicate) players.
+        /// Fallback lockouts removed: ALL bots are always eligible.
         /// </summary>
         private static bool IsWorldSafeAndUnique(GameWorld world)
         {
@@ -201,10 +201,6 @@ namespace AIRefactored.Runtime
                         continue;
                     if (!seenProfiles.Add(profileId))
                         return false; // Duplicate or null player
-
-                    // Reject fallback bots from registry
-                    if (BotRegistry.IsFallbackBot(profileId))
-                        return false;
                 }
                 return seenProfiles.Count > 0;
             }

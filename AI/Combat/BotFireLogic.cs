@@ -3,7 +3,7 @@
 //   Licensed under the MIT License. See LICENSE in the repository root for more information.
 //
 //   THIS FILE IS SYSTEMATICALLY MANAGED.
-//   Failures in AIRefactored logic must always trigger safe fallback to EFT base AI.
+//   All fallback logic removed: Bot fire logic is always eligible and self-recovering. No fallback mode. No terminal disables.
 // </auto-generated>
 
 namespace AIRefactored.AI.Combat
@@ -25,7 +25,7 @@ namespace AIRefactored.AI.Combat
     /// <summary>
     /// Controls bot firing, aiming, fire mode selection, and fallback behavior.
     /// Dynamically adjusts based on distance, suppression, weapon state, and bot personality.
-    /// Bulletproof: all failures are isolated and fallback to vanilla AI when required.
+    /// Fully bulletproof: All errors are isolated, never disable this logic, always retries.
     /// </summary>
     public sealed class BotFireLogic
     {
@@ -53,7 +53,6 @@ namespace AIRefactored.AI.Combat
         private Vector3 _idleLookDirection = Vector3.forward;
         private float _lastLookAroundTime;
         private float _nextDecisionTime;
-        private bool _isFallbackMode;
 
         #endregion
 
@@ -63,16 +62,6 @@ namespace AIRefactored.AI.Combat
         {
             _bot = bot;
             _cache = cache;
-
-            if (_bot == null || _cache == null)
-            {
-                BotFallbackUtility.Trigger(this, _bot, "Null bot or cache during construction.");
-                _isFallbackMode = true;
-            }
-            else
-            {
-                _isFallbackMode = false;
-            }
         }
 
         #endregion
@@ -81,7 +70,7 @@ namespace AIRefactored.AI.Combat
 
         public void Tick(float time)
         {
-            if (_isFallbackMode || _bot == null || _cache == null || _bot.IsDead || !_bot.IsAI || _bot.Memory == null)
+            if (_bot == null || _cache == null || _bot.IsDead || !_bot.IsAI || _bot.Memory == null)
                 return;
 
             try
@@ -109,26 +98,15 @@ namespace AIRefactored.AI.Combat
                 float weaponRange = EstimateWeaponRange(weapon);
                 float maxRange = Mathf.Min(profile.EngagementRange, weaponRange, 200f);
 
-                // Panic fallback
-                if (_bot.Memory.IsUnderFire && GetHealthRatio() <= profile.RetreatThreshold)
-                {
-                    TriggerFallback();
-                    return;
-                }
-
                 // Out of range, move closer if chaos/personality allows
                 if (distance > maxRange)
                 {
                     if (profile.ChaosFactor > 0f && Random.value < profile.ChaosFactor)
                     {
-                        // Move to aimPosition using only vanilla EFT navigation
-                        if (!BotNavHelper.TryGetSafeTarget(_bot, out aimPosition) || !IsVectorValid(aimPosition))
+                        if (BotNavHelper.TryGetSafeTarget(_bot, out var safeTarget) && IsVectorValid(safeTarget))
                         {
-                            BotFallbackUtility.FallbackToEFTLogic(_bot);
-                            _isFallbackMode = true;
-                            return;
+                            BotMovementHelper.SmoothMoveTo(_bot, safeTarget, false, profile.Cohesion);
                         }
-                        BotMovementHelper.SmoothMoveTo(_bot, aimPosition, false, profile.Cohesion);
                     }
                     return;
                 }
@@ -160,9 +138,7 @@ namespace AIRefactored.AI.Combat
             }
             catch (Exception ex)
             {
-                BotFallbackUtility.Trigger(this, _bot, "Exception in Tick.", ex);
-                _isFallbackMode = true;
-                BotFallbackUtility.FallbackToEFTLogic(_bot);
+                Plugin.LoggerInstance?.LogError($"[BotFireLogic] Exception in Tick: {ex}");
             }
         }
 
@@ -187,9 +163,7 @@ namespace AIRefactored.AI.Combat
             }
             catch (Exception ex)
             {
-                BotFallbackUtility.Trigger(this, _bot, "Exception in UpdateBotAiming.", ex);
-                _isFallbackMode = true;
-                BotFallbackUtility.FallbackToEFTLogic(_bot);
+                Plugin.LoggerInstance?.LogError($"[BotFireLogic] Exception in UpdateBotAiming: {ex}");
             }
         }
 
@@ -223,9 +197,7 @@ namespace AIRefactored.AI.Combat
             }
             catch (Exception ex)
             {
-                BotFallbackUtility.Trigger(this, _bot, "Exception in GetValidatedAimPosition.", ex);
-                _isFallbackMode = true;
-                BotFallbackUtility.FallbackToEFTLogic(_bot);
+                Plugin.LoggerInstance?.LogError($"[BotFireLogic] Exception in GetValidatedAimPosition: {ex}");
                 return _bot.Position;
             }
         }
@@ -252,9 +224,7 @@ namespace AIRefactored.AI.Combat
             }
             catch (Exception ex)
             {
-                BotFallbackUtility.Trigger(this, _bot, "Exception in ApplyFireMode.", ex);
-                _isFallbackMode = true;
-                BotFallbackUtility.FallbackToEFTLogic(_bot);
+                Plugin.LoggerInstance?.LogError($"[BotFireLogic] Exception in ApplyFireMode: {ex}");
             }
         }
 
@@ -269,9 +239,7 @@ namespace AIRefactored.AI.Combat
             }
             catch (Exception ex)
             {
-                BotFallbackUtility.Trigger(this, _bot, "Exception in SetFireMode.", ex);
-                _isFallbackMode = true;
-                BotFallbackUtility.FallbackToEFTLogic(_bot);
+                Plugin.LoggerInstance?.LogError($"[BotFireLogic] Exception in SetFireMode: {ex}");
             }
         }
 
@@ -290,9 +258,7 @@ namespace AIRefactored.AI.Combat
             }
             catch (Exception ex)
             {
-                BotFallbackUtility.Trigger(this, _bot, "Exception in SupportsFireMode.", ex);
-                _isFallbackMode = true;
-                BotFallbackUtility.FallbackToEFTLogic(_bot);
+                Plugin.LoggerInstance?.LogError($"[BotFireLogic] Exception in SupportsFireMode: {ex}");
             }
             return false;
         }
@@ -305,9 +271,7 @@ namespace AIRefactored.AI.Combat
             }
             catch (Exception ex)
             {
-                BotFallbackUtility.Trigger(this, _bot, "Exception in RecoverAccuracy.", ex);
-                _isFallbackMode = true;
-                BotFallbackUtility.FallbackToEFTLogic(_bot);
+                Plugin.LoggerInstance?.LogError($"[BotFireLogic] Exception in RecoverAccuracy: {ex}");
             }
         }
 
@@ -323,9 +287,7 @@ namespace AIRefactored.AI.Combat
             }
             catch (Exception ex)
             {
-                BotFallbackUtility.Trigger(this, _bot, "Exception in ApplyScatter.", ex);
-                _isFallbackMode = true;
-                BotFallbackUtility.FallbackToEFTLogic(_bot);
+                Plugin.LoggerInstance?.LogError($"[BotFireLogic] Exception in ApplyScatter: {ex}");
             }
         }
 
@@ -351,9 +313,7 @@ namespace AIRefactored.AI.Combat
             }
             catch (Exception ex)
             {
-                BotFallbackUtility.Trigger(this, _bot, "Exception in EstimateWeaponRange.", ex);
-                _isFallbackMode = true;
-                BotFallbackUtility.FallbackToEFTLogic(_bot);
+                Plugin.LoggerInstance?.LogError($"[BotFireLogic] Exception in EstimateWeaponRange: {ex}");
                 return 90f;
             }
         }
@@ -370,9 +330,7 @@ namespace AIRefactored.AI.Combat
             }
             catch (Exception ex)
             {
-                BotFallbackUtility.Trigger(this, _bot, "Exception in GetBurstCadence.", ex);
-                _isFallbackMode = true;
-                BotFallbackUtility.FallbackToEFTLogic(_bot);
+                Plugin.LoggerInstance?.LogError($"[BotFireLogic] Exception in GetBurstCadence: {ex}");
                 return 0.45f;
             }
         }
@@ -402,53 +360,8 @@ namespace AIRefactored.AI.Combat
             }
             catch (Exception ex)
             {
-                BotFallbackUtility.Trigger(this, _bot, "Exception in GetHealthRatio.", ex);
-                _isFallbackMode = true;
-                BotFallbackUtility.FallbackToEFTLogic(_bot);
+                Plugin.LoggerInstance?.LogError($"[BotFireLogic] Exception in GetHealthRatio: {ex}");
                 return 1f;
-            }
-        }
-
-        private void TriggerFallback()
-        {
-            try
-            {
-                if (_bot == null)
-                    return;
-
-                Vector3 fallback = _bot.Position;
-                // Only use EFT internal navigation helpers for fallback
-                if (!BotNavHelper.TryGetSafeTarget(_bot, out fallback) || !IsVectorValid(fallback))
-                {
-                    BotFallbackUtility.FallbackToEFTLogic(_bot);
-                    _isFallbackMode = true;
-                    return;
-                }
-
-                if (_bot.Mover != null)
-                {
-                    BotMovementHelper.SmoothMoveTo(_bot, fallback, false);
-                    BotCoverHelper.TrySetStanceFromNearbyCover(_cache, fallback);
-                }
-                else
-                {
-                    BotFallbackUtility.Trigger(this, _bot, "BotMover missing. Fallback to EFT AI.");
-                    _isFallbackMode = true;
-                    BotFallbackUtility.FallbackToEFTLogic(_bot);
-                    return;
-                }
-
-                if (!FikaHeadlessDetector.IsHeadless && _bot.BotTalk != null)
-                {
-                    try { _bot.BotTalk.TrySay(EPhraseTrigger.OnLostVisual); }
-                    catch { /* no-op */ }
-                }
-            }
-            catch (Exception ex)
-            {
-                BotFallbackUtility.Trigger(this, _bot, "Exception in TriggerFallback.", ex);
-                _isFallbackMode = true;
-                BotFallbackUtility.FallbackToEFTLogic(_bot);
             }
         }
 
@@ -471,9 +384,7 @@ namespace AIRefactored.AI.Combat
             }
             catch (Exception ex)
             {
-                BotFallbackUtility.Trigger(this, _bot, "Exception in TryResolveEnemy.", ex);
-                _isFallbackMode = true;
-                BotFallbackUtility.FallbackToEFTLogic(_bot);
+                Plugin.LoggerInstance?.LogError($"[BotFireLogic] Exception in TryResolveEnemy: {ex}");
             }
             return false;
         }

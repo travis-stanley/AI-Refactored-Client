@@ -3,7 +3,7 @@
 //   Licensed under the MIT License. See LICENSE in the repository root for more information.
 //
 //   THIS FILE IS SYSTEMATICALLY MANAGED.
-//   Failures in AIRefactored logic must always trigger safe fallback to EFT base AI.
+//   All fallback logic is removed: bot suppression logic is always eligible, self-recovering, and never disables the bot.
 // </auto-generated>
 
 namespace AIRefactored.AI.Combat
@@ -19,7 +19,7 @@ namespace AIRefactored.AI.Combat
     /// <summary>
     /// Handles bot suppression logic, including sprint retreat, composure impact,
     /// and panic escalation. Suppression is triggered by incoming fire or explosions.
-    /// Bulletproof: All failures are isolated; only this handler disables itself and triggers vanilla fallback if required.
+    /// All failures are isolated; suppression logic never disables itself, never triggers fallback logic.
     /// </summary>
     public sealed class BotSuppressionReactionComponent
     {
@@ -36,7 +36,6 @@ namespace AIRefactored.AI.Combat
         private BotComponentCache _cache;
         private bool _isSuppressed;
         private float _suppressionStartTime = float.NegativeInfinity;
-        private bool _isFallbackMode;
 
         #endregion
 
@@ -49,8 +48,7 @@ namespace AIRefactored.AI.Combat
         {
             if (componentCache == null || componentCache.Bot == null)
             {
-                BotFallbackUtility.Trigger(this, null, "[Suppression] Bot or cache is null in Initialize.");
-                _isFallbackMode = true;
+                Plugin.LoggerInstance?.LogError("[Suppression] Bot or cache is null in Initialize.");
                 return;
             }
 
@@ -58,7 +56,6 @@ namespace AIRefactored.AI.Combat
             _bot = componentCache.Bot;
             _isSuppressed = false;
             _suppressionStartTime = float.NegativeInfinity;
-            _isFallbackMode = false;
         }
 
         /// <summary>
@@ -66,9 +63,6 @@ namespace AIRefactored.AI.Combat
         /// </summary>
         public bool IsSuppressed()
         {
-            if (_isFallbackMode)
-                return false;
-
             return _isSuppressed;
         }
 
@@ -77,7 +71,7 @@ namespace AIRefactored.AI.Combat
         /// </summary>
         public void Tick(float time)
         {
-            if (_isFallbackMode || !_isSuppressed)
+            if (!_isSuppressed)
                 return;
 
             try
@@ -95,10 +89,8 @@ namespace AIRefactored.AI.Combat
             }
             catch (Exception ex)
             {
-                BotFallbackUtility.Trigger(this, _bot, "Exception in Tick.", ex);
+                Plugin.LoggerInstance?.LogError("[BotSuppression] Exception in Tick: " + ex);
                 _isSuppressed = false;
-                _isFallbackMode = true;
-                BotFallbackUtility.FallbackToEFTLogic(_bot);
             }
         }
 
@@ -107,7 +99,7 @@ namespace AIRefactored.AI.Combat
         /// </summary>
         public void TriggerSuppression(Vector3? source)
         {
-            if (_isFallbackMode || _isSuppressed || !IsValid())
+            if (_isSuppressed || !IsValid())
                 return;
 
             try
@@ -125,12 +117,10 @@ namespace AIRefactored.AI.Combat
 
                 Vector3 fallback = _bot.Position + retreatDir.normalized * MinSuppressionRetreatDistance;
 
-                // Use only BotNavHelper (EFT navigation)
-                if (!BotNavHelper.TryGetSafeTarget(_bot, out fallback) || !IsVectorValid(fallback))
+                // Use BotNavHelper (EFT navigation) to adjust fallback if possible
+                if (BotNavHelper.TryGetSafeTarget(_bot, out var navTarget) && IsVectorValid(navTarget))
                 {
-                    BotFallbackUtility.FallbackToEFTLogic(_bot);
-                    _isFallbackMode = true;
-                    return;
+                    fallback = navTarget;
                 }
 
                 float cohesion = _cache.AIRefactoredBotOwner?.PersonalityProfile?.Cohesion ?? 1f;
@@ -139,13 +129,6 @@ namespace AIRefactored.AI.Combat
                 {
                     BotMovementHelper.SmoothMoveTo(_bot, fallback, false, cohesion);
                     _bot.Sprint(true);
-                }
-                else
-                {
-                    BotFallbackUtility.Trigger(this, _bot, "BotMover missing. Fallback to EFT AI.");
-                    _isFallbackMode = true;
-                    BotFallbackUtility.FallbackToEFTLogic(_bot);
-                    return;
                 }
 
                 panic?.TriggerPanic();
@@ -159,9 +142,7 @@ namespace AIRefactored.AI.Combat
             }
             catch (Exception ex)
             {
-                BotFallbackUtility.Trigger(this, _bot, "Exception in TriggerSuppression.", ex);
-                _isFallbackMode = true;
-                BotFallbackUtility.FallbackToEFTLogic(_bot);
+                Plugin.LoggerInstance?.LogError("[BotSuppression] Exception in TriggerSuppression: " + ex);
             }
         }
 

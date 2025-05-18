@@ -3,7 +3,7 @@
 //   Licensed under the MIT License. See LICENSE in the repository root for more information.
 //
 //   THIS FILE IS SYSTEMATICALLY MANAGED.
-//   Bulletproof: No cache can be left incomplete or with missing critical references. All fallback paths are guarded and logged.
+//   Bulletproof: No cache can be left incomplete or with missing critical references. No fallback logic exists; all failures are isolated and only logged.
 // </auto-generated>
 
 namespace AIRefactored.AI.Core
@@ -30,7 +30,7 @@ namespace AIRefactored.AI.Core
     /// <summary>
     /// Runtime container for all bot-specific AIRefactored logic systems.
     /// Managed via BotComponentCacheRegistry.
-    /// Bulletproof: If any component fails, falls back to vanilla logic for that part only.
+    /// Bulletproof: All failures are locally logged; no fallback to vanilla logic ever occurs.
     /// </summary>
     public sealed class BotComponentCache
     {
@@ -72,7 +72,6 @@ namespace AIRefactored.AI.Core
         public float LastHeardTime { get; private set; } = -999f;
         public Vector3 LastHeardDirection { get; private set; }
         public bool HasHeardDirection { get; private set; }
-        public bool IsFallbackMode { get; private set; }
 
         #endregion
 
@@ -132,13 +131,9 @@ namespace AIRefactored.AI.Core
         /// </summary>
         public void Initialize(BotOwner bot)
         {
-            if (IsFallbackMode)
-                return;
-
             if (bot == null)
             {
                 Logger.LogError("[BotComponentCache] Initialize called with null bot.");
-                EnterFallback();
                 return;
             }
 
@@ -183,31 +178,11 @@ namespace AIRefactored.AI.Core
 
         private void TryInit(Action action, string name)
         {
-            if (IsFallbackMode)
-                return;
             try { action(); }
             catch (Exception ex)
             {
                 Logger.LogError($"[BotComponentCache] Subsystem {name} failed: {ex}");
-                EnterFallback();
             }
-        }
-
-        #endregion
-
-        #region Fallback Entry
-
-        public void EnterFallback()
-        {
-            if (IsFallbackMode)
-                return;
-            IsFallbackMode = true;
-
-            if (!string.IsNullOrEmpty(Nickname))
-                BotRegistry.MarkFallback(Bot?.Profile?.Id);
-
-            Logger.LogWarning($"[BotComponentCache] Entered fallback mode for bot: {Nickname}");
-            BotFallbackUtility.FallbackToEFTLogic(Bot);
         }
 
         #endregion
@@ -216,13 +191,9 @@ namespace AIRefactored.AI.Core
 
         public void SetOwner(AIRefactoredBotOwner owner)
         {
-            if (IsFallbackMode)
-                return;
-
             if (owner == null)
             {
                 Logger.LogError("[BotComponentCache] SetOwner() called with null.");
-                EnterFallback();
                 return;
             }
 
@@ -235,21 +206,19 @@ namespace AIRefactored.AI.Core
                 {
                     Logger.LogError("[BotComponentCache] ThreatSelector failed: " + ex);
                     ThreatSelector = null;
-                    EnterFallback();
                 }
             }
 
             // Final audit
             if (Bot == null || _owner == null || ThreatSelector == null)
             {
-                Logger.LogError("[BotComponentCache] Post-wiring critical reference missing! Entering fallback.");
-                EnterFallback();
+                Logger.LogError("[BotComponentCache] Post-wiring critical reference missing!");
             }
         }
 
         public void RegisterHeardSound(Vector3 source)
         {
-            if (IsFallbackMode || Bot == null)
+            if (Bot == null)
                 return;
 
             LastHeardTime = Time.time;

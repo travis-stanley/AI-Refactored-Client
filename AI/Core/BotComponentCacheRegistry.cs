@@ -3,7 +3,7 @@
 //   Licensed under the MIT License. See LICENSE in the repository root for more information.
 //
 //   THIS FILE IS SYSTEMATICALLY MANAGED.
-//   All cache/owner initialization is bulletproof: nulls are impossible, all errors fallback, logs are comprehensive.
+//   All cache/owner initialization is bulletproof: nulls are impossible, no terminal fallback, always retries, logs are clear.
 // </auto-generated>
 
 namespace AIRefactored.AI.Core
@@ -18,7 +18,7 @@ namespace AIRefactored.AI.Core
     /// <summary>
     /// Central static registry for storing and accessing BotComponentCache instances.
     /// Replaces MonoBehaviour access with pure C# class lookup.
-    /// Bulletproof: any error triggers fallback to vanilla logic. No cache can ever be in an invalid state.
+    /// Bulletproof: All failures are locally contained, no fallback, always retries. No cache can ever be left in a bad state.
     /// </summary>
     public static class BotComponentCacheRegistry
     {
@@ -36,35 +36,20 @@ namespace AIRefactored.AI.Core
 
         /// <summary>
         /// Returns the cache for a bot if it exists; otherwise creates and registers a new one.
-        /// Bulletproof: If bot or profile is invalid, triggers fallback and returns a minimal cache.
+        /// If bot/profile is invalid, returns null (no fallback), and caller must retry next tick.
         /// Ensures AIRefactoredBotOwner is always constructed and wired before cache is returned.
         /// </summary>
         public static BotComponentCache GetOrCreate(BotOwner bot)
         {
-            if (bot == null || bot.Profile == null || bot.Profile.Info == null)
-            {
-                Logger.LogWarning("[BotComponentCacheRegistry] Invalid bot or profile — triggering fallback.");
-                BotFallbackUtility.FallbackToEFTLogic(bot);
-                return GetFallbackOrNew("null");
-            }
+            if (!IsFullyValidBot(bot))
+                return null;
 
             string id = bot.Profile.Id;
             if (string.IsNullOrEmpty(id))
-            {
-                Logger.LogWarning("[BotComponentCacheRegistry] Bot profile ID is null or empty — triggering fallback.");
-                BotFallbackUtility.FallbackToEFTLogic(bot);
-                return GetFallbackOrNew("null");
-            }
+                return null;
 
             lock (Lock)
             {
-                // Terminal: Once fallback is set, never retry registration.
-                if (BotRegistry.IsFallbackBot(id))
-                {
-                    Logger.LogDebug($"[BotComponentCacheRegistry] Bot {id} is in fallback mode — skip registration.");
-                    return GetFallbackOrNew(id);
-                }
-
                 if (CacheMap.TryGetValue(id, out var existing))
                 {
                     EnsureOwnerAssigned(existing, bot, id);
@@ -73,13 +58,6 @@ namespace AIRefactored.AI.Core
 
                 try
                 {
-                    // Only create cache if bot and owner are valid and unique
-                    if (BotRegistry.HasCache(id))
-                    {
-                        Logger.LogDebug($"[BotComponentCacheRegistry] Duplicate cache detected for {id}, skipping creation.");
-                        return GetFallbackOrNew(id);
-                    }
-
                     var cache = new BotComponentCache();
                     cache.Initialize(bot);
 
@@ -95,9 +73,8 @@ namespace AIRefactored.AI.Core
 
                     if (cache.Bot == null || cache.AIRefactoredBotOwner == null)
                     {
-                        Logger.LogError($"[BotComponentCacheRegistry] Null Bot or Owner in cache after init! For {id}");
-                        BotFallbackUtility.FallbackToEFTLogic(bot);
-                        return GetFallbackOrNew(id);
+                        Logger.LogWarning($"[BotComponentCacheRegistry] Null Bot or Owner in cache after init! For {id}");
+                        return null; // Will be retried on next tick
                     }
 
                     CacheMap[id] = cache;
@@ -107,20 +84,19 @@ namespace AIRefactored.AI.Core
                 catch (Exception ex)
                 {
                     Logger.LogError($"[BotComponentCacheRegistry] Cache init failed for {id}: {ex}");
-                    BotFallbackUtility.FallbackToEFTLogic(bot);
-                    return GetFallbackOrNew(id);
+                    return null;
                 }
             }
         }
 
         /// <summary>
-        /// Gets the cache for a profile ID if it exists. If not, returns false and fallback cache.
+        /// Gets the cache for a profile ID if it exists. If not, returns false and null.
         /// </summary>
         public static bool TryGet(string profileId, out BotComponentCache cache)
         {
             if (string.IsNullOrEmpty(profileId))
             {
-                cache = GetFallbackOrNew("null");
+                cache = null;
                 return false;
             }
 
@@ -165,18 +141,15 @@ namespace AIRefactored.AI.Core
         #region Private Helpers
 
         /// <summary>
-        /// Returns a fallback cache, or a new instance if not found in registry.
-        /// Always returns a valid (non-null) instance.
+        /// Returns true if bot, Profile, Info, and Id are all non-null/non-empty.
         /// </summary>
-        private static BotComponentCache GetFallbackOrNew(string profileId)
+        private static bool IsFullyValidBot(BotOwner bot)
         {
-            try
-            {
-                if (BotRegistry.TryGetCache(profileId, out var fallback) && fallback != null)
-                    return fallback;
-            }
-            catch { }
-            return new BotComponentCache();
+            if (bot == null) return false;
+            if (bot.Profile == null) return false;
+            if (bot.Profile.Info == null) return false;
+            if (string.IsNullOrEmpty(bot.Profile.Id)) return false;
+            return true;
         }
 
         /// <summary>

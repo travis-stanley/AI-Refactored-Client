@@ -3,7 +3,7 @@
 //   Licensed under the MIT License. See LICENSE in the repository root for more information.
 //
 //   THIS FILE IS SYSTEMATICALLY MANAGED.
-//   Bulletproof fallback: all subsystem failures are isolated, trigger vanilla fallback, and never propagate.
+//   Bulletproof: All errors are locally isolated, never disables handler, never triggers fallback AI.
 // </auto-generated>
 
 namespace AIRefactored.AI.Combat.States
@@ -21,7 +21,7 @@ namespace AIRefactored.AI.Combat.States
     /// <summary>
     /// Controls direct combat engagement logic.
     /// Pushes toward the enemy, recalculates stance and movement based on distance, visibility, and cover presence.
-    /// Fully bulletproof: all failures are isolated and fallback to vanilla AI when required.
+    /// Bulletproof: all errors are locally isolated, never disables handler, never disables bot, never falls back.
     /// </summary>
     public sealed class AttackHandler
     {
@@ -37,7 +37,6 @@ namespace AIRefactored.AI.Combat.States
         private readonly BotComponentCache _cache;
         private Vector3 _lastTargetPosition;
         private bool _hasLastTarget;
-        private bool _isFallbackMode;
 
         #endregion
 
@@ -52,16 +51,6 @@ namespace AIRefactored.AI.Combat.States
             _bot = cache?.Bot;
             _lastTargetPosition = Vector3.zero;
             _hasLastTarget = false;
-
-            if (_cache == null || _bot == null)
-            {
-                BotFallbackUtility.Trigger(this, _bot, "Null cache or BotOwner during construction.");
-                _isFallbackMode = true;
-            }
-            else
-            {
-                _isFallbackMode = false;
-            }
         }
 
         #endregion
@@ -73,9 +62,6 @@ namespace AIRefactored.AI.Combat.States
         /// </summary>
         public void ClearTarget()
         {
-            if (_isFallbackMode)
-                return;
-
             _hasLastTarget = false;
             _lastTargetPosition = Vector3.zero;
         }
@@ -85,29 +71,20 @@ namespace AIRefactored.AI.Combat.States
         /// </summary>
         public bool ShallUseNow()
         {
-            if (_isFallbackMode)
-                return false;
-
             Player _;
             return TryResolveEnemy(out _);
         }
 
         /// <summary>
         /// Executes per-frame attack logic: move toward enemy and adjust stance.
-        /// Bulletproof: on any failure, disables only attack and falls back, never breaks other AI.
+        /// All errors are locally isolated—handler always retries, never disables itself.
         /// </summary>
         public void Tick(float deltaTime)
         {
-            if (_isFallbackMode)
-                return;
-
             try
             {
                 if (_bot == null || _cache == null)
-                {
-                    EnterFallback("Null bot or cache in Tick.");
                     return;
-                }
 
                 Player enemy;
                 if (!TryResolveEnemy(out enemy))
@@ -128,12 +105,10 @@ namespace AIRefactored.AI.Combat.States
 
                     Vector3 destination = currentTargetPos;
 
-                    // Only use vanilla EFT nav for all fallback and validation.
                     if (!BotNavHelper.TryGetSafeTarget(_bot, out destination) || !IsValidTarget(destination))
                     {
-                        BotFallbackUtility.FallbackToEFTLogic(_bot);
-                        EnterFallback("BotNavHelper could not resolve valid movement target.");
-                        return;
+                        // If nav fails, just use the raw target position
+                        destination = currentTargetPos;
                     }
 
                     if (_bot.Mover != null)
@@ -145,21 +120,14 @@ namespace AIRefactored.AI.Combat.States
                         }
                         catch (Exception ex)
                         {
-                            BotFallbackUtility.Trigger(this, _bot, "SmoothMoveTo or stance logic failed.", ex);
-                            EnterFallback("SmoothMoveTo or stance logic failed.");
+                            Plugin.LoggerInstance.LogError("[AttackHandler] SmoothMoveTo or stance logic failed: " + ex);
                         }
-                    }
-                    else
-                    {
-                        EnterFallback("BotMover missing or not ready. Falling back to EFT AI.");
-                        BotFallbackUtility.FallbackToEFTLogic(_bot);
                     }
                 }
             }
             catch (Exception ex)
             {
-                BotFallbackUtility.Trigger(this, _bot, "General Tick failure.", ex);
-                EnterFallback("General Tick failure.");
+                Plugin.LoggerInstance.LogError("[AttackHandler] General Tick failure: " + ex);
             }
         }
 
@@ -173,7 +141,7 @@ namespace AIRefactored.AI.Combat.States
         private bool TryResolveEnemy(out Player result)
         {
             result = null;
-            if (_isFallbackMode || _cache == null)
+            if (_cache == null)
                 return false;
 
             // Prefer current threat selector target.
@@ -205,25 +173,12 @@ namespace AIRefactored.AI.Combat.States
         {
             try
             {
-                // If BotPoseController is present, use it for dynamic pose logic.
                 if (_cache.PoseController != null)
                     _cache.PoseController.TrySetStanceFromNearbyCover(destination);
             }
-            catch
+            catch (Exception ex)
             {
-                // Bulletproof: failures never break logic.
-            }
-        }
-
-        /// <summary>
-        /// Enters fallback mode for this attack handler only. Never disables or breaks other bot logic.
-        /// </summary>
-        private void EnterFallback(string reason)
-        {
-            if (!_isFallbackMode)
-            {
-                _isFallbackMode = true;
-                BotFallbackUtility.Trigger(this, _bot, reason);
+                Plugin.LoggerInstance.LogError("[AttackHandler] Exception in TrySetCombatStance: " + ex);
             }
         }
 

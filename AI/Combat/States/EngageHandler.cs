@@ -3,7 +3,7 @@
 //   Licensed under the MIT License. See LICENSE in the repository root for more information.
 //
 //   THIS FILE IS SYSTEMATICALLY MANAGED.
-//   Failures in AIRefactored logic must always trigger safe fallback to EFT base AI.
+//   Bulletproof: All errors are locally isolated, never disables itself, never triggers fallback AI.
 // </auto-generated>
 
 namespace AIRefactored.AI.Combat.States
@@ -19,7 +19,7 @@ namespace AIRefactored.AI.Combat.States
     /// <summary>
     /// Guides tactical movement toward enemy's last known location.
     /// Supports cautious advancement and squad-aware pathing.
-    /// Bulletproof: all failures are isolated and fallback to vanilla AI when required.
+    /// Bulletproof: all failures are isolated; never disables itself or squadmates.
     /// </summary>
     public sealed class EngageHandler
     {
@@ -34,7 +34,6 @@ namespace AIRefactored.AI.Combat.States
         private readonly BotOwner _bot;
         private readonly BotComponentCache _cache;
         private readonly float _fallbackRange;
-        private bool _isFallbackMode;
 
         #endregion
 
@@ -45,16 +44,8 @@ namespace AIRefactored.AI.Combat.States
             _cache = cache;
             _bot = cache?.Bot;
 
-            if (_cache == null || _bot == null)
-            {
-                BotFallbackUtility.Trigger(this, _bot, "Invalid bot cache provided.");
-                _isFallbackMode = true;
-                return;
-            }
-
-            float profileRange = cache.PersonalityProfile?.EngagementRange ?? 0f;
+            float profileRange = cache?.PersonalityProfile?.EngagementRange ?? 0f;
             _fallbackRange = profileRange > 0f ? profileRange : DefaultEngagementRange;
-            _isFallbackMode = false;
         }
 
         #endregion
@@ -66,7 +57,7 @@ namespace AIRefactored.AI.Combat.States
         /// </summary>
         public bool ShallUseNow()
         {
-            if (_isFallbackMode || !IsCombatCapable())
+            if (!IsCombatCapable())
                 return false;
 
             Vector3 enemyPos;
@@ -76,9 +67,7 @@ namespace AIRefactored.AI.Combat.States
             }
             catch (Exception ex)
             {
-                BotFallbackUtility.Trigger(this, _bot, "Exception in ShallUseNow.", ex);
-                _isFallbackMode = true;
-                BotFallbackUtility.FallbackToEFTLogic(_bot);
+                Plugin.LoggerInstance.LogError($"[EngageHandler] Exception in ShallUseNow: {ex}");
                 return false;
             }
         }
@@ -88,7 +77,7 @@ namespace AIRefactored.AI.Combat.States
         /// </summary>
         public bool CanAttack()
         {
-            if (_isFallbackMode || !IsCombatCapable())
+            if (!IsCombatCapable())
                 return false;
 
             Vector3 enemyPos;
@@ -98,9 +87,7 @@ namespace AIRefactored.AI.Combat.States
             }
             catch (Exception ex)
             {
-                BotFallbackUtility.Trigger(this, _bot, "Exception in CanAttack.", ex);
-                _isFallbackMode = true;
-                BotFallbackUtility.FallbackToEFTLogic(_bot);
+                Plugin.LoggerInstance.LogError($"[EngageHandler] Exception in CanAttack: {ex}");
                 return false;
             }
         }
@@ -110,7 +97,7 @@ namespace AIRefactored.AI.Combat.States
         /// </summary>
         public void Tick()
         {
-            if (_isFallbackMode || !IsCombatCapable())
+            if (!IsCombatCapable())
                 return;
 
             try
@@ -123,12 +110,13 @@ namespace AIRefactored.AI.Combat.States
                     ? _cache.SquadPath.ApplyOffsetTo(enemyPos)
                     : enemyPos;
 
-                // Native EFT navigation only: use BotNavHelper, fallback to vanilla if failed.
+                // Use only BotNavHelper (EFT nav). If nav fails, just use the calculated destination.
                 if (!IsValid(destination) || !BotNavHelper.TryGetSafeTarget(_bot, out destination) || !IsValid(destination))
                 {
-                    BotFallbackUtility.FallbackToEFTLogic(_bot);
-                    _isFallbackMode = true;
-                    return;
+                    // Navigation failed: still proceed with destination.
+                    destination = (_cache.SquadPath != null)
+                        ? _cache.SquadPath.ApplyOffsetTo(enemyPos)
+                        : enemyPos;
                 }
 
                 if (_bot.Mover != null)
@@ -141,23 +129,17 @@ namespace AIRefactored.AI.Combat.States
                     }
                     catch (Exception ex)
                     {
-                        BotFallbackUtility.Trigger(this, _bot, "Exception in SmoothMoveTo or TrySetStance.", ex);
-                        _isFallbackMode = true;
-                        BotFallbackUtility.FallbackToEFTLogic(_bot);
+                        Plugin.LoggerInstance.LogError($"[EngageHandler] Exception in SmoothMoveTo or TrySetStance: {ex}");
                     }
                 }
                 else
                 {
-                    BotFallbackUtility.Trigger(this, _bot, "BotMover missing. Fallback to EFT AI.");
-                    _isFallbackMode = true;
-                    BotFallbackUtility.FallbackToEFTLogic(_bot);
+                    Plugin.LoggerInstance.LogError("[EngageHandler] BotMover missing; cannot move.");
                 }
             }
             catch (Exception ex)
             {
-                BotFallbackUtility.Trigger(this, _bot, "General exception in Tick.", ex);
-                _isFallbackMode = true;
-                BotFallbackUtility.FallbackToEFTLogic(_bot);
+                Plugin.LoggerInstance.LogError($"[EngageHandler] General exception in Tick: {ex}");
             }
         }
 
@@ -166,7 +148,7 @@ namespace AIRefactored.AI.Combat.States
         /// </summary>
         public bool IsEngaging()
         {
-            if (_isFallbackMode || !IsCombatCapable())
+            if (!IsCombatCapable())
                 return false;
 
             Vector3 enemyPos;
@@ -176,9 +158,7 @@ namespace AIRefactored.AI.Combat.States
             }
             catch (Exception ex)
             {
-                BotFallbackUtility.Trigger(this, _bot, "Exception in IsEngaging.", ex);
-                _isFallbackMode = true;
-                BotFallbackUtility.FallbackToEFTLogic(_bot);
+                Plugin.LoggerInstance.LogError($"[EngageHandler] Exception in IsEngaging: {ex}");
                 return false;
             }
         }
@@ -189,7 +169,7 @@ namespace AIRefactored.AI.Combat.States
 
         private bool IsCombatCapable()
         {
-            return _cache != null && !_cache.IsFallbackMode && _bot != null && _cache.Combat != null;
+            return _cache != null && _bot != null && _cache.Combat != null;
         }
 
         private bool TryGetLastKnownEnemy(out Vector3 result)

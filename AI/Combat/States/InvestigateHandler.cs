@@ -3,7 +3,7 @@
 //   Licensed under the MIT License. See LICENSE in the repository root for more information.
 //
 //   THIS FILE IS SYSTEMATICALLY MANAGED.
-//   Failures in AIRefactored logic must always trigger safe fallback to EFT base AI.
+//   Bulletproof: All failures are locally isolated, never disables itself, never triggers fallback AI.
 // </auto-generated>
 
 namespace AIRefactored.AI.Combat.States
@@ -21,7 +21,7 @@ namespace AIRefactored.AI.Combat.States
     /// <summary>
     /// Manages bot investigation behavior when sound or memory suggest enemy presence.
     /// Guides cautious, reactive movement toward enemy vicinity with adaptive stance.
-    /// Bulletproof: All failures are isolated; only this handler disables itself and triggers vanilla fallback if required.
+    /// Bulletproof: All errors are locally isolated, never disables itself, never triggers fallback AI.
     /// </summary>
     public sealed class InvestigateHandler
     {
@@ -42,7 +42,6 @@ namespace AIRefactored.AI.Combat.States
         private readonly BotOwner _bot;
         private readonly BotComponentCache _cache;
         private readonly BotTacticalMemory _memory;
-        private bool _isFallbackMode;
 
         #endregion
 
@@ -53,16 +52,6 @@ namespace AIRefactored.AI.Combat.States
             _cache = cache;
             _bot = cache?.Bot;
             _memory = cache?.TacticalMemory;
-
-            if (_cache == null || _bot == null || _memory == null)
-            {
-                BotFallbackUtility.Trigger(this, _bot, "Constructor failed: Cache, Bot, or TacticalMemory is null.");
-                _isFallbackMode = true;
-            }
-            else
-            {
-                _isFallbackMode = false;
-            }
         }
 
         #endregion
@@ -74,9 +63,6 @@ namespace AIRefactored.AI.Combat.States
         /// </summary>
         public Vector3 GetInvestigateTarget(Vector3 visualLastKnown)
         {
-            if (_isFallbackMode)
-                return _bot != null ? _bot.Position : Vector3.zero;
-
             try
             {
                 if (IsVectorValid(visualLastKnown))
@@ -96,9 +82,7 @@ namespace AIRefactored.AI.Combat.States
             }
             catch (Exception ex)
             {
-                BotFallbackUtility.Trigger(this, _bot, "Exception in GetInvestigateTarget.", ex);
-                _isFallbackMode = true;
-                BotFallbackUtility.FallbackToEFTLogic(_bot);
+                Plugin.LoggerInstance.LogError($"[InvestigateHandler] Exception in GetInvestigateTarget: {ex}");
                 return _bot != null ? _bot.Position : Vector3.zero;
             }
         }
@@ -108,7 +92,7 @@ namespace AIRefactored.AI.Combat.States
         /// </summary>
         public void Investigate(Vector3 target)
         {
-            if (_isFallbackMode || _cache == null || _bot == null)
+            if (_cache == null || _bot == null)
                 return;
 
             try
@@ -128,28 +112,22 @@ namespace AIRefactored.AI.Combat.States
                     try
                     {
                         BotMovementHelper.SmoothMoveTo(_bot, destination);
-                        _memory.MarkCleared(destination);
+                        _memory?.MarkCleared(destination);
                         _cache.Combat?.TrySetStanceFromNearbyCover(destination);
                     }
                     catch (Exception ex)
                     {
-                        BotFallbackUtility.Trigger(this, _bot, "Exception in SmoothMoveTo/MarkCleared.", ex);
-                        _isFallbackMode = true;
-                        BotFallbackUtility.FallbackToEFTLogic(_bot);
+                        Plugin.LoggerInstance.LogError($"[InvestigateHandler] Exception in SmoothMoveTo/MarkCleared: {ex}");
                     }
                 }
                 else
                 {
-                    BotFallbackUtility.Trigger(this, _bot, "BotMover missing. Fallback to EFT AI.");
-                    _isFallbackMode = true;
-                    BotFallbackUtility.FallbackToEFTLogic(_bot);
+                    Plugin.LoggerInstance.LogWarning("[InvestigateHandler] BotMover missing; cannot move.");
                 }
             }
             catch (Exception ex)
             {
-                BotFallbackUtility.Trigger(this, _bot, "General exception in Investigate.", ex);
-                _isFallbackMode = true;
-                BotFallbackUtility.FallbackToEFTLogic(_bot);
+                Plugin.LoggerInstance.LogError($"[InvestigateHandler] General exception in Investigate: {ex}");
             }
         }
 
@@ -158,7 +136,7 @@ namespace AIRefactored.AI.Combat.States
         /// </summary>
         public bool ShallUseNow(float time, float lastTransition)
         {
-            if (_isFallbackMode || _cache == null || _cache.AIRefactoredBotOwner?.PersonalityProfile == null)
+            if (_cache == null || _cache.AIRefactoredBotOwner?.PersonalityProfile == null)
                 return false;
 
             try
@@ -171,9 +149,7 @@ namespace AIRefactored.AI.Combat.States
             }
             catch (Exception ex)
             {
-                BotFallbackUtility.Trigger(this, _bot, "Exception in ShallUseNow.", ex);
-                _isFallbackMode = true;
-                BotFallbackUtility.FallbackToEFTLogic(_bot);
+                Plugin.LoggerInstance.LogError($"[InvestigateHandler] Exception in ShallUseNow: {ex}");
                 return false;
             }
         }
@@ -183,9 +159,6 @@ namespace AIRefactored.AI.Combat.States
         /// </summary>
         public bool ShouldExit(float now, float lastHitTime, float cooldown)
         {
-            if (_isFallbackMode)
-                return true;
-
             try
             {
                 float elapsed = now - lastHitTime;
@@ -193,9 +166,7 @@ namespace AIRefactored.AI.Combat.States
             }
             catch (Exception ex)
             {
-                BotFallbackUtility.Trigger(this, _bot, "Exception in ShouldExit.", ex);
-                _isFallbackMode = true;
-                BotFallbackUtility.FallbackToEFTLogic(_bot);
+                Plugin.LoggerInstance.LogError($"[InvestigateHandler] Exception in ShouldExit: {ex}");
                 return true;
             }
         }
@@ -205,7 +176,7 @@ namespace AIRefactored.AI.Combat.States
         /// </summary>
         public bool IsInvestigating()
         {
-            if (_isFallbackMode || _cache == null)
+            if (_cache == null)
                 return false;
 
             try
@@ -214,9 +185,7 @@ namespace AIRefactored.AI.Combat.States
             }
             catch (Exception ex)
             {
-                BotFallbackUtility.Trigger(this, _bot, "Exception in IsInvestigating.", ex);
-                _isFallbackMode = true;
-                BotFallbackUtility.FallbackToEFTLogic(_bot);
+                Plugin.LoggerInstance.LogError($"[InvestigateHandler] Exception in IsInvestigating: {ex}");
                 return false;
             }
         }
@@ -245,9 +214,7 @@ namespace AIRefactored.AI.Combat.States
             }
             catch (Exception ex)
             {
-                BotFallbackUtility.Trigger(this, _bot, "Exception in TryGetMemoryEnemyPosition.", ex);
-                _isFallbackMode = true;
-                BotFallbackUtility.FallbackToEFTLogic(_bot);
+                Plugin.LoggerInstance.LogError($"[InvestigateHandler] Exception in TryGetMemoryEnemyPosition: {ex}");
             }
             return false;
         }

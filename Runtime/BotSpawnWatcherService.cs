@@ -3,8 +3,7 @@
 //   Licensed under the MIT License. See LICENSE in the repository root for more information.
 //
 //   THIS FILE IS SYSTEMATICALLY MANAGED.
-//   Failures in AIRefactored logic must always trigger safe fallback to EFT base AI.
-//   Bulletproof: All failures are locally contained, never break other subsystems, and always trigger fallback isolation.
+//   All polling, validation, and injection is strictly localized. No fallback lockouts, always retries.
 // </auto-generated>
 
 namespace AIRefactored.Runtime
@@ -24,7 +23,7 @@ namespace AIRefactored.Runtime
 	/// <summary>
 	/// Static bot spawn tracker. Injects brains for new bots without using MonoBehaviours.
 	/// Called externally on update by WorldBootstrapper or BotWorkScheduler.
-	/// Bulletproof: All polling, validation, and injection is strictly localized.
+	/// Bulletproof: All polling, validation, and injection is strictly localized. No fallback lockouts, always retries.
 	/// </summary>
 	public sealed class BotSpawnWatcherService : IAIWorldSystemBootstrapper
 	{
@@ -151,18 +150,13 @@ namespace AIRefactored.Runtime
 						int id = go.GetInstanceID();
 						string profileId = player.ProfileId ?? player.Profile?.Id;
 
-						// Do not process the same GameObject or ProfileId twice
+						// Do not process the same GameObject or ProfileId twice (per raid session)
 						if (!SeenBotIds.Add(id))
 							continue;
 						if (!string.IsNullOrEmpty(profileId) && !SeenProfileIds.Add(profileId))
 							continue;
 
-						// Terminal: never inject fallback bots
-						if (!string.IsNullOrEmpty(profileId) && BotRegistry.IsFallbackBot(profileId))
-						{
-							LogWarn($"[BotSpawnWatcher] Skipping injection for fallback bot: {profileId}");
-							continue;
-						}
+						// No more fallback/lockout logic—bots can always retry and re-inject
 
 						if (go.GetComponent<BotBrain>() != null)
 							continue;
@@ -172,7 +166,6 @@ namespace AIRefactored.Runtime
 
 						try
 						{
-							// Bulletproof: Never double-inject or race-inject
 							BotBrainGuardian.Enforce(go);
 							GameWorldHandler.TryAttachBotBrain(player.AIData.BotOwner);
 
@@ -181,10 +174,6 @@ namespace AIRefactored.Runtime
 						}
 						catch (Exception ex)
 						{
-							// Terminal: Mark fallback for this bot/profile, never retry again
-							if (!string.IsNullOrEmpty(profileId))
-								BotRegistry.MarkFallback(profileId);
-
 							LogError("[BotSpawnWatcher] ❌ Brain injection failed for bot: " + ex);
 						}
 					}

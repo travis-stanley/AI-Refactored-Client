@@ -4,7 +4,7 @@
 //
 //   THIS FILE IS SYSTEMATICALLY MANAGED.
 //   All movement, segment/corner, and fallback logic is bulletproof and fully isolated.
-//   Any error triggers per-bot fallback to vanilla EFT AI without breaking global logic.
+//   All failures are logged locally; no subsystem can trigger fallback to vanilla EFT AI.
 // </auto-generated>
 
 namespace AIRefactored.AI.Movement
@@ -24,7 +24,7 @@ namespace AIRefactored.AI.Movement
     /// <summary>
     /// Controls bot movement, corner-based path targeting, path inertia, flanking, and stuck recovery.
     /// All navigation, target, and fallback logic routed through BotNavHelper and pure EFT navigation.
-    /// Bulletproof: All failures locally contained and revert this bot to vanilla AI; cannot NRE or break global logic.
+    /// All failures locally contained and logged; never break global logic or trigger fallback.
     /// </summary>
     public sealed class BotMovementController
     {
@@ -105,8 +105,7 @@ namespace AIRefactored.AI.Movement
                 Vector3 target;
                 if (!BotNavHelper.TryGetSafeTarget(_bot, out target) || !IsValidTarget(target))
                 {
-                    // Always fallback to vanilla on missing/faulty nav
-                    BotFallbackUtility.FallbackToEFTLogic(_bot);
+                    Logger.LogWarning("[BotMovementController] Tick: Invalid navigation target — skipping movement.");
                     return;
                 }
 
@@ -128,7 +127,7 @@ namespace AIRefactored.AI.Movement
             catch (Exception ex)
             {
                 Logger.LogError($"[BotMovementController] Tick failed: {ex}");
-                try { BotFallbackUtility.FallbackToEFTLogic(_bot); } catch { }
+                // No fallback logic — only log error.
             }
         }
 

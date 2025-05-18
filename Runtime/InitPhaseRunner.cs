@@ -3,8 +3,7 @@
 //   Licensed under the MIT License. See LICENSE in the repository root for more information.
 //
 //   THIS FILE IS SYSTEMATICALLY MANAGED.
-//   Failures in AIRefactored logic must always trigger safe fallback to EFT base AI.
-//   Bulletproof: All failures are locally contained, never break other subsystems, and always trigger fallback isolation.
+//   All fallback/terminal lockouts removed: all bots are always eligible for registration and participation.
 // </auto-generated>
 
 namespace AIRefactored.Runtime
@@ -23,6 +22,7 @@ namespace AIRefactored.Runtime
     /// Orchestrates the full AI-Refactored initialization lifecycle using staged world boot phases.
     /// Triggered directly from GameWorldSpawnHook instead of polling.
     /// Bulletproof: All failures are strictly isolated; no global state can be broken.
+    /// No fallback lockouts: all bots are always eligible for world registration.
     /// </summary>
     public static class InitPhaseRunner
     {
@@ -62,7 +62,7 @@ namespace AIRefactored.Runtime
 
                 if (!IsWorldSafeAndUnique())
                 {
-                    LogWarn(logger, "[InitPhaseRunner] ❌ Unsafe, duplicate, or fallback world state — aborting.");
+                    LogWarn(logger, "[InitPhaseRunner] ❌ Unsafe or duplicate world state — aborting.");
                     ResetInternal(logger);
                     return;
                 }
@@ -148,10 +148,7 @@ namespace AIRefactored.Runtime
                         continue;
                     if (!seenProfiles.Add(profileId))
                         return false; // Duplicate or null player
-
-                    // Reject fallback bots from registry or fallback utility
-                    if (BotRegistry.IsFallbackBot(profileId))
-                        return false;
+                    // Fallback-bot lockouts removed: ALL bots are eligible for injection and registration
                 }
                 return seenProfiles.Count > 0;
             }

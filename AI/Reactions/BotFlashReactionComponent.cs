@@ -3,7 +3,7 @@
 //   Licensed under the MIT License. See LICENSE in the repository root for more information.
 //
 //   THIS FILE IS SYSTEMATICALLY MANAGED.
-//   Failures in AIRefactored logic must always trigger safe fallback to EFT base AI, never break the stack.
+//   All failures are logged locally; no subsystem can trigger fallback to vanilla EFT AI.
 //   Please follow strict StyleCop, ReSharper, and AI-Refactored code standards for all modifications.
 // </auto-generated>
 
@@ -20,6 +20,7 @@ namespace AIRefactored.AI.Reactions
     /// <summary>
     /// Handles bot reactions to intense light exposure (e.g., flashlights or flashbangs).
     /// Applies suppression, triggers scored fallback movement, and panic if threshold reached.
+    /// All failures are locally isolated; never trigger fallback to vanilla AI.
     /// </summary>
     public sealed class BotFlashReactionComponent
     {
@@ -180,7 +181,7 @@ namespace AIRefactored.AI.Reactions
 
         /// <summary>
         /// Calculates and executes bot fallback movement due to flash suppression.
-        /// Uses only EFT-native navigation; falls back to vanilla AI if path fails.
+        /// Uses only EFT-native navigation. Never triggers fallback to vanilla AI.
         /// </summary>
         private static void TriggerFallback(BotOwner bot)
         {
@@ -194,15 +195,11 @@ namespace AIRefactored.AI.Reactions
                 fallback += UnityEngine.Random.insideUnitSphere * FallbackJitter;
                 fallback.y = bot.Position.y;
 
-                if (!BotMovementHelper.SmoothMoveToSafe(bot, fallback))
-                {
-                    BotFallbackUtility.FallbackToEFTLogic(bot);
-                }
+                BotMovementHelper.SmoothMoveToSafe(bot, fallback);
             }
-            catch
+            catch (Exception ex)
             {
-                if (bot != null)
-                    BotFallbackUtility.FallbackToEFTLogic(bot);
+                Plugin.LoggerInstance.LogError($"[BotFlashReactionComponent] TriggerFallback failed: {ex}");
             }
         }
 
@@ -218,7 +215,10 @@ namespace AIRefactored.AI.Reactions
                     panic.TriggerPanic();
                 }
             }
-            catch { }
+            catch (Exception ex)
+            {
+                Plugin.LoggerInstance.LogError($"[BotFlashReactionComponent] TriggerPanic failed: {ex}");
+            }
         }
 
         #endregion

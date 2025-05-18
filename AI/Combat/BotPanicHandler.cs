@@ -3,7 +3,7 @@
 //   Licensed under the MIT License. See LICENSE in the repository root for more information.
 //
 //   THIS FILE IS SYSTEMATICALLY MANAGED.
-//   Failures in AIRefactored logic must always trigger safe fallback to EFT base AI.
+//   All fallback logic is removed: bot panic logic is always eligible, self-recovering, and never disables the bot.
 // </auto-generated>
 
 namespace AIRefactored.AI.Combat
@@ -21,7 +21,7 @@ namespace AIRefactored.AI.Combat
     /// <summary>
     /// Handles bot suppression, flash, injury, and squad danger panic behavior.
     /// Manages composure, retreat direction, danger zones, and voice triggers.
-    /// Bulletproof: All failures are isolated; only this handler disables itself and triggers vanilla fallback if required.
+    /// All failures are isolated; panic logic never disables itself, never triggers fallback logic.
     /// </summary>
     public sealed class BotPanicHandler
     {
@@ -44,7 +44,6 @@ namespace AIRefactored.AI.Combat
         private float _panicStartTime = -1f;
         private float _lastPanicExitTime = -99f;
         private bool _isPanicking;
-        private bool _isFallbackMode;
 
         #endregion
 
@@ -65,14 +64,12 @@ namespace AIRefactored.AI.Combat
         {
             if (componentCache == null || componentCache.Bot == null)
             {
-                BotFallbackUtility.Trigger(this, null, "[BotPanicHandler] Cannot initialize with null BotComponentCache or Bot.");
-                _isFallbackMode = true;
+                Plugin.LoggerInstance?.LogError("[BotPanicHandler] Cannot initialize with null BotComponentCache or Bot.");
                 return;
             }
 
             _cache = componentCache;
             _bot = componentCache.Bot;
-            _isFallbackMode = false;
 
             try
             {
@@ -83,14 +80,13 @@ namespace AIRefactored.AI.Combat
             }
             catch (Exception ex)
             {
-                BotFallbackUtility.Trigger(this, _bot, "Exception subscribing to ApplyDamageEvent.", ex);
-                _isFallbackMode = true;
+                Plugin.LoggerInstance?.LogError("[BotPanicHandler] Exception subscribing to ApplyDamageEvent: " + ex);
             }
         }
 
         public void Tick(float time)
         {
-            if (_isFallbackMode || !IsValid())
+            if (!IsValid())
                 return;
 
             try
@@ -121,15 +117,13 @@ namespace AIRefactored.AI.Combat
             }
             catch (Exception ex)
             {
-                BotFallbackUtility.Trigger(this, _bot, "Exception in Tick.", ex);
-                _isFallbackMode = true;
-                BotFallbackUtility.FallbackToEFTLogic(_bot);
+                Plugin.LoggerInstance?.LogError("[BotPanicHandler] Exception in Tick: " + ex);
             }
         }
 
         public void TriggerPanic()
         {
-            if (_isFallbackMode || !IsValid() || _isPanicking || Time.time < _lastPanicExitTime + PanicCooldown)
+            if (!IsValid() || _isPanicking || Time.time < _lastPanicExitTime + PanicCooldown)
                 return;
 
             try
@@ -143,9 +137,7 @@ namespace AIRefactored.AI.Combat
             }
             catch (Exception ex)
             {
-                BotFallbackUtility.Trigger(this, _bot, "Exception in TriggerPanic.", ex);
-                _isFallbackMode = true;
-                BotFallbackUtility.FallbackToEFTLogic(_bot);
+                Plugin.LoggerInstance?.LogError("[BotPanicHandler] Exception in TriggerPanic: " + ex);
             }
         }
 
@@ -155,7 +147,7 @@ namespace AIRefactored.AI.Combat
 
         private void OnDamaged(EBodyPart part, float damage, DamageInfoStruct info)
         {
-            if (_isFallbackMode || !IsValid() || _isPanicking || Time.time < _lastPanicExitTime + PanicCooldown)
+            if (!IsValid() || _isPanicking || Time.time < _lastPanicExitTime + PanicCooldown)
                 return;
 
             try
@@ -175,9 +167,7 @@ namespace AIRefactored.AI.Combat
             }
             catch (Exception ex)
             {
-                BotFallbackUtility.Trigger(this, _bot, "Exception in OnDamaged.", ex);
-                _isFallbackMode = true;
-                BotFallbackUtility.FallbackToEFTLogic(_bot);
+                Plugin.LoggerInstance?.LogError("[BotPanicHandler] Exception in OnDamaged: " + ex);
             }
         }
 
@@ -200,9 +190,7 @@ namespace AIRefactored.AI.Combat
             }
             catch (Exception ex)
             {
-                BotFallbackUtility.Trigger(this, _bot, "Exception in ShouldPanicFromThreat.", ex);
-                _isFallbackMode = true;
-                BotFallbackUtility.FallbackToEFTLogic(_bot);
+                Plugin.LoggerInstance?.LogError("[BotPanicHandler] Exception in ShouldPanicFromThreat: " + ex);
                 return false;
             }
         }
@@ -215,15 +203,13 @@ namespace AIRefactored.AI.Combat
             }
             catch (Exception ex)
             {
-                BotFallbackUtility.Trigger(this, _bot, "Exception in RecoverComposure.", ex);
-                _isFallbackMode = true;
-                BotFallbackUtility.FallbackToEFTLogic(_bot);
+                Plugin.LoggerInstance?.LogError("[BotPanicHandler] Exception in RecoverComposure: " + ex);
             }
         }
 
         private void TryStartPanic(float now, Vector3 retreatDir)
         {
-            if (_isFallbackMode || !IsValid())
+            if (!IsValid())
                 return;
 
             try
@@ -236,26 +222,16 @@ namespace AIRefactored.AI.Combat
 
                 float cohesion = _cache.AIRefactoredBotOwner?.PersonalityProfile?.Cohesion ?? 1f;
 
-                // Native fallback: only use EFT navigation for panic retreat
                 Vector3 fallback = _bot.Position + retreatDir.normalized * 8f;
-                if (!BotNavHelper.TryGetSafeTarget(_bot, out fallback) || !IsVectorValid(fallback))
+                if (BotNavHelper.TryGetSafeTarget(_bot, out var navTarget) && IsVectorValid(navTarget))
                 {
-                    BotFallbackUtility.FallbackToEFTLogic(_bot);
-                    _isFallbackMode = true;
-                    return;
+                    fallback = navTarget;
                 }
 
                 if (_bot.Mover != null)
                 {
                     BotMovementHelper.SmoothMoveTo(_bot, fallback, false, cohesion);
                     BotCoverHelper.TrySetStanceFromNearbyCover(_cache, fallback);
-                }
-                else
-                {
-                    BotFallbackUtility.Trigger(this, _bot, "BotMover missing. Fallback to EFT AI.");
-                    _isFallbackMode = true;
-                    BotFallbackUtility.FallbackToEFTLogic(_bot);
-                    return;
                 }
 
                 if (GameWorldHandler.TryGetValidMapName() is string mapId)
@@ -273,9 +249,7 @@ namespace AIRefactored.AI.Combat
             }
             catch (Exception ex)
             {
-                BotFallbackUtility.Trigger(this, _bot, "Exception in TryStartPanic.", ex);
-                _isFallbackMode = true;
-                BotFallbackUtility.FallbackToEFTLogic(_bot);
+                Plugin.LoggerInstance?.LogError("[BotPanicHandler] Exception in TryStartPanic: " + ex);
             }
         }
 
@@ -294,9 +268,7 @@ namespace AIRefactored.AI.Combat
             }
             catch (Exception ex)
             {
-                BotFallbackUtility.Trigger(this, _bot, "Exception in EndPanic.", ex);
-                _isFallbackMode = true;
-                BotFallbackUtility.FallbackToEFTLogic(_bot);
+                Plugin.LoggerInstance?.LogError("[BotPanicHandler] Exception in EndPanic: " + ex);
             }
         }
 
@@ -327,9 +299,7 @@ namespace AIRefactored.AI.Combat
             }
             catch (Exception ex)
             {
-                BotFallbackUtility.Trigger(this, _bot, "Exception in CheckNearbySquadDanger.", ex);
-                _isFallbackMode = true;
-                BotFallbackUtility.FallbackToEFTLogic(_bot);
+                Plugin.LoggerInstance?.LogError("[BotPanicHandler] Exception in CheckNearbySquadDanger: " + ex);
             }
 
             return false;

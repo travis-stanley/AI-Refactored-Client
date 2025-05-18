@@ -3,7 +3,7 @@
 //   Licensed under the MIT License. See LICENSE in the repository root for more information.
 //
 //   THIS FILE IS SYSTEMATICALLY MANAGED.
-//   Failures in AIRefactored logic must always trigger safe fallback to EFT base AI.
+//   Bulletproof: No fallback logic exists. All navigation failures are isolated and only log or skip.
 // </auto-generated>
 
 namespace AIRefactored.AI.Helpers
@@ -19,8 +19,8 @@ namespace AIRefactored.AI.Helpers
 
     /// <summary>
     /// Provides smooth, human-like movement and aim transitions for AIRefactored bots.
-    /// Includes fallback, strafing, smooth look, and smooth go-to movement.
-    /// Bulletproof: all errors and navigation failures fall back to vanilla logic.
+    /// Includes strafing, smooth look, and smooth go-to movement.
+    /// Bulletproof: all errors and navigation failures are locally contained, never fallback to vanilla logic.
     /// </summary>
     public static class BotMovementHelper
     {
@@ -70,14 +70,10 @@ namespace AIRefactored.AI.Helpers
                     if (sprint)
                         bot.Sprint(true);
                 }
-                else
-                {
-                    BotFallbackUtility.FallbackToEFTLogic(bot);
-                }
             }
             catch
             {
-                BotFallbackUtility.FallbackToEFTLogic(bot);
+                // No fallback; error is ignored.
             }
         }
 
@@ -103,7 +99,7 @@ namespace AIRefactored.AI.Helpers
             }
             catch
             {
-                // Never break; no fallback needed, just skip
+                // Never break; just skip
             }
         }
 
@@ -134,14 +130,10 @@ namespace AIRefactored.AI.Helpers
                     bot.Mover.GoToPoint(safeTarget, slow, cohesionScale);
                     return true;
                 }
-                else
-                {
-                    BotFallbackUtility.FallbackToEFTLogic(bot);
-                }
             }
             catch
             {
-                BotFallbackUtility.FallbackToEFTLogic(bot);
+                // Error is ignored
             }
             return false;
         }
@@ -174,14 +166,10 @@ namespace AIRefactored.AI.Helpers
                 {
                     bot.Mover.GoToPoint(target, false, 1f);
                 }
-                else
-                {
-                    BotFallbackUtility.FallbackToEFTLogic(bot);
-                }
             }
             catch
             {
-                BotFallbackUtility.FallbackToEFTLogic(bot);
+                // Error is ignored
             }
         }
 
@@ -204,14 +192,10 @@ namespace AIRefactored.AI.Helpers
                 {
                     bot.Mover.GoToPoint(target, true, 1f);
                 }
-                else
-                {
-                    BotFallbackUtility.FallbackToEFTLogic(bot);
-                }
             }
             catch
             {
-                BotFallbackUtility.FallbackToEFTLogic(bot);
+                // Error is ignored
             }
         }
 
@@ -233,14 +217,10 @@ namespace AIRefactored.AI.Helpers
                 {
                     bot.Mover.GoToPoint(fallback, true, 1f);
                 }
-                else
-                {
-                    BotFallbackUtility.FallbackToEFTLogic(bot);
-                }
             }
             catch
             {
-                BotFallbackUtility.FallbackToEFTLogic(bot);
+                // Error is ignored
             }
         }
 

@@ -3,13 +3,12 @@
 //   Licensed under the MIT License. See LICENSE in the repository root for more information.
 //
 //   THIS FILE IS SYSTEMATICALLY MANAGED.
-//   Failures in AIRefactored logic must always trigger safe fallback to EFT base AI.
+//   Bulletproof: All failures are locally isolated, never disables itself, never triggers fallback AI.
 // </auto-generated>
 
 namespace AIRefactored.AI.Combat.States
 {
     using System;
-    using System.Collections.Generic;
     using AIRefactored.AI.Core;
     using AIRefactored.AI.Helpers;
     using AIRefactored.AI.Hotspots;
@@ -23,7 +22,7 @@ namespace AIRefactored.AI.Combat.States
     /// <summary>
     /// Handles bot behavior while in Patrol state.
     /// Evaluates suppression, panic, wounds, or nearby deaths to trigger fallback, and moves bots between hotspots.
-    /// Bulletproof: All failures are isolated; only this handler disables itself and triggers vanilla fallback if required.
+    /// Bulletproof: All failures are locally isolated, never disables itself, never triggers fallback AI.
     /// </summary>
     public sealed class PatrolHandler
     {
@@ -43,7 +42,6 @@ namespace AIRefactored.AI.Combat.States
         private readonly float _switchCooldownBase;
 
         private float _nextSwitchTime;
-        private bool _isFallbackMode;
 
         #endregion
 
@@ -55,16 +53,6 @@ namespace AIRefactored.AI.Combat.States
             _bot = cache?.Bot;
             _minStateDuration = minStateDuration;
             _switchCooldownBase = switchCooldownBase;
-
-            if (_cache == null || _bot == null)
-            {
-                BotFallbackUtility.Trigger(this, _bot, "Constructor failed: cache or bot is null.");
-                _isFallbackMode = true;
-            }
-            else
-            {
-                _isFallbackMode = false;
-            }
         }
 
         #endregion
@@ -73,14 +61,12 @@ namespace AIRefactored.AI.Combat.States
 
         public bool ShallUseNow()
         {
-            if (_isFallbackMode)
-                return false;
             return true;
         }
 
         public bool ShouldTransitionToInvestigate(float time)
         {
-            if (_isFallbackMode || _cache?.Combat == null || _cache.AIRefactoredBotOwner?.PersonalityProfile == null)
+            if (_cache?.Combat == null || _cache.AIRefactoredBotOwner?.PersonalityProfile == null)
                 return false;
 
             try
@@ -93,16 +79,14 @@ namespace AIRefactored.AI.Combat.States
             }
             catch (Exception ex)
             {
-                BotFallbackUtility.Trigger(this, _bot, "Exception in ShouldTransitionToInvestigate.", ex);
-                _isFallbackMode = true;
-                BotFallbackUtility.FallbackToEFTLogic(_bot);
+                Plugin.LoggerInstance.LogError($"[PatrolHandler] Exception in ShouldTransitionToInvestigate: {ex}");
                 return false;
             }
         }
 
         public void Tick(float time)
         {
-            if (_isFallbackMode || _cache == null || _bot == null)
+            if (_cache == null || _bot == null)
                 return;
 
             try
@@ -121,10 +105,7 @@ namespace AIRefactored.AI.Combat.States
                     }
                     catch (Exception ex)
                     {
-                        BotFallbackUtility.Trigger(this, _bot, "TriggerFallback exception in Tick.", ex);
-                        _isFallbackMode = true;
-                        BotFallbackUtility.FallbackToEFTLogic(_bot);
-                        return;
+                        Plugin.LoggerInstance.LogError($"[PatrolHandler] TriggerFallback exception in Tick: {ex}");
                     }
                     return;
                 }
@@ -139,15 +120,13 @@ namespace AIRefactored.AI.Combat.States
                 }
                 catch (Exception ex)
                 {
-                    BotFallbackUtility.Trigger(this, _bot, "HotspotRegistry exception in Tick.", ex);
-                    _isFallbackMode = true;
-                    BotFallbackUtility.FallbackToEFTLogic(_bot);
+                    Plugin.LoggerInstance.LogError($"[PatrolHandler] HotspotRegistry exception in Tick: {ex}");
                     return;
                 }
 
                 if (hotspot == null || !IsVectorValid(hotspot.Position))
                 {
-                    BotFallbackUtility.Trigger(this, _bot, "Skipped patrol: hotspot was null or invalid.");
+                    Plugin.LoggerInstance.LogWarning("[PatrolHandler] Skipped patrol: hotspot was null or invalid.");
                     return;
                 }
 
@@ -169,17 +148,12 @@ namespace AIRefactored.AI.Combat.States
                     }
                     catch (Exception ex)
                     {
-                        BotFallbackUtility.Trigger(this, _bot, "Exception in SmoothMoveTo or TrySetStance.", ex);
-                        _isFallbackMode = true;
-                        BotFallbackUtility.FallbackToEFTLogic(_bot);
-                        return;
+                        Plugin.LoggerInstance.LogError($"[PatrolHandler] Exception in SmoothMoveTo or TrySetStance: {ex}");
                     }
                 }
                 else
                 {
-                    BotFallbackUtility.Trigger(this, _bot, "BotMover missing. Fallback to EFT AI.");
-                    _isFallbackMode = true;
-                    BotFallbackUtility.FallbackToEFTLogic(_bot);
+                    Plugin.LoggerInstance.LogWarning("[PatrolHandler] BotMover missing; cannot move.");
                     return;
                 }
 
@@ -193,9 +167,7 @@ namespace AIRefactored.AI.Combat.States
             }
             catch (Exception ex)
             {
-                BotFallbackUtility.Trigger(this, _bot, "General exception in Tick.", ex);
-                _isFallbackMode = true;
-                BotFallbackUtility.FallbackToEFTLogic(_bot);
+                Plugin.LoggerInstance.LogError($"[PatrolHandler] General exception in Tick: {ex}");
             }
         }
 
@@ -205,7 +177,7 @@ namespace AIRefactored.AI.Combat.States
 
         private bool ShouldTriggerFallback()
         {
-            if (_isFallbackMode || _cache == null || _bot == null)
+            if (_cache == null || _bot == null)
                 return false;
 
             try
@@ -238,22 +210,19 @@ namespace AIRefactored.AI.Combat.States
             }
             catch (Exception ex)
             {
-                BotFallbackUtility.Trigger(this, _bot, "Exception in ShouldTriggerFallback.", ex);
-                _isFallbackMode = true;
-                BotFallbackUtility.FallbackToEFTLogic(_bot);
+                Plugin.LoggerInstance.LogError($"[PatrolHandler] Exception in ShouldTriggerFallback: {ex}");
                 return false;
             }
         }
 
         private Vector3 TryGetFallbackPosition()
         {
-            if (_isFallbackMode || _bot == null)
-                return _bot != null ? _bot.Position : Vector3.zero;
+            if (_bot == null)
+                return Vector3.zero;
 
             try
             {
                 Vector3 direction = _bot.LookDirection.normalized;
-                // No custom pathing; just step away in look direction as fallback
                 Vector3 fallback = _bot.Position - direction * 7.5f;
 
                 if (!BotNavHelper.TryGetSafeTarget(_bot, out fallback) || !IsVectorValid(fallback))
@@ -263,10 +232,8 @@ namespace AIRefactored.AI.Combat.States
             }
             catch (Exception ex)
             {
-                BotFallbackUtility.Trigger(this, _bot, "Exception in TryGetFallbackPosition.", ex);
-                _isFallbackMode = true;
-                BotFallbackUtility.FallbackToEFTLogic(_bot);
-                return _bot != null ? _bot.Position : Vector3.zero;
+                Plugin.LoggerInstance.LogError($"[PatrolHandler] Exception in TryGetFallbackPosition: {ex}");
+                return _bot.Position;
             }
         }
 

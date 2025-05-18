@@ -3,7 +3,7 @@
 //   Licensed under the MIT License. See LICENSE in the repository root for more information.
 //
 //   THIS FILE IS SYSTEMATICALLY MANAGED.
-//   Failures in AIRefactored logic must always trigger safe fallback to EFT base AI.
+//   Bulletproof: All errors are locally isolated, never disables itself, never disables squadmates, never triggers fallback AI.
 // </auto-generated>
 
 namespace AIRefactored.AI.Combat.States
@@ -20,7 +20,7 @@ namespace AIRefactored.AI.Combat.States
     /// <summary>
     /// Coordinates echo behavior for fallback, investigation, and enemy sightings.
     /// Ensures realistic squad cohesion and tactical communication.
-    /// Bulletproof: all failures are isolated and never cascade.
+    /// Bulletproof: All failures are isolated and never cascade. Never disables itself or squadmates.
     /// </summary>
     public sealed class EchoCoordinator
     {
@@ -41,7 +41,6 @@ namespace AIRefactored.AI.Combat.States
 
         private float _lastEchoFallbackTime = float.NegativeInfinity;
         private float _lastEchoInvestigateTime = float.NegativeInfinity;
-        private bool _isFallbackMode;
 
         #endregion
 
@@ -51,15 +50,6 @@ namespace AIRefactored.AI.Combat.States
         {
             _cache = cache;
             _bot = cache?.Bot;
-            if (_cache == null || _bot == null)
-            {
-                BotFallbackUtility.Trigger(this, _bot, "Initialization failed: cache or Bot is null.");
-                _isFallbackMode = true;
-            }
-            else
-            {
-                _isFallbackMode = false;
-            }
         }
 
         #endregion
@@ -71,7 +61,7 @@ namespace AIRefactored.AI.Combat.States
         /// </summary>
         public void EchoFallbackToSquad(Vector3 retreatPosition)
         {
-            if (_isFallbackMode || _cache == null || _cache.IsFallbackMode || _bot == null || _bot.BotsGroup == null)
+            if (_cache == null || _bot == null || _bot.BotsGroup == null)
                 return;
 
             float now = Time.time;
@@ -90,7 +80,7 @@ namespace AIRefactored.AI.Combat.States
                         continue;
 
                     BotComponentCache mateCache = BotCacheUtility.GetCache(mate);
-                    if (mateCache == null || mateCache.IsFallbackMode || mateCache.Combat == null || !CanAcceptEcho(mateCache))
+                    if (mateCache == null || mateCache.Combat == null || !CanAcceptEcho(mateCache))
                         continue;
 
                     Vector3 fallbackDir = selfPosition - mate.Position;
@@ -110,12 +100,11 @@ namespace AIRefactored.AI.Combat.States
 
                     Vector3 destination = mate.Position - fallbackDir * BaseFallbackDistance + chaos;
 
-                    // Use only BotNavHelper (EFT nav). Fallback to vanilla AI on failure.
+                    // Use only BotNavHelper (EFT nav). If nav fails, just use the calculated position.
                     if (!BotNavHelper.TryGetSafeTarget(mate, out destination) || !IsValidTarget(destination))
                     {
-                        BotFallbackUtility.FallbackToEFTLogic(mate);
-                        mateCache.EnterFallback();
-                        continue;
+                        // Navigation failed: still proceed with destination
+                        destination = mate.Position - fallbackDir * BaseFallbackDistance + chaos;
                     }
 
                     try
@@ -124,8 +113,7 @@ namespace AIRefactored.AI.Combat.States
                     }
                     catch (Exception ex)
                     {
-                        BotFallbackUtility.Trigger(this, mate, "TriggerFallback error in EchoFallback.", ex);
-                        mateCache.EnterFallback();
+                        Plugin.LoggerInstance.LogError($"[EchoCoordinator] TriggerFallback error for squadmate: {ex}");
                     }
 
                     if (!FikaHeadlessDetector.IsHeadless && mate.BotTalk != null)
@@ -139,8 +127,7 @@ namespace AIRefactored.AI.Combat.States
                 }
                 catch (Exception ex)
                 {
-                    BotFallbackUtility.Trigger(this, _bot, "EchoFallbackToSquad member loop error.", ex);
-                    // Never break loop, keep echoing to remaining squadmates.
+                    Plugin.LoggerInstance.LogError("[EchoCoordinator] EchoFallbackToSquad member loop error: " + ex);
                 }
             }
 
@@ -152,7 +139,7 @@ namespace AIRefactored.AI.Combat.States
         /// </summary>
         public void EchoInvestigateToSquad()
         {
-            if (_isFallbackMode || _cache == null || _cache.IsFallbackMode || _bot == null || _bot.BotsGroup == null)
+            if (_cache == null || _bot == null || _bot.BotsGroup == null)
                 return;
 
             float now = Time.time;
@@ -171,7 +158,7 @@ namespace AIRefactored.AI.Combat.States
                         continue;
 
                     BotComponentCache mateCache = BotCacheUtility.GetCache(mate);
-                    if (mateCache == null || mateCache.IsFallbackMode || mateCache.Combat == null || !CanAcceptEcho(mateCache))
+                    if (mateCache == null || mateCache.Combat == null || !CanAcceptEcho(mateCache))
                         continue;
 
                     try
@@ -180,8 +167,7 @@ namespace AIRefactored.AI.Combat.States
                     }
                     catch (Exception ex)
                     {
-                        BotFallbackUtility.Trigger(this, mate, "NotifyEchoInvestigate error in EchoInvestigateToSquad.", ex);
-                        mateCache.EnterFallback();
+                        Plugin.LoggerInstance.LogError($"[EchoCoordinator] NotifyEchoInvestigate error for squadmate: {ex}");
                     }
 
                     if (!FikaHeadlessDetector.IsHeadless && mate.BotTalk != null)
@@ -195,7 +181,7 @@ namespace AIRefactored.AI.Combat.States
                 }
                 catch (Exception ex)
                 {
-                    BotFallbackUtility.Trigger(this, _bot, "EchoInvestigateToSquad member loop error.", ex);
+                    Plugin.LoggerInstance.LogError("[EchoCoordinator] EchoInvestigateToSquad member loop error: " + ex);
                 }
             }
 
@@ -207,7 +193,7 @@ namespace AIRefactored.AI.Combat.States
         /// </summary>
         public void EchoSpottedEnemyToSquad(Vector3 enemyPosition)
         {
-            if (_isFallbackMode || _cache == null || _cache.IsFallbackMode || _bot == null || _bot.BotsGroup == null)
+            if (_cache == null || _bot == null || _bot.BotsGroup == null)
                 return;
 
             string enemyId = string.Empty;
@@ -227,7 +213,7 @@ namespace AIRefactored.AI.Combat.States
                         continue;
 
                     BotComponentCache mateCache = BotCacheUtility.GetCache(mate);
-                    if (mateCache == null || mateCache.IsFallbackMode || mateCache.TacticalMemory == null)
+                    if (mateCache == null || mateCache.TacticalMemory == null)
                         continue;
 
                     try
@@ -236,13 +222,12 @@ namespace AIRefactored.AI.Combat.States
                     }
                     catch (Exception ex)
                     {
-                        BotFallbackUtility.Trigger(this, mate, "RecordEnemyPosition error in EchoSpottedEnemyToSquad.", ex);
-                        mateCache.EnterFallback();
+                        Plugin.LoggerInstance.LogError($"[EchoCoordinator] RecordEnemyPosition error for squadmate: {ex}");
                     }
                 }
                 catch (Exception ex)
                 {
-                    BotFallbackUtility.Trigger(this, _bot, "EchoSpottedEnemyToSquad member loop error.", ex);
+                    Plugin.LoggerInstance.LogError("[EchoCoordinator] EchoSpottedEnemyToSquad member loop error: " + ex);
                 }
             }
         }
@@ -253,7 +238,7 @@ namespace AIRefactored.AI.Combat.States
 
         private static bool CanAcceptEcho(BotComponentCache cache)
         {
-            if (cache.IsFallbackMode || cache.IsBlinded)
+            if (cache.IsBlinded)
                 return false;
             if (cache.PanicHandler != null && cache.PanicHandler.IsPanicking)
                 return false;

@@ -3,7 +3,7 @@
 //   Licensed under the MIT License. See LICENSE in the repository root for more information.
 //
 //   THIS FILE IS SYSTEMATICALLY MANAGED.
-//   Bulletproof: All failures are locally contained, never break other subsystems, and always trigger fallback isolation.
+//   Bulletproof: All failures are locally contained, never break other subsystems. No vanilla fallback is triggered.
 //   See: AIRefactored “Bulletproof Fallback & Isolation Safety Rule Set” for audit compliance.
 // </auto-generated>
 
@@ -27,7 +27,7 @@ namespace AIRefactored.Bootstrap
 
     /// <summary>
     /// Main coordinator for AIRefactored world systems. Handles initialization, tick/update, and teardown.
-    /// Fully bulletproof: all errors are locally contained and never break the AIRefactored stack.
+    /// Fully bulletproof: all errors are locally contained and never break the AIRefactored stack. No fallback logic is ever triggered.
     /// </summary>
     public static class WorldBootstrapper
     {
@@ -181,10 +181,6 @@ namespace AIRefactored.Bootstrap
                         Player player = players[i];
                         if (!EFTPlayerUtil.IsValid(player) || !player.IsAI) continue;
 
-                        string profileId = player.ProfileId ?? player.Profile?.Id;
-                        if (!string.IsNullOrEmpty(profileId) && BotRegistry.IsFallbackBot(profileId))
-                            continue;
-
                         GameObject go = player.gameObject;
                         if (go == null) continue;
 
@@ -220,14 +216,14 @@ namespace AIRefactored.Bootstrap
 
         /// <summary>
         /// Ensures the given player has a BotBrain attached and initialized.
-        /// Never attaches to bots in fallback state or with invalid profile.
+        /// Never attaches to bots with invalid profile.
         /// </summary>
         public static void EnforceBotBrain(Player player, BotOwner bot)
         {
             if (!EFTPlayerUtil.IsValid(player) || !player.IsAI || bot == null) return;
 
             string profileId = bot.Profile?.Id;
-            if (string.IsNullOrEmpty(profileId) || BotRegistry.IsFallbackBot(profileId))
+            if (string.IsNullOrEmpty(profileId))
                 return;
 
             GameObject go = player.gameObject;
@@ -252,7 +248,6 @@ namespace AIRefactored.Bootstrap
             }
             catch (Exception ex)
             {
-                BotRegistry.MarkFallback(profileId);
                 Logger.LogWarning("[WorldBootstrapper] BotBrain init failed for " + profileId + ": " + ex);
             }
         }

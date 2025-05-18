@@ -3,7 +3,7 @@
 //   Licensed under the MIT License. See LICENSE in the repository root for more information.
 //
 //   THIS FILE IS SYSTEMATICALLY MANAGED.
-//   Failures in AIRefactored logic must always trigger safe fallback to EFT base AI.
+//   Failures in AIRefactored logic must always trigger safe retry and recovery. No fallback or terminal state.
 //   Bulletproof: All failures are strictly localized and cannot break the mod.
 // </auto-generated>
 
@@ -24,20 +24,9 @@ namespace AIRefactored.Runtime
 	using EFT.Game.Spawning;
 	using UnityEngine;
 
-	/// <summary>
-	/// Monitors GameWorld state and ensures AIRefactored systems remain functional across sessions.
-	/// Called externally by WorldBootstrapper, tick scheduler, or raid monitor.
-	/// Bulletproof: All failures are strictly localized and cannot break the mod.
-	/// </summary>
 	public sealed class BotRecoveryService : IAIWorldSystemBootstrapper
 	{
-		#region Constants
-
 		private const float TickInterval = 5f;
-
-		#endregion
-
-		#region Static State
 
 		private static readonly ManualLogSource Logger = Plugin.LoggerInstance;
 
@@ -47,16 +36,8 @@ namespace AIRefactored.Runtime
 		private static bool _hasInitialized;
 		private static bool _hookedSpawner;
 
-		/// <summary>
-		/// Gets the shared singleton instance.
-		/// </summary>
 		public static BotRecoveryService Instance { get; } = new BotRecoveryService();
 
-		#endregion
-
-		#region Lifecycle
-
-		/// <inheritdoc />
 		public void Initialize()
 		{
 			try
@@ -71,7 +52,6 @@ namespace AIRefactored.Runtime
 			}
 		}
 
-		/// <inheritdoc />
 		public void OnRaidEnd()
 		{
 			try
@@ -92,22 +72,10 @@ namespace AIRefactored.Runtime
 			}
 		}
 
-		/// <inheritdoc />
-		public bool IsReady()
-		{
-			return _hasInitialized && GameWorldHandler.IsReady();
-		}
+		public bool IsReady() => _hasInitialized && GameWorldHandler.IsReady();
 
-		/// <inheritdoc />
-		public WorldPhase RequiredPhase()
-		{
-			return WorldPhase.WorldReady;
-		}
+		public WorldPhase RequiredPhase() => WorldPhase.WorldReady;
 
-		/// <summary>
-		/// Resets all static flags and internal state for next raid.
-		/// Bulletproof: always safe, never throws.
-		/// </summary>
 		public static void Reset()
 		{
 			_nextTickTime = -1f;
@@ -116,11 +84,6 @@ namespace AIRefactored.Runtime
 			_hookedSpawner = false;
 		}
 
-		#endregion
-
-		#region Tick
-
-		/// <inheritdoc />
 		public void Tick(float deltaTime)
 		{
 			try
@@ -160,10 +123,6 @@ namespace AIRefactored.Runtime
 			}
 		}
 
-		#endregion
-
-		#region Spawn Hook
-
 		private static void EnsureSpawnHook()
 		{
 			try
@@ -181,10 +140,6 @@ namespace AIRefactored.Runtime
 			}
 		}
 
-		#endregion
-
-		#region Bot Validation
-
 		private static void ValidateBotBrains(List<Player> players)
 		{
 			for (int i = 0; i < players.Count; i++)
@@ -196,7 +151,7 @@ namespace AIRefactored.Runtime
 						continue;
 
 					string profileId = player.ProfileId ?? player.Profile?.Id;
-					if (string.IsNullOrEmpty(profileId) || BotRegistry.IsFallbackBot(profileId))
+					if (string.IsNullOrEmpty(profileId))
 						continue;
 
 					GameObject go = player.gameObject;
@@ -223,12 +178,10 @@ namespace AIRefactored.Runtime
 						}
 						catch (Exception ex)
 						{
-							BotRegistry.MarkFallback(profileId);
 							LogError("[BotRecoveryService] ❌ Failed to attach brain to BotOwner: " + ex);
 						}
 					}
 
-					// Only allow one rescan per tick, and only if phase/world is valid
 					if (!_hasRescanned && GameWorldHandler.IsReady() && WorldInitState.IsInPhase(WorldPhase.WorldReady))
 					{
 						_hasRescanned = true;
@@ -241,10 +194,6 @@ namespace AIRefactored.Runtime
 				}
 			}
 		}
-
-		#endregion
-
-		#region World Refresh
 
 		private static void RescanWorld()
 		{
@@ -280,10 +229,6 @@ namespace AIRefactored.Runtime
 			}
 		}
 
-		#endregion
-
-		#region Log Helpers
-
 		private static void LogDebug(string msg)
 		{
 			if (!FikaHeadlessDetector.IsHeadless)
@@ -301,7 +246,5 @@ namespace AIRefactored.Runtime
 			if (!FikaHeadlessDetector.IsHeadless)
 				Logger.LogError(msg);
 		}
-
-		#endregion
 	}
 }

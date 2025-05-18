@@ -14,7 +14,6 @@ namespace AIRefactored.AI.Combat.States
     using AIRefactored.AI.Helpers;
     using AIRefactored.AI.Hotspots;
     using AIRefactored.AI.Navigation;
-    using AIRefactored.AI.Optimization;
     using AIRefactored.Core;
     using AIRefactored.Pools;
     using AIRefactored.Runtime;
@@ -33,7 +32,6 @@ namespace AIRefactored.AI.Combat.States
         private const float DeadAllyRadius = 10.0f;
         private const float InvestigateSoundDelay = 3.0f;
         private const float PanicThreshold = 0.25f;
-        private const int FallbackPathMinLength = 2;
 
         #endregion
 
@@ -112,13 +110,9 @@ namespace AIRefactored.AI.Combat.States
                 {
                     Vector3 fallback = TryGetFallbackPosition();
 
-                    if (!BotNavValidator.Validate(_bot, "PatrolFallback"))
-                    {
-                        if (!EFTPathFallbackHelper.TryGetSafeTarget(_bot, out fallback))
-                            fallback = EFTPathFallbackHelper.GetFallbackNavPoint(_bot.Position);
-                    }
-                    if (!IsVectorValid(fallback))
-                        fallback = EFTPathFallbackHelper.GetFallbackNavPoint(_bot.Position);
+                    // Only use EFT native navigation
+                    if (!BotNavHelper.TryGetSafeTarget(_bot, out fallback) || !IsVectorValid(fallback))
+                        fallback = _bot.Position;
 
                     try
                     {
@@ -160,14 +154,9 @@ namespace AIRefactored.AI.Combat.States
                     ? _cache.SquadPath.ApplyOffsetTo(target)
                     : target;
 
-                if (!IsVectorValid(destination) ||
-                    !BotNavValidator.Validate(_bot, "PatrolDestination"))
-                {
-                    if (!EFTPathFallbackHelper.TryGetSafeTarget(_bot, out destination))
-                        destination = EFTPathFallbackHelper.GetFallbackNavPoint(_bot.Position);
-                }
-                if (!IsVectorValid(destination))
-                    destination = EFTPathFallbackHelper.GetFallbackNavPoint(_bot.Position);
+                // Only use EFT navigation
+                if (!BotNavHelper.TryGetSafeTarget(_bot, out destination) || !IsVectorValid(destination))
+                    destination = _bot.Position;
 
                 if (_bot.Mover != null)
                 {
@@ -254,18 +243,19 @@ namespace AIRefactored.AI.Combat.States
 
         private Vector3 TryGetFallbackPosition()
         {
-            if (_isFallbackMode || _cache?.Pathing == null || _bot == null)
+            if (_isFallbackMode || _bot == null)
                 return _bot != null ? _bot.Position : Vector3.zero;
 
             try
             {
                 Vector3 direction = _bot.LookDirection.normalized;
-                List<Vector3> path = BotCoverRetreatPlanner.GetCoverRetreatPath(_bot, direction, _cache.Pathing);
+                // No custom pathing; just step away in look direction as fallback
+                Vector3 fallback = _bot.Position - direction * 7.5f;
 
-                if (path != null && path.Count >= FallbackPathMinLength)
-                    return path[path.Count - 1];
+                if (!BotNavHelper.TryGetSafeTarget(_bot, out fallback) || !IsVectorValid(fallback))
+                    fallback = _bot.Position;
 
-                return FallbackNavPointProvider.GetSafePoint(_bot.Position);
+                return fallback;
             }
             catch (Exception ex)
             {

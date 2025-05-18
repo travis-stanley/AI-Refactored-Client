@@ -11,7 +11,6 @@ namespace AIRefactored.AI.Combat
     using System;
     using AIRefactored.AI.Core;
     using AIRefactored.AI.Helpers;
-    using AIRefactored.AI.Optimization;
     using AIRefactored.AI.Navigation;
     using AIRefactored.Core;
     using EFT;
@@ -123,17 +122,17 @@ namespace AIRefactored.AI.Combat
                     ? (_bot.Position - source.Value).normalized
                     : GetDefaultRetreatDirection();
 
-                Vector3 fallback = ComputeFallbackPosition(retreatDir);
-                float cohesion = _cache.AIRefactoredBotOwner?.PersonalityProfile?.Cohesion ?? 1f;
+                Vector3 fallback = _bot.Position + retreatDir.normalized * MinSuppressionRetreatDistance;
 
-                // Robust: always use EFTPathFallbackHelper for bulletproof nav
-                if (!BotNavValidator.Validate(_bot, "BotSuppression::TriggerSuppression"))
+                // NEW: Use only BotNavHelper (EFT navigation)
+                if (!BotNavHelper.TryGetSafeTarget(_bot, out fallback) || !IsVectorValid(fallback))
                 {
-                    if (!EFTPathFallbackHelper.TryGetSafeTarget(_bot, out fallback))
-                        fallback = EFTPathFallbackHelper.GetFallbackNavPoint(_bot.Position);
+                    BotFallbackUtility.FallbackToEFTLogic(_bot);
+                    _isFallbackMode = true;
+                    return;
                 }
-                if (!IsVectorValid(fallback))
-                    fallback = EFTPathFallbackHelper.GetFallbackNavPoint(_bot.Position);
+
+                float cohesion = _cache.AIRefactoredBotOwner?.PersonalityProfile?.Cohesion ?? 1f;
 
                 if (_bot.Mover != null)
                 {
@@ -167,31 +166,6 @@ namespace AIRefactored.AI.Combat
         #endregion
 
         #region Private Methods
-
-        private Vector3 ComputeFallbackPosition(Vector3 retreatDirection)
-        {
-            try
-            {
-                if (_cache.Pathing != null)
-                {
-                    var path = BotCoverRetreatPlanner.GetCoverRetreatPath(_bot, retreatDirection, _cache.Pathing);
-                    if (path != null && path.Count > 0)
-                    {
-                        return (Vector3.Distance(path[0], _bot.Position) < 1f && path.Count > 1)
-                            ? path[1]
-                            : path[0];
-                    }
-                }
-
-                return _bot.Position + retreatDirection.normalized * MinSuppressionRetreatDistance;
-            }
-            catch (Exception ex)
-            {
-                BotFallbackUtility.Trigger(this, _bot, "Exception in ComputeFallbackPosition.", ex);
-                _isFallbackMode = true;
-                return _bot != null ? _bot.Position : Vector3.zero;
-            }
-        }
 
         private static Vector3 GetDefaultRetreatDirection()
         {

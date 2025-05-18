@@ -165,6 +165,7 @@ namespace AIRefactored.AI.Missions
                 if (_cache?.TacticalMemory != null)
                     _cache.TacticalMemory.MarkExtractionStarted();
 
+                // Only native movement
                 BotMovementHelper.SmoothMoveToSafeExit(_bot);
                 _log.LogDebug("[ExtractDecision] ✅ Extraction initiated for: " + _bot.name);
             }

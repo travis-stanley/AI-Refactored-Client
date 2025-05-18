@@ -145,9 +145,6 @@ namespace AIRefactored.Runtime
 						if (!EFTPlayerUtil.IsValid(player) || !player.IsAI || player.gameObject == null)
 							continue;
 
-						if (NavPointRegistry.AIRefactoredNavDisabled)
-							continue;
-
 						GameObject go = player.gameObject;
 						int id = go.GetInstanceID();
 

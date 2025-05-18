@@ -13,7 +13,6 @@ namespace AIRefactored.AI.Reactions
     using AIRefactored.AI.Combat;
     using AIRefactored.AI.Core;
     using AIRefactored.AI.Helpers;
-    using AIRefactored.AI.Optimization;
     using AIRefactored.Core;
     using EFT;
     using UnityEngine;
@@ -181,27 +180,30 @@ namespace AIRefactored.AI.Reactions
 
         /// <summary>
         /// Calculates and executes bot fallback movement due to flash suppression.
+        /// Uses only EFT-native navigation; falls back to vanilla AI if path fails.
         /// </summary>
         private static void TriggerFallback(BotOwner bot)
         {
             try
             {
-                Vector3 dir = bot.LookDirection;
-                Vector3? retreat = HybridFallbackResolver.GetBestRetreatPoint(bot, dir);
-
-                if (retreat.HasValue)
-                {
-                    BotMovementHelper.SmoothMoveTo(bot, retreat.Value);
+                if (bot == null)
                     return;
-                }
 
-                Vector3 lateral = new Vector3(-dir.x, 0f, -dir.z).normalized;
-                Vector3 fallback = bot.Position + lateral * FallbackDistance + UnityEngine.Random.insideUnitSphere * FallbackJitter;
+                Vector3 dir = bot.LookDirection;
+                Vector3 fallback = bot.Position - dir.normalized * FallbackDistance;
+                fallback += UnityEngine.Random.insideUnitSphere * FallbackJitter;
                 fallback.y = bot.Position.y;
 
-                BotMovementHelper.SmoothMoveTo(bot, fallback);
+                if (!BotMovementHelper.SmoothMoveToSafe(bot, fallback))
+                {
+                    BotFallbackUtility.FallbackToEFTLogic(bot);
+                }
             }
-            catch { }
+            catch
+            {
+                if (bot != null)
+                    BotFallbackUtility.FallbackToEFTLogic(bot);
+            }
         }
 
         /// <summary>

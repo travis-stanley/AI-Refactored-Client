@@ -148,7 +148,6 @@ namespace AIRefactored.Runtime
 
                 LogInfo("[AIRefactoredController] 🚀 GameWorld valid — starting AI systems.");
 
-                // NAVMESH/NAVPOINT BOOTSTRAP — Strict WorldReady check
                 string mapId = GameWorldHandler.TryGetValidMapName();
                 if (string.IsNullOrEmpty(mapId))
                 {
@@ -156,20 +155,15 @@ namespace AIRefactored.Runtime
                 }
                 else
                 {
-                    // NavMesh must be prebuilt before NavPointRegistry is registered for correct timing
+                    // NavMesh warmup/validation (no registry logic, no navpoint bootstrap)
                     if (!NavMeshWarmupManager.IsNavMeshReady)
                     {
                         try { NavMeshWarmupManager.TryPrebuildNavMesh(); }
                         catch (Exception ex) { LogError("[AIRefactoredController] NavMeshWarmupManager error: " + ex); }
                     }
-                    if (!NavPointRegistry.IsInitialized)
-                    {
-                        try { NavPointRegistry.RegisterAll(mapId); }
-                        catch (Exception ex) { LogError("[AIRefactoredController] NavPointRegistry error: " + ex); }
-                    }
                 }
 
-                // Main world initialization after navmesh/navpoint
+                // Main world initialization
                 GameWorldHandler.Initialize(world);
                 WorldBootstrapper.Begin(Logger, mapId);
 

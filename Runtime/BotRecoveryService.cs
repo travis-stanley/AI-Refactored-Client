@@ -267,8 +267,6 @@ namespace AIRefactored.Runtime
 				LootBootstrapper.RegisterAllLoot();
 				BotDeadBodyScanner.ScanAll();
 
-				NavPointRegistry.Clear();
-				NavPointRegistry.RegisterAll(mapId);
 
 				LogDebug("[BotRecoveryService] ✅ World rescan complete.");
 			}

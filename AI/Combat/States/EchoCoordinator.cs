@@ -110,14 +110,13 @@ namespace AIRefactored.AI.Combat.States
 
                     Vector3 destination = mate.Position - fallbackDir * BaseFallbackDistance + chaos;
 
-                    // Route through robust fallback helper
-                    if (!BotNavValidator.Validate(mate, "EchoFallback"))
+                    // Native EFT navigation only: use BotNavHelper, fallback to vanilla if failed.
+                    if (!BotNavHelper.TryGetSafeTarget(mate, out destination) || !IsValidTarget(destination))
                     {
-                        if (!EFTPathFallbackHelper.TryGetSafeTarget(mate, out destination))
-                            destination = EFTPathFallbackHelper.GetFallbackNavPoint(mate.Position);
+                        BotFallbackUtility.FallbackToEFTLogic(mate);
+                        mateCache.EnterFallback();
+                        continue;
                     }
-                    if (!IsValidTarget(destination))
-                        destination = EFTPathFallbackHelper.GetFallbackNavPoint(mate.Position);
 
                     try
                     {
@@ -135,10 +134,7 @@ namespace AIRefactored.AI.Combat.States
                         {
                             mate.BotTalk.TrySay(EPhraseTrigger.CoverMe);
                         }
-                        catch
-                        {
-                            // no-op
-                        }
+                        catch { /* no-op */ }
                     }
                 }
                 catch (Exception ex)
@@ -194,10 +190,7 @@ namespace AIRefactored.AI.Combat.States
                         {
                             mate.BotTalk.TrySay(EPhraseTrigger.CheckHim);
                         }
-                        catch
-                        {
-                            // no-op
-                        }
+                        catch { /* no-op */ }
                     }
                 }
                 catch (Exception ex)

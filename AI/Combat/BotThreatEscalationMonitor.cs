@@ -212,11 +212,14 @@ namespace AIRefactored.AI.Combat
                     catch { /* no-op */ }
                 }
 
-                Vector3 fallback;
-                if (!EFTPathFallbackHelper.TryGetSafeTarget(_bot, out fallback))
-                    fallback = EFTPathFallbackHelper.GetFallbackNavPoint(_bot.Position);
-                if (!IsVectorValid(fallback))
-                    fallback = EFTPathFallbackHelper.GetFallbackNavPoint(_bot.Position);
+                // NEW: Only use internal EFT navigation for fallback movement
+                Vector3 fallback = _bot.Position;
+                if (!BotNavHelper.TryGetSafeTarget(_bot, out fallback) || !IsVectorValid(fallback))
+                {
+                    BotFallbackUtility.FallbackToEFTLogic(_bot);
+                    _isFallbackMode = true;
+                    return;
+                }
 
                 if (_bot.Mover != null && !_bot.Mover.IsMoving)
                 {

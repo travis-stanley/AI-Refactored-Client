@@ -86,13 +86,12 @@ namespace AIRefactored.AI.Combat.States
                     return memoryPos;
 
                 Vector3 fallback = RandomNearbyPosition();
-                if (!BotNavValidator.Validate(_bot, "InvestigateRandomFallback"))
+
+                // Only use native EFT navigation
+                if (!BotNavHelper.TryGetSafeTarget(_bot, out fallback) || !IsVectorValid(fallback))
                 {
-                    if (!EFTPathFallbackHelper.TryGetSafeTarget(_bot, out fallback))
-                        fallback = EFTPathFallbackHelper.GetFallbackNavPoint(_bot != null ? _bot.Position : Vector3.zero);
-                }
-                if (!IsVectorValid(fallback))
                     fallback = _bot != null ? _bot.Position : Vector3.zero;
+                }
                 return fallback;
             }
             catch (Exception ex)
@@ -117,15 +116,11 @@ namespace AIRefactored.AI.Combat.States
                     ? _cache.SquadPath.ApplyOffsetTo(target)
                     : target;
 
-                if (!IsVectorValid(destination) ||
-                    !BotNavValidator.Validate(_bot, "InvestigateDestination"))
+                // Native navigation only
+                if (!BotNavHelper.TryGetSafeTarget(_bot, out destination) || !IsVectorValid(destination))
                 {
-                    if (!EFTPathFallbackHelper.TryGetSafeTarget(_bot, out destination))
-                        destination = EFTPathFallbackHelper.GetFallbackNavPoint(_bot.Position);
-                }
-
-                if (!IsVectorValid(destination))
                     destination = _bot.Position;
+                }
 
                 if (_bot.Mover != null)
                 {

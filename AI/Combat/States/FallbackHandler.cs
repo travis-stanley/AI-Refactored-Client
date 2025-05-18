@@ -15,7 +15,6 @@ namespace AIRefactored.AI.Combat.States
     using AIRefactored.AI.Navigation;
     using AIRefactored.Core;
     using AIRefactored.Pools;
-    using AIRefactored.Runtime;
     using EFT;
     using UnityEngine;
 
@@ -188,14 +187,13 @@ namespace AIRefactored.AI.Combat.States
 
                 Vector3 fallbackPoint = _fallbackTarget;
 
-                // Route fallback through bulletproof helper.
-                if (!BotNavValidator.Validate(_bot, nameof(FallbackHandler)))
+                // Native navigation only — use BotNavHelper and fallback.
+                if (!BotNavHelper.TryGetSafeTarget(_bot, out fallbackPoint) || !IsVectorValid(fallbackPoint))
                 {
-                    if (!EFTPathFallbackHelper.TryGetSafeTarget(_bot, out fallbackPoint))
-                        fallbackPoint = EFTPathFallbackHelper.GetFallbackNavPoint(_bot.Position);
+                    BotFallbackUtility.FallbackToEFTLogic(_bot);
+                    _isFallbackMode = true;
+                    return;
                 }
-                if (!IsVectorValid(fallbackPoint))
-                    fallbackPoint = EFTPathFallbackHelper.GetFallbackNavPoint(_bot.Position);
 
                 if (_bot.Mover != null)
                 {
@@ -276,9 +274,6 @@ namespace AIRefactored.AI.Combat.States
 
         #region Private Methods
 
-        /// <summary>
-        /// Validates a Vector3 for fallback/AI purposes.
-        /// </summary>
         private static bool IsVectorValid(Vector3 v)
         {
             return !float.IsNaN(v.x) &&

@@ -4,6 +4,7 @@
 //
 //   THIS FILE IS SYSTEMATICALLY MANAGED.
 //   Failures in AIRefactored logic must always trigger safe fallback to EFT base AI.
+//   All navigation and cover checks use only EFT vanilla logic. No custom navpoint registry is used.
 // </auto-generated>
 
 namespace AIRefactored.AI.Movement
@@ -12,9 +13,7 @@ namespace AIRefactored.AI.Movement
     using AIRefactored.AI.Core;
     using AIRefactored.AI.Helpers;
     using AIRefactored.AI.Memory;
-    using AIRefactored.AI.Navigation;
     using AIRefactored.Core;
-    using AIRefactored.Pools;
     using EFT;
     using UnityEngine;
 
@@ -169,39 +168,31 @@ namespace AIRefactored.AI.Movement
         }
 
         /// <summary>
-        /// Examines cover near the given position and anticipates best pose.
+        /// Examines cover near the given position and anticipates best pose, using only CustomNavigationPoint.
         /// </summary>
         public void TrySetStanceFromNearbyCover(Vector3 position)
         {
             try
             {
-                var points = NavPointRegistry.QueryNearby(
-                    position,
-                    4f,
-                    p =>
-                    {
-                        float dSq = (p.Position - position).sqrMagnitude;
-                        return dSq <= 16f &&
-                               (BotCoverHelper.IsProneCover(p) || BotCoverHelper.IsLowCover(p));
-                    });
-
-                for (int i = 0, n = points.Count; i < n; i++)
+                // No registry or custom nav queries. Use only BotMemory/cover info if available.
+                if (_bot?.Memory?.BotCurrentCoverInfo?.LastCover is CustomNavigationPoint lastCover)
                 {
-                    NavPointData p = points[i];
-                    if (BotCoverHelper.IsProneCover(p))
+                    float dist = Vector3.Distance(position, lastCover.Position);
+                    if (dist < 2.5f)
                     {
-                        SetProne(true);
-                        break;
-                    }
-
-                    if (BotCoverHelper.IsLowCover(p))
-                    {
-                        SetCrouch(true);
-                        break;
+                        if (lastCover.CoverLevel == CoverLevel.Lay)
+                        {
+                            SetProne(true);
+                            return;
+                        }
+                        if (lastCover.CoverLevel == CoverLevel.Sit)
+                        {
+                            SetCrouch(true);
+                            return;
+                        }
                     }
                 }
-
-                TempListPool.Return(points);
+                // If no valid cover found, do nothing. (Do not call fallback, since stance logic is not critical.)
             }
             catch
             {
@@ -275,23 +266,23 @@ namespace AIRefactored.AI.Movement
                     }
                 }
 
+                // Use only last cover from memory if available
                 if (_bot.Memory != null && _bot.Memory.BotCurrentCoverInfo != null)
                 {
                     CustomNavigationPoint lastCover = _bot.Memory.BotCurrentCoverInfo.LastCover;
                     if (lastCover != null)
                     {
-                        NavPointData point = NavPointConverter.FromCustom(lastCover);
-                        float dist = Vector3.Distance(_bot.Position, point.Position);
+                        float dist = Vector3.Distance(_bot.Position, lastCover.Position);
 
                         if (dist < 2.5f)
                         {
-                            if (BotCoverHelper.IsProneCover(point))
+                            if (lastCover.CoverLevel == CoverLevel.Lay)
                             {
                                 _targetPoseLevel = PronePose;
                                 return;
                             }
 
-                            if (BotCoverHelper.IsLowCover(point))
+                            if (lastCover.CoverLevel == CoverLevel.Sit)
                             {
                                 _targetPoseLevel = CrouchPose;
                                 return;

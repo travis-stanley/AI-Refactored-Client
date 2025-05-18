@@ -3,22 +3,20 @@
 //   Licensed under the MIT License. See LICENSE in the repository root for more information.
 //
 //   THIS FILE IS SYSTEMATICALLY MANAGED.
-//   Nav fallback logic must never assume registry is valid or override vanilla if disabled.
+//   Navigation validation uses only EFT internal pathing; never custom nav fallback.
 // </auto-generated>
 
 namespace AIRefactored.AI.Navigation
 {
-    using AIRefactored.Core;
-    using AIRefactored.Runtime;
     using BepInEx.Logging;
     using EFT;
     using UnityEngine;
 
     /// <summary>
-    /// Validates bot navigation state at runtime. If nav data is invalid or missing,
-    /// attempts fallback assignment or safely aborts further pathing logic.
-    /// If AIRefactored nav is disabled, immediately yields to vanilla Tarkov logic.
-    /// All logic is bulletproof and locally isolated.
+    /// Validates bot navigation state at runtime.
+    /// All logic uses only EFT's internal navigation via BotMover and PathControllerClass.
+    /// If navigation is invalid, lets vanilla EFT logic handle fallback.
+    /// Bulletproof: Locally isolated and never breaks stack.
     /// </summary>
     public static class BotNavValidator
     {
@@ -33,19 +31,13 @@ namespace AIRefactored.AI.Navigation
         #region Public API
 
         /// <summary>
-        /// Validates whether the bot has valid nav system backing and positioning.
-        /// If not, attempts fallback assignment or returns false.
-        /// If AIRefactored nav is disabled, lets vanilla handle navigation.
-        /// Bulletproof: locally isolated, never cascades or breaks stack.
+        /// Validates whether the bot has a valid internal navigation state.
+        /// Returns true if navigation is valid; false if vanilla EFT logic should take over.
         /// </summary>
         public static bool Validate(BotOwner botOwner, string context)
         {
             try
             {
-                // If AIRefactored nav is disabled, do nothing—vanilla logic takes over
-                if (NavPointRegistry.AIRefactoredNavDisabled)
-                    return false;
-
                 if (botOwner == null)
                 {
                     TryLogOnce("[BotNavValidator] ❌ Null BotOwner in context: " + context);
@@ -65,34 +57,27 @@ namespace AIRefactored.AI.Navigation
                     return false;
                 }
 
-                // Only act if registry is actually ready and usable
-                if (!NavPointRegistry.IsReady || NavPointRegistry.IsEmpty)
-                    return false;
-
-                Vector3 target = NavPointRegistry.GetClosestPosition(position);
-                if (!IsValidPosition(target) || target == Vector3.zero)
-                    return false;
-
-                // Only issue path move if the bot is not already moving (prevents AI-vs-vanilla thrash)
-                if (botOwner.Mover != null && !botOwner.Mover.IsMoving)
+                if (botOwner.Mover == null)
                 {
-                    try
-                    {
-                        botOwner.Mover.GoToPoint(
-                            target,
-                            slowAtTheEnd: true,
-                            reachDist: 1.0f,
-                            getUpWithCheck: false,
-                            mustHaveWay: true,
-                            onlyShortTrie: false,
-                            force: true);
-                    }
-                    catch
-                    {
-                        // If GoToPoint throws, fail gracefully (vanilla will handle)
-                    }
+                    TryLogOnce("[BotNavValidator] ❌ BotOwner has no Mover — context: " + context);
+                    return false;
                 }
 
+                var pathController = botOwner.Mover._pathController;
+                if (!IsPathValid(pathController))
+                {
+                    TryLogOnce("[BotNavValidator] ❌ No valid internal path — context: " + context);
+                    return false;
+                }
+
+                Vector3 target = pathController.LastTargetPoint(1.0f);
+                if (!IsValidPosition(target) || target == Vector3.zero)
+                {
+                    TryLogOnce("[BotNavValidator] ❌ PathController target is invalid — context: " + context);
+                    return false;
+                }
+
+                // Navigation is valid and up, let movement logic proceed
                 return true;
             }
             catch
@@ -114,6 +99,14 @@ namespace AIRefactored.AI.Navigation
                    !float.IsNaN(pos.z);
         }
 
+        private static bool IsPathValid(PathControllerClass pathController)
+        {
+            return pathController != null &&
+                   pathController.HavePath &&
+                   pathController.CurPath != null &&
+                   pathController.CurPath.Length > 0;
+        }
+
         private static void TryLogOnce(string msg)
         {
             try
@@ -127,7 +120,7 @@ namespace AIRefactored.AI.Navigation
             }
             catch
             {
-                // Do nothing—never allow log to break anything.
+                // Never allow log failure to break anything.
             }
         }
 

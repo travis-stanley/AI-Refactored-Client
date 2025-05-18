@@ -122,8 +122,8 @@ namespace AIRefactored.Runtime
 					!Application.isPlaying ||
 					!GameWorldHandler.IsInitialized ||
 					!GameWorldHandler.IsHost ||
-					!GameWorldHandler.IsReady() ||
-					NavPointRegistry.AIRefactoredNavDisabled
+					!GameWorldHandler.IsReady()
+
 				)
 				{
 					return;

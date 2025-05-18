@@ -13,6 +13,7 @@ namespace AIRefactored.AI.Missions.Subsystems
     using AIRefactored.AI.Core;
     using AIRefactored.AI.Groups;
     using AIRefactored.AI.Helpers;
+    using AIRefactored.AI.Navigation;
     using AIRefactored.AI.Optimization;
     using AIRefactored.Core;
     using AIRefactored.Pools;
@@ -211,12 +212,21 @@ namespace AIRefactored.AI.Missions.Subsystems
                     _fallbackAttempts++;
 
                     Vector3 dir = _bot.LookDirection;
-                    Vector3? fallback = HybridFallbackResolver.GetBestRetreatPoint(_bot, dir);
-                    if (fallback.HasValue && _bot.Mover != null)
+                    Vector3 target = _bot.Position - dir.normalized * 4f;
+                    if (!BotNavHelper.TryGetSafeTarget(_bot, out target))
+                        target = _bot.Position - dir.normalized * 4f;
+                    if (!IsValidTarget(target))
+                        target = _bot.Position;
+
+                    if (_bot.Mover != null)
                     {
                         Logger.LogDebug("[MissionEvaluator] " + (_bot.Profile?.Info?.Nickname ?? "Unknown") +
-                                        " fallback #" + _fallbackAttempts + " → " + fallback.Value);
-                        BotMovementHelper.SmoothMoveTo(_bot, fallback.Value);
+                                        " fallback #" + _fallbackAttempts + " → " + target);
+                        BotMovementHelper.SmoothMoveTo(_bot, target);
+                    }
+                    else
+                    {
+                        BotFallbackUtility.FallbackToEFTLogic(_bot);
                     }
                 }
             }
@@ -243,6 +253,14 @@ namespace AIRefactored.AI.Missions.Subsystems
             {
                 Logger.LogWarning("[MissionEvaluator] VO failed: " + ex.Message);
             }
+        }
+
+        private static bool IsValidTarget(Vector3 pos)
+        {
+            return pos != Vector3.zero &&
+                   !float.IsNaN(pos.x) &&
+                   !float.IsNaN(pos.y) &&
+                   !float.IsNaN(pos.z);
         }
 
         #endregion

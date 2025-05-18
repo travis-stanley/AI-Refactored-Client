@@ -219,7 +219,6 @@ namespace AIRefactored.Core
                     DeadBodyContainerCache.Clear();
                     HotspotRegistry.Clear();
                     LootRegistry.Clear();
-                    NavPointRegistry.Clear();
 
                     _isRecovering = false;
                     IsInitialized = false;

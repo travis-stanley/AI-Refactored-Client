@@ -48,7 +48,7 @@ namespace AIRefactored.Bootstrap
         #region Lifecycle
 
         /// <summary>
-        /// Begins world system initialization. Does NOT register navmesh or navpoints.
+        /// Begins world system initialization. Never registers navmesh or navpoints.
         /// Bulletproof: all exceptions contained, never cascades or breaks global mod state.
         /// </summary>
         public static void Begin(ManualLogSource logger, string mapId)
@@ -66,7 +66,7 @@ namespace AIRefactored.Bootstrap
                 _hasShutdownLogged = false;
                 Systems.Clear();
 
-                // Bulletproof global resets: never triggers navmesh/navpoint population here!
+                // Bulletproof global resets. NavMesh/NavPoint systems are now deprecated.
                 TrySafe(BotRecoveryService.Reset, "[WorldBootstrapper] BotRecoveryService.Reset() failed: ");
                 TrySafe(BotSpawnWatcherService.Reset, "[WorldBootstrapper] BotSpawnWatcherService.Reset() failed: ");
                 TrySafe(LootRuntimeWatcher.Reset, "[WorldBootstrapper] LootRuntimeWatcher.Reset() failed: ");
@@ -74,7 +74,7 @@ namespace AIRefactored.Bootstrap
                 TrySafe(DeadBodyContainerCache.Clear, "[WorldBootstrapper] DeadBodyContainerCache.Clear() failed: ");
                 TrySafe(LootRegistry.Clear, "[WorldBootstrapper] LootRegistry.Clear() failed: ");
                 TrySafe(HotspotRegistry.Clear, "[WorldBootstrapper] HotspotRegistry.Clear() failed: ");
-                TrySafe(NavPointRegistry.Clear, "[WorldBootstrapper] NavPointRegistry.Clear() failed: ");
+                //TrySafe(NavPointRegistry.Clear, "[WorldBootstrapper] NavPointRegistry.Clear() failed: "); // Removed: Custom navpoints are deprecated
 
                 // Only initialize HotspotRegistry if mapId is valid.
                 if (!string.IsNullOrEmpty(mapId))
@@ -86,7 +86,7 @@ namespace AIRefactored.Bootstrap
                     Logger.LogWarning("[WorldBootstrapper] Cannot initialize registries — mapId is invalid.");
                 }
 
-                // Register world systems (do not add navmesh/navpoint managers here)
+                // Register world systems (no navmesh/navpoint systems)
                 RegisterSystemSafe(new RaidLifecycleWatcher());
                 RegisterSystemSafe(new BotRecoveryService());
                 RegisterSystemSafe(new BotSpawnWatcherService());

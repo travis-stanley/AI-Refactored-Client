@@ -13,9 +13,6 @@ namespace AIRefactored.AI.Helpers
     using System.Collections.Generic;
     using AIRefactored.AI.Combat;
     using AIRefactored.AI.Core;
-    using AIRefactored.AI.Movement;
-    using AIRefactored.AI.Navigation;
-    using AIRefactored.Pools;
     using EFT;
     using UnityEngine;
 
@@ -57,21 +54,6 @@ namespace AIRefactored.AI.Helpers
             return point != null && point.CoverLevel == CoverLevel.Stay;
         }
 
-        public static bool IsLowCover(NavPointData point)
-        {
-            return point.IsCover && point.ElevationBand == "Mid";
-        }
-
-        public static bool IsProneCover(NavPointData point)
-        {
-            return point.IsCover && point.ElevationBand == "Low";
-        }
-
-        public static bool IsStandingCover(NavPointData point)
-        {
-            return point.IsCover && point.ElevationBand == "High";
-        }
-
         #endregion
 
         #region Cover Memory Usage
@@ -79,13 +61,6 @@ namespace AIRefactored.AI.Helpers
         public static void MarkUsed(CustomNavigationPoint point)
         {
             if (point == null)
-                return;
-            MarkUsed(point.Position);
-        }
-
-        public static void MarkUsed(NavPointData point)
-        {
-            if (!IsValidPos(point.Position))
                 return;
             MarkUsed(point.Position);
         }
@@ -111,11 +86,6 @@ namespace AIRefactored.AI.Helpers
             return point != null && WasRecentlyUsed(point.Position);
         }
 
-        public static bool WasRecentlyUsed(NavPointData point)
-        {
-            return WasRecentlyUsed(point.Position);
-        }
-
         public static bool WasRecentlyUsed(Vector3 position)
         {
             try
@@ -134,46 +104,40 @@ namespace AIRefactored.AI.Helpers
         #region Pose Application
 
         /// <summary>
-        /// Sets stance based on nearby cover—never applies if NavPointRegistry is not ready, empty, or disabled.
+        /// Sets stance based on nearby cover—EFT-native only. No registry.
         /// </summary>
         public static void TrySetStanceFromNearbyCover(BotComponentCache cache, Vector3 position)
         {
             if (cache?.PoseController == null)
                 return;
 
-            if (!NavPointRegistry.IsReady || NavPointRegistry.IsEmpty || NavPointRegistry.AIRefactoredNavDisabled)
-                return;
-
+            // Only supports EFT native navigation: checks for CustomNavigationPoints nearby
             try
             {
-                BotPoseController controller = cache.PoseController;
-                List<NavPointData> points = NavPointRegistry.QueryNearby(position, 4f, null);
-
-                for (int i = 0; i < points.Count; i++)
+                // Use EFT internal: check for native CustomNavigationPoint within a small radius
+                Collider[] colliders = Physics.OverlapSphere(position, 4f);
+                for (int i = 0; i < colliders.Length; i++)
                 {
-                    NavPointData point = points[i];
-                    if (!point.IsCover)
+                    CustomNavigationPoint point = colliders[i].GetComponent<CustomNavigationPoint>();
+                    if (point == null || !IsValidPos(point.Position))
                         continue;
-
                     if ((point.Position - position).sqrMagnitude > MaxValidDistanceSqr)
                         continue;
-
                     if (IsProneCover(point))
                     {
-                        controller.SetProne(true);
+                        cache.PoseController.SetProne(true);
                         return;
                     }
-
                     if (IsLowCover(point))
                     {
-                        controller.SetCrouch(true);
+                        cache.PoseController.SetCrouch(true);
                         return;
                     }
                 }
             }
             catch
             {
-                // Never break bot logic if registry or posture fails
+                // Never break bot logic if posture fails
             }
         }
 
@@ -184,30 +148,6 @@ namespace AIRefactored.AI.Helpers
         public static float Score(CustomNavigationPoint point, Vector3 botPos, Vector3 threatPos)
         {
             if (point == null) return 0f;
-            try
-            {
-                float distBot = Vector3.Distance(botPos, point.Position);
-                float distThreat = Vector3.Distance(threatPos, point.Position);
-                float angle = Vector3.Angle(threatPos - point.Position, botPos - point.Position);
-
-                float bonus = 0.5f;
-                if (IsProneCover(point)) bonus = 1.25f;
-                else if (IsLowCover(point)) bonus = 1.0f;
-                else if (IsStandingCover(point)) bonus = 0.85f;
-
-                float threatFactor = Mathf.Clamp01(distThreat / 20f);
-                float angleFactor = Mathf.Clamp01(angle / 180f);
-
-                return (bonus + threatFactor + angleFactor) / (1f + distBot * 0.15f);
-            }
-            catch
-            {
-                return 0f;
-            }
-        }
-
-        public static float Score(NavPointData point, Vector3 botPos, Vector3 threatPos)
-        {
             try
             {
                 float distBot = Vector3.Distance(botPos, point.Position);

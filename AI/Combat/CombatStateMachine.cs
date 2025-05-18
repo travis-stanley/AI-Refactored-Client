@@ -15,7 +15,6 @@ namespace AIRefactored.AI.Combat
     using AIRefactored.AI.Groups;
     using AIRefactored.AI.Memory;
     using AIRefactored.AI.Navigation;
-    using AIRefactored.AI.Optimization;
     using AIRefactored.Core;
     using AIRefactored.Pools;
     using AIRefactored.Runtime;
@@ -291,46 +290,28 @@ namespace AIRefactored.AI.Combat
                 if (_fallback.HasValidFallbackPath())
                     return;
 
-                if (_cache.Pathing == null)
+                Vector3 retreatDir = _bot.LookDirection.sqrMagnitude > 0.01f
+                    ? -_bot.LookDirection.normalized
+                    : Vector3.back;
+
+                Vector3 fallback;
+                if (!BotNavHelper.TryGetSafeTarget(_bot, out fallback) || !IsVectorValid(fallback))
                 {
-                    BotFallbackUtility.Trigger(this, _bot, "[CombatStateMachine] Pathing system is null — fallback skipped.");
+                    BotFallbackUtility.FallbackToEFTLogic(_bot);
+                    _isFallbackMode = true;
                     return;
                 }
 
-                Vector3 lookDir = _bot.LookDirection;
-                Vector3 retreatDir = lookDir.sqrMagnitude > 0.01f ? -lookDir.normalized : Vector3.back;
+                // Assign fallback as a single-point path for legacy compatibility
+                var path = TempListPool.Rent<Vector3>();
+                path.Clear();
+                path.Add(fallback);
 
-                List<Vector3> path = TempListPool.Rent<Vector3>();
-                try
-                {
-                    path.Clear();
-                    List<Vector3> generated = BotCoverRetreatPlanner.GetCoverRetreatPath(_bot, retreatDir, _cache.Pathing);
-                    for (int i = 0; i < generated.Count; i++)
-                        path.Add(generated[i]);
+                _fallback.SetFallbackPath(path);
+                _fallback.SetFallbackTarget(fallback);
+                TrySetStanceFromNearbyCover(fallback);
 
-                    if (path.Count > 0)
-                    {
-                        Vector3 final = path[path.Count - 1];
-                        _fallback.SetFallbackPath(path);
-                        _fallback.SetFallbackTarget(final);
-                        TrySetStanceFromNearbyCover(final);
-                    }
-                    else
-                    {
-                        // Fallback to bulletproof nav fallback helper
-                        Vector3 fallback = EFTPathFallbackHelper.GetFallbackNavPoint(_bot.Position);
-                        _fallback.SetFallbackTarget(fallback);
-                        TrySetStanceFromNearbyCover(fallback);
-                    }
-                }
-                catch (Exception ex)
-                {
-                    BotFallbackUtility.Trigger(this, _bot, "[CombatStateMachine] Exception in fallback planner.", ex);
-                }
-                finally
-                {
-                    TempListPool.Return(path);
-                }
+                TempListPool.Return(path);
             }
             catch (Exception ex)
             {
@@ -412,6 +393,11 @@ namespace AIRefactored.AI.Combat
         private void SetLastStateChangeTime(CombatState state, float time)
         {
             _lastStateChangeTime = time;
+        }
+
+        private static bool IsVectorValid(Vector3 v)
+        {
+            return !float.IsNaN(v.x) && !float.IsNaN(v.y) && !float.IsNaN(v.z);
         }
 
         #endregion

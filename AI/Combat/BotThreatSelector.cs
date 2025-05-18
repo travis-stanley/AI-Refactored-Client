@@ -289,15 +289,16 @@ namespace AIRefactored.AI.Combat
                     _cache.LastShotTracker?.RegisterHit(id);
                 }
 
-                // Use hardened fallback nav for safety and bulletproof logic.
+                // Use only internal EFT nav for fallback movement
                 if (_cache.Movement != null && !_cache.Bot.IsDead && _cache.Bot.Mover != null && !_cache.Bot.Mover.IsMoving)
                 {
                     Vector3 fallback;
-                    if (!EFTPathFallbackHelper.TryGetSafeTarget(_cache.Bot, out fallback))
-                        fallback = EFTPathFallbackHelper.GetFallbackNavPoint(_cache.Bot.Position);
-                    if (!IsVectorValid(fallback))
-                        fallback = EFTPathFallbackHelper.GetFallbackNavPoint(_cache.Bot.Position);
-
+                    if (!BotNavHelper.TryGetSafeTarget(_cache.Bot, out fallback) || !IsVectorValid(fallback))
+                    {
+                        BotFallbackUtility.FallbackToEFTLogic(_cache.Bot);
+                        _isFallbackMode = true;
+                        return;
+                    }
                     _cache.Bot.Mover.GoToPoint(fallback, true, 1.0f);
                 }
             }

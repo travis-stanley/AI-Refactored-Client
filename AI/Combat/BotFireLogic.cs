@@ -13,7 +13,6 @@ namespace AIRefactored.AI.Combat
     using AIRefactored.AI.Core;
     using AIRefactored.AI.Helpers;
     using AIRefactored.AI.Navigation;
-    using AIRefactored.AI.Optimization;
     using AIRefactored.Core;
     using AIRefactored.Pools;
     using EFT;
@@ -33,9 +32,7 @@ namespace AIRefactored.AI.Combat
         #region Constants
 
         private const float MaxAimPitch = 70f;
-
         private static readonly EBodyPart[] AllBodyParts = (EBodyPart[])Enum.GetValues(typeof(EBodyPart));
-
         private static readonly Dictionary<string, float> WeaponTypeRanges = new Dictionary<string, float>(StringComparer.OrdinalIgnoreCase)
         {
             { "sniper", 180f },
@@ -53,7 +50,6 @@ namespace AIRefactored.AI.Combat
 
         private readonly BotOwner _bot;
         private readonly BotComponentCache _cache;
-
         private Vector3 _idleLookDirection = Vector3.forward;
         private float _lastLookAroundTime;
         private float _nextDecisionTime;
@@ -125,15 +121,17 @@ namespace AIRefactored.AI.Combat
                 {
                     if (profile.ChaosFactor > 0f && Random.value < profile.ChaosFactor)
                     {
-                        // Move to aimPosition using bulletproof fallback helpers
-                        if (!BotNavValidator.Validate(_bot, "FireLogicAdvance"))
+                        // Move to aimPosition using only vanilla EFT navigation
+                        if (!BotNavHelper.TryGetSafeTarget(_bot, out aimPosition))
                         {
-                            if (!EFTPathFallbackHelper.TryGetSafeTarget(_bot, out aimPosition))
-                                aimPosition = EFTPathFallbackHelper.GetFallbackNavPoint(_bot.Position);
+                            BotFallbackUtility.FallbackToEFTLogic(_bot);
+                            return;
                         }
                         if (!IsVectorValid(aimPosition))
-                            aimPosition = EFTPathFallbackHelper.GetFallbackNavPoint(_bot.Position);
-
+                        {
+                            BotFallbackUtility.FallbackToEFTLogic(_bot);
+                            return;
+                        }
                         BotMovementHelper.SmoothMoveTo(_bot, aimPosition, false, profile.Cohesion);
                     }
                     return;
@@ -409,24 +407,23 @@ namespace AIRefactored.AI.Combat
         {
             try
             {
-                if (_cache == null || _cache.Pathing == null || _bot == null)
+                if (_bot == null)
                     return;
 
-                List<Vector3> retreatPath = BotCoverRetreatPlanner.GetCoverRetreatPath(_bot, _bot.LookDirection.normalized, _cache.Pathing);
-
-                Vector3 fallback = (_bot != null) ? _bot.Position : Vector3.zero;
-                if (retreatPath != null && retreatPath.Count >= 2)
+                Vector3 fallback = _bot.Position;
+                // Only use EFT internal navigation helpers for fallback
+                if (!BotNavHelper.TryGetSafeTarget(_bot, out fallback))
                 {
-                    fallback = retreatPath[retreatPath.Count - 1];
-                }
-
-                if (!BotNavValidator.Validate(_bot, "BotFireLogic::TriggerFallback"))
-                {
-                    if (!EFTPathFallbackHelper.TryGetSafeTarget(_bot, out fallback))
-                        fallback = EFTPathFallbackHelper.GetFallbackNavPoint(_bot.Position);
+                    BotFallbackUtility.FallbackToEFTLogic(_bot);
+                    _isFallbackMode = true;
+                    return;
                 }
                 if (!IsVectorValid(fallback))
-                    fallback = EFTPathFallbackHelper.GetFallbackNavPoint(_bot.Position);
+                {
+                    BotFallbackUtility.FallbackToEFTLogic(_bot);
+                    _isFallbackMode = true;
+                    return;
+                }
 
                 if (_bot.Mover != null)
                 {

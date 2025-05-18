@@ -10,7 +10,6 @@
 namespace AIRefactored.AI.Movement
 {
     using System;
-    using System.Collections.Generic;
     using AIRefactored.AI.Core;
     using AIRefactored.AI.Helpers;
     using AIRefactored.AI.Navigation;
@@ -24,7 +23,7 @@ namespace AIRefactored.AI.Movement
 
     /// <summary>
     /// Controls bot movement, corner-based path targeting, path inertia, flanking, and stuck recovery.
-    /// All navigation, target, and fallback logic routed through EFTPathFallbackHelper.
+    /// All navigation, target, and fallback logic routed through BotNavHelper and pure EFT navigation.
     /// Bulletproof: All failures locally contained and revert this bot to vanilla AI; cannot NRE or break global logic.
     /// </summary>
     public sealed class BotMovementController
@@ -66,9 +65,6 @@ namespace AIRefactored.AI.Movement
 
         #region Public API
 
-        /// <summary>
-        /// Initializes this movement controller with the owning bot and cache.
-        /// </summary>
         public void Initialize(BotComponentCache cache)
         {
             if (cache == null || cache.Bot == null || cache.PersonalityProfile == null)
@@ -84,28 +80,12 @@ namespace AIRefactored.AI.Movement
             _nextFlankAllowed = Time.time;
         }
 
-        /// <summary>
-        /// Ticks bot movement, tactical logic, and nav recovery every frame.
-        /// Bulletproof; always falls back to vanilla on local failure.
-        /// </summary>
         public void Tick(float deltaTime)
         {
             try
             {
                 if (_bot == null || _cache == null || _bot.IsDead || _bot.GetPlayer == null || !_bot.GetPlayer.IsAI)
                     return;
-
-                if (NavPointRegistry.AIRefactoredNavDisabled)
-                {
-                    BotFallbackUtility.FallbackToEFTLogic(_bot);
-                    return;
-                }
-
-                if (!NavMeshStatus.IsReady && !_inLootingMode)
-                {
-                    if (!NavPointRegistry.IsEmpty)
-                        return;
-                }
 
                 _jump.Tick(deltaTime);
 
@@ -123,8 +103,9 @@ namespace AIRefactored.AI.Movement
                 }
 
                 Vector3 target;
-                if (!EFTPathFallbackHelper.TryGetSafeTarget(_bot, out target) || !IsValidTarget(target))
+                if (!BotNavHelper.TryGetSafeTarget(_bot, out target) || !IsValidTarget(target))
                 {
+                    // Always fallback to vanilla on missing/faulty nav
                     BotFallbackUtility.FallbackToEFTLogic(_bot);
                     return;
                 }
@@ -142,7 +123,7 @@ namespace AIRefactored.AI.Movement
                     TryFlankAroundEnemy();
                 }
 
-                DetectStuck(deltaTime);
+                DetectStuck(deltaTime, target);
             }
             catch (Exception ex)
             {
@@ -158,9 +139,6 @@ namespace AIRefactored.AI.Movement
 
         #region Movement, Look, Combat, Flanking, Stuck Recovery
 
-        /// <summary>
-        /// Applies movement inertia and realistic smoothing to bot movement toward target.
-        /// </summary>
         private void ApplyInertia(Vector3 target, float deltaTime)
         {
             try
@@ -189,9 +167,6 @@ namespace AIRefactored.AI.Movement
             }
         }
 
-        /// <summary>
-        /// Smoothly turns the bot's look/aim toward the target position.
-        /// </summary>
         private void SmoothLookTo(Vector3 target, float deltaTime)
         {
             try
@@ -215,9 +190,6 @@ namespace AIRefactored.AI.Movement
             }
         }
 
-        /// <summary>
-        /// Scans ahead for vision blockers or tactical callouts.
-        /// </summary>
         private void ScanAhead()
         {
             try
@@ -238,9 +210,6 @@ namespace AIRefactored.AI.Movement
             }
         }
 
-        /// <summary>
-        /// Performs human-style strafe/side movement in combat, including collision avoidance.
-        /// </summary>
         private void CombatStrafe(float deltaTime)
         {
             try
@@ -279,9 +248,6 @@ namespace AIRefactored.AI.Movement
             }
         }
 
-        /// <summary>
-        /// Attempts a tactical lean in combat, considering cover and nearby obstacles.
-        /// </summary>
         private void TryCombatLean()
         {
             try
@@ -330,9 +296,6 @@ namespace AIRefactored.AI.Movement
             }
         }
 
-        /// <summary>
-        /// Attempts a tactical flank, using best-segment evaluation from registry and fallback.
-        /// </summary>
         private void TryFlankAroundEnemy()
         {
             try
@@ -346,14 +309,13 @@ namespace AIRefactored.AI.Movement
 
                 if (distance < required)
                 {
-                    List<Vector3> flankSegment;
-                    if (EFTPathFallbackHelper.TryGetBestFlankSegment(_bot, new List<Vector3> { _bot.Memory.GoalEnemy.CurrPosition }, out flankSegment))
+                    // No registry or custom pathing; attempt a side step along the native EFT path
+                    Vector3[] path = BotNavHelper.GetCurrentPathPoints(_bot, 6);
+                    if (path != null && path.Length >= 2)
                     {
-                        if (flankSegment != null && flankSegment.Count > 0)
-                        {
-                            BotMovementHelper.SmoothMoveTo(_bot, flankSegment[flankSegment.Count - 1], false);
-                            _nextFlankAllowed = Time.time + FlankCooldown;
-                        }
+                        Vector3 flankTarget = path[Math.Min(1, path.Length - 1)];
+                        BotMovementHelper.SmoothMoveTo(_bot, flankTarget, false);
+                        _nextFlankAllowed = Time.time + FlankCooldown;
                     }
                 }
             }
@@ -363,29 +325,12 @@ namespace AIRefactored.AI.Movement
             }
         }
 
-        /// <summary>
-        /// Detects if the bot is stuck and recovers using fallback navigation or a safe point.
-        /// </summary>
-        private void DetectStuck(float deltaTime)
+        private void DetectStuck(float deltaTime, Vector3 currentTarget)
         {
             try
             {
                 if (_inLootingMode || _bot.Mover == null)
                     return;
-
-                if (NavPointRegistry.AIRefactoredNavDisabled)
-                    return;
-
-                Vector3 target;
-                if (!EFTPathFallbackHelper.TryGetSafeTarget(_bot, out target) || !ValidateNavMeshTarget(target))
-                {
-                    Vector3 safe = EFTPathFallbackHelper.GetFallbackNavPoint(_bot.Position);
-                    if (IsValidTarget(safe))
-                    {
-                        BotMovementHelper.SmoothMoveTo(_bot, safe, true);
-                    }
-                    return;
-                }
 
                 Vector3 velocity = _bot.GetPlayer?.Velocity ?? Vector3.zero;
                 if (velocity.sqrMagnitude < StuckThreshold * StuckThreshold)
@@ -393,19 +338,11 @@ namespace AIRefactored.AI.Movement
                     _stuckTimer += deltaTime;
                     if (_stuckTimer > MaxStuckDuration)
                     {
-                        Vector3[] buffer = TempVector3Pool.Rent(1);
-                        try
+                        Vector3 fallback = _bot.Position + UnityEngine.Random.insideUnitSphere * 1.0f;
+                        fallback.y = _bot.Position.y;
+                        if (IsValidTarget(fallback))
                         {
-                            buffer[0] = target + UnityEngine.Random.insideUnitSphere * 1.0f;
-                            buffer[0].y = target.y;
-                            if (IsValidTarget(buffer[0]))
-                            {
-                                BotMovementHelper.SmoothMoveTo(_bot, buffer[0], false);
-                            }
-                        }
-                        finally
-                        {
-                            TempVector3Pool.Return(buffer);
+                            BotMovementHelper.SmoothMoveTo(_bot, fallback, true);
                         }
                         _stuckTimer = 0f;
                     }
@@ -421,34 +358,6 @@ namespace AIRefactored.AI.Movement
             }
         }
 
-        /// <summary>
-        /// Validates a navmesh target point.
-        /// </summary>
-        private bool ValidateNavMeshTarget(Vector3 pos)
-        {
-            try
-            {
-                if (!IsValidTarget(pos))
-                    return false;
-
-                if (!BotNavValidator.Validate(_bot, "NavTargetValidation"))
-                    return false;
-
-                if (NavMesh.SamplePosition(pos, out NavMeshHit hit, 1.5f, NavMesh.AllAreas))
-                {
-                    return (hit.position - pos).sqrMagnitude < 1.0f;
-                }
-            }
-            catch (Exception ex)
-            {
-                Logger.LogError($"[BotMovementController] ValidateNavMeshTarget failed: {ex}");
-            }
-            return false;
-        }
-
-        /// <summary>
-        /// Validates that a target position is not NaN/invalid.
-        /// </summary>
         private bool IsValidTarget(Vector3 pos)
         {
             return pos != Vector3.zero && !float.IsNaN(pos.x) && !float.IsNaN(pos.y) && !float.IsNaN(pos.z);

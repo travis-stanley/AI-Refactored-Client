@@ -13,7 +13,6 @@ namespace AIRefactored.AI.Combat
     using AIRefactored.AI.Helpers;
     using AIRefactored.AI.Memory;
     using AIRefactored.AI.Navigation;
-    using AIRefactored.AI.Optimization;
     using AIRefactored.Core;
     using EFT;
     using EFT.HealthSystem;
@@ -232,23 +231,14 @@ namespace AIRefactored.AI.Combat
 
                 float cohesion = _cache.AIRefactoredBotOwner?.PersonalityProfile?.Cohesion ?? 1f;
 
-                // Robust: always get safe fallback point using EFTPathFallbackHelper
+                // Native fallback: only use EFT navigation for panic retreat
                 Vector3 fallback = _bot.Position + retreatDir.normalized * 8f;
-                if (_cache.Pathing != null)
+                if (!BotNavHelper.TryGetSafeTarget(_bot, out fallback) || !IsVectorValid(fallback))
                 {
-                    var path = BotCoverRetreatPlanner.GetCoverRetreatPath(_bot, retreatDir, _cache.Pathing);
-                    if (path != null && path.Count > 0)
-                    {
-                        fallback = (Vector3.Distance(path[0], _bot.Position) < 1f && path.Count > 1) ? path[1] : path[0];
-                    }
+                    BotFallbackUtility.FallbackToEFTLogic(_bot);
+                    _isFallbackMode = true;
+                    return;
                 }
-                if (!BotNavValidator.Validate(_bot, "BotPanicHandler::TryStartPanic"))
-                {
-                    if (!EFTPathFallbackHelper.TryGetSafeTarget(_bot, out fallback))
-                        fallback = EFTPathFallbackHelper.GetFallbackNavPoint(_bot.Position);
-                }
-                if (!IsVectorValid(fallback))
-                    fallback = EFTPathFallbackHelper.GetFallbackNavPoint(_bot.Position);
 
                 if (_bot.Mover != null)
                 {

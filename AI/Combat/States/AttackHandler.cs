@@ -127,28 +127,14 @@ namespace AIRefactored.AI.Combat.States
                     _lastTargetPosition = currentTargetPos;
                     _hasLastTarget = true;
 
-                    Vector3 destination = (_cache.SquadPath != null)
-                        ? _cache.SquadPath.ApplyOffsetTo(currentTargetPos)
-                        : currentTargetPos;
+                    Vector3 destination = currentTargetPos;
 
-                    try
+                    // Only use vanilla EFT nav for all fallback and validation.
+                    if (!BotNavHelper.TryGetSafeTarget(_bot, out destination) || !IsValidTarget(destination))
                     {
-                        // Use EFTPathFallbackHelper for bulletproof movement target
-                        if (!BotNavValidator.Validate(_bot, "AttackHandlerTarget"))
-                        {
-                            if (!EFTPathFallbackHelper.TryGetSafeTarget(_bot, out destination))
-                                destination = EFTPathFallbackHelper.GetFallbackNavPoint(_bot.Position);
-                        }
-                    }
-                    catch (Exception ex)
-                    {
-                        BotFallbackUtility.Trigger(this, _bot, "BotNavValidator/EFTPathFallbackHelper exception.", ex);
-                        destination = EFTPathFallbackHelper.GetFallbackNavPoint(_bot.Position);
-                    }
-
-                    if (!IsValidTarget(destination))
-                    {
-                        destination = EFTPathFallbackHelper.GetFallbackNavPoint(_bot.Position);
+                        BotFallbackUtility.FallbackToEFTLogic(_bot);
+                        EnterFallback("BotNavHelper could not resolve valid movement target.");
+                        return;
                     }
 
                     if (_bot.Mover != null)
@@ -167,6 +153,7 @@ namespace AIRefactored.AI.Combat.States
                     else
                     {
                         EnterFallback("BotMover missing or not ready. Falling back to EFT AI.");
+                        BotFallbackUtility.FallbackToEFTLogic(_bot);
                     }
                 }
             }

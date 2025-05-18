@@ -104,7 +104,7 @@ namespace AIRefactored.AI.Combat.States
         }
 
         /// <summary>
-        /// Advances the bot toward last known enemy position with squad offset and cover-aware stance.
+        /// Advances the bot toward last known enemy position with squad offset.
         /// </summary>
         public void Tick()
         {
@@ -121,27 +121,13 @@ namespace AIRefactored.AI.Combat.States
                     ? _cache.SquadPath.ApplyOffsetTo(enemyPos)
                     : enemyPos;
 
-                if (!IsValid(destination))
-                    destination = EFTPathFallbackHelper.GetFallbackNavPoint(_bot.Position);
-                else
+                // Native EFT navigation only: use BotNavHelper, fallback to vanilla if failed.
+                if (!IsValid(destination) || !BotNavHelper.TryGetSafeTarget(_bot, out destination) || !IsValid(destination))
                 {
-                    try
-                    {
-                        if (!BotNavValidator.Validate(_bot, "EngageHandlerDestination"))
-                        {
-                            if (!EFTPathFallbackHelper.TryGetSafeTarget(_bot, out destination))
-                                destination = EFTPathFallbackHelper.GetFallbackNavPoint(_bot.Position);
-                        }
-                    }
-                    catch (Exception ex)
-                    {
-                        BotFallbackUtility.Trigger(this, _bot, "NavValidator/EFTPathFallbackHelper exception in Tick.", ex);
-                        destination = EFTPathFallbackHelper.GetFallbackNavPoint(_bot.Position);
-                    }
+                    BotFallbackUtility.FallbackToEFTLogic(_bot);
+                    _isFallbackMode = true;
+                    return;
                 }
-
-                if (!IsValid(destination))
-                    destination = EFTPathFallbackHelper.GetFallbackNavPoint(_bot.Position);
 
                 if (_bot.Mover != null)
                 {
@@ -162,12 +148,14 @@ namespace AIRefactored.AI.Combat.States
                 {
                     BotFallbackUtility.Trigger(this, _bot, "BotMover missing. Fallback to EFT AI.");
                     _isFallbackMode = true;
+                    BotFallbackUtility.FallbackToEFTLogic(_bot);
                 }
             }
             catch (Exception ex)
             {
                 BotFallbackUtility.Trigger(this, _bot, "General exception in Tick.", ex);
                 _isFallbackMode = true;
+                BotFallbackUtility.FallbackToEFTLogic(_bot);
             }
         }
 
@@ -196,17 +184,11 @@ namespace AIRefactored.AI.Combat.States
 
         #region Private Methods
 
-        /// <summary>
-        /// Checks whether bot is in valid state to perform combat operations.
-        /// </summary>
         private bool IsCombatCapable()
         {
             return _cache != null && !_cache.IsFallbackMode && _bot != null && _cache.Combat != null;
         }
 
-        /// <summary>
-        /// Attempts to retrieve a valid last known enemy position.
-        /// </summary>
         private bool TryGetLastKnownEnemy(out Vector3 result)
         {
             result = (_cache != null && _cache.Combat != null) ? _cache.Combat.LastKnownEnemyPos : Vector3.zero;
@@ -216,17 +198,11 @@ namespace AIRefactored.AI.Combat.States
                    !float.IsNaN(result.z);
         }
 
-        /// <summary>
-        /// Returns true if the enemy position is within range to attack.
-        /// </summary>
         private bool IsWithinRange(Vector3 enemyPos)
         {
             return Vector3.SqrMagnitude(_bot.Position - enemyPos) < (_fallbackRange * _fallbackRange);
         }
 
-        /// <summary>
-        /// Validates that a position contains finite and usable coordinates.
-        /// </summary>
         private static bool IsValid(Vector3 pos)
         {
             return !float.IsNaN(pos.x) && !float.IsNaN(pos.y) && !float.IsNaN(pos.z);

@@ -34,11 +34,6 @@ namespace AIRefactored.AI.Core
 
         #region Public API
 
-        /// <summary>
-        /// Returns the cache for a bot if it exists; otherwise creates and registers a new one.
-        /// If bot/profile is invalid, returns null (no fallback), and caller must retry next tick.
-        /// Ensures AIRefactoredBotOwner is always constructed and wired before cache is returned.
-        /// </summary>
         public static BotComponentCache GetOrCreate(BotOwner bot)
         {
             if (!IsFullyValidBot(bot))
@@ -52,7 +47,7 @@ namespace AIRefactored.AI.Core
             {
                 if (CacheMap.TryGetValue(id, out var existing))
                 {
-                    EnsureOwnerAssigned(existing, bot, id);
+                    EnsureOwnerAssigned(existing, id);
                     return existing;
                 }
 
@@ -61,20 +56,16 @@ namespace AIRefactored.AI.Core
                     var cache = new BotComponentCache();
                     cache.Initialize(bot);
 
-                    if (!BotRegistry.TryGetRefactoredOwner(id, out var owner) || owner == null)
-                    {
-                        owner = new AIRefactoredBotOwner();
-                        owner.Initialize(bot);
-                        BotRegistry.RegisterOwner(id, owner);
-                        Logger.LogDebug($"[BotComponentCacheRegistry] Created new AIRefactoredBotOwner for: {id}");
-                    }
+                    var owner = new AIRefactoredBotOwner();
+                    BotRegistry.RegisterOwner(id, owner);
 
                     cache.SetOwner(owner);
+                    owner.Initialize(bot); // Now safe — uses TryGet internally, not GetOrCreate
 
                     if (cache.Bot == null || cache.AIRefactoredBotOwner == null)
                     {
                         Logger.LogWarning($"[BotComponentCacheRegistry] Null Bot or Owner in cache after init! For {id}");
-                        return null; // Will be retried on next tick
+                        return null;
                     }
 
                     CacheMap[id] = cache;
@@ -89,9 +80,6 @@ namespace AIRefactored.AI.Core
             }
         }
 
-        /// <summary>
-        /// Gets the cache for a profile ID if it exists. If not, returns false and null.
-        /// </summary>
         public static bool TryGet(string profileId, out BotComponentCache cache)
         {
             if (string.IsNullOrEmpty(profileId))
@@ -106,9 +94,6 @@ namespace AIRefactored.AI.Core
             }
         }
 
-        /// <summary>
-        /// Removes the cache for the specified bot, if present.
-        /// </summary>
         public static void Remove(BotOwner bot)
         {
             if (bot?.Profile?.Id == null)
@@ -124,9 +109,6 @@ namespace AIRefactored.AI.Core
             }
         }
 
-        /// <summary>
-        /// Clears all bot caches.
-        /// </summary>
         public static void ClearAll()
         {
             lock (Lock)
@@ -140,35 +122,23 @@ namespace AIRefactored.AI.Core
 
         #region Private Helpers
 
-        /// <summary>
-        /// Returns true if bot, Profile, Info, and Id are all non-null/non-empty.
-        /// </summary>
         private static bool IsFullyValidBot(BotOwner bot)
         {
             return bot?.Profile?.Info != null && !string.IsNullOrEmpty(bot.Profile.Id);
         }
 
-        /// <summary>
-        /// Ensures that a BotComponentCache has a valid AIRefactoredBotOwner assigned before use.
-        /// </summary>
-        private static void EnsureOwnerAssigned(BotComponentCache cache, BotOwner bot, string id)
+        private static void EnsureOwnerAssigned(BotComponentCache cache, string id)
         {
-            if (cache == null)
-                return;
-            if (cache.AIRefactoredBotOwner != null)
+            if (cache == null || cache.AIRefactoredBotOwner != null)
                 return;
 
             try
             {
-                if (!BotRegistry.TryGetRefactoredOwner(id, out var owner) || owner == null)
+                if (BotRegistry.TryGetRefactoredOwner(id, out var owner) && owner != null)
                 {
-                    owner = new AIRefactoredBotOwner();
-                    owner.Initialize(bot);
-                    BotRegistry.RegisterOwner(id, owner);
-                    Logger.LogDebug($"[BotComponentCacheRegistry] [Owner Assign] Created new owner for {id} during EnsureOwnerAssigned.");
+                    cache.SetOwner(owner);
+                    Logger.LogDebug($"[BotComponentCacheRegistry] [Owner Assign] Wired existing owner for {id}.");
                 }
-
-                cache.SetOwner(owner);
             }
             catch (Exception ex)
             {

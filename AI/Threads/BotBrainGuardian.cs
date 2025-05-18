@@ -3,7 +3,8 @@
 //   Licensed under the MIT License. See LICENSE in the repository root for more information.
 //
 //   THIS FILE IS SYSTEMATICALLY MANAGED.
-//   Failures in AIRefactored logic must always trigger safe fallback to EFT base AI.
+//   All failures are locally logged; no subsystem can trigger fallback to vanilla EFT AI.
+//   Please follow strict StyleCop, ReSharper, and AI-Refactored code standards for all modifications.
 // </auto-generated>
 
 namespace AIRefactored.AI.Threads
@@ -35,29 +36,21 @@ namespace AIRefactored.AI.Threads
             try
             {
                 if (botGameObject == null || !GameWorldHandler.IsLocalHost())
-                {
                     return;
-                }
 
                 MonoBehaviour[] components = botGameObject.GetComponents<MonoBehaviour>();
                 if (components == null || components.Length == 0)
-                {
                     return;
-                }
 
                 for (int i = 0; i < components.Length; i++)
                 {
                     MonoBehaviour component = components[i];
                     if (component == null)
-                    {
                         continue;
-                    }
 
                     Type type = component.GetType();
                     if (type == typeof(BotBrain) || type == typeof(BotComponentCache))
-                    {
                         continue;
-                    }
 
                     string name = type.Name.ToLowerInvariant();
                     string ns = type.Namespace != null ? type.Namespace.ToLowerInvariant() : string.Empty;
@@ -65,9 +58,7 @@ namespace AIRefactored.AI.Threads
                     try
                     {
                         if (IsUnityOrEftSafe(name, ns))
-                        {
                             continue;
-                        }
 
                         if (IsConflictingBrain(name, ns) || IsHarmonyPatched(type) || HasSuspiciousMethods(type))
                         {
@@ -138,9 +129,7 @@ namespace AIRefactored.AI.Threads
             {
                 MethodInfo method = type.GetMethod("Update", BindingFlags.Instance | BindingFlags.Public | BindingFlags.NonPublic);
                 if (method == null)
-                {
                     return false;
-                }
 
                 Patches patch = Harmony.GetPatchInfo(method);
                 return patch != null && patch.Owners != null && patch.Owners.Count > 0;
@@ -162,9 +151,7 @@ namespace AIRefactored.AI.Threads
                 {
                     MethodInfo method = type.GetMethod(methods[i], BindingFlags.Instance | BindingFlags.Public | BindingFlags.NonPublic);
                     if (method != null && method.DeclaringType != typeof(MonoBehaviour))
-                    {
                         return true;
-                    }
                 }
                 catch (Exception ex)
                 {

@@ -3,7 +3,7 @@
 //   Licensed under the MIT License. See LICENSE in the repository root for more information.
 //
 //   THIS FILE IS SYSTEMATICALLY MANAGED.
-//   All polling, validation, and injection is strictly localized. No fallback lockouts, always retries.
+//   All polling, validation, and injection is strictly localized. No fallback lockouts, always retries, atomic cache/owner/brain enforcement.
 // </auto-generated>
 
 namespace AIRefactored.Runtime
@@ -137,10 +137,31 @@ namespace AIRefactored.Runtime
 						if (player.AIData == null || player.AIData.BotOwner == null)
 							continue;
 
+						// --- Atomic brain+cache+owner injection start ---
 						try
 						{
+							// Always ensure atomic creation of cache and owner
+							var botOwner = player.AIData.BotOwner;
+							var cache = BotComponentCacheRegistry.GetOrCreate(botOwner);
+							if (cache == null)
+							{
+								LogWarn("[BotSpawnWatcher] Cache was null after GetOrCreate. Will retry next tick.");
+								continue;
+							}
+							if (cache.AIRefactoredBotOwner == null)
+							{
+								var aiOwner = new AIRefactoredBotOwner();
+								cache.SetOwner(aiOwner);
+								aiOwner.Initialize(botOwner);
+								BotRegistry.RegisterOwner(profileId, aiOwner);
+							}
+							else if (!cache.AIRefactoredBotOwner.HasPersonality())
+							{
+								cache.AIRefactoredBotOwner.Initialize(botOwner);
+							}
+
 							BotBrainGuardian.Enforce(go);
-							GameWorldHandler.TryAttachBotBrain(player.AIData.BotOwner);
+							GameWorldHandler.TryAttachBotBrain(botOwner);
 
 							string name = player.Profile?.Info?.Nickname ?? player.ProfileId;
 							LogDebug("[BotSpawnWatcher] ✅ Brain injected for bot: " + name);
@@ -149,6 +170,7 @@ namespace AIRefactored.Runtime
 						{
 							LogError("[BotSpawnWatcher] ❌ Brain injection failed for bot: " + ex);
 						}
+						// --- Atomic brain+cache+owner injection end ---
 					}
 					catch (Exception ex)
 					{

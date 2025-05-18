@@ -3,8 +3,8 @@
 //   Licensed under the MIT License. See LICENSE in the repository root for more information.
 //
 //   THIS FILE IS SYSTEMATICALLY MANAGED.
-//   All failures are locally logged; no subsystem can trigger fallback to vanilla EFT AI.
-//   Please follow strict StyleCop, ReSharper, and AI-Refactored code standards for all modifications.
+//   Bulletproof: All failures are locally contained, never break other subsystems. No vanilla fallback is triggered.
+//   No bot is ever marked as terminal or failed — all systems retry until successful.
 // </auto-generated>
 
 namespace AIRefactored.AI.Threads

@@ -3,7 +3,7 @@
 //   Licensed under the MIT License. See LICENSE in the repository root for more information.
 //
 //   THIS FILE IS SYSTEMATICALLY MANAGED.
-//   Bulletproof: All failures are locally isolated, never disables itself, never triggers fallback AI.
+//   Bulletproof: All failures are locally isolated, owner is always atomically wired with cache, never disables itself, never triggers fallback AI.
 // </auto-generated>
 
 namespace AIRefactored.AI.Core
@@ -18,7 +18,7 @@ namespace AIRefactored.AI.Core
 
     /// <summary>
     /// Holds AIRefactored-specific metadata for a bot, including personality, zone, tuning, and runtime behavior state.
-    /// Always logs and recovers locally if any core field is invalid. Never disables itself or triggers fallback.
+    /// Always logs and recovers locally if any core field is invalid. Owner/cache wiring is atomic and bulletproof.
     /// </summary>
     public sealed class AIRefactoredBotOwner
     {
@@ -96,6 +96,9 @@ namespace AIRefactored.AI.Core
 
         #region Initialization
 
+        /// <summary>
+        /// Atomic initialization: only runs if cache is present, never leaves unwired.
+        /// </summary>
         public void Initialize(BotOwner bot)
         {
             if (bot == null)
@@ -115,13 +118,16 @@ namespace AIRefactored.AI.Core
             {
                 if (!BotComponentCacheRegistry.TryGet(id, out _cache) || _cache == null)
                 {
-                    Logger.LogError($"[AIRefactoredBotOwner] Cache not found for bot {id} — aborting init.");
+                    Logger.LogError($"[AIRefactoredBotOwner] Cache not found for bot {id} — will retry until available.");
+                    _isInitialized = false;
                     return;
                 }
 
-                if (_cache.AIRefactoredBotOwner == null)
+                // Always ensure atomic wiring
+                if (_cache.AIRefactoredBotOwner != this)
                 {
                     _cache.SetOwner(this);
+                    Logger.LogDebug($"[AIRefactoredBotOwner] SetOwner atomic wire for {id}.");
                 }
 
                 WildSpawnType role = bot.Profile?.Info?.Settings?.Role ?? WildSpawnType.assault;

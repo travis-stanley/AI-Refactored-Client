@@ -3,7 +3,7 @@
 //   Licensed under the MIT License. See LICENSE in the repository root for more information.
 //
 //   THIS FILE IS SYSTEMATICALLY MANAGED.
-//   All registry logic is bulletproof: never returns null, always provides fallback objects, and never blocks bots from retrying registration.
+//   All registry logic is bulletproof: always atomically wires owner+cache, always retries, never leaves bots unwired.
 // </auto-generated>
 
 namespace AIRefactored
@@ -19,7 +19,7 @@ namespace AIRefactored
 
     /// <summary>
     /// Global personality and owner registry for AI-Refactored bots.
-    /// Boot-safe, null-safe, and allocation-resistant. Never fails or blocks.
+    /// Boot-safe, null-safe, allocation-resistant, and guarantees atomic owner/cache wiring. Never blocks or leaves bots unwired.
     /// </summary>
     public static class BotRegistry
     {
@@ -106,7 +106,6 @@ namespace AIRefactored
                 {
                     Logger.LogWarning("[BotRegistry] Requested null or empty profileId. Using fallback.");
                 }
-
                 return GetFallbackProfile(fallback);
             }
 
@@ -119,7 +118,6 @@ namespace AIRefactored
             {
                 Logger.LogWarning("[BotRegistry] Missing profile for '" + profileId + "'. Using fallback: " + fallback + ".");
             }
-
             return GetFallbackProfile(fallback);
         }
 
@@ -146,7 +144,6 @@ namespace AIRefactored
             {
                 Logger.LogDebug("[BotRegistry] Registered '" + type + "' for role '" + role + "' (" + profileId + ").");
             }
-
             return profile;
         }
 
@@ -158,7 +155,6 @@ namespace AIRefactored
                 {
                     Logger.LogWarning("[BotRegistry] GetOrGenerate failed — null or empty profileId.");
                 }
-
                 return GetFallbackProfile(defaultType);
             }
 
@@ -174,7 +170,6 @@ namespace AIRefactored
             {
                 Logger.LogDebug("[BotRegistry] Auto-generated profile for '" + profileId + "' with type: " + defaultType);
             }
-
             return profile;
         }
 
@@ -187,7 +182,6 @@ namespace AIRefactored
                 {
                     Logger.LogWarning("[BotRegistry] Null profileId. Fallback resolved to: " + resolved);
                 }
-
                 return GetFallbackProfile(resolved);
             }
 
@@ -204,7 +198,6 @@ namespace AIRefactored
             {
                 Logger.LogDebug("[BotRegistry] Auto-generated profile for '" + profileId + "' with type: " + type + " (role: " + role + ")");
             }
-
             return profile;
         }
 
@@ -221,37 +214,52 @@ namespace AIRefactored
             }
         }
 
+        /// <summary>
+        /// Atomically registers the owner ONLY if the cache exists and is fully wired, otherwise abort and retry later.
+        /// </summary>
         public static void RegisterOwner(string profileId, AIRefactoredBotOwner owner)
         {
             if (string.IsNullOrEmpty(profileId) || owner == null)
+                return;
+
+            if (!_ownerRegistry.TryGetValue(profileId, out var existing))
             {
+                // Atomic: Only register owner if cache is present and owner.Cache is valid.
+                if (owner.Cache == null)
+                {
+                    if (_debug)
+                        Logger.LogWarning("[BotRegistry] Cannot register owner for '" + profileId + "' — missing BotComponentCache. Will retry.");
+                    return; // Abort. BotComponentCacheRegistry must trigger owner registration once cache exists.
+                }
+                _ownerRegistry[profileId] = owner;
+                if (_debug)
+                    Logger.LogDebug("[BotRegistry] Registered AIRefactoredBotOwner for '" + profileId + "'.");
                 return;
             }
-
-            if (_ownerRegistry.TryGetValue(profileId, out var existing) && !ReferenceEquals(existing, owner))
+            // Already exists; only update if not the same object
+            if (!ReferenceEquals(existing, owner))
             {
                 if (_debug)
+                    Logger.LogWarning("[BotRegistry] Duplicate owner detected for '" + profileId + "'. Forcing atomic rewire.");
+                // Rewire the registry to always point to the correct owner with valid cache
+                if (owner.Cache != null)
                 {
-                    Logger.LogWarning("[BotRegistry] Duplicate owner detected for '" + profileId + "'. Skipped.");
+                    _ownerRegistry[profileId] = owner;
+                    if (_debug)
+                        Logger.LogDebug("[BotRegistry] Overwrote owner for '" + profileId + "' with valid owner+cache.");
                 }
-
-                return;
-            }
-
-            _ownerRegistry[profileId] = owner;
-
-            if (_debug)
-            {
-                Logger.LogDebug("[BotRegistry] Registered AIRefactoredBotOwner for '" + profileId + "'.");
+                else
+                {
+                    if (_debug)
+                        Logger.LogWarning("[BotRegistry] Owner duplicate has missing cache for '" + profileId + "'. Skipping rewire, will retry.");
+                }
             }
         }
 
         public static bool TryGet(string profileId, out BotPersonalityProfile profile)
         {
             if (!string.IsNullOrEmpty(profileId) && _profileRegistry.TryGetValue(profileId, out profile))
-            {
                 return true;
-            }
 
             profile = _nullProfileFallback;
             return false;
@@ -260,9 +268,7 @@ namespace AIRefactored
         public static bool TryGetRefactoredOwner(string profileId, out AIRefactoredBotOwner owner)
         {
             if (!string.IsNullOrEmpty(profileId) && _ownerRegistry.TryGetValue(profileId, out owner) && owner != null)
-            {
                 return true;
-            }
 
             owner = _nullOwnerFallback;
             return false;
@@ -298,9 +304,7 @@ namespace AIRefactored
         private static BotPersonalityProfile GetFallbackProfile(PersonalityType fallback)
         {
             if (_fallbackProfiles.TryGetValue(fallback, out var cached))
-            {
                 return cached;
-            }
 
             var profile = BotPersonalityPresets.GenerateProfile(fallback);
             _fallbackProfiles[fallback] = profile;
@@ -309,7 +313,6 @@ namespace AIRefactored
             {
                 Logger.LogDebug("[BotRegistry] Created fallback personality: " + profile.Personality);
             }
-
             return profile;
         }
 

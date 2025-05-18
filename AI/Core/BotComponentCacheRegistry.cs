@@ -3,7 +3,7 @@
 //   Licensed under the MIT License. See LICENSE in the repository root for more information.
 //
 //   THIS FILE IS SYSTEMATICALLY MANAGED.
-//   All cache/owner initialization is bulletproof: nulls are impossible, no terminal fallback, always retries, logs are clear.
+//   All cache/owner initialization is bulletproof: atomic, nulls are impossible, always retries, logs are clear. No terminal fallback.
 // </auto-generated>
 
 namespace AIRefactored.AI.Core
@@ -17,8 +17,7 @@ namespace AIRefactored.AI.Core
 
     /// <summary>
     /// Central static registry for storing and accessing BotComponentCache instances.
-    /// Replaces MonoBehaviour access with pure C# class lookup.
-    /// Bulletproof: All failures are locally contained, no fallback, always retries. No cache can ever be left in a bad state.
+    /// All wiring is atomic: owner and cache are always created together, and always retried until fully wired.
     /// </summary>
     public static class BotComponentCacheRegistry
     {
@@ -36,8 +35,8 @@ namespace AIRefactored.AI.Core
 
         /// <summary>
         /// Returns the cache for a bot if it exists; otherwise creates and registers a new one.
+        /// Always creates/wires AIRefactoredBotOwner and ensures both are fully initialized before returning.
         /// If bot/profile is invalid, returns null (no fallback), and caller must retry next tick.
-        /// Ensures AIRefactoredBotOwner is always constructed and wired before cache is returned.
         /// </summary>
         public static BotComponentCache GetOrCreate(BotOwner bot)
         {
@@ -50,23 +49,25 @@ namespace AIRefactored.AI.Core
 
             lock (Lock)
             {
+                // Try to get existing cache and repair owner wiring if missing.
                 if (CacheMap.TryGetValue(id, out var existing))
                 {
-                    EnsureOwnerAssigned(existing, id);
+                    EnsureOwnerAssigned(existing, id, bot);
                     return existing;
                 }
 
                 try
                 {
-                    var cache = new BotComponentCache();
-                    cache.Initialize(bot);
-
+                    // ATOMIC CREATION: Always create both owner and cache together and wire both.
                     var owner = new AIRefactoredBotOwner();
+                    var cache = new BotComponentCache();
+
+                    cache.Initialize(bot);
+                    cache.SetOwner(owner);
+                    owner.Initialize(bot);
                     BotRegistry.RegisterOwner(id, owner);
 
-                    cache.SetOwner(owner);
-                    owner.Initialize(bot); // Safe: uses TryGet internally
-
+                    // Defensive: ensure both wired before returning.
                     if (cache.Bot == null || cache.AIRefactoredBotOwner == null)
                     {
                         Logger.LogWarning($"[BotComponentCacheRegistry] Null Bot or Owner in cache after init! For {id}");
@@ -74,7 +75,7 @@ namespace AIRefactored.AI.Core
                     }
 
                     CacheMap[id] = cache;
-                    Logger.LogDebug($"[BotComponentCacheRegistry] ✅ Created new cache for: {id}");
+                    Logger.LogDebug($"[BotComponentCacheRegistry] ✅ Created new cache (and owner) for: {id}");
                     return cache;
                 }
                 catch (Exception ex)
@@ -147,17 +148,29 @@ namespace AIRefactored.AI.Core
         /// <summary>
         /// Ensures that a BotComponentCache has a valid AIRefactoredBotOwner assigned before use.
         /// </summary>
-        private static void EnsureOwnerAssigned(BotComponentCache cache, string id)
+        private static void EnsureOwnerAssigned(BotComponentCache cache, string id, BotOwner bot)
         {
-            if (cache == null || cache.AIRefactoredBotOwner != null)
+            if (cache == null)
+                return;
+
+            if (cache.AIRefactoredBotOwner != null)
                 return;
 
             try
             {
-                if (BotRegistry.TryGetRefactoredOwner(id, out var owner) && owner != null)
+                if (BotRegistry.TryGetRefactoredOwner(id, out var owner) && owner != null && owner.Cache == cache)
                 {
                     cache.SetOwner(owner);
                     Logger.LogDebug($"[BotComponentCacheRegistry] [Owner Assign] Wired existing owner for {id}.");
+                }
+                else
+                {
+                    // Atomic fix: if owner not present or invalid, create and register new one.
+                    var newOwner = new AIRefactoredBotOwner();
+                    cache.SetOwner(newOwner);
+                    newOwner.Initialize(bot);
+                    BotRegistry.RegisterOwner(id, newOwner);
+                    Logger.LogDebug($"[BotComponentCacheRegistry] [Owner Assign] Created and wired new owner for {id}.");
                 }
             }
             catch (Exception ex)

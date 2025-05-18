@@ -4,7 +4,7 @@
 //
 //   THIS FILE IS SYSTEMATICALLY MANAGED.
 //   Failures in AIRefactored logic must always trigger safe retry and recovery. No fallback or terminal state.
-//   Bulletproof: All failures are strictly localized and cannot break the mod.
+//   Bulletproof: All failures are strictly localized and cannot break the mod. Atomic bot brain/owner/cache recovery logic.
 // </auto-generated>
 
 namespace AIRefactored.Runtime
@@ -167,7 +167,27 @@ namespace AIRefactored.Runtime
 
 					if (player.AIData?.BotOwner != null)
 					{
-						GameWorldHandler.TryAttachBotBrain(player.AIData.BotOwner);
+						// Atomic: always ensure cache+owner+brain are valid and present.
+						var botOwner = player.AIData.BotOwner;
+						var cache = BotComponentCacheRegistry.GetOrCreate(botOwner);
+						if (cache == null)
+						{
+							LogWarn("[BotRecoveryService] Cache was null during ValidateBotBrains. Will retry next tick.");
+							continue;
+						}
+						if (cache.AIRefactoredBotOwner == null)
+						{
+							var aiOwner = new AIRefactoredBotOwner();
+							cache.SetOwner(aiOwner);
+							aiOwner.Initialize(botOwner);
+							BotRegistry.RegisterOwner(profileId, aiOwner);
+						}
+						else if (!cache.AIRefactoredBotOwner.HasPersonality())
+						{
+							cache.AIRefactoredBotOwner.Initialize(botOwner);
+						}
+
+						GameWorldHandler.TryAttachBotBrain(botOwner);
 						LogWarn("[BotRecoveryService] ⚠ BotBrain missing — injected late for: " + (player.Profile?.Info?.Nickname ?? "Unknown"));
 					}
 

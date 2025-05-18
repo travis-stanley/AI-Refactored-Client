@@ -3,7 +3,7 @@
 //   Licensed under the MIT License. See LICENSE in the repository root for more information.
 //
 //   THIS FILE IS SYSTEMATICALLY MANAGED.
-//   Bulletproof: No cache can be left incomplete or with missing critical references. No fallback logic exists; all failures are isolated and only logged.
+//   Bulletproof: No cache can be left incomplete or with missing critical references. All wiring is atomic; all failures are isolated and only logged. No fallback logic exists.
 // </auto-generated>
 
 namespace AIRefactored.AI.Core
@@ -138,6 +138,7 @@ namespace AIRefactored.AI.Core
             WildSpawnType role = bot.Profile?.Info?.Settings?.Role ?? WildSpawnType.assault;
             PersonalityProfile = BotRegistry.GetOrGenerate(id, PersonalityType.Balanced, role);
 
+            // Each subsystem is initialized individually with bulletproofing.
             TryInit(() => Pathing = new BotOwnerPathfindingCache(), "Pathing");
             TryInit(() => { TacticalMemory = new BotTacticalMemory(); TacticalMemory.Initialize(this); }, "TacticalMemory");
             TryInit(() => { Combat = new CombatStateMachine(); Combat.Initialize(this); }, "Combat");
@@ -162,7 +163,6 @@ namespace AIRefactored.AI.Core
             TryInit(() => GroupComms = new BotGroupComms(this), "GroupComms");
             TryInit(() => SquadHealer = bot.HealAnotherTarget ?? new BotHealAnotherTarget(bot), "SquadHealer");
             TryInit(() => HealReceiver = bot.HealingBySomebody ?? new BotHealingBySomebody(bot), "HealReceiver");
-
             TryInit(() => ThreatSelector = new BotThreatSelector(this), "ThreatSelector");
         }
 

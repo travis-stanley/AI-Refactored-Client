@@ -3,7 +3,7 @@
 //   Licensed under the MIT License. See LICENSE in the repository root for more information.
 //
 //   THIS FILE IS SYSTEMATICALLY MANAGED.
-//   Failures in AIRefactored logic must always trigger safe fallback to EFT base AI.
+//   Coordinates bot combat state transitions with bulletproof error handling and fallback to vanilla EFT logic.
 // </auto-generated>
 
 namespace AIRefactored.AI.Combat
@@ -18,13 +18,10 @@ namespace AIRefactored.AI.Combat
     using AIRefactored.Core;
     using AIRefactored.Pools;
     using AIRefactored.Runtime;
+    using BepInEx.Logging;
     using EFT;
     using UnityEngine;
 
-    /// <summary>
-    /// Coordinates bot combat state transitions across patrol, engage, attack, fallback, and investigation.
-    /// Bulletproof: All subsystem failures are isolated; fallback to vanilla AI for movement/combat if required.
-    /// </summary>
     public sealed class CombatStateMachine
     {
         #region Constants
@@ -65,9 +62,6 @@ namespace AIRefactored.AI.Combat
 
         #region Public Methods
 
-        /// <summary>
-        /// Initializes the state machine and all combat state handlers for this bot.
-        /// </summary>
         public void Initialize(BotComponentCache componentCache)
         {
             if (componentCache == null || componentCache.Bot == null)
@@ -100,9 +94,6 @@ namespace AIRefactored.AI.Combat
             }
         }
 
-        /// <summary>
-        /// Returns true if the bot is currently in any combat state.
-        /// </summary>
         public bool IsInCombatState()
         {
             if (!_initialized || _isFallbackMode)
@@ -113,7 +104,7 @@ namespace AIRefactored.AI.Combat
                 return (_fallback.IsActive() ||
                         _engage.IsEngaging() ||
                         _investigate.IsInvestigating() ||
-                        _cache.ThreatSelector.CurrentTarget != null);
+                        (_cache.ThreatSelector != null && _cache.ThreatSelector.CurrentTarget != null));
             }
             catch (Exception ex)
             {
@@ -123,9 +114,6 @@ namespace AIRefactored.AI.Combat
             }
         }
 
-        /// <summary>
-        /// Notifies the FSM of a damage event (e.g., suppression or hit).
-        /// </summary>
         public void NotifyDamaged()
         {
             if (!_initialized || _isFallbackMode)
@@ -137,7 +125,7 @@ namespace AIRefactored.AI.Combat
                 if (_fallback.ShallUseNow(time))
                 {
                     AssignFallbackIfNeeded();
-                    if (_bot.BotTalk != null) _bot.BotTalk.TrySay(EPhraseTrigger.OnBeingHurt);
+                    _bot.BotTalk?.TrySay(EPhraseTrigger.OnBeingHurt);
                     _lastStateChangeTime = time;
                 }
             }
@@ -148,9 +136,6 @@ namespace AIRefactored.AI.Combat
             }
         }
 
-        /// <summary>
-        /// Notifies the FSM to echo investigate (e.g., squad hears sound).
-        /// </summary>
         public void NotifyEchoInvestigate()
         {
             if (!_initialized || _isFallbackMode)
@@ -162,7 +147,7 @@ namespace AIRefactored.AI.Combat
                 if (_investigate.ShallUseNow(time, _lastStateChangeTime))
                 {
                     _lastStateChangeTime = time;
-                    if (_bot.BotTalk != null) _bot.BotTalk.TrySay(EPhraseTrigger.Cooperation);
+                    _bot.BotTalk?.TrySay(EPhraseTrigger.Cooperation);
                 }
             }
             catch (Exception ex)
@@ -172,9 +157,6 @@ namespace AIRefactored.AI.Combat
             }
         }
 
-        /// <summary>
-        /// Main update for state transitions, behavior selection, and movement.
-        /// </summary>
         public void Tick(float time)
         {
             if (!_initialized || _isFallbackMode || _bot == null || _bot.IsDead || !EFTPlayerUtil.IsValid(_bot.GetPlayer))
@@ -194,7 +176,7 @@ namespace AIRefactored.AI.Combat
                 if (ShouldTriggerSuppressedFallback(time))
                 {
                     AssignFallbackIfNeeded();
-                    if (_bot.BotTalk != null) _bot.BotTalk.TrySay(EPhraseTrigger.OnBeingHurt);
+                    _bot.BotTalk?.TrySay(EPhraseTrigger.OnBeingHurt);
 
                     Vector3 fallback = _fallback.HasValidFallbackPath()
                         ? _fallback.GetFallbackPosition()
@@ -212,15 +194,15 @@ namespace AIRefactored.AI.Combat
                     return;
                 }
 
-                Player enemy = _cache.ThreatSelector.CurrentTarget;
+                Player enemy = _cache.ThreatSelector?.CurrentTarget;
                 if (EFTPlayerUtil.IsValid(enemy))
                 {
                     _lastKnownEnemyPos = EFTPlayerUtil.GetPosition(enemy);
                     _hasKnownEnemy = true;
 
                     string id = enemy.ProfileId;
-                    if (id.Length > 0)
-                        _cache.TacticalMemory.RecordEnemyPosition(_lastKnownEnemyPos, "Combat", id);
+                    if (!string.IsNullOrEmpty(id))
+                        _cache.TacticalMemory?.RecordEnemyPosition(_lastKnownEnemyPos, "Combat", id);
 
                     if (_bot.Mover != null && !_bot.Mover.Sprinting)
                         _bot.Sprint(true);
@@ -256,13 +238,11 @@ namespace AIRefactored.AI.Combat
             {
                 BotFallbackUtility.Trigger(this, _bot, "[CombatStateMachine] Exception in Tick.", ex);
                 _isFallbackMode = true;
-                if (_bot != null) BotFallbackUtility.FallbackToEFTLogic(_bot);
+                if (_bot != null)
+                    BotFallbackUtility.FallbackToEFTLogic(_bot);
             }
         }
 
-        /// <summary>
-        /// Forces bot to fallback (e.g., due to panic, suppression).
-        /// </summary>
         public void TriggerFallback(Vector3 fallbackPos)
         {
             if (!_initialized || _isFallbackMode)
@@ -271,7 +251,7 @@ namespace AIRefactored.AI.Combat
             try
             {
                 _fallback.SetFallbackTarget(fallbackPos);
-                if (_bot.BotTalk != null) _bot.BotTalk.TrySay(EPhraseTrigger.OnLostVisual);
+                _bot.BotTalk?.TrySay(EPhraseTrigger.OnLostVisual);
                 _lastStateChangeTime = Time.time;
             }
             catch (Exception ex)
@@ -281,9 +261,6 @@ namespace AIRefactored.AI.Combat
             }
         }
 
-        /// <summary>
-        /// Requests cover stance update from the PoseController.
-        /// </summary>
         public void TrySetStanceFromNearbyCover(Vector3 pos)
         {
             try
@@ -366,14 +343,14 @@ namespace AIRefactored.AI.Combat
                 if (!_fallback.IsActive())
                     return false;
 
-                if (_cache.ThreatSelector.CurrentTarget != null)
+                if (_cache.ThreatSelector?.CurrentTarget != null)
                 {
                     _fallback.Cancel();
-                    if (_bot.BotTalk != null) _bot.BotTalk.TrySay(EPhraseTrigger.OnEnemyConversation);
+                    _bot.BotTalk?.TrySay(EPhraseTrigger.OnEnemyConversation);
                     return true;
                 }
 
-                if (_cache.GroupSync != null && _cache.GroupSync.IsSquadReady())
+                if (_cache.GroupSync?.IsSquadReady() ?? false)
                 {
                     Vector3 self = _bot.Position;
                     IReadOnlyList<BotOwner> mates = _cache.GroupSync.GetTeammates();
@@ -386,7 +363,7 @@ namespace AIRefactored.AI.Combat
                             if (dist < 12f)
                             {
                                 _fallback.Cancel();
-                                if (_bot.BotTalk != null) _bot.BotTalk.TrySay(EPhraseTrigger.Cooperation);
+                                _bot.BotTalk?.TrySay(EPhraseTrigger.Cooperation);
                                 return true;
                             }
                         }
@@ -396,7 +373,7 @@ namespace AIRefactored.AI.Combat
                 if (time - _lastStateChangeTime > ReentryCooldown)
                 {
                     _fallback.Cancel();
-                    if (_bot.BotTalk != null) _bot.BotTalk.TrySay(EPhraseTrigger.Ready);
+                    _bot.BotTalk?.TrySay(EPhraseTrigger.Ready);
                     return true;
                 }
 

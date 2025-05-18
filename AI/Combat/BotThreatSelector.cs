@@ -3,7 +3,7 @@
 //   Licensed under the MIT License. See LICENSE in the repository root for more information.
 //
 //   THIS FILE IS SYSTEMATICALLY MANAGED.
-//   Failures in AIRefactored logic must always trigger safe fallback to EFT base AI.
+//   Failures are locally isolated; fallback to EFT AI on critical errors.
 // </auto-generated>
 
 namespace AIRefactored.AI.Combat
@@ -15,12 +15,8 @@ namespace AIRefactored.AI.Combat
     using AIRefactored.Core;
     using EFT;
     using UnityEngine;
+    using BepInEx.Logging;
 
-    /// <summary>
-    /// Selects and maintains the most viable enemy target based on distance, visibility, memory, and tactical realism.
-    /// Prevents erratic switching and reinforces believable combat behavior.
-    /// Bulletproof: All failures are isolated and cannot propagate.
-    /// </summary>
     public sealed class BotThreatSelector
     {
         #region Constants
@@ -51,6 +47,8 @@ namespace AIRefactored.AI.Combat
         private float _nextEvaluateTime;
         private Player _currentTarget;
         private bool _isFallbackMode;
+        private static readonly ManualLogSource Logger = Plugin.LoggerInstance;
+        private static bool _hasLoggedConstructorError;
 
         #endregion
 
@@ -64,10 +62,15 @@ namespace AIRefactored.AI.Combat
 
         public BotThreatSelector(BotComponentCache cache)
         {
-            // Null safety and isolation up front, logs for diagnostics
             if (cache == null || cache.Bot == null || cache.AIRefactoredBotOwner == null)
             {
-                BotFallbackUtility.Trigger(this, null, "[BotThreatSelector] Null cache, bot, or AIRefactoredBotOwner in constructor.");
+                if (!_hasLoggedConstructorError)
+                {
+                    Logger.LogWarning("[BotThreatSelector] Null cache, bot, or AIRefactoredBotOwner in constructor. Enabling fallback mode.");
+                    _hasLoggedConstructorError = true;
+                }
+
+                BotFallbackUtility.FallbackToEFTLogic(cache?.Bot);
                 _isFallbackMode = true;
                 return;
             }
@@ -82,9 +85,6 @@ namespace AIRefactored.AI.Combat
 
         #region Public Methods
 
-        /// <summary>
-        /// Evaluates and selects the best enemy target based on tactical criteria.
-        /// </summary>
         public void Tick(float time)
         {
             if (_isFallbackMode || time < _nextEvaluateTime || _bot == null || _bot.IsDead || !_bot.IsAI)
@@ -142,23 +142,17 @@ namespace AIRefactored.AI.Combat
             }
             catch (Exception ex)
             {
-                BotFallbackUtility.Trigger(this, _bot, "Exception in Tick.", ex);
-                _isFallbackMode = true;
+                Logger.LogWarning($"[BotThreatSelector] Exception in Tick(): {ex}");
                 BotFallbackUtility.FallbackToEFTLogic(_bot);
+                _isFallbackMode = true;
             }
         }
 
-        /// <summary>
-        /// Clears the currently selected target.
-        /// </summary>
         public void ResetTarget()
         {
             _currentTarget = null;
         }
 
-        /// <summary>
-        /// Gets the most appropriate target, using current, memory, or fallback.
-        /// </summary>
         public Player GetPriorityTarget()
         {
             if (_isFallbackMode)
@@ -178,19 +172,16 @@ namespace AIRefactored.AI.Combat
             }
             catch (Exception ex)
             {
-                BotFallbackUtility.Trigger(this, _bot, "Exception in GetPriorityTarget.", ex);
-                _isFallbackMode = true;
+                Logger.LogWarning($"[BotThreatSelector] Exception in GetPriorityTarget(): {ex}");
                 BotFallbackUtility.FallbackToEFTLogic(_bot);
+                _isFallbackMode = true;
                 return null;
             }
         }
 
-        /// <summary>
-        /// Returns the profileId of the current target.
-        /// </summary>
         public string GetTargetProfileId()
         {
-            return _currentTarget != null ? _currentTarget.ProfileId : string.Empty;
+            return _currentTarget?.ProfileId ?? string.Empty;
         }
 
         #endregion
@@ -253,9 +244,9 @@ namespace AIRefactored.AI.Combat
             }
             catch (Exception ex)
             {
-                BotFallbackUtility.Trigger(this, _bot, "Exception in ScoreTarget.", ex);
-                _isFallbackMode = true;
+                Logger.LogWarning($"[BotThreatSelector] Exception in ScoreTarget(): {ex}");
                 BotFallbackUtility.FallbackToEFTLogic(_bot);
+                _isFallbackMode = true;
                 return float.MinValue;
             }
         }
@@ -288,9 +279,9 @@ namespace AIRefactored.AI.Combat
             }
             catch (Exception ex)
             {
-                BotFallbackUtility.Trigger(this, _bot, "Exception in GetEnemyInfo.", ex);
-                _isFallbackMode = true;
+                Logger.LogWarning($"[BotThreatSelector] Exception in GetEnemyInfo(): {ex}");
                 BotFallbackUtility.FallbackToEFTLogic(_bot);
+                _isFallbackMode = true;
                 return null;
             }
         }
@@ -327,15 +318,16 @@ namespace AIRefactored.AI.Combat
             }
             catch (Exception ex)
             {
-                BotFallbackUtility.Trigger(this, _bot, "Exception in SetTarget.", ex);
-                _isFallbackMode = true;
+                Logger.LogWarning($"[BotThreatSelector] Exception in SetTarget(): {ex}");
                 BotFallbackUtility.FallbackToEFTLogic(_bot);
+                _isFallbackMode = true;
             }
         }
 
         private static bool IsVectorValid(Vector3 v)
         {
-            return !float.IsNaN(v.x) && !float.IsNaN(v.y) && !float.IsNaN(v.z);
+            return !float.IsNaN(v.x) && !float.IsNaN(v.y) && !float.IsNaN(v.z) &&
+                   Mathf.Abs(v.x) < 10000f && Mathf.Abs(v.y) < 10000f && Mathf.Abs(v.z) < 10000f;
         }
 
         #endregion

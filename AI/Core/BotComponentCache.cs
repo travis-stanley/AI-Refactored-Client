@@ -171,6 +171,8 @@ namespace AIRefactored.AI.Core
             TryInit(() => GroupComms = new BotGroupComms(this), "GroupComms");
             TryInit(() => SquadHealer = bot.HealAnotherTarget ?? new BotHealAnotherTarget(bot), "SquadHealer");
             TryInit(() => HealReceiver = bot.HealingBySomebody ?? new BotHealingBySomebody(bot), "HealReceiver");
+
+            // Defer ThreatSelector creation to SetOwner for safety
         }
 
         private void TryInit(Action action, string name)

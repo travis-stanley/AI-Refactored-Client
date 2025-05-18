@@ -20,11 +20,6 @@ namespace AIRefactored.Runtime
 	using EFT;
 	using UnityEngine;
 
-	/// <summary>
-	/// Static bot spawn tracker. Injects brains for new bots without using MonoBehaviours.
-	/// Called externally on update by WorldBootstrapper or BotWorkScheduler.
-	/// Bulletproof: All polling, validation, and injection is strictly localized. No fallback lockouts, always retries.
-	/// </summary>
 	public sealed class BotSpawnWatcherService : IAIWorldSystemBootstrapper
 	{
 		#region Constants
@@ -46,7 +41,6 @@ namespace AIRefactored.Runtime
 
 		#region Lifecycle
 
-		/// <inheritdoc />
 		public void Initialize()
 		{
 			try
@@ -60,7 +54,6 @@ namespace AIRefactored.Runtime
 			}
 		}
 
-		/// <inheritdoc />
 		public void OnRaidEnd()
 		{
 			try
@@ -74,9 +67,6 @@ namespace AIRefactored.Runtime
 			}
 		}
 
-		/// <summary>
-		/// Clears internal bot ID cache and state flags for reuse in next raid.
-		/// </summary>
 		public static void Reset()
 		{
 			try
@@ -85,20 +75,15 @@ namespace AIRefactored.Runtime
 				SeenProfileIds.Clear();
 				_nextPollTime = -1f;
 				_hasWarnedInvalid = false;
-
 				LogDebug("[BotSpawnWatcher] 🔄 Reset complete.");
 			}
-			catch
-			{
-				// Safe ignore: logger might be disposed during shutdown.
-			}
+			catch { }
 		}
 
 		#endregion
 
 		#region Tick
 
-		/// <inheritdoc />
 		public void Tick(float deltaTime)
 		{
 			try
@@ -115,8 +100,8 @@ namespace AIRefactored.Runtime
 
 				if (_hasWarnedInvalid)
 				{
-					LogDebug("[BotSpawnWatcher] ✅ Host world recovered — resuming.");
 					_hasWarnedInvalid = false;
+					LogDebug("[BotSpawnWatcher] ✅ Host world recovered — resuming.");
 				}
 
 				float now = Time.time;
@@ -125,18 +110,9 @@ namespace AIRefactored.Runtime
 
 				_nextPollTime = now + PollInterval;
 
-				List<Player> players = null;
-				try
-				{
-					players = GameWorldHandler.GetAllAlivePlayers();
-					if (players == null || players.Count == 0)
-						return;
-				}
-				catch (Exception ex)
-				{
-					LogError("[BotSpawnWatcher] GetAllAlivePlayers() failed: " + ex);
+				List<Player> players = GameWorldHandler.GetAllAlivePlayers();
+				if (players == null || players.Count == 0)
 					return;
-				}
 
 				for (int i = 0; i < players.Count; i++)
 				{
@@ -150,13 +126,10 @@ namespace AIRefactored.Runtime
 						int id = go.GetInstanceID();
 						string profileId = player.ProfileId ?? player.Profile?.Id;
 
-						// Do not process the same GameObject or ProfileId twice (per raid session)
 						if (!SeenBotIds.Add(id))
 							continue;
 						if (!string.IsNullOrEmpty(profileId) && !SeenProfileIds.Add(profileId))
 							continue;
-
-						// No more fallback/lockout logic—bots can always retry and re-inject
 
 						if (go.GetComponent<BotBrain>() != null)
 							continue;
@@ -193,17 +166,9 @@ namespace AIRefactored.Runtime
 
 		#region Integration
 
-		/// <inheritdoc />
-		public bool IsReady()
-		{
-			return WorldInitState.IsInPhase(WorldPhase.WorldReady);
-		}
+		public bool IsReady() => WorldInitState.IsInPhase(WorldPhase.WorldReady);
 
-		/// <inheritdoc />
-		public WorldPhase RequiredPhase()
-		{
-			return WorldPhase.WorldReady;
-		}
+		public WorldPhase RequiredPhase() => WorldPhase.WorldReady;
 
 		#endregion
 

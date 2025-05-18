@@ -17,14 +17,8 @@ namespace AIRefactored.AI.Combat
     using UnityEngine;
     using BepInEx.Logging;
 
-    /// <summary>
-    /// Selects and maintains the most viable enemy target for the bot.
-    /// Isolated and bulletproof: any error logs, but never disables or falls back.
-    /// </summary>
     public sealed class BotThreatSelector
     {
-        #region Constants
-
         private const float EvaluationCooldown = 0.35f;
         private const float MaxScanDistance = 120f;
         private const float SwitchCooldown = 2.0f;
@@ -39,10 +33,6 @@ namespace AIRefactored.AI.Combat
         private const float AggressionMaxBonus = 15f;
         private const float TargetSwitchThreshold = 10f;
 
-        #endregion
-
-        #region Fields
-
         private readonly BotOwner _bot;
         private readonly BotComponentCache _cache;
         private readonly BotPersonalityProfile _profile;
@@ -50,18 +40,11 @@ namespace AIRefactored.AI.Combat
         private float _lastTargetSwitchTime = -999f;
         private float _nextEvaluateTime;
         private Player _currentTarget;
+
         private static readonly ManualLogSource Logger = Plugin.LoggerInstance;
         private static bool _hasLoggedConstructorError;
 
-        #endregion
-
-        #region Properties
-
         public Player CurrentTarget => _currentTarget;
-
-        #endregion
-
-        #region Constructor
 
         public BotThreatSelector(BotComponentCache cache)
         {
@@ -79,10 +62,6 @@ namespace AIRefactored.AI.Combat
             _bot = cache.Bot;
             _profile = cache.AIRefactoredBotOwner.PersonalityProfile ?? BotPersonalityPresets.GenerateProfile(PersonalityType.Balanced);
         }
-
-        #endregion
-
-        #region Public Methods
 
         public void Tick(float time)
         {
@@ -106,8 +85,7 @@ namespace AIRefactored.AI.Combat
                     if (!EFTPlayerUtil.IsValid(candidate))
                         continue;
 
-                    string profileId = candidate.ProfileId;
-                    if (string.IsNullOrEmpty(profileId) || profileId == _bot.ProfileId)
+                    if (string.IsNullOrEmpty(candidate.ProfileId) || candidate.ProfileId == _bot.ProfileId)
                         continue;
 
                     if (!EFTPlayerUtil.IsEnemyOf(_bot, candidate))
@@ -176,10 +154,6 @@ namespace AIRefactored.AI.Combat
             return _currentTarget?.ProfileId ?? string.Empty;
         }
 
-        #endregion
-
-        #region Private Methods
-
         private float ScoreTarget(Player candidate, float time)
         {
             try
@@ -202,7 +176,6 @@ namespace AIRefactored.AI.Combat
                     if (info.IsVisible)
                     {
                         score += VisibilityBonus;
-
                         if (info.PersonalLastSeenTime + 2f > time)
                             score += RecentSeenBonus;
 
@@ -245,7 +218,7 @@ namespace AIRefactored.AI.Combat
         {
             try
             {
-                if (candidate == null || _bot == null || _bot.EnemiesController == null)
+                if (candidate == null || _bot?.EnemiesController == null)
                     return null;
 
                 string id = candidate.ProfileId;
@@ -255,10 +228,10 @@ namespace AIRefactored.AI.Combat
                 var enemyInfos = _bot.EnemiesController.EnemyInfos;
                 if (enemyInfos != null)
                 {
-                    foreach (var kvp in enemyInfos)
+                    foreach (var kv in enemyInfos)
                     {
-                        if (kvp.Key is Player known && known.ProfileId == id)
-                            return kvp.Value;
+                        if (kv.Key is Player known && known.ProfileId == id)
+                            return kv.Value;
                     }
                 }
 
@@ -291,11 +264,12 @@ namespace AIRefactored.AI.Combat
                     _cache?.LastShotTracker?.RegisterHit(id);
                 }
 
-                // Optional: movement assist if not moving and valid
-                if (_cache != null && _cache.Movement != null && !_cache.Bot.IsDead && _cache.Bot.Mover != null && !_cache.Bot.Mover.IsMoving)
+                if (_cache?.Movement != null &&
+                    !_cache.Bot.IsDead &&
+                    _cache.Bot.Mover != null &&
+                    !_cache.Bot.Mover.IsMoving)
                 {
-                    Vector3 fallback;
-                    if (BotNavHelper.TryGetSafeTarget(_cache.Bot, out fallback) && IsVectorValid(fallback))
+                    if (BotNavHelper.TryGetSafeTarget(_cache.Bot, out var fallback) && IsVectorValid(fallback))
                     {
                         _cache.Bot.Mover.GoToPoint(fallback, true, 1.0f);
                     }
@@ -312,7 +286,5 @@ namespace AIRefactored.AI.Combat
             return !float.IsNaN(v.x) && !float.IsNaN(v.y) && !float.IsNaN(v.z) &&
                    Mathf.Abs(v.x) < 10000f && Mathf.Abs(v.y) < 10000f && Mathf.Abs(v.z) < 10000f;
         }
-
-        #endregion
     }
 }

@@ -145,11 +145,7 @@ namespace AIRefactored.AI.Core
         /// </summary>
         private static bool IsFullyValidBot(BotOwner bot)
         {
-            if (bot == null) return false;
-            if (bot.Profile == null) return false;
-            if (bot.Profile.Info == null) return false;
-            if (string.IsNullOrEmpty(bot.Profile.Id)) return false;
-            return true;
+            return bot?.Profile?.Info != null && !string.IsNullOrEmpty(bot.Profile.Id);
         }
 
         /// <summary>
@@ -161,6 +157,7 @@ namespace AIRefactored.AI.Core
                 return;
             if (cache.AIRefactoredBotOwner != null)
                 return;
+
             try
             {
                 if (!BotRegistry.TryGetRefactoredOwner(id, out var owner) || owner == null)
@@ -170,6 +167,7 @@ namespace AIRefactored.AI.Core
                     BotRegistry.RegisterOwner(id, owner);
                     Logger.LogDebug($"[BotComponentCacheRegistry] [Owner Assign] Created new owner for {id} during EnsureOwnerAssigned.");
                 }
+
                 cache.SetOwner(owner);
             }
             catch (Exception ex)

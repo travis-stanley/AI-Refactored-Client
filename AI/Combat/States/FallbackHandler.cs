@@ -24,22 +24,12 @@ namespace AIRefactored.AI.Combat.States
     /// </summary>
     public sealed class FallbackHandler : IDisposable
     {
-        #region Constants
-
         private const float MinArrivalDistance = 0.1f;
-
-        #endregion
-
-        #region Fields
 
         private readonly BotOwner _bot;
         private readonly BotComponentCache _cache;
         private readonly List<Vector3> _currentFallbackPath;
         private Vector3 _fallbackTarget;
-
-        #endregion
-
-        #region Constructor
 
         public FallbackHandler(BotComponentCache cache)
         {
@@ -49,37 +39,18 @@ namespace AIRefactored.AI.Combat.States
             _currentFallbackPath = TempListPool.Rent<Vector3>();
         }
 
-        #endregion
+        public Vector3 GetFallbackPosition() => _fallbackTarget;
 
-        #region Public Methods
-
-        /// <summary>
-        /// Gets the current fallback target position.
-        /// </summary>
-        public Vector3 GetFallbackPosition()
-        {
-            return _fallbackTarget;
-        }
-
-        /// <summary>
-        /// Gets the fallback position, or a default value if invalid.
-        /// </summary>
         public Vector3 GetFallbackPositionOrDefault(Vector3 defaultPos)
         {
             return HasValidFallbackPath() ? _fallbackTarget : defaultPos;
         }
 
-        /// <summary>
-        /// Returns true if the fallback path is valid.
-        /// </summary>
         public bool HasValidFallbackPath()
         {
             return _currentFallbackPath.Count >= 2 && IsVectorValid(_fallbackTarget);
         }
 
-        /// <summary>
-        /// Sets a new fallback target if valid.
-        /// </summary>
         public void SetFallbackTarget(Vector3 target)
         {
             if (!IsVectorValid(target))
@@ -90,9 +61,6 @@ namespace AIRefactored.AI.Combat.States
             _fallbackTarget = target;
         }
 
-        /// <summary>
-        /// Sets a new fallback path if valid.
-        /// </summary>
         public void SetFallbackPath(List<Vector3> path)
         {
             if (path == null || path.Count < 2)
@@ -123,9 +91,6 @@ namespace AIRefactored.AI.Combat.States
             }
         }
 
-        /// <summary>
-        /// Determines if the fallback handler should activate now.
-        /// </summary>
         public bool ShallUseNow(float time)
         {
             return _bot != null &&
@@ -133,19 +98,12 @@ namespace AIRefactored.AI.Combat.States
                    Vector3.Distance(_bot.Position, _fallbackTarget) > MinArrivalDistance;
         }
 
-        /// <summary>
-        /// Determines if suppression fallback should trigger.
-        /// </summary>
         public bool ShouldTriggerSuppressedFallback(float now, float lastStateChangeTime, float minStateDuration)
         {
-            return _cache.Suppression != null &&
-                   _cache.Suppression.IsSuppressed() &&
+            return _cache?.Suppression?.IsSuppressed() == true &&
                    (now - lastStateChangeTime) >= minStateDuration;
         }
 
-        /// <summary>
-        /// Ticks the fallback logic. Never disables, never sets fallback/terminal state, all errors locally isolated.
-        /// </summary>
         public void Tick(float time, Action<CombatState, float> forceState)
         {
             if (_bot == null || !IsVectorValid(_fallbackTarget))
@@ -177,6 +135,7 @@ namespace AIRefactored.AI.Combat.States
                 if (Vector3.Distance(_bot.Position, fallbackPoint) < MinArrivalDistance)
                 {
                     forceState?.Invoke(CombatState.Patrol, time);
+
                     if (!FikaHeadlessDetector.IsHeadless && _bot.BotTalk != null)
                     {
                         try { _bot.BotTalk.TrySay(EPhraseTrigger.NeedHelp); }
@@ -190,9 +149,6 @@ namespace AIRefactored.AI.Combat.States
             }
         }
 
-        /// <summary>
-        /// Returns true if fallback logic is currently active (always retryable, never disables).
-        /// </summary>
         public bool IsActive()
         {
             return _bot != null &&
@@ -201,26 +157,16 @@ namespace AIRefactored.AI.Combat.States
                    Vector3.Distance(_bot.Position, _fallbackTarget) > MinArrivalDistance;
         }
 
-        /// <summary>
-        /// Cancels the current fallback logic and resets path (never disables future retry).
-        /// </summary>
         public void Cancel()
         {
-            _fallbackTarget = (_bot != null) ? _bot.Position : Vector3.zero;
+            _fallbackTarget = _bot != null ? _bot.Position : Vector3.zero;
             _currentFallbackPath.Clear();
         }
 
-        /// <summary>
-        /// Disposes internal pooled data.
-        /// </summary>
         public void Dispose()
         {
             TempListPool.Return(_currentFallbackPath);
         }
-
-        #endregion
-
-        #region Private Methods
 
         private static bool IsVectorValid(Vector3 v)
         {
@@ -229,7 +175,5 @@ namespace AIRefactored.AI.Combat.States
                    !float.IsNaN(v.z) &&
                    v != Vector3.zero;
         }
-
-        #endregion
     }
 }

@@ -25,17 +25,11 @@ namespace AIRefactored.AI.Combat
     /// </summary>
     public sealed class BotPanicHandler
     {
-        #region Constants
-
         private const float PanicCooldown = 5f;
         private const float PanicDuration = 3.5f;
         private const float RecoverySpeed = 0.2f;
         private const float SquadRadiusSqr = 225f;
         private const float LowHealthThreshold = 25f;
-
-        #endregion
-
-        #region Fields
 
         private BotOwner _bot;
         private BotComponentCache _cache;
@@ -45,20 +39,9 @@ namespace AIRefactored.AI.Combat
         private float _lastPanicExitTime = -99f;
         private bool _isPanicking;
 
-        #endregion
-
-        #region Properties
-
         public bool IsPanicking => _isPanicking;
 
-        #endregion
-
-        #region Public Methods
-
-        public float GetComposureLevel()
-        {
-            return _composureLevel;
-        }
+        public float GetComposureLevel() => _composureLevel;
 
         public void Initialize(BotComponentCache componentCache)
         {
@@ -86,8 +69,7 @@ namespace AIRefactored.AI.Combat
 
         public void Tick(float time)
         {
-            if (!IsValid())
-                return;
+            if (!IsValid()) return;
 
             try
             {
@@ -141,10 +123,6 @@ namespace AIRefactored.AI.Combat
             }
         }
 
-        #endregion
-
-        #region Private Methods
-
         private void OnDamaged(EBodyPart part, float damage, DamageInfoStruct info)
         {
             if (!IsValid() || _isPanicking || Time.time < _lastPanicExitTime + PanicCooldown)
@@ -179,7 +157,7 @@ namespace AIRefactored.AI.Combat
                 if (profile == null || profile.IsFrenzied || profile.IsStubborn)
                     return false;
 
-                if (_cache.FlashGrenade != null && _cache.FlashGrenade.IsFlashed())
+                if (_cache.FlashGrenade?.IsFlashed() == true)
                     return true;
 
                 if (_bot.HealthController == null)
@@ -209,8 +187,7 @@ namespace AIRefactored.AI.Combat
 
         private void TryStartPanic(float now, Vector3 retreatDir)
         {
-            if (!IsValid())
-                return;
+            if (!IsValid()) return;
 
             try
             {
@@ -224,9 +201,7 @@ namespace AIRefactored.AI.Combat
 
                 Vector3 fallback = _bot.Position + retreatDir.normalized * 8f;
                 if (BotNavHelper.TryGetSafeTarget(_bot, out var navTarget) && IsVectorValid(navTarget))
-                {
                     fallback = navTarget;
-                }
 
                 if (_bot.Mover != null)
                 {
@@ -235,16 +210,14 @@ namespace AIRefactored.AI.Combat
                 }
 
                 if (GameWorldHandler.TryGetValidMapName() is string mapId)
-                {
                     BotMemoryStore.AddDangerZone(mapId, _bot.Position, DangerTriggerType.Panic, 0.6f);
-                }
 
                 _bot.Sprint(true);
 
                 if (!FikaHeadlessDetector.IsHeadless && _bot.BotTalk != null)
                 {
                     try { _bot.BotTalk.TrySay(EPhraseTrigger.OnBeingHurt); }
-                    catch { /* no-op */ }
+                    catch { }
                 }
             }
             catch (Exception ex)
@@ -312,8 +285,8 @@ namespace AIRefactored.AI.Combat
                 return _bot != null &&
                        _cache != null &&
                        !_bot.IsDead &&
-                       _bot.GetPlayer is Player player &&
-                       player.IsAI;
+                       _bot.GetPlayer is Player p &&
+                       p.IsAI;
             }
             catch
             {
@@ -325,7 +298,5 @@ namespace AIRefactored.AI.Combat
         {
             return !float.IsNaN(v.x) && !float.IsNaN(v.y) && !float.IsNaN(v.z);
         }
-
-        #endregion
     }
 }

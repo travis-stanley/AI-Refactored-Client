@@ -19,22 +19,11 @@ namespace AIRefactored.AI.Combat
     using EFT;
     using UnityEngine;
 
-    /// <summary>
-    /// Tracks panic events, visible enemies, and squad losses to trigger escalation behavior.
-    /// Applies tuning and personality adaptations based on threat severity.
-    /// All failures are isolated and never propagate beyond this monitor.
-    /// </summary>
     public sealed class BotThreatEscalationMonitor
     {
-        #region Constants
-
         private const float CheckInterval = 1.0f;
         private const float PanicDurationThreshold = 4.0f;
         private const float SquadCasualtyThreshold = 0.4f;
-
-        #endregion
-
-        #region Fields
 
         private static readonly ManualLogSource Logger = Plugin.LoggerInstance;
 
@@ -42,10 +31,6 @@ namespace AIRefactored.AI.Combat
         private float _panicStartTime = -1f;
         private float _nextCheckTime = -1f;
         private bool _hasEscalated;
-
-        #endregion
-
-        #region Public Methods
 
         public void Initialize(BotOwner botOwner)
         {
@@ -89,10 +74,6 @@ namespace AIRefactored.AI.Combat
             }
         }
 
-        #endregion
-
-        #region Private Methods
-
         private bool IsValid()
         {
             try
@@ -117,18 +98,15 @@ namespace AIRefactored.AI.Combat
         {
             try
             {
-                BotEnemiesController controller = _bot.EnemiesController;
+                var controller = _bot.EnemiesController;
                 if (controller?.EnemyInfos == null)
                     return false;
 
-                int visibleCount = 0;
+                int visible = 0;
                 foreach (var kv in controller.EnemyInfos)
                 {
-                    if (kv.Value != null && kv.Value.IsVisible)
-                    {
-                        if (++visibleCount >= 2)
-                            return true;
-                    }
+                    if (kv.Value?.IsVisible == true && ++visible >= 2)
+                        return true;
                 }
                 return false;
             }
@@ -143,18 +121,15 @@ namespace AIRefactored.AI.Combat
         {
             try
             {
-                BotsGroup group = _bot.BotsGroup;
+                var group = _bot.BotsGroup;
                 if (group == null || group.MembersCount <= 1)
                     return false;
 
                 int dead = 0;
                 for (int i = 0; i < group.MembersCount; i++)
                 {
-                    BotOwner member = group.Member(i);
-                    if (member == null || member.IsDead)
-                    {
+                    if (group.Member(i)?.IsDead == true)
                         dead++;
-                    }
                 }
 
                 return dead >= Mathf.CeilToInt(group.MembersCount * SquadCasualtyThreshold);
@@ -170,9 +145,9 @@ namespace AIRefactored.AI.Combat
         {
             try
             {
-                return PanicDurationExceeded(time) ||
-                       MultipleEnemiesVisible() ||
-                       SquadHasLostTeammates();
+                return PanicDurationExceeded(time)
+                    || MultipleEnemiesVisible()
+                    || SquadHasLostTeammates();
             }
             catch (Exception ex)
             {
@@ -199,15 +174,12 @@ namespace AIRefactored.AI.Combat
                 if (!FikaHeadlessDetector.IsHeadless && _bot.BotTalk != null)
                 {
                     try { _bot.BotTalk.TrySay(EPhraseTrigger.OnFight); }
-                    catch { /* no-op */ }
+                    catch { }
                 }
 
-                // Only use internal EFT navigation for fallback movement
                 Vector3 fallback = _bot.Position;
                 if (BotNavHelper.TryGetSafeTarget(_bot, out var navTarget) && IsVectorValid(navTarget))
-                {
                     fallback = navTarget;
-                }
 
                 if (_bot.Mover != null && !_bot.Mover.IsMoving)
                 {
@@ -225,10 +197,8 @@ namespace AIRefactored.AI.Combat
         {
             try
             {
-                if (bot?.Settings?.FileSettings == null)
-                    return;
-
-                var file = bot.Settings.FileSettings;
+                var file = bot?.Settings?.FileSettings;
+                if (file == null) return;
 
                 if (file.Shoot != null)
                 {
@@ -263,7 +233,7 @@ namespace AIRefactored.AI.Combat
                 if (string.IsNullOrEmpty(profileId))
                     return;
 
-                BotPersonalityProfile profile = BotRegistry.Get(profileId);
+                var profile = BotRegistry.Get(profileId);
                 if (profile == null)
                     return;
 
@@ -290,7 +260,5 @@ namespace AIRefactored.AI.Combat
         {
             return !float.IsNaN(v.x) && !float.IsNaN(v.y) && !float.IsNaN(v.z);
         }
-
-        #endregion
     }
 }

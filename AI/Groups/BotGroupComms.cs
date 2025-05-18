@@ -123,9 +123,6 @@ namespace AIRefactored.AI.Groups
 
         #region Private Methods
 
-        /// <summary>
-        /// Returns true if bot can issue squad VO.
-        /// </summary>
         private bool IsEligible()
         {
             return _bot != null &&
@@ -135,9 +132,6 @@ namespace AIRefactored.AI.Groups
                    _bot.BotTalk != null;
         }
 
-        /// <summary>
-        /// Attempts to trigger a voice line with chance/cooldown.
-        /// </summary>
         private void TryTriggerVoice(EPhraseTrigger phrase, float chance)
         {
             try
@@ -161,9 +155,6 @@ namespace AIRefactored.AI.Groups
             }
         }
 
-        /// <summary>
-        /// Returns true if any alive ally in group is nearby.
-        /// </summary>
         private bool HasNearbyAlly()
         {
             try
@@ -189,17 +180,15 @@ namespace AIRefactored.AI.Groups
                     if (!groupId.Equals(otherProfile.Info.GroupId, StringComparison.Ordinal))
                         continue;
 
-                    Vector3 offset = other.Bot.Position - myPos;
-                    if (offset.sqrMagnitude <= AllyRadiusSqr)
-                    {
+                    if ((other.Bot.Position - myPos).sqrMagnitude <= AllyRadiusSqr)
                         return true;
-                    }
                 }
             }
             catch
             {
                 // Silent fail: treat as no ally nearby
             }
+
             return false;
         }
 

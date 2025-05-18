@@ -12,6 +12,7 @@ namespace AIRefactored.AI.Core
     using System;
     using AIRefactored.Bootstrap;
     using AIRefactored.Core;
+    using BepInEx.Logging;
 
     /// <summary>
     /// Abstract base class for all AI world-level systems.
@@ -130,8 +131,8 @@ namespace AIRefactored.AI.Core
         /// </summary>
         protected virtual void OnFailover()
         {
-            // Optionally trigger fallback to vanilla logic for this system if needed.
-            // Never disable parent systems, never affect other bots or global mod state.
+            // Override in subclasses if fallback behavior is needed.
+            // Never allow escalation. Do not affect global mod state or other systems.
         }
 
         /// <summary>

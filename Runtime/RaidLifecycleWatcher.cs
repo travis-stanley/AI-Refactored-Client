@@ -19,34 +19,22 @@ namespace AIRefactored.Runtime
     /// <summary>
     /// Detects GameWorld lifecycle events and triggers mod startup/teardown accordingly.
     /// Works in both FIKA headless and standard modes.
-    /// Bulletproof: All errors are strictly contained; mod/global state is never at risk.
+    /// Bulletproof: All errors are strictly contained; retry-safe. No fallback logic used.
     /// </summary>
     public sealed class RaidLifecycleWatcher : IAIWorldSystemBootstrapper
     {
-        #region Fields
-
         private static readonly ManualLogSource Logger = Plugin.LoggerInstance;
-
         private static bool _initialized;
         private static bool _bound;
 
-        /// <summary>
-        /// Global singleton instance.
-        /// </summary>
         public static RaidLifecycleWatcher Instance { get; } = new RaidLifecycleWatcher();
 
-        #endregion
-
-        #region Lifecycle
-
-        /// <inheritdoc />
         public void Initialize()
         {
             _initialized = false;
             _bound = false;
         }
 
-        /// <inheritdoc />
         public void Tick(float deltaTime)
         {
             try
@@ -54,7 +42,7 @@ namespace AIRefactored.Runtime
                 if (_initialized || !GameWorldHandler.IsHost || !GameWorldHandler.IsReady())
                     return;
 
-                GameWorld world = null;
+                GameWorld world;
                 try
                 {
                     world = GameWorldHandler.Get();
@@ -67,7 +55,6 @@ namespace AIRefactored.Runtime
                     return;
                 }
 
-                // Atomic event binding, only once per raid
                 if (!_bound)
                 {
                     try
@@ -83,7 +70,6 @@ namespace AIRefactored.Runtime
                     }
                 }
 
-                // Only initialize if world is unique (fallback lockouts removed)
                 if (!IsWorldSafeAndUnique(world))
                 {
                     Logger.LogWarning("[RaidLifecycleWatcher] Unsafe or duplicate world state, skipping initialization.");
@@ -107,7 +93,6 @@ namespace AIRefactored.Runtime
             }
         }
 
-        /// <inheritdoc />
         public void OnRaidEnd()
         {
             try
@@ -145,10 +130,6 @@ namespace AIRefactored.Runtime
             }
         }
 
-        #endregion
-
-        #region Static Event Handler
-
         private static void OnRaidEnded()
         {
             try
@@ -161,30 +142,10 @@ namespace AIRefactored.Runtime
             }
         }
 
-        #endregion
+        public bool IsReady() => true;
 
-        #region Phase Control
+        public WorldPhase RequiredPhase() => WorldPhase.AwaitWorld;
 
-        /// <inheritdoc />
-        public bool IsReady()
-        {
-            return true;
-        }
-
-        /// <inheritdoc />
-        public WorldPhase RequiredPhase()
-        {
-            return WorldPhase.AwaitWorld;
-        }
-
-        #endregion
-
-        #region Validation
-
-        /// <summary>
-        /// Returns true only if world has unique (non-duplicate) players.
-        /// Fallback lockouts removed: ALL bots are always eligible.
-        /// </summary>
         private static bool IsWorldSafeAndUnique(GameWorld world)
         {
             try
@@ -200,8 +161,9 @@ namespace AIRefactored.Runtime
                     if (!EFTPlayerUtil.IsValid(player) || string.IsNullOrEmpty(profileId))
                         continue;
                     if (!seenProfiles.Add(profileId))
-                        return false; // Duplicate or null player
+                        return false;
                 }
+
                 return seenProfiles.Count > 0;
             }
             catch
@@ -209,7 +171,5 @@ namespace AIRefactored.Runtime
                 return false;
             }
         }
-
-        #endregion
     }
 }

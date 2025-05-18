@@ -26,15 +26,9 @@ namespace AIRefactored.AI.Combat.States
     /// </summary>
     public sealed class PatrolHandler
     {
-        #region Constants
-
         private const float DeadAllyRadius = 10.0f;
         private const float InvestigateSoundDelay = 3.0f;
         private const float PanicThreshold = 0.25f;
-
-        #endregion
-
-        #region Fields
 
         private readonly BotOwner _bot;
         private readonly BotComponentCache _cache;
@@ -42,10 +36,6 @@ namespace AIRefactored.AI.Combat.States
         private readonly float _switchCooldownBase;
 
         private float _nextSwitchTime;
-
-        #endregion
-
-        #region Constructor
 
         public PatrolHandler(BotComponentCache cache, float minStateDuration, float switchCooldownBase)
         {
@@ -55,14 +45,7 @@ namespace AIRefactored.AI.Combat.States
             _switchCooldownBase = switchCooldownBase;
         }
 
-        #endregion
-
-        #region Public Methods
-
-        public bool ShallUseNow()
-        {
-            return true;
-        }
+        public bool ShallUseNow() => true;
 
         public bool ShouldTransitionToInvestigate(float time)
         {
@@ -95,7 +78,6 @@ namespace AIRefactored.AI.Combat.States
                 {
                     Vector3 fallback = TryGetFallbackPosition();
 
-                    // Only use EFT native navigation
                     if (!BotNavHelper.TryGetSafeTarget(_bot, out fallback) || !IsVectorValid(fallback))
                         fallback = _bot.Position;
 
@@ -113,7 +95,7 @@ namespace AIRefactored.AI.Combat.States
                 if (time < _nextSwitchTime)
                     return;
 
-                HotspotRegistry.Hotspot hotspot = null;
+                HotspotRegistry.Hotspot hotspot;
                 try
                 {
                     hotspot = HotspotRegistry.GetRandomHotspot();
@@ -135,7 +117,6 @@ namespace AIRefactored.AI.Combat.States
                     ? _cache.SquadPath.ApplyOffsetTo(target)
                     : target;
 
-                // Only use EFT navigation
                 if (!BotNavHelper.TryGetSafeTarget(_bot, out destination) || !IsVectorValid(destination))
                     destination = _bot.Position;
 
@@ -162,7 +143,7 @@ namespace AIRefactored.AI.Combat.States
                 if (!FikaHeadlessDetector.IsHeadless && _bot.BotTalk != null && UnityEngine.Random.value < 0.25f)
                 {
                     try { _bot.BotTalk.TrySay(EPhraseTrigger.GoForward); }
-                    catch { /* no-op */ }
+                    catch { }
                 }
             }
             catch (Exception ex)
@@ -171,10 +152,6 @@ namespace AIRefactored.AI.Combat.States
             }
         }
 
-        #endregion
-
-        #region Private Methods
-
         private bool ShouldTriggerFallback()
         {
             if (_cache == null || _bot == null)
@@ -182,13 +159,13 @@ namespace AIRefactored.AI.Combat.States
 
             try
             {
-                if (_cache.PanicHandler != null && _cache.PanicHandler.GetComposureLevel() < PanicThreshold)
+                if (_cache.PanicHandler?.GetComposureLevel() < PanicThreshold)
                     return true;
 
-                if (_cache.InjurySystem != null && _cache.InjurySystem.ShouldHeal())
+                if (_cache.InjurySystem?.ShouldHeal() == true)
                     return true;
 
-                if (_cache.Suppression != null && _cache.Suppression.IsSuppressed())
+                if (_cache.Suppression?.IsSuppressed() == true)
                     return true;
 
                 BotsGroup group = _bot.BotsGroup;
@@ -241,7 +218,5 @@ namespace AIRefactored.AI.Combat.States
         {
             return !float.IsNaN(v.x) && !float.IsNaN(v.y) && !float.IsNaN(v.z);
         }
-
-        #endregion
     }
 }

@@ -3,8 +3,7 @@
 //   Licensed under the MIT License. See LICENSE in the repository root for more information.
 //
 //   THIS FILE IS SYSTEMATICALLY MANAGED.
-//   Failures in AIRefactored logic must always trigger safe fallback to EFT base AI.
-//   Bulletproof: All errors are strictly contained, global state is never at risk.
+//   Ticking is retry-safe and non-terminal. All errors are isolated, no fallback logic is used.
 // </auto-generated>
 
 namespace AIRefactored.Runtime
@@ -23,8 +22,6 @@ namespace AIRefactored.Runtime
     /// </summary>
     public static class WorldTickDispatcher
     {
-        #region Fields
-
         private static GameObject _host;
         private static TickHost _monoHost;
         private static bool _isActive;
@@ -32,20 +29,9 @@ namespace AIRefactored.Runtime
 
         private static ManualLogSource Logger => Plugin.LoggerInstance;
 
-        #endregion
-
-        #region Lifecycle
-
-        /// <summary>
-        /// Initializes the world tick dispatcher and attaches update loop.
-        /// Bulletproof: All failures are locally contained, global state is never at risk.
-        /// </summary>
         public static void Initialize()
         {
-            if (_isActive || _host != null || _monoHost != null)
-                return;
-
-            if (_isQuitting)
+            if (_isActive || _host != null || _monoHost != null || _isQuitting)
                 return;
 
             try
@@ -64,10 +50,6 @@ namespace AIRefactored.Runtime
             }
         }
 
-        /// <summary>
-        /// Fully resets and destroys dispatcher logic (e.g. on teardown).
-        /// Bulletproof: All failures are locally contained, global state is never at risk.
-        /// </summary>
         public static void Reset()
         {
             if (!_isActive)
@@ -79,26 +61,14 @@ namespace AIRefactored.Runtime
             {
                 if (_monoHost != null)
                 {
-                    try
-                    {
-                        UnityEngine.Object.Destroy(_monoHost);
-                    }
-                    catch (Exception ex)
-                    {
-                        LogError("[WorldTickDispatcher] ❌ Destroy _monoHost failed: " + ex);
-                    }
+                    try { UnityEngine.Object.Destroy(_monoHost); }
+                    catch (Exception ex) { LogError("[WorldTickDispatcher] ❌ Destroy _monoHost failed: " + ex); }
                 }
 
                 if (_host != null)
                 {
-                    try
-                    {
-                        UnityEngine.Object.Destroy(_host);
-                    }
-                    catch (Exception ex)
-                    {
-                        LogError("[WorldTickDispatcher] ❌ Destroy _host failed: " + ex);
-                    }
+                    try { UnityEngine.Object.Destroy(_host); }
+                    catch (Exception ex) { LogError("[WorldTickDispatcher] ❌ Destroy _host failed: " + ex); }
                 }
 
                 LogDebug("[WorldTickDispatcher] 🧹 Shutdown complete.");
@@ -112,15 +82,6 @@ namespace AIRefactored.Runtime
             _host = null;
         }
 
-        #endregion
-
-        #region Ticking
-
-        /// <summary>
-        /// Ticks all world systems for the given frame delta time.
-        /// Bulletproof: All failures are locally contained, global state is never at risk.
-        /// </summary>
-        /// <param name="deltaTime">The time delta since the last frame.</param>
         public static void Tick(float deltaTime)
         {
             if (!_isActive || _isQuitting || !GameWorldHandler.IsInitialized || !GameWorldHandler.IsHost)
@@ -136,14 +97,6 @@ namespace AIRefactored.Runtime
             }
         }
 
-        #endregion
-
-        #region MonoHost
-
-        /// <summary>
-        /// Internal MonoBehaviour host that drives frame-based ticking.
-        /// Used in all modes — traditional or headless client.
-        /// </summary>
         private sealed class TickHost : MonoBehaviour
         {
             private void Update()
@@ -178,10 +131,6 @@ namespace AIRefactored.Runtime
             }
         }
 
-        #endregion
-
-        #region Log Helpers
-
         private static void LogDebug(string msg)
         {
             if (!FikaHeadlessDetector.IsHeadless)
@@ -193,7 +142,5 @@ namespace AIRefactored.Runtime
             if (!FikaHeadlessDetector.IsHeadless)
                 Logger.LogError(msg);
         }
-
-        #endregion
     }
 }

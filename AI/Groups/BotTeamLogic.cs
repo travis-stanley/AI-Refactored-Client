@@ -47,7 +47,6 @@ namespace AIRefactored.AI.Groups
         {
             if (!EFTPlayerUtil.IsValidBotOwner(bot))
                 throw new ArgumentException("[BotTeamLogic] Invalid or non-AI bot owner.");
-
             _bot = bot;
         }
 
@@ -55,9 +54,6 @@ namespace AIRefactored.AI.Groups
 
         #region Public Methods
 
-        /// <summary>
-        /// Adds an enemy to all squadmates' memory and group controller.
-        /// </summary>
         public static void AddEnemy(BotOwner bot, IPlayer target)
         {
             try
@@ -81,15 +77,9 @@ namespace AIRefactored.AI.Groups
                     }
                 }
             }
-            catch
-            {
-                // Fail silently: squad logic is always isolated
-            }
+            catch { }
         }
 
-        /// <summary>
-        /// Broadcasts mission type to all squadmates (voice).
-        /// </summary>
         public static void BroadcastMissionType(BotOwner bot, MissionType mission)
         {
             try
@@ -107,15 +97,9 @@ namespace AIRefactored.AI.Groups
                     }
                 }
             }
-            catch
-            {
-                // Fail silently
-            }
+            catch { }
         }
 
-        /// <summary>
-        /// Broadcasts a fallback retreat point to all squadmates' Combat FSMs.
-        /// </summary>
         public void BroadcastFallback(Vector3 retreatPoint)
         {
             foreach (var pair in _combatMap)
@@ -130,9 +114,6 @@ namespace AIRefactored.AI.Groups
             }
         }
 
-        /// <summary>
-        /// Regroup with squadmates if too far, using only vanilla movement.
-        /// </summary>
         public void CoordinateMovement()
         {
             try
@@ -163,19 +144,12 @@ namespace AIRefactored.AI.Groups
                 Vector3 target = center + jitter;
                 if ((_bot.Position - target).sqrMagnitude > RegroupThresholdSqr)
                 {
-                    // Use only vanilla EFT movement.
                     BotMovementHelper.SmoothMoveTo(_bot, target, false);
                 }
             }
-            catch
-            {
-                // Fail silently; squad logic is always local
-            }
+            catch { }
         }
 
-        /// <summary>
-        /// Registers a squadmate's CombatStateMachine for tactical comms.
-        /// </summary>
         public void InjectCombatState(BotOwner mate, CombatStateMachine fsm)
         {
             try
@@ -185,19 +159,12 @@ namespace AIRefactored.AI.Groups
                     _combatMap.Add(mate, fsm);
                 }
             }
-            catch
-            {
-                // Fail silently
-            }
+            catch { }
         }
 
-        /// <summary>
-        /// Sets the list of squadmates for regrouping/tactical actions.
-        /// </summary>
         public void SetTeammates(List<BotOwner> allBots)
         {
             _teammates.Clear();
-
             try
             {
                 Player self = _bot.GetPlayer;
@@ -219,15 +186,9 @@ namespace AIRefactored.AI.Groups
                     }
                 }
             }
-            catch
-            {
-                // Fail silently
-            }
+            catch { }
         }
 
-        /// <summary>
-        /// Shares a spotted enemy with all squadmates (adds to memory/group).
-        /// </summary>
         public void ShareTarget(IPlayer enemy)
         {
             try
@@ -240,7 +201,6 @@ namespace AIRefactored.AI.Groups
                     return;
 
                 IPlayer safe = EFTPlayerUtil.AsSafeIPlayer(resolved);
-
                 for (int i = 0; i < _teammates.Count; i++)
                 {
                     BotOwner mate = _teammates[i];
@@ -250,19 +210,13 @@ namespace AIRefactored.AI.Groups
                     }
                 }
             }
-            catch
-            {
-                // Fail silently
-            }
+            catch { }
         }
 
         #endregion
 
         #region Internal Helpers
 
-        /// <summary>
-        /// Force-add an enemy to a squadmate's memory and group logic.
-        /// </summary>
         private static void ForceRegisterEnemy(BotOwner receiver, IPlayer enemy)
         {
             try
@@ -278,15 +232,9 @@ namespace AIRefactored.AI.Groups
                     receiver.Memory?.AddEnemy(enemy, settings, false);
                 }
             }
-            catch
-            {
-                // Fail silently: never break squad logic or AI
-            }
+            catch { }
         }
 
-        /// <summary>
-        /// Issues a delayed fallback command to a squadmate's FSM (non-blocking).
-        /// </summary>
         private static void TriggerDelayedFallback(CombatStateMachine fsm, Vector3 point)
         {
             if (fsm == null)
@@ -299,10 +247,7 @@ namespace AIRefactored.AI.Groups
                     await Task.Delay(Random.Range(150, 400));
                     fsm.TriggerFallback(point);
                 }
-                catch
-                {
-                    // Fail silently or log if needed
-                }
+                catch { }
             });
         }
 

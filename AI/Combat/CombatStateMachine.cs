@@ -24,16 +24,10 @@ namespace AIRefactored.AI.Combat
 
     public sealed class CombatStateMachine
     {
-        #region Constants
-
         private const float MinTransitionDelay = 0.4f;
         private const float PatrolMinDuration = 1.25f;
         private const float PatrolCooldown = 12.0f;
         private const float ReentryCooldown = 3.0f;
-
-        #endregion
-
-        #region Fields
 
         private BotComponentCache _cache;
         private BotOwner _bot;
@@ -50,16 +44,8 @@ namespace AIRefactored.AI.Combat
         private float _lastStateChangeTime;
         private bool _initialized;
 
-        #endregion
-
-        #region Properties
-
         public Vector3 LastKnownEnemyPos => _lastKnownEnemyPos;
         public float LastStateChangeTime => _lastStateChangeTime;
-
-        #endregion
-
-        #region Public Methods
 
         public void Initialize(BotComponentCache componentCache)
         {
@@ -98,10 +84,10 @@ namespace AIRefactored.AI.Combat
 
             try
             {
-                return (_fallback.IsActive() ||
-                        _engage.IsEngaging() ||
-                        _investigate.IsInvestigating() ||
-                        (_cache.ThreatSelector != null && _cache.ThreatSelector.CurrentTarget != null));
+                return _fallback.IsActive()
+                    || _engage.IsEngaging()
+                    || _investigate.IsInvestigating()
+                    || _cache.ThreatSelector?.CurrentTarget != null;
             }
             catch (Exception ex)
             {
@@ -112,8 +98,7 @@ namespace AIRefactored.AI.Combat
 
         public void NotifyDamaged()
         {
-            if (!_initialized)
-                return;
+            if (!_initialized) return;
 
             try
             {
@@ -133,8 +118,7 @@ namespace AIRefactored.AI.Combat
 
         public void NotifyEchoInvestigate()
         {
-            if (!_initialized)
-                return;
+            if (!_initialized) return;
 
             try
             {
@@ -171,12 +155,7 @@ namespace AIRefactored.AI.Combat
                 {
                     AssignFallbackIfNeeded();
                     _bot.BotTalk?.TrySay(EPhraseTrigger.OnBeingHurt);
-
-                    Vector3 fallback = _fallback.HasValidFallbackPath()
-                        ? _fallback.GetFallbackPosition()
-                        : _bot.Position;
-
-                    _echo.EchoFallbackToSquad(fallback);
+                    _echo.EchoFallbackToSquad(_fallback.GetFallbackPositionOrDefault(_bot.Position));
                     _lastStateChangeTime = time;
                     return;
                 }
@@ -236,8 +215,7 @@ namespace AIRefactored.AI.Combat
 
         public void TriggerFallback(Vector3 fallbackPos)
         {
-            if (!_initialized)
-                return;
+            if (!_initialized) return;
 
             try
             {
@@ -263,10 +241,6 @@ namespace AIRefactored.AI.Combat
             }
         }
 
-        #endregion
-
-        #region Private Methods
-
         private void AssignFallbackIfNeeded()
         {
             try
@@ -280,9 +254,7 @@ namespace AIRefactored.AI.Combat
 
                 Vector3 fallback;
                 if (!BotNavHelper.TryGetSafeTarget(_bot, out fallback) || !IsVectorValid(fallback))
-                {
                     fallback = _bot.Position + retreatDir * 5f;
-                }
 
                 var path = TempListPool.Rent<Vector3>();
                 path.Clear();
@@ -329,17 +301,16 @@ namespace AIRefactored.AI.Combat
                     return true;
                 }
 
-                if (_cache.GroupSync?.IsSquadReady() ?? false)
+                if (_cache.GroupSync?.IsSquadReady() == true)
                 {
                     Vector3 self = _bot.Position;
-                    IReadOnlyList<BotOwner> mates = _cache.GroupSync.GetTeammates();
-                    for (int i = 0; i < mates.Count; i++)
+                    var squad = _cache.GroupSync.GetTeammates();
+                    for (int i = 0; i < squad.Count; i++)
                     {
-                        BotOwner mate = mates[i];
-                        if (mate != null && mate != _bot && !mate.IsDead)
+                        BotOwner mate = squad[i];
+                        if (mate != null && !mate.IsDead && mate != _bot)
                         {
-                            float dist = Vector3.Distance(mate.Position, self);
-                            if (dist < 12f)
+                            if (Vector3.Distance(mate.Position, self) < 12f)
                             {
                                 _fallback.Cancel();
                                 _bot.BotTalk?.TrySay(EPhraseTrigger.Cooperation);
@@ -374,7 +345,5 @@ namespace AIRefactored.AI.Combat
         {
             return !float.IsNaN(v.x) && !float.IsNaN(v.y) && !float.IsNaN(v.z);
         }
-
-        #endregion
     }
 }

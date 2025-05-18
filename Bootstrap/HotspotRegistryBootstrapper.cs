@@ -21,21 +21,16 @@ namespace AIRefactored.Bootstrap
     /// </summary>
     public sealed class HotspotRegistryBootstrapper : IAIWorldSystemBootstrapper
     {
-        #region Fields
-
         private static readonly ManualLogSource Logger = Plugin.LoggerInstance;
         private volatile bool _isInitialized;
         private volatile bool _hasFailed;
-
-        #endregion
-
-        #region Lifecycle
 
         /// <inheritdoc />
         public void Initialize()
         {
             _isInitialized = false;
             _hasFailed = false;
+
             try
             {
                 HotspotRegistry.Clear();
@@ -75,8 +70,7 @@ namespace AIRefactored.Bootstrap
         /// <inheritdoc />
         public void Tick(float deltaTime)
         {
-            // Future: Runtime hotspot adaptation can be added here.
-            // All errors must be locally handled if logic is added.
+            // Future: Add runtime hotspot logic here. All errors must remain locally isolated.
         }
 
         /// <inheritdoc />
@@ -113,11 +107,8 @@ namespace AIRefactored.Bootstrap
         /// </summary>
         private void OnFailover()
         {
-            // Optionally, notify fallback for Hotspot logic here (never cascades).
-            // Example: HotspotRegistry.RevertToVanilla();
-            // This must never affect any other system, bot, or global state.
+            // Optional: Add fallback logic like HotspotRegistry.RevertToVanilla() here.
+            // Must never affect global systems or other AI components.
         }
-
-        #endregion
     }
 }

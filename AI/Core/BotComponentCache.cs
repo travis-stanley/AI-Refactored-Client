@@ -125,10 +125,6 @@ namespace AIRefactored.AI.Core
 
         #region Initialization
 
-        /// <summary>
-        /// Initializes and wires up all bot subsystems. Each is bulletproofed against failure.
-        /// Owner and ThreatSelector are strictly assigned in the registry, never here.
-        /// </summary>
         public void Initialize(BotOwner bot)
         {
             if (bot == null)
@@ -138,7 +134,6 @@ namespace AIRefactored.AI.Core
             }
 
             string id = bot.Profile?.Id ?? "null";
-
             if (Bot != null || InitializedBots.Contains(id))
                 return;
 
@@ -172,8 +167,6 @@ namespace AIRefactored.AI.Core
             TryInit(() => GroupComms = new BotGroupComms(this), "GroupComms");
             TryInit(() => SquadHealer = bot.HealAnotherTarget ?? new BotHealAnotherTarget(bot), "SquadHealer");
             TryInit(() => HealReceiver = bot.HealingBySomebody ?? new BotHealingBySomebody(bot), "HealReceiver");
-
-            // Critical audit: owner/threatselector MUST be set by registry before use!
         }
 
         private void TryInit(Action action, string name)
@@ -209,7 +202,6 @@ namespace AIRefactored.AI.Core
                 }
             }
 
-            // Final audit
             if (Bot == null || _owner == null || ThreatSelector == null)
             {
                 Logger.LogError("[BotComponentCache] Post-wiring critical reference missing!");

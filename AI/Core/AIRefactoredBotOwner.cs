@@ -19,7 +19,6 @@ namespace AIRefactored.AI.Core
     /// <summary>
     /// Holds AIRefactored-specific metadata for a bot, including personality, zone, tuning, and runtime behavior state.
     /// Always logs and recovers locally if any core field is invalid. Never disables itself or triggers fallback.
-    /// Bulletproof: all failures are isolated, never cascade or prevent continued operation.
     /// </summary>
     public sealed class AIRefactoredBotOwner
     {
@@ -71,7 +70,9 @@ namespace AIRefactored.AI.Core
             get
             {
                 if (_missionController == null)
+                {
                     Logger.LogError("[AIRefactoredBotOwner] MissionController is null.");
+                }
                 return _missionController;
             }
         }
@@ -95,10 +96,6 @@ namespace AIRefactored.AI.Core
 
         #region Initialization
 
-        /// <summary>
-        /// Initializes the owner and sets up cache and personality.
-        /// </summary>
-        /// <param name="bot">BotOwner instance.</param>
         public void Initialize(BotOwner bot)
         {
             if (bot == null)
@@ -107,10 +104,12 @@ namespace AIRefactored.AI.Core
                 _isInitialized = false;
                 return;
             }
+
             if (_isInitialized)
                 return;
 
             _bot = bot;
+
             try
             {
                 _cache = BotComponentCacheRegistry.GetOrCreate(bot);
@@ -121,6 +120,7 @@ namespace AIRefactored.AI.Core
                 BotPersonalityProfile profile = BotRegistry.GetOrGenerate(profileId, PersonalityType.Balanced, role);
 
                 InitProfile(profile, profile?.Personality.ToString() ?? "Balanced");
+
                 _isInitialized = true;
 
                 if (!FikaHeadlessDetector.IsHeadless)
@@ -140,9 +140,6 @@ namespace AIRefactored.AI.Core
 
         #region Personality
 
-        /// <summary>
-        /// Initializes from a preset PersonalityType.
-        /// </summary>
         public void InitProfile(PersonalityType type)
         {
             try
@@ -157,6 +154,7 @@ namespace AIRefactored.AI.Core
                 {
                     PersonalityName = type.ToString();
                 }
+
                 PersonalityProfile = preset;
 
                 if (!FikaHeadlessDetector.IsHeadless)
@@ -172,9 +170,6 @@ namespace AIRefactored.AI.Core
             }
         }
 
-        /// <summary>
-        /// Initializes from a custom profile and name.
-        /// </summary>
         public void InitProfile(BotPersonalityProfile profile, string name)
         {
             try
@@ -186,6 +181,7 @@ namespace AIRefactored.AI.Core
                     PersonalityName = "Default";
                     return;
                 }
+
                 PersonalityProfile = profile;
                 PersonalityName = string.IsNullOrEmpty(name) ? "Custom" : name;
 
@@ -196,15 +192,12 @@ namespace AIRefactored.AI.Core
             }
             catch (Exception ex)
             {
-                Logger.LogError($"[AIRefactoredBotOwner] Exception in InitProfile(profile,name): {ex}");
+                Logger.LogError($"[AIRefactoredBotOwner] Exception in InitProfile(profile, name): {ex}");
                 PersonalityProfile = new BotPersonalityProfile();
                 PersonalityName = "Default";
             }
         }
 
-        /// <summary>
-        /// Clears the personality to a default state.
-        /// </summary>
         public void ClearPersonality()
         {
             try
@@ -223,9 +216,6 @@ namespace AIRefactored.AI.Core
             }
         }
 
-        /// <summary>
-        /// Returns true if personality is assigned.
-        /// </summary>
         public bool HasPersonality()
         {
             return PersonalityProfile != null;
@@ -235,9 +225,6 @@ namespace AIRefactored.AI.Core
 
         #region Zone + Mission
 
-        /// <summary>
-        /// Sets the assigned zone name for this bot.
-        /// </summary>
         public void SetZone(string zoneName)
         {
             try
@@ -258,9 +245,6 @@ namespace AIRefactored.AI.Core
             }
         }
 
-        /// <summary>
-        /// Sets the mission controller.
-        /// </summary>
         public void SetMissionController(BotMissionController controller)
         {
             try
@@ -270,6 +254,7 @@ namespace AIRefactored.AI.Core
                     Logger.LogError("[AIRefactoredBotOwner] SetMissionController failed: controller is null.");
                     return;
                 }
+
                 _missionController = controller;
             }
             catch (Exception ex)

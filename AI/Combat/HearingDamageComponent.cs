@@ -42,14 +42,7 @@ namespace AIRefactored.AI.Combat
         /// <summary>
         /// Gets the remaining deafness duration in seconds.
         /// </summary>
-        public float RemainingTime
-        {
-            get
-            {
-                float remaining = _deafDuration - _elapsedTime;
-                return remaining > 0f ? remaining : 0f;
-            }
-        }
+        public float RemainingTime => Mathf.Max(_deafDuration - _elapsedTime, 0f);
 
         #endregion
 
@@ -79,8 +72,7 @@ namespace AIRefactored.AI.Combat
             }
             catch
             {
-                // Never propagate failure
-                Clear();
+                Clear(); // Always self-heal
             }
         }
 
@@ -122,8 +114,7 @@ namespace AIRefactored.AI.Combat
             }
             catch
             {
-                // Always self-heal if something breaks
-                Clear();
+                Clear(); // Fail-safe recovery
             }
         }
 

@@ -194,7 +194,10 @@ namespace AIRefactored.AI.Groups
                     _bot.Mover.GoToPoint(_bot.Position, true, 1.0f);
                 }
             }
-            catch { /* Hard fail-safe: never break global logic */ }
+            catch
+            {
+                // Hard fail-safe: never break global logic
+            }
         }
 
         #endregion

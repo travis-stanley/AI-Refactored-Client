@@ -21,24 +21,12 @@ namespace AIRefactored.Runtime
     /// <summary>
     /// Orchestrates the full AI-Refactored initialization lifecycle using staged world boot phases.
     /// Triggered directly from GameWorldSpawnHook instead of polling.
-    /// Bulletproof: All failures are strictly isolated; no global state can be broken.
-    /// No fallback lockouts: all bots are always eligible for world registration.
+    /// Bulletproof: All failures are strictly isolated. All bots are always eligible. No fallback logic used.
     /// </summary>
     public static class InitPhaseRunner
     {
-        #region Fields
-
         private static bool _hasStarted;
 
-        #endregion
-
-        #region Lifecycle
-
-        /// <summary>
-        /// Starts the full AI-Refactored boot sequence exactly once.
-        /// Bulletproof: All failures are locally contained and cannot break mod.
-        /// </summary>
-        /// <param name="logger">Logger for runtime diagnostics.</param>
         public static void Begin(ManualLogSource logger)
         {
             if (_hasStarted)
@@ -75,7 +63,6 @@ namespace AIRefactored.Runtime
                     LogWarn(logger, "[InitPhaseRunner] ⚠ No valid map ID.");
                 }
 
-                // NavMesh/navpoint building is strictly deferred from here.
                 GameWorldHandler.Initialize();
                 WorldBootstrapper.Begin(logger, mapId);
 
@@ -91,10 +78,6 @@ namespace AIRefactored.Runtime
             }
         }
 
-        /// <summary>
-        /// Stops and resets all world systems in preparation for a new raid.
-        /// Bulletproof: No errors can propagate or break the mod.
-        /// </summary>
         public static void Stop()
         {
             if (!_hasStarted)
@@ -110,10 +93,6 @@ namespace AIRefactored.Runtime
             }
         }
 
-        #endregion
-
-        #region Internal Reset
-
         private static void ResetInternal(ManualLogSource logger)
         {
             _hasStarted = false;
@@ -122,14 +101,9 @@ namespace AIRefactored.Runtime
             try { WorldTickDispatcher.Reset(); } catch { }
             try { WorldBootstrapper.Stop(); } catch { }
             try { GameWorldHandler.Cleanup(); } catch { }
-            // NavMeshStatus.Reset() removed as no longer exists
 
             try { LogDebug(logger, "[InitPhaseRunner] 🧹 Cleanup complete — initialization state reset."); } catch { }
         }
-
-        #endregion
-
-        #region Validation
 
         private static bool IsWorldSafeAndUnique()
         {
@@ -147,9 +121,9 @@ namespace AIRefactored.Runtime
                     if (!EFTPlayerUtil.IsValid(player) || string.IsNullOrEmpty(profileId))
                         continue;
                     if (!seenProfiles.Add(profileId))
-                        return false; // Duplicate or null player
-                    // Fallback-bot lockouts removed: ALL bots are eligible for injection and registration
+                        return false;
                 }
+
                 return seenProfiles.Count > 0;
             }
             catch
@@ -157,10 +131,6 @@ namespace AIRefactored.Runtime
                 return false;
             }
         }
-
-        #endregion
-
-        #region Log Helpers
 
         private static void LogDebug(ManualLogSource logger, string msg)
         {
@@ -179,7 +149,5 @@ namespace AIRefactored.Runtime
             if (!FikaHeadlessDetector.IsHeadless)
                 logger?.LogError(msg);
         }
-
-        #endregion
     }
 }

@@ -154,32 +154,21 @@ namespace AIRefactored.Runtime
 					if (string.IsNullOrEmpty(profileId))
 						continue;
 
-					GameObject go = player.gameObject;
-					BotBrain brain = go.GetComponent<BotBrain>();
-
+					BotBrain brain = player.gameObject.GetComponent<BotBrain>();
 					if (brain != null)
 					{
 						if (!brain.enabled)
 						{
 							brain.enabled = true;
-							LogWarn("[BotRecoveryService] Re-enabled disabled BotBrain: " + profileId);
+							LogWarn("[BotRecoveryService] ♻ Re-enabled disabled BotBrain: " + profileId);
 						}
 						continue;
 					}
 
-					string name = player.Profile?.Info?.Nickname ?? "Unknown";
-					LogWarn("[BotRecoveryService] ⚠ Missing BotBrain — restoring: " + name);
-
 					if (player.AIData?.BotOwner != null)
 					{
-						try
-						{
-							GameWorldHandler.TryAttachBotBrain(player.AIData.BotOwner);
-						}
-						catch (Exception ex)
-						{
-							LogError("[BotRecoveryService] ❌ Failed to attach brain to BotOwner: " + ex);
-						}
+						GameWorldHandler.TryAttachBotBrain(player.AIData.BotOwner);
+						LogWarn("[BotRecoveryService] ⚠ BotBrain missing — injected late for: " + (player.Profile?.Info?.Nickname ?? "Unknown"));
 					}
 
 					if (!_hasRescanned && GameWorldHandler.IsReady() && WorldInitState.IsInPhase(WorldPhase.WorldReady))

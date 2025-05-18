@@ -3,7 +3,7 @@
 //   Licensed under the MIT License. See LICENSE in the repository root for more information.
 //
 //   THIS FILE IS SYSTEMATICALLY MANAGED.
-//   Bulletproof: All errors are locally isolated, never disables itself, never disables squadmates, never triggers fallback AI.
+//   Bulletproof: All errors are locally isolated, never disables handler, never disables squadmates, never triggers fallback AI.
 // </auto-generated>
 
 namespace AIRefactored.AI.Combat.States
@@ -24,27 +24,16 @@ namespace AIRefactored.AI.Combat.States
     /// </summary>
     public sealed class EchoCoordinator
     {
-        #region Constants
-
         private const float EchoCooldown = 4.0f;
         private const float MaxEchoRangeSqr = 1600.0f;
         private const float BaseFallbackDistance = 6.0f;
         private const float FallbackChaosOffset = 1.75f;
         private const float MinDirectionSqr = 0.01f;
 
-        #endregion
-
-        #region Fields
-
         private readonly BotOwner _bot;
         private readonly BotComponentCache _cache;
-
         private float _lastEchoFallbackTime = float.NegativeInfinity;
         private float _lastEchoInvestigateTime = float.NegativeInfinity;
-
-        #endregion
-
-        #region Constructor
 
         public EchoCoordinator(BotComponentCache cache)
         {
@@ -52,13 +41,6 @@ namespace AIRefactored.AI.Combat.States
             _bot = cache?.Bot;
         }
 
-        #endregion
-
-        #region Public Methods
-
-        /// <summary>
-        /// Triggers a fallback signal to all squadmates, directing them to retreat tactically.
-        /// </summary>
         public void EchoFallbackToSquad(Vector3 retreatPosition)
         {
             if (_cache == null || _bot == null || _bot.BotsGroup == null)
@@ -100,10 +82,8 @@ namespace AIRefactored.AI.Combat.States
 
                     Vector3 destination = mate.Position - fallbackDir * BaseFallbackDistance + chaos;
 
-                    // Use only BotNavHelper (EFT nav). If nav fails, just use the calculated position.
                     if (!BotNavHelper.TryGetSafeTarget(mate, out destination) || !IsValidTarget(destination))
                     {
-                        // Navigation failed: still proceed with destination
                         destination = mate.Position - fallbackDir * BaseFallbackDistance + chaos;
                     }
 
@@ -113,16 +93,13 @@ namespace AIRefactored.AI.Combat.States
                     }
                     catch (Exception ex)
                     {
-                        Plugin.LoggerInstance.LogError($"[EchoCoordinator] TriggerFallback error for squadmate: {ex}");
+                        Plugin.LoggerInstance.LogError($"[EchoCoordinator] TriggerFallback error: {ex}");
                     }
 
                     if (!FikaHeadlessDetector.IsHeadless && mate.BotTalk != null)
                     {
-                        try
-                        {
-                            mate.BotTalk.TrySay(EPhraseTrigger.CoverMe);
-                        }
-                        catch { /* no-op */ }
+                        try { mate.BotTalk.TrySay(EPhraseTrigger.CoverMe); }
+                        catch { }
                     }
                 }
                 catch (Exception ex)
@@ -134,9 +111,6 @@ namespace AIRefactored.AI.Combat.States
             _lastEchoFallbackTime = now;
         }
 
-        /// <summary>
-        /// Triggers an investigative signal to all squadmates, causing them to enter a search state.
-        /// </summary>
         public void EchoInvestigateToSquad()
         {
             if (_cache == null || _bot == null || _bot.BotsGroup == null)
@@ -167,16 +141,13 @@ namespace AIRefactored.AI.Combat.States
                     }
                     catch (Exception ex)
                     {
-                        Plugin.LoggerInstance.LogError($"[EchoCoordinator] NotifyEchoInvestigate error for squadmate: {ex}");
+                        Plugin.LoggerInstance.LogError($"[EchoCoordinator] NotifyEchoInvestigate error: {ex}");
                     }
 
                     if (!FikaHeadlessDetector.IsHeadless && mate.BotTalk != null)
                     {
-                        try
-                        {
-                            mate.BotTalk.TrySay(EPhraseTrigger.CheckHim);
-                        }
-                        catch { /* no-op */ }
+                        try { mate.BotTalk.TrySay(EPhraseTrigger.CheckHim); }
+                        catch { }
                     }
                 }
                 catch (Exception ex)
@@ -188,16 +159,13 @@ namespace AIRefactored.AI.Combat.States
             _lastEchoInvestigateTime = now;
         }
 
-        /// <summary>
-        /// Broadcasts enemy location to squadmates for shared tactical awareness.
-        /// </summary>
         public void EchoSpottedEnemyToSquad(Vector3 enemyPosition)
         {
             if (_cache == null || _bot == null || _bot.BotsGroup == null)
                 return;
 
             string enemyId = string.Empty;
-            Player enemy = _cache.ThreatSelector != null ? _cache.ThreatSelector.CurrentTarget : null;
+            Player enemy = _cache.ThreatSelector?.CurrentTarget;
             if (enemy != null && !string.IsNullOrEmpty(enemy.ProfileId))
             {
                 enemyId = enemy.ProfileId;
@@ -222,7 +190,7 @@ namespace AIRefactored.AI.Combat.States
                     }
                     catch (Exception ex)
                     {
-                        Plugin.LoggerInstance.LogError($"[EchoCoordinator] RecordEnemyPosition error for squadmate: {ex}");
+                        Plugin.LoggerInstance.LogError($"[EchoCoordinator] RecordEnemyPosition error: {ex}");
                     }
                 }
                 catch (Exception ex)
@@ -232,25 +200,22 @@ namespace AIRefactored.AI.Combat.States
             }
         }
 
-        #endregion
-
-        #region Private Methods
-
         private static bool CanAcceptEcho(BotComponentCache cache)
         {
             if (cache.IsBlinded)
                 return false;
-            if (cache.PanicHandler != null && cache.PanicHandler.IsPanicking)
+
+            if (cache.PanicHandler?.IsPanicking == true)
                 return false;
-            return cache.AIRefactoredBotOwner != null &&
-                   cache.AIRefactoredBotOwner.PersonalityProfile != null &&
-                   cache.AIRefactoredBotOwner.PersonalityProfile.Caution >= 0.15f;
+
+            return cache.AIRefactoredBotOwner?.PersonalityProfile?.Caution >= 0.15f;
         }
 
         private bool IsValidSquadmate(BotOwner mate, Vector3 origin)
         {
             if (mate == null || mate == _bot || mate.IsDead)
                 return false;
+
             return (mate.Position - origin).sqrMagnitude <= MaxEchoRangeSqr;
         }
 
@@ -261,7 +226,5 @@ namespace AIRefactored.AI.Combat.States
                    !float.IsNaN(pos.y) &&
                    !float.IsNaN(pos.z);
         }
-
-        #endregion
     }
 }

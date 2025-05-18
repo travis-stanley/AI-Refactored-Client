@@ -23,21 +23,11 @@ namespace AIRefactored.AI.Combat.States
     /// </summary>
     public sealed class EngageHandler
     {
-        #region Constants
-
         private const float DefaultEngagementRange = 25.0f;
-
-        #endregion
-
-        #region Fields
 
         private readonly BotOwner _bot;
         private readonly BotComponentCache _cache;
         private readonly float _fallbackRange;
-
-        #endregion
-
-        #region Constructor
 
         public EngageHandler(BotComponentCache cache)
         {
@@ -48,22 +38,14 @@ namespace AIRefactored.AI.Combat.States
             _fallbackRange = profileRange > 0f ? profileRange : DefaultEngagementRange;
         }
 
-        #endregion
-
-        #region Public Methods
-
-        /// <summary>
-        /// Determines if the bot should begin advancing toward the enemy.
-        /// </summary>
         public bool ShallUseNow()
         {
             if (!IsCombatCapable())
                 return false;
 
-            Vector3 enemyPos;
             try
             {
-                return TryGetLastKnownEnemy(out enemyPos) && !IsWithinRange(enemyPos);
+                return TryGetLastKnownEnemy(out Vector3 enemyPos) && !IsWithinRange(enemyPos);
             }
             catch (Exception ex)
             {
@@ -72,18 +54,14 @@ namespace AIRefactored.AI.Combat.States
             }
         }
 
-        /// <summary>
-        /// Determines if the bot is close enough to start direct attack behavior.
-        /// </summary>
         public bool CanAttack()
         {
             if (!IsCombatCapable())
                 return false;
 
-            Vector3 enemyPos;
             try
             {
-                return TryGetLastKnownEnemy(out enemyPos) && IsWithinRange(enemyPos);
+                return TryGetLastKnownEnemy(out Vector3 enemyPos) && IsWithinRange(enemyPos);
             }
             catch (Exception ex)
             {
@@ -92,9 +70,6 @@ namespace AIRefactored.AI.Combat.States
             }
         }
 
-        /// <summary>
-        /// Advances the bot toward last known enemy position with squad offset.
-        /// </summary>
         public void Tick()
         {
             if (!IsCombatCapable())
@@ -102,19 +77,18 @@ namespace AIRefactored.AI.Combat.States
 
             try
             {
-                Vector3 enemyPos;
-                if (!TryGetLastKnownEnemy(out enemyPos))
+                if (!TryGetLastKnownEnemy(out Vector3 enemyPos))
                     return;
 
-                Vector3 destination = (_cache.SquadPath != null)
+                Vector3 destination = _cache.SquadPath != null
                     ? _cache.SquadPath.ApplyOffsetTo(enemyPos)
                     : enemyPos;
 
-                // Use only BotNavHelper (EFT nav). If nav fails, just use the calculated destination.
-                if (!IsValid(destination) || !BotNavHelper.TryGetSafeTarget(_bot, out destination) || !IsValid(destination))
+                if (!IsValid(destination) ||
+                    !BotNavHelper.TryGetSafeTarget(_bot, out destination) ||
+                    !IsValid(destination))
                 {
-                    // Navigation failed: still proceed with destination.
-                    destination = (_cache.SquadPath != null)
+                    destination = _cache.SquadPath != null
                         ? _cache.SquadPath.ApplyOffsetTo(enemyPos)
                         : enemyPos;
                 }
@@ -124,8 +98,7 @@ namespace AIRefactored.AI.Combat.States
                     try
                     {
                         BotMovementHelper.SmoothMoveTo(_bot, destination);
-                        if (_cache.Combat != null)
-                            _cache.Combat.TrySetStanceFromNearbyCover(destination);
+                        _cache.Combat?.TrySetStanceFromNearbyCover(destination);
                     }
                     catch (Exception ex)
                     {
@@ -143,18 +116,14 @@ namespace AIRefactored.AI.Combat.States
             }
         }
 
-        /// <summary>
-        /// Returns whether the bot is currently engaging based on distance to last known enemy.
-        /// </summary>
         public bool IsEngaging()
         {
             if (!IsCombatCapable())
                 return false;
 
-            Vector3 enemyPos;
             try
             {
-                return TryGetLastKnownEnemy(out enemyPos) && !IsWithinRange(enemyPos);
+                return TryGetLastKnownEnemy(out Vector3 enemyPos) && !IsWithinRange(enemyPos);
             }
             catch (Exception ex)
             {
@@ -163,10 +132,6 @@ namespace AIRefactored.AI.Combat.States
             }
         }
 
-        #endregion
-
-        #region Private Methods
-
         private bool IsCombatCapable()
         {
             return _cache != null && _bot != null && _cache.Combat != null;
@@ -174,7 +139,7 @@ namespace AIRefactored.AI.Combat.States
 
         private bool TryGetLastKnownEnemy(out Vector3 result)
         {
-            result = (_cache != null && _cache.Combat != null) ? _cache.Combat.LastKnownEnemyPos : Vector3.zero;
+            result = _cache?.Combat?.LastKnownEnemyPos ?? Vector3.zero;
             return result != Vector3.zero &&
                    !float.IsNaN(result.x) &&
                    !float.IsNaN(result.y) &&
@@ -190,7 +155,5 @@ namespace AIRefactored.AI.Combat.States
         {
             return !float.IsNaN(pos.x) && !float.IsNaN(pos.y) && !float.IsNaN(pos.z);
         }
-
-        #endregion
     }
 }

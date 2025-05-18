@@ -164,11 +164,9 @@ namespace AIRefactored.AI.Groups
         public Vector3? GetSharedFallbackTarget() => _hasFallback ? (Vector3?)_fallbackPoint : null;
         public Vector3? GetSharedLootTarget() => _hasLoot ? (Vector3?)_lootPoint : null;
         public Vector3? GetSharedExtractTarget() => _hasExtract ? (Vector3?)_extractPoint : null;
+
         public bool IsSquadReady() => _teammateCaches.Count > 0;
 
-        /// <summary>
-        /// Returns a pooled list of all alive bot teammates (must be returned to pool by caller).
-        /// </summary>
         public IReadOnlyList<BotOwner> GetTeammates()
         {
             var result = TempListPool.Rent<BotOwner>();

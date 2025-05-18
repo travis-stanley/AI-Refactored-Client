@@ -23,27 +23,14 @@ namespace AIRefactored.AI.Combat
     /// </summary>
     public sealed class BotSuppressionReactionComponent
     {
-        #region Constants
-
         private const float MinSuppressionRetreatDistance = 6.0f;
         private const float SuppressionDuration = 2.0f;
-
-        #endregion
-
-        #region Fields
 
         private BotOwner _bot;
         private BotComponentCache _cache;
         private bool _isSuppressed;
         private float _suppressionStartTime = float.NegativeInfinity;
 
-        #endregion
-
-        #region Public Methods
-
-        /// <summary>
-        /// Initializes the suppression reaction component with a bot's component cache.
-        /// </summary>
         public void Initialize(BotComponentCache componentCache)
         {
             if (componentCache == null || componentCache.Bot == null)
@@ -58,17 +45,11 @@ namespace AIRefactored.AI.Combat
             _suppressionStartTime = float.NegativeInfinity;
         }
 
-        /// <summary>
-        /// Returns whether the bot is currently suppressed.
-        /// </summary>
         public bool IsSuppressed()
         {
             return _isSuppressed;
         }
 
-        /// <summary>
-        /// Updates suppression decay over time.
-        /// </summary>
         public void Tick(float time)
         {
             if (!_isSuppressed)
@@ -94,9 +75,6 @@ namespace AIRefactored.AI.Combat
             }
         }
 
-        /// <summary>
-        /// Triggers suppression effects: sprint, fallback, panic escalation.
-        /// </summary>
         public void TriggerSuppression(Vector3? source)
         {
             if (_isSuppressed || !IsValid())
@@ -117,7 +95,6 @@ namespace AIRefactored.AI.Combat
 
                 Vector3 fallback = _bot.Position + retreatDir.normalized * MinSuppressionRetreatDistance;
 
-                // Use BotNavHelper (EFT navigation) to adjust fallback if possible
                 if (BotNavHelper.TryGetSafeTarget(_bot, out var navTarget) && IsVectorValid(navTarget))
                 {
                     fallback = navTarget;
@@ -137,7 +114,7 @@ namespace AIRefactored.AI.Combat
                 if (!FikaHeadlessDetector.IsHeadless && _bot.BotTalk != null)
                 {
                     try { _bot.BotTalk.TrySay(EPhraseTrigger.OnLostVisual); }
-                    catch { /* no-op */ }
+                    catch { }
                 }
             }
             catch (Exception ex)
@@ -145,10 +122,6 @@ namespace AIRefactored.AI.Combat
                 Plugin.LoggerInstance?.LogError("[BotSuppression] Exception in TriggerSuppression: " + ex);
             }
         }
-
-        #endregion
-
-        #region Private Methods
 
         private static Vector3 GetDefaultRetreatDirection()
         {
@@ -175,7 +148,5 @@ namespace AIRefactored.AI.Combat
         {
             return !float.IsNaN(v.x) && !float.IsNaN(v.y) && !float.IsNaN(v.z);
         }
-
-        #endregion
     }
 }

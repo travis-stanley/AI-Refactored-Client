@@ -68,23 +68,18 @@ namespace AIRefactored.AI.Threads
 		private float CombatTickRate => FikaHeadlessDetector.IsHeadless ? 1f / 60f : 1f / 30f;
 		private float LogicTickRate => FikaHeadlessDetector.IsHeadless ? 1f / 30f : 1f / 15f;
 
-		/// <summary>
-		/// Core runtime tick. All subsystems tick independently. Missing or broken subsystems only log warnings, never fallback.
-		/// </summary>
 		public void Tick(float deltaTime)
 		{
 			try
 			{
-				if (!enabled) return;
-				if (_bot == null || _player == null || _bot.IsDead) return;
+				if (!enabled || _bot == null || _player == null || _bot.IsDead)
+					return;
 
-				Player current = _bot.GetPlayer;
-				if (current == null || current.HealthController == null || !current.HealthController.IsAlive)
+				if (_bot.GetPlayer == null || _bot.GetPlayer.HealthController == null || !_bot.GetPlayer.HealthController.IsAlive)
 					return;
 
 				float now = Time.time;
 
-				// Perception
 				if (now >= _nextPerceptionTick)
 				{
 					TryTick(_vision, () => _vision.Tick(now), "Vision");
@@ -93,7 +88,6 @@ namespace AIRefactored.AI.Threads
 					_nextPerceptionTick = now + PerceptionTickRate;
 				}
 
-				// Combat
 				if (now >= _nextCombatTick)
 				{
 					TryTick(_combat, () => _combat.Tick(now), "Combat", fallback: () => LogWarn("[BotBrain] Combat subsystem missing — vanilla fallback not implemented for combat."));
@@ -106,7 +100,6 @@ namespace AIRefactored.AI.Threads
 					_nextCombatTick = now + CombatTickRate;
 				}
 
-				// Logic
 				if (now >= _nextLogicTick)
 				{
 					TryTick(_mission, () => _mission.Tick(now), "Mission", fallback: () => LogWarn("[BotBrain] Mission subsystem missing — vanilla fallback not implemented for mission."));
@@ -118,13 +111,11 @@ namespace AIRefactored.AI.Threads
 					_nextLogicTick = now + LogicTickRate;
 				}
 
-				// Movement: only log warning if missing
 				if (_movement != null)
 					TryTick(_movement, () => _movement.Tick(deltaTime), "Movement");
 				else
 					TryMovementWarning(now);
 
-				// Other systems: just log warnings on failure
 				TryTick(_jump, () => _jump.Tick(deltaTime), "Jump");
 				TryTick(_pose, () => _pose.Tick(now), "Pose");
 				TryTick(_look, () => _look.Tick(deltaTime), "Look");
@@ -138,12 +129,8 @@ namespace AIRefactored.AI.Threads
 			}
 		}
 
-		/// <summary>
-		/// Initializes the bot brain and all subsystems. Each subsystem that fails to wire logs its own errors.
-		/// </summary>
 		public void Initialize(BotOwner bot)
 		{
-			// Only allow on authoritative host (headless or true host)
 			if (!GameWorldHandler.IsLocalHost())
 			{
 				LogWarn("[BotBrain] Initialization skipped: not authoritative host.");
@@ -172,6 +159,7 @@ namespace AIRefactored.AI.Threads
 			try
 			{
 				string profileId = player.Profile.Id;
+
 				if (!BotRegistry.TryGetRefactoredOwner(profileId, out AIRefactoredBotOwner owner) || owner == null)
 				{
 					owner = new AIRefactoredBotOwner();
@@ -195,10 +183,12 @@ namespace AIRefactored.AI.Threads
 				_vision = TryInit(() => { var v = new BotVisionSystem(); v.Initialize(_cache); return v; }, "Vision");
 				_hearing = TryInit(() => { var h = new BotHearingSystem(); h.Initialize(_cache); return h; }, "Hearing");
 				_perception = TryInit(() => { var p = new BotPerceptionSystem(); p.Initialize(_cache); return p; }, "Perception");
+
 				_flashReaction = TryInit(() => { var f = new BotFlashReactionComponent(); f.Initialize(_cache); return f; }, "FlashReaction");
 				_flashDetector = TryInit(() => { var f = new FlashGrenadeComponent(); f.Initialize(_cache); return f; }, "FlashDetector");
 				_hearingDamage = TryInit(() => new HearingDamageComponent(), "HearingDamage");
 				_tactical = TryInit(() => _cache.Tactical, "Tactical");
+
 				_mission = TryInit(() => new BotMissionController(bot, _cache), "Mission");
 				_groupSync = TryInit(() => { var g = new BotGroupSyncCoordinator(); g.Initialize(bot); g.InjectLocalCache(_cache); return g; }, "GroupSync");
 				_asyncProcessor = TryInit(() => { var a = new BotAsyncProcessor(); a.Initialize(bot, _cache); return a; }, "AsyncProcessor");
@@ -213,11 +203,9 @@ namespace AIRefactored.AI.Threads
 			catch (Exception ex)
 			{
 				LogError("[BotBrain] Initialization failed: " + ex);
-				enabled = true; // Never disable the brain—rest will tick on!
+				enabled = true;
 			}
 		}
-
-		#region Helpers
 
 		private static T TryInit<T>(Func<T> ctor, string name) where T : class
 		{
@@ -269,7 +257,5 @@ namespace AIRefactored.AI.Threads
 			if (!FikaHeadlessDetector.IsHeadless)
 				Logger.LogError(msg);
 		}
-
-		#endregion
 	}
 }

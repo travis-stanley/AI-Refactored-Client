@@ -28,24 +28,9 @@ namespace AIRefactored.Bootstrap
 	/// </summary>
 	public static class LootBootstrapper
 	{
-		#region Constants
-
 		private const float MaxCorpseLinkDistance = 1.5f;
-
-		#endregion
-
-		#region Fields
-
 		private static readonly ManualLogSource Logger = Plugin.LoggerInstance;
 
-		#endregion
-
-		#region Public Methods
-
-		/// <summary>
-		/// Registers all scene lootable containers and loose items.
-		/// Bulletproof: Any error disables only this pass, never breaks caller or system.
-		/// </summary>
 		public static void RegisterAllLoot()
 		{
 			if (!GameWorldHandler.IsInitialized || !GameWorldHandler.IsHost)
@@ -58,31 +43,18 @@ namespace AIRefactored.Bootstrap
 			{
 				LootableContainer[] containers = null;
 				LootItem[] items = null;
-				try
-				{
-					containers = UnityEngine.Object.FindObjectsOfType<LootableContainer>();
-				}
-				catch (Exception ex)
-				{
-					Logger.LogError("[LootBootstrapper] Failed to find LootableContainer: " + ex);
-				}
-				try
-				{
-					items = UnityEngine.Object.FindObjectsOfType<LootItem>();
-				}
-				catch (Exception ex)
-				{
-					Logger.LogError("[LootBootstrapper] Failed to find LootItem: " + ex);
-				}
+
+				try { containers = UnityEngine.Object.FindObjectsOfType<LootableContainer>(); }
+				catch (Exception ex) { Logger.LogError("[LootBootstrapper] Failed to find LootableContainer: " + ex); }
+
+				try { items = UnityEngine.Object.FindObjectsOfType<LootItem>(); }
+				catch (Exception ex) { Logger.LogError("[LootBootstrapper] Failed to find LootItem: " + ex); }
 
 				if (containers != null && containers.Length > 0)
-				{
 					RegisterContainers(containers);
-				}
+
 				if (items != null && items.Length > 0)
-				{
 					RegisterLooseItems(items);
-				}
 			}
 			catch (Exception ex)
 			{
@@ -90,19 +62,13 @@ namespace AIRefactored.Bootstrap
 			}
 		}
 
-		#endregion
-
-		#region Private Methods
-
 		private static void RegisterContainers(LootableContainer[] containers)
 		{
 			for (int i = 0; i < containers.Length; i++)
 			{
-				LootableContainer container = containers[i];
+				var container = containers[i];
 				if (container == null || !container.enabled || container.transform == null)
-				{
 					continue;
-				}
 
 				try
 				{
@@ -111,7 +77,7 @@ namespace AIRefactored.Bootstrap
 				}
 				catch (Exception ex)
 				{
-					Logger.LogError("[LootBootstrapper] RegisterContainers() failed for container: " + ex);
+					Logger.LogError("[LootBootstrapper] RegisterContainers() failed: " + ex);
 				}
 			}
 		}
@@ -120,11 +86,9 @@ namespace AIRefactored.Bootstrap
 		{
 			for (int i = 0; i < items.Length; i++)
 			{
-				LootItem item = items[i];
+				var item = items[i];
 				if (item == null || !item.enabled)
-				{
 					continue;
-				}
 
 				try
 				{
@@ -132,7 +96,7 @@ namespace AIRefactored.Bootstrap
 				}
 				catch (Exception ex)
 				{
-					Logger.LogError("[LootBootstrapper] RegisterLooseItems() failed for item: " + ex);
+					Logger.LogError("[LootBootstrapper] RegisterLooseItems() failed: " + ex);
 				}
 			}
 		}
@@ -140,51 +104,42 @@ namespace AIRefactored.Bootstrap
 		private static void TryLinkToCorpse(LootableContainer container)
 		{
 			if (container == null || container.transform == null)
-			{
 				return;
-			}
 
-			Vector3 containerPosition = container.transform.position;
-			GameWorld world = GameWorldHandler.Get();
-			if (world == null || world.RegisteredPlayers == null || world.RegisteredPlayers.Count == 0)
-			{
+			var containerPos = container.transform.position;
+			var world = GameWorldHandler.Get();
+			if (world?.RegisteredPlayers == null || world.RegisteredPlayers.Count == 0)
 				return;
-			}
 
 			List<Player> deadPlayers = null;
-			List<IPlayer> all = world.RegisteredPlayers;
 
 			try
 			{
 				deadPlayers = TempListPool.Rent<Player>();
+				List<IPlayer> all = world.RegisteredPlayers;
 
 				for (int i = 0; i < all.Count; i++)
 				{
-					Player player = EFTPlayerUtil.AsEFTPlayer(all[i]);
-					if (player != null && player.HealthController != null && !player.HealthController.IsAlive)
-					{
-						deadPlayers.Add(player);
-					}
+					var p = EFTPlayerUtil.AsEFTPlayer(all[i]);
+					if (p != null && p.HealthController != null && !p.HealthController.IsAlive)
+						deadPlayers.Add(p);
 				}
 
 				for (int i = 0; i < deadPlayers.Count; i++)
 				{
-					Player corpse = deadPlayers[i];
-					string profileId = corpse.Profile != null ? corpse.Profile.Id : null;
+					var corpse = deadPlayers[i];
+					string profileId = corpse.Profile?.Id;
 					if (string.IsNullOrEmpty(profileId) || DeadBodyContainerCache.Contains(profileId))
-					{
 						continue;
-					}
 
-					Vector3 corpsePosition = EFTPlayerUtil.GetPosition(corpse);
-					if (Vector3.Distance(containerPosition, corpsePosition) <= MaxCorpseLinkDistance)
+					var corpsePos = EFTPlayerUtil.GetPosition(corpse);
+					if (Vector3.Distance(containerPos, corpsePos) <= MaxCorpseLinkDistance)
 					{
 						try
 						{
 							DeadBodyContainerCache.Register(corpse, container);
-							string nickname = corpse.Profile != null && corpse.Profile.Info != null
-								? corpse.Profile.Info.Nickname
-								: "Unnamed";
+
+							string nickname = corpse.Profile?.Info?.Nickname ?? "Unnamed";
 							Logger.LogDebug("[LootBootstrapper] Linked container to corpse: " + nickname);
 						}
 						catch (Exception ex)
@@ -202,12 +157,8 @@ namespace AIRefactored.Bootstrap
 			finally
 			{
 				if (deadPlayers != null)
-				{
 					TempListPool.Return(deadPlayers);
-				}
 			}
 		}
-
-		#endregion
 	}
 }

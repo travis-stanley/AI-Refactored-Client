@@ -21,33 +21,16 @@ namespace AIRefactored.Runtime
 	using EFT.Interactive;
 	using UnityEngine;
 
-	/// <summary>
-	/// Scans for dead players and associates them with nearby loot containers.
-	/// Executed as a runtime service from WorldBootstrapper or BotWorkScheduler.
-	/// Bulletproof: All errors are strictly contained, never cascade or break the mod.
-	/// No fallback lockouts: all bots are always eligible.
-	/// </summary>
 	public sealed class DeadBodyObserverService : IAIWorldSystemBootstrapper
 	{
-		#region Constants
-
 		private const float ScanIntervalSeconds = 1.0f;
 		private const float AssociationRadius = 1.5f;
-
-		#endregion
-
-		#region Fields
 
 		private static readonly ManualLogSource Logger = Plugin.LoggerInstance;
 
 		private static float _nextScanTime = -1f;
 		private static bool _hasLoggedReset;
 
-		#endregion
-
-		#region Lifecycle
-
-		/// <inheritdoc />
 		public void Initialize()
 		{
 			try
@@ -62,7 +45,6 @@ namespace AIRefactored.Runtime
 			}
 		}
 
-		/// <inheritdoc />
 		public void OnRaidEnd()
 		{
 			try
@@ -76,21 +58,10 @@ namespace AIRefactored.Runtime
 			}
 		}
 
-		/// <inheritdoc />
-		public bool IsReady()
-		{
-			return true;
-		}
+		public bool IsReady() => true;
 
-		/// <inheritdoc />
-		public WorldPhase RequiredPhase()
-		{
-			return WorldPhase.WorldReady;
-		}
+		public WorldPhase RequiredPhase() => WorldPhase.WorldReady;
 
-		/// <summary>
-		/// Resets scan timing and marks reset state.
-		/// </summary>
 		public static void Reset()
 		{
 			if (_hasLoggedReset)
@@ -103,30 +74,15 @@ namespace AIRefactored.Runtime
 			{
 				LogDebug("[DeadBodyObserver] 🔄 Reset complete.");
 			}
-			catch
-			{
-				// Logger may be disposed during shutdown.
-			}
+			catch { }
 		}
 
-		#endregion
-
-		#region Tick
-
-		/// <inheritdoc />
 		public void Tick(float deltaTime)
 		{
 			try
 			{
-				if (
-					!Application.isPlaying ||
-					!GameWorldHandler.IsInitialized ||
-					!GameWorldHandler.IsHost ||
-					!GameWorldHandler.IsReady()
-				)
-				{
+				if (!Application.isPlaying || !GameWorldHandler.IsInitialized || !GameWorldHandler.IsHost || !GameWorldHandler.IsReady())
 					return;
-				}
 
 				float now = Time.time;
 				if (now < _nextScanTime)
@@ -134,31 +90,11 @@ namespace AIRefactored.Runtime
 
 				_nextScanTime = now + ScanIntervalSeconds;
 
-				GameWorld world = null;
-				try
-				{
-					world = GameWorldHandler.Get();
-				}
-				catch (Exception ex)
-				{
-					LogError("[DeadBodyObserver] ❌ GameWorldHandler.Get() failed: " + ex);
-					return;
-				}
-
+				GameWorld world = GameWorldHandler.Get();
 				if (world == null || world.RegisteredPlayers == null || world.RegisteredPlayers.Count == 0)
 					return;
 
-				LootableContainer[] containers = null;
-				try
-				{
-					containers = UnityEngine.Object.FindObjectsOfType<LootableContainer>();
-				}
-				catch (Exception ex)
-				{
-					LogError("[DeadBodyObserver] ❌ Failed to find containers: " + ex);
-					return;
-				}
-
+				LootableContainer[] containers = UnityEngine.Object.FindObjectsOfType<LootableContainer>();
 				if (containers == null || containers.Length == 0)
 					return;
 
@@ -170,16 +106,14 @@ namespace AIRefactored.Runtime
 					for (int i = 0; i < rawPlayers.Count; i++)
 					{
 						Player player = EFTPlayerUtil.AsEFTPlayer(rawPlayers[i]);
-						if (player != null && player.HealthController != null && !player.HealthController.IsAlive)
-						{
-							// Only skip if container is already registered for this profileId
-							string profileId = player.ProfileId;
-							if (string.IsNullOrEmpty(profileId) || DeadBodyContainerCache.Contains(profileId))
-							{
-								continue;
-							}
-							deadPlayers.Add(player);
-						}
+						if (player == null || player.HealthController == null || player.HealthController.IsAlive)
+							continue;
+
+						string profileId = player.ProfileId;
+						if (string.IsNullOrEmpty(profileId) || DeadBodyContainerCache.Contains(profileId))
+							continue;
+
+						deadPlayers.Add(player);
 					}
 
 					for (int i = 0; i < deadPlayers.Count; i++)
@@ -187,15 +121,11 @@ namespace AIRefactored.Runtime
 						Player player = deadPlayers[i];
 						string profileId = player.ProfileId;
 						if (string.IsNullOrEmpty(profileId) || DeadBodyContainerCache.Contains(profileId))
-						{
 							continue;
-						}
 
 						Transform root = player.Transform?.Original?.root;
 						if (root == null)
-						{
 							continue;
-						}
 
 						Vector3 corpsePos = EFTPlayerUtil.GetPosition(player);
 
@@ -203,9 +133,7 @@ namespace AIRefactored.Runtime
 						{
 							LootableContainer container = containers[j];
 							if (container == null || !container.enabled || container.transform == null)
-							{
 								continue;
-							}
 
 							bool sameRoot = container.transform.root == root;
 							bool closeEnough = Vector3.Distance(container.transform.position, corpsePos) <= AssociationRadius;
@@ -244,10 +172,6 @@ namespace AIRefactored.Runtime
 			}
 		}
 
-		#endregion
-
-		#region Log Helpers
-
 		private static void LogDebug(string msg)
 		{
 			if (!FikaHeadlessDetector.IsHeadless)
@@ -259,7 +183,5 @@ namespace AIRefactored.Runtime
 			if (!FikaHeadlessDetector.IsHeadless)
 				Logger.LogError(msg);
 		}
-
-		#endregion
 	}
 }

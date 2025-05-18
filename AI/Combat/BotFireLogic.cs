@@ -22,16 +22,10 @@ namespace AIRefactored.AI.Combat
     using GClass2814 = GClass2814<HealthControllerClass.GClass2819>;
     using Random = UnityEngine.Random;
 
-    /// <summary>
-    /// Controls bot firing, aiming, fire mode selection, and fallback behavior.
-    /// Dynamically adjusts based on distance, suppression, weapon state, and bot personality.
-    /// Fully bulletproof: All errors are isolated, never disable this logic, always retries.
-    /// </summary>
     public sealed class BotFireLogic
     {
-        #region Constants
-
         private const float MaxAimPitch = 70f;
+
         private static readonly EBodyPart[] AllBodyParts = (EBodyPart[])Enum.GetValues(typeof(EBodyPart));
         private static readonly Dictionary<string, float> WeaponTypeRanges = new Dictionary<string, float>(StringComparer.OrdinalIgnoreCase)
         {
@@ -44,29 +38,18 @@ namespace AIRefactored.AI.Combat
             { "pistol", 35f }
         };
 
-        #endregion
-
-        #region Fields
-
         private readonly BotOwner _bot;
         private readonly BotComponentCache _cache;
+
         private Vector3 _idleLookDirection = Vector3.forward;
         private float _lastLookAroundTime;
         private float _nextDecisionTime;
-
-        #endregion
-
-        #region Constructor
 
         public BotFireLogic(BotOwner bot, BotComponentCache cache)
         {
             _bot = bot;
             _cache = cache;
         }
-
-        #endregion
-
-        #region Public Methods
 
         public void Tick(float time)
         {
@@ -75,12 +58,12 @@ namespace AIRefactored.AI.Combat
 
             try
             {
-                BotWeaponManager weaponManager = _bot.WeaponManager;
-                ShootData shootData = _bot.ShootData;
-                BotWeaponInfo weaponInfo = weaponManager?._currentWeaponInfo;
-                Weapon weapon = weaponInfo?.weapon;
-                GClass592 settings = _bot.Settings?.FileSettings?.Core;
-                BotPersonalityProfile profile = _cache.AIRefactoredBotOwner?.PersonalityProfile;
+                var weaponManager = _bot.WeaponManager;
+                var shootData = _bot.ShootData;
+                var weaponInfo = weaponManager?._currentWeaponInfo;
+                var weapon = weaponInfo?.weapon;
+                var settings = _bot.Settings?.FileSettings?.Core;
+                var profile = _cache.AIRefactoredBotOwner?.PersonalityProfile;
 
                 if (weaponManager == null || shootData == null || weaponInfo == null || weapon == null || settings == null || profile == null)
                     return;
@@ -98,20 +81,16 @@ namespace AIRefactored.AI.Combat
                 float weaponRange = EstimateWeaponRange(weapon);
                 float maxRange = Mathf.Min(profile.EngagementRange, weaponRange, 200f);
 
-                // Out of range, move closer if chaos/personality allows
                 if (distance > maxRange)
                 {
                     if (profile.ChaosFactor > 0f && Random.value < profile.ChaosFactor)
                     {
-                        if (BotNavHelper.TryGetSafeTarget(_bot, out var safeTarget) && IsVectorValid(safeTarget))
-                        {
-                            BotMovementHelper.SmoothMoveTo(_bot, safeTarget, false, profile.Cohesion);
-                        }
+                        if (BotNavHelper.TryGetSafeTarget(_bot, out var advance) && IsVectorValid(advance))
+                            BotMovementHelper.SmoothMoveTo(_bot, advance, false, profile.Cohesion);
                     }
                     return;
                 }
 
-                // Fire cadence
                 if (time < _nextDecisionTime)
                     return;
 
@@ -129,11 +108,7 @@ namespace AIRefactored.AI.Combat
                 if (weaponManager.IsWeaponReady)
                 {
                     shootData.Shoot();
-
-                    if (_cache.LastShotTracker != null && !string.IsNullOrEmpty(target.ProfileId))
-                    {
-                        _cache.LastShotTracker.RegisterShot(target.ProfileId);
-                    }
+                    _cache.LastShotTracker?.RegisterShot(target.ProfileId);
                 }
             }
             catch (Exception ex)
@@ -141,10 +116,6 @@ namespace AIRefactored.AI.Combat
                 Plugin.LoggerInstance?.LogError($"[BotFireLogic] Exception in Tick: {ex}");
             }
         }
-
-        #endregion
-
-        #region Private Methods
 
         private void UpdateBotAiming(Vector3 aimPosition)
         {
@@ -172,17 +143,12 @@ namespace AIRefactored.AI.Combat
             try
             {
                 if (EFTPlayerUtil.IsValid(target))
-                {
                     return EFTPlayerUtil.GetPosition(target);
-                }
 
                 Vector3 memory = _bot.Memory.LastEnemy?.CurrPosition ?? Vector3.zero;
                 if (memory != Vector3.zero)
-                {
                     return memory;
-                }
 
-                // Look around randomly when no enemy seen
                 if (time - _lastLookAroundTime > 1.5f)
                 {
                     float yaw = Random.Range(-75f, 75f);
@@ -233,9 +199,7 @@ namespace AIRefactored.AI.Combat
             try
             {
                 if (info.weapon.SelectedFireMode != mode)
-                {
                     info.ChangeFireMode(mode);
-                }
             }
             catch (Exception ex)
             {
@@ -247,13 +211,10 @@ namespace AIRefactored.AI.Combat
         {
             try
             {
-                Weapon.EFireMode[] modes = weapon.WeapFireType;
-                for (int i = 0; i < modes.Length; i++)
+                foreach (var m in weapon.WeapFireType)
                 {
-                    if (modes[i] == mode)
-                    {
+                    if (m == mode)
                         return true;
-                    }
                 }
             }
             catch (Exception ex)
@@ -279,7 +240,7 @@ namespace AIRefactored.AI.Combat
         {
             try
             {
-                float composure = _cache.PanicHandler != null ? _cache.PanicHandler.GetComposureLevel() : 1f;
+                float composure = _cache.PanicHandler?.GetComposureLevel() ?? 1f;
                 float scatterPenalty = underFire ? (1f - profile.AccuracyUnderFire) * (1f - composure) : 0f;
                 float scatterFactor = 1.1f + scatterPenalty;
 
@@ -295,18 +256,14 @@ namespace AIRefactored.AI.Combat
         {
             try
             {
-                ItemTemplate template = weapon.Template;
+                var template = weapon.Template;
                 if (template == null || string.IsNullOrEmpty(template.Name))
-                {
                     return 90f;
-                }
 
                 foreach (var kv in WeaponTypeRanges)
                 {
                     if (template.Name.IndexOf(kv.Key, StringComparison.OrdinalIgnoreCase) >= 0)
-                    {
                         return kv.Value;
-                    }
                 }
 
                 return 90f;
@@ -325,43 +282,12 @@ namespace AIRefactored.AI.Combat
                 float baseDelay = Mathf.Lerp(0.75f, 0.25f, profile.AggressionLevel);
                 float reactionDelay = Mathf.Lerp(0.15f, 0.35f, 1f - profile.ReactionTime);
                 float chaosOffset = Random.Range(-0.08f, 0.2f) * profile.ChaosFactor;
-
                 return Mathf.Clamp(baseDelay + reactionDelay + chaosOffset, 0.15f, 1.1f);
             }
             catch (Exception ex)
             {
                 Plugin.LoggerInstance?.LogError($"[BotFireLogic] Exception in GetBurstCadence: {ex}");
                 return 0.45f;
-            }
-        }
-
-        private float GetHealthRatio()
-        {
-            try
-            {
-                HealthControllerClass hc = _bot.HealthController as HealthControllerClass;
-                if (hc == null || hc.Dictionary_0 == null)
-                    return 1f;
-
-                float current = 0f;
-                float max = 0f;
-
-                for (int i = 0; i < AllBodyParts.Length; i++)
-                {
-                    EBodyPart part = AllBodyParts[i];
-                    if (hc.Dictionary_0.TryGetValue(part, out var state) && state.Health != null)
-                    {
-                        current += state.Health.Current;
-                        max += state.Health.Maximum;
-                    }
-                }
-
-                return max > 0f ? current / max : 1f;
-            }
-            catch (Exception ex)
-            {
-                Plugin.LoggerInstance?.LogError($"[BotFireLogic] Exception in GetHealthRatio: {ex}");
-                return 1f;
             }
         }
 
@@ -393,7 +319,5 @@ namespace AIRefactored.AI.Combat
         {
             return !float.IsNaN(v.x) && !float.IsNaN(v.y) && !float.IsNaN(v.z);
         }
-
-        #endregion
     }
 }

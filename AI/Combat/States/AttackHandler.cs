@@ -25,26 +25,13 @@ namespace AIRefactored.AI.Combat.States
     /// </summary>
     public sealed class AttackHandler
     {
-        #region Constants
-
         private const float PositionUpdateThresholdSqr = 1.0f;
-
-        #endregion
-
-        #region Fields
 
         private readonly BotOwner _bot;
         private readonly BotComponentCache _cache;
         private Vector3 _lastTargetPosition;
         private bool _hasLastTarget;
 
-        #endregion
-
-        #region Constructor
-
-        /// <summary>
-        /// Initializes the attack handler with bot component cache.
-        /// </summary>
         public AttackHandler(BotComponentCache cache)
         {
             _cache = cache;
@@ -53,32 +40,18 @@ namespace AIRefactored.AI.Combat.States
             _hasLastTarget = false;
         }
 
-        #endregion
-
-        #region Public Methods
-
-        /// <summary>
-        /// Clears last known enemy position tracking.
-        /// </summary>
         public void ClearTarget()
         {
             _hasLastTarget = false;
             _lastTargetPosition = Vector3.zero;
         }
 
-        /// <summary>
-        /// Determines if the bot currently has a valid target to attack.
-        /// </summary>
         public bool ShallUseNow()
         {
             Player _;
             return TryResolveEnemy(out _);
         }
 
-        /// <summary>
-        /// Executes per-frame attack logic: move toward enemy and adjust stance.
-        /// All errors are locally isolated—handler always retries, never disables itself.
-        /// </summary>
         public void Tick(float deltaTime)
         {
             try
@@ -86,8 +59,7 @@ namespace AIRefactored.AI.Combat.States
                 if (_bot == null || _cache == null)
                     return;
 
-                Player enemy;
-                if (!TryResolveEnemy(out enemy))
+                if (!TryResolveEnemy(out Player enemy))
                     return;
 
                 Transform enemyTransform = EFTPlayerUtil.GetTransform(enemy);
@@ -97,7 +69,6 @@ namespace AIRefactored.AI.Combat.States
                 Vector3 currentTargetPos = enemyTransform.position;
                 float deltaSqr = (currentTargetPos - _lastTargetPosition).sqrMagnitude;
 
-                // Only update path if target has moved enough or this is the first assignment.
                 if (!_hasLastTarget || deltaSqr > PositionUpdateThresholdSqr)
                 {
                     _lastTargetPosition = currentTargetPos;
@@ -107,7 +78,6 @@ namespace AIRefactored.AI.Combat.States
 
                     if (!BotNavHelper.TryGetSafeTarget(_bot, out destination) || !IsValidTarget(destination))
                     {
-                        // If nav fails, just use the raw target position
                         destination = currentTargetPos;
                     }
 
@@ -131,50 +101,33 @@ namespace AIRefactored.AI.Combat.States
             }
         }
 
-        #endregion
-
-        #region Private Methods
-
-        /// <summary>
-        /// Attempts to resolve the most appropriate enemy target for attack.
-        /// </summary>
         private bool TryResolveEnemy(out Player result)
         {
             result = null;
             if (_cache == null)
                 return false;
 
-            // Prefer current threat selector target.
-            BotThreatSelector selector = _cache.ThreatSelector;
+            var selector = _cache.ThreatSelector;
             if (selector != null && EFTPlayerUtil.IsValid(selector.CurrentTarget))
             {
                 result = selector.CurrentTarget;
                 return true;
             }
 
-            // Fallback to vanilla bot memory GoalEnemy if present.
-            if (_bot != null && _bot.Memory != null && _bot.Memory.GoalEnemy != null)
+            if (_bot?.Memory?.GoalEnemy?.Person is Player fallback && EFTPlayerUtil.IsValid(fallback))
             {
-                Player fallback = _bot.Memory.GoalEnemy.Person as Player;
-                if (EFTPlayerUtil.IsValid(fallback))
-                {
-                    result = fallback;
-                    return true;
-                }
+                result = fallback;
+                return true;
             }
 
             return false;
         }
 
-        /// <summary>
-        /// Handles combat stance adjustment using only native data.
-        /// </summary>
         private void TrySetCombatStance(Vector3 destination)
         {
             try
             {
-                if (_cache.PoseController != null)
-                    _cache.PoseController.TrySetStanceFromNearbyCover(destination);
+                _cache.PoseController?.TrySetStanceFromNearbyCover(destination);
             }
             catch (Exception ex)
             {
@@ -182,9 +135,6 @@ namespace AIRefactored.AI.Combat.States
             }
         }
 
-        /// <summary>
-        /// Checks if a Vector3 is valid for navigation.
-        /// </summary>
         private static bool IsValidTarget(Vector3 pos)
         {
             return pos != Vector3.zero &&
@@ -192,7 +142,5 @@ namespace AIRefactored.AI.Combat.States
                    !float.IsNaN(pos.y) &&
                    !float.IsNaN(pos.z);
         }
-
-        #endregion
     }
 }

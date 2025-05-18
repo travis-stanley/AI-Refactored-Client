@@ -141,6 +141,7 @@ namespace AIRefactored.AI.Threads
 		/// </summary>
 		public void Initialize(BotOwner bot)
 		{
+			// Only allow on authoritative host (headless or true host)
 			if (!GameWorldHandler.IsLocalHost())
 			{
 				LogWarn("[BotBrain] Initialization skipped: not authoritative host.");
@@ -169,7 +170,7 @@ namespace AIRefactored.AI.Threads
 			try
 			{
 				string profileId = player.Profile.Id;
-				if (!BotRegistry.TryGetRefactoredOwner(profileId, out AIRefactoredBotOwner owner))
+				if (!BotRegistry.TryGetRefactoredOwner(profileId, out AIRefactoredBotOwner owner) || owner == null)
 				{
 					owner = new AIRefactoredBotOwner();
 					owner.Initialize(bot);

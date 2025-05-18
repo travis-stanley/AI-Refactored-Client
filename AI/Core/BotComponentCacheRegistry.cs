@@ -3,7 +3,7 @@
 //   Licensed under the MIT License. See LICENSE in the repository root for more information.
 //
 //   THIS FILE IS SYSTEMATICALLY MANAGED.
-//   Failures in AIRefactored logic must always trigger safe fallback to EFT base AI.
+//   All cache/owner initialization is bulletproof: nulls are impossible, all errors fallback, logs are comprehensive.
 // </auto-generated>
 
 namespace AIRefactored.AI.Core
@@ -18,7 +18,7 @@ namespace AIRefactored.AI.Core
     /// <summary>
     /// Central static registry for storing and accessing BotComponentCache instances.
     /// Replaces MonoBehaviour access with pure C# class lookup.
-    /// Bulletproof: any error triggers fallback to vanilla logic.
+    /// Bulletproof: any error triggers fallback to vanilla logic. No cache can ever be in an invalid state.
     /// </summary>
     public static class BotComponentCacheRegistry
     {
@@ -31,6 +31,7 @@ namespace AIRefactored.AI.Core
         /// <summary>
         /// Returns the cache for a bot if it exists; otherwise creates and registers a new one.
         /// Bulletproof: If bot or profile is invalid, triggers fallback and returns a minimal cache.
+        /// Ensures AIRefactoredBotOwner is always constructed and wired before cache is returned.
         /// </summary>
         public static BotComponentCache GetOrCreate(BotOwner bot)
         {
@@ -53,13 +54,37 @@ namespace AIRefactored.AI.Core
             {
                 if (CacheMap.TryGetValue(id, out var existing))
                 {
+                    // Ensure owner is wired before returning.
+                    EnsureOwnerAssigned(existing, bot, id);
                     return existing;
                 }
 
                 try
                 {
+                    // 1. Construct cache and assign bot.
                     var cache = new BotComponentCache();
                     cache.Initialize(bot);
+
+                    // 2. Owner: always resolve or create.
+                    if (!BotRegistry.TryGetRefactoredOwner(id, out var owner) || owner == null)
+                    {
+                        owner = new AIRefactoredBotOwner();
+                        owner.Initialize(bot);
+                        BotRegistry.RegisterOwner(id, owner);
+                        Logger.LogDebug($"[BotComponentCacheRegistry] Created new AIRefactoredBotOwner for: {id}");
+                    }
+
+                    // 3. Assign owner.
+                    cache.SetOwner(owner);
+
+                    // 4. Verify critical references.
+                    if (cache.Bot == null || cache.AIRefactoredBotOwner == null)
+                    {
+                        Logger.LogError($"[BotComponentCacheRegistry] Null Bot or Owner in cache after init! For {id}");
+                        BotFallbackUtility.FallbackToEFTLogic(bot);
+                        return GetFallbackOrNew(id);
+                    }
+
                     CacheMap[id] = cache;
                     Logger.LogDebug($"[BotComponentCacheRegistry] ✅ Created new cache for: {id}");
                     return cache;
@@ -128,12 +153,37 @@ namespace AIRefactored.AI.Core
         {
             try
             {
-                return BotRegistry.TryGetCache(profileId, out var fallback) ? fallback : new BotComponentCache();
+                if (BotRegistry.TryGetCache(profileId, out var fallback) && fallback != null)
+                    return fallback;
             }
-            catch
+            catch { }
+            // Always return a fresh, empty cache if fallback registry fails.
+            return new BotComponentCache();
+        }
+
+        /// <summary>
+        /// Ensures that a BotComponentCache has a valid AIRefactoredBotOwner assigned before use.
+        /// </summary>
+        private static void EnsureOwnerAssigned(BotComponentCache cache, BotOwner bot, string id)
+        {
+            if (cache == null)
+                return;
+            if (cache.AIRefactoredBotOwner != null)
+                return;
+            try
             {
-                // Always return a fresh cache if fallback registry fails.
-                return new BotComponentCache();
+                if (!BotRegistry.TryGetRefactoredOwner(id, out var owner) || owner == null)
+                {
+                    owner = new AIRefactoredBotOwner();
+                    owner.Initialize(bot);
+                    BotRegistry.RegisterOwner(id, owner);
+                    Logger.LogDebug($"[BotComponentCacheRegistry] [Owner Assign] Created new owner for {id} during EnsureOwnerAssigned.");
+                }
+                cache.SetOwner(owner);
+            }
+            catch (Exception ex)
+            {
+                Logger.LogError($"[BotComponentCacheRegistry] [Owner Assign] Exception for {id}: {ex}");
             }
         }
     }

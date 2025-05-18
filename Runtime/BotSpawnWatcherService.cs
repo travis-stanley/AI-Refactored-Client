@@ -151,6 +151,7 @@ namespace AIRefactored.Runtime
 						if (!SeenBotIds.Add(id))
 							continue;
 
+						// Bulletproof: Never double-inject or race-inject
 						if (go.GetComponent<BotBrain>() != null)
 							continue;
 
@@ -159,7 +160,7 @@ namespace AIRefactored.Runtime
 
 						try
 						{
-							BotBrainGuardian.Enforce(go);
+							BotBrainGuardian.Enforce(go); // Enforces only one BotBrain per bot
 							GameWorldHandler.TryAttachBotBrain(player.AIData.BotOwner);
 
 							string name = player.Profile?.Info?.Nickname ?? player.ProfileId;

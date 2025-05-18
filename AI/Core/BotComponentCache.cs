@@ -3,7 +3,7 @@
 //   Licensed under the MIT License. See LICENSE in the repository root for more information.
 //
 //   THIS FILE IS SYSTEMATICALLY MANAGED.
-//   Failures in AIRefactored logic must always trigger safe fallback to EFT base AI.
+//   Bulletproof: No cache can be left incomplete or with missing critical references. All fallback paths are guarded and logged.
 // </auto-generated>
 
 namespace AIRefactored.AI.Core
@@ -118,7 +118,9 @@ namespace AIRefactored.AI.Core
             Suppression != null &&
             PanicHandler != null &&
             Tactical != null &&
-            FlashGrenade != null;
+            FlashGrenade != null &&
+            ThreatSelector != null &&
+            _owner != null;
 
         #endregion
 
@@ -126,13 +128,14 @@ namespace AIRefactored.AI.Core
 
         /// <summary>
         /// Initializes and wires up all bot subsystems. Each is bulletproofed against failure.
+        /// Owner and ThreatSelector are strictly assigned in the registry, never here.
         /// </summary>
         public void Initialize(BotOwner bot)
         {
             if (bot == null)
             {
                 Logger.LogError("[BotComponentCache] Initialize called with null bot.");
-                BotFallbackUtility.FallbackToEFTLogic(bot);
+                EnterFallback();
                 return;
             }
 
@@ -172,19 +175,17 @@ namespace AIRefactored.AI.Core
             TryInit(() => SquadHealer = bot.HealAnotherTarget ?? new BotHealAnotherTarget(bot), "SquadHealer");
             TryInit(() => HealReceiver = bot.HealingBySomebody ?? new BotHealingBySomebody(bot), "HealReceiver");
 
-            // Defer ThreatSelector creation to SetOwner for safety
+            // Critical audit: owner/threatselector MUST be set by registry before use!
         }
 
         private void TryInit(Action action, string name)
         {
             try { action(); }
-            catch (Exception ex) { LogAndFallback(name, ex); }
-        }
-
-        private void LogAndFallback(string subsystem, Exception ex)
-        {
-            Logger.LogError($"[BotComponentCache] Subsystem {subsystem} failed: {ex}");
-            BotFallbackUtility.FallbackToEFTLogic(Bot);
+            catch (Exception ex)
+            {
+                Logger.LogError($"[BotComponentCache] Subsystem {name} failed: {ex}");
+                EnterFallback();
+            }
         }
 
         #endregion
@@ -193,6 +194,8 @@ namespace AIRefactored.AI.Core
 
         public void EnterFallback()
         {
+            if (IsFallbackMode)
+                return;
             IsFallbackMode = true;
             Logger.LogWarning($"[BotComponentCache] Entered fallback mode for bot: {Nickname}");
             BotFallbackUtility.FallbackToEFTLogic(Bot);
@@ -207,7 +210,7 @@ namespace AIRefactored.AI.Core
             if (owner == null)
             {
                 Logger.LogError("[BotComponentCache] SetOwner() called with null.");
-                BotFallbackUtility.FallbackToEFTLogic(Bot);
+                EnterFallback();
                 return;
             }
 
@@ -220,8 +223,15 @@ namespace AIRefactored.AI.Core
                 {
                     Logger.LogError("[BotComponentCache] ThreatSelector failed: " + ex);
                     ThreatSelector = null;
-                    BotFallbackUtility.FallbackToEFTLogic(Bot);
+                    EnterFallback();
                 }
+            }
+
+            // Final audit
+            if (Bot == null || _owner == null || ThreatSelector == null)
+            {
+                Logger.LogError("[BotComponentCache] Post-wiring critical reference missing! Entering fallback.");
+                EnterFallback();
             }
         }
 

@@ -3,7 +3,7 @@
 //   Licensed under the MIT License. See LICENSE in the repository root for more information.
 //
 //   THIS FILE IS SYSTEMATICALLY MANAGED.
-//   Failures in AIRefactored logic must always trigger safe fallback to EFT base AI.
+//   All registry logic is bulletproof: never returns null, always provides fallback objects, and prevents duplicate registration.
 // </auto-generated>
 
 namespace AIRefactored
@@ -255,14 +255,26 @@ namespace AIRefactored
         {
             try
             {
-                if (!string.IsNullOrEmpty(profileId) && owner != null && !_ownerRegistry.ContainsKey(profileId))
-                {
-                    _ownerRegistry[profileId] = owner;
+                if (string.IsNullOrEmpty(profileId) || owner == null)
+                    return;
 
-                    if (_debug)
+                if (_ownerRegistry.TryGetValue(profileId, out var existing))
+                {
+                    if (!ReferenceEquals(existing, owner))
                     {
-                        Logger.LogDebug("[BotRegistry] Registered owner for '" + profileId + "'.");
+                        if (_debug)
+                        {
+                            Logger.LogWarning("[BotRegistry] Attempted duplicate owner registration for '" + profileId + "'. Skipping.");
+                        }
                     }
+                    return;
+                }
+
+                _ownerRegistry[profileId] = owner;
+
+                if (_debug)
+                {
+                    Logger.LogDebug("[BotRegistry] Registered owner for '" + profileId + "'.");
                 }
             }
             catch (System.Exception ex)

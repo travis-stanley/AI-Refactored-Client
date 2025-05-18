@@ -42,13 +42,13 @@ namespace AIRefactored.Runtime
         {
             if (_hasStarted)
             {
-                logger?.LogWarning("[InitPhaseRunner] Begin() already called — skipping.");
+                LogWarn(logger, "[InitPhaseRunner] Begin() already called — skipping.");
                 return;
             }
 
             if (FikaHeadlessDetector.IsHeadless && !FikaHeadlessDetector.HasRaidStarted())
             {
-                logger?.LogDebug("[InitPhaseRunner] Skipped — FIKA headless raid not started.");
+                LogDebug(logger, "[InitPhaseRunner] Skipped — FIKA headless raid not started.");
                 return;
             }
 
@@ -57,11 +57,11 @@ namespace AIRefactored.Runtime
             try
             {
                 WorldInitState.SetPhase(WorldPhase.PreInit);
-                logger?.LogDebug("[InitPhaseRunner] 🚀 Beginning AIRefactored world initialization...");
+                LogDebug(logger, "[InitPhaseRunner] 🚀 Beginning AIRefactored world initialization...");
 
                 if (!IsWorldSafe())
                 {
-                    logger?.LogWarning("[InitPhaseRunner] ❌ Unsafe world state — aborting.");
+                    LogWarn(logger, "[InitPhaseRunner] ❌ Unsafe world state — aborting.");
                     ResetInternal(logger);
                     return;
                 }
@@ -71,22 +71,21 @@ namespace AIRefactored.Runtime
                 string mapId = GameWorldHandler.TryGetValidMapName();
                 if (string.IsNullOrEmpty(mapId))
                 {
-                    logger?.LogWarning("[InitPhaseRunner] ⚠ No valid map ID.");
+                    LogWarn(logger, "[InitPhaseRunner] ⚠ No valid map ID.");
                 }
 
                 // NavMesh/navpoint building is strictly deferred from here.
-
                 GameWorldHandler.Initialize();
                 WorldBootstrapper.Begin(logger, mapId);
 
                 WorldInitState.SetPhase(WorldPhase.WorldReady);
-                logger?.LogDebug("[InitPhaseRunner] ✅ World systems initialized.");
+                LogDebug(logger, "[InitPhaseRunner] ✅ World systems initialized.");
 
                 WorldInitState.SetPhase(WorldPhase.PostInit);
             }
             catch (Exception ex)
             {
-                logger?.LogError("[InitPhaseRunner] ❌ Fatal error during Begin(): " + ex);
+                LogError(logger, "[InitPhaseRunner] ❌ Fatal error during Begin(): " + ex);
                 ResetInternal(logger);
             }
         }
@@ -98,9 +97,7 @@ namespace AIRefactored.Runtime
         public static void Stop()
         {
             if (!_hasStarted)
-            {
                 return;
-            }
 
             try
             {
@@ -126,7 +123,7 @@ namespace AIRefactored.Runtime
             try { GameWorldHandler.Cleanup(); } catch { }
             // NavMeshStatus.Reset() removed as no longer exists
 
-            try { logger?.LogDebug("[InitPhaseRunner] 🧹 Cleanup complete — initialization state reset."); } catch { }
+            try { LogDebug(logger, "[InitPhaseRunner] 🧹 Cleanup complete — initialization state reset."); } catch { }
         }
 
         #endregion
@@ -155,6 +152,28 @@ namespace AIRefactored.Runtime
             {
                 return false;
             }
+        }
+
+        #endregion
+
+        #region Log Helpers
+
+        private static void LogDebug(ManualLogSource logger, string msg)
+        {
+            if (!FikaHeadlessDetector.IsHeadless)
+                logger?.LogDebug(msg);
+        }
+
+        private static void LogWarn(ManualLogSource logger, string msg)
+        {
+            if (!FikaHeadlessDetector.IsHeadless)
+                logger?.LogWarning(msg);
+        }
+
+        private static void LogError(ManualLogSource logger, string msg)
+        {
+            if (!FikaHeadlessDetector.IsHeadless)
+                logger?.LogError(msg);
         }
 
         #endregion

@@ -17,6 +17,10 @@ namespace AIRefactored.AI.Combat
     using UnityEngine;
     using BepInEx.Logging;
 
+    /// <summary>
+    /// Selects and maintains the most viable enemy target for the bot.
+    /// Isolated and bulletproof: any critical error triggers fallback to vanilla AI.
+    /// </summary>
     public sealed class BotThreatSelector
     {
         #region Constants
@@ -62,6 +66,7 @@ namespace AIRefactored.AI.Combat
 
         public BotThreatSelector(BotComponentCache cache)
         {
+            // Hardened: null-check every critical reference; single log warning globally per boot.
             if (cache == null || cache.Bot == null || cache.AIRefactoredBotOwner == null)
             {
                 if (!_hasLoggedConstructorError)
@@ -69,7 +74,6 @@ namespace AIRefactored.AI.Combat
                     Logger.LogWarning("[BotThreatSelector] Null cache, bot, or AIRefactoredBotOwner in constructor. Enabling fallback mode.");
                     _hasLoggedConstructorError = true;
                 }
-
                 BotFallbackUtility.FallbackToEFTLogic(cache?.Bot);
                 _isFallbackMode = true;
                 return;
@@ -77,7 +81,7 @@ namespace AIRefactored.AI.Combat
 
             _cache = cache;
             _bot = cache.Bot;
-            _profile = cache.AIRefactoredBotOwner.PersonalityProfile;
+            _profile = cache.AIRefactoredBotOwner.PersonalityProfile ?? BotPersonalityPresets.GenerateProfile(PersonalityType.Balanced);
             _isFallbackMode = false;
         }
 
@@ -303,7 +307,7 @@ namespace AIRefactored.AI.Combat
                     _cache?.LastShotTracker?.RegisterHit(id);
                 }
 
-                // Use only internal EFT nav for fallback movement
+                // Only fallback movement if all critical references exist and valid
                 if (_cache != null && _cache.Movement != null && !_cache.Bot.IsDead && _cache.Bot.Mover != null && !_cache.Bot.Mover.IsMoving)
                 {
                     Vector3 fallback;

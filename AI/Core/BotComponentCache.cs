@@ -124,6 +124,9 @@ namespace AIRefactored.AI.Core
 
         #region Initialization
 
+        /// <summary>
+        /// Initializes and wires up all bot subsystems. Each is bulletproofed against failure.
+        /// </summary>
         public void Initialize(BotOwner bot)
         {
             if (bot == null)
@@ -136,19 +139,14 @@ namespace AIRefactored.AI.Core
             string id = bot.Profile?.Id ?? "null";
 
             if (Bot != null || InitializedBots.Contains(id))
-            {
-                Logger.LogWarning("[BotComponentCache] Already initialized for bot: " + id);
                 return;
-            }
 
             InitializedBots.Add(id);
             Bot = bot;
 
             WildSpawnType role = bot.Profile?.Info?.Settings?.Role ?? WildSpawnType.assault;
             PersonalityProfile = BotRegistry.GetOrGenerate(id, PersonalityType.Balanced, role);
-            Logger.LogDebug($"[BotComponentCache] Loaded personality for bot {id}: {PersonalityProfile.Personality}");
 
-            // Each init wrapped for isolation, no cascade. Only that subsystem is skipped on error.
             TryInit(() => Pathing = new BotOwnerPathfindingCache(), "Pathing");
             TryInit(() => { TacticalMemory = new BotTacticalMemory(); TacticalMemory.Initialize(this); }, "TacticalMemory");
             TryInit(() => { Combat = new CombatStateMachine(); Combat.Initialize(this); }, "Combat");
@@ -173,8 +171,6 @@ namespace AIRefactored.AI.Core
             TryInit(() => GroupComms = new BotGroupComms(this), "GroupComms");
             TryInit(() => SquadHealer = bot.HealAnotherTarget ?? new BotHealAnotherTarget(bot), "SquadHealer");
             TryInit(() => HealReceiver = bot.HealingBySomebody ?? new BotHealingBySomebody(bot), "HealReceiver");
-
-            Logger.LogDebug($"[BotComponentCache] ✅ Initialized for bot: {Nickname}");
         }
 
         private void TryInit(Action action, string name)
@@ -230,16 +226,11 @@ namespace AIRefactored.AI.Core
         public void RegisterHeardSound(Vector3 source)
         {
             if (Bot == null)
-            {
-                Logger.LogWarning("[BotComponentCache] RegisterHeardSound failed — bot not assigned.");
                 return;
-            }
 
             LastHeardTime = Time.time;
             LastHeardDirection = source - Position;
             HasHeardDirection = true;
-
-            Logger.LogDebug($"[BotComponentCache] Registered sound from: {source}");
         }
 
         #endregion

@@ -13,6 +13,7 @@ namespace AIRefactored.AI.Groups
     using System.Threading.Tasks;
     using AIRefactored.AI.Core;
     using AIRefactored.Core;
+    using AIRefactored.Pools;
     using EFT;
     using UnityEngine;
 
@@ -81,7 +82,6 @@ namespace AIRefactored.AI.Groups
             }
             catch
             {
-                // Safe: fail local, never break mod
                 _bot = null;
                 _group = null;
             }
@@ -107,26 +107,22 @@ namespace AIRefactored.AI.Groups
 
                 foreach (var kv in _teammateCaches)
                 {
-                    BotComponentCache mate = kv.Value;
+                    var mate = kv.Value;
                     if (mate?.Bot != null && !mate.Bot.IsDead)
                     {
                         try
                         {
                             mate.Combat?.TriggerFallback(point);
-
                             if (mate.PanicHandler != null && !mate.PanicHandler.IsPanicking)
                             {
                                 mate.PanicHandler.TriggerPanic();
                             }
                         }
-                        catch { /* Always bulletproof, never throw */ }
+                        catch { }
                     }
                 }
             }
-            catch
-            {
-                // Always safe, silent fail
-            }
+            catch { }
         }
 
         public void BroadcastDanger(Vector3 position)
@@ -138,7 +134,7 @@ namespace AIRefactored.AI.Groups
 
                 foreach (var kv in _teammateCaches)
                 {
-                    BotComponentCache mate = kv.Value;
+                    var mate = kv.Value;
                     if (mate?.Bot != null && !mate.Bot.IsDead && mate.PanicHandler != null && !mate.PanicHandler.IsPanicking)
                     {
                         float delay = UnityEngine.Random.Range(0.1f, 0.35f);
@@ -146,10 +142,7 @@ namespace AIRefactored.AI.Groups
                     }
                 }
             }
-            catch
-            {
-                // Always safe, silent fail
-            }
+            catch { }
         }
 
         public void BroadcastLootPoint(Vector3 point)
@@ -173,25 +166,29 @@ namespace AIRefactored.AI.Groups
         public Vector3? GetSharedExtractTarget() => _hasExtract ? (Vector3?)_extractPoint : null;
         public bool IsSquadReady() => _teammateCaches.Count > 0;
 
+        /// <summary>
+        /// Returns a pooled list of all alive bot teammates (must be returned to pool by caller).
+        /// </summary>
         public IReadOnlyList<BotOwner> GetTeammates()
         {
-            List<BotOwner> result = new List<BotOwner>(_teammateCaches.Count);
+            var result = TempListPool.Rent<BotOwner>();
             try
             {
                 foreach (var kv in _teammateCaches)
                 {
-                    BotOwner bot = kv.Key;
+                    var bot = kv.Key;
                     if (bot != null && !bot.IsDead && bot.GetPlayer?.IsAI == true)
                     {
                         result.Add(bot);
                     }
                 }
+                return result;
             }
             catch
             {
-                // Silent fail: partial result is fine
+                result.Clear();
+                return result;
             }
-            return result;
         }
 
         public BotComponentCache GetCache(BotOwner teammate)
@@ -230,10 +227,7 @@ namespace AIRefactored.AI.Groups
                     BroadcastDanger(myPos);
                 }
             }
-            catch
-            {
-                // Always safe, silent fail
-            }
+            catch { }
         }
 
         #endregion
@@ -246,46 +240,31 @@ namespace AIRefactored.AI.Groups
             {
                 if (teammate == null || teammate == _bot || _teammateCaches.ContainsKey(teammate))
                     return;
-
                 if (teammate.IsDead || teammate.GetPlayer?.IsAI != true)
                     return;
-
                 string profileId = teammate.ProfileId;
                 if (string.IsNullOrEmpty(profileId))
                     return;
-
                 if (!BotRegistry.TryGetRefactoredOwner(profileId, out AIRefactoredBotOwner owner))
                     return;
-
                 BotComponentCache cache = new BotComponentCache();
                 cache.Initialize(teammate);
                 cache.SetOwner(owner);
-
                 _teammateCaches[teammate] = cache;
             }
-            catch
-            {
-                // Always safe, never throw
-            }
+            catch { }
         }
 
         private void OnMemberRemoved(BotOwner teammate)
         {
-            try
-            {
-                _teammateCaches.Remove(teammate);
-            }
-            catch
-            {
-                // Always safe, never throw
-            }
+            try { _teammateCaches.Remove(teammate); }
+            catch { }
         }
 
         private static void TriggerDelayedPanic(BotComponentCache cache, float delay)
         {
             if (cache == null)
                 return;
-
             Task.Run(async () =>
             {
                 try
@@ -296,10 +275,7 @@ namespace AIRefactored.AI.Groups
                         cache.PanicHandler.TriggerPanic();
                     }
                 }
-                catch
-                {
-                    // Fail silently; async fire-and-forget is best effort only
-                }
+                catch { }
             });
         }
 

@@ -64,6 +64,7 @@ namespace AIRefactored.AI.Combat
 
         public BotThreatSelector(BotComponentCache cache)
         {
+            // Null safety and isolation up front, logs for diagnostics
             if (cache == null || cache.Bot == null || cache.AIRefactoredBotOwner == null)
             {
                 BotFallbackUtility.Trigger(this, null, "[BotThreatSelector] Null cache, bot, or AIRefactoredBotOwner in constructor.");
@@ -81,6 +82,9 @@ namespace AIRefactored.AI.Combat
 
         #region Public Methods
 
+        /// <summary>
+        /// Evaluates and selects the best enemy target based on tactical criteria.
+        /// </summary>
         public void Tick(float time)
         {
             if (_isFallbackMode || time < _nextEvaluateTime || _bot == null || _bot.IsDead || !_bot.IsAI)
@@ -140,14 +144,21 @@ namespace AIRefactored.AI.Combat
             {
                 BotFallbackUtility.Trigger(this, _bot, "Exception in Tick.", ex);
                 _isFallbackMode = true;
+                BotFallbackUtility.FallbackToEFTLogic(_bot);
             }
         }
 
+        /// <summary>
+        /// Clears the currently selected target.
+        /// </summary>
         public void ResetTarget()
         {
             _currentTarget = null;
         }
 
+        /// <summary>
+        /// Gets the most appropriate target, using current, memory, or fallback.
+        /// </summary>
         public Player GetPriorityTarget()
         {
             if (_isFallbackMode)
@@ -158,7 +169,7 @@ namespace AIRefactored.AI.Combat
                 if (EFTPlayerUtil.IsValid(_currentTarget))
                     return _currentTarget;
 
-                string id = _cache.TacticalMemory.GetMostRecentEnemyId();
+                string id = _cache?.TacticalMemory?.GetMostRecentEnemyId();
                 if (string.IsNullOrEmpty(id))
                     return null;
 
@@ -169,10 +180,14 @@ namespace AIRefactored.AI.Combat
             {
                 BotFallbackUtility.Trigger(this, _bot, "Exception in GetPriorityTarget.", ex);
                 _isFallbackMode = true;
+                BotFallbackUtility.FallbackToEFTLogic(_bot);
                 return null;
             }
         }
 
+        /// <summary>
+        /// Returns the profileId of the current target.
+        /// </summary>
         public string GetTargetProfileId()
         {
             return _currentTarget != null ? _currentTarget.ProfileId : string.Empty;
@@ -186,6 +201,9 @@ namespace AIRefactored.AI.Combat
         {
             try
             {
+                if (_bot == null || candidate == null)
+                    return float.MinValue;
+
                 Vector3 botPos = _bot.Position;
                 Vector3 targetPos = EFTPlayerUtil.GetPosition(candidate);
                 float distance = Vector3.Distance(botPos, targetPos);
@@ -237,6 +255,7 @@ namespace AIRefactored.AI.Combat
             {
                 BotFallbackUtility.Trigger(this, _bot, "Exception in ScoreTarget.", ex);
                 _isFallbackMode = true;
+                BotFallbackUtility.FallbackToEFTLogic(_bot);
                 return float.MinValue;
             }
         }
@@ -245,7 +264,7 @@ namespace AIRefactored.AI.Combat
         {
             try
             {
-                if (candidate == null || _bot.EnemiesController == null)
+                if (candidate == null || _bot == null || _bot.EnemiesController == null)
                     return null;
 
                 string id = candidate.ProfileId;
@@ -271,6 +290,7 @@ namespace AIRefactored.AI.Combat
             {
                 BotFallbackUtility.Trigger(this, _bot, "Exception in GetEnemyInfo.", ex);
                 _isFallbackMode = true;
+                BotFallbackUtility.FallbackToEFTLogic(_bot);
                 return null;
             }
         }
@@ -279,18 +299,21 @@ namespace AIRefactored.AI.Combat
         {
             try
             {
+                if (target == null)
+                    return;
+
                 _currentTarget = target;
                 _lastTargetSwitchTime = time;
 
                 string id = target.ProfileId;
                 if (!string.IsNullOrEmpty(id))
                 {
-                    _cache.TacticalMemory.RecordEnemyPosition(EFTPlayerUtil.GetPosition(target), "Target", id);
-                    _cache.LastShotTracker?.RegisterHit(id);
+                    _cache?.TacticalMemory?.RecordEnemyPosition(EFTPlayerUtil.GetPosition(target), "Target", id);
+                    _cache?.LastShotTracker?.RegisterHit(id);
                 }
 
                 // Use only internal EFT nav for fallback movement
-                if (_cache.Movement != null && !_cache.Bot.IsDead && _cache.Bot.Mover != null && !_cache.Bot.Mover.IsMoving)
+                if (_cache != null && _cache.Movement != null && !_cache.Bot.IsDead && _cache.Bot.Mover != null && !_cache.Bot.Mover.IsMoving)
                 {
                     Vector3 fallback;
                     if (!BotNavHelper.TryGetSafeTarget(_cache.Bot, out fallback) || !IsVectorValid(fallback))
@@ -306,6 +329,7 @@ namespace AIRefactored.AI.Combat
             {
                 BotFallbackUtility.Trigger(this, _bot, "Exception in SetTarget.", ex);
                 _isFallbackMode = true;
+                BotFallbackUtility.FallbackToEFTLogic(_bot);
             }
         }
 

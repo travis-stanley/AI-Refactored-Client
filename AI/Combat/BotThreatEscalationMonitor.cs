@@ -212,7 +212,7 @@ namespace AIRefactored.AI.Combat
                     catch { /* no-op */ }
                 }
 
-                // NEW: Only use internal EFT navigation for fallback movement
+                // Only use internal EFT navigation for fallback movement
                 Vector3 fallback = _bot.Position;
                 if (!BotNavHelper.TryGetSafeTarget(_bot, out fallback) || !IsVectorValid(fallback))
                 {

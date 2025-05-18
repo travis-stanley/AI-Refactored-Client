@@ -26,7 +26,7 @@ namespace AIRefactored.AI.Combat.States
     {
         #region Constants
 
-        private const float MinArrivalDistance = 2.0f;
+        private const float MinArrivalDistance = 0.1f; // Lowered to minimum safe threshold
 
         #endregion
 
@@ -108,6 +108,7 @@ namespace AIRefactored.AI.Combat.States
 
         /// <summary>
         /// Sets the fallback path using a list of valid points.
+        /// If rejected (distance too short), logs info and triggers vanilla fallback.
         /// </summary>
         public void SetFallbackPath(List<Vector3> path)
         {
@@ -116,7 +117,11 @@ namespace AIRefactored.AI.Combat.States
 
             if (path == null || path.Count < 2)
             {
-                BotFallbackUtility.Trigger(this, _bot, "Rejected fallback path: path too short.");
+                string posStr = _bot != null ? _bot.Position.ToString("F3") : "null";
+                string tgtStr = (path != null && path.Count > 0) ? path[path.Count - 1].ToString("F3") : "null";
+                BotFallbackUtility.Trigger(this, _bot, $"Rejected fallback path: path too short (src={posStr}, tgt={tgtStr})");
+                BotFallbackUtility.FallbackToEFTLogic(_bot);
+                _isFallbackMode = true;
                 return;
             }
 
@@ -137,7 +142,11 @@ namespace AIRefactored.AI.Combat.States
             }
             else
             {
-                BotFallbackUtility.Trigger(this, _bot, "Final fallback path was invalid.");
+                string posStr = _bot != null ? _bot.Position.ToString("F3") : "null";
+                string tgtStr = _currentFallbackPath.Count > 0 ? _currentFallbackPath[_currentFallbackPath.Count - 1].ToString("F3") : "null";
+                BotFallbackUtility.Trigger(this, _bot, $"Final fallback path was invalid (src={posStr}, tgt={tgtStr})");
+                BotFallbackUtility.FallbackToEFTLogic(_bot);
+                _isFallbackMode = true;
             }
         }
 
@@ -182,12 +191,14 @@ namespace AIRefactored.AI.Combat.States
                 if (!EFTPlayerUtil.IsValid(player))
                 {
                     BotFallbackUtility.Trigger(this, _bot, "Tick skipped: bot player invalid.");
+                    BotFallbackUtility.FallbackToEFTLogic(_bot);
+                    _isFallbackMode = true;
                     return;
                 }
 
                 Vector3 fallbackPoint = _fallbackTarget;
 
-                // Native navigation only — use BotNavHelper and fallback.
+                // Pure native navigation — use BotNavHelper and fallback.
                 if (!BotNavHelper.TryGetSafeTarget(_bot, out fallbackPoint) || !IsVectorValid(fallbackPoint))
                 {
                     BotFallbackUtility.FallbackToEFTLogic(_bot);
@@ -233,6 +244,7 @@ namespace AIRefactored.AI.Combat.States
             {
                 BotFallbackUtility.Trigger(this, _bot, "General Tick exception.", ex);
                 _isFallbackMode = true;
+                BotFallbackUtility.FallbackToEFTLogic(_bot);
             }
         }
 

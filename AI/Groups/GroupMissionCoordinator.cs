@@ -30,6 +30,9 @@ namespace AIRefactored.AI.Groups
 
         #region Public API
 
+        /// <summary>
+        /// Forces a mission type for the given group.
+        /// </summary>
         public static void ForceMissionForGroup(string groupId, BotMissionController.MissionType mission)
         {
             if (!string.IsNullOrEmpty(groupId))
@@ -38,21 +41,20 @@ namespace AIRefactored.AI.Groups
             }
         }
 
+        /// <summary>
+        /// Gets or assigns a mission for the specified bot's group.
+        /// </summary>
         public static BotMissionController.MissionType GetMissionForGroup(BotOwner bot)
         {
             try
             {
                 if (!EFTPlayerUtil.IsValidBotOwner(bot))
-                {
                     return BotMissionController.MissionType.Loot;
-                }
 
                 string groupId = bot.GetPlayer?.Profile?.Info?.GroupId;
 
                 if (string.IsNullOrEmpty(groupId))
-                {
                     return PickMission(bot);
-                }
 
                 if (!AssignedMissions.TryGetValue(groupId, out var mission))
                 {
@@ -69,17 +71,17 @@ namespace AIRefactored.AI.Groups
             }
         }
 
+        /// <summary>
+        /// Registers a bot for mission assignment based on group.
+        /// </summary>
         public static void RegisterFromBot(BotOwner bot)
         {
             try
             {
                 if (!EFTPlayerUtil.IsValidBotOwner(bot))
-                {
                     return;
-                }
 
                 string groupId = bot.GetPlayer?.Profile?.Info?.GroupId;
-
                 if (!string.IsNullOrEmpty(groupId) && !AssignedMissions.ContainsKey(groupId))
                 {
                     AssignedMissions[groupId] = PickMission(bot);
@@ -91,6 +93,9 @@ namespace AIRefactored.AI.Groups
             }
         }
 
+        /// <summary>
+        /// Clears all assigned group missions.
+        /// </summary>
         public static void Reset()
         {
             AssignedMissions.Clear();
@@ -100,11 +105,12 @@ namespace AIRefactored.AI.Groups
 
         #region Mission Picker
 
+        /// <summary>
+        /// Picks a mission type for a squad based on map, squad, and bot personality.
+        /// </summary>
         private static BotMissionController.MissionType PickMission(BotOwner bot)
         {
-            float loot = 1.0f;
-            float fight = 1.0f;
-            float quest = 1.0f;
+            float loot = 1.0f, fight = 1.0f, quest = 1.0f;
 
             try
             {
@@ -115,50 +121,40 @@ namespace AIRefactored.AI.Groups
                     case "factory4_night":
                         fight += 1.5f;
                         break;
-
                     case "woods":
                         loot += 1.5f;
                         break;
-
                     case "bigmap":
                         quest += 0.75f;
                         fight += 0.25f;
                         break;
-
                     case "interchange":
                         loot += 1.2f;
                         break;
-
                     case "rezervbase":
                         fight += 1.0f;
                         loot += 0.4f;
                         break;
-
                     case "lighthouse":
                         quest += 1.2f;
                         loot += 1.0f;
                         break;
-
                     case "shoreline":
                         quest += 1.4f;
                         loot += 0.6f;
                         break;
-
                     case "tarkovstreets":
                         fight += 1.3f;
                         loot += 0.5f;
                         break;
-
                     case "laboratory":
                         fight += 2.0f;
                         break;
-
                     case "sandbox":
                     case "sandbox_high":
                     case "groundzero":
                         loot += 1.0f;
                         break;
-
                     default:
                         loot += 0.5f;
                         break;
@@ -170,20 +166,9 @@ namespace AIRefactored.AI.Groups
                     quest += personality.Caution * 0.5f;
                     fight += personality.AggressionLevel * 1.2f;
 
-                    if (personality.IsFrenzied)
-                    {
-                        fight += 1.5f;
-                    }
-
-                    if (personality.IsFearful)
-                    {
-                        loot += 1.0f;
-                    }
-
-                    if (personality.IsCamper)
-                    {
-                        quest += 0.75f;
-                    }
+                    if (personality.IsFrenzied) fight += 1.5f;
+                    if (personality.IsFearful) loot += 1.0f;
+                    if (personality.IsCamper) quest += 0.75f;
                 }
             }
             catch
@@ -195,15 +180,9 @@ namespace AIRefactored.AI.Groups
             float roll = Random.value * total;
 
             if (roll < loot)
-            {
                 return BotMissionController.MissionType.Loot;
-            }
-
             if (roll < loot + fight)
-            {
                 return BotMissionController.MissionType.Fight;
-            }
-
             return BotMissionController.MissionType.Quest;
         }
 

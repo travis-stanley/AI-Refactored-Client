@@ -95,6 +95,7 @@ namespace AIRefactored.AI.Combat.States
             {
                 BotFallbackUtility.Trigger(this, _bot, "Exception in ShouldTransitionToInvestigate.", ex);
                 _isFallbackMode = true;
+                BotFallbackUtility.FallbackToEFTLogic(_bot);
                 return false;
             }
         }
@@ -140,6 +141,7 @@ namespace AIRefactored.AI.Combat.States
                 {
                     BotFallbackUtility.Trigger(this, _bot, "HotspotRegistry exception in Tick.", ex);
                     _isFallbackMode = true;
+                    BotFallbackUtility.FallbackToEFTLogic(_bot);
                     return;
                 }
 
@@ -193,6 +195,7 @@ namespace AIRefactored.AI.Combat.States
             {
                 BotFallbackUtility.Trigger(this, _bot, "General exception in Tick.", ex);
                 _isFallbackMode = true;
+                BotFallbackUtility.FallbackToEFTLogic(_bot);
             }
         }
 
@@ -237,6 +240,7 @@ namespace AIRefactored.AI.Combat.States
             {
                 BotFallbackUtility.Trigger(this, _bot, "Exception in ShouldTriggerFallback.", ex);
                 _isFallbackMode = true;
+                BotFallbackUtility.FallbackToEFTLogic(_bot);
                 return false;
             }
         }
@@ -261,6 +265,7 @@ namespace AIRefactored.AI.Combat.States
             {
                 BotFallbackUtility.Trigger(this, _bot, "Exception in TryGetFallbackPosition.", ex);
                 _isFallbackMode = true;
+                BotFallbackUtility.FallbackToEFTLogic(_bot);
                 return _bot != null ? _bot.Position : Vector3.zero;
             }
         }

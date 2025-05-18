@@ -78,6 +78,7 @@ namespace AIRefactored.AI.Combat.States
             {
                 BotFallbackUtility.Trigger(this, _bot, "Exception in ShallUseNow.", ex);
                 _isFallbackMode = true;
+                BotFallbackUtility.FallbackToEFTLogic(_bot);
                 return false;
             }
         }
@@ -99,6 +100,7 @@ namespace AIRefactored.AI.Combat.States
             {
                 BotFallbackUtility.Trigger(this, _bot, "Exception in CanAttack.", ex);
                 _isFallbackMode = true;
+                BotFallbackUtility.FallbackToEFTLogic(_bot);
                 return false;
             }
         }
@@ -176,6 +178,7 @@ namespace AIRefactored.AI.Combat.States
             {
                 BotFallbackUtility.Trigger(this, _bot, "Exception in IsEngaging.", ex);
                 _isFallbackMode = true;
+                BotFallbackUtility.FallbackToEFTLogic(_bot);
                 return false;
             }
         }

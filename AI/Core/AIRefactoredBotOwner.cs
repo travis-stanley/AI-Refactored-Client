@@ -100,6 +100,10 @@ namespace AIRefactored.AI.Core
 
         #region Initialization
 
+        /// <summary>
+        /// Initializes the owner and sets up cache and personality.
+        /// </summary>
+        /// <param name="bot">BotOwner instance.</param>
         public void Initialize(BotOwner bot)
         {
             if (bot == null)
@@ -110,10 +114,8 @@ namespace AIRefactored.AI.Core
                 return;
             }
             if (_isInitialized)
-            {
-                Logger.LogWarning("[AIRefactoredBotOwner] Duplicate initialization attempt ignored.");
                 return;
-            }
+
             _bot = bot;
             try
             {
@@ -145,6 +147,9 @@ namespace AIRefactored.AI.Core
 
         #region Personality
 
+        /// <summary>
+        /// Initializes from a preset PersonalityType.
+        /// </summary>
         public void InitProfile(PersonalityType type)
         {
             try
@@ -175,6 +180,9 @@ namespace AIRefactored.AI.Core
             }
         }
 
+        /// <summary>
+        /// Initializes from a custom profile and name.
+        /// </summary>
         public void InitProfile(BotPersonalityProfile profile, string name)
         {
             try
@@ -204,6 +212,9 @@ namespace AIRefactored.AI.Core
             }
         }
 
+        /// <summary>
+        /// Clears the personality to a default state.
+        /// </summary>
         public void ClearPersonality()
         {
             try
@@ -222,6 +233,9 @@ namespace AIRefactored.AI.Core
             }
         }
 
+        /// <summary>
+        /// Returns true if personality is assigned.
+        /// </summary>
         public bool HasPersonality()
         {
             return PersonalityProfile != null;
@@ -231,15 +245,16 @@ namespace AIRefactored.AI.Core
 
         #region Zone + Mission
 
+        /// <summary>
+        /// Sets the assigned zone name for this bot.
+        /// </summary>
         public void SetZone(string zoneName)
         {
             try
             {
                 if (string.IsNullOrEmpty(zoneName))
-                {
-                    Logger.LogWarning("[AIRefactoredBotOwner] Ignored empty zone assignment.");
                     return;
-                }
+
                 AssignedZone = zoneName;
 
                 if (!FikaHeadlessDetector.IsHeadless)
@@ -253,6 +268,9 @@ namespace AIRefactored.AI.Core
             }
         }
 
+        /// <summary>
+        /// Sets the mission controller.
+        /// </summary>
         public void SetMissionController(BotMissionController controller)
         {
             try

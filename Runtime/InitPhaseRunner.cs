@@ -67,7 +67,6 @@ namespace AIRefactored.Runtime
                 }
 
                 WorldInitState.SetPhase(WorldPhase.AwaitWorld);
-                NavMeshStatus.Reset();
 
                 string mapId = GameWorldHandler.TryGetValidMapName();
                 if (string.IsNullOrEmpty(mapId))
@@ -125,7 +124,7 @@ namespace AIRefactored.Runtime
             try { WorldTickDispatcher.Reset(); } catch { }
             try { WorldBootstrapper.Stop(); } catch { }
             try { GameWorldHandler.Cleanup(); } catch { }
-            try { NavMeshStatus.Reset(); } catch { }
+            // NavMeshStatus.Reset() removed as no longer exists
 
             try { logger?.LogDebug("[InitPhaseRunner] 🧹 Cleanup complete — initialization state reset."); } catch { }
         }

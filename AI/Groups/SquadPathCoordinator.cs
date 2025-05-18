@@ -106,6 +106,10 @@ namespace AIRefactored.AI.Groups
 
         #region Private Methods
 
+        /// <summary>
+        /// Computes a unique squad offset for this bot using a deterministic per-bot random seed.
+        /// Never mutates UnityEngine.Random global state.
+        /// </summary>
         private Vector3 ComputeOffset()
         {
             try
@@ -123,13 +127,14 @@ namespace AIRefactored.AI.Groups
 
                 int squadSize = _group.MembersCount;
                 int seed = unchecked(profileId.GetHashCode() ^ (squadSize * 397));
-                Random.InitState(seed);
+                var localRand = new System.Random(seed);
 
-                float baseNoise = Random.Range(-0.4f, 0.4f);
+                float baseNoise = (float)(localRand.NextDouble() * 0.8 - 0.4); // [-0.4, 0.4]
                 float spacing = Mathf.Clamp(BaseSpacing + baseNoise, MinSpacing, MaxSpacing);
 
                 float angleStep = 360f / squadSize;
-                float angle = (index * angleStep) + Random.Range(-8f, 8f);
+                float angleJitter = (float)(localRand.NextDouble() * 16.0 - 8.0); // [-8, 8]
+                float angle = (index * angleStep) + angleJitter;
                 float radians = angle * Mathf.Deg2Rad;
 
                 float x = Mathf.Cos(radians) * spacing;

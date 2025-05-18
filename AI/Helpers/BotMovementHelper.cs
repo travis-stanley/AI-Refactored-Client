@@ -42,7 +42,7 @@ namespace AIRefactored.AI.Helpers
 
         public static void RetreatToCover(BotOwner bot, Vector3 threatDirection, float distance = RetreatDistance, bool sprint = true)
         {
-            if (!IsEligible(bot))
+            if (!IsAlive(bot))
                 return;
 
             try
@@ -83,7 +83,7 @@ namespace AIRefactored.AI.Helpers
 
         public static void SmoothLookTo(BotOwner bot, Vector3 lookTarget, float speed = DefaultLookSpeed)
         {
-            if (!IsEligible(bot) || !IsValidTarget(lookTarget))
+            if (!IsAlive(bot) || !IsValidTarget(lookTarget))
                 return;
 
             try
@@ -109,7 +109,7 @@ namespace AIRefactored.AI.Helpers
 
         public static bool SmoothMoveToSafe(BotOwner bot, Vector3 target, bool slow = true, float cohesionScale = 1f)
         {
-            if (!IsEligible(bot) || !IsValidTarget(target))
+            if (!IsAlive(bot) || !IsValidTarget(target))
                 return false;
 
             try
@@ -153,7 +153,7 @@ namespace AIRefactored.AI.Helpers
 
         public static void SmoothStrafeFrom(BotOwner bot, Vector3 threatDirection, float scale = 1f)
         {
-            if (!IsEligible(bot))
+            if (!IsAlive(bot))
                 return;
 
             try
@@ -187,7 +187,7 @@ namespace AIRefactored.AI.Helpers
 
         public static void ForceFallbackMove(BotOwner bot)
         {
-            if (!IsEligible(bot))
+            if (!IsAlive(bot))
                 return;
 
             try
@@ -217,7 +217,7 @@ namespace AIRefactored.AI.Helpers
 
         public static void SmoothMoveToSafeExit(BotOwner bot)
         {
-            if (!IsEligible(bot))
+            if (!IsAlive(bot))
                 return;
 
             try
@@ -248,13 +248,12 @@ namespace AIRefactored.AI.Helpers
 
         #region Internal Helpers
 
-        private static bool IsEligible(BotOwner bot)
+        private static bool IsAlive(BotOwner bot)
         {
             return bot != null &&
                    bot.GetPlayer != null &&
                    bot.GetPlayer.IsAI &&
-                   !bot.IsDead &&
-                   bot.Mover != null;
+                   !bot.IsDead;
         }
 
         private static bool IsValidTarget(Vector3 pos)

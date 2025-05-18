@@ -18,7 +18,7 @@ namespace AIRefactored.AI.Navigation
 
     /// <summary>
     /// Immediately builds Unity NavMesh surfaces once the map is known.
-    /// Ensures NavMeshStatus is flagged and safe before bot AI is initialized.
+    /// Ensures NavMesh is flagged and safe before bot AI is initialized.
     /// All errors and state are strictly localized; never breaks outside navigation systems.
     /// </summary>
     public static class NavMeshWarmupManager
@@ -27,6 +27,7 @@ namespace AIRefactored.AI.Navigation
 
         private static readonly ManualLogSource Logger = Plugin.LoggerInstance;
         private static bool _hasStarted;
+        private static bool _isReady;
 
         #endregion
 
@@ -35,7 +36,7 @@ namespace AIRefactored.AI.Navigation
         /// <summary>
         /// Gets a value indicating whether the NavMesh has been warmed up this raid.
         /// </summary>
-        public static bool IsNavMeshReady => _hasStarted && NavMeshStatus.IsReady;
+        public static bool IsNavMeshReady => _hasStarted && _isReady;
 
         #endregion
 
@@ -73,6 +74,7 @@ namespace AIRefactored.AI.Navigation
             }
 
             _hasStarted = true;
+            _isReady = false;
 
             try
             {
@@ -109,7 +111,7 @@ namespace AIRefactored.AI.Navigation
                 }
 
                 Logger.LogInfo("[NavMeshWarmupManager] ✅ NavMesh warmup complete.");
-                NavMeshStatus.SetReady();
+                _isReady = true;
             }
             catch (Exception ex)
             {
@@ -123,7 +125,7 @@ namespace AIRefactored.AI.Navigation
         public static void Reset()
         {
             _hasStarted = false;
-            NavMeshStatus.Reset();
+            _isReady = false;
         }
 
         #endregion

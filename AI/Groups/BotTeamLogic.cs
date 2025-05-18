@@ -15,7 +15,6 @@ namespace AIRefactored.AI.Groups
     using AIRefactored.AI.Core;
     using AIRefactored.AI.Helpers;
     using AIRefactored.Core;
-    using AIRefactored.Runtime;
     using EFT;
     using UnityEngine;
     using static AIRefactored.AI.Missions.BotMissionController;
@@ -56,6 +55,9 @@ namespace AIRefactored.AI.Groups
 
         #region Public Methods
 
+        /// <summary>
+        /// Adds an enemy to all squadmates' memory and group controller.
+        /// </summary>
         public static void AddEnemy(BotOwner bot, IPlayer target)
         {
             try
@@ -85,6 +87,9 @@ namespace AIRefactored.AI.Groups
             }
         }
 
+        /// <summary>
+        /// Broadcasts mission type to all squadmates (voice).
+        /// </summary>
         public static void BroadcastMissionType(BotOwner bot, MissionType mission)
         {
             try
@@ -108,6 +113,9 @@ namespace AIRefactored.AI.Groups
             }
         }
 
+        /// <summary>
+        /// Broadcasts a fallback retreat point to all squadmates' Combat FSMs.
+        /// </summary>
         public void BroadcastFallback(Vector3 retreatPoint)
         {
             foreach (var pair in _combatMap)
@@ -122,6 +130,9 @@ namespace AIRefactored.AI.Groups
             }
         }
 
+        /// <summary>
+        /// Regroup with squadmates if too far, using only vanilla movement.
+        /// </summary>
         public void CoordinateMovement()
         {
             try
@@ -152,6 +163,7 @@ namespace AIRefactored.AI.Groups
                 Vector3 target = center + jitter;
                 if ((_bot.Position - target).sqrMagnitude > RegroupThresholdSqr)
                 {
+                    // Use only vanilla EFT movement.
                     BotMovementHelper.SmoothMoveTo(_bot, target, false);
                 }
             }
@@ -161,6 +173,9 @@ namespace AIRefactored.AI.Groups
             }
         }
 
+        /// <summary>
+        /// Registers a squadmate's CombatStateMachine for tactical comms.
+        /// </summary>
         public void InjectCombatState(BotOwner mate, CombatStateMachine fsm)
         {
             try
@@ -176,6 +191,9 @@ namespace AIRefactored.AI.Groups
             }
         }
 
+        /// <summary>
+        /// Sets the list of squadmates for regrouping/tactical actions.
+        /// </summary>
         public void SetTeammates(List<BotOwner> allBots)
         {
             _teammates.Clear();
@@ -207,6 +225,9 @@ namespace AIRefactored.AI.Groups
             }
         }
 
+        /// <summary>
+        /// Shares a spotted enemy with all squadmates (adds to memory/group).
+        /// </summary>
         public void ShareTarget(IPlayer enemy)
         {
             try
@@ -239,6 +260,9 @@ namespace AIRefactored.AI.Groups
 
         #region Internal Helpers
 
+        /// <summary>
+        /// Force-add an enemy to a squadmate's memory and group logic.
+        /// </summary>
         private static void ForceRegisterEnemy(BotOwner receiver, IPlayer enemy)
         {
             try
@@ -260,6 +284,9 @@ namespace AIRefactored.AI.Groups
             }
         }
 
+        /// <summary>
+        /// Issues a delayed fallback command to a squadmate's FSM (non-blocking).
+        /// </summary>
         private static void TriggerDelayedFallback(CombatStateMachine fsm, Vector3 point)
         {
             if (fsm == null)

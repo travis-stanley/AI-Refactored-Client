@@ -111,14 +111,13 @@ namespace AIRefactored.AI.Helpers
             if (cache?.PoseController == null)
                 return;
 
-            // Only supports EFT native navigation: checks for CustomNavigationPoints nearby
             try
             {
-                // Use EFT internal: check for native CustomNavigationPoint within a small radius
+                // Only native EFT: looks for CustomNavigationPoint MonoBehaviours nearby
                 Collider[] colliders = Physics.OverlapSphere(position, 4f);
                 for (int i = 0; i < colliders.Length; i++)
                 {
-                    CustomNavigationPoint point = colliders[i].GetComponent<CustomNavigationPoint>();
+                    var point = colliders[i].GetComponent<CustomNavigationPoint>();
                     if (point == null || !IsValidPos(point.Position))
                         continue;
                     if ((point.Position - position).sqrMagnitude > MaxValidDistanceSqr)

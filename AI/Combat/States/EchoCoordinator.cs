@@ -110,7 +110,7 @@ namespace AIRefactored.AI.Combat.States
 
                     Vector3 destination = mate.Position - fallbackDir * BaseFallbackDistance + chaos;
 
-                    // Native EFT navigation only: use BotNavHelper, fallback to vanilla if failed.
+                    // Use only BotNavHelper (EFT nav). Fallback to vanilla AI on failure.
                     if (!BotNavHelper.TryGetSafeTarget(mate, out destination) || !IsValidTarget(destination))
                     {
                         BotFallbackUtility.FallbackToEFTLogic(mate);

@@ -61,7 +61,6 @@ namespace AIRefactored.AI.Core
                     var cache = new BotComponentCache();
                     cache.Initialize(bot);
                     CacheMap[id] = cache;
-
                     Logger.LogDebug($"[BotComponentCacheRegistry] ✅ Created new cache for: {id}");
                     return cache;
                 }
@@ -97,12 +96,9 @@ namespace AIRefactored.AI.Core
         public static void Remove(BotOwner bot)
         {
             if (bot?.Profile?.Id == null)
-            {
                 return;
-            }
 
             string id = bot.Profile.Id;
-
             lock (Lock)
             {
                 if (CacheMap.Remove(id))
@@ -124,6 +120,10 @@ namespace AIRefactored.AI.Core
             }
         }
 
+        /// <summary>
+        /// Returns a fallback cache, or a new instance if not found in registry.
+        /// Always returns a valid (non-null) instance.
+        /// </summary>
         private static BotComponentCache GetFallbackOrNew(string profileId)
         {
             try

@@ -98,6 +98,7 @@ namespace AIRefactored.AI.Combat.States
             {
                 BotFallbackUtility.Trigger(this, _bot, "Exception in GetInvestigateTarget.", ex);
                 _isFallbackMode = true;
+                BotFallbackUtility.FallbackToEFTLogic(_bot);
                 return _bot != null ? _bot.Position : Vector3.zero;
             }
         }
@@ -148,6 +149,7 @@ namespace AIRefactored.AI.Combat.States
             {
                 BotFallbackUtility.Trigger(this, _bot, "General exception in Investigate.", ex);
                 _isFallbackMode = true;
+                BotFallbackUtility.FallbackToEFTLogic(_bot);
             }
         }
 
@@ -171,6 +173,7 @@ namespace AIRefactored.AI.Combat.States
             {
                 BotFallbackUtility.Trigger(this, _bot, "Exception in ShallUseNow.", ex);
                 _isFallbackMode = true;
+                BotFallbackUtility.FallbackToEFTLogic(_bot);
                 return false;
             }
         }
@@ -192,6 +195,7 @@ namespace AIRefactored.AI.Combat.States
             {
                 BotFallbackUtility.Trigger(this, _bot, "Exception in ShouldExit.", ex);
                 _isFallbackMode = true;
+                BotFallbackUtility.FallbackToEFTLogic(_bot);
                 return true;
             }
         }
@@ -212,6 +216,7 @@ namespace AIRefactored.AI.Combat.States
             {
                 BotFallbackUtility.Trigger(this, _bot, "Exception in IsInvestigating.", ex);
                 _isFallbackMode = true;
+                BotFallbackUtility.FallbackToEFTLogic(_bot);
                 return false;
             }
         }
@@ -242,6 +247,7 @@ namespace AIRefactored.AI.Combat.States
             {
                 BotFallbackUtility.Trigger(this, _bot, "Exception in TryGetMemoryEnemyPosition.", ex);
                 _isFallbackMode = true;
+                BotFallbackUtility.FallbackToEFTLogic(_bot);
             }
             return false;
         }

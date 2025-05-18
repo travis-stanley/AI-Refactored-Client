@@ -122,14 +122,10 @@ namespace AIRefactored.AI.Combat
                     if (profile.ChaosFactor > 0f && Random.value < profile.ChaosFactor)
                     {
                         // Move to aimPosition using only vanilla EFT navigation
-                        if (!BotNavHelper.TryGetSafeTarget(_bot, out aimPosition))
+                        if (!BotNavHelper.TryGetSafeTarget(_bot, out aimPosition) || !IsVectorValid(aimPosition))
                         {
                             BotFallbackUtility.FallbackToEFTLogic(_bot);
-                            return;
-                        }
-                        if (!IsVectorValid(aimPosition))
-                        {
-                            BotFallbackUtility.FallbackToEFTLogic(_bot);
+                            _isFallbackMode = true;
                             return;
                         }
                         BotMovementHelper.SmoothMoveTo(_bot, aimPosition, false, profile.Cohesion);
@@ -193,6 +189,7 @@ namespace AIRefactored.AI.Combat
             {
                 BotFallbackUtility.Trigger(this, _bot, "Exception in UpdateBotAiming.", ex);
                 _isFallbackMode = true;
+                BotFallbackUtility.FallbackToEFTLogic(_bot);
             }
         }
 
@@ -228,6 +225,7 @@ namespace AIRefactored.AI.Combat
             {
                 BotFallbackUtility.Trigger(this, _bot, "Exception in GetValidatedAimPosition.", ex);
                 _isFallbackMode = true;
+                BotFallbackUtility.FallbackToEFTLogic(_bot);
                 return _bot.Position;
             }
         }
@@ -256,6 +254,7 @@ namespace AIRefactored.AI.Combat
             {
                 BotFallbackUtility.Trigger(this, _bot, "Exception in ApplyFireMode.", ex);
                 _isFallbackMode = true;
+                BotFallbackUtility.FallbackToEFTLogic(_bot);
             }
         }
 
@@ -272,6 +271,7 @@ namespace AIRefactored.AI.Combat
             {
                 BotFallbackUtility.Trigger(this, _bot, "Exception in SetFireMode.", ex);
                 _isFallbackMode = true;
+                BotFallbackUtility.FallbackToEFTLogic(_bot);
             }
         }
 
@@ -292,6 +292,7 @@ namespace AIRefactored.AI.Combat
             {
                 BotFallbackUtility.Trigger(this, _bot, "Exception in SupportsFireMode.", ex);
                 _isFallbackMode = true;
+                BotFallbackUtility.FallbackToEFTLogic(_bot);
             }
             return false;
         }
@@ -306,6 +307,7 @@ namespace AIRefactored.AI.Combat
             {
                 BotFallbackUtility.Trigger(this, _bot, "Exception in RecoverAccuracy.", ex);
                 _isFallbackMode = true;
+                BotFallbackUtility.FallbackToEFTLogic(_bot);
             }
         }
 
@@ -323,6 +325,7 @@ namespace AIRefactored.AI.Combat
             {
                 BotFallbackUtility.Trigger(this, _bot, "Exception in ApplyScatter.", ex);
                 _isFallbackMode = true;
+                BotFallbackUtility.FallbackToEFTLogic(_bot);
             }
         }
 
@@ -350,6 +353,7 @@ namespace AIRefactored.AI.Combat
             {
                 BotFallbackUtility.Trigger(this, _bot, "Exception in EstimateWeaponRange.", ex);
                 _isFallbackMode = true;
+                BotFallbackUtility.FallbackToEFTLogic(_bot);
                 return 90f;
             }
         }
@@ -368,6 +372,7 @@ namespace AIRefactored.AI.Combat
             {
                 BotFallbackUtility.Trigger(this, _bot, "Exception in GetBurstCadence.", ex);
                 _isFallbackMode = true;
+                BotFallbackUtility.FallbackToEFTLogic(_bot);
                 return 0.45f;
             }
         }
@@ -399,6 +404,7 @@ namespace AIRefactored.AI.Combat
             {
                 BotFallbackUtility.Trigger(this, _bot, "Exception in GetHealthRatio.", ex);
                 _isFallbackMode = true;
+                BotFallbackUtility.FallbackToEFTLogic(_bot);
                 return 1f;
             }
         }
@@ -412,13 +418,7 @@ namespace AIRefactored.AI.Combat
 
                 Vector3 fallback = _bot.Position;
                 // Only use EFT internal navigation helpers for fallback
-                if (!BotNavHelper.TryGetSafeTarget(_bot, out fallback))
-                {
-                    BotFallbackUtility.FallbackToEFTLogic(_bot);
-                    _isFallbackMode = true;
-                    return;
-                }
-                if (!IsVectorValid(fallback))
+                if (!BotNavHelper.TryGetSafeTarget(_bot, out fallback) || !IsVectorValid(fallback))
                 {
                     BotFallbackUtility.FallbackToEFTLogic(_bot);
                     _isFallbackMode = true;
@@ -448,6 +448,7 @@ namespace AIRefactored.AI.Combat
             {
                 BotFallbackUtility.Trigger(this, _bot, "Exception in TriggerFallback.", ex);
                 _isFallbackMode = true;
+                BotFallbackUtility.FallbackToEFTLogic(_bot);
             }
         }
 
@@ -472,6 +473,7 @@ namespace AIRefactored.AI.Combat
             {
                 BotFallbackUtility.Trigger(this, _bot, "Exception in TryResolveEnemy.", ex);
                 _isFallbackMode = true;
+                BotFallbackUtility.FallbackToEFTLogic(_bot);
             }
             return false;
         }

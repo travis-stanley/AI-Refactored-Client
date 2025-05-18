@@ -123,6 +123,7 @@ namespace AIRefactored.AI.Combat
             {
                 BotFallbackUtility.Trigger(this, _bot, "Exception in Tick.", ex);
                 _isFallbackMode = true;
+                BotFallbackUtility.FallbackToEFTLogic(_bot);
             }
         }
 
@@ -144,6 +145,7 @@ namespace AIRefactored.AI.Combat
             {
                 BotFallbackUtility.Trigger(this, _bot, "Exception in TriggerPanic.", ex);
                 _isFallbackMode = true;
+                BotFallbackUtility.FallbackToEFTLogic(_bot);
             }
         }
 
@@ -175,6 +177,7 @@ namespace AIRefactored.AI.Combat
             {
                 BotFallbackUtility.Trigger(this, _bot, "Exception in OnDamaged.", ex);
                 _isFallbackMode = true;
+                BotFallbackUtility.FallbackToEFTLogic(_bot);
             }
         }
 
@@ -199,6 +202,7 @@ namespace AIRefactored.AI.Combat
             {
                 BotFallbackUtility.Trigger(this, _bot, "Exception in ShouldPanicFromThreat.", ex);
                 _isFallbackMode = true;
+                BotFallbackUtility.FallbackToEFTLogic(_bot);
                 return false;
             }
         }
@@ -213,6 +217,7 @@ namespace AIRefactored.AI.Combat
             {
                 BotFallbackUtility.Trigger(this, _bot, "Exception in RecoverComposure.", ex);
                 _isFallbackMode = true;
+                BotFallbackUtility.FallbackToEFTLogic(_bot);
             }
         }
 
@@ -270,6 +275,7 @@ namespace AIRefactored.AI.Combat
             {
                 BotFallbackUtility.Trigger(this, _bot, "Exception in TryStartPanic.", ex);
                 _isFallbackMode = true;
+                BotFallbackUtility.FallbackToEFTLogic(_bot);
             }
         }
 
@@ -290,6 +296,7 @@ namespace AIRefactored.AI.Combat
             {
                 BotFallbackUtility.Trigger(this, _bot, "Exception in EndPanic.", ex);
                 _isFallbackMode = true;
+                BotFallbackUtility.FallbackToEFTLogic(_bot);
             }
         }
 
@@ -322,6 +329,7 @@ namespace AIRefactored.AI.Combat
             {
                 BotFallbackUtility.Trigger(this, _bot, "Exception in CheckNearbySquadDanger.", ex);
                 _isFallbackMode = true;
+                BotFallbackUtility.FallbackToEFTLogic(_bot);
             }
 
             return false;

@@ -60,7 +60,6 @@ namespace AIRefactored.AI.Groups
             }
             catch
             {
-                // Comms are disabled for this bot if construction fails.
                 IsMuted = true;
             }
         }
@@ -69,6 +68,9 @@ namespace AIRefactored.AI.Groups
 
         #region Public Methods
 
+        /// <summary>
+        /// Attempts to say a VO line for the given phrase, if eligible.
+        /// </summary>
         public void Say(EPhraseTrigger phrase)
         {
             try
@@ -84,22 +86,34 @@ namespace AIRefactored.AI.Groups
             }
         }
 
+        /// <summary>
+        /// Triggers a fallback voice line (e.g. "Get back!").
+        /// </summary>
         public void SayFallback()
         {
             TryTriggerVoice(EPhraseTrigger.GetBack, 0.5f);
         }
 
+        /// <summary>
+        /// Triggers a grenade warning if an ally is nearby.
+        /// </summary>
         public void SayFragOut()
         {
             float chance = HasNearbyAlly() ? 0.8f : 0.0f;
             TryTriggerVoice(EPhraseTrigger.OnEnemyGrenade, chance);
         }
 
+        /// <summary>
+        /// Triggers a hit reaction VO line.
+        /// </summary>
         public void SayHit()
         {
             TryTriggerVoice(EPhraseTrigger.OnBeingHurt, 0.7f);
         }
 
+        /// <summary>
+        /// Triggers a suppression VO line.
+        /// </summary>
         public void SaySuppression()
         {
             TryTriggerVoice(EPhraseTrigger.Suppress, 0.6f);
@@ -109,6 +123,9 @@ namespace AIRefactored.AI.Groups
 
         #region Private Methods
 
+        /// <summary>
+        /// Returns true if bot can issue squad VO.
+        /// </summary>
         private bool IsEligible()
         {
             return _bot != null &&
@@ -118,6 +135,9 @@ namespace AIRefactored.AI.Groups
                    _bot.BotTalk != null;
         }
 
+        /// <summary>
+        /// Attempts to trigger a voice line with chance/cooldown.
+        /// </summary>
         private void TryTriggerVoice(EPhraseTrigger phrase, float chance)
         {
             try
@@ -141,6 +161,9 @@ namespace AIRefactored.AI.Groups
             }
         }
 
+        /// <summary>
+        /// Returns true if any alive ally in group is nearby.
+        /// </summary>
         private bool HasNearbyAlly()
         {
             try

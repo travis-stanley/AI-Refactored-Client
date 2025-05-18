@@ -35,7 +35,6 @@ namespace AIRefactored.AI.Combat.States
 
         private readonly BotOwner _bot;
         private readonly BotComponentCache _cache;
-
         private Vector3 _lastTargetPosition;
         private bool _hasLastTarget;
         private bool _isFallbackMode;
@@ -142,7 +141,7 @@ namespace AIRefactored.AI.Combat.States
                         try
                         {
                             BotMovementHelper.SmoothMoveTo(_bot, destination);
-                            BotCoverHelper.TrySetStanceFromNearbyCover(_cache, destination);
+                            TrySetCombatStance(destination);
                         }
                         catch (Exception ex)
                         {
@@ -197,6 +196,23 @@ namespace AIRefactored.AI.Combat.States
             }
 
             return false;
+        }
+
+        /// <summary>
+        /// Handles combat stance adjustment using only native data.
+        /// </summary>
+        private void TrySetCombatStance(Vector3 destination)
+        {
+            try
+            {
+                // If BotPoseController is present, use it for dynamic pose logic.
+                if (_cache.PoseController != null)
+                    _cache.PoseController.TrySetStanceFromNearbyCover(destination);
+            }
+            catch
+            {
+                // Bulletproof: failures never break logic.
+            }
         }
 
         /// <summary>

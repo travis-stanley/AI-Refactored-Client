@@ -98,6 +98,7 @@ namespace AIRefactored.AI.Combat
                 BotFallbackUtility.Trigger(this, _bot, "Exception in Tick.", ex);
                 _isSuppressed = false;
                 _isFallbackMode = true;
+                BotFallbackUtility.FallbackToEFTLogic(_bot);
             }
         }
 
@@ -124,7 +125,7 @@ namespace AIRefactored.AI.Combat
 
                 Vector3 fallback = _bot.Position + retreatDir.normalized * MinSuppressionRetreatDistance;
 
-                // NEW: Use only BotNavHelper (EFT navigation)
+                // Use only BotNavHelper (EFT navigation)
                 if (!BotNavHelper.TryGetSafeTarget(_bot, out fallback) || !IsVectorValid(fallback))
                 {
                     BotFallbackUtility.FallbackToEFTLogic(_bot);
@@ -160,6 +161,7 @@ namespace AIRefactored.AI.Combat
             {
                 BotFallbackUtility.Trigger(this, _bot, "Exception in TriggerSuppression.", ex);
                 _isFallbackMode = true;
+                BotFallbackUtility.FallbackToEFTLogic(_bot);
             }
         }
 

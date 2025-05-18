@@ -65,6 +65,9 @@ namespace AIRefactored.AI.Combat
 
         #region Public Methods
 
+        /// <summary>
+        /// Initializes the state machine and all combat state handlers for this bot.
+        /// </summary>
         public void Initialize(BotComponentCache componentCache)
         {
             if (componentCache == null || componentCache.Bot == null)
@@ -97,6 +100,9 @@ namespace AIRefactored.AI.Combat
             }
         }
 
+        /// <summary>
+        /// Returns true if the bot is currently in any combat state.
+        /// </summary>
         public bool IsInCombatState()
         {
             if (!_initialized || _isFallbackMode)
@@ -117,6 +123,9 @@ namespace AIRefactored.AI.Combat
             }
         }
 
+        /// <summary>
+        /// Notifies the FSM of a damage event (e.g., suppression or hit).
+        /// </summary>
         public void NotifyDamaged()
         {
             if (!_initialized || _isFallbackMode)
@@ -139,6 +148,9 @@ namespace AIRefactored.AI.Combat
             }
         }
 
+        /// <summary>
+        /// Notifies the FSM to echo investigate (e.g., squad hears sound).
+        /// </summary>
         public void NotifyEchoInvestigate()
         {
             if (!_initialized || _isFallbackMode)
@@ -160,6 +172,9 @@ namespace AIRefactored.AI.Combat
             }
         }
 
+        /// <summary>
+        /// Main update for state transitions, behavior selection, and movement.
+        /// </summary>
         public void Tick(float time)
         {
             if (!_initialized || _isFallbackMode || _bot == null || _bot.IsDead || !EFTPlayerUtil.IsValid(_bot.GetPlayer))
@@ -245,6 +260,9 @@ namespace AIRefactored.AI.Combat
             }
         }
 
+        /// <summary>
+        /// Forces bot to fallback (e.g., due to panic, suppression).
+        /// </summary>
         public void TriggerFallback(Vector3 fallbackPos)
         {
             if (!_initialized || _isFallbackMode)
@@ -263,6 +281,9 @@ namespace AIRefactored.AI.Combat
             }
         }
 
+        /// <summary>
+        /// Requests cover stance update from the PoseController.
+        /// </summary>
         public void TrySetStanceFromNearbyCover(Vector3 pos)
         {
             try
@@ -302,7 +323,6 @@ namespace AIRefactored.AI.Combat
                     return;
                 }
 
-                // Assign fallback as a single-point path for legacy compatibility
                 var path = TempListPool.Rent<Vector3>();
                 path.Clear();
                 path.Add(fallback);

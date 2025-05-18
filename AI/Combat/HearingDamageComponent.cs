@@ -57,7 +57,7 @@ namespace AIRefactored.AI.Combat
 
         /// <summary>
         /// Applies a new deafness effect with the specified intensity and duration.
-        /// Only overrides if intensity is stronger than current.
+        /// Only overrides if intensity is stronger or will last longer at the same intensity.
         /// </summary>
         /// <param name="intensity">Intensity from 0.0 to 1.0 (clamped).</param>
         /// <param name="duration">Duration in seconds (min 0.1s).</param>
@@ -66,11 +66,10 @@ namespace AIRefactored.AI.Combat
             try
             {
                 float newIntensity = Mathf.Clamp01(intensity);
-                float newDuration = duration < 0.1f ? 0.1f : duration;
+                float newDuration = Mathf.Max(duration, 0.1f);
 
-                // Only override if new effect is stronger or will last longer with equal intensity
                 if (newIntensity > _targetDeafness ||
-                    (newIntensity == _targetDeafness && newDuration > _deafDuration - _elapsedTime))
+                    (Mathf.Approximately(newIntensity, _targetDeafness) && newDuration > RemainingTime))
                 {
                     _targetDeafness = newIntensity;
                     _deafDuration = newDuration;
@@ -110,7 +109,7 @@ namespace AIRefactored.AI.Combat
                     return;
                 }
 
-                _elapsedTime += deltaTime > 0f ? deltaTime : 0f;
+                _elapsedTime += Mathf.Max(deltaTime, 0f);
 
                 if (_elapsedTime >= _deafDuration)
                 {

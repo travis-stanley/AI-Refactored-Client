@@ -18,7 +18,7 @@ namespace AIRefactored.AI.Hotspots
 
     /// <summary>
     /// Global registry for map-specific hotspots (loot zones, patrol targets, tactical nodes).
-    /// Dynamically builds spatial indexes (quadtree or grid) depending on map type.
+    /// Only uses flat zone-based and global lookup (no dynamic grid/quadtree).
     /// Bulletproof: all initialization, query, and builder logic is isolation-safe and never cascades or breaks the mod.
     /// </summary>
     public static class HotspotRegistry
@@ -30,28 +30,7 @@ namespace AIRefactored.AI.Hotspots
         private static readonly List<Hotspot> All = new List<Hotspot>(256);
         private static readonly Dictionary<string, List<Hotspot>> ByZone = new Dictionary<string, List<Hotspot>>(StringComparer.OrdinalIgnoreCase);
 
-        private static readonly Dictionary<string, SpatialIndexMode> IndexModeMap = new Dictionary<string, SpatialIndexMode>(StringComparer.OrdinalIgnoreCase)
-        {
-            { "woods", SpatialIndexMode.Quadtree },
-            { "shoreline", SpatialIndexMode.Quadtree },
-            { "lighthouse", SpatialIndexMode.Quadtree },
-            { "interchange", SpatialIndexMode.Quadtree },
-            { "bigmap", SpatialIndexMode.Quadtree },
-            { "sandbox", SpatialIndexMode.Grid },
-            { "sandbox_high", SpatialIndexMode.Grid },
-            { "factory4_day", SpatialIndexMode.Grid },
-            { "factory4_night", SpatialIndexMode.Grid },
-            { "laboratory", SpatialIndexMode.Grid },
-            { "tarkovstreets", SpatialIndexMode.Grid },
-            { "rezervbase", SpatialIndexMode.Grid }
-        };
-
-        private enum SpatialIndexMode { None, Quadtree, Grid }
-
-        private static SpatialIndexMode _activeMode = SpatialIndexMode.None;
         private static string _loadedMap = "none";
-        private static HotspotQuadtree _quadtree;
-        private static HotspotSpatialGrid _grid;
 
         #endregion
 
@@ -61,10 +40,7 @@ namespace AIRefactored.AI.Hotspots
         {
             All.Clear();
             ByZone.Clear();
-            _quadtree = null;
-            _grid = null;
             _loadedMap = "none";
-            _activeMode = SpatialIndexMode.None;
         }
 
         public static void Initialize(string mapId)
@@ -91,7 +67,6 @@ namespace AIRefactored.AI.Hotspots
 
                 Clear();
                 _loadedMap = normalizedMapId;
-                _activeMode = IndexModeMap.TryGetValue(_loadedMap, out var mode) ? mode : SpatialIndexMode.None;
 
                 HotspotSet set = HardcodedHotspots.GetForMap(_loadedMap);
                 if (set == null || set.Points == null || set.Points.Count == 0)
@@ -119,27 +94,7 @@ namespace AIRefactored.AI.Hotspots
                     list.Add(h);
                 }
 
-                try
-                {
-                    switch (_activeMode)
-                    {
-                        case SpatialIndexMode.Quadtree:
-                            BuildQuadtree();
-                            break;
-                        case SpatialIndexMode.Grid:
-                            BuildGrid();
-                            break;
-                    }
-                }
-                catch (Exception ex)
-                {
-                    Logger.LogWarning($"[HotspotRegistry] Index builder failed for map '{_loadedMap}': {ex.Message}");
-                    _quadtree = null;
-                    _grid = null;
-                    _activeMode = SpatialIndexMode.None;
-                }
-
-                Logger.LogDebug($"[HotspotRegistry] ✅ Registered {All.Count} hotspots for map '{_loadedMap}' using {_activeMode}");
+                Logger.LogDebug($"[HotspotRegistry] ✅ Registered {All.Count} hotspots for map '{_loadedMap}' (flat mode)");
             }
             catch (Exception ex)
             {
@@ -168,96 +123,11 @@ namespace AIRefactored.AI.Hotspots
             return count == 0 ? new Hotspot(Vector3.zero, "none") : All[UnityEngine.Random.Range(0, count)];
         }
 
+        /// <summary>
+        /// Returns all hotspots within a radius of the given position, optionally filtered.
+        /// Uses a linear scan over all hotspots (no grid/quadtree).
+        /// </summary>
         public static List<Hotspot> QueryNearby(Vector3 position, float radius, Predicate<Hotspot> filter)
-        {
-            try
-            {
-                if (_activeMode == SpatialIndexMode.Quadtree && _quadtree != null)
-                    return _quadtree.Query(position, radius, filter);
-
-                if (_activeMode == SpatialIndexMode.Grid && _grid != null)
-                    return _grid.Query(position, radius, filter);
-
-                return FallbackQuery(position, radius, filter);
-            }
-            catch
-            {
-                return FallbackQuery(position, radius, filter);
-            }
-        }
-
-        #endregion
-
-        #region Spatial Index Builders
-
-        private static void BuildQuadtree()
-        {
-            try
-            {
-                Vector2 center = EstimateCenter();
-                float size = EstimateBoundsSize(center);
-
-                _quadtree = new HotspotQuadtree(center, size);
-                for (int i = 0; i < All.Count; i++)
-                {
-                    _quadtree.Insert(All[i]);
-                }
-            }
-            catch
-            {
-                _quadtree = null;
-            }
-        }
-
-        private static void BuildGrid()
-        {
-            try
-            {
-                _grid = new HotspotSpatialGrid(10f);
-                for (int i = 0; i < All.Count; i++)
-                {
-                    _grid.Insert(All[i]);
-                }
-            }
-            catch
-            {
-                _grid = null;
-            }
-        }
-
-        private static Vector2 EstimateCenter()
-        {
-            float minX = float.MaxValue, maxX = float.MinValue;
-            float minZ = float.MaxValue, maxZ = float.MinValue;
-
-            for (int i = 0; i < All.Count; i++)
-            {
-                Vector3 pos = All[i].Position;
-                if (pos.x < minX) minX = pos.x;
-                if (pos.x > maxX) maxX = pos.x;
-                if (pos.z < minZ) minZ = pos.z;
-                if (pos.z > maxZ) maxZ = pos.z;
-            }
-
-            return new Vector2((minX + maxX) * 0.5f, (minZ + maxZ) * 0.5f);
-        }
-
-        private static float EstimateBoundsSize(Vector2 center)
-        {
-            float maxDist = 0f;
-            for (int i = 0; i < All.Count; i++)
-            {
-                Vector3 pos = All[i].Position;
-                float dist = Vector2.Distance(center, new Vector2(pos.x, pos.z));
-                if (dist > maxDist)
-                    maxDist = dist;
-            }
-
-            // Use next power of two for quadtree grid sizing
-            return Mathf.NextPowerOfTwo(Mathf.CeilToInt(maxDist * 2f));
-        }
-
-        private static List<Hotspot> FallbackQuery(Vector3 position, float radius, Predicate<Hotspot> filter)
         {
             List<Hotspot> result = TempListPool.Rent<Hotspot>();
             float radiusSq = radius * radius;
@@ -270,7 +140,6 @@ namespace AIRefactored.AI.Hotspots
                     result.Add(h);
                 }
             }
-
             return result;
         }
 

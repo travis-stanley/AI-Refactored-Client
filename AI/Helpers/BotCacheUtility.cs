@@ -120,7 +120,6 @@ namespace AIRefactored.AI.Helpers
         {
             if (cache?.Bot?.Profile?.Info != null)
                 return $"{cache.Bot.Profile.Info.Nickname} ({cache.Bot.Profile.Side})";
-
             return "Unknown";
         }
 
@@ -148,10 +147,7 @@ namespace AIRefactored.AI.Helpers
                     continue;
 
                 Vector3 pos = bot.Position;
-                float dx = pos.x - origin.x;
-                float dy = pos.y - origin.y;
-                float dz = pos.z - origin.z;
-                float distSqr = (dx * dx) + (dy * dy) + (dz * dz);
+                float distSqr = (pos - origin).sqrMagnitude;
 
                 if (distSqr < bestSqr)
                 {

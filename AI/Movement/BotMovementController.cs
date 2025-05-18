@@ -14,18 +14,10 @@ namespace AIRefactored.AI.Movement
     using AIRefactored.AI.Helpers;
     using AIRefactored.AI.Navigation;
     using AIRefactored.Core;
-    using AIRefactored.Pools;
-    using AIRefactored.Runtime;
     using BepInEx.Logging;
     using EFT;
     using UnityEngine;
-    using UnityEngine.AI;
 
-    /// <summary>
-    /// Controls bot movement, corner-based path targeting, path inertia, flanking, and stuck recovery.
-    /// All navigation, target, and fallback logic routed through BotNavHelper and pure EFT navigation.
-    /// All failures locally contained and logged; never break global logic or trigger fallback.
-    /// </summary>
     public sealed class BotMovementController
     {
         #region Constants
@@ -127,7 +119,6 @@ namespace AIRefactored.AI.Movement
             catch (Exception ex)
             {
                 Logger.LogError($"[BotMovementController] Tick failed: {ex}");
-                // No fallback logic — only log error.
             }
         }
 
@@ -136,7 +127,7 @@ namespace AIRefactored.AI.Movement
 
         #endregion
 
-        #region Movement, Look, Combat, Flanking, Stuck Recovery
+        #region Movement Logic
 
         private void ApplyInertia(Vector3 target, float deltaTime)
         {
@@ -198,9 +189,7 @@ namespace AIRefactored.AI.Movement
                 if (Physics.SphereCast(origin, ScanRadius, direction, out _, ScanDistance, AIRefactoredLayerMasks.VisionBlockers))
                 {
                     if (_bot.BotTalk != null && UnityEngine.Random.value < 0.2f)
-                    {
                         _bot.BotTalk.TrySay(EPhraseTrigger.Look);
-                    }
                 }
             }
             catch (Exception ex)
@@ -223,6 +212,7 @@ namespace AIRefactored.AI.Movement
                 Vector3 lateral = _isStrafingRight ? _bot.Transform.right : -_bot.Transform.right;
                 Vector3 avoid = Vector3.zero;
                 BotsGroup group = _bot.BotsGroup;
+
                 if (group != null)
                 {
                     for (int i = 0; i < group.MembersCount; i++)
@@ -308,7 +298,6 @@ namespace AIRefactored.AI.Movement
 
                 if (distance < required)
                 {
-                    // No registry or custom pathing; attempt a side step along the native EFT path
                     Vector3[] path = BotNavHelper.GetCurrentPathPoints(_bot, 6);
                     if (path != null && path.Length >= 2)
                     {

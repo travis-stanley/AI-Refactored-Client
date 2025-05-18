@@ -34,6 +34,11 @@ namespace AIRefactored.AI.Core
 
         #region Public API
 
+        /// <summary>
+        /// Returns the cache for a bot if it exists; otherwise creates and registers a new one.
+        /// If bot/profile is invalid, returns null (no fallback), and caller must retry next tick.
+        /// Ensures AIRefactoredBotOwner is always constructed and wired before cache is returned.
+        /// </summary>
         public static BotComponentCache GetOrCreate(BotOwner bot)
         {
             if (!IsFullyValidBot(bot))
@@ -60,7 +65,7 @@ namespace AIRefactored.AI.Core
                     BotRegistry.RegisterOwner(id, owner);
 
                     cache.SetOwner(owner);
-                    owner.Initialize(bot); // Now safe — uses TryGet internally, not GetOrCreate
+                    owner.Initialize(bot); // Safe: uses TryGet internally
 
                     if (cache.Bot == null || cache.AIRefactoredBotOwner == null)
                     {
@@ -80,6 +85,9 @@ namespace AIRefactored.AI.Core
             }
         }
 
+        /// <summary>
+        /// Gets the cache for a profile ID if it exists. If not, returns false and null.
+        /// </summary>
         public static bool TryGet(string profileId, out BotComponentCache cache)
         {
             if (string.IsNullOrEmpty(profileId))
@@ -94,6 +102,9 @@ namespace AIRefactored.AI.Core
             }
         }
 
+        /// <summary>
+        /// Removes the cache for the specified bot, if present.
+        /// </summary>
         public static void Remove(BotOwner bot)
         {
             if (bot?.Profile?.Id == null)
@@ -109,6 +120,9 @@ namespace AIRefactored.AI.Core
             }
         }
 
+        /// <summary>
+        /// Clears all bot caches.
+        /// </summary>
         public static void ClearAll()
         {
             lock (Lock)
@@ -122,11 +136,17 @@ namespace AIRefactored.AI.Core
 
         #region Private Helpers
 
+        /// <summary>
+        /// Returns true if bot, Profile, Info, and Id are all non-null/non-empty.
+        /// </summary>
         private static bool IsFullyValidBot(BotOwner bot)
         {
             return bot?.Profile?.Info != null && !string.IsNullOrEmpty(bot.Profile.Id);
         }
 
+        /// <summary>
+        /// Ensures that a BotComponentCache has a valid AIRefactoredBotOwner assigned before use.
+        /// </summary>
         private static void EnsureOwnerAssigned(BotComponentCache cache, string id)
         {
             if (cache == null || cache.AIRefactoredBotOwner != null)

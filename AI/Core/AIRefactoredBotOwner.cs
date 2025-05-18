@@ -109,26 +109,23 @@ namespace AIRefactored.AI.Core
                 return;
 
             _bot = bot;
+            string id = bot.Profile?.Id ?? "null-profile";
 
             try
             {
-                // ❗ FIX: Use a non-recursive cache pull here
-                if (!BotComponentCacheRegistry.TryGet(bot.Profile?.Id, out _cache) || _cache == null)
+                if (!BotComponentCacheRegistry.TryGet(id, out _cache) || _cache == null)
                 {
-                    Logger.LogError($"[AIRefactoredBotOwner] Cache not found for bot {bot.Profile?.Id ?? "null"} — aborting init.");
-                    _isInitialized = false;
+                    Logger.LogError($"[AIRefactoredBotOwner] Cache not found for bot {id} — aborting init.");
                     return;
                 }
 
-                // Only wire owner if not already set
                 if (_cache.AIRefactoredBotOwner == null)
                 {
                     _cache.SetOwner(this);
                 }
 
-                string profileId = bot.Profile?.Id ?? "null-profile";
                 WildSpawnType role = bot.Profile?.Info?.Settings?.Role ?? WildSpawnType.assault;
-                BotPersonalityProfile profile = BotRegistry.GetOrGenerate(profileId, PersonalityType.Balanced, role);
+                BotPersonalityProfile profile = BotRegistry.GetOrGenerate(id, PersonalityType.Balanced, role);
 
                 InitProfile(profile, profile?.Personality.ToString() ?? "Balanced");
 

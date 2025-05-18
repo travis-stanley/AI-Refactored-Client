@@ -27,11 +27,6 @@ namespace AIRefactored.AI.Core
     using EFT;
     using UnityEngine;
 
-    /// <summary>
-    /// Runtime container for all bot-specific AIRefactored logic systems.
-    /// Managed via BotComponentCacheRegistry.
-    /// Bulletproof: All failures are locally logged; no fallback to vanilla logic ever occurs.
-    /// </summary>
     public sealed class BotComponentCache
     {
         #region Static
@@ -167,6 +162,8 @@ namespace AIRefactored.AI.Core
             TryInit(() => GroupComms = new BotGroupComms(this), "GroupComms");
             TryInit(() => SquadHealer = bot.HealAnotherTarget ?? new BotHealAnotherTarget(bot), "SquadHealer");
             TryInit(() => HealReceiver = bot.HealingBySomebody ?? new BotHealingBySomebody(bot), "HealReceiver");
+
+            TryInit(() => ThreatSelector = new BotThreatSelector(this), "ThreatSelector");
         }
 
         private void TryInit(Action action, string name)
@@ -191,21 +188,6 @@ namespace AIRefactored.AI.Core
             }
 
             _owner = owner;
-
-            if (ThreatSelector == null)
-            {
-                try { ThreatSelector = new BotThreatSelector(this); }
-                catch (Exception ex)
-                {
-                    Logger.LogError("[BotComponentCache] ThreatSelector failed: " + ex);
-                    ThreatSelector = null;
-                }
-            }
-
-            if (Bot == null || _owner == null || ThreatSelector == null)
-            {
-                Logger.LogError("[BotComponentCache] Post-wiring critical reference missing!");
-            }
         }
 
         public void RegisterHeardSound(Vector3 source)

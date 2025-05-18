@@ -10,6 +10,7 @@
 namespace AIRefactored.Runtime
 {
     using System;
+    using System.Collections.Generic;
     using AIRefactored.AI.Core;
     using AIRefactored.AI.Navigation;
     using AIRefactored.Bootstrap;
@@ -59,9 +60,9 @@ namespace AIRefactored.Runtime
                 WorldInitState.SetPhase(WorldPhase.PreInit);
                 LogDebug(logger, "[InitPhaseRunner] 🚀 Beginning AIRefactored world initialization...");
 
-                if (!IsWorldSafe())
+                if (!IsWorldSafeAndUnique())
                 {
-                    LogWarn(logger, "[InitPhaseRunner] ❌ Unsafe world state — aborting.");
+                    LogWarn(logger, "[InitPhaseRunner] ❌ Unsafe, duplicate, or fallback world state — aborting.");
                     ResetInternal(logger);
                     return;
                 }
@@ -130,7 +131,7 @@ namespace AIRefactored.Runtime
 
         #region Validation
 
-        private static bool IsWorldSafe()
+        private static bool IsWorldSafeAndUnique()
         {
             try
             {
@@ -138,15 +139,21 @@ namespace AIRefactored.Runtime
                 if (world == null || world.RegisteredPlayers == null || world.RegisteredPlayers.Count == 0)
                     return false;
 
+                var seenProfiles = new HashSet<string>();
                 for (int i = 0; i < world.RegisteredPlayers.Count; i++)
                 {
                     Player player = EFTPlayerUtil.AsEFTPlayer(world.RegisteredPlayers[i]);
-                    if (player != null && EFTPlayerUtil.IsValid(player))
-                    {
-                        return true;
-                    }
+                    string profileId = player?.Profile?.Id;
+                    if (!EFTPlayerUtil.IsValid(player) || string.IsNullOrEmpty(profileId))
+                        continue;
+                    if (!seenProfiles.Add(profileId))
+                        return false; // Duplicate or null player
+
+                    // Reject fallback bots from registry or fallback utility
+                    if (BotRegistry.IsFallbackBot(profileId))
+                        return false;
                 }
-                return false;
+                return seenProfiles.Count > 0;
             }
             catch
             {

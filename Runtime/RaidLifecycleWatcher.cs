@@ -10,6 +10,7 @@
 namespace AIRefactored.Runtime
 {
     using System;
+    using System.Collections.Generic;
     using AIRefactored.AI.Core;
     using AIRefactored.Bootstrap;
     using AIRefactored.Core;
@@ -67,6 +68,7 @@ namespace AIRefactored.Runtime
                     return;
                 }
 
+                // Atomic event binding, only once per raid
                 if (!_bound)
                 {
                     try
@@ -80,6 +82,13 @@ namespace AIRefactored.Runtime
                         Logger.LogError("[RaidLifecycleWatcher] Event bind failed: " + ex);
                         return;
                     }
+                }
+
+                // Only initialize if world is unique and not fallback
+                if (!IsWorldSafeAndUnique(world))
+                {
+                    Logger.LogWarning("[RaidLifecycleWatcher] Unsafe/duplicate/fallback world state, skipping initialization.");
+                    return;
                 }
 
                 try
@@ -167,6 +176,42 @@ namespace AIRefactored.Runtime
         public WorldPhase RequiredPhase()
         {
             return WorldPhase.AwaitWorld;
+        }
+
+        #endregion
+
+        #region Validation
+
+        /// <summary>
+        /// Returns true only if world has unique, non-fallback players.
+        /// </summary>
+        private static bool IsWorldSafeAndUnique(GameWorld world)
+        {
+            try
+            {
+                if (world == null || world.RegisteredPlayers == null || world.RegisteredPlayers.Count == 0)
+                    return false;
+
+                var seenProfiles = new HashSet<string>();
+                for (int i = 0; i < world.RegisteredPlayers.Count; i++)
+                {
+                    Player player = EFTPlayerUtil.AsEFTPlayer(world.RegisteredPlayers[i]);
+                    string profileId = player?.Profile?.Id;
+                    if (!EFTPlayerUtil.IsValid(player) || string.IsNullOrEmpty(profileId))
+                        continue;
+                    if (!seenProfiles.Add(profileId))
+                        return false; // Duplicate or null player
+
+                    // Reject fallback bots from registry
+                    if (BotRegistry.IsFallbackBot(profileId))
+                        return false;
+                }
+                return seenProfiles.Count > 0;
+            }
+            catch
+            {
+                return false;
+            }
         }
 
         #endregion

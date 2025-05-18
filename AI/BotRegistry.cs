@@ -28,6 +28,7 @@ namespace AIRefactored
         private static readonly ConcurrentDictionary<string, BotPersonalityProfile> _profileRegistry = new ConcurrentDictionary<string, BotPersonalityProfile>();
         private static readonly ConcurrentDictionary<string, AIRefactoredBotOwner> _ownerRegistry = new ConcurrentDictionary<string, AIRefactoredBotOwner>();
         private static readonly Dictionary<PersonalityType, BotPersonalityProfile> _fallbackProfiles = new Dictionary<PersonalityType, BotPersonalityProfile>();
+        private static readonly HashSet<string> _fallbackBots = new HashSet<string>(); // Tracks bots in terminal fallback
         private static readonly HashSet<string> _missingLogged = new HashSet<string>();
 
         private static readonly Dictionary<WildSpawnType, PersonalityType> _roleMap = new Dictionary<WildSpawnType, PersonalityType>
@@ -74,12 +75,13 @@ namespace AIRefactored
         {
             _profileRegistry.Clear();
             _ownerRegistry.Clear();
+            _fallbackBots.Clear();
             _missingLogged.Clear();
             _fallbackProfiles.Clear();
 
             if (_debug)
             {
-                Logger.LogDebug("[BotRegistry] Cleared all personality and owner data.");
+                Logger.LogDebug("[BotRegistry] Cleared all personality, owner, and fallback data.");
             }
         }
 
@@ -95,6 +97,20 @@ namespace AIRefactored
         public static bool Exists(string profileId)
         {
             return !string.IsNullOrEmpty(profileId) && _profileRegistry.ContainsKey(profileId);
+        }
+
+        public static bool IsFallbackBot(string profileId)
+        {
+            return !string.IsNullOrEmpty(profileId) && _fallbackBots.Contains(profileId);
+        }
+
+        public static void MarkFallback(string profileId)
+        {
+            if (!string.IsNullOrEmpty(profileId))
+            {
+                _fallbackBots.Add(profileId);
+                if (_debug) Logger.LogWarning($"[BotRegistry] Marked {profileId} as terminal fallback bot.");
+            }
         }
 
         public static BotPersonalityProfile Get(string profileId, PersonalityType fallback = PersonalityType.Balanced)
@@ -258,6 +274,13 @@ namespace AIRefactored
                 if (string.IsNullOrEmpty(profileId) || owner == null)
                     return;
 
+                if (_fallbackBots.Contains(profileId))
+                {
+                    if (_debug)
+                        Logger.LogWarning($"[BotRegistry] Refused to register owner for fallback bot '{profileId}'.");
+                    return;
+                }
+
                 if (_ownerRegistry.TryGetValue(profileId, out var existing))
                 {
                     if (!ReferenceEquals(existing, owner))
@@ -332,6 +355,15 @@ namespace AIRefactored
                 if (_debug) Logger.LogError("[BotRegistry] TryGetCache failed: " + ex);
             }
             cache = _nullCacheFallback;
+            return false;
+        }
+
+        public static bool HasCache(string profileId)
+        {
+            if (string.IsNullOrEmpty(profileId)) return false;
+            if (_fallbackBots.Contains(profileId)) return true;
+            if (_ownerRegistry.TryGetValue(profileId, out var owner) && owner != null && owner.Cache != null)
+                return true;
             return false;
         }
 

@@ -36,12 +36,12 @@ namespace AIRefactored.Runtime
             {
                 if (_hooked)
                 {
-                    Logger.LogDebug("[GameWorldSpawnHook] Already hooked — skipping duplicate patch.");
+                    LogDebug("[GameWorldSpawnHook] Already hooked — skipping duplicate patch.");
                     Destroy(this);
                     return;
                 }
 
-                Logger.LogDebug("[GameWorldSpawnHook] Hooking GameWorld.OnGameStarted...");
+                LogDebug("[GameWorldSpawnHook] Hooking GameWorld.OnGameStarted...");
 
                 MethodInfo method = null;
                 try
@@ -50,12 +50,12 @@ namespace AIRefactored.Runtime
                 }
                 catch (Exception ex)
                 {
-                    Logger.LogError("[GameWorldSpawnHook] ❌ AccessTools.Method exception: " + ex);
+                    LogError("[GameWorldSpawnHook] ❌ AccessTools.Method exception: " + ex);
                 }
 
                 if (method == null)
                 {
-                    Logger.LogError("[GameWorldSpawnHook] ❌ Failed to locate GameWorld.OnGameStarted.");
+                    LogError("[GameWorldSpawnHook] ❌ Failed to locate GameWorld.OnGameStarted.");
                     Destroy(this);
                     return;
                 }
@@ -67,17 +67,18 @@ namespace AIRefactored.Runtime
                 }
                 catch (Exception ex)
                 {
-                    Logger.LogError("[GameWorldSpawnHook] ❌ Harmony patch exception: " + ex);
+                    LogError("[GameWorldSpawnHook] ❌ Harmony patch exception: " + ex);
                     Destroy(this);
                     return;
                 }
 
                 _hooked = true;
-                Logger.LogDebug("[GameWorldSpawnHook] ✅ Harmony patch installed.");
+                LogDebug("[GameWorldSpawnHook] ✅ Harmony patch installed.");
             }
             catch (Exception ex)
             {
-                Logger.LogError("[GameWorldSpawnHook] ❌ Exception during Awake: " + ex);
+                LogError("[GameWorldSpawnHook] ❌ Exception during Awake: " + ex);
+                Destroy(this);
             }
         }
 
@@ -99,31 +100,58 @@ namespace AIRefactored.Runtime
                     GameWorld world = Singleton<GameWorld>.Instantiated ? Singleton<GameWorld>.Instance : null;
                     if (world == null)
                     {
-                        Logger.LogWarning("[GameWorldSpawnHook] GameWorld.Instance is null — skipping init.");
+                        LogWarning("[GameWorldSpawnHook] GameWorld.Instance is null — skipping init.");
                         return;
                     }
 
                     if (!GameWorldHandler.IsHost)
                     {
-                        Logger.LogDebug("[GameWorldSpawnHook] Skipped init — not a valid host.");
+                        LogDebug("[GameWorldSpawnHook] Skipped init — not a valid host.");
                         return;
                     }
 
                     if (FikaHeadlessDetector.IsHeadless && !FikaHeadlessDetector.HasRaidStarted())
                     {
-                        Logger.LogDebug("[GameWorldSpawnHook] FIKA Headless not ready — skipping early init.");
+                        LogDebug("[GameWorldSpawnHook] FIKA Headless not ready — skipping early init.");
                         return;
                     }
 
                     // No more NavMesh or NavPoint registration here!
-                    Logger.LogDebug("[GameWorldSpawnHook] ✅ Triggering InitPhaseRunner...");
+                    LogDebug("[GameWorldSpawnHook] ✅ Triggering InitPhaseRunner...");
                     InitPhaseRunner.Begin(Logger);
                 }
                 catch (Exception ex)
                 {
-                    Logger.LogError("[GameWorldSpawnHook] ❌ Postfix error: " + ex);
+                    LogError("[GameWorldSpawnHook] ❌ Postfix error: " + ex);
                 }
             }
+
+            private static void LogDebug(string msg)
+            {
+                if (!FikaHeadlessDetector.IsHeadless)
+                    Logger.LogDebug(msg);
+            }
+            private static void LogWarning(string msg)
+            {
+                if (!FikaHeadlessDetector.IsHeadless)
+                    Logger.LogWarning(msg);
+            }
+            private static void LogError(string msg)
+            {
+                if (!FikaHeadlessDetector.IsHeadless)
+                    Logger.LogError(msg);
+            }
+        }
+
+        private static void LogDebug(string msg)
+        {
+            if (!FikaHeadlessDetector.IsHeadless)
+                Logger.LogDebug(msg);
+        }
+        private static void LogError(string msg)
+        {
+            if (!FikaHeadlessDetector.IsHeadless)
+                Logger.LogError(msg);
         }
     }
 }

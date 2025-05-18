@@ -48,8 +48,7 @@ namespace AIRefactored.Bootstrap
         #region Lifecycle
 
         /// <summary>
-        /// Begins world system initialization. Never registers navmesh or navpoints.
-        /// Bulletproof: all exceptions contained, never cascades or breaks global mod state.
+        /// Begins world system initialization. Bulletproof: all exceptions contained, never cascades or breaks global mod state.
         /// </summary>
         public static void Begin(ManualLogSource logger, string mapId)
         {
@@ -66,7 +65,7 @@ namespace AIRefactored.Bootstrap
                 _hasShutdownLogged = false;
                 Systems.Clear();
 
-                // Bulletproof global resets. NavMesh/NavPoint systems are now deprecated.
+                // Bulletproof global resets.
                 TrySafe(BotRecoveryService.Reset, "[WorldBootstrapper] BotRecoveryService.Reset() failed: ");
                 TrySafe(BotSpawnWatcherService.Reset, "[WorldBootstrapper] BotSpawnWatcherService.Reset() failed: ");
                 TrySafe(LootRuntimeWatcher.Reset, "[WorldBootstrapper] LootRuntimeWatcher.Reset() failed: ");
@@ -74,7 +73,6 @@ namespace AIRefactored.Bootstrap
                 TrySafe(DeadBodyContainerCache.Clear, "[WorldBootstrapper] DeadBodyContainerCache.Clear() failed: ");
                 TrySafe(LootRegistry.Clear, "[WorldBootstrapper] LootRegistry.Clear() failed: ");
                 TrySafe(HotspotRegistry.Clear, "[WorldBootstrapper] HotspotRegistry.Clear() failed: ");
-                //TrySafe(NavPointRegistry.Clear, "[WorldBootstrapper] NavPointRegistry.Clear() failed: "); // Removed: Custom navpoints are deprecated
 
                 // Only initialize HotspotRegistry if mapId is valid.
                 if (!string.IsNullOrEmpty(mapId))
@@ -86,7 +84,7 @@ namespace AIRefactored.Bootstrap
                     Logger.LogWarning("[WorldBootstrapper] Cannot initialize registries — mapId is invalid.");
                 }
 
-                // Register world systems (no navmesh/navpoint systems)
+                // Register world systems (navmesh/navpoint systems deprecated).
                 RegisterSystemSafe(new RaidLifecycleWatcher());
                 RegisterSystemSafe(new BotRecoveryService());
                 RegisterSystemSafe(new BotSpawnWatcherService());
@@ -94,7 +92,7 @@ namespace AIRefactored.Bootstrap
                 RegisterSystemSafe(new DeadBodyObserverService());
                 RegisterSystemSafe(new HotspotRegistryBootstrapper());
 
-                // Initialize all systems (never break loop on single error)
+                // Initialize all systems (never break loop on single error).
                 for (int i = 0; i < Systems.Count; i++)
                 {
                     IAIWorldSystemBootstrapper sys = Systems[i];
@@ -111,7 +109,7 @@ namespace AIRefactored.Bootstrap
         }
 
         /// <summary>
-        /// Stops and tears down world systems. Does not touch navmesh/navpoint state.
+        /// Stops and tears down world systems.
         /// </summary>
         public static void Stop()
         {
@@ -183,6 +181,10 @@ namespace AIRefactored.Bootstrap
                         Player player = players[i];
                         if (!EFTPlayerUtil.IsValid(player) || !player.IsAI) continue;
 
+                        string profileId = player.ProfileId ?? player.Profile?.Id;
+                        if (!string.IsNullOrEmpty(profileId) && BotRegistry.IsFallbackBot(profileId))
+                            continue;
+
                         GameObject go = player.gameObject;
                         if (go == null) continue;
 
@@ -218,10 +220,15 @@ namespace AIRefactored.Bootstrap
 
         /// <summary>
         /// Ensures the given player has a BotBrain attached and initialized.
+        /// Never attaches to bots in fallback state or with invalid profile.
         /// </summary>
         public static void EnforceBotBrain(Player player, BotOwner bot)
         {
-            if (!EFTPlayerUtil.IsValid(player) || !player.IsAI) return;
+            if (!EFTPlayerUtil.IsValid(player) || !player.IsAI || bot == null) return;
+
+            string profileId = bot.Profile?.Id;
+            if (string.IsNullOrEmpty(profileId) || BotRegistry.IsFallbackBot(profileId))
+                return;
 
             GameObject go = player.gameObject;
             if (go == null) return;
@@ -231,21 +238,22 @@ namespace AIRefactored.Bootstrap
                 BotBrainGuardian.Enforce(go);
 
                 BotBrain existing = go.GetComponent<BotBrain>();
-                if (existing == null && bot != null)
+                if (existing == null)
                 {
                     BotBrain brain = go.AddComponent<BotBrain>();
                     brain.enabled = true;
                     brain.Initialize(bot);
                 }
-                else if (existing != null && !existing.enabled)
+                else if (!existing.enabled)
                 {
                     existing.enabled = true;
-                    Logger.LogWarning("[WorldBootstrapper] Re-enabled BotBrain for: " + player.ProfileId);
+                    Logger.LogWarning("[WorldBootstrapper] Re-enabled BotBrain for: " + profileId);
                 }
             }
             catch (Exception ex)
             {
-                Logger.LogWarning("[WorldBootstrapper] BotBrain init failed for " + player.ProfileId + ": " + ex);
+                BotRegistry.MarkFallback(profileId);
+                Logger.LogWarning("[WorldBootstrapper] BotBrain init failed for " + profileId + ": " + ex);
             }
         }
 

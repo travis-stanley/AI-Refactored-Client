@@ -37,6 +37,7 @@ namespace AIRefactored.Runtime
 		#region Fields
 
 		private static readonly HashSet<int> SeenBotIds = new HashSet<int>();
+		private static readonly HashSet<string> SeenProfileIds = new HashSet<string>();
 		private static readonly ManualLogSource Logger = Plugin.LoggerInstance;
 
 		private static float _nextPollTime = -1f;
@@ -82,6 +83,7 @@ namespace AIRefactored.Runtime
 			try
 			{
 				SeenBotIds.Clear();
+				SeenProfileIds.Clear();
 				_nextPollTime = -1f;
 				_hasWarnedInvalid = false;
 
@@ -147,11 +149,21 @@ namespace AIRefactored.Runtime
 
 						GameObject go = player.gameObject;
 						int id = go.GetInstanceID();
+						string profileId = player.ProfileId ?? player.Profile?.Id;
 
+						// Do not process the same GameObject or ProfileId twice
 						if (!SeenBotIds.Add(id))
 							continue;
+						if (!string.IsNullOrEmpty(profileId) && !SeenProfileIds.Add(profileId))
+							continue;
 
-						// Bulletproof: Never double-inject or race-inject
+						// Terminal: never inject fallback bots
+						if (!string.IsNullOrEmpty(profileId) && BotRegistry.IsFallbackBot(profileId))
+						{
+							LogWarn($"[BotSpawnWatcher] Skipping injection for fallback bot: {profileId}");
+							continue;
+						}
+
 						if (go.GetComponent<BotBrain>() != null)
 							continue;
 
@@ -160,7 +172,8 @@ namespace AIRefactored.Runtime
 
 						try
 						{
-							BotBrainGuardian.Enforce(go); // Enforces only one BotBrain per bot
+							// Bulletproof: Never double-inject or race-inject
+							BotBrainGuardian.Enforce(go);
 							GameWorldHandler.TryAttachBotBrain(player.AIData.BotOwner);
 
 							string name = player.Profile?.Info?.Nickname ?? player.ProfileId;
@@ -168,6 +181,10 @@ namespace AIRefactored.Runtime
 						}
 						catch (Exception ex)
 						{
+							// Terminal: Mark fallback for this bot/profile, never retry again
+							if (!string.IsNullOrEmpty(profileId))
+								BotRegistry.MarkFallback(profileId);
+
 							LogError("[BotSpawnWatcher] ❌ Brain injection failed for bot: " + ex);
 						}
 					}

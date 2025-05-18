@@ -132,6 +132,9 @@ namespace AIRefactored.AI.Core
         /// </summary>
         public void Initialize(BotOwner bot)
         {
+            if (IsFallbackMode)
+                return;
+
             if (bot == null)
             {
                 Logger.LogError("[BotComponentCache] Initialize called with null bot.");
@@ -180,6 +183,8 @@ namespace AIRefactored.AI.Core
 
         private void TryInit(Action action, string name)
         {
+            if (IsFallbackMode)
+                return;
             try { action(); }
             catch (Exception ex)
             {
@@ -197,6 +202,10 @@ namespace AIRefactored.AI.Core
             if (IsFallbackMode)
                 return;
             IsFallbackMode = true;
+
+            if (!string.IsNullOrEmpty(Nickname))
+                BotRegistry.MarkFallback(Bot?.Profile?.Id);
+
             Logger.LogWarning($"[BotComponentCache] Entered fallback mode for bot: {Nickname}");
             BotFallbackUtility.FallbackToEFTLogic(Bot);
         }
@@ -207,6 +216,9 @@ namespace AIRefactored.AI.Core
 
         public void SetOwner(AIRefactoredBotOwner owner)
         {
+            if (IsFallbackMode)
+                return;
+
             if (owner == null)
             {
                 Logger.LogError("[BotComponentCache] SetOwner() called with null.");
@@ -237,7 +249,7 @@ namespace AIRefactored.AI.Core
 
         public void RegisterHeardSound(Vector3 source)
         {
-            if (Bot == null)
+            if (IsFallbackMode || Bot == null)
                 return;
 
             LastHeardTime = Time.time;

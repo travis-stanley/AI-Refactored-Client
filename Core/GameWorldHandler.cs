@@ -3,8 +3,7 @@
 //   Licensed under the MIT License. See LICENSE in the repository root for more information.
 //
 //   THIS FILE IS SYSTEMATICALLY MANAGED.
-//   Failures in AIRefactored logic must always trigger safe fallback to EFT base AI, never break global logic.
-//   Bulletproof: All failures are locally contained, never break other subsystems, and always trigger fallback isolation.
+//   All failures are isolated and terminal. No partial, duplicate, or invalid bot or world logic can ever break the stack.
 // </auto-generated>
 
 namespace AIRefactored.Core
@@ -56,7 +55,7 @@ namespace AIRefactored.Core
             get
             {
                 GameWorld world = TryGetGameWorld();
-                return world != null && world.RegisteredPlayers?.Count > 0;
+                return world != null && world.RegisteredPlayers?.Count > 0 && HasUniqueValidPlayers(world);
             }
         }
 
@@ -131,26 +130,9 @@ namespace AIRefactored.Core
                 return;
             }
 
-            if (world?.RegisteredPlayers == null || world.RegisteredPlayers.Count == 0)
+            if (!IsValidWorld(world))
             {
-                LogSafe("[GameWorldHandler] Invalid GameWorld — skipping initialization.");
-                return;
-            }
-
-            bool hasValidPlayer = false;
-            for (int i = 0; i < world.RegisteredPlayers.Count; i++)
-            {
-                Player p = EFTPlayerUtil.AsEFTPlayer(world.RegisteredPlayers[i]);
-                if (EFTPlayerUtil.IsValid(p))
-                {
-                    hasValidPlayer = true;
-                    break;
-                }
-            }
-
-            if (!hasValidPlayer)
-            {
-                LogSafe("[GameWorldHandler] No valid EFT players — aborting init.");
+                LogSafe("[GameWorldHandler] Invalid GameWorld or duplicate profile detected — skipping initialization.");
                 return;
             }
 
@@ -184,14 +166,41 @@ namespace AIRefactored.Core
         public static void Initialize()
         {
             GameWorld world = TryGetGameWorld();
-            if (world != null)
+            if (IsValidWorld(world))
             {
                 Initialize(world);
             }
             else
             {
-                LogSafe("[GameWorldHandler] Initialize() failed — GameWorld was null.");
+                LogSafe("[GameWorldHandler] Initialize() failed — GameWorld was null or not valid.");
             }
+        }
+
+        private static bool IsValidWorld(GameWorld world)
+        {
+            if (world == null || world.RegisteredPlayers == null || world.RegisteredPlayers.Count == 0)
+                return false;
+            return HasUniqueValidPlayers(world);
+        }
+
+        private static bool HasUniqueValidPlayers(GameWorld world)
+        {
+            var seenProfiles = new HashSet<string>();
+            bool hasValid = false;
+            for (int i = 0; i < world.RegisteredPlayers.Count; i++)
+            {
+                Player p = EFTPlayerUtil.AsEFTPlayer(world.RegisteredPlayers[i]);
+                string id = p?.Profile?.Id;
+                if (!EFTPlayerUtil.IsValid(p) || string.IsNullOrEmpty(id))
+                    continue;
+                if (!seenProfiles.Add(id))
+                {
+                    LogSafe($"[GameWorldHandler] Duplicate or null player profileId: {id}");
+                    return false;
+                }
+                hasValid = true;
+            }
+            return hasValid;
         }
 
         #endregion
@@ -351,9 +360,7 @@ namespace AIRefactored.Core
             try
             {
                 GameWorld world = TryGetGameWorld();
-                return world != null &&
-                       !string.IsNullOrEmpty(world.LocationId) &&
-                       !world.LocationId.Equals("unknown", StringComparison.OrdinalIgnoreCase);
+                return IsValidWorld(world);
             }
             catch
             {
@@ -370,6 +377,10 @@ namespace AIRefactored.Core
             try
             {
                 if (bot == null || bot.IsDead)
+                    return;
+
+                string profileId = bot.Profile?.Id;
+                if (string.IsNullOrEmpty(profileId) || BotRegistry.IsFallbackBot(profileId))
                     return;
 
                 Player player = EFTPlayerUtil.ResolvePlayer(bot);
@@ -400,7 +411,8 @@ namespace AIRefactored.Core
                         if (EFTPlayerUtil.IsValid(player) && player.HealthController.IsAlive)
                         {
                             BotOwner owner = player.GetComponent<BotOwner>();
-                            if (owner != null)
+                            string profileId = owner?.Profile?.Id;
+                            if (owner != null && !string.IsNullOrEmpty(profileId) && !BotRegistry.IsFallbackBot(profileId))
                             {
                                 WorldBootstrapper.EnforceBotBrain(player, owner);
                             }

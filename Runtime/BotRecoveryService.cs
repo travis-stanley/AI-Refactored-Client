@@ -4,7 +4,7 @@
 //
 //   THIS FILE IS SYSTEMATICALLY MANAGED.
 //   Failures in AIRefactored logic must always trigger safe fallback to EFT base AI.
-//   Bulletproof: All failures are locally contained, never break other subsystems, and always trigger fallback isolation.
+//   Bulletproof: All failures are strictly localized and cannot break the mod.
 // </auto-generated>
 
 namespace AIRefactored.Runtime
@@ -195,6 +195,10 @@ namespace AIRefactored.Runtime
 					if (!EFTPlayerUtil.IsValid(player) || !player.IsAI || player.gameObject == null)
 						continue;
 
+					string profileId = player.ProfileId ?? player.Profile?.Id;
+					if (string.IsNullOrEmpty(profileId) || BotRegistry.IsFallbackBot(profileId))
+						continue;
+
 					GameObject go = player.gameObject;
 					BotBrain brain = go.GetComponent<BotBrain>();
 
@@ -203,7 +207,7 @@ namespace AIRefactored.Runtime
 						if (!brain.enabled)
 						{
 							brain.enabled = true;
-							LogWarn("[BotRecoveryService] Re-enabled disabled BotBrain: " + player.ProfileId);
+							LogWarn("[BotRecoveryService] Re-enabled disabled BotBrain: " + profileId);
 						}
 						continue;
 					}
@@ -219,6 +223,7 @@ namespace AIRefactored.Runtime
 						}
 						catch (Exception ex)
 						{
+							BotRegistry.MarkFallback(profileId);
 							LogError("[BotRecoveryService] ❌ Failed to attach brain to BotOwner: " + ex);
 						}
 					}
@@ -266,7 +271,6 @@ namespace AIRefactored.Runtime
 				LootRegistry.Clear();
 				LootBootstrapper.RegisterAllLoot();
 				BotDeadBodyScanner.ScanAll();
-
 
 				LogDebug("[BotRecoveryService] ✅ World rescan complete.");
 			}

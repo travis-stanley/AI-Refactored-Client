@@ -35,6 +35,7 @@ namespace AIRefactored.AI.Core
         private BotComponentCache _cache;
         private BotMissionController _missionController;
         private bool _isInitialized;
+        private bool _isFallback;
 
         #endregion
 
@@ -44,10 +45,9 @@ namespace AIRefactored.AI.Core
         {
             get
             {
-                if (!_isInitialized || _bot == null)
+                if (!_isInitialized || _bot == null || _isFallback)
                 {
-                    Logger.LogError("[AIRefactoredBotOwner] Bot accessed before initialization — fallback triggered.");
-                    BotFallbackUtility.FallbackToEFTLogic(_bot);
+                    TriggerTerminalFallback("[AIRefactoredBotOwner] Bot accessed before initialization or after fallback.");
                     return null;
                 }
                 return _bot;
@@ -58,10 +58,9 @@ namespace AIRefactored.AI.Core
         {
             get
             {
-                if (!_isInitialized || _cache == null)
+                if (!_isInitialized || _cache == null || _isFallback)
                 {
-                    Logger.LogError("[AIRefactoredBotOwner] Cache accessed before initialization — fallback triggered.");
-                    BotFallbackUtility.FallbackToEFTLogic(_bot);
+                    TriggerTerminalFallback("[AIRefactoredBotOwner] Cache accessed before initialization or after fallback.");
                     return BotComponentCache.Empty;
                 }
                 return _cache;
@@ -72,10 +71,9 @@ namespace AIRefactored.AI.Core
         {
             get
             {
-                if (_missionController == null)
+                if (_missionController == null || _isFallback)
                 {
-                    Logger.LogError("[AIRefactoredBotOwner] MissionController is null — fallback triggered.");
-                    BotFallbackUtility.FallbackToEFTLogic(_bot);
+                    TriggerTerminalFallback("[AIRefactoredBotOwner] MissionController is null or in fallback.");
                 }
                 return _missionController;
             }
@@ -106,10 +104,12 @@ namespace AIRefactored.AI.Core
         /// <param name="bot">BotOwner instance.</param>
         public void Initialize(BotOwner bot)
         {
+            if (_isFallback)
+                return;
+
             if (bot == null)
             {
-                Logger.LogError("[AIRefactoredBotOwner] Initialization failed: bot is null.");
-                BotFallbackUtility.FallbackToEFTLogic(bot);
+                TriggerTerminalFallback("[AIRefactoredBotOwner] Initialization failed: bot is null.");
                 _isInitialized = false;
                 return;
             }
@@ -137,8 +137,7 @@ namespace AIRefactored.AI.Core
             }
             catch (Exception ex)
             {
-                Logger.LogError($"[AIRefactoredBotOwner] Initialization failed: {ex}");
-                BotFallbackUtility.FallbackToEFTLogic(bot);
+                TriggerTerminalFallback($"[AIRefactoredBotOwner] Initialization failed: {ex}");
                 _isInitialized = false;
             }
         }
@@ -152,6 +151,9 @@ namespace AIRefactored.AI.Core
         /// </summary>
         public void InitProfile(PersonalityType type)
         {
+            if (_isFallback)
+                return;
+
             try
             {
                 if (!BotPersonalityPresets.Presets.TryGetValue(type, out var preset) || preset == null)
@@ -173,8 +175,7 @@ namespace AIRefactored.AI.Core
             }
             catch (Exception ex)
             {
-                Logger.LogError($"[AIRefactoredBotOwner] InitProfile failed: {ex}");
-                BotFallbackUtility.FallbackToEFTLogic(_bot);
+                TriggerTerminalFallback($"[AIRefactoredBotOwner] InitProfile failed: {ex}");
                 PersonalityProfile = new BotPersonalityProfile();
                 PersonalityName = "Default";
             }
@@ -185,12 +186,14 @@ namespace AIRefactored.AI.Core
         /// </summary>
         public void InitProfile(BotPersonalityProfile profile, string name)
         {
+            if (_isFallback)
+                return;
+
             try
             {
                 if (profile == null)
                 {
-                    Logger.LogError("[AIRefactoredBotOwner] InitProfile failed: profile is null.");
-                    BotFallbackUtility.FallbackToEFTLogic(_bot);
+                    TriggerTerminalFallback("[AIRefactoredBotOwner] InitProfile failed: profile is null.");
                     PersonalityProfile = new BotPersonalityProfile();
                     PersonalityName = "Default";
                     return;
@@ -205,8 +208,7 @@ namespace AIRefactored.AI.Core
             }
             catch (Exception ex)
             {
-                Logger.LogError($"[AIRefactoredBotOwner] Exception in InitProfile(profile,name): {ex}");
-                BotFallbackUtility.FallbackToEFTLogic(_bot);
+                TriggerTerminalFallback($"[AIRefactoredBotOwner] Exception in InitProfile(profile,name): {ex}");
                 PersonalityProfile = new BotPersonalityProfile();
                 PersonalityName = "Default";
             }
@@ -217,6 +219,9 @@ namespace AIRefactored.AI.Core
         /// </summary>
         public void ClearPersonality()
         {
+            if (_isFallback)
+                return;
+
             try
             {
                 PersonalityProfile = new BotPersonalityProfile();
@@ -238,7 +243,7 @@ namespace AIRefactored.AI.Core
         /// </summary>
         public bool HasPersonality()
         {
-            return PersonalityProfile != null;
+            return !_isFallback && PersonalityProfile != null;
         }
 
         #endregion
@@ -250,6 +255,9 @@ namespace AIRefactored.AI.Core
         /// </summary>
         public void SetZone(string zoneName)
         {
+            if (_isFallback)
+                return;
+
             try
             {
                 if (string.IsNullOrEmpty(zoneName))
@@ -273,21 +281,44 @@ namespace AIRefactored.AI.Core
         /// </summary>
         public void SetMissionController(BotMissionController controller)
         {
+            if (_isFallback)
+                return;
+
             try
             {
                 if (controller == null)
                 {
-                    Logger.LogError("[AIRefactoredBotOwner] SetMissionController failed: controller is null.");
-                    BotFallbackUtility.FallbackToEFTLogic(_bot);
+                    TriggerTerminalFallback("[AIRefactoredBotOwner] SetMissionController failed: controller is null.");
                     return;
                 }
                 _missionController = controller;
             }
             catch (Exception ex)
             {
-                Logger.LogError($"[AIRefactoredBotOwner] Exception in SetMissionController: {ex}");
-                BotFallbackUtility.FallbackToEFTLogic(_bot);
+                TriggerTerminalFallback($"[AIRefactoredBotOwner] Exception in SetMissionController: {ex}");
             }
+        }
+
+        #endregion
+
+        #region Fallback Utility
+
+        /// <summary>
+        /// Triggers terminal fallback on this owner. This is one-shot and permanent.
+        /// </summary>
+        private void TriggerTerminalFallback(string logMsg)
+        {
+            if (_isFallback)
+                return;
+
+            _isFallback = true;
+            if (!string.IsNullOrEmpty(_bot?.Profile?.Id))
+                BotRegistry.MarkFallback(_bot.Profile.Id);
+
+            if (!FikaHeadlessDetector.IsHeadless)
+                Logger.LogError(logMsg);
+
+            BotFallbackUtility.FallbackToEFTLogic(_bot);
         }
 
         #endregion

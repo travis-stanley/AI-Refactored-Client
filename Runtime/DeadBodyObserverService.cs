@@ -3,7 +3,7 @@
 //   Licensed under the MIT License. See LICENSE in the repository root for more information.
 //
 //   THIS FILE IS SYSTEMATICALLY MANAGED.
-//   Failures in AIRefactored logic must always trigger safe fallback to EFT base AI.
+//   Failures in AIRefactored logic must always trigger safe fallback to EFT base AI, never break global logic.
 //   Bulletproof: All failures are locally contained, never break other subsystems, and always trigger fallback isolation.
 // </auto-generated>
 
@@ -123,7 +123,6 @@ namespace AIRefactored.Runtime
 					!GameWorldHandler.IsInitialized ||
 					!GameWorldHandler.IsHost ||
 					!GameWorldHandler.IsReady()
-
 				)
 				{
 					return;
@@ -173,6 +172,14 @@ namespace AIRefactored.Runtime
 						Player player = EFTPlayerUtil.AsEFTPlayer(rawPlayers[i]);
 						if (player != null && player.HealthController != null && !player.HealthController.IsAlive)
 						{
+							// Skip fallback bots and duplicates
+							string profileId = player.ProfileId;
+							if (string.IsNullOrEmpty(profileId)
+								|| DeadBodyContainerCache.Contains(profileId)
+								|| BotRegistry.IsFallbackBot(profileId))
+							{
+								continue;
+							}
 							deadPlayers.Add(player);
 						}
 					}
@@ -181,8 +188,7 @@ namespace AIRefactored.Runtime
 					{
 						Player player = deadPlayers[i];
 						string profileId = player.ProfileId;
-
-						if (string.IsNullOrEmpty(profileId) || DeadBodyContainerCache.Contains(profileId))
+						if (string.IsNullOrEmpty(profileId) || DeadBodyContainerCache.Contains(profileId) || BotRegistry.IsFallbackBot(profileId))
 						{
 							continue;
 						}

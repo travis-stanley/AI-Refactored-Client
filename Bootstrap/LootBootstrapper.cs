@@ -179,11 +179,18 @@ namespace AIRefactored.Bootstrap
 					Vector3 corpsePosition = EFTPlayerUtil.GetPosition(corpse);
 					if (Vector3.Distance(containerPosition, corpsePosition) <= MaxCorpseLinkDistance)
 					{
-						DeadBodyContainerCache.Register(corpse, container);
-						string nickname = corpse.Profile != null && corpse.Profile.Info != null
-							? corpse.Profile.Info.Nickname
-							: "Unnamed";
-						Logger.LogDebug("[LootBootstrapper] Linked container to corpse: " + nickname);
+						try
+						{
+							DeadBodyContainerCache.Register(corpse, container);
+							string nickname = corpse.Profile != null && corpse.Profile.Info != null
+								? corpse.Profile.Info.Nickname
+								: "Unnamed";
+							Logger.LogDebug("[LootBootstrapper] Linked container to corpse: " + nickname);
+						}
+						catch (Exception ex)
+						{
+							Logger.LogError("[LootBootstrapper] DeadBodyContainerCache.Register() failed: " + ex);
+						}
 						break;
 					}
 				}

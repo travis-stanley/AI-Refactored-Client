@@ -56,14 +56,16 @@ namespace AIRefactored.Core
                 if (string.IsNullOrEmpty(profileId))
                     return;
 
+                // Mark this bot as fallback atomically
                 lock (FallbackBots)
                 {
-                    // Prevent duplicate fallback activation for same bot
                     if (FallbackBots.Contains(profileId))
                         return;
 
                     FallbackBots.Add(profileId);
                 }
+                // Registry atomic marking for all systems
+                try { BotRegistry.MarkFallback(profileId); } catch { /* silent if method not present */ }
 
                 StandartBotBrain brain = null;
                 try
@@ -125,6 +127,43 @@ namespace AIRefactored.Core
             catch (Exception err)
             {
                 Logger.LogError("[BotFallback] ❌ Trigger() unhandled exception: " + err);
+            }
+        }
+
+        /// <summary>
+        /// Returns true if this profileId is marked as fallback (used for registry/controller checks).
+        /// </summary>
+        public static bool IsFallbackBot(string profileId)
+        {
+            if (string.IsNullOrEmpty(profileId))
+                return false;
+            lock (FallbackBots)
+            {
+                return FallbackBots.Contains(profileId);
+            }
+        }
+
+        /// <summary>
+        /// Allows registry/controller to clear a fallback bot (should only be used for end-of-raid cleanup).
+        /// </summary>
+        public static void ClearFallback(string profileId)
+        {
+            if (string.IsNullOrEmpty(profileId))
+                return;
+            lock (FallbackBots)
+            {
+                FallbackBots.Remove(profileId);
+            }
+        }
+
+        /// <summary>
+        /// Clears all fallback tracking (for end-of-raid or mod reload).
+        /// </summary>
+        public static void ClearAllFallbacks()
+        {
+            lock (FallbackBots)
+            {
+                FallbackBots.Clear();
             }
         }
 

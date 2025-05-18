@@ -18,6 +18,7 @@ namespace AIRefactored.Runtime
     using Comfort.Common;
     using EFT;
     using UnityEngine;
+    using System.Collections.Generic;
 
     /// <summary>
     /// Global AIRefactored lifecycle manager. Spawns persistent host and routes raid start/end logic and tick delegation.
@@ -114,27 +115,10 @@ namespace AIRefactored.Runtime
                     return;
                 }
 
-                // World must have registered players, all valid, and must be fully ready (no partial loads)
-                if (world.RegisteredPlayers == null || world.RegisteredPlayers.Count == 0)
+                // World must have registered players, all valid and unique, and must be fully ready (no partial loads)
+                if (!IsWorldAndPlayersValid(world))
                 {
-                    LogWarn("[AIRefactoredController] Skipped — RegisteredPlayers not ready.");
-                    return;
-                }
-
-                bool hasValidPlayer = false;
-                for (int i = 0; i < world.RegisteredPlayers.Count; i++)
-                {
-                    Player p = EFTPlayerUtil.AsEFTPlayer(world.RegisteredPlayers[i]);
-                    if (p != null && EFTPlayerUtil.IsValid(p))
-                    {
-                        hasValidPlayer = true;
-                        break;
-                    }
-                }
-
-                if (!hasValidPlayer)
-                {
-                    LogWarn("[AIRefactoredController] Skipped — no valid EFT.Player found.");
+                    LogWarn("[AIRefactoredController] Skipped — RegisteredPlayers not valid or unique.");
                     return;
                 }
 
@@ -240,6 +224,36 @@ namespace AIRefactored.Runtime
             {
                 LogError("[AIRefactoredController] ❌ OnDestroy error: " + ex);
             }
+        }
+
+        #endregion
+
+        #region Validation Helpers
+
+        /// <summary>
+        /// Ensures world and player references are unique, valid, and complete before allowing raid start.
+        /// </summary>
+        private static bool IsWorldAndPlayersValid(GameWorld world)
+        {
+            if (world == null || world.RegisteredPlayers == null || world.RegisteredPlayers.Count == 0)
+                return false;
+
+            var seenProfiles = new HashSet<string>();
+            bool hasValid = false;
+            for (int i = 0; i < world.RegisteredPlayers.Count; i++)
+            {
+                Player p = EFTPlayerUtil.AsEFTPlayer(world.RegisteredPlayers[i]);
+                string id = p?.Profile?.Id;
+                if (!EFTPlayerUtil.IsValid(p) || string.IsNullOrEmpty(id))
+                    continue;
+                if (!seenProfiles.Add(id))
+                {
+                    LogWarn($"[AIRefactoredController] Duplicate or null player profileId: {id}");
+                    return false;
+                }
+                hasValid = true;
+            }
+            return hasValid;
         }
 
         #endregion

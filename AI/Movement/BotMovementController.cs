@@ -51,8 +51,15 @@ namespace AIRefactored.AI.Movement
         {
             try
             {
-                var mover = _bot?.Mover;
-                if (mover == null || _bot.IsDead || _bot.GetPlayer == null || !_bot.GetPlayer.IsAI)
+                if (_bot == null)
+                    return;
+
+                var mover = _bot.Mover;
+                if (mover == null || _bot.IsDead)
+                    return;
+
+                var player = _bot.GetPlayer;
+                if (player == null || !player.IsAI)
                     return;
 
                 if (!_lootingMode)
@@ -75,28 +82,23 @@ namespace AIRefactored.AI.Movement
 
         /// <summary>
         /// Smoothly rotates bot to look toward its current navigation target (next corner or destination).
-        /// Uses only valid _pathController references; bulletproof against nulls.
         /// </summary>
         private void TrySmoothLook(BotMover mover, float deltaTime)
         {
             try
             {
+                if (mover == null)
+                    return;
+
                 var pathController = mover._pathController;
                 if (pathController == null)
                     return;
 
-                // Defensive: LastTargetPoint may still throw if controller is not ready.
-                Vector3 point;
-                try
-                {
-                    point = pathController.LastTargetPoint(1.0f);
-                }
-                catch
-                {
-                    return;
-                }
-
+                Vector3 point = pathController.LastTargetPoint(1.0f);
                 if (point == Vector3.zero)
+                    return;
+
+                if (_bot == null || _bot.Transform == null)
                     return;
 
                 Vector3 dir = point - _bot.Position;
@@ -121,7 +123,17 @@ namespace AIRefactored.AI.Movement
         {
             try
             {
-                if (_bot.Memory?.GoalEnemy == null || !mover.IsMoving)
+                if (_bot == null || mover == null)
+                    return;
+
+                var memory = _bot.Memory;
+                if (memory == null || memory.GoalEnemy == null)
+                    return;
+
+                if (!mover.HasPathAndNoComplete || !mover.IsMoving)
+                    return;
+
+                if (_bot.Transform == null)
                     return;
 
                 _strafeTimer -= deltaTime;
@@ -138,7 +150,11 @@ namespace AIRefactored.AI.Movement
                 Vector3 navDir = mover.NormDirCurPoint;
                 Vector3 blend = Vector3.Lerp(navDir, strafeVector, 0.25f).normalized * 1.0f * deltaTime;
 
-                _bot.GetPlayer?.CharacterController?.Move(blend, deltaTime);
+                var player = _bot.GetPlayer;
+                if (player?.CharacterController != null)
+                {
+                    player.CharacterController.Move(blend, deltaTime);
+                }
             }
             catch (Exception ex)
             {
@@ -153,7 +169,17 @@ namespace AIRefactored.AI.Movement
         {
             try
             {
-                if (_cache.Tilt == null || Time.time < _nextLeanTime || _bot.Memory?.GoalEnemy == null)
+                if (_cache == null || _cache.Tilt == null || _bot == null)
+                    return;
+
+                if (Time.time < _nextLeanTime)
+                    return;
+
+                var memory = _bot.Memory;
+                if (memory == null || memory.GoalEnemy == null)
+                    return;
+
+                if (_bot.Transform == null)
                     return;
 
                 Vector3 head = _bot.Position + Vector3.up * 1.5f;
@@ -168,9 +194,9 @@ namespace AIRefactored.AI.Movement
                 {
                     _cache.Tilt.Set(BotTiltType.left);
                 }
-                else
+                else if (memory.GoalEnemy != null)
                 {
-                    Vector3 toEnemy = _bot.Memory.GoalEnemy.CurrPosition - _bot.Position;
+                    Vector3 toEnemy = memory.GoalEnemy.CurrPosition - _bot.Position;
                     float dot = Vector3.Dot(toEnemy.normalized, _bot.Transform.right);
                     _cache.Tilt.Set(dot > 0f ? BotTiltType.right : BotTiltType.left);
                 }
@@ -190,6 +216,9 @@ namespace AIRefactored.AI.Movement
         {
             try
             {
+                if (_bot == null || _bot.Transform == null)
+                    return;
+
                 if (Time.time - _lastScanTime < 1.25f)
                     return;
 

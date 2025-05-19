@@ -11,7 +11,6 @@ namespace AIRefactored.AI.Movement
 {
     using System;
     using AIRefactored.AI.Core;
-    using AIRefactored.AI.Helpers;
     using AIRefactored.Core;
     using BepInEx.Logging;
     using EFT;
@@ -52,16 +51,17 @@ namespace AIRefactored.AI.Movement
         {
             try
             {
-                if (_bot?.Mover == null || _bot.IsDead || _bot.GetPlayer == null || !_bot.GetPlayer.IsAI)
+                var mover = _bot?.Mover;
+                if (mover == null || _bot.IsDead || _bot.GetPlayer == null || !_bot.GetPlayer.IsAI)
                     return;
 
                 if (!_lootingMode)
                 {
-                    TryCombatStrafe(deltaTime);
+                    TryCombatStrafe(mover, deltaTime);
                     TryLean();
                 }
 
-                TrySmoothLook(deltaTime);
+                TrySmoothLook(mover, deltaTime);
                 TryScan();
             }
             catch (Exception ex)
@@ -73,15 +73,23 @@ namespace AIRefactored.AI.Movement
         public void EnterLootingMode() => _lootingMode = true;
         public void ExitLootingMode() => _lootingMode = false;
 
-        private void TrySmoothLook(float deltaTime)
+        /// <summary>
+        /// Smoothly rotates bot to look toward its current navigation target (next corner or destination).
+        /// </summary>
+        private void TrySmoothLook(BotMover mover, float deltaTime)
         {
             try
             {
-                Vector3? target = _bot.Mover.TargetPoint;
-                if (!target.HasValue || target.Value == Vector3.zero)
+                // CurPath may be null if path is not set; LastTargetPoint uses a default coefficient.
+                var pathController = mover._pathController;
+                if (pathController == null)
                     return;
 
-                Vector3 dir = target.Value - _bot.Position;
+                Vector3 point = pathController.LastTargetPoint(1.0f);
+                if (point == Vector3.zero)
+                    return;
+
+                Vector3 dir = point - _bot.Position;
                 dir.y = 0f;
 
                 if (dir.sqrMagnitude < 0.01f)
@@ -96,23 +104,34 @@ namespace AIRefactored.AI.Movement
             }
         }
 
-        private void TryCombatStrafe(float deltaTime)
+        /// <summary>
+        /// Adds realistic side-to-side strafing during combat using only native BotMover and CharacterController logic.
+        /// </summary>
+        private void TryCombatStrafe(BotMover mover, float deltaTime)
         {
             try
             {
-                if (_bot.Memory?.GoalEnemy == null)
+                // Only strafe if bot has a visible enemy and is currently moving along a valid path
+                if (_bot.Memory?.GoalEnemy == null || !mover.HasPathAndNoComplete || !mover.IsMoving)
                     return;
 
                 _strafeTimer -= deltaTime;
                 if (_strafeTimer <= 0f)
                 {
                     _strafeRight = UnityEngine.Random.value > 0.5f;
-                    _strafeTimer = UnityEngine.Random.Range(0.4f, 0.75f);
+                    _strafeTimer = UnityEngine.Random.Range(0.5f, 1.0f);
                 }
 
                 Vector3 offset = _strafeRight ? _bot.Transform.right : -_bot.Transform.right;
-                Vector3 nudge = offset + UnityEngine.Random.insideUnitSphere * 0.1f;
-                _bot.GetPlayer?.CharacterController?.Move(nudge.normalized * 1.25f * deltaTime, deltaTime);
+                Vector3 randomJitter = UnityEngine.Random.insideUnitSphere * 0.05f;
+                Vector3 strafeVector = (offset + randomJitter).normalized * 1.1f * deltaTime;
+
+                // Blend strafe with the forward navigation vector to keep movement human-like
+                Vector3 navDir = mover.NormDirCurPoint;
+                Vector3 blend = Vector3.Lerp(navDir, strafeVector, 0.25f).normalized * 1.0f * deltaTime;
+
+                // Use native movement
+                _bot.GetPlayer?.CharacterController?.Move(blend, deltaTime);
             }
             catch (Exception ex)
             {
@@ -120,6 +139,9 @@ namespace AIRefactored.AI.Movement
             }
         }
 
+        /// <summary>
+        /// Simulates human-like peeking or leaning around corners or obstacles, with cover/obstacle logic.
+        /// </summary>
         private void TryLean()
         {
             try
@@ -154,6 +176,9 @@ namespace AIRefactored.AI.Movement
             }
         }
 
+        /// <summary>
+        /// Randomized head/vision scan for realism (pauses and checks vision line).
+        /// </summary>
         private void TryScan()
         {
             try

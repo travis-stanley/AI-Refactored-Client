@@ -87,7 +87,7 @@ namespace AIRefactored.AI.Movement
         {
             try
             {
-                if (mover == null)
+                if (mover == null || _bot == null || _bot.Transform == null)
                     return;
 
                 var pathController = mover._pathController;
@@ -96,9 +96,6 @@ namespace AIRefactored.AI.Movement
 
                 Vector3 point = pathController.LastTargetPoint(1.0f);
                 if (point == Vector3.zero)
-                    return;
-
-                if (_bot == null || _bot.Transform == null)
                     return;
 
                 Vector3 dir = point - _bot.Position;

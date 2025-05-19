@@ -187,6 +187,15 @@ namespace AIRefactored.AI.Core
                 return;
             }
 
+            if (_owner != null)
+            {
+                if (!ReferenceEquals(_owner, owner))
+                {
+                    Logger.LogWarning("[BotComponentCache] SetOwner() attempted to overwrite existing owner.");
+                }
+                return;
+            }
+
             _owner = owner;
         }
 

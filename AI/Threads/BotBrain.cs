@@ -160,11 +160,20 @@ namespace AIRefactored.AI.Threads
 			{
 				string profileId = player.Profile.Id;
 
-				if (!BotRegistry.TryGetRefactoredOwner(profileId, out AIRefactoredBotOwner owner) || owner == null)
+				_cache = BotComponentCacheRegistry.GetOrCreate(bot);
+				if (_cache == null)
 				{
-					owner = new AIRefactoredBotOwner();
-					owner.Initialize(bot);
-					BotRegistry.RegisterOwner(profileId, owner);
+					LogError("[BotBrain] Initialization failed: cache could not be created.");
+					enabled = false;
+					return;
+				}
+
+				AIRefactoredBotOwner owner = _cache.AIRefactoredBotOwner;
+				if (owner == null)
+				{
+					LogError("[BotBrain] Initialization failed: owner not wired in cache.");
+					enabled = false;
+					return;
 				}
 
 				_cache = BotComponentCacheRegistry.GetOrCreate(bot);

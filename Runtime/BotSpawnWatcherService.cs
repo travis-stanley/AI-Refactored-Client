@@ -26,13 +26,7 @@ namespace AIRefactored.Runtime
 	/// </summary>
 	public sealed class BotSpawnWatcherService : IAIWorldSystemBootstrapper
 	{
-		#region Constants
-
 		private const float PollInterval = 1.5f;
-
-		#endregion
-
-		#region Fields
 
 		private static readonly HashSet<int> SeenBotIds = new HashSet<int>();
 		private static readonly HashSet<string> SeenProfileIds = new HashSet<string>();
@@ -40,10 +34,6 @@ namespace AIRefactored.Runtime
 
 		private static float _nextPollTime = -1f;
 		private static bool _hasWarnedInvalid;
-
-		#endregion
-
-		#region Lifecycle
 
 		public void Initialize()
 		{
@@ -83,10 +73,6 @@ namespace AIRefactored.Runtime
 			}
 			catch { }
 		}
-
-		#endregion
-
-		#region Tick
 
 		public void Tick(float deltaTime)
 		{
@@ -130,58 +116,39 @@ namespace AIRefactored.Runtime
 						int id = go.GetInstanceID();
 						string profileId = player.ProfileId ?? player.Profile?.Id;
 
-						// Always retry on every tick for non-fully-injected bots (atomic enforcement)
-						bool seenThisBot = SeenBotIds.Contains(id);
-						bool seenThisProfile = !string.IsNullOrEmpty(profileId) && SeenProfileIds.Contains(profileId);
+						if (!SeenBotIds.Contains(id)) SeenBotIds.Add(id);
+						if (!string.IsNullOrEmpty(profileId) && !SeenProfileIds.Contains(profileId)) SeenProfileIds.Add(profileId);
 
-						// Only skip if this bot already has a working BotBrain
 						if (go.GetComponent<BotBrain>() != null)
-						{
-							if (!seenThisBot) SeenBotIds.Add(id);
-							if (!string.IsNullOrEmpty(profileId) && !seenThisProfile) SeenProfileIds.Add(profileId);
 							continue;
-						}
-
-						// Valid bot and profile required
-						if (!seenThisBot) SeenBotIds.Add(id);
-						if (!string.IsNullOrEmpty(profileId) && !seenThisProfile) SeenProfileIds.Add(profileId);
 
 						if (player.AIData == null || player.AIData.BotOwner == null)
 							continue;
 
-						// --- Atomic brain+cache+owner injection start ---
-						try
+						BotOwner botOwner = player.AIData.BotOwner;
+						BotComponentCache cache = BotComponentCacheRegistry.GetOrCreate(botOwner);
+						if (cache == null)
 						{
-							var botOwner = player.AIData.BotOwner;
-							var cache = BotComponentCacheRegistry.GetOrCreate(botOwner);
-							if (cache == null)
-							{
-								LogWarn("[BotSpawnWatcher] Cache was null after GetOrCreate. Will retry next tick.");
-								continue;
-							}
-							if (cache.AIRefactoredBotOwner == null)
-							{
-								var aiOwner = new AIRefactoredBotOwner();
-								cache.SetOwner(aiOwner);
-								aiOwner.Initialize(botOwner);
-								BotRegistry.RegisterOwner(profileId, aiOwner);
-							}
-							else if (!cache.AIRefactoredBotOwner.HasPersonality())
-							{
-								cache.AIRefactoredBotOwner.Initialize(botOwner);
-							}
-
-							BotBrainGuardian.Enforce(go);
-							GameWorldHandler.TryAttachBotBrain(botOwner);
-
-							string name = player.Profile?.Info?.Nickname ?? player.ProfileId;
-							LogDebug("[BotSpawnWatcher] ✅ Brain injected for bot: " + name);
+							LogWarn("[BotSpawnWatcher] Cache was null after GetOrCreate. Will retry next tick.");
+							continue;
 						}
-						catch (Exception ex)
+
+						if (cache.Bot == null || cache.AIRefactoredBotOwner == null)
 						{
-							LogError("[BotSpawnWatcher] ❌ Brain injection failed for bot: " + ex);
+							LogWarn($"[BotSpawnWatcher] Incomplete cache for bot {profileId} — will retry next tick.");
+							continue;
 						}
-						// --- Atomic brain+cache+owner injection end ---
+
+						if (!cache.AIRefactoredBotOwner.HasPersonality())
+						{
+							cache.AIRefactoredBotOwner.InitProfile(cache.AIRefactoredBotOwner.PersonalityProfile, cache.AIRefactoredBotOwner.PersonalityName);
+						}
+
+						BotBrainGuardian.Enforce(go);
+						GameWorldHandler.TryAttachBotBrain(botOwner);
+
+						string name = player.Profile?.Info?.Nickname ?? profileId;
+						LogDebug("[BotSpawnWatcher] ✅ Brain injected for bot: " + name);
 					}
 					catch (Exception ex)
 					{
@@ -195,17 +162,9 @@ namespace AIRefactored.Runtime
 			}
 		}
 
-		#endregion
-
-		#region Integration
-
 		public bool IsReady() => WorldInitState.IsInPhase(WorldPhase.WorldReady);
 
 		public WorldPhase RequiredPhase() => WorldPhase.WorldReady;
-
-		#endregion
-
-		#region Log Helpers
 
 		private static void LogDebug(string msg)
 		{
@@ -224,7 +183,5 @@ namespace AIRefactored.Runtime
 			if (!FikaHeadlessDetector.IsHeadless)
 				Logger.LogError(msg);
 		}
-
-		#endregion
 	}
 }

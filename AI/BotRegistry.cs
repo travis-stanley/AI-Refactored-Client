@@ -222,37 +222,34 @@ namespace AIRefactored
             if (string.IsNullOrEmpty(profileId) || owner == null)
                 return;
 
+            BotComponentCache cache;
+            if (!BotComponentCacheRegistry.TryGet(profileId, out cache) || cache == null)
+            {
+                if (_debug)
+                    Logger.LogWarning("[BotRegistry] Skipped RegisterOwner — no cache exists for: " + profileId);
+                return;
+            }
+
+            if (owner.Cache != cache)
+            {
+                if (_debug)
+                    Logger.LogWarning("[BotRegistry] Skipped RegisterOwner — mismatched cache reference for: " + profileId);
+                return;
+            }
+
             if (!_ownerRegistry.TryGetValue(profileId, out var existing))
             {
-                // Atomic: Only register owner if cache is present and owner.Cache is valid.
-                if (owner.Cache == null)
-                {
-                    if (_debug)
-                        Logger.LogWarning("[BotRegistry] Cannot register owner for '" + profileId + "' — missing BotComponentCache. Will retry.");
-                    return; // Abort. BotComponentCacheRegistry must trigger owner registration once cache exists.
-                }
                 _ownerRegistry[profileId] = owner;
                 if (_debug)
                     Logger.LogDebug("[BotRegistry] Registered AIRefactoredBotOwner for '" + profileId + "'.");
                 return;
             }
-            // Already exists; only update if not the same object
+
             if (!ReferenceEquals(existing, owner))
             {
+                _ownerRegistry[profileId] = owner;
                 if (_debug)
-                    Logger.LogWarning("[BotRegistry] Duplicate owner detected for '" + profileId + "'. Forcing atomic rewire.");
-                // Rewire the registry to always point to the correct owner with valid cache
-                if (owner.Cache != null)
-                {
-                    _ownerRegistry[profileId] = owner;
-                    if (_debug)
-                        Logger.LogDebug("[BotRegistry] Overwrote owner for '" + profileId + "' with valid owner+cache.");
-                }
-                else
-                {
-                    if (_debug)
-                        Logger.LogWarning("[BotRegistry] Owner duplicate has missing cache for '" + profileId + "'. Skipping rewire, will retry.");
-                }
+                    Logger.LogDebug("[BotRegistry] Overwrote duplicate owner for '" + profileId + "'.");
             }
         }
 

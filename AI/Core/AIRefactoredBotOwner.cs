@@ -22,57 +22,27 @@ namespace AIRefactored.AI.Core
     /// </summary>
     public sealed class AIRefactoredBotOwner
     {
-        #region Static
-
         private static readonly ManualLogSource Logger = Plugin.LoggerInstance;
-
-        #endregion
-
-        #region Fields
 
         private BotOwner _bot;
         private BotComponentCache _cache;
         private BotMissionController _missionController;
         private bool _isInitialized;
 
-        #endregion
+        public BotOwner Bot => !_isInitialized || _bot == null
+            ? LogAndReturnNull("[AIRefactoredBotOwner] Bot accessed before initialization.")
+            : _bot;
 
-        #region Properties
-
-        public BotOwner Bot
-        {
-            get
-            {
-                if (!_isInitialized || _bot == null)
-                {
-                    Logger.LogError("[AIRefactoredBotOwner] Bot accessed before initialization.");
-                    return null;
-                }
-                return _bot;
-            }
-        }
-
-        public BotComponentCache Cache
-        {
-            get
-            {
-                if (!_isInitialized || _cache == null)
-                {
-                    Logger.LogError("[AIRefactoredBotOwner] Cache accessed before initialization.");
-                    return BotComponentCache.Empty;
-                }
-                return _cache;
-            }
-        }
+        public BotComponentCache Cache => !_isInitialized || _cache == null
+            ? LogAndReturnEmptyCache()
+            : _cache;
 
         public BotMissionController MissionController
         {
             get
             {
                 if (_missionController == null)
-                {
                     Logger.LogError("[AIRefactoredBotOwner] MissionController is null.");
-                }
                 return _missionController;
             }
         }
@@ -80,10 +50,6 @@ namespace AIRefactored.AI.Core
         public BotPersonalityProfile PersonalityProfile { get; private set; }
         public string PersonalityName { get; private set; }
         public string AssignedZone { get; private set; }
-
-        #endregion
-
-        #region Constructor
 
         public AIRefactoredBotOwner()
         {
@@ -93,37 +59,27 @@ namespace AIRefactored.AI.Core
             _isInitialized = false;
         }
 
-        #endregion
-
-        #region Initialization
-
         /// <summary>
-        /// Atomic initialization: always retries until bot and cache are both available, and owner/cache are fully wired.
-        /// Never leaves a partial or broken state; never disables itself or triggers fallback.
+        /// Must only be called once and only by BotSpawnWatcherService.
+        /// Never calls GetOrCreate. Assumes cache has already been created and assigned externally.
         /// </summary>
         public void Initialize(BotOwner bot)
         {
-            if (bot == null)
+            if (_isInitialized || bot == null)
             {
-                Logger.LogError("[AIRefactoredBotOwner] Initialization failed: bot is null.");
-                _isInitialized = false;
+                Logger.LogError("[AIRefactoredBotOwner] Initialization skipped or bot null.");
                 return;
             }
-
-            if (_isInitialized)
-                return;
 
             _bot = bot;
             string id = bot.Profile?.Id ?? "null-profile";
 
             try
             {
-                // Atomic cache/owner wiring: always waits for cache, then wires self
-                _cache = BotComponentCacheRegistry.GetOrCreate(bot);
+                _cache = BotComponentCacheRegistry.TryGetExisting(bot);
                 if (_cache == null)
                 {
                     Logger.LogError($"[AIRefactoredBotOwner] Cache not found for bot {id} — will retry until available.");
-                    _isInitialized = false;
                     return;
                 }
 
@@ -135,7 +91,6 @@ namespace AIRefactored.AI.Core
 
                 WildSpawnType role = bot.Profile?.Info?.Settings?.Role ?? WildSpawnType.assault;
                 BotPersonalityProfile profile = BotRegistry.GetOrGenerate(id, PersonalityType.Balanced, role);
-
                 InitProfile(profile, profile?.Personality.ToString() ?? "Balanced");
 
                 _isInitialized = true;
@@ -149,13 +104,8 @@ namespace AIRefactored.AI.Core
             catch (Exception ex)
             {
                 Logger.LogError($"[AIRefactoredBotOwner] Initialization failed: {ex}");
-                _isInitialized = false;
             }
         }
-
-        #endregion
-
-        #region Personality
 
         public void InitProfile(PersonalityType type)
         {
@@ -175,9 +125,7 @@ namespace AIRefactored.AI.Core
                 PersonalityProfile = preset;
 
                 if (!FikaHeadlessDetector.IsHeadless)
-                {
                     Logger.LogDebug($"[AIRefactoredBotOwner] Personality assigned: {PersonalityName}");
-                }
             }
             catch (Exception ex)
             {
@@ -203,9 +151,7 @@ namespace AIRefactored.AI.Core
                 PersonalityName = string.IsNullOrEmpty(name) ? "Custom" : name;
 
                 if (!FikaHeadlessDetector.IsHeadless)
-                {
                     Logger.LogDebug($"[AIRefactoredBotOwner] Custom profile assigned: {PersonalityName}");
-                }
             }
             catch (Exception ex)
             {
@@ -223,37 +169,22 @@ namespace AIRefactored.AI.Core
                 PersonalityName = "Cleared";
 
                 if (!FikaHeadlessDetector.IsHeadless)
-                {
                     Logger.LogDebug("[AIRefactoredBotOwner] Personality cleared.");
-                }
             }
-            catch
-            {
-                // Silent fail
-            }
+            catch { }
         }
 
-        public bool HasPersonality()
-        {
-            return PersonalityProfile != null;
-        }
-
-        #endregion
-
-        #region Zone + Mission
+        public bool HasPersonality() => PersonalityProfile != null;
 
         public void SetZone(string zoneName)
         {
             try
             {
-                if (string.IsNullOrEmpty(zoneName))
-                    return;
-
-                AssignedZone = zoneName;
-
-                if (!FikaHeadlessDetector.IsHeadless)
+                if (!string.IsNullOrEmpty(zoneName))
                 {
-                    Logger.LogDebug($"[AIRefactoredBotOwner] Zone assigned: {zoneName}");
+                    AssignedZone = zoneName;
+                    if (!FikaHeadlessDetector.IsHeadless)
+                        Logger.LogDebug($"[AIRefactoredBotOwner] Zone assigned: {zoneName}");
                 }
             }
             catch (Exception ex)
@@ -280,6 +211,16 @@ namespace AIRefactored.AI.Core
             }
         }
 
-        #endregion
+        private static BotOwner LogAndReturnNull(string msg)
+        {
+            Logger.LogError(msg);
+            return null;
+        }
+
+        private static BotComponentCache LogAndReturnEmptyCache()
+        {
+            Logger.LogError("[AIRefactoredBotOwner] Cache accessed before initialization.");
+            return BotComponentCache.Empty;
+        }
     }
 }

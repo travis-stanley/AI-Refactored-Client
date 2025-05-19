@@ -209,6 +209,13 @@ namespace AIRefactored.Bootstrap
 
             try
             {
+                BotComponentCache cache = BotComponentCacheRegistry.GetOrCreate(bot);
+                if (cache == null || cache.AIRefactoredBotOwner == null)
+                {
+                    Logger.LogWarning("[WorldBootstrapper] ❌ Cache or owner missing — deferring BotBrain injection for: " + profileId);
+                    return;
+                }
+
                 BotBrainGuardian.Enforce(go);
 
                 BotBrain existing = go.GetComponent<BotBrain>();

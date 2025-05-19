@@ -182,44 +182,35 @@ namespace AIRefactored.Runtime
 					if (string.IsNullOrEmpty(profileId))
 						continue;
 
-					BotBrain brain = player.gameObject.GetComponent<BotBrain>();
-					if (brain != null)
+					if (player.gameObject.GetComponent<BotBrain>() != null)
+						continue;
+
+					if (player.AIData?.BotOwner == null)
+						continue;
+
+					var botOwner = player.AIData.BotOwner;
+					var cache = BotComponentCacheRegistry.GetOrCreate(botOwner);
+					if (cache == null)
 					{
-						if (!brain.enabled)
-						{
-							brain.enabled = true;
-							LogWarn("[BotRecoveryService] ♻ Re-enabled disabled BotBrain: " + profileId);
-						}
+						LogWarn("[BotRecoveryService] Cache was null for bot. Will retry.");
 						continue;
 					}
 
-					// Always ensure BotOwner/caches are present and valid.
-					if (player.AIData?.BotOwner != null)
+					if (cache.Bot == null || cache.AIRefactoredBotOwner == null)
 					{
-						var botOwner = player.AIData.BotOwner;
-						var cache = BotComponentCacheRegistry.GetOrCreate(botOwner);
-						if (cache == null)
-						{
-							LogWarn("[BotRecoveryService] Cache was null during ValidateBotBrains. Will retry next tick.");
-							continue;
-						}
-						if (cache.AIRefactoredBotOwner == null)
-						{
-							var aiOwner = new AIRefactoredBotOwner();
-							cache.SetOwner(aiOwner);
-							aiOwner.Initialize(botOwner);
-							BotRegistry.RegisterOwner(profileId, aiOwner);
-						}
-						else if (!cache.AIRefactoredBotOwner.HasPersonality())
-						{
-							cache.AIRefactoredBotOwner.Initialize(botOwner);
-						}
-
-						GameWorldHandler.TryAttachBotBrain(botOwner);
-						LogWarn("[BotRecoveryService] ⚠ BotBrain missing — injected late for: " + (player.Profile?.Info?.Nickname ?? "Unknown"));
+						LogWarn($"[BotRecoveryService] Incomplete cache for bot {profileId} — waiting for next tick.");
+						continue;
 					}
 
-					// Only rescan once per world phase.
+					if (!cache.AIRefactoredBotOwner.HasPersonality())
+					{
+						// Only allowed logic: assign default personality
+						cache.AIRefactoredBotOwner.InitProfile(cache.AIRefactoredBotOwner.PersonalityProfile, cache.AIRefactoredBotOwner.PersonalityName);
+					}
+
+					GameWorldHandler.TryAttachBotBrain(botOwner);
+					LogWarn("[BotRecoveryService] ⚠ BotBrain missing — injected late for: " + (player.Profile?.Info?.Nickname ?? "Unknown"));
+
 					if (!_hasRescanned && GameWorldHandler.IsReady() && WorldInitState.IsInPhase(WorldPhase.WorldReady))
 					{
 						_hasRescanned = true;

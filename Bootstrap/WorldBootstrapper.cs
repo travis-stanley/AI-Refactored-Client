@@ -3,7 +3,7 @@
 //   Licensed under the MIT License. See LICENSE in the repository root for more information.
 //
 //   THIS FILE IS SYSTEMATICALLY MANAGED.
-//   Bulletproof: All failures are locally contained, never break other subsystems. No vanilla fallback is triggered.
+//   Bulletproof: All failures are locally contained, never break other subsystems, and always trigger fallback isolation.
 //   See: AIRefactored “Bulletproof Fallback & Isolation Safety Rule Set” for audit compliance.
 // </auto-generated>
 

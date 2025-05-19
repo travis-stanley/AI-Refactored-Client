@@ -17,6 +17,7 @@ namespace AIRefactored.AI.Core
     /// <summary>
     /// Abstract base class for all AI world-level systems.
     /// Provides diamond-standard lifecycle binding, tick gating, and bulletproof fallback isolation.
+    /// All failures are strictly locally contained; no failures may cascade or break global mod state.
     /// </summary>
     public abstract class BaseAIWorldSystemBootstrapper : IAIWorldSystemBootstrapper
     {

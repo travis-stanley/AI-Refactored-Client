@@ -38,6 +38,9 @@ namespace AIRefactored.Runtime
 
         #region Properties
 
+        /// <summary>
+        /// Shared logger instance for all AIRefactored systems.
+        /// </summary>
         public static ManualLogSource Logger
         {
             get
@@ -53,6 +56,9 @@ namespace AIRefactored.Runtime
 
         #region Public API
 
+        /// <summary>
+        /// Initializes the persistent AIRefactored host and controller. Idempotent, thread-safe, and retry-safe.
+        /// </summary>
         public static void Initialize()
         {
             lock (InitLock)
@@ -83,6 +89,9 @@ namespace AIRefactored.Runtime
             }
         }
 
+        /// <summary>
+        /// Called when a raid (GameWorld) has started and world is ready for AI system boot.
+        /// </summary>
         public static void OnRaidStarted(GameWorld world)
         {
             try
@@ -103,11 +112,8 @@ namespace AIRefactored.Runtime
                     return;
 
                 string mapId = GameWorldHandler.TryGetValidMapName();
-                if (!string.IsNullOrEmpty(mapId) && !NavMeshWarmupManager.IsNavMeshReady)
-                {
-                    try { NavMeshWarmupManager.TryPrebuildNavMesh(); }
-                    catch (Exception ex) { Logger.LogError("[AIRefactoredController] NavMeshWarmupManager error: " + ex); }
-                }
+
+                // No NavMeshWarmupManager logic remains here.
 
                 GameWorldHandler.Initialize(world);
                 WorldBootstrapper.Begin(Logger, mapId);
@@ -121,6 +127,9 @@ namespace AIRefactored.Runtime
             }
         }
 
+        /// <summary>
+        /// Called when a raid (GameWorld) ends; triggers teardown of all AIRefactored systems.
+        /// </summary>
         public static void OnRaidEnded()
         {
             if (!s_RaidActive)
@@ -147,6 +156,9 @@ namespace AIRefactored.Runtime
 
         #region Unity Lifecycle
 
+        /// <summary>
+        /// Ticks the global WorldTickDispatcher for all subsystems.
+        /// </summary>
         private void Update()
         {
             try
@@ -160,6 +172,10 @@ namespace AIRefactored.Runtime
             }
         }
 
+        /// <summary>
+        /// Called when this controller is destroyed (typically on scene/raid end).
+        /// Ensures full and safe teardown of all systems.
+        /// </summary>
         private void OnDestroy()
         {
             try
@@ -186,6 +202,9 @@ namespace AIRefactored.Runtime
 
         #region Validation Helpers
 
+        /// <summary>
+        /// Checks if the provided GameWorld and all registered players are valid and unique.
+        /// </summary>
         private static bool IsWorldAndPlayersValid(GameWorld world)
         {
             if (world == null || world.RegisteredPlayers == null || world.RegisteredPlayers.Count == 0)

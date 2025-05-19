@@ -89,6 +89,9 @@ namespace AIRefactored.Runtime
 
         public WorldPhase RequiredPhase() => WorldPhase.WorldReady;
 
+        /// <summary>
+        /// Triggers a delayed loot registry refresh if not already queued.
+        /// </summary>
         public static void TriggerQueuedRefresh()
         {
             try
@@ -105,6 +108,9 @@ namespace AIRefactored.Runtime
             }
         }
 
+        /// <summary>
+        /// Immediately refreshes the loot registry (manual trigger).
+        /// </summary>
         public static void TriggerManualRefresh()
         {
             try
@@ -130,6 +136,9 @@ namespace AIRefactored.Runtime
             }
         }
 
+        /// <summary>
+        /// Registers a loot GameObject for tracking and queues refresh if new.
+        /// </summary>
         public static void Register(GameObject go)
         {
             try
@@ -149,6 +158,9 @@ namespace AIRefactored.Runtime
             }
         }
 
+        /// <summary>
+        /// Unregisters a loot GameObject from tracking.
+        /// </summary>
         public static void Unregister(GameObject go)
         {
             try
@@ -172,6 +184,9 @@ namespace AIRefactored.Runtime
             }
         }
 
+        /// <summary>
+        /// Clears all state and tracked instance IDs for full reset.
+        /// </summary>
         public static void Reset()
         {
             try

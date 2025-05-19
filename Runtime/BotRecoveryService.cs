@@ -24,6 +24,10 @@ namespace AIRefactored.Runtime
 	using EFT.Game.Spawning;
 	using UnityEngine;
 
+	/// <summary>
+	/// Monolithic bot lifecycle, cache, and owner/brain recovery watchdog.
+	/// All failures are contained; no fallback or terminal disable, always retry on incomplete state.
+	/// </summary>
 	public sealed class BotRecoveryService : IAIWorldSystemBootstrapper
 	{
 		private const float TickInterval = 5f;
@@ -38,6 +42,9 @@ namespace AIRefactored.Runtime
 
 		public static BotRecoveryService Instance { get; } = new BotRecoveryService();
 
+		/// <summary>
+		/// Initializes the recovery service and resets state.
+		/// </summary>
 		public void Initialize()
 		{
 			try
@@ -52,6 +59,9 @@ namespace AIRefactored.Runtime
 			}
 		}
 
+		/// <summary>
+		/// Called on raid end or teardown to reset and detach hooks.
+		/// </summary>
 		public void OnRaidEnd()
 		{
 			try
@@ -72,10 +82,19 @@ namespace AIRefactored.Runtime
 			}
 		}
 
+		/// <summary>
+		/// Returns true if initialized and GameWorldHandler is ready.
+		/// </summary>
 		public bool IsReady() => _hasInitialized && GameWorldHandler.IsReady();
 
+		/// <summary>
+		/// The required phase for this system (always WorldReady).
+		/// </summary>
 		public WorldPhase RequiredPhase() => WorldPhase.WorldReady;
 
+		/// <summary>
+		/// Resets all internal static state.
+		/// </summary>
 		public static void Reset()
 		{
 			_nextTickTime = -1f;
@@ -84,6 +103,9 @@ namespace AIRefactored.Runtime
 			_hookedSpawner = false;
 		}
 
+		/// <summary>
+		/// Ticks the recovery service to ensure all bots, owners, and caches are wired and running.
+		/// </summary>
 		public void Tick(float deltaTime)
 		{
 			try
@@ -123,6 +145,9 @@ namespace AIRefactored.Runtime
 			}
 		}
 
+		/// <summary>
+		/// Ensures the BotSpawner event hook is attached for runtime bot injection.
+		/// </summary>
 		private static void EnsureSpawnHook()
 		{
 			try
@@ -140,6 +165,9 @@ namespace AIRefactored.Runtime
 			}
 		}
 
+		/// <summary>
+		/// Iterates all living AI players and ensures full owner/cache/brain wiring, recovering any missing subsystems.
+		/// </summary>
 		private static void ValidateBotBrains(List<Player> players)
 		{
 			for (int i = 0; i < players.Count; i++)
@@ -165,9 +193,9 @@ namespace AIRefactored.Runtime
 						continue;
 					}
 
+					// Always ensure BotOwner/caches are present and valid.
 					if (player.AIData?.BotOwner != null)
 					{
-						// Atomic: always ensure cache+owner+brain are valid and present.
 						var botOwner = player.AIData.BotOwner;
 						var cache = BotComponentCacheRegistry.GetOrCreate(botOwner);
 						if (cache == null)
@@ -191,6 +219,7 @@ namespace AIRefactored.Runtime
 						LogWarn("[BotRecoveryService] ⚠ BotBrain missing — injected late for: " + (player.Profile?.Info?.Nickname ?? "Unknown"));
 					}
 
+					// Only rescan once per world phase.
 					if (!_hasRescanned && GameWorldHandler.IsReady() && WorldInitState.IsInPhase(WorldPhase.WorldReady))
 					{
 						_hasRescanned = true;
@@ -204,6 +233,9 @@ namespace AIRefactored.Runtime
 			}
 		}
 
+		/// <summary>
+		/// Re-initializes world systems (hotspot, loot, corpse) for full recovery after late boot.
+		/// </summary>
 		private static void RescanWorld()
 		{
 			try
@@ -238,6 +270,8 @@ namespace AIRefactored.Runtime
 			}
 		}
 
+		#region Logging
+
 		private static void LogDebug(string msg)
 		{
 			if (!FikaHeadlessDetector.IsHeadless)
@@ -255,5 +289,7 @@ namespace AIRefactored.Runtime
 			if (!FikaHeadlessDetector.IsHeadless)
 				Logger.LogError(msg);
 		}
+
+		#endregion
 	}
 }

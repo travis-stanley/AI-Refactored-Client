@@ -29,6 +29,9 @@ namespace AIRefactored.Runtime
 
         private static ManualLogSource Logger => Plugin.LoggerInstance;
 
+        /// <summary>
+        /// Initializes the tick dispatcher, ensuring a persistent host MonoBehaviour is active.
+        /// </summary>
         public static void Initialize()
         {
             if (_isActive || _host != null || _monoHost != null || _isQuitting)
@@ -50,6 +53,9 @@ namespace AIRefactored.Runtime
             }
         }
 
+        /// <summary>
+        /// Shuts down and destroys the tick host and MonoBehaviour.
+        /// </summary>
         public static void Reset()
         {
             if (!_isActive)
@@ -82,6 +88,9 @@ namespace AIRefactored.Runtime
             _host = null;
         }
 
+        /// <summary>
+        /// Ticks all world systems every frame; bulletproof to errors and host/teardown state.
+        /// </summary>
         public static void Tick(float deltaTime)
         {
             if (!_isActive || _isQuitting || !GameWorldHandler.IsInitialized || !GameWorldHandler.IsHost)
@@ -97,6 +106,9 @@ namespace AIRefactored.Runtime
             }
         }
 
+        /// <summary>
+        /// MonoBehaviour tick host. Routes Unity lifecycle events to the static dispatcher.
+        /// </summary>
         private sealed class TickHost : MonoBehaviour
         {
             private void Update()

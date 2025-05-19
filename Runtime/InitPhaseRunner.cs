@@ -27,6 +27,9 @@ namespace AIRefactored.Runtime
     {
         private static bool _hasStarted;
 
+        /// <summary>
+        /// Begins the full world and AIRefactored initialization sequence.
+        /// </summary>
         public static void Begin(ManualLogSource logger)
         {
             if (_hasStarted)
@@ -78,6 +81,9 @@ namespace AIRefactored.Runtime
             }
         }
 
+        /// <summary>
+        /// Stops and resets all AIRefactored init state and subsystems.
+        /// </summary>
         public static void Stop()
         {
             if (!_hasStarted)
@@ -93,6 +99,9 @@ namespace AIRefactored.Runtime
             }
         }
 
+        /// <summary>
+        /// Resets internal phase and all associated world state.
+        /// </summary>
         private static void ResetInternal(ManualLogSource logger)
         {
             _hasStarted = false;
@@ -105,6 +114,9 @@ namespace AIRefactored.Runtime
             try { LogDebug(logger, "[InitPhaseRunner] 🧹 Cleanup complete — initialization state reset."); } catch { }
         }
 
+        /// <summary>
+        /// Checks if the GameWorld is valid, non-duplicate, and ready for AI init.
+        /// </summary>
         private static bool IsWorldSafeAndUnique()
         {
             try

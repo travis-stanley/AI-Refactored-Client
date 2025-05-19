@@ -21,6 +21,10 @@ namespace AIRefactored.Runtime
 	using EFT.Interactive;
 	using UnityEngine;
 
+	/// <summary>
+	/// Observes dead players and ensures their lootable containers are associated in DeadBodyContainerCache.
+	/// All errors are contained; never breaks the mod; never triggers fallback or terminal bot logic.
+	/// </summary>
 	public sealed class DeadBodyObserverService : IAIWorldSystemBootstrapper
 	{
 		private const float ScanIntervalSeconds = 1.0f;

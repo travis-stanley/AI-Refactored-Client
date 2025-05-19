@@ -20,6 +20,10 @@ namespace AIRefactored.Runtime
 	using EFT;
 	using UnityEngine;
 
+	/// <summary>
+	/// Watches for any bots without brains and enforces atomic cache/owner/brain injection on all unhandled AI, always retrying.
+	/// All failures are locally contained; no fallback disables, no terminal state.
+	/// </summary>
 	public sealed class BotSpawnWatcherService : IAIWorldSystemBootstrapper
 	{
 		#region Constants

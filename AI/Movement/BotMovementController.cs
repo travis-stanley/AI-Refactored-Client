@@ -75,17 +75,27 @@ namespace AIRefactored.AI.Movement
 
         /// <summary>
         /// Smoothly rotates bot to look toward its current navigation target (next corner or destination).
+        /// Uses only valid _pathController references; bulletproof against nulls.
         /// </summary>
         private void TrySmoothLook(BotMover mover, float deltaTime)
         {
             try
             {
-                // CurPath may be null if path is not set; LastTargetPoint uses a default coefficient.
                 var pathController = mover._pathController;
                 if (pathController == null)
                     return;
 
-                Vector3 point = pathController.LastTargetPoint(1.0f);
+                // Defensive: LastTargetPoint may still throw if controller is not ready.
+                Vector3 point;
+                try
+                {
+                    point = pathController.LastTargetPoint(1.0f);
+                }
+                catch
+                {
+                    return;
+                }
+
                 if (point == Vector3.zero)
                     return;
 
@@ -111,8 +121,7 @@ namespace AIRefactored.AI.Movement
         {
             try
             {
-                // Only strafe if bot has a visible enemy and is currently moving along a valid path
-                if (_bot.Memory?.GoalEnemy == null || !mover.HasPathAndNoComplete || !mover.IsMoving)
+                if (_bot.Memory?.GoalEnemy == null || !mover.IsMoving)
                     return;
 
                 _strafeTimer -= deltaTime;
@@ -126,11 +135,9 @@ namespace AIRefactored.AI.Movement
                 Vector3 randomJitter = UnityEngine.Random.insideUnitSphere * 0.05f;
                 Vector3 strafeVector = (offset + randomJitter).normalized * 1.1f * deltaTime;
 
-                // Blend strafe with the forward navigation vector to keep movement human-like
                 Vector3 navDir = mover.NormDirCurPoint;
                 Vector3 blend = Vector3.Lerp(navDir, strafeVector, 0.25f).normalized * 1.0f * deltaTime;
 
-                // Use native movement
                 _bot.GetPlayer?.CharacterController?.Move(blend, deltaTime);
             }
             catch (Exception ex)

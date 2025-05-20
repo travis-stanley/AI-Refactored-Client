@@ -33,7 +33,7 @@ namespace AIRefactored.AI.Movement
         private const float IdleScanInterval = 2.4f;
         private const float IdleScanAngleMax = 65f;
         private const float IdleScanJitter = 7f;
-        private const float IdleMissChance = 0.02f; // ~2% chance per tick to drift off idle
+        private const float IdleMissChance = 0.02f;
 
         #endregion
 
@@ -49,7 +49,7 @@ namespace AIRefactored.AI.Movement
 
         private float _nextIdleScanTime;
         private float _currentIdleAngle;
-        private int _idleScanDirection; // -1 or 1
+        private int _idleScanDirection;
         private float _idleJitterOffset;
 
         #endregion
@@ -114,9 +114,6 @@ namespace AIRefactored.AI.Movement
             }
         }
 
-        /// <summary>
-        /// Sets a persistent fallback look target.
-        /// </summary>
         public void SetLookTarget(Vector3 worldPos)
         {
             try
@@ -132,25 +129,16 @@ namespace AIRefactored.AI.Movement
             }
         }
 
-        /// <summary>
-        /// Freezes look updates.
-        /// </summary>
         public void FreezeLook()
         {
             _frozen = true;
         }
 
-        /// <summary>
-        /// Resumes look updates.
-        /// </summary>
         public void ResumeLook()
         {
             _frozen = false;
         }
 
-        /// <summary>
-        /// Gets the bot's current look direction.
-        /// </summary>
         public Vector3 GetLookDirection()
         {
             try
@@ -224,11 +212,9 @@ namespace AIRefactored.AI.Movement
                     _idleJitterOffset = UnityEngine.Random.Range(-IdleScanJitter, IdleScanJitter);
                 }
 
-                // Randomly "drift" the angle or snap back for realism.
                 if (UnityEngine.Random.value < IdleMissChance)
                     _currentIdleAngle += UnityEngine.Random.Range(-5f, 5f);
 
-                // Slowly oscillate between -IdleScanAngleMax and +IdleScanAngleMax, jitter included.
                 float baseAngle = IdleScanAngleMax * _idleScanDirection * deltaTime * 0.5f;
                 _currentIdleAngle = Mathf.Clamp(_currentIdleAngle + baseAngle + _idleJitterOffset * deltaTime * 0.15f, -IdleScanAngleMax, IdleScanAngleMax);
 

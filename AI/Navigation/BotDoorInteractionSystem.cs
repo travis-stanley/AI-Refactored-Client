@@ -3,7 +3,7 @@
 //   Licensed under the MIT License. See LICENSE in the repository root for more information.
 //
 //   THIS FILE IS SYSTEMATICALLY MANAGED.
-//   Failures in AIRefactored logic must always trigger safe fallback to EFT base AI.
+//   All logic is bulletproof and strictly contained—never fallback to vanilla AI, never cascade errors.
 //   Realism Pass: Human-like hesitation, micro-randomization, and organic error handling.
 // </auto-generated>
 
@@ -17,7 +17,7 @@ namespace AIRefactored.AI.Navigation
     using UnityEngine;
 
     /// <summary>
-    /// Handles door interactions for bots using fallback-agnostic, deadlock-free logic.
+    /// Handles door interactions for bots using bulletproof, fallback-agnostic, deadlock-free logic.
     /// Replaces EFT.BotDoorInteraction with fully AIRefactored logic.
     /// All failures are locally isolated; cannot break or cascade into other systems.
     /// </summary>
@@ -155,7 +155,6 @@ namespace AIRefactored.AI.Navigation
                     InteractionResult result = new InteractionResult(interactionType);
                     player.CurrentManagedState.StartDoorInteraction(door, result, null);
 
-                    // Log at Debug only; can be filtered at runtime
                     _log.LogDebug("[BotDoorInteraction] " + _bot.name + " → " + interactionType + " door " + door.name);
                 }
                 catch (Exception ex)
@@ -167,7 +166,7 @@ namespace AIRefactored.AI.Navigation
                 _currentDoor = door;
                 IsBlockedByDoor = true;
             }
-            catch (Exception)
+            catch
             {
                 // Locally isolated; cannot break or cascade.
                 ClearDoorState();
@@ -209,9 +208,6 @@ namespace AIRefactored.AI.Navigation
 
         #region Private Helpers
 
-        /// <summary>
-        /// Clears all door state and resets blocking.
-        /// </summary>
         private void ClearDoorState()
         {
             _currentDoor = null;
@@ -219,18 +215,12 @@ namespace AIRefactored.AI.Navigation
             _hesitateUntil = 0f;
         }
 
-        /// <summary>
-        /// Marks the given door as currently blocking the bot.
-        /// </summary>
         private void MarkBlocked(Door door)
         {
             _currentDoor = door;
             IsBlockedByDoor = true;
         }
 
-        /// <summary>
-        /// Determines the best interaction type for the given door state.
-        /// </summary>
         private static EInteractionType GetBestInteractionType(EDoorState state)
         {
             if ((state & EDoorState.Shut) != 0 || state == EDoorState.None)

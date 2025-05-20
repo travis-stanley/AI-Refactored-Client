@@ -3,7 +3,6 @@
 //   Licensed under the MIT License. See LICENSE in the repository root for more information.
 //
 //   THIS FILE IS SYSTEMATICALLY MANAGED.
-//   Failures in AIRefactored logic must always trigger safe fallback to EFT base AI.
 //   Bulletproof: All failures are locally isolated, never disables itself, never triggers fallback AI.
 //   Realism Pass: Human-like micro-hesitation, imperfect scanning, and personality-based peeking logic.
 // </auto-generated>
@@ -18,11 +17,6 @@ namespace AIRefactored.AI.Movement
     using UnityEngine;
     using UnityEngine.AI;
 
-    /// <summary>
-    /// Scans for edges and corners to trigger realistic lean, crouch, or pause behavior.
-    /// Aggressive bots peek corners quickly, cautious bots crouch before engaging.
-    /// All failures are locally isolated; cannot break or cascade into other systems.
-    /// </summary>
     public sealed class BotCornerScanner
     {
         #region Constants
@@ -38,7 +32,7 @@ namespace AIRefactored.AI.Movement
         private const float NavSampleTolerance = 0.65f;
         private const float MinPauseJitter = 0.1f;
         private const float MaxPauseJitter = 0.38f;
-        private const float FalsePositiveChance = 0.045f; // Human error: ~4.5%
+        private const float FalsePositiveChance = 0.045f;
 
         #endregion
 
@@ -65,39 +59,24 @@ namespace AIRefactored.AI.Movement
 
         public BotCornerScanner(BotOwner bot, BotComponentCache cache)
         {
-            try
-            {
-                Initialize(bot, cache);
-            }
-            catch (Exception ex)
-            {
-                Log.LogError("[BotCornerScanner] Constructor init failed: " + ex);
-            }
+            try { Initialize(bot, cache); }
+            catch (Exception ex) { Log.LogError("[BotCornerScanner] Constructor init failed: " + ex); }
         }
 
         #endregion
 
         #region Initialization
 
-        /// <summary>
-        /// Initializes this corner/edge scanner for the given bot and cache.
-        /// </summary>
         public void Initialize(BotOwner bot, BotComponentCache cache)
         {
             try
             {
                 if (!EFTPlayerUtil.IsValidBotOwner(bot) || cache == null || bot.Transform == null)
-                {
-                    Log.LogWarning("[BotCornerScanner] Initialization skipped — invalid bot or transform.");
                     return;
-                }
 
                 BotPersonalityProfile profile = cache.AIRefactoredBotOwner?.PersonalityProfile;
                 if (profile == null)
-                {
-                    Log.LogWarning("[BotCornerScanner] Initialization failed — missing personality for bot " + bot.ProfileId);
                     return;
-                }
 
                 _bot = bot;
                 _cache = cache;
@@ -114,9 +93,6 @@ namespace AIRefactored.AI.Movement
 
         #region Public API
 
-        /// <summary>
-        /// Ticks the corner/edge scan logic for this bot.
-        /// </summary>
         public void Tick(float time)
         {
             try
@@ -127,12 +103,11 @@ namespace AIRefactored.AI.Movement
                     return;
                 if (_cache.Tilt == null || _cache.PoseController == null)
                     return;
-                if (_bot.Memory != null && _bot.Memory.GoalEnemy != null)
+                if (_bot.Memory?.GoalEnemy != null)
                     return;
                 if (time < _pauseUntil || time < _prepCrouchUntil)
                     return;
 
-                // Human error: sometimes miss a scan
                 if (UnityEngine.Random.value < FalsePositiveChance)
                 {
                     ResetLean(time);
@@ -150,19 +125,13 @@ namespace AIRefactored.AI.Movement
 
                 ResetLean(time);
             }
-            catch (Exception ex)
-            {
-                Log.LogError("[BotCornerScanner] Tick failed: " + ex);
-            }
+            catch { }
         }
 
         #endregion
 
         #region Edge + Corner Logic
 
-        /// <summary>
-        /// Returns true if an edge/ledge/drop-off is detected in front of the bot.
-        /// </summary>
         private bool IsApproachingEdge()
         {
             try
@@ -170,7 +139,6 @@ namespace AIRefactored.AI.Movement
                 Vector3 origin = _bot.Position + Vector3.up * 0.2f;
                 Vector3 forward = _bot.Transform.forward;
                 Vector3 right = _bot.Transform.right;
-
                 int rays = Mathf.CeilToInt((EdgeCheckDistance * 2f) / EdgeRaySpacing);
 
                 for (int i = 0; i < rays; i++)
@@ -179,12 +147,10 @@ namespace AIRefactored.AI.Movement
                     Vector3 rayOrigin = origin + (right * offset) + (forward * EdgeCheckDistance);
                     Vector3 rayDown = rayOrigin + Vector3.down * MinFallHeight;
 
-                    // Must not be over a walkable surface, and must not have navmesh beneath
                     if (!Physics.Raycast(rayOrigin, Vector3.down, MinFallHeight, AIRefactoredLayerMasks.NavObstacleMask))
                     {
                         if (!NavMesh.SamplePosition(rayDown, out NavMeshHit hit, 1.0f, NavMesh.AllAreas) || hit.distance > NavSampleTolerance)
                         {
-                            // Human error: sometimes misjudge
                             if (UnityEngine.Random.value < (FalsePositiveChance * 1.5f))
                                 continue;
                             return true;
@@ -192,16 +158,10 @@ namespace AIRefactored.AI.Movement
                     }
                 }
             }
-            catch (Exception ex)
-            {
-                Log.LogError("[BotCornerScanner] IsApproachingEdge failed: " + ex);
-            }
+            catch { }
             return false;
         }
 
-        /// <summary>
-        /// Checks both left/right for a wall and triggers lean or crouch.
-        /// </summary>
         private bool TryCornerPeekWithCrouch(float time)
         {
             try
@@ -211,26 +171,18 @@ namespace AIRefactored.AI.Movement
                 Vector3 left = -right;
                 float dist = BaseWallCheckDistance + ((1f - _profile.Caution) * 0.5f);
 
-                // Human: sometimes misreads and does nothing
                 if (UnityEngine.Random.value < FalsePositiveChance)
                     return false;
 
                 if (CheckWall(origin, left, dist))
                     return TriggerLeanOrCrouch(BotTiltType.left, time);
-
                 if (CheckWall(origin, right, dist))
                     return TriggerLeanOrCrouch(BotTiltType.right, time);
             }
-            catch (Exception ex)
-            {
-                Log.LogError("[BotCornerScanner] TryCornerPeekWithCrouch failed: " + ex);
-            }
+            catch { }
             return false;
         }
 
-        /// <summary>
-        /// Returns true if a wall is detected in the given direction from origin.
-        /// </summary>
         private bool CheckWall(Vector3 origin, Vector3 dir, float dist)
         {
             try
@@ -239,44 +191,37 @@ namespace AIRefactored.AI.Movement
                     return false;
                 return Vector3.Dot(hit.normal, dir) < WallAngleThreshold;
             }
-            catch (Exception ex)
+            catch
             {
-                Log.LogError("[BotCornerScanner] CheckWall failed: " + ex);
                 return false;
             }
         }
 
-        /// <summary>
-        /// Triggers a crouch (first) or a lean (second) depending on pose/state and personality.
-        /// </summary>
         private bool TriggerLeanOrCrouch(BotTiltType side, float time)
         {
             try
             {
-                // Cautious bots crouch before leaning, aggressive bots lean fast
                 if (_profile.Caution > 0.54f && !_isCrouching && AttemptCrouch(time))
                 {
                     _isCrouching = true;
                     return true;
                 }
+
                 if (!_isLeaning)
                 {
                     _cache.Tilt.Set(side);
                     PauseMovement(time);
                     _isLeaning = true;
                 }
+
                 return true;
             }
-            catch (Exception ex)
+            catch
             {
-                Log.LogError("[BotCornerScanner] TriggerLeanOrCrouch failed: " + ex);
                 return false;
             }
         }
 
-        /// <summary>
-        /// Attempts to crouch using the pose controller.
-        /// </summary>
         private bool AttemptCrouch(float time)
         {
             try
@@ -288,10 +233,7 @@ namespace AIRefactored.AI.Movement
                     return true;
                 }
             }
-            catch (Exception ex)
-            {
-                Log.LogError("[BotCornerScanner] AttemptCrouch failed: " + ex);
-            }
+            catch { }
             return false;
         }
 
@@ -299,27 +241,18 @@ namespace AIRefactored.AI.Movement
 
         #region Helpers
 
-        /// <summary>
-        /// Pauses movement for a context-dependent duration with jitter for realism.
-        /// </summary>
         private void PauseMovement(float time)
         {
             try
             {
-                float humanJitter = UnityEngine.Random.Range(MinPauseJitter, MaxPauseJitter);
-                float duration = (BasePauseDuration + humanJitter) * Mathf.Clamp(0.5f + _profile.Caution, 0.35f, 2.0f);
+                float jitter = UnityEngine.Random.Range(MinPauseJitter, MaxPauseJitter);
+                float duration = (BasePauseDuration + jitter) * Mathf.Clamp(0.5f + _profile.Caution, 0.35f, 2.0f);
                 _bot.Mover.MovementPause(duration);
                 _pauseUntil = time + duration;
             }
-            catch (Exception ex)
-            {
-                Log.LogError("[BotCornerScanner] PauseMovement failed: " + ex);
-            }
+            catch { }
         }
 
-        /// <summary>
-        /// Resets all lean and crouch states to normal.
-        /// </summary>
         private void ResetLean(float time)
         {
             try
@@ -333,10 +266,7 @@ namespace AIRefactored.AI.Movement
                 _isLeaning = false;
                 _isCrouching = false;
             }
-            catch (Exception ex)
-            {
-                Log.LogError("[BotCornerScanner] ResetLean failed: " + ex);
-            }
+            catch { }
         }
 
         #endregion

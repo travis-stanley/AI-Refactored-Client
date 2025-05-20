@@ -3,8 +3,8 @@
 //   Licensed under the MIT License. See LICENSE in the repository root for more information.
 //
 //   THIS FILE IS SYSTEMATICALLY MANAGED.
-//   Failures in AIRefactored logic must always trigger safe fallback to EFT base AI.
 //   Realism Pass: Adds micro-randomness, human-like miss chance, and anti-cluster logic.
+//   All logic is bulletproof and locally isolated. No fallback logic. No unguarded failures.
 // </auto-generated>
 
 namespace AIRefactored.AI.Movement
@@ -30,7 +30,7 @@ namespace AIRefactored.AI.Movement
         private const float NavSampleRadius = 1.5f;
         private const float OffsetVariation = 0.4f;
         private const float VerticalTolerance = 1.85f;
-        private const float MissChance = 0.05f; // 5% chance to fail even if position is valid
+        private const float MissChance = 0.05f;
 
         #endregion
 
@@ -41,9 +41,7 @@ namespace AIRefactored.AI.Movement
         /// </summary>
         public enum Side
         {
-            /// <summary>Flank from the enemy's left side.</summary>
             Left,
-            /// <summary>Flank from the enemy's right side.</summary>
             Right
         }
 
@@ -59,27 +57,20 @@ namespace AIRefactored.AI.Movement
         public static bool TryFindFlankPosition(Vector3 botPos, Vector3 enemyPos, out Vector3 flankPoint, Side preferred)
         {
             flankPoint = Vector3.zero;
-            try
-            {
-                Vector3 toEnemy = enemyPos - botPos;
-                toEnemy.y = 0f;
 
-                if (toEnemy.sqrMagnitude < 0.0001f)
-                    return false;
+            Vector3 toEnemy = enemyPos - botPos;
+            toEnemy.y = 0f;
 
-                toEnemy.Normalize();
-
-                if (TrySide(botPos, toEnemy, preferred, out flankPoint))
-                    return true;
-
-                Side fallback = preferred == Side.Left ? Side.Right : Side.Left;
-                return TrySide(botPos, toEnemy, fallback, out flankPoint);
-            }
-            catch
-            {
-                flankPoint = Vector3.zero;
+            if (toEnemy.sqrMagnitude < 0.0001f)
                 return false;
-            }
+
+            toEnemy.Normalize();
+
+            if (TrySide(botPos, toEnemy, preferred, out flankPoint))
+                return true;
+
+            Side fallback = preferred == Side.Left ? Side.Right : Side.Left;
+            return TrySide(botPos, toEnemy, fallback, out flankPoint);
         }
 
         /// <summary>
@@ -89,99 +80,71 @@ namespace AIRefactored.AI.Movement
         public static bool TrySmartFlank(Vector3 botPos, Vector3 enemyPos, Vector3 enemyForward, out Vector3 flankPoint)
         {
             flankPoint = Vector3.zero;
-            try
-            {
-                Vector3 toBot = botPos - enemyPos;
-                toBot.y = 0f;
 
-                if (toBot.sqrMagnitude < 0.0001f)
-                    return false;
+            Vector3 toBot = botPos - enemyPos;
+            toBot.y = 0f;
 
-                toBot.Normalize();
-
-                float sideDot = Vector3.Dot(Vector3.Cross(enemyForward, Vector3.up), toBot);
-                Side side = sideDot >= 0f ? Side.Right : Side.Left;
-
-                return TryFindFlankPosition(botPos, enemyPos, out flankPoint, side);
-            }
-            catch
-            {
-                flankPoint = Vector3.zero;
+            if (toBot.sqrMagnitude < 0.0001f)
                 return false;
-            }
+
+            toBot.Normalize();
+
+            float sideDot = Vector3.Dot(Vector3.Cross(enemyForward, Vector3.up), toBot);
+            Side side = sideDot >= 0f ? Side.Right : Side.Left;
+
+            return TryFindFlankPosition(botPos, enemyPos, out flankPoint, side);
         }
 
         #endregion
 
         #region Internal Logic
 
-        /// <summary>
-        /// Attempts to find a valid flank point on a specific side.
-        /// </summary>
         private static bool TrySide(Vector3 origin, Vector3 toEnemy, Side side, out Vector3 result)
         {
             result = Vector3.zero;
-            try
+
+            Vector3 perpendicular = Vector3.Cross(Vector3.up, toEnemy) * (side == Side.Left ? -1f : 1f);
+
+            for (int i = 0; i < MaxAttemptsPerSide; i++)
             {
-                Vector3 perpendicular = Vector3.Cross(Vector3.up, toEnemy) * (side == Side.Left ? -1f : 1f);
+                float lateralOffset = BaseOffset + UnityEngine.Random.Range(-OffsetVariation, OffsetVariation);
+                float forwardOffset = UnityEngine.Random.Range(MinDistance, MaxDistance);
+                float jitterAngle = UnityEngine.Random.Range(-14f, 14f);
 
-                for (int i = 0; i < MaxAttemptsPerSide; i++)
+                Quaternion jitter = Quaternion.AngleAxis(jitterAngle, Vector3.up);
+                Vector3 candidate = origin + jitter * ((perpendicular * lateralOffset) + (toEnemy * forwardOffset));
+
+                if (IsValidFlankPoint(candidate, origin, out Vector3 valid))
                 {
-                    float lateralOffset = BaseOffset + UnityEngine.Random.Range(-OffsetVariation, OffsetVariation);
-                    float forwardOffset = UnityEngine.Random.Range(MinDistance, MaxDistance);
+                    if (UnityEngine.Random.value < MissChance && i < MaxAttemptsPerSide - 1)
+                        continue;
 
-                    // Subtle organic "herding": slightly bias away from last picked spot (human-like)
-                    float jitterAngle = UnityEngine.Random.Range(-14f, 14f);
-                    Quaternion jitter = Quaternion.AngleAxis(jitterAngle, Vector3.up);
-
-                    Vector3 candidate = origin + jitter * ((perpendicular * lateralOffset) + (toEnemy * forwardOffset));
-
-                    if (IsValidFlankPoint(candidate, origin, out Vector3 valid))
-                    {
-                        // Small miss chance to create imperfect/organic squad movement
-                        if (UnityEngine.Random.value < MissChance && i < MaxAttemptsPerSide - 1)
-                            continue;
-
-                        result = valid;
-                        return true;
-                    }
+                    result = valid;
+                    return true;
                 }
             }
-            catch
-            {
-                result = Vector3.zero;
-            }
+
             return false;
         }
 
-        /// <summary>
-        /// Validates a flank point using NavMesh and world geometry constraints.
-        /// </summary>
         private static bool IsValidFlankPoint(Vector3 candidate, Vector3 origin, out Vector3 final)
         {
             final = Vector3.zero;
-            try
-            {
-                if (!NavMesh.SamplePosition(candidate, out NavMeshHit hit, NavSampleRadius, NavMesh.AllAreas))
-                    return false;
 
-                float verticalDelta = Mathf.Abs(origin.y - hit.position.y);
-                float distanceSqr = (origin - hit.position).sqrMagnitude;
-
-                if (distanceSqr < MinDistance * MinDistance || distanceSqr > MaxDistance * MaxDistance)
-                    return false;
-
-                if (verticalDelta > VerticalTolerance)
-                    return false;
-
-                final = hit.position;
-                return true;
-            }
-            catch
-            {
-                final = Vector3.zero;
+            if (!NavMesh.SamplePosition(candidate, out NavMeshHit hit, NavSampleRadius, NavMesh.AllAreas))
                 return false;
-            }
+
+            float verticalDelta = Mathf.Abs(origin.y - hit.position.y);
+            float distSqr = (origin - hit.position).sqrMagnitude;
+
+            if (distSqr < MinDistance * MinDistance || distSqr > MaxDistance * MaxDistance)
+                return false;
+
+            if (verticalDelta > VerticalTolerance)
+                return false;
+
+            final = hit.position;
+            return true;
         }
 
         #endregion

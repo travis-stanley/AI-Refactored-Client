@@ -3,7 +3,6 @@
 //   Licensed under the MIT License. See LICENSE in the repository root for more information.
 //
 //   THIS FILE IS SYSTEMATICALLY MANAGED.
-//   Failures in AIRefactored logic must always trigger safe fallback to EFT base AI.
 //   Bulletproof: All failures are locally isolated; cannot break or cascade into other systems.
 //   Realism Pass: Personality-driven, smoothly-varying chaos; organic avoidance; no robotic movement artifacts.
 // </auto-generated>
@@ -32,8 +31,8 @@ namespace AIRefactored.AI.Movement
         private const float SquadOffsetScale = 0.75f;
         private const float VelocityFactor = 1.5f;
         private const float MinMagnitude = 0.0001f;
-        private const float ChaosLerpSpeed = 3.8f; // smooth chaos updates
-        private const float AvoidanceMissChance = 0.07f; // ~7% chance to "miss" avoidance, human error
+        private const float ChaosLerpSpeed = 3.8f;
+        private const float AvoidanceMissChance = 0.07f;
 
         #endregion
 
@@ -53,12 +52,12 @@ namespace AIRefactored.AI.Movement
         /// <summary>
         /// Initializes a new instance with bulletproof validation.
         /// </summary>
-        /// <param name="bot">The bot owner reference (never null).</param>
-        /// <param name="cache">BotComponentCache (never null).</param>
         public BotMovementTrajectoryPlanner(BotOwner bot, BotComponentCache cache)
         {
-            if (!EFTPlayerUtil.IsValidBotOwner(bot)) throw new ArgumentException("[BotMovementTrajectoryPlanner] bot is invalid.");
-            if (cache == null || bot.GetPlayer == null) throw new ArgumentException("[BotMovementTrajectoryPlanner] cache or player is null.");
+            if (!EFTPlayerUtil.IsValidBotOwner(bot))
+                throw new ArgumentException("[BotMovementTrajectoryPlanner] bot is invalid.");
+            if (cache == null || bot.GetPlayer == null)
+                throw new ArgumentException("[BotMovementTrajectoryPlanner] cache or player is null.");
 
             _bot = bot;
             _cache = cache;
@@ -76,16 +75,13 @@ namespace AIRefactored.AI.Movement
         /// Applies chaos, squad offsets, avoidance, and velocity blending.
         /// Always bulletproof, never allocates, never throws, always returns a valid direction.
         /// </summary>
-        /// <param name="targetDir">Intended movement direction (not normalized).</param>
-        /// <param name="deltaTime">Delta time for frame.</param>
-        /// <returns>Adjusted, normalized movement direction vector.</returns>
         public Vector3 ModifyTrajectory(Vector3 targetDir, float deltaTime)
         {
             try
             {
                 float now = Time.unscaledTime;
 
-                // Realistic: Chaos is smoothly interpolated over time, not abrupt
+                // Chaos offset is updated only at a fixed interval
                 if (now >= _nextChaosUpdate)
                 {
                     UpdateTargetChaosOffset(now);
@@ -110,14 +106,14 @@ namespace AIRefactored.AI.Movement
                     }
                 }
 
-                // Avoidance (now includes human error)
+                // Avoidance vector from nearby squadmates, with human-like "miss" chance
                 Vector3 avoidVector = ComputeAvoidance();
                 if (avoidVector.sqrMagnitude > MinMagnitude)
                 {
                     adjusted += avoidVector.normalized * AvoidanceScale;
                 }
 
-                // Bot's current velocity
+                // Bot's current velocity (for true organic blending)
                 Vector3 velocity = Vector3.zero;
                 try
                 {
@@ -133,9 +129,8 @@ namespace AIRefactored.AI.Movement
                 adjusted.y = 0f;
                 return adjusted.sqrMagnitude > MinMagnitude ? adjusted.normalized : baseDir;
             }
-            catch (Exception)
+            catch
             {
-                // Always return a valid forward fallback.
                 return Vector3.forward;
             }
         }
@@ -145,10 +140,8 @@ namespace AIRefactored.AI.Movement
         #region Internal Helpers
 
         /// <summary>
-        /// Computes avoidance vector from nearby squadmates.
-        /// Realism: 7% chance to "miss" avoidance (human error).
+        /// Computes avoidance vector from nearby squadmates. Includes human error.
         /// </summary>
-        /// <returns>Repulsion vector (may be zero).</returns>
         private Vector3 ComputeAvoidance()
         {
             try
@@ -186,10 +179,9 @@ namespace AIRefactored.AI.Movement
         }
 
         /// <summary>
-        /// Updates the target chaos (random) movement offset based on bot personality.
-        /// More cautious bots have less chaos; bias is always forward. Lerp to this value over time for smoothness.
+        /// Updates the target chaos movement offset based on bot personality.
+        /// More cautious bots have less chaos. Lerp to this value for smoothness.
         /// </summary>
-        /// <param name="now">Current time (unscaled).</param>
         private void UpdateTargetChaosOffset(float now)
         {
             try
@@ -206,7 +198,7 @@ namespace AIRefactored.AI.Movement
                 float chaosRange = ChaosRadius * (1f - caution);
 
                 float x = UnityEngine.Random.Range(-chaosRange * 0.5f, chaosRange * 0.5f);
-                float z = UnityEngine.Random.Range(0.1f, chaosRange); // Always forward biased
+                float z = UnityEngine.Random.Range(0.1f, chaosRange); // always forward-biased
 
                 _targetChaosOffset = new Vector3(x, 0f, z);
                 _nextChaosUpdate = now + ChaosInterval;

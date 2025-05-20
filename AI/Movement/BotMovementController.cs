@@ -5,13 +5,14 @@
 //   THIS FILE IS SYSTEMATICALLY MANAGED.
 //   All movement, combat lean, and strafe logic is bulletproof and layered over EFT BotMover.
 //   No fallback logic. No invalid targets. Smooth, human-like movement only.
-//   Realism Pass: Adds subtle randomness, human hesitation, personality-driven leaning, and micro-scanning.
+//   Realism Pass: Subtle randomness, human hesitation, personality-driven leaning, and micro-scanning.
 // </auto-generated>
 
 namespace AIRefactored.AI.Movement
 {
     using System;
     using AIRefactored.AI.Core;
+    using AIRefactored.AI.Navigation;
     using AIRefactored.Core;
     using BepInEx.Logging;
     using EFT;
@@ -58,11 +59,7 @@ namespace AIRefactored.AI.Movement
         {
             try
             {
-                if (_bot == null)
-                    return;
-
-                var mover = _bot.Mover;
-                if (mover == null || _bot.IsDead)
+                if (_bot == null || _bot.IsDead || _bot.Mover == null)
                     return;
 
                 var player = _bot.GetPlayer;
@@ -71,11 +68,11 @@ namespace AIRefactored.AI.Movement
 
                 if (!_lootingMode)
                 {
-                    TryCombatStrafe(mover, deltaTime);
+                    TryCombatStrafe(_bot.Mover, deltaTime);
                     TryLean();
                 }
 
-                TrySmoothLook(mover, deltaTime);
+                TrySmoothLook(_bot.Mover, deltaTime);
                 TryScan();
             }
             catch (Exception ex)
@@ -87,186 +84,114 @@ namespace AIRefactored.AI.Movement
         public void EnterLootingMode() => _lootingMode = true;
         public void ExitLootingMode() => _lootingMode = false;
 
-        /// <summary>
-        /// Smoothly rotates bot to look toward its current navigation target (next corner or destination).
-        /// </summary>
         private void TrySmoothLook(BotMover mover, float deltaTime)
         {
-            try
+            if (_bot?.Transform == null)
+                return;
+
+            if (!BotNavHelper.TryGetSafeTarget(_bot, out Vector3 point))
+                return;
+
+            Vector3 dir = point - _bot.Position;
+            dir.y = 0f;
+            if (dir.sqrMagnitude < 0.0125f)
+                return;
+
+            if (Time.time < _lastRandomPause + 0.13f && UnityEngine.Random.value < 0.09f)
+                return;
+
+            Quaternion desired = Quaternion.LookRotation(dir);
+            _bot.Transform.rotation = Quaternion.Lerp(_bot.Transform.rotation, desired, 6f * deltaTime);
+
+            if (Time.time > _nextRandomPause)
             {
-                if (mover == null || _bot == null || _bot.Transform == null)
-                    return;
-
-                var pathController = mover._pathController;
-                if (pathController == null || !pathController.HavePath)
-                    return;
-
-                Vector3 point;
-                try
-                {
-                    point = pathController.LastTargetPoint(1.0f);
-                }
-                catch
-                {
-                    return;
-                }
-
-                if (point == Vector3.zero || float.IsNaN(point.x) || float.IsInfinity(point.x))
-                    return;
-
-                Vector3 dir = point - _bot.Position;
-                dir.y = 0f;
-
-                if (dir.sqrMagnitude < 0.01f)
-                    return;
-
-                if (Time.time < _lastRandomPause + 0.13f && UnityEngine.Random.value < 0.09f)
-                    return;
-
-                Quaternion desired = Quaternion.LookRotation(dir);
-                _bot.Transform.rotation = Quaternion.Lerp(_bot.Transform.rotation, desired, 6f * deltaTime);
-
-                if (Time.time > _nextRandomPause)
-                {
-                    _lastRandomPause = Time.time;
-                    _nextRandomPause = Time.time + UnityEngine.Random.Range(1.2f, 3.7f);
-                }
-            }
-            catch (Exception ex)
-            {
-                Logger.LogError("[BotMovementController] TrySmoothLook error: " + ex);
+                _lastRandomPause = Time.time;
+                _nextRandomPause = Time.time + UnityEngine.Random.Range(1.2f, 3.7f);
             }
         }
 
-        /// <summary>
-        /// Adds realistic side-to-side strafing during combat using only native BotMover and CharacterController logic.
-        /// </summary>
         private void TryCombatStrafe(BotMover mover, float deltaTime)
         {
-            try
+            if (_bot == null || mover == null || _bot.Memory?.GoalEnemy == null)
+                return;
+
+            if (!mover.HasPathAndNoComplete || !mover.IsMoving || _bot.Transform == null)
+                return;
+
+            _strafeTimer -= deltaTime;
+            if (_strafeTimer <= 0f)
             {
-                if (_bot == null || mover == null)
-                    return;
-
-                var memory = _bot.Memory;
-                if (memory == null || memory.GoalEnemy == null)
-                    return;
-
-                if (!mover.HasPathAndNoComplete || !mover.IsMoving)
-                    return;
-
-                if (_bot.Transform == null)
-                    return;
-
-                _strafeTimer -= deltaTime;
-                if (_strafeTimer <= 0f)
-                {
-                    _strafeRight = UnityEngine.Random.value > 0.5f;
-                    _strafeTimer = UnityEngine.Random.Range(0.42f, 1.11f);
-                }
-
-                Vector3 offset = _strafeRight ? _bot.Transform.right : -_bot.Transform.right;
-                Vector3 randomJitter = UnityEngine.Random.insideUnitSphere * 0.08f;
-                Vector3 strafeVector = (offset + randomJitter).normalized * 1.08f * deltaTime;
-
-                Vector3 navDir = mover.NormDirCurPoint;
-                Vector3 blend = Vector3.Lerp(navDir, strafeVector, UnityEngine.Random.Range(0.21f, 0.32f)).normalized * 1.0f * deltaTime;
-
-                var player = _bot.GetPlayer;
-                if (player?.CharacterController != null)
-                {
-                    player.CharacterController.Move(blend, deltaTime);
-                }
+                _strafeRight = UnityEngine.Random.value > 0.5f;
+                _strafeTimer = UnityEngine.Random.Range(0.42f, 1.11f);
             }
-            catch (Exception ex)
-            {
-                Logger.LogError("[BotMovementController] TryCombatStrafe error: " + ex);
-            }
+
+            Vector3 offset = _strafeRight ? _bot.Transform.right : -_bot.Transform.right;
+            Vector3 jitter = UnityEngine.Random.insideUnitSphere * 0.06f;
+            Vector3 strafe = (offset + jitter).normalized * 1.05f * deltaTime;
+
+            Vector3 navDir = mover.NormDirCurPoint;
+            Vector3 blend = Vector3.Lerp(navDir, strafe, UnityEngine.Random.Range(0.2f, 0.28f)).normalized * deltaTime;
+
+            var player = _bot.GetPlayer;
+            player?.CharacterController?.Move(blend, deltaTime);
         }
 
-        /// <summary>
-        /// Simulates human-like peeking or leaning around corners or obstacles, with cover/obstacle logic.
-        /// Personality: Cautious bots lean less; aggressive bots lean more. Adds rare "miss" for realism.
-        /// </summary>
         private void TryLean()
         {
-            try
+            if (_cache?.Tilt == null || _bot == null || Time.time < _nextLeanTime)
+                return;
+
+            var memory = _bot.Memory;
+            if (memory?.GoalEnemy == null || _bot.Transform == null)
+                return;
+
+            float missChance = (_cache.AIRefactoredBotOwner?.PersonalityProfile?.Caution ?? 0.5f) * _leanMissChance;
+            if (UnityEngine.Random.value < missChance)
             {
-                if (_cache == null || _cache.Tilt == null || _bot == null)
-                    return;
-
-                if (Time.time < _nextLeanTime)
-                    return;
-
-                var memory = _bot.Memory;
-                if (memory == null || memory.GoalEnemy == null)
-                    return;
-
-                if (_bot.Transform == null)
-                    return;
-
-                float leanMiss = (_cache.AIRefactoredBotOwner?.PersonalityProfile?.Caution ?? 0.5f) * _leanMissChance;
-                if (UnityEngine.Random.value < leanMiss)
-                {
-                    _nextLeanTime = Time.time + UnityEngine.Random.Range(1.1f, 2.3f);
-                    return;
-                }
-
-                Vector3 head = _bot.Position + Vector3.up * 1.5f;
-                bool wallLeft = Physics.Raycast(head, -_bot.Transform.right, 1.5f, AIRefactoredLayerMasks.VisionBlockers);
-                bool wallRight = Physics.Raycast(head, _bot.Transform.right, 1.5f, AIRefactoredLayerMasks.VisionBlockers);
-
-                if (wallLeft && !wallRight)
-                {
-                    _cache.Tilt.Set(BotTiltType.right);
-                }
-                else if (wallRight && !wallLeft)
-                {
-                    _cache.Tilt.Set(BotTiltType.left);
-                }
-                else if (memory.GoalEnemy != null)
-                {
-                    Vector3 toEnemy = memory.GoalEnemy.CurrPosition - _bot.Position;
-                    float dot = Vector3.Dot(toEnemy.normalized, _bot.Transform.right);
-                    _cache.Tilt.Set(dot > 0f ? BotTiltType.right : BotTiltType.left);
-                }
-
-                _nextLeanTime = Time.time + UnityEngine.Random.Range(1.1f, 2.3f);
+                _nextLeanTime = Time.time + UnityEngine.Random.Range(0.65f, 1.35f);
+                return;
             }
-            catch (Exception ex)
+
+            Vector3 head = _bot.Position + Vector3.up * 1.5f;
+            bool wallLeft = Physics.Raycast(head, -_bot.Transform.right, 1.35f, AIRefactoredLayerMasks.VisionBlockers);
+            bool wallRight = Physics.Raycast(head, _bot.Transform.right, 1.35f, AIRefactoredLayerMasks.VisionBlockers);
+
+            if (wallLeft && !wallRight)
             {
-                Logger.LogError("[BotMovementController] TryLean error: " + ex);
+                _cache.Tilt.Set(BotTiltType.right);
             }
+            else if (wallRight && !wallLeft)
+            {
+                _cache.Tilt.Set(BotTiltType.left);
+            }
+            else
+            {
+                Vector3 toEnemy = memory.GoalEnemy.CurrPosition - _bot.Position;
+                float dot = Vector3.Dot(toEnemy.normalized, _bot.Transform.right);
+                _cache.Tilt.Set(dot > 0f ? BotTiltType.right : BotTiltType.left);
+            }
+
+            _nextLeanTime = Time.time + UnityEngine.Random.Range(0.65f, 1.15f);
         }
 
-        /// <summary>
-        /// Randomized head/vision scan for realism (pauses and checks vision line).
-        /// </summary>
         private void TryScan()
         {
-            try
+            if (_bot?.Transform == null)
+                return;
+
+            if (Time.time - _lastScanTime < UnityEngine.Random.Range(1.12f, 1.45f))
+                return;
+
+            Vector3 head = _bot.Position + Vector3.up * 1.5f;
+            Vector3 dir = _bot.Transform.forward;
+
+            if (Physics.SphereCast(head, 0.24f, dir, out _, 2.4f, AIRefactoredLayerMasks.VisionBlockers))
             {
-                if (_bot == null || _bot.Transform == null)
-                    return;
-
-                if (Time.time - _lastScanTime < UnityEngine.Random.Range(1.15f, 1.65f))
-                    return;
-
-                Vector3 head = _bot.Position + Vector3.up * 1.5f;
-                Vector3 dir = _bot.Transform.forward;
-
-                if (Physics.SphereCast(head, 0.25f, dir, out _, 2.5f, AIRefactoredLayerMasks.VisionBlockers))
-                {
-                    if (_bot.BotTalk != null && UnityEngine.Random.value < 0.25f)
-                        _bot.BotTalk.TrySay(EPhraseTrigger.Look);
-                }
-
-                _lastScanTime = Time.time;
+                if (_bot.BotTalk != null && UnityEngine.Random.value < 0.21f)
+                    _bot.BotTalk.TrySay(EPhraseTrigger.Look);
             }
-            catch (Exception ex)
-            {
-                Logger.LogError("[BotMovementController] TryScan error: " + ex);
-            }
+
+            _lastScanTime = Time.time;
         }
     }
 }

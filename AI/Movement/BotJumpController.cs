@@ -3,7 +3,6 @@
 //   Licensed under the MIT License. See LICENSE in the repository root for more information.
 //
 //   THIS FILE IS SYSTEMATICALLY MANAGED.
-//   Failures in AIRefactored logic must always trigger safe fallback to EFT base AI.
 //   Bulletproof: All failures are locally isolated; never disables itself, never triggers fallback AI.
 //   Realism Pass: Human-like jump anticipation, variable delay, and error-prone motion. 
 // </auto-generated>
@@ -36,7 +35,7 @@ namespace AIRefactored.AI.Movement
         private const float JumpVelocityMultiplier = 1.5f;
         private const float HumanJumpDelayMin = 0.09f;
         private const float HumanJumpDelayMax = 0.22f;
-        private const float HumanMistakeChance = 0.075f; // ~7.5% bots chicken out of jump
+        private const float HumanMistakeChance = 0.075f;
 
         #endregion
 
@@ -54,9 +53,6 @@ namespace AIRefactored.AI.Movement
 
         #region Constructor
 
-        /// <summary>
-        /// Creates a new jump controller for a bot.
-        /// </summary>
         public BotJumpController(BotOwner bot, BotComponentCache cache)
         {
             if (!EFTPlayerUtil.IsValidBotOwner(bot) || cache == null)
@@ -75,9 +71,6 @@ namespace AIRefactored.AI.Movement
 
         #region Public Methods
 
-        /// <summary>
-        /// Called every tick to evaluate and trigger jump logic.
-        /// </summary>
         public void Tick(float deltaTime)
         {
             try
@@ -85,7 +78,6 @@ namespace AIRefactored.AI.Movement
                 if (!IsJumpAllowed())
                     return;
 
-                // Human hesitation: random delay between jump opportunities
                 float now = Time.time;
                 if (now < _nextAllowedJumpTime)
                     return;
@@ -95,14 +87,12 @@ namespace AIRefactored.AI.Movement
                 {
                     if (TryFindJumpTarget(out temp[0]))
                     {
-                        // Human: small chance to bail and not jump
                         if (UnityEngine.Random.value < HumanMistakeChance)
                         {
-                            _nextAllowedJumpTime = now + UnityEngine.Random.Range(0.22f, 0.39f); // Hesitate longer after chickening out
+                            _nextAllowedJumpTime = now + UnityEngine.Random.Range(0.22f, 0.39f);
                             return;
                         }
 
-                        // Human: add small anticipation delay
                         float anticipation = UnityEngine.Random.Range(HumanJumpDelayMin, HumanJumpDelayMax);
                         _nextAllowedJumpTime = now + JumpCooldown + anticipation;
                         ExecuteJump(temp[0], deltaTime);
@@ -123,9 +113,6 @@ namespace AIRefactored.AI.Movement
 
         #region Internal Logic
 
-        /// <summary>
-        /// Returns true if a jump is currently allowed.
-        /// </summary>
         private bool IsJumpAllowed()
         {
             try
@@ -154,9 +141,6 @@ namespace AIRefactored.AI.Movement
             }
         }
 
-        /// <summary>
-        /// Applies jump force and sets jump state.
-        /// </summary>
         private void ExecuteJump(Vector3 target, float deltaTime)
         {
             try
@@ -181,9 +165,6 @@ namespace AIRefactored.AI.Movement
             }
         }
 
-        /// <summary>
-        /// Finds a valid jump/vault target in front of the bot.
-        /// </summary>
         private bool TryFindJumpTarget(out Vector3 target)
         {
             target = Vector3.zero;

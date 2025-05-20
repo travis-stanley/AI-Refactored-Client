@@ -8,20 +8,12 @@
 
 namespace AIRefactored.AI.Helpers
 {
-    using System;
-    using AIRefactored.AI.Combat;
     using AIRefactored.AI.Core;
-    using AIRefactored.AI.Movement;
     using AIRefactored.AI.Navigation;
     using AIRefactored.Core;
     using EFT;
     using UnityEngine;
 
-    /// <summary>
-    /// Provides smooth, human-like movement and aim transitions for AIRefactored bots.
-    /// Includes strafing, smooth look, and smooth go-to movement.
-    /// Bulletproof: all errors and navigation failures are locally contained, never fallback to vanilla logic.
-    /// </summary>
     public static class BotMovementHelper
     {
         #region Constants
@@ -37,43 +29,30 @@ namespace AIRefactored.AI.Helpers
 
         #region Public Methods
 
-        public static void Reset(BotOwner bot)
-        {
-            // Reserved for future mover override / reset.
-        }
+        public static void Reset(BotOwner bot) { }
 
-        public static void RetreatToCover(BotOwner bot, Vector3 threatDirection, float distance = RetreatDistance, bool sprint = true)
+        public static void RetreatToCover(BotOwner bot, Vector3 threatDir, float distance = RetreatDistance, bool sprint = true)
         {
             if (!IsAlive(bot))
                 return;
 
-            try
-            {
-                Vector3 fallback = bot.Position - threatDirection.normalized * distance;
-                if (!BotNavHelper.TryGetSafeTarget(bot, out fallback))
-                    fallback = bot.Position - threatDirection.normalized * distance;
-                if (!IsValidTarget(fallback))
-                    fallback = bot.Position;
+            Vector3 baseTarget = bot.Position - threatDir.normalized * distance;
+            if (!BotNavHelper.TryGetSafeTarget(bot, out Vector3 target))
+                target = baseTarget;
+            if (!IsValidTarget(target))
+                target = bot.Position;
 
-                float cohesion = 1f;
-                if (BotRegistry.TryGet(bot.ProfileId, out BotPersonalityProfile profile))
-                {
-                    cohesion = Mathf.Clamp(profile.Cohesion, 0.7f, 1.3f);
-                    if (profile.IsFrenzied || profile.IsFearful)
-                        sprint = true;
-                }
-
-                if (bot.Mover != null)
-                {
-                    bot.Mover.GoToPoint(fallback, true, cohesion);
-                    if (sprint)
-                        bot.Sprint(true);
-                }
-            }
-            catch
+            float cohesion = 1f;
+            if (BotRegistry.TryGet(bot.ProfileId, out BotPersonalityProfile profile))
             {
-                // No fallback; error is ignored.
+                cohesion = Mathf.Clamp(profile.Cohesion, 0.7f, 1.3f);
+                if (profile.IsFrenzied || profile.IsFearful)
+                    sprint = true;
             }
+
+            bot.Mover?.GoToPoint(ApplyMicroDrift(target, bot.ProfileId, Time.frameCount), true, cohesion);
+            if (sprint)
+                bot.Sprint(true);
         }
 
         public static void SmoothLookTo(BotOwner bot, Vector3 lookTarget, float speed = DefaultLookSpeed)
@@ -81,26 +60,18 @@ namespace AIRefactored.AI.Helpers
             if (!IsAlive(bot) || !IsValidTarget(lookTarget))
                 return;
 
-            try
-            {
-                Transform transform = bot.Transform?.Original;
-                if (transform == null)
-                    return;
+            Transform transform = bot.Transform?.Original;
+            if (transform == null)
+                return;
 
-                Vector3 direction = lookTarget - bot.Position;
-                direction.y = 0f;
-                if (direction.sqrMagnitude < MinMoveEpsilon)
-                    return;
+            Vector3 direction = lookTarget - bot.Position;
+            direction.y = 0f;
+            if (direction.sqrMagnitude < MinMoveEpsilon)
+                return;
 
-                // Human-like slerp with bias for realistic aim inertia (slightly "lags behind" target for realism)
-                Quaternion targetRotation = Quaternion.LookRotation(direction.normalized, Vector3.up);
-                float t = SlerpBias * Time.deltaTime * Mathf.Clamp(speed, 1.1f, 9.5f);
-                transform.rotation = Quaternion.Slerp(transform.rotation, targetRotation, t);
-            }
-            catch
-            {
-                // Never break; just skip
-            }
+            Quaternion targetRotation = Quaternion.LookRotation(direction.normalized, Vector3.up);
+            float t = SlerpBias * Time.deltaTime * Mathf.Clamp(speed, 1.1f, 9.5f);
+            transform.rotation = Quaternion.Slerp(transform.rotation, targetRotation, t);
         }
 
         public static bool SmoothMoveToSafe(BotOwner bot, Vector3 target, bool slow = true, float cohesionScale = 1f)
@@ -108,35 +79,17 @@ namespace AIRefactored.AI.Helpers
             if (!IsAlive(bot) || !IsValidTarget(target))
                 return false;
 
-            try
-            {
-                if (!BotNavHelper.TryGetSafeTarget(bot, out Vector3 safeTarget))
-                    safeTarget = target;
-                if (!IsValidTarget(safeTarget))
-                    safeTarget = bot.Position;
+            Vector3 safeTarget = BotNavHelper.TryGetSafeTarget(bot, out Vector3 fallback) ? fallback : target;
+            if (!IsValidTarget(safeTarget))
+                safeTarget = bot.Position;
 
-                Vector3 position = bot.Position;
-                float radius = DefaultRadius * Mathf.Clamp(cohesionScale, 0.7f, 1.3f);
-                float dx = position.x - safeTarget.x;
-                float dz = position.z - safeTarget.z;
+            Vector3 pos = bot.Position;
+            float radius = DefaultRadius * Mathf.Clamp(cohesionScale, 0.7f, 1.3f);
+            if ((pos.x - safeTarget.x) * (pos.x - safeTarget.x) + (pos.z - safeTarget.z) * (pos.z - safeTarget.z) < radius * radius)
+                return true;
 
-                if ((dx * dx + dz * dz) < radius * radius)
-                    return true;
-
-                if (bot.Mover != null)
-                {
-                    bot.Mover.GoToPoint(
-                        // Subtle per-move random jitter for "organic" micro-adjustment
-                        ApplyMicroDrift(safeTarget, bot.ProfileId, Time.frameCount),
-                        slow, cohesionScale);
-                    return true;
-                }
-            }
-            catch
-            {
-                // Error is ignored
-            }
-            return false;
+            bot.Mover?.GoToPoint(ApplyMicroDrift(safeTarget, bot.ProfileId, Time.frameCount), slow, cohesionScale);
+            return true;
         }
 
         public static void SmoothMoveTo(BotOwner bot, Vector3 target, bool slow = true, float cohesionScale = 1f)
@@ -144,36 +97,23 @@ namespace AIRefactored.AI.Helpers
             SmoothMoveToSafe(bot, target, slow, cohesionScale);
         }
 
-        public static void SmoothStrafeFrom(BotOwner bot, Vector3 threatDirection, float scale = 1f)
+        public static void SmoothStrafeFrom(BotOwner bot, Vector3 threatDir, float scale = 1f)
         {
             if (!IsAlive(bot))
                 return;
 
-            try
-            {
-                Vector3 right = Vector3.Cross(Vector3.up, threatDirection.normalized);
-                if (right.sqrMagnitude < 0.01f)
-                    right = Vector3.right;
+            Vector3 right = Vector3.Cross(Vector3.up, threatDir.normalized);
+            if (right.sqrMagnitude < 0.01f)
+                right = Vector3.right;
 
-                Vector3 offset = right.normalized * DefaultStrafeDistance * Mathf.Clamp(scale, 0.75f, 1.25f);
-                Vector3 target = bot.Position + offset;
+            Vector3 offset = right.normalized * DefaultStrafeDistance * Mathf.Clamp(scale, 0.75f, 1.25f);
+            Vector3 rawTarget = bot.Position + offset;
 
-                if (!BotNavHelper.TryGetSafeTarget(bot, out target))
-                    target = bot.Position + offset;
-                if (!IsValidTarget(target))
-                    target = bot.Position;
+            Vector3 final = BotNavHelper.TryGetSafeTarget(bot, out Vector3 safeTarget) ? safeTarget : rawTarget;
+            if (!IsValidTarget(final))
+                final = bot.Position;
 
-                if (bot.Mover != null)
-                {
-                    bot.Mover.GoToPoint(
-                        ApplyMicroDrift(target, bot.ProfileId, Time.frameCount + 15),
-                        false, 1f);
-                }
-            }
-            catch
-            {
-                // Error is ignored
-            }
+            bot.Mover?.GoToPoint(ApplyMicroDrift(final, bot.ProfileId, Time.frameCount + 15), false, 1f);
         }
 
         public static void ForceFallbackMove(BotOwner bot)
@@ -181,27 +121,14 @@ namespace AIRefactored.AI.Helpers
             if (!IsAlive(bot))
                 return;
 
-            try
-            {
-                Vector3 dir = bot.LookDirection;
-                Vector3 target = bot.Position + dir.normalized * 5f;
+            Vector3 dir = bot.LookDirection;
+            Vector3 rawTarget = bot.Position + dir.normalized * 5f;
 
-                if (!BotNavHelper.TryGetSafeTarget(bot, out target))
-                    target = bot.Position + dir.normalized * 5f;
-                if (!IsValidTarget(target))
-                    target = bot.Position;
+            Vector3 final = BotNavHelper.TryGetSafeTarget(bot, out Vector3 safeTarget) ? safeTarget : rawTarget;
+            if (!IsValidTarget(final))
+                final = bot.Position;
 
-                if (bot.Mover != null)
-                {
-                    bot.Mover.GoToPoint(
-                        ApplyMicroDrift(target, bot.ProfileId, Time.frameCount + 21),
-                        true, 1f);
-                }
-            }
-            catch
-            {
-                // Error is ignored
-            }
+            bot.Mover?.GoToPoint(ApplyMicroDrift(final, bot.ProfileId, Time.frameCount + 21), true, 1f);
         }
 
         public static void SmoothMoveToSafeExit(BotOwner bot)
@@ -209,26 +136,13 @@ namespace AIRefactored.AI.Helpers
             if (!IsAlive(bot))
                 return;
 
-            try
-            {
-                Vector3 fallback = bot.Position + bot.LookDirection.normalized * 4f;
+            Vector3 fallback = bot.Position + bot.LookDirection.normalized * 4f;
 
-                if (!BotNavHelper.TryGetSafeTarget(bot, out fallback))
-                    fallback = bot.Position + bot.LookDirection.normalized * 4f;
-                if (!IsValidTarget(fallback))
-                    fallback = bot.Position;
+            Vector3 final = BotNavHelper.TryGetSafeTarget(bot, out Vector3 safeTarget) ? safeTarget : fallback;
+            if (!IsValidTarget(final))
+                final = bot.Position;
 
-                if (bot.Mover != null)
-                {
-                    bot.Mover.GoToPoint(
-                        ApplyMicroDrift(fallback, bot.ProfileId, Time.frameCount + 35),
-                        true, 1f);
-                }
-            }
-            catch
-            {
-                // Error is ignored
-            }
+            bot.Mover?.GoToPoint(ApplyMicroDrift(final, bot.ProfileId, Time.frameCount + 35), true, 1f);
         }
 
         #endregion
@@ -237,23 +151,15 @@ namespace AIRefactored.AI.Helpers
 
         private static bool IsAlive(BotOwner bot)
         {
-            return bot != null &&
-                   bot.GetPlayer != null &&
-                   bot.GetPlayer.IsAI &&
-                   !bot.IsDead;
+            return bot != null && bot.GetPlayer != null && bot.GetPlayer.IsAI && !bot.IsDead;
         }
 
         private static bool IsValidTarget(Vector3 pos)
         {
-            return pos != Vector3.zero &&
-                   !float.IsNaN(pos.x) &&
-                   !float.IsNaN(pos.y) &&
-                   !float.IsNaN(pos.z);
+            return !float.IsNaN(pos.x) && !float.IsNaN(pos.y) && !float.IsNaN(pos.z) &&
+                   !float.IsInfinity(pos.x) && !float.IsInfinity(pos.y) && !float.IsInfinity(pos.z);
         }
 
-        /// <summary>
-        /// Adds subtle, deterministic per-move drift to mimic human error and micro-correction.
-        /// </summary>
         private static Vector3 ApplyMicroDrift(Vector3 pos, string profileId, int tick)
         {
             int hash = (profileId?.GetHashCode() ?? 0) ^ (tick * 11) ^ 0x17DF413;

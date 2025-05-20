@@ -4,7 +4,7 @@
 //
 //   THIS FILE IS SYSTEMATICALLY MANAGED.
 //   Please follow strict StyleCop, ReSharper, and AI-Refactored code standards for all modifications.
-//   All pathfinding and cache logic is bulletproof and fully isolated.
+//   All pathfinding and cache logic is bulletproof and fully isolated. NavPointRegistry logic removed.
 // </auto-generated>
 
 namespace AIRefactored.AI.Optimization
@@ -12,13 +12,11 @@ namespace AIRefactored.AI.Optimization
     using System;
     using System.Collections.Generic;
     using AIRefactored.AI.Memory;
-    using AIRefactored.AI.Navigation;
     using AIRefactored.Core;
     using AIRefactored.Pools;
     using AIRefactored.Runtime;
     using BepInEx.Logging;
     using EFT;
-    using Unity.AI.Navigation;
     using UnityEngine;
     using UnityEngine.AI;
 
@@ -26,6 +24,7 @@ namespace AIRefactored.AI.Optimization
     /// Caches NavMesh paths and fallback scoring for individual bots.
     /// Optimizes retreat and navigation behaviors with smart path reuse and avoidance heuristics.
     /// All failures are strictly isolated to the affected bot; all pools are always returned.
+    /// NavPointRegistry and custom navpoint logic removed.
     /// </summary>
     public sealed class BotOwnerPathfindingCache
     {
@@ -54,10 +53,8 @@ namespace AIRefactored.AI.Optimization
         {
             try
             {
-                if (!IsAIBot(bot) || bot.BotsGroup == null)
-                {
+                if (bot == null || bot.BotsGroup == null)
                     return;
-                }
 
                 string map = GameWorldHandler.TryGetValidMapName();
                 if (!string.IsNullOrEmpty(map))
@@ -187,39 +184,7 @@ namespace AIRefactored.AI.Optimization
                     return cached;
                 }
 
-                List<Vector3> candidates = NavPointRegistry.QueryNearby(origin, 25f, pos => NavPointRegistry.GetTag(pos) == "fallback");
-
-                try
-                {
-                    for (int i = 0; i < candidates.Count; i++)
-                    {
-                        var single = TempListPool.Rent<Vector3>();
-                        try
-                        {
-                            single.Add(candidates[i]);
-                            if (IsPathInClearedZone(single))
-                            {
-                                continue;
-                            }
-
-                            List<Vector3> navPath = BuildNavPath(origin, candidates[i]);
-                            if (navPath.Count > 1 && !IsPathBlocked(navPath))
-                            {
-                                _fallbackCache[key] = navPath;
-                                return navPath;
-                            }
-                        }
-                        finally
-                        {
-                            TempListPool.Return(single);
-                        }
-                    }
-                }
-                finally
-                {
-                    TempListPool.Return(candidates);
-                }
-
+                // Only fallback to direct NavMesh path (custom navpoint/zone logic removed)
                 List<Vector3> fallback = BuildNavPath(origin, fallbackTarget);
                 if (fallback.Count > 1 && !IsPathBlocked(fallback) && !IsPathInClearedZone(fallback))
                 {

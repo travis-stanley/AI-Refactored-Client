@@ -70,9 +70,7 @@ namespace AIRefactored.AI.Looting
             try
             {
                 if (!TryGetValidKey(profileId, out string key))
-                {
                     return null;
-                }
 
                 Containers.TryGetValue(key, out var result);
                 return result;
@@ -92,14 +90,10 @@ namespace AIRefactored.AI.Looting
             try
             {
                 if (!EFTPlayerUtil.IsValid(player) || container == null)
-                {
                     return;
-                }
 
                 if (!TryGetValidKey(player.ProfileId, out string key))
-                {
                     return;
-                }
 
                 if (!Containers.ContainsKey(key))
                 {
@@ -120,9 +114,7 @@ namespace AIRefactored.AI.Looting
             try
             {
                 if (!TryGetValidKey(profileId, out string key) || container == null)
-                {
                     return;
-                }
 
                 if (!Containers.ContainsKey(key))
                 {
@@ -143,9 +135,7 @@ namespace AIRefactored.AI.Looting
         {
             key = string.Empty;
             if (string.IsNullOrEmpty(profileId))
-            {
                 return false;
-            }
 
             key = profileId.Trim();
             return key.Length > 0;

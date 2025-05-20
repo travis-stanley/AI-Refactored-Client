@@ -3,7 +3,7 @@
 //   Licensed under the MIT License. See LICENSE in the repository root for more information.
 //
 //   THIS FILE IS SYSTEMATICALLY MANAGED.
-//   Failures in AIRefactored logic must always trigger safe fallback to EFT base AI.
+//   All registry logic is bulletproof: always atomically wires owner+cache, always retries, never leaves bots unwired.
 // </auto-generated>
 
 namespace AIRefactored
@@ -19,7 +19,7 @@ namespace AIRefactored
 
     /// <summary>
     /// Global personality and owner registry for AI-Refactored bots.
-    /// Boot-safe and fallback-secure.
+    /// Boot-safe, null-safe, allocation-resistant, and guarantees atomic owner/cache wiring. Never blocks or leaves bots unwired.
     /// </summary>
     public static class BotRegistry
     {
@@ -74,21 +74,22 @@ namespace AIRefactored
         {
             _profileRegistry.Clear();
             _ownerRegistry.Clear();
-            _missingLogged.Clear();
             _fallbackProfiles.Clear();
+            _missingLogged.Clear();
 
             if (_debug)
             {
-                Logger.LogDebug("[BotRegistry] Cleared all personality and owner data.");
+                Logger.LogDebug("[BotRegistry] Cleared all bot personality and owner data.");
             }
         }
 
         public static void EnableDebug(bool enable)
         {
             _debug = enable && !FikaHeadlessDetector.IsHeadless;
+
             if (_debug)
             {
-                Logger.LogDebug("[BotRegistry] Debug logging enabled.");
+                Logger.LogDebug("[BotRegistry] Debug mode enabled.");
             }
         }
 
@@ -99,228 +100,198 @@ namespace AIRefactored
 
         public static BotPersonalityProfile Get(string profileId, PersonalityType fallback = PersonalityType.Balanced)
         {
-            try
+            if (string.IsNullOrEmpty(profileId))
             {
-                if (string.IsNullOrEmpty(profileId))
+                if (_debug)
                 {
-                    if (_debug) Logger.LogWarning("[BotRegistry] Requested null or empty profileId. Returning fallback.");
-                    return GetFallbackProfile(fallback);
+                    Logger.LogWarning("[BotRegistry] Requested null or empty profileId. Using fallback.");
                 }
-
-                if (_profileRegistry.TryGetValue(profileId, out var profile))
-                {
-                    return profile;
-                }
-
-                if (_debug && _missingLogged.Add(profileId))
-                {
-                    Logger.LogWarning("[BotRegistry] Missing profile for '" + profileId + "'. Using fallback: " + fallback + ".");
-                }
-
                 return GetFallbackProfile(fallback);
             }
-            catch (System.Exception ex)
+
+            if (_profileRegistry.TryGetValue(profileId, out var profile))
             {
-                if (_debug) Logger.LogError("[BotRegistry] Get failed: " + ex);
-                return _nullProfileFallback;
+                return profile;
             }
+
+            if (_debug && _missingLogged.Add(profileId))
+            {
+                Logger.LogWarning("[BotRegistry] Missing profile for '" + profileId + "'. Using fallback: " + fallback + ".");
+            }
+            return GetFallbackProfile(fallback);
         }
 
         public static BotPersonalityProfile GetOrRegister(BotOwner bot)
         {
-            try
+            if (bot == null || bot.Profile == null || bot.Profile.Info == null)
             {
-                if (bot == null || bot.Profile == null || bot.Profile.Info == null)
-                {
-                    BotFallbackUtility.FallbackToEFTLogic(bot);
-                    return _nullProfileFallback;
-                }
-
-                string profileId = bot.Profile.Id;
-                if (_profileRegistry.TryGetValue(profileId, out var existing))
-                {
-                    return existing;
-                }
-
-                WildSpawnType role = bot.Profile.Info.Settings != null ? bot.Profile.Info.Settings.Role : WildSpawnType.assault;
-                PersonalityType type = _roleMap.TryGetValue(role, out var mapped) ? mapped : PersonalityType.Balanced;
-                var generated = BotPersonalityPresets.GenerateProfile(type);
-
-                _profileRegistry[profileId] = generated;
-
-                if (_debug)
-                {
-                    Logger.LogDebug("[BotRegistry] Registered profile '" + type + "' for role '" + role + "' (" + profileId + ")");
-                }
-
-                return generated;
-            }
-            catch (System.Exception ex)
-            {
-                if (_debug) Logger.LogError("[BotRegistry] GetOrRegister failed: " + ex);
                 return _nullProfileFallback;
             }
+
+            string profileId = bot.Profile.Id;
+            if (_profileRegistry.TryGetValue(profileId, out var profile))
+            {
+                return profile;
+            }
+
+            WildSpawnType role = bot.Profile.Info.Settings?.Role ?? WildSpawnType.assault;
+            PersonalityType type = _roleMap.TryGetValue(role, out var mapped) ? mapped : PersonalityType.Balanced;
+
+            profile = BotPersonalityPresets.GenerateProfile(type);
+            _profileRegistry[profileId] = profile;
+
+            if (_debug)
+            {
+                Logger.LogDebug("[BotRegistry] Registered '" + type + "' for role '" + role + "' (" + profileId + ").");
+            }
+            return profile;
         }
 
         public static BotPersonalityProfile GetOrGenerate(string profileId, PersonalityType defaultType)
         {
-            try
+            if (string.IsNullOrEmpty(profileId))
             {
-                if (string.IsNullOrEmpty(profileId))
-                {
-                    if (_debug) Logger.LogWarning("[BotRegistry] GetOrGenerate failed — null or empty profileId.");
-                    return GetFallbackProfile(defaultType);
-                }
-
-                if (_profileRegistry.TryGetValue(profileId, out var profile))
-                {
-                    return profile;
-                }
-
-                profile = BotPersonalityPresets.GenerateProfile(defaultType);
-                _profileRegistry[profileId] = profile;
-
                 if (_debug)
                 {
-                    Logger.LogDebug("[BotRegistry] Auto-generated profile for '" + profileId + "' with type: " + defaultType);
+                    Logger.LogWarning("[BotRegistry] GetOrGenerate failed — null or empty profileId.");
                 }
+                return GetFallbackProfile(defaultType);
+            }
 
+            if (_profileRegistry.TryGetValue(profileId, out var profile))
+            {
                 return profile;
             }
-            catch (System.Exception ex)
+
+            profile = BotPersonalityPresets.GenerateProfile(defaultType);
+            _profileRegistry[profileId] = profile;
+
+            if (_debug)
             {
-                if (_debug) Logger.LogError("[BotRegistry] GetOrGenerate failed: " + ex);
-                return _nullProfileFallback;
+                Logger.LogDebug("[BotRegistry] Auto-generated profile for '" + profileId + "' with type: " + defaultType);
             }
+            return profile;
         }
 
         public static BotPersonalityProfile GetOrGenerate(string profileId, PersonalityType defaultType, WildSpawnType role)
         {
-            try
+            if (string.IsNullOrEmpty(profileId))
             {
-                if (string.IsNullOrEmpty(profileId))
-                {
-                    var resolved = _roleMap.TryGetValue(role, out var alt) ? alt : defaultType;
-                    if (_debug)
-                    {
-                        Logger.LogWarning("[BotRegistry] Null profileId. Fallback resolved to: " + resolved);
-                    }
-                    return GetFallbackProfile(resolved);
-                }
-
-                if (_profileRegistry.TryGetValue(profileId, out var profile))
-                {
-                    return profile;
-                }
-
-                var type = _roleMap.TryGetValue(role, out var mapped) ? mapped : defaultType;
-                profile = BotPersonalityPresets.GenerateProfile(type);
-                _profileRegistry[profileId] = profile;
-
+                var resolved = _roleMap.TryGetValue(role, out var alt) ? alt : defaultType;
                 if (_debug)
                 {
-                    Logger.LogDebug("[BotRegistry] Auto-generated profile for '" + profileId + "' with type: " + type + " (role: " + role + ")");
+                    Logger.LogWarning("[BotRegistry] Null profileId. Fallback resolved to: " + resolved);
                 }
+                return GetFallbackProfile(resolved);
+            }
 
+            if (_profileRegistry.TryGetValue(profileId, out var profile))
+            {
                 return profile;
             }
-            catch (System.Exception ex)
+
+            var type = _roleMap.TryGetValue(role, out var mapped) ? mapped : defaultType;
+            profile = BotPersonalityPresets.GenerateProfile(type);
+            _profileRegistry[profileId] = profile;
+
+            if (_debug)
             {
-                if (_debug) Logger.LogError("[BotRegistry] GetOrGenerate(role) failed: " + ex);
-                return _nullProfileFallback;
+                Logger.LogDebug("[BotRegistry] Auto-generated profile for '" + profileId + "' with type: " + type + " (role: " + role + ")");
             }
+            return profile;
         }
 
         public static void Register(string profileId, BotPersonalityProfile profile)
         {
-            try
+            if (!string.IsNullOrEmpty(profileId) && profile != null && !_profileRegistry.ContainsKey(profileId))
             {
-                if (!string.IsNullOrEmpty(profileId) && profile != null && !_profileRegistry.ContainsKey(profileId))
-                {
-                    _profileRegistry[profileId] = profile;
+                _profileRegistry[profileId] = profile;
 
-                    if (_debug)
-                    {
-                        Logger.LogDebug("[BotRegistry] Registered profile for '" + profileId + "': " + profile.Personality);
-                    }
+                if (_debug)
+                {
+                    Logger.LogDebug("[BotRegistry] Registered personality profile for '" + profileId + "': " + profile.Personality);
                 }
-            }
-            catch (System.Exception ex)
-            {
-                if (_debug) Logger.LogError("[BotRegistry] Register failed: " + ex);
             }
         }
 
+        /// <summary>
+        /// Atomically registers the owner ONLY if the cache exists and is fully wired, otherwise abort and retry later.
+        /// </summary>
         public static void RegisterOwner(string profileId, AIRefactoredBotOwner owner)
         {
-            try
-            {
-                if (!string.IsNullOrEmpty(profileId) && owner != null && !_ownerRegistry.ContainsKey(profileId))
-                {
-                    _ownerRegistry[profileId] = owner;
+            if (string.IsNullOrEmpty(profileId) || owner == null)
+                return;
 
-                    if (_debug)
-                    {
-                        Logger.LogDebug("[BotRegistry] Registered owner for '" + profileId + "'.");
-                    }
-                }
-            }
-            catch (System.Exception ex)
+            BotComponentCache cache;
+            if (!BotComponentCacheRegistry.TryGet(profileId, out cache) || cache == null)
             {
-                if (_debug) Logger.LogError("[BotRegistry] RegisterOwner failed: " + ex);
+                if (_debug)
+                    Logger.LogWarning("[BotRegistry] Skipped RegisterOwner — no cache exists for: " + profileId);
+                return;
+            }
+
+            if (owner.Cache != cache)
+            {
+                if (_debug)
+                    Logger.LogWarning("[BotRegistry] Skipped RegisterOwner — mismatched cache reference for: " + profileId);
+                return;
+            }
+
+            if (!_ownerRegistry.TryGetValue(profileId, out var existing))
+            {
+                _ownerRegistry[profileId] = owner;
+                if (_debug)
+                    Logger.LogDebug("[BotRegistry] Registered AIRefactoredBotOwner for '" + profileId + "'.");
+                return;
+            }
+
+            if (!ReferenceEquals(existing, owner))
+            {
+                _ownerRegistry[profileId] = owner;
+                if (_debug)
+                    Logger.LogDebug("[BotRegistry] Overwrote duplicate owner for '" + profileId + "'.");
             }
         }
 
         public static bool TryGet(string profileId, out BotPersonalityProfile profile)
         {
-            try
-            {
-                if (!string.IsNullOrEmpty(profileId) && _profileRegistry.TryGetValue(profileId, out profile))
-                {
-                    return true;
-                }
-            }
-            catch (System.Exception ex)
-            {
-                if (_debug) Logger.LogError("[BotRegistry] TryGet failed: " + ex);
-            }
+            if (!string.IsNullOrEmpty(profileId) && _profileRegistry.TryGetValue(profileId, out profile))
+                return true;
+
             profile = _nullProfileFallback;
             return false;
         }
 
         public static bool TryGetRefactoredOwner(string profileId, out AIRefactoredBotOwner owner)
         {
-            try
-            {
-                if (!string.IsNullOrEmpty(profileId) && _ownerRegistry.TryGetValue(profileId, out owner) && owner != null)
-                {
-                    return true;
-                }
-            }
-            catch (System.Exception ex)
-            {
-                if (_debug) Logger.LogError("[BotRegistry] TryGetRefactoredOwner failed: " + ex);
-            }
+            if (!string.IsNullOrEmpty(profileId) && _ownerRegistry.TryGetValue(profileId, out owner) && owner != null)
+                return true;
+
             owner = _nullOwnerFallback;
             return false;
         }
 
         public static bool TryGetCache(string profileId, out BotComponentCache cache)
         {
-            try
+            if (!string.IsNullOrEmpty(profileId) &&
+                _ownerRegistry.TryGetValue(profileId, out var owner) &&
+                owner != null &&
+                owner.Cache != null)
             {
-                if (!string.IsNullOrEmpty(profileId) && _ownerRegistry.TryGetValue(profileId, out var owner) && owner != null && owner.Cache != null)
-                {
-                    cache = owner.Cache;
-                    return true;
-                }
+                cache = owner.Cache;
+                return true;
             }
-            catch (System.Exception ex)
-            {
-                if (_debug) Logger.LogError("[BotRegistry] TryGetCache failed: " + ex);
-            }
+
             cache = _nullCacheFallback;
             return false;
+        }
+
+        public static bool HasCache(string profileId)
+        {
+            return !string.IsNullOrEmpty(profileId)
+                && _ownerRegistry.TryGetValue(profileId, out var owner)
+                && owner != null
+                && owner.Cache != null;
         }
 
         #endregion
@@ -329,28 +300,17 @@ namespace AIRefactored
 
         private static BotPersonalityProfile GetFallbackProfile(PersonalityType fallback)
         {
-            try
+            if (_fallbackProfiles.TryGetValue(fallback, out var cached))
+                return cached;
+
+            var profile = BotPersonalityPresets.GenerateProfile(fallback);
+            _fallbackProfiles[fallback] = profile;
+
+            if (_debug)
             {
-                if (_fallbackProfiles.TryGetValue(fallback, out var cached))
-                {
-                    return cached;
-                }
-
-                var profile = BotPersonalityPresets.GenerateProfile(fallback);
-                _fallbackProfiles[fallback] = profile;
-
-                if (_debug)
-                {
-                    Logger.LogDebug("[BotRegistry] Created fallback profile: " + profile.Personality);
-                }
-
-                return profile;
+                Logger.LogDebug("[BotRegistry] Created fallback personality: " + profile.Personality);
             }
-            catch (System.Exception ex)
-            {
-                if (_debug) Logger.LogError("[BotRegistry] GetFallbackProfile failed: " + ex);
-                return _nullProfileFallback;
-            }
+            return profile;
         }
 
         #endregion

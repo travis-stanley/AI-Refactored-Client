@@ -3,13 +3,13 @@
 //   Licensed under the MIT License. See LICENSE in the repository root for more information.
 //
 //   THIS FILE IS SYSTEMATICALLY MANAGED.
-//   Please follow strict StyleCop, ReSharper, and AI-Refactored code standards for all modifications.
-//   Bulletproof: All failures are locally contained, never break other subsystems, and always trigger fallback isolation.
+//   All fallback lockouts removed: All bots are always eligible for injection and participation.
 // </auto-generated>
 
 namespace AIRefactored.Runtime
 {
     using System;
+    using System.Collections.Generic;
     using AIRefactored.AI.Core;
     using AIRefactored.Bootstrap;
     using AIRefactored.Core;
@@ -19,34 +19,22 @@ namespace AIRefactored.Runtime
     /// <summary>
     /// Detects GameWorld lifecycle events and triggers mod startup/teardown accordingly.
     /// Works in both FIKA headless and standard modes.
-    /// Bulletproof: All errors are strictly contained; mod/global state is never at risk.
+    /// Bulletproof: All errors are strictly contained; retry-safe. No fallback logic used.
     /// </summary>
     public sealed class RaidLifecycleWatcher : IAIWorldSystemBootstrapper
     {
-        #region Fields
-
         private static readonly ManualLogSource Logger = Plugin.LoggerInstance;
-
         private static bool _initialized;
         private static bool _bound;
 
-        /// <summary>
-        /// Global singleton instance.
-        /// </summary>
         public static RaidLifecycleWatcher Instance { get; } = new RaidLifecycleWatcher();
 
-        #endregion
-
-        #region Lifecycle
-
-        /// <inheritdoc />
         public void Initialize()
         {
             _initialized = false;
             _bound = false;
         }
 
-        /// <inheritdoc />
         public void Tick(float deltaTime)
         {
             try
@@ -54,7 +42,7 @@ namespace AIRefactored.Runtime
                 if (_initialized || !GameWorldHandler.IsHost || !GameWorldHandler.IsReady())
                     return;
 
-                GameWorld world = null;
+                GameWorld world;
                 try
                 {
                     world = GameWorldHandler.Get();
@@ -82,6 +70,12 @@ namespace AIRefactored.Runtime
                     }
                 }
 
+                if (!IsWorldSafeAndUnique(world))
+                {
+                    Logger.LogWarning("[RaidLifecycleWatcher] Unsafe or duplicate world state, skipping initialization.");
+                    return;
+                }
+
                 try
                 {
                     AIRefactoredController.OnRaidStarted(world);
@@ -99,7 +93,6 @@ namespace AIRefactored.Runtime
             }
         }
 
-        /// <inheritdoc />
         public void OnRaidEnd()
         {
             try
@@ -137,10 +130,6 @@ namespace AIRefactored.Runtime
             }
         }
 
-        #endregion
-
-        #region Static Event Handler
-
         private static void OnRaidEnded()
         {
             try
@@ -153,22 +142,34 @@ namespace AIRefactored.Runtime
             }
         }
 
-        #endregion
+        public bool IsReady() => true;
 
-        #region Phase Control
+        public WorldPhase RequiredPhase() => WorldPhase.AwaitWorld;
 
-        /// <inheritdoc />
-        public bool IsReady()
+        private static bool IsWorldSafeAndUnique(GameWorld world)
         {
-            return true;
-        }
+            try
+            {
+                if (world == null || world.RegisteredPlayers == null || world.RegisteredPlayers.Count == 0)
+                    return false;
 
-        /// <inheritdoc />
-        public WorldPhase RequiredPhase()
-        {
-            return WorldPhase.AwaitWorld;
-        }
+                var seenProfiles = new HashSet<string>();
+                for (int i = 0; i < world.RegisteredPlayers.Count; i++)
+                {
+                    Player player = EFTPlayerUtil.AsEFTPlayer(world.RegisteredPlayers[i]);
+                    string profileId = player?.Profile?.Id;
+                    if (!EFTPlayerUtil.IsValid(player) || string.IsNullOrEmpty(profileId))
+                        continue;
+                    if (!seenProfiles.Add(profileId))
+                        return false;
+                }
 
-        #endregion
+                return seenProfiles.Count > 0;
+            }
+            catch
+            {
+                return false;
+            }
+        }
     }
 }

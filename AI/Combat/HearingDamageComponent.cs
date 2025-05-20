@@ -42,14 +42,7 @@ namespace AIRefactored.AI.Combat
         /// <summary>
         /// Gets the remaining deafness duration in seconds.
         /// </summary>
-        public float RemainingTime
-        {
-            get
-            {
-                float remaining = _deafDuration - _elapsedTime;
-                return remaining > 0f ? remaining : 0f;
-            }
-        }
+        public float RemainingTime => Mathf.Max(_deafDuration - _elapsedTime, 0f);
 
         #endregion
 
@@ -57,7 +50,7 @@ namespace AIRefactored.AI.Combat
 
         /// <summary>
         /// Applies a new deafness effect with the specified intensity and duration.
-        /// Only overrides if intensity is stronger than current.
+        /// Only overrides if intensity is stronger or will last longer at the same intensity.
         /// </summary>
         /// <param name="intensity">Intensity from 0.0 to 1.0 (clamped).</param>
         /// <param name="duration">Duration in seconds (min 0.1s).</param>
@@ -66,9 +59,10 @@ namespace AIRefactored.AI.Combat
             try
             {
                 float newIntensity = Mathf.Clamp01(intensity);
-                float newDuration = duration < 0.1f ? 0.1f : duration;
+                float newDuration = Mathf.Max(duration, 0.1f);
 
-                if (newIntensity > _targetDeafness)
+                if (newIntensity > _targetDeafness ||
+                    (Mathf.Approximately(newIntensity, _targetDeafness) && newDuration > RemainingTime))
                 {
                     _targetDeafness = newIntensity;
                     _deafDuration = newDuration;
@@ -78,8 +72,7 @@ namespace AIRefactored.AI.Combat
             }
             catch
             {
-                // Silent fail — never break parent systems
-                Clear();
+                Clear(); // Always self-heal
             }
         }
 
@@ -102,10 +95,13 @@ namespace AIRefactored.AI.Combat
         {
             try
             {
-                if (_targetDeafness <= 0.01f)
+                if (_targetDeafness <= 0.01f || _deafDuration <= 0f)
+                {
+                    Clear();
                     return;
+                }
 
-                _elapsedTime += deltaTime;
+                _elapsedTime += Mathf.Max(deltaTime, 0f);
 
                 if (_elapsedTime >= _deafDuration)
                 {
@@ -118,8 +114,7 @@ namespace AIRefactored.AI.Combat
             }
             catch
             {
-                // Silent fail — always safe
-                Clear();
+                Clear(); // Fail-safe recovery
             }
         }
 

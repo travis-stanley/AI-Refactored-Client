@@ -73,9 +73,7 @@ namespace AIRefactored.AI.Hotspots
             {
                 BotsController controller = Singleton<BotsController>.Instance;
                 if (controller?.Bots?.BotOwners == null)
-                {
                     return;
-                }
 
                 BotList.Clear();
                 BotList.AddRange(controller.Bots.BotOwners);
@@ -84,9 +82,7 @@ namespace AIRefactored.AI.Hotspots
                 {
                     BotOwner bot = BotList[i];
                     if (bot == null || bot.IsDead || bot.GetPlayer == null || bot.GetPlayer.IsYourPlayer)
-                    {
                         continue;
-                    }
 
                     try
                     {
@@ -94,9 +90,7 @@ namespace AIRefactored.AI.Hotspots
                         {
                             session = AssignHotspotRoute(bot);
                             if (session != null)
-                            {
                                 _sessions[bot] = session;
-                            }
                         }
 
                         session?.Tick();
@@ -170,9 +164,7 @@ namespace AIRefactored.AI.Hotspots
                 {
                     int index = UnityEngine.Random.Range(0, nearby.Count);
                     if (used.Add(index))
-                    {
                         route.Add(nearby[index]);
-                    }
                 }
 
                 return new HotspotSession(bot, route, false);
@@ -183,6 +175,8 @@ namespace AIRefactored.AI.Hotspots
                 return null;
             }
         }
+
+        #region HotspotSession
 
         private sealed class HotspotSession
         {
@@ -201,9 +195,7 @@ namespace AIRefactored.AI.Hotspots
             public HotspotSession(BotOwner bot, List<HotspotRegistry.Hotspot> route, bool isDefender)
             {
                 if (bot == null || route == null || route.Count == 0)
-                {
                     throw new ArgumentException("Invalid HotspotSession initialization.");
-                }
 
                 _bot = bot;
                 _route = route;
@@ -216,9 +208,7 @@ namespace AIRefactored.AI.Hotspots
                 try
                 {
                     if (bot.GetPlayer?.HealthController is HealthControllerClass health)
-                    {
                         health.ApplyDamageEvent += OnDamaged;
-                    }
                 }
                 catch
                 {
@@ -231,9 +221,7 @@ namespace AIRefactored.AI.Hotspots
                 try
                 {
                     if (_bot.IsDead || _route.Count == 0 || _bot.GetPlayer == null || _bot.GetPlayer.IsYourPlayer)
-                    {
                         return;
-                    }
 
                     if (_bot.Memory?.GoalEnemy != null)
                     {
@@ -242,9 +230,7 @@ namespace AIRefactored.AI.Hotspots
                     }
 
                     if (Time.time - _lastHitTime < DamageCooldown)
-                    {
                         return;
-                    }
 
                     Vector3 target = _route[_index].Position;
 
@@ -283,25 +269,17 @@ namespace AIRefactored.AI.Hotspots
                 {
                     BotPersonalityProfile profile = _cache?.AIRefactoredBotOwner?.PersonalityProfile;
                     if (profile == null)
-                    {
                         return target;
-                    }
 
                     Vector3 jitter = Vector3.zero;
                     float chaos = profile.ChaosFactor;
 
                     if (profile.IsFrenzied)
-                    {
                         jitter = UnityEngine.Random.insideUnitSphere * 2.5f;
-                    }
                     else if (profile.IsSilentHunter)
-                    {
                         jitter = UnityEngine.Random.insideUnitSphere * 0.25f;
-                    }
                     else if (chaos > 0.4f)
-                    {
                         jitter = new Vector3(Mathf.Sin(Time.time), 0f, Mathf.Cos(Time.time)) * chaos;
-                    }
 
                     jitter.y = 0f;
                     return target + jitter;
@@ -413,5 +391,7 @@ namespace AIRefactored.AI.Hotspots
                 }
             }
         }
+
+        #endregion
     }
 }

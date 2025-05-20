@@ -50,9 +50,7 @@ namespace AIRefactored.AI.Missions
         public BotExtractionDecisionSystem(BotOwner bot, BotComponentCache cache, BotPersonalityProfile profile)
         {
             if (!EFTPlayerUtil.IsValidBotOwner(bot))
-            {
                 throw new ArgumentException("[BotExtractionDecisionSystem] Invalid BotOwner reference.");
-            }
 
             _bot = bot;
             _cache = cache ?? throw new ArgumentNullException(nameof(cache));
@@ -73,9 +71,7 @@ namespace AIRefactored.AI.Missions
             try
             {
                 if (_hasExtracted)
-                {
                     return;
-                }
 
                 if (ShouldExtract(time))
                 {
@@ -95,15 +91,11 @@ namespace AIRefactored.AI.Missions
             {
                 Player player = _bot.GetPlayer;
                 if (_bot.IsDead || player == null || !player.IsAI)
-                {
                     return false;
-                }
 
                 IHealthController health = player.HealthController;
                 if (health == null || !health.IsAlive)
-                {
                     return false;
-                }
 
                 float composure = _cache?.PanicHandler?.GetComposureLevel() ?? 1f;
                 float panicThreshold = Mathf.Lerp(0.35f, 0.15f, _profile.Caution);
@@ -171,9 +163,9 @@ namespace AIRefactored.AI.Missions
                 }
 
                 if (_cache?.TacticalMemory != null)
-                {
                     _cache.TacticalMemory.MarkExtractionStarted();
-                }
+
+                // Only native movement
                 BotMovementHelper.SmoothMoveToSafeExit(_bot);
                 _log.LogDebug("[ExtractDecision] ✅ Extraction initiated for: " + _bot.name);
             }
@@ -215,17 +207,13 @@ namespace AIRefactored.AI.Missions
             {
                 BotsGroup group = _bot.BotsGroup;
                 if (group == null || group.MembersCount <= 1)
-                {
                     return false; // Solo bots should NOT extract due to squad wipe
-                }
 
                 for (int i = 0; i < group.MembersCount; i++)
                 {
                     BotOwner member = group.Member(i);
                     if (member != null && member != _bot && !member.IsDead)
-                    {
                         return false;
-                    }
                 }
 
                 return true;
@@ -243,9 +231,7 @@ namespace AIRefactored.AI.Missions
             {
                 BotsGroup group = _bot.BotsGroup;
                 if (group == null || group.MembersCount <= 1)
-                {
                     return true;
-                }
 
                 Vector3 currentPosition = _bot.Position;
                 float radiusSqr = radius * radius;
@@ -257,9 +243,7 @@ namespace AIRefactored.AI.Missions
                     {
                         float distanceSqr = (member.Position - currentPosition).sqrMagnitude;
                         if (distanceSqr < radiusSqr)
-                        {
                             return false;
-                        }
                     }
                 }
 

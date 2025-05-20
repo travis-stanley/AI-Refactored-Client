@@ -3,8 +3,7 @@
 //   Licensed under the MIT License. See LICENSE in the repository root for more information.
 //
 //   THIS FILE IS SYSTEMATICALLY MANAGED.
-//   Failures in AIRefactored logic must always trigger safe fallback to EFT base AI.
-//   Bulletproof: All failures are locally contained, never break other subsystems, and always trigger fallback isolation.
+//   Ticking is retry-safe and non-terminal. All errors are isolated, no fallback logic is used.
 // </auto-generated>
 
 namespace AIRefactored.Runtime
@@ -23,25 +22,19 @@ namespace AIRefactored.Runtime
     /// </summary>
     public static class WorldTickDispatcher
     {
-        #region Fields
-
         private static GameObject _host;
         private static TickHost _monoHost;
         private static bool _isActive;
+        private static bool _isQuitting;
 
         private static ManualLogSource Logger => Plugin.LoggerInstance;
 
-        #endregion
-
-        #region Lifecycle
-
         /// <summary>
-        /// Initializes the world tick dispatcher and attaches update loop.
-        /// Bulletproof: All failures are locally contained, global state is never at risk.
+        /// Initializes the tick dispatcher, ensuring a persistent host MonoBehaviour is active.
         /// </summary>
         public static void Initialize()
         {
-            if (_isActive || _host != null || _monoHost != null)
+            if (_isActive || _host != null || _monoHost != null || _isQuitting)
                 return;
 
             try
@@ -52,17 +45,16 @@ namespace AIRefactored.Runtime
                 _monoHost = _host.AddComponent<TickHost>();
                 _isActive = true;
 
-                Logger.LogDebug("[WorldTickDispatcher] ✅ Host attached and ticking.");
+                LogDebug("[WorldTickDispatcher] ✅ Host attached and ticking.");
             }
             catch (Exception ex)
             {
-                Logger.LogError("[WorldTickDispatcher] ❌ Initialization failed: " + ex);
+                LogError("[WorldTickDispatcher] ❌ Initialization failed: " + ex);
             }
         }
 
         /// <summary>
-        /// Fully resets and destroys dispatcher logic (e.g. on teardown).
-        /// Bulletproof: All failures are locally contained, global state is never at risk.
+        /// Shuts down and destroys the tick host and MonoBehaviour.
         /// </summary>
         public static void Reset()
         {
@@ -75,51 +67,33 @@ namespace AIRefactored.Runtime
             {
                 if (_monoHost != null)
                 {
-                    try
-                    {
-                        UnityEngine.Object.Destroy(_monoHost);
-                    }
-                    catch (Exception ex)
-                    {
-                        Logger.LogError("[WorldTickDispatcher] ❌ Destroy _monoHost failed: " + ex);
-                    }
+                    try { UnityEngine.Object.Destroy(_monoHost); }
+                    catch (Exception ex) { LogError("[WorldTickDispatcher] ❌ Destroy _monoHost failed: " + ex); }
                 }
 
                 if (_host != null)
                 {
-                    try
-                    {
-                        UnityEngine.Object.Destroy(_host);
-                    }
-                    catch (Exception ex)
-                    {
-                        Logger.LogError("[WorldTickDispatcher] ❌ Destroy _host failed: " + ex);
-                    }
+                    try { UnityEngine.Object.Destroy(_host); }
+                    catch (Exception ex) { LogError("[WorldTickDispatcher] ❌ Destroy _host failed: " + ex); }
                 }
 
-                Logger.LogDebug("[WorldTickDispatcher] 🧹 Shutdown complete.");
+                LogDebug("[WorldTickDispatcher] 🧹 Shutdown complete.");
             }
             catch (Exception ex)
             {
-                Logger.LogError("[WorldTickDispatcher] ❌ Error during host destroy: " + ex);
+                LogError("[WorldTickDispatcher] ❌ Error during host destroy: " + ex);
             }
 
             _monoHost = null;
             _host = null;
         }
 
-        #endregion
-
-        #region Ticking
-
         /// <summary>
-        /// Ticks all world systems for the given frame delta time.
-        /// Bulletproof: All failures are locally contained, global state is never at risk.
+        /// Ticks all world systems every frame; bulletproof to errors and host/teardown state.
         /// </summary>
-        /// <param name="deltaTime">The time delta since the last frame.</param>
         public static void Tick(float deltaTime)
         {
-            if (!_isActive || !GameWorldHandler.IsInitialized || !GameWorldHandler.IsHost)
+            if (!_isActive || _isQuitting || !GameWorldHandler.IsInitialized || !GameWorldHandler.IsHost)
                 return;
 
             try
@@ -128,17 +102,12 @@ namespace AIRefactored.Runtime
             }
             catch (Exception ex)
             {
-                Logger.LogError("[WorldTickDispatcher] ❌ Tick error: " + ex);
+                LogError("[WorldTickDispatcher] ❌ Tick error: " + ex);
             }
         }
 
-        #endregion
-
-        #region MonoHost
-
         /// <summary>
-        /// Internal MonoBehaviour host that drives frame-based ticking.
-        /// Used in all modes — traditional or headless client.
+        /// MonoBehaviour tick host. Routes Unity lifecycle events to the static dispatcher.
         /// </summary>
         private sealed class TickHost : MonoBehaviour
         {
@@ -150,7 +119,7 @@ namespace AIRefactored.Runtime
                 }
                 catch (Exception ex)
                 {
-                    Logger.LogError("[WorldTickDispatcher] ❌ Update exception: " + ex);
+                    LogError("[WorldTickDispatcher] ❌ Update exception: " + ex);
                 }
             }
 
@@ -158,15 +127,32 @@ namespace AIRefactored.Runtime
             {
                 try
                 {
-                    Reset();
+                    if (!_isQuitting)
+                        Reset();
                 }
                 catch (Exception ex)
                 {
-                    Logger.LogError("[WorldTickDispatcher] ❌ OnDestroy failed: " + ex);
+                    LogError("[WorldTickDispatcher] ❌ OnDestroy failed: " + ex);
                 }
+            }
+
+            private void OnApplicationQuit()
+            {
+                _isQuitting = true;
+                Reset();
             }
         }
 
-        #endregion
+        private static void LogDebug(string msg)
+        {
+            if (!FikaHeadlessDetector.IsHeadless)
+                Logger.LogDebug(msg);
+        }
+
+        private static void LogError(string msg)
+        {
+            if (!FikaHeadlessDetector.IsHeadless)
+                Logger.LogError(msg);
+        }
     }
 }

@@ -3,8 +3,7 @@
 //   Licensed under the MIT License. See LICENSE in the repository root for more information.
 //
 //   THIS FILE IS SYSTEMATICALLY MANAGED.
-//   Failures in AIRefactored logic must always trigger safe fallback to EFT base AI.
-//   Bulletproof: All failures are locally contained, never break other subsystems, and always trigger fallback isolation.
+//   All polling, validation, and injection is strictly localized. No fallback lockouts, always retries, atomic cache/owner/brain enforcement.
 // </auto-generated>
 
 namespace AIRefactored.Runtime
@@ -22,31 +21,20 @@ namespace AIRefactored.Runtime
 	using UnityEngine;
 
 	/// <summary>
-	/// Static bot spawn tracker. Injects brains for new bots without using MonoBehaviours.
-	/// Called externally on update by WorldBootstrapper or BotWorkScheduler.
-	/// Bulletproof: All polling, validation, and injection is strictly localized.
+	/// Watches for any bots without brains and enforces atomic cache/owner/brain injection on all unhandled AI, always retrying.
+	/// All failures are locally contained; no fallback disables, no terminal state.
 	/// </summary>
 	public sealed class BotSpawnWatcherService : IAIWorldSystemBootstrapper
 	{
-		#region Constants
-
 		private const float PollInterval = 1.5f;
 
-		#endregion
-
-		#region Fields
-
 		private static readonly HashSet<int> SeenBotIds = new HashSet<int>();
+		private static readonly HashSet<string> SeenProfileIds = new HashSet<string>();
 		private static readonly ManualLogSource Logger = Plugin.LoggerInstance;
 
 		private static float _nextPollTime = -1f;
 		private static bool _hasWarnedInvalid;
 
-		#endregion
-
-		#region Lifecycle
-
-		/// <inheritdoc />
 		public void Initialize()
 		{
 			try
@@ -60,7 +48,6 @@ namespace AIRefactored.Runtime
 			}
 		}
 
-		/// <inheritdoc />
 		public void OnRaidEnd()
 		{
 			try
@@ -74,30 +61,19 @@ namespace AIRefactored.Runtime
 			}
 		}
 
-		/// <summary>
-		/// Clears internal bot ID cache and state flags for reuse in next raid.
-		/// </summary>
 		public static void Reset()
 		{
 			try
 			{
 				SeenBotIds.Clear();
+				SeenProfileIds.Clear();
 				_nextPollTime = -1f;
 				_hasWarnedInvalid = false;
-
 				LogDebug("[BotSpawnWatcher] 🔄 Reset complete.");
 			}
-			catch
-			{
-				// Safe ignore: logger might be disposed during shutdown.
-			}
+			catch { }
 		}
 
-		#endregion
-
-		#region Tick
-
-		/// <inheritdoc />
 		public void Tick(float deltaTime)
 		{
 			try
@@ -114,8 +90,8 @@ namespace AIRefactored.Runtime
 
 				if (_hasWarnedInvalid)
 				{
-					LogDebug("[BotSpawnWatcher] ✅ Host world recovered — resuming.");
 					_hasWarnedInvalid = false;
+					LogDebug("[BotSpawnWatcher] ✅ Host world recovered — resuming.");
 				}
 
 				float now = Time.time;
@@ -124,35 +100,24 @@ namespace AIRefactored.Runtime
 
 				_nextPollTime = now + PollInterval;
 
-				List<Player> players = null;
-				try
-				{
-					players = GameWorldHandler.GetAllAlivePlayers();
-					if (players == null || players.Count == 0)
-						return;
-				}
-				catch (Exception ex)
-				{
-					LogError("[BotSpawnWatcher] GetAllAlivePlayers() failed: " + ex);
+				List<Player> players = GameWorldHandler.GetAllAlivePlayers();
+				if (players == null || players.Count == 0)
 					return;
-				}
 
 				for (int i = 0; i < players.Count; i++)
 				{
 					try
 					{
 						Player player = players[i];
-						if (!EFTPlayerUtil.IsValid(player) || !player.IsAI || player.gameObject == null)
-							continue;
-
-						if (NavPointRegistry.AIRefactoredNavDisabled)
+						if (!EFTPlayerUtil.IsValid(player) || !player.IsAI || player.gameObject == null || player.HealthController == null || !player.HealthController.IsAlive)
 							continue;
 
 						GameObject go = player.gameObject;
 						int id = go.GetInstanceID();
+						string profileId = player.ProfileId ?? player.Profile?.Id;
 
-						if (!SeenBotIds.Add(id))
-							continue;
+						if (!SeenBotIds.Contains(id)) SeenBotIds.Add(id);
+						if (!string.IsNullOrEmpty(profileId) && !SeenProfileIds.Contains(profileId)) SeenProfileIds.Add(profileId);
 
 						if (go.GetComponent<BotBrain>() != null)
 							continue;
@@ -160,18 +125,30 @@ namespace AIRefactored.Runtime
 						if (player.AIData == null || player.AIData.BotOwner == null)
 							continue;
 
-						try
+						BotOwner botOwner = player.AIData.BotOwner;
+						BotComponentCache cache = BotComponentCacheRegistry.GetOrCreate(botOwner);
+						if (cache == null)
 						{
-							BotBrainGuardian.Enforce(go);
-							GameWorldHandler.TryAttachBotBrain(player.AIData.BotOwner);
+							LogWarn("[BotSpawnWatcher] Cache was null after GetOrCreate. Will retry next tick.");
+							continue;
+						}
 
-							string name = player.Profile?.Info?.Nickname ?? player.ProfileId;
-							LogDebug("[BotSpawnWatcher] ✅ Brain injected for bot: " + name);
-						}
-						catch (Exception ex)
+						if (cache.Bot == null || cache.AIRefactoredBotOwner == null)
 						{
-							LogError("[BotSpawnWatcher] ❌ Brain injection failed for bot: " + ex);
+							LogWarn($"[BotSpawnWatcher] Incomplete cache for bot {profileId} — will retry next tick.");
+							continue;
 						}
+
+						if (!cache.AIRefactoredBotOwner.HasPersonality())
+						{
+							cache.AIRefactoredBotOwner.InitProfile(cache.AIRefactoredBotOwner.PersonalityProfile, cache.AIRefactoredBotOwner.PersonalityName);
+						}
+
+						BotBrainGuardian.Enforce(go);
+						GameWorldHandler.TryAttachBotBrain(botOwner);
+
+						string name = player.Profile?.Info?.Nickname ?? profileId;
+						LogDebug("[BotSpawnWatcher] ✅ Brain injected for bot: " + name);
 					}
 					catch (Exception ex)
 					{
@@ -185,25 +162,9 @@ namespace AIRefactored.Runtime
 			}
 		}
 
-		#endregion
+		public bool IsReady() => WorldInitState.IsInPhase(WorldPhase.WorldReady);
 
-		#region Integration
-
-		/// <inheritdoc />
-		public bool IsReady()
-		{
-			return WorldInitState.IsInPhase(WorldPhase.WorldReady);
-		}
-
-		/// <inheritdoc />
-		public WorldPhase RequiredPhase()
-		{
-			return WorldPhase.WorldReady;
-		}
-
-		#endregion
-
-		#region Log Helpers
+		public WorldPhase RequiredPhase() => WorldPhase.WorldReady;
 
 		private static void LogDebug(string msg)
 		{
@@ -222,7 +183,5 @@ namespace AIRefactored.Runtime
 			if (!FikaHeadlessDetector.IsHeadless)
 				Logger.LogError(msg);
 		}
-
-		#endregion
 	}
 }

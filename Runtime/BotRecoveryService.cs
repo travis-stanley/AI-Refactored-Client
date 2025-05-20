@@ -3,8 +3,8 @@
 //   Licensed under the MIT License. See LICENSE in the repository root for more information.
 //
 //   THIS FILE IS SYSTEMATICALLY MANAGED.
-//   Failures in AIRefactored logic must always trigger safe fallback to EFT base AI.
-//   Bulletproof: All failures are locally contained, never break other subsystems, and always trigger fallback isolation.
+//   Failures in AIRefactored logic must always trigger safe retry and recovery. No fallback or terminal state.
+//   Bulletproof: All failures are strictly localized and cannot break the mod. Atomic bot brain/owner/cache recovery logic.
 // </auto-generated>
 
 namespace AIRefactored.Runtime
@@ -25,19 +25,12 @@ namespace AIRefactored.Runtime
 	using UnityEngine;
 
 	/// <summary>
-	/// Monitors GameWorld state and ensures AIRefactored systems remain functional across sessions.
-	/// Called externally by WorldBootstrapper, tick scheduler, or raid monitor.
-	/// Bulletproof: All failures are strictly localized and cannot break the mod.
+	/// Monolithic bot lifecycle, cache, and owner/brain recovery watchdog.
+	/// All failures are contained; no fallback or terminal disable, always retry on incomplete state.
 	/// </summary>
 	public sealed class BotRecoveryService : IAIWorldSystemBootstrapper
 	{
-		#region Constants
-
 		private const float TickInterval = 5f;
-
-		#endregion
-
-		#region Static State
 
 		private static readonly ManualLogSource Logger = Plugin.LoggerInstance;
 
@@ -47,16 +40,11 @@ namespace AIRefactored.Runtime
 		private static bool _hasInitialized;
 		private static bool _hookedSpawner;
 
-		/// <summary>
-		/// Gets the shared singleton instance.
-		/// </summary>
 		public static BotRecoveryService Instance { get; } = new BotRecoveryService();
 
-		#endregion
-
-		#region Lifecycle
-
-		/// <inheritdoc />
+		/// <summary>
+		/// Initializes the recovery service and resets state.
+		/// </summary>
 		public void Initialize()
 		{
 			try
@@ -71,7 +59,9 @@ namespace AIRefactored.Runtime
 			}
 		}
 
-		/// <inheritdoc />
+		/// <summary>
+		/// Called on raid end or teardown to reset and detach hooks.
+		/// </summary>
 		public void OnRaidEnd()
 		{
 			try
@@ -92,21 +82,18 @@ namespace AIRefactored.Runtime
 			}
 		}
 
-		/// <inheritdoc />
-		public bool IsReady()
-		{
-			return _hasInitialized && GameWorldHandler.IsReady();
-		}
-
-		/// <inheritdoc />
-		public WorldPhase RequiredPhase()
-		{
-			return WorldPhase.WorldReady;
-		}
+		/// <summary>
+		/// Returns true if initialized and GameWorldHandler is ready.
+		/// </summary>
+		public bool IsReady() => _hasInitialized && GameWorldHandler.IsReady();
 
 		/// <summary>
-		/// Resets all static flags and internal state for next raid.
-		/// Bulletproof: always safe, never throws.
+		/// The required phase for this system (always WorldReady).
+		/// </summary>
+		public WorldPhase RequiredPhase() => WorldPhase.WorldReady;
+
+		/// <summary>
+		/// Resets all internal static state.
 		/// </summary>
 		public static void Reset()
 		{
@@ -116,11 +103,9 @@ namespace AIRefactored.Runtime
 			_hookedSpawner = false;
 		}
 
-		#endregion
-
-		#region Tick
-
-		/// <inheritdoc />
+		/// <summary>
+		/// Ticks the recovery service to ensure all bots, owners, and caches are wired and running.
+		/// </summary>
 		public void Tick(float deltaTime)
 		{
 			try
@@ -160,10 +145,9 @@ namespace AIRefactored.Runtime
 			}
 		}
 
-		#endregion
-
-		#region Spawn Hook
-
+		/// <summary>
+		/// Ensures the BotSpawner event hook is attached for runtime bot injection.
+		/// </summary>
 		private static void EnsureSpawnHook()
 		{
 			try
@@ -181,10 +165,9 @@ namespace AIRefactored.Runtime
 			}
 		}
 
-		#endregion
-
-		#region Bot Validation
-
+		/// <summary>
+		/// Iterates all living AI players and ensures full owner/cache/brain wiring, recovering any missing subsystems.
+		/// </summary>
 		private static void ValidateBotBrains(List<Player> players)
 		{
 			for (int i = 0; i < players.Count; i++)
@@ -192,38 +175,42 @@ namespace AIRefactored.Runtime
 				try
 				{
 					Player player = players[i];
-					if (!EFTPlayerUtil.IsValid(player) || !player.IsAI || player.gameObject == null)
+					if (!EFTPlayerUtil.IsValid(player) || !player.IsAI || player.gameObject == null || player.HealthController == null || !player.HealthController.IsAlive)
 						continue;
 
-					GameObject go = player.gameObject;
-					BotBrain brain = go.GetComponent<BotBrain>();
+					string profileId = player.ProfileId ?? player.Profile?.Id;
+					if (string.IsNullOrEmpty(profileId))
+						continue;
 
-					if (brain != null)
+					if (player.gameObject.GetComponent<BotBrain>() != null)
+						continue;
+
+					if (player.AIData?.BotOwner == null)
+						continue;
+
+					var botOwner = player.AIData.BotOwner;
+					var cache = BotComponentCacheRegistry.GetOrCreate(botOwner);
+					if (cache == null)
 					{
-						if (!brain.enabled)
-						{
-							brain.enabled = true;
-							LogWarn("[BotRecoveryService] Re-enabled disabled BotBrain: " + player.ProfileId);
-						}
+						LogWarn("[BotRecoveryService] Cache was null for bot. Will retry.");
 						continue;
 					}
 
-					string name = player.Profile?.Info?.Nickname ?? "Unknown";
-					LogWarn("[BotRecoveryService] ⚠ Missing BotBrain — restoring: " + name);
-
-					if (player.AIData?.BotOwner != null)
+					if (cache.Bot == null || cache.AIRefactoredBotOwner == null)
 					{
-						try
-						{
-							GameWorldHandler.TryAttachBotBrain(player.AIData.BotOwner);
-						}
-						catch (Exception ex)
-						{
-							LogError("[BotRecoveryService] ❌ Failed to attach brain to BotOwner: " + ex);
-						}
+						LogWarn($"[BotRecoveryService] Incomplete cache for bot {profileId} — waiting for next tick.");
+						continue;
 					}
 
-					// Only allow one rescan per tick, and only if phase/world is valid
+					if (!cache.AIRefactoredBotOwner.HasPersonality())
+					{
+						// Only allowed logic: assign default personality
+						cache.AIRefactoredBotOwner.InitProfile(cache.AIRefactoredBotOwner.PersonalityProfile, cache.AIRefactoredBotOwner.PersonalityName);
+					}
+
+					GameWorldHandler.TryAttachBotBrain(botOwner);
+					LogWarn("[BotRecoveryService] ⚠ BotBrain missing — injected late for: " + (player.Profile?.Info?.Nickname ?? "Unknown"));
+
 					if (!_hasRescanned && GameWorldHandler.IsReady() && WorldInitState.IsInPhase(WorldPhase.WorldReady))
 					{
 						_hasRescanned = true;
@@ -237,10 +224,9 @@ namespace AIRefactored.Runtime
 			}
 		}
 
-		#endregion
-
-		#region World Refresh
-
+		/// <summary>
+		/// Re-initializes world systems (hotspot, loot, corpse) for full recovery after late boot.
+		/// </summary>
 		private static void RescanWorld()
 		{
 			try
@@ -267,9 +253,6 @@ namespace AIRefactored.Runtime
 				LootBootstrapper.RegisterAllLoot();
 				BotDeadBodyScanner.ScanAll();
 
-				NavPointRegistry.Clear();
-				NavPointRegistry.RegisterAll(mapId);
-
 				LogDebug("[BotRecoveryService] ✅ World rescan complete.");
 			}
 			catch (Exception ex)
@@ -278,9 +261,7 @@ namespace AIRefactored.Runtime
 			}
 		}
 
-		#endregion
-
-		#region Log Helpers
+		#region Logging
 
 		private static void LogDebug(string msg)
 		{

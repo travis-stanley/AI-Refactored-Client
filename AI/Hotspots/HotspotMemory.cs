@@ -55,7 +55,7 @@ namespace AIRefactored.AI.Hotspots
                     }
                     catch
                     {
-                        // Never break; always continue clearing/returning pools
+                        // Always continue clearing/returning pools
                     }
                 }
                 VisitedMap.Clear();
@@ -129,6 +129,9 @@ namespace AIRefactored.AI.Hotspots
 
         #region Internal Logic
 
+        /// <summary>
+        /// Checks if a hotspot at this position/mapId was visited within the specified cooldown.
+        /// </summary>
         private static bool WasVisitedWithin(string mapId, Vector3 position, float cooldown)
         {
             if (string.IsNullOrEmpty(mapId))

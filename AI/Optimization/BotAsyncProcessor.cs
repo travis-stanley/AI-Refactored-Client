@@ -39,7 +39,6 @@ namespace AIRefactored.AI.Optimization
         #region Fields
 
         private static readonly ManualLogSource Logger = Plugin.LoggerInstance;
-
         private readonly BotOwnerGroupOptimization _groupOptimizer = new BotOwnerGroupOptimization();
 
         private BotOwner _bot;
@@ -74,15 +73,16 @@ namespace AIRefactored.AI.Optimization
                 {
                     try
                     {
-                        await Task.Delay(TimeSpan.FromSeconds(InitDelaySeconds));
+                        await Task.Delay(TimeSpan.FromSeconds(InitDelaySeconds)).ConfigureAwait(false);
                         if (!_hasInitialized)
                         {
-                            await ApplyInitialPersonalityAsync(botOwner);
+                            await ApplyInitialPersonalityAsync(botOwner).ConfigureAwait(false);
                         }
                     }
                     catch (Exception ex)
                     {
-                        Logger.LogWarning("[BotAsyncProcessor] Async init failed: " + ex.Message);
+                        if (!FikaHeadlessDetector.IsHeadless)
+                            Logger.LogWarning("[BotAsyncProcessor] Async init failed: " + ex.Message);
                     }
                 });
             }
@@ -103,8 +103,8 @@ namespace AIRefactored.AI.Optimization
                 if (!GameWorldHandler.IsLocalHost() || !_hasInitialized || _bot == null || _bot.IsDead)
                     return;
 
-                try { _stateCache.UpdateBotOwnerStateIfNeeded(_bot); } catch (Exception ex) { Logger.LogWarning("[BotAsyncProcessor] StateCache update failed: " + ex.Message); }
-                try { TryOptimizeGroup(); } catch (Exception ex) { Logger.LogWarning("[BotAsyncProcessor] TryOptimizeGroup failed: " + ex.Message); }
+                try { _stateCache.UpdateBotOwnerStateIfNeeded(_bot); } catch (Exception ex) { LogWarn("[BotAsyncProcessor] StateCache update failed: " + ex.Message); }
+                try { TryOptimizeGroup(); } catch (Exception ex) { LogWarn("[BotAsyncProcessor] TryOptimizeGroup failed: " + ex.Message); }
 
                 float cooldown = FikaHeadlessDetector.IsHeadless ? ThinkCooldownHeadless : ThinkCooldownNormal;
                 if (time - _lastThinkTime < cooldown)
@@ -117,13 +117,13 @@ namespace AIRefactored.AI.Optimization
                     ThreadPool.QueueUserWorkItem(_ =>
                     {
                         try { Think(); }
-                        catch (Exception ex) { Logger.LogWarning("[BotAsyncProcessor] Async headless think failed: " + ex.Message); }
+                        catch (Exception ex) { LogWarn("[BotAsyncProcessor] Async headless think failed: " + ex.Message); }
                     });
                 }
                 else
                 {
                     try { Think(); }
-                    catch (Exception ex) { Logger.LogWarning("[BotAsyncProcessor] Think execution failed: " + ex.Message); }
+                    catch (Exception ex) { LogWarn("[BotAsyncProcessor] Think execution failed: " + ex.Message); }
                 }
             }
             catch (Exception ex)
@@ -166,12 +166,12 @@ namespace AIRefactored.AI.Optimization
                 try { mind.DIST_TO_FOUND_SQRT = Mathf.Lerp(200f, 600f, 1f - personality.Cohesion); } catch { }
                 try { mind.FRIEND_AGR_KILL = Mathf.Lerp(0f, 0.4f, personality.AggressionLevel); } catch { }
 
-                Logger.LogDebug("[BotAsyncProcessor] ✅ Personality initialized for bot: " + (bot.Profile?.Info?.Nickname ?? "Unknown"));
+                LogDebug("[BotAsyncProcessor] ✅ Personality initialized for bot: " + (bot.Profile?.Info?.Nickname ?? "Unknown"));
                 _hasInitialized = true;
             }
             catch (Exception ex)
             {
-                Logger.LogWarning("[BotAsyncProcessor] ApplyInitialPersonalityAsync failed: " + ex.Message);
+                LogWarn("[BotAsyncProcessor] ApplyInitialPersonalityAsync failed: " + ex.Message);
             }
         }
 
@@ -195,14 +195,14 @@ namespace AIRefactored.AI.Optimization
                         }
                         catch (Exception ex)
                         {
-                            Logger.LogWarning("[BotAsyncProcessor] Mumble dispatch failed: " + ex.Message);
+                            LogWarn("[BotAsyncProcessor] Mumble dispatch failed: " + ex.Message);
                         }
                     });
                 }
             }
             catch (Exception ex)
             {
-                Logger.LogWarning("[BotAsyncProcessor] Think() exception: " + ex.Message);
+                LogWarn("[BotAsyncProcessor] Think() exception: " + ex.Message);
             }
         }
 
@@ -221,13 +221,29 @@ namespace AIRefactored.AI.Optimization
                 try { squad = BotTeamTracker.GetGroup(groupId); } catch { }
                 if (squad != null && squad.Count > 0)
                 {
-                    try { _groupOptimizer.OptimizeGroupAI(squad); } catch (Exception ex) { Logger.LogWarning("[BotAsyncProcessor] Group optimization failed: " + ex.Message); }
+                    try { _groupOptimizer.OptimizeGroupAI(squad); } catch (Exception ex) { LogWarn("[BotAsyncProcessor] Group optimization failed: " + ex.Message); }
                 }
             }
             catch (Exception ex)
             {
-                Logger.LogWarning("[BotAsyncProcessor] TryOptimizeGroup() exception: " + ex.Message);
+                LogWarn("[BotAsyncProcessor] TryOptimizeGroup() exception: " + ex.Message);
             }
+        }
+
+        #endregion
+
+        #region Logging Helpers
+
+        private static void LogDebug(string msg)
+        {
+            if (!FikaHeadlessDetector.IsHeadless)
+                Logger.LogDebug(msg);
+        }
+
+        private static void LogWarn(string msg)
+        {
+            if (!FikaHeadlessDetector.IsHeadless)
+                Logger.LogWarning(msg);
         }
 
         #endregion

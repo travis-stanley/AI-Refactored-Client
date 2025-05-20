@@ -48,18 +48,17 @@ namespace AIRefactored.AI.Movement
 
         #region Constructor
 
+        /// <summary>
+        /// Creates a new jump controller for a bot.
+        /// </summary>
         public BotJumpController(BotOwner bot, BotComponentCache cache)
         {
             if (!EFTPlayerUtil.IsValidBotOwner(bot) || cache == null)
-            {
                 throw new ArgumentException("[BotJumpController] Invalid bot or cache.");
-            }
 
             MovementContext context = bot.GetPlayer?.MovementContext;
             if (context == null)
-            {
                 throw new InvalidOperationException("[BotJumpController] Missing MovementContext.");
-            }
 
             _bot = bot;
             _cache = cache;
@@ -78,9 +77,7 @@ namespace AIRefactored.AI.Movement
             try
             {
                 if (!IsJumpAllowed())
-                {
                     return;
-                }
 
                 Vector3[] temp = TempVector3Pool.Rent(1);
                 try
@@ -105,6 +102,9 @@ namespace AIRefactored.AI.Movement
 
         #region Internal Logic
 
+        /// <summary>
+        /// Returns true if a jump is currently allowed.
+        /// </summary>
         private bool IsJumpAllowed()
         {
             try
@@ -112,19 +112,13 @@ namespace AIRefactored.AI.Movement
                 float now = Time.time;
 
                 if (_hasRecentlyJumped && now - _lastJumpTime < JumpCooldown)
-                {
                     return false;
-                }
 
                 if (_context == null || !_context.IsGrounded || _context.IsInPronePose)
-                {
                     return false;
-                }
 
                 if (_cache != null && _cache.PanicHandler != null && _cache.PanicHandler.IsPanicking)
-                {
                     return false;
-                }
 
                 _hasRecentlyJumped = false;
                 return true;
@@ -136,14 +130,15 @@ namespace AIRefactored.AI.Movement
             }
         }
 
+        /// <summary>
+        /// Applies jump force and sets jump state.
+        /// </summary>
         private void ExecuteJump(Vector3 target, float deltaTime)
         {
             try
             {
                 if (_context == null)
-                {
                     return;
-                }
 
                 _context.OnJump();
                 _lastJumpTime = Time.time;
@@ -151,9 +146,7 @@ namespace AIRefactored.AI.Movement
 
                 Vector3 direction = (target - _context.TransformPosition).normalized;
                 if (direction.sqrMagnitude < 0.01f)
-                {
                     return;
-                }
 
                 Vector3 velocity = direction * JumpVelocityMultiplier;
                 _context.ApplyMotion(velocity, deltaTime);
@@ -164,15 +157,16 @@ namespace AIRefactored.AI.Movement
             }
         }
 
+        /// <summary>
+        /// Finds a valid jump/vault target in front of the bot.
+        /// </summary>
         private bool TryFindJumpTarget(out Vector3 target)
         {
             target = Vector3.zero;
             try
             {
                 if (_context == null)
-                {
                     return false;
-                }
 
                 Vector3 origin = _context.PlayerColliderCenter + Vector3.up * 0.25f;
                 Vector3 forward = _context.TransformForwardVector;
@@ -181,9 +175,7 @@ namespace AIRefactored.AI.Movement
                 try
                 {
                     if (!Physics.SphereCast(origin, ObstacleCheckRadius, forward, out hits[0], JumpCheckDistance, AIRefactoredLayerMasks.ObstacleRayMask))
-                    {
                         return false;
-                    }
 
                     Bounds[] boundsArray = TempBoundsPool.Rent(1);
                     try
@@ -192,9 +184,7 @@ namespace AIRefactored.AI.Movement
                         float height = boundsArray[0].max.y - _context.TransformPosition.y;
 
                         if (height < MinJumpHeight || height > MaxJumpHeight)
-                        {
                             return false;
-                        }
 
                         Vector3 vaultPoint = boundsArray[0].max + (forward * VaultForwardOffset);
 
@@ -202,15 +192,11 @@ namespace AIRefactored.AI.Movement
                         try
                         {
                             if (!Physics.Raycast(vaultPoint, Vector3.down, out landHits[0], 2.5f, AIRefactoredLayerMasks.JumpRayMask))
-                            {
                                 return false;
-                            }
 
                             float fallHeight = Mathf.Abs(_context.TransformPosition.y - landHits[0].point.y);
                             if (fallHeight > SafeFallHeight)
-                            {
                                 return false;
-                            }
 
                             target = landHits[0].point;
                             return true;

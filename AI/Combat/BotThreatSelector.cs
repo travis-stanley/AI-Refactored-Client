@@ -3,7 +3,7 @@
 //   Licensed under the MIT License. See LICENSE in the repository root for more information.
 //
 //   THIS FILE IS SYSTEMATICALLY MANAGED.
-//   Failures in AIRefactored logic must always trigger safe fallback to EFT base AI.
+//   Failures are locally isolated, never disables bot, never triggers fallback AI.
 // </auto-generated>
 
 namespace AIRefactored.AI.Combat
@@ -15,16 +15,10 @@ namespace AIRefactored.AI.Combat
     using AIRefactored.Core;
     using EFT;
     using UnityEngine;
+    using BepInEx.Logging;
 
-    /// <summary>
-    /// Selects and maintains the most viable enemy target based on distance, visibility, memory, and tactical realism.
-    /// Prevents erratic switching and reinforces believable combat behavior.
-    /// Bulletproof: All failures are isolated and cannot propagate.
-    /// </summary>
     public sealed class BotThreatSelector
     {
-        #region Constants
-
         private const float EvaluationCooldown = 0.35f;
         private const float MaxScanDistance = 120f;
         private const float SwitchCooldown = 2.0f;
@@ -39,10 +33,6 @@ namespace AIRefactored.AI.Combat
         private const float AggressionMaxBonus = 15f;
         private const float TargetSwitchThreshold = 10f;
 
-        #endregion
-
-        #region Fields
-
         private readonly BotOwner _bot;
         private readonly BotComponentCache _cache;
         private readonly BotPersonalityProfile _profile;
@@ -50,40 +40,32 @@ namespace AIRefactored.AI.Combat
         private float _lastTargetSwitchTime = -999f;
         private float _nextEvaluateTime;
         private Player _currentTarget;
-        private bool _isFallbackMode;
 
-        #endregion
-
-        #region Properties
+        private static readonly ManualLogSource Logger = Plugin.LoggerInstance;
+        private static bool _hasLoggedConstructorError;
 
         public Player CurrentTarget => _currentTarget;
-
-        #endregion
-
-        #region Constructor
 
         public BotThreatSelector(BotComponentCache cache)
         {
             if (cache == null || cache.Bot == null || cache.AIRefactoredBotOwner == null)
             {
-                BotFallbackUtility.Trigger(this, null, "[BotThreatSelector] Null cache, bot, or AIRefactoredBotOwner in constructor.");
-                _isFallbackMode = true;
+                if (!_hasLoggedConstructorError)
+                {
+                    Logger.LogWarning("[BotThreatSelector] Null cache, bot, or AIRefactoredBotOwner in constructor.");
+                    _hasLoggedConstructorError = true;
+                }
                 return;
             }
 
             _cache = cache;
             _bot = cache.Bot;
-            _profile = cache.AIRefactoredBotOwner.PersonalityProfile;
-            _isFallbackMode = false;
+            _profile = cache.AIRefactoredBotOwner.PersonalityProfile ?? BotPersonalityPresets.GenerateProfile(PersonalityType.Balanced);
         }
-
-        #endregion
-
-        #region Public Methods
 
         public void Tick(float time)
         {
-            if (_isFallbackMode || time < _nextEvaluateTime || _bot == null || _bot.IsDead || !_bot.IsAI)
+            if (time < _nextEvaluateTime || _bot == null || _bot.IsDead || !_bot.IsAI)
                 return;
 
             try
@@ -103,8 +85,7 @@ namespace AIRefactored.AI.Combat
                     if (!EFTPlayerUtil.IsValid(candidate))
                         continue;
 
-                    string profileId = candidate.ProfileId;
-                    if (string.IsNullOrEmpty(profileId) || profileId == _bot.ProfileId)
+                    if (string.IsNullOrEmpty(candidate.ProfileId) || candidate.ProfileId == _bot.ProfileId)
                         continue;
 
                     if (!EFTPlayerUtil.IsEnemyOf(_bot, candidate))
@@ -138,8 +119,7 @@ namespace AIRefactored.AI.Combat
             }
             catch (Exception ex)
             {
-                BotFallbackUtility.Trigger(this, _bot, "Exception in Tick.", ex);
-                _isFallbackMode = true;
+                Logger.LogWarning($"[BotThreatSelector] Exception in Tick(): {ex}");
             }
         }
 
@@ -150,15 +130,12 @@ namespace AIRefactored.AI.Combat
 
         public Player GetPriorityTarget()
         {
-            if (_isFallbackMode)
-                return null;
-
             try
             {
                 if (EFTPlayerUtil.IsValid(_currentTarget))
                     return _currentTarget;
 
-                string id = _cache.TacticalMemory.GetMostRecentEnemyId();
+                string id = _cache?.TacticalMemory?.GetMostRecentEnemyId();
                 if (string.IsNullOrEmpty(id))
                     return null;
 
@@ -167,25 +144,23 @@ namespace AIRefactored.AI.Combat
             }
             catch (Exception ex)
             {
-                BotFallbackUtility.Trigger(this, _bot, "Exception in GetPriorityTarget.", ex);
-                _isFallbackMode = true;
+                Logger.LogWarning($"[BotThreatSelector] Exception in GetPriorityTarget(): {ex}");
                 return null;
             }
         }
 
         public string GetTargetProfileId()
         {
-            return _currentTarget != null ? _currentTarget.ProfileId : string.Empty;
+            return _currentTarget?.ProfileId ?? string.Empty;
         }
-
-        #endregion
-
-        #region Private Methods
 
         private float ScoreTarget(Player candidate, float time)
         {
             try
             {
+                if (_bot == null || candidate == null)
+                    return float.MinValue;
+
                 Vector3 botPos = _bot.Position;
                 Vector3 targetPos = EFTPlayerUtil.GetPosition(candidate);
                 float distance = Vector3.Distance(botPos, targetPos);
@@ -201,7 +176,6 @@ namespace AIRefactored.AI.Combat
                     if (info.IsVisible)
                     {
                         score += VisibilityBonus;
-
                         if (info.PersonalLastSeenTime + 2f > time)
                             score += RecentSeenBonus;
 
@@ -235,8 +209,7 @@ namespace AIRefactored.AI.Combat
             }
             catch (Exception ex)
             {
-                BotFallbackUtility.Trigger(this, _bot, "Exception in ScoreTarget.", ex);
-                _isFallbackMode = true;
+                Logger.LogWarning($"[BotThreatSelector] Exception in ScoreTarget(): {ex}");
                 return float.MinValue;
             }
         }
@@ -245,7 +218,7 @@ namespace AIRefactored.AI.Combat
         {
             try
             {
-                if (candidate == null || _bot.EnemiesController == null)
+                if (candidate == null || _bot?.EnemiesController == null)
                     return null;
 
                 string id = candidate.ProfileId;
@@ -255,10 +228,10 @@ namespace AIRefactored.AI.Combat
                 var enemyInfos = _bot.EnemiesController.EnemyInfos;
                 if (enemyInfos != null)
                 {
-                    foreach (var kvp in enemyInfos)
+                    foreach (var kv in enemyInfos)
                     {
-                        if (kvp.Key is Player known && known.ProfileId == id)
-                            return kvp.Value;
+                        if (kv.Key is Player known && known.ProfileId == id)
+                            return kv.Value;
                     }
                 }
 
@@ -269,8 +242,7 @@ namespace AIRefactored.AI.Combat
             }
             catch (Exception ex)
             {
-                BotFallbackUtility.Trigger(this, _bot, "Exception in GetEnemyInfo.", ex);
-                _isFallbackMode = true;
+                Logger.LogWarning($"[BotThreatSelector] Exception in GetEnemyInfo(): {ex}");
                 return null;
             }
         }
@@ -279,31 +251,25 @@ namespace AIRefactored.AI.Combat
         {
             try
             {
+                if (target == null)
+                    return;
+
                 _currentTarget = target;
                 _lastTargetSwitchTime = time;
 
                 string id = target.ProfileId;
                 if (!string.IsNullOrEmpty(id))
                 {
-                    _cache.TacticalMemory.RecordEnemyPosition(EFTPlayerUtil.GetPosition(target), "Target", id);
-                    _cache.LastShotTracker?.RegisterHit(id);
+                    _cache?.TacticalMemory?.RecordEnemyPosition(EFTPlayerUtil.GetPosition(target), "Target", id);
+                    _cache?.LastShotTracker?.RegisterHit(id);
                 }
 
-                if (_cache.Movement != null && !_cache.Bot.IsDead && _cache.Bot.Mover != null && !_cache.Bot.Mover.IsMoving)
+                if (_cache?.Movement != null &&
+                    !_cache.Bot.IsDead &&
+                    _cache.Bot.Mover != null &&
+                    !_cache.Bot.Mover.IsMoving)
                 {
-                    Vector3 fallback = Vector3.zero;
-
-                    if (NavPointRegistry.IsReady && !NavPointRegistry.IsEmpty)
-                    {
-                        fallback = NavPointRegistry.GetClosestPosition(_cache.Bot.Position);
-                    }
-
-                    if (!BotNavValidator.Validate(_cache.Bot, nameof(SetTarget)))
-                    {
-                        fallback = FallbackNavPointProvider.GetSafePoint(_cache.Bot.Position);
-                    }
-
-                    if (fallback != Vector3.zero)
+                    if (BotNavHelper.TryGetSafeTarget(_cache.Bot, out var fallback) && IsVectorValid(fallback))
                     {
                         _cache.Bot.Mover.GoToPoint(fallback, true, 1.0f);
                     }
@@ -311,11 +277,14 @@ namespace AIRefactored.AI.Combat
             }
             catch (Exception ex)
             {
-                BotFallbackUtility.Trigger(this, _bot, "Exception in SetTarget.", ex);
-                _isFallbackMode = true;
+                Logger.LogWarning($"[BotThreatSelector] Exception in SetTarget(): {ex}");
             }
         }
 
-        #endregion
+        private static bool IsVectorValid(Vector3 v)
+        {
+            return !float.IsNaN(v.x) && !float.IsNaN(v.y) && !float.IsNaN(v.z) &&
+                   Mathf.Abs(v.x) < 10000f && Mathf.Abs(v.y) < 10000f && Mathf.Abs(v.z) < 10000f;
+        }
     }
 }

@@ -3,7 +3,7 @@
 //   Licensed under the MIT License. See LICENSE in the repository root for more information.
 //
 //   THIS FILE IS SYSTEMATICALLY MANAGED.
-//   Please follow strict StyleCop, ReSharper, and AI-Refactored code standards for all modifications.
+//   Failures in AIRefactored logic must always trigger safe fallback to EFT base AI.
 // </auto-generated>
 
 namespace AIRefactored.AI.Navigation
@@ -53,6 +53,9 @@ namespace AIRefactored.AI.Navigation
 
         #region Constructor
 
+        /// <summary>
+        /// Creates a new BotDoorInteractionSystem with strict null safety and logging.
+        /// </summary>
         public BotDoorInteractionSystem(BotOwner bot)
         {
             if (bot == null)
@@ -67,9 +70,8 @@ namespace AIRefactored.AI.Navigation
         #region Public API
 
         /// <summary>
-        /// Updates door interaction logic.
+        /// Updates door interaction logic. Bulletproof: never breaks or cascades on error.
         /// </summary>
-        /// <param name="time">Current time (Time.time).</param>
         public void Tick(float time)
         {
             try
@@ -135,6 +137,7 @@ namespace AIRefactored.AI.Navigation
                     InteractionResult result = new InteractionResult(interactionType);
                     player.CurrentManagedState.StartDoorInteraction(door, result, null);
 
+                    // Log at Debug only; can be filtered at runtime
                     _log.LogDebug("[BotDoorInteraction] " + _bot.name + " → " + interactionType + " door " + door.name);
                 }
                 catch (Exception ex)
@@ -148,7 +151,7 @@ namespace AIRefactored.AI.Navigation
             }
             catch (Exception)
             {
-                // Locally isolated. Cannot break or cascade.
+                // Locally isolated; cannot break or cascade.
                 ClearDoorState();
             }
         }
@@ -156,7 +159,6 @@ namespace AIRefactored.AI.Navigation
         /// <summary>
         /// Checks if a door is currently blocking the specified position.
         /// </summary>
-        /// <param name="position">The bot's current position.</param>
         public bool IsDoorBlocking(Vector3 position)
         {
             try
@@ -188,18 +190,27 @@ namespace AIRefactored.AI.Navigation
 
         #region Private Helpers
 
+        /// <summary>
+        /// Clears all door state and resets blocking.
+        /// </summary>
         private void ClearDoorState()
         {
             _currentDoor = null;
             IsBlockedByDoor = false;
         }
 
+        /// <summary>
+        /// Marks the given door as currently blocking the bot.
+        /// </summary>
         private void MarkBlocked(Door door)
         {
             _currentDoor = door;
             IsBlockedByDoor = true;
         }
 
+        /// <summary>
+        /// Determines the best interaction type for the given door state.
+        /// </summary>
         private static EInteractionType GetBestInteractionType(EDoorState state)
         {
             if ((state & EDoorState.Shut) != 0 || state == EDoorState.None)

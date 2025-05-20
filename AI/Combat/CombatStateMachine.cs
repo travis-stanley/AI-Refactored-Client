@@ -3,7 +3,7 @@
 //   Licensed under the MIT License. See LICENSE in the repository root for more information.
 //
 //   THIS FILE IS SYSTEMATICALLY MANAGED.
-//   Failures in AIRefactored logic must always trigger safe fallback to EFT base AI.
+//   Failures are locally isolated, never disables bot, never triggers fallback AI.
 // </auto-generated>
 
 namespace AIRefactored.AI.Combat
@@ -15,29 +15,23 @@ namespace AIRefactored.AI.Combat
     using AIRefactored.AI.Groups;
     using AIRefactored.AI.Memory;
     using AIRefactored.AI.Navigation;
-    using AIRefactored.AI.Optimization;
     using AIRefactored.Core;
     using AIRefactored.Pools;
     using AIRefactored.Runtime;
+    using BepInEx.Logging;
     using EFT;
     using UnityEngine;
 
     /// <summary>
-    /// Coordinates bot combat state transitions across patrol, engage, attack, fallback, and investigation.
-    /// Bulletproof: All subsystem failures are isolated; fallback to vanilla AI for movement/combat if required.
+    /// Drives bot combat state logic including fallback, engagement, patrol, and escalation.
+    /// All errors are locally contained; never disables or falls back to vanilla AI.
     /// </summary>
     public sealed class CombatStateMachine
     {
-        #region Constants
-
         private const float MinTransitionDelay = 0.4f;
         private const float PatrolMinDuration = 1.25f;
         private const float PatrolCooldown = 12.0f;
         private const float ReentryCooldown = 3.0f;
-
-        #endregion
-
-        #region Fields
 
         private BotComponentCache _cache;
         private BotOwner _bot;
@@ -53,25 +47,16 @@ namespace AIRefactored.AI.Combat
         private bool _hasKnownEnemy;
         private float _lastStateChangeTime;
         private bool _initialized;
-        private bool _isFallbackMode;
-
-        #endregion
-
-        #region Properties
 
         public Vector3 LastKnownEnemyPos => _lastKnownEnemyPos;
         public float LastStateChangeTime => _lastStateChangeTime;
-
-        #endregion
-
-        #region Public Methods
 
         public void Initialize(BotComponentCache componentCache)
         {
             if (componentCache == null || componentCache.Bot == null)
             {
-                BotFallbackUtility.Trigger(this, null, "[CombatStateMachine] Initialization failed: null references.");
-                _isFallbackMode = true;
+                Plugin.LoggerInstance.LogError("[CombatStateMachine] Initialization failed: null references.");
+                _initialized = false;
                 return;
             }
 
@@ -88,40 +73,36 @@ namespace AIRefactored.AI.Combat
                 _echo = new EchoCoordinator(_cache);
 
                 _initialized = true;
-                _isFallbackMode = false;
             }
             catch (Exception ex)
             {
-                BotFallbackUtility.Trigger(this, _bot, "[CombatStateMachine] Exception during Initialize.", ex);
-                _isFallbackMode = true;
+                Plugin.LoggerInstance.LogError("[CombatStateMachine] Exception during Initialize: " + ex);
                 _initialized = false;
             }
         }
 
         public bool IsInCombatState()
         {
-            if (!_initialized || _isFallbackMode)
+            if (!_initialized)
                 return false;
 
             try
             {
-                return (_fallback.IsActive() ||
-                        _engage.IsEngaging() ||
-                        _investigate.IsInvestigating() ||
-                        _cache.ThreatSelector.CurrentTarget != null);
+                return _fallback.IsActive()
+                    || _engage.IsEngaging()
+                    || _investigate.IsInvestigating()
+                    || _cache.ThreatSelector?.CurrentTarget != null;
             }
             catch (Exception ex)
             {
-                BotFallbackUtility.Trigger(this, _bot, "[CombatStateMachine] Exception in IsInCombatState.", ex);
-                _isFallbackMode = true;
+                Plugin.LoggerInstance.LogError("[CombatStateMachine] Exception in IsInCombatState: " + ex);
                 return false;
             }
         }
 
         public void NotifyDamaged()
         {
-            if (!_initialized || _isFallbackMode)
-                return;
+            if (!_initialized) return;
 
             try
             {
@@ -129,21 +110,19 @@ namespace AIRefactored.AI.Combat
                 if (_fallback.ShallUseNow(time))
                 {
                     AssignFallbackIfNeeded();
-                    if (_bot.BotTalk != null) _bot.BotTalk.TrySay(EPhraseTrigger.OnBeingHurt);
+                    _bot.BotTalk?.TrySay(EPhraseTrigger.OnBeingHurt);
                     _lastStateChangeTime = time;
                 }
             }
             catch (Exception ex)
             {
-                BotFallbackUtility.Trigger(this, _bot, "[CombatStateMachine] Exception in NotifyDamaged.", ex);
-                _isFallbackMode = true;
+                Plugin.LoggerInstance.LogError("[CombatStateMachine] Exception in NotifyDamaged: " + ex);
             }
         }
 
         public void NotifyEchoInvestigate()
         {
-            if (!_initialized || _isFallbackMode)
-                return;
+            if (!_initialized) return;
 
             try
             {
@@ -151,19 +130,18 @@ namespace AIRefactored.AI.Combat
                 if (_investigate.ShallUseNow(time, _lastStateChangeTime))
                 {
                     _lastStateChangeTime = time;
-                    if (_bot.BotTalk != null) _bot.BotTalk.TrySay(EPhraseTrigger.Cooperation);
+                    _bot.BotTalk?.TrySay(EPhraseTrigger.Cooperation);
                 }
             }
             catch (Exception ex)
             {
-                BotFallbackUtility.Trigger(this, _bot, "[CombatStateMachine] Exception in NotifyEchoInvestigate.", ex);
-                _isFallbackMode = true;
+                Plugin.LoggerInstance.LogError("[CombatStateMachine] Exception in NotifyEchoInvestigate: " + ex);
             }
         }
 
         public void Tick(float time)
         {
-            if (!_initialized || _isFallbackMode || _bot == null || _bot.IsDead || !EFTPlayerUtil.IsValid(_bot.GetPlayer))
+            if (!_initialized || _bot == null || _bot.IsDead || !EFTPlayerUtil.IsValid(_bot.GetPlayer))
                 return;
 
             try
@@ -180,13 +158,8 @@ namespace AIRefactored.AI.Combat
                 if (ShouldTriggerSuppressedFallback(time))
                 {
                     AssignFallbackIfNeeded();
-                    if (_bot.BotTalk != null) _bot.BotTalk.TrySay(EPhraseTrigger.OnBeingHurt);
-
-                    Vector3 fallback = _fallback.HasValidFallbackPath()
-                        ? _fallback.GetFallbackPosition()
-                        : _bot.Position;
-
-                    _echo.EchoFallbackToSquad(fallback);
+                    _bot.BotTalk?.TrySay(EPhraseTrigger.OnBeingHurt);
+                    _echo.EchoFallbackToSquad(_fallback.GetFallbackPositionOrDefault(_bot.Position));
                     _lastStateChangeTime = time;
                     return;
                 }
@@ -198,15 +171,15 @@ namespace AIRefactored.AI.Combat
                     return;
                 }
 
-                Player enemy = _cache.ThreatSelector.CurrentTarget;
+                Player enemy = _cache.ThreatSelector?.CurrentTarget;
                 if (EFTPlayerUtil.IsValid(enemy))
                 {
                     _lastKnownEnemyPos = EFTPlayerUtil.GetPosition(enemy);
                     _hasKnownEnemy = true;
 
                     string id = enemy.ProfileId;
-                    if (id.Length > 0)
-                        _cache.TacticalMemory.RecordEnemyPosition(_lastKnownEnemyPos, "Combat", id);
+                    if (!string.IsNullOrEmpty(id))
+                        _cache.TacticalMemory?.RecordEnemyPosition(_lastKnownEnemyPos, "Combat", id);
 
                     if (_bot.Mover != null && !_bot.Mover.Sprinting)
                         _bot.Sprint(true);
@@ -240,27 +213,23 @@ namespace AIRefactored.AI.Combat
             }
             catch (Exception ex)
             {
-                BotFallbackUtility.Trigger(this, _bot, "[CombatStateMachine] Exception in Tick.", ex);
-                _isFallbackMode = true;
-                if (_bot != null) BotFallbackUtility.FallbackToEFTLogic(_bot);
+                Plugin.LoggerInstance.LogError("[CombatStateMachine] Exception in Tick: " + ex);
             }
         }
 
         public void TriggerFallback(Vector3 fallbackPos)
         {
-            if (!_initialized || _isFallbackMode)
-                return;
+            if (!_initialized) return;
 
             try
             {
                 _fallback.SetFallbackTarget(fallbackPos);
-                if (_bot.BotTalk != null) _bot.BotTalk.TrySay(EPhraseTrigger.OnLostVisual);
+                _bot.BotTalk?.TrySay(EPhraseTrigger.OnLostVisual);
                 _lastStateChangeTime = Time.time;
             }
             catch (Exception ex)
             {
-                BotFallbackUtility.Trigger(this, _bot, "[CombatStateMachine] Exception in TriggerFallback.", ex);
-                _isFallbackMode = true;
+                Plugin.LoggerInstance.LogError("[CombatStateMachine] Exception in TriggerFallback: " + ex);
             }
         }
 
@@ -272,67 +241,43 @@ namespace AIRefactored.AI.Combat
             }
             catch (Exception ex)
             {
-                BotFallbackUtility.Trigger(this, _bot, "[CombatStateMachine] Exception in TrySetStanceFromNearbyCover.", ex);
-                _isFallbackMode = true;
+                Plugin.LoggerInstance.LogError("[CombatStateMachine] Exception in TrySetStanceFromNearbyCover: " + ex);
             }
         }
 
-        #endregion
-
-        #region Private Methods
-
+        /// <summary>
+        /// Always builds a fallback path with at least two points (current position and fallback target),
+        /// eliminating invalid fallback warnings and ensuring correct fallback handler logic.
+        /// </summary>
         private void AssignFallbackIfNeeded()
         {
-            if (_isFallbackMode)
-                return;
-
             try
             {
                 if (_fallback.HasValidFallbackPath())
                     return;
 
-                if (_cache.Pathing == null)
-                {
-                    BotFallbackUtility.Trigger(this, _bot, "[CombatStateMachine] Pathing system is null — fallback skipped.");
-                    return;
-                }
+                Vector3 retreatDir = _bot.LookDirection.sqrMagnitude > 0.01f
+                    ? -_bot.LookDirection.normalized
+                    : Vector3.back;
 
-                Vector3 lookDir = _bot.LookDirection;
-                Vector3 retreatDir = lookDir.sqrMagnitude > 0.01f ? -lookDir.normalized : Vector3.back;
+                Vector3 fallback;
+                if (!BotNavHelper.TryGetSafeTarget(_bot, out fallback) || !IsVectorValid(fallback))
+                    fallback = _bot.Position + retreatDir * 5f;
 
-                List<Vector3> path = TempListPool.Rent<Vector3>();
-                try
-                {
-                    path.Clear();
-                    List<Vector3> generated = BotCoverRetreatPlanner.GetCoverRetreatPath(_bot, retreatDir, _cache.Pathing);
-                    for (int i = 0; i < generated.Count; i++)
-                        path.Add(generated[i]);
+                var path = TempListPool.Rent<Vector3>();
+                path.Clear();
+                path.Add(_bot.Position); // Start position (must be included!)
+                path.Add(fallback);      // Fallback target
 
-                    if (path.Count > 0)
-                    {
-                        Vector3 final = path[path.Count - 1];
-                        _fallback.SetFallbackPath(path);
-                        _fallback.SetFallbackTarget(final);
-                        TrySetStanceFromNearbyCover(final);
-                    }
-                    else
-                    {
-                        BotFallbackUtility.Trigger(this, _bot, "[CombatStateMachine] Fallback path not found.");
-                    }
-                }
-                catch (Exception ex)
-                {
-                    BotFallbackUtility.Trigger(this, _bot, "[CombatStateMachine] Exception in fallback planner.", ex);
-                }
-                finally
-                {
-                    TempListPool.Return(path);
-                }
+                _fallback.SetFallbackPath(path);
+                _fallback.SetFallbackTarget(fallback);
+                TrySetStanceFromNearbyCover(fallback);
+
+                TempListPool.Return(path);
             }
             catch (Exception ex)
             {
-                BotFallbackUtility.Trigger(this, _bot, "[CombatStateMachine] Exception in AssignFallbackIfNeeded.", ex);
-                _isFallbackMode = true;
+                Plugin.LoggerInstance.LogError("[CombatStateMachine] Exception in AssignFallbackIfNeeded: " + ex);
             }
         }
 
@@ -346,43 +291,38 @@ namespace AIRefactored.AI.Combat
             }
             catch (Exception ex)
             {
-                BotFallbackUtility.Trigger(this, _bot, "[CombatStateMachine] Exception in ShouldTriggerSuppressedFallback.", ex);
-                _isFallbackMode = true;
+                Plugin.LoggerInstance.LogError("[CombatStateMachine] Exception in ShouldTriggerSuppressedFallback: " + ex);
                 return false;
             }
         }
 
         private bool TryReenterCombatState(float time)
         {
-            if (_isFallbackMode)
-                return false;
-
             try
             {
                 if (!_fallback.IsActive())
                     return false;
 
-                if (_cache.ThreatSelector.CurrentTarget != null)
+                if (_cache.ThreatSelector?.CurrentTarget != null)
                 {
                     _fallback.Cancel();
-                    if (_bot.BotTalk != null) _bot.BotTalk.TrySay(EPhraseTrigger.OnEnemyConversation);
+                    _bot.BotTalk?.TrySay(EPhraseTrigger.OnEnemyConversation);
                     return true;
                 }
 
-                if (_cache.GroupSync != null && _cache.GroupSync.IsSquadReady())
+                if (_cache.GroupSync?.IsSquadReady() == true)
                 {
                     Vector3 self = _bot.Position;
-                    IReadOnlyList<BotOwner> mates = _cache.GroupSync.GetTeammates();
-                    for (int i = 0; i < mates.Count; i++)
+                    var squad = _cache.GroupSync.GetTeammates();
+                    for (int i = 0; i < squad.Count; i++)
                     {
-                        BotOwner mate = mates[i];
-                        if (mate != null && mate != _bot && !mate.IsDead)
+                        BotOwner mate = squad[i];
+                        if (mate != null && !mate.IsDead && mate != _bot)
                         {
-                            float dist = Vector3.Distance(mate.Position, self);
-                            if (dist < 12f)
+                            if (Vector3.Distance(mate.Position, self) < 12f)
                             {
                                 _fallback.Cancel();
-                                if (_bot.BotTalk != null) _bot.BotTalk.TrySay(EPhraseTrigger.Cooperation);
+                                _bot.BotTalk?.TrySay(EPhraseTrigger.Cooperation);
                                 return true;
                             }
                         }
@@ -392,7 +332,7 @@ namespace AIRefactored.AI.Combat
                 if (time - _lastStateChangeTime > ReentryCooldown)
                 {
                     _fallback.Cancel();
-                    if (_bot.BotTalk != null) _bot.BotTalk.TrySay(EPhraseTrigger.Ready);
+                    _bot.BotTalk?.TrySay(EPhraseTrigger.Ready);
                     return true;
                 }
 
@@ -400,8 +340,7 @@ namespace AIRefactored.AI.Combat
             }
             catch (Exception ex)
             {
-                BotFallbackUtility.Trigger(this, _bot, "[CombatStateMachine] Exception in TryReenterCombatState.", ex);
-                _isFallbackMode = true;
+                Plugin.LoggerInstance.LogError("[CombatStateMachine] Exception in TryReenterCombatState: " + ex);
                 return false;
             }
         }
@@ -411,6 +350,9 @@ namespace AIRefactored.AI.Combat
             _lastStateChangeTime = time;
         }
 
-        #endregion
+        private static bool IsVectorValid(Vector3 v)
+        {
+            return !float.IsNaN(v.x) && !float.IsNaN(v.y) && !float.IsNaN(v.z);
+        }
     }
 }

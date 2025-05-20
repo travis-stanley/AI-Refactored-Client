@@ -3,7 +3,7 @@
 //   Licensed under the MIT License. See LICENSE in the repository root for more information.
 //
 //   THIS FILE IS SYSTEMATICALLY MANAGED.
-//   Failures in AIRefactored logic must always trigger safe fallback to EFT base AI.
+//   Bulletproof: All failures are locally isolated, owner is always atomically wired with cache, never disables itself, never triggers fallback AI.
 // </auto-generated>
 
 namespace AIRefactored.AI.Core
@@ -18,65 +18,31 @@ namespace AIRefactored.AI.Core
 
     /// <summary>
     /// Holds AIRefactored-specific metadata for a bot, including personality, zone, tuning, and runtime behavior state.
-    /// Always yields to vanilla logic if any core field is invalid. Never disables the owner.
-    /// Bulletproof: all failures are isolated, never cascade.
+    /// Always logs and recovers locally if any core field is invalid. Owner/cache wiring is atomic and bulletproof.
     /// </summary>
     public sealed class AIRefactoredBotOwner
     {
-        #region Static
-
         private static readonly ManualLogSource Logger = Plugin.LoggerInstance;
-
-        #endregion
-
-        #region Fields
 
         private BotOwner _bot;
         private BotComponentCache _cache;
         private BotMissionController _missionController;
         private bool _isInitialized;
 
-        #endregion
+        public BotOwner Bot => !_isInitialized || _bot == null
+            ? LogAndReturnNull("[AIRefactoredBotOwner] Bot accessed before initialization.")
+            : _bot;
 
-        #region Properties
-
-        public BotOwner Bot
-        {
-            get
-            {
-                if (!_isInitialized || _bot == null)
-                {
-                    Logger.LogError("[AIRefactoredBotOwner] Bot accessed before initialization — fallback triggered.");
-                    BotFallbackUtility.FallbackToEFTLogic(_bot);
-                    return null;
-                }
-                return _bot;
-            }
-        }
-
-        public BotComponentCache Cache
-        {
-            get
-            {
-                if (!_isInitialized || _cache == null)
-                {
-                    Logger.LogError("[AIRefactoredBotOwner] Cache accessed before initialization — fallback triggered.");
-                    BotFallbackUtility.FallbackToEFTLogic(_bot);
-                    return BotComponentCache.Empty;
-                }
-                return _cache;
-            }
-        }
+        public BotComponentCache Cache => !_isInitialized || _cache == null
+            ? LogAndReturnEmptyCache()
+            : _cache;
 
         public BotMissionController MissionController
         {
             get
             {
                 if (_missionController == null)
-                {
-                    Logger.LogError("[AIRefactoredBotOwner] MissionController is null — fallback triggered.");
-                    BotFallbackUtility.FallbackToEFTLogic(_bot);
-                }
+                    Logger.LogError("[AIRefactoredBotOwner] MissionController is null.");
                 return _missionController;
             }
         }
@@ -85,46 +51,48 @@ namespace AIRefactored.AI.Core
         public string PersonalityName { get; private set; }
         public string AssignedZone { get; private set; }
 
-        #endregion
-
-        #region Constructor
-
         public AIRefactoredBotOwner()
         {
             PersonalityProfile = new BotPersonalityProfile();
             PersonalityName = "Unknown";
             AssignedZone = "unknown";
+            _isInitialized = false;
         }
 
-        #endregion
-
-        #region Initialization
-
+        /// <summary>
+        /// Must only be called once and only by BotSpawnWatcherService.
+        /// Never calls GetOrCreate. Assumes cache has already been created and assigned externally.
+        /// </summary>
         public void Initialize(BotOwner bot)
         {
-            if (bot == null)
+            if (_isInitialized || bot == null)
             {
-                Logger.LogError("[AIRefactoredBotOwner] Initialization failed: bot is null.");
-                BotFallbackUtility.FallbackToEFTLogic(bot);
-                _isInitialized = false;
+                Logger.LogError("[AIRefactoredBotOwner] Initialization skipped or bot null.");
                 return;
             }
-            if (_isInitialized)
-            {
-                Logger.LogWarning("[AIRefactoredBotOwner] Duplicate initialization attempt ignored.");
-                return;
-            }
+
             _bot = bot;
+            string id = bot.Profile?.Id ?? "null-profile";
+
             try
             {
-                _cache = BotComponentCacheRegistry.GetOrCreate(bot);
-                _cache.SetOwner(this);
+                _cache = BotComponentCacheRegistry.TryGetExisting(bot);
+                if (_cache == null)
+                {
+                    Logger.LogError($"[AIRefactoredBotOwner] Cache not found for bot {id} — will retry until available.");
+                    return;
+                }
 
-                string profileId = bot.Profile?.Id ?? "null-profile";
+                if (_cache.AIRefactoredBotOwner != this)
+                {
+                    _cache.SetOwner(this);
+                    Logger.LogDebug($"[AIRefactoredBotOwner] SetOwner atomic wire for {id}.");
+                }
+
                 WildSpawnType role = bot.Profile?.Info?.Settings?.Role ?? WildSpawnType.assault;
-                BotPersonalityProfile profile = BotRegistry.GetOrGenerate(profileId, PersonalityType.Balanced, role);
-
+                BotPersonalityProfile profile = BotRegistry.GetOrGenerate(id, PersonalityType.Balanced, role);
                 InitProfile(profile, profile?.Personality.ToString() ?? "Balanced");
+
                 _isInitialized = true;
 
                 if (!FikaHeadlessDetector.IsHeadless)
@@ -136,14 +104,8 @@ namespace AIRefactored.AI.Core
             catch (Exception ex)
             {
                 Logger.LogError($"[AIRefactoredBotOwner] Initialization failed: {ex}");
-                BotFallbackUtility.FallbackToEFTLogic(bot);
-                _isInitialized = false;
             }
         }
-
-        #endregion
-
-        #region Personality
 
         public void InitProfile(PersonalityType type)
         {
@@ -159,17 +121,15 @@ namespace AIRefactored.AI.Core
                 {
                     PersonalityName = type.ToString();
                 }
+
                 PersonalityProfile = preset;
 
                 if (!FikaHeadlessDetector.IsHeadless)
-                {
                     Logger.LogDebug($"[AIRefactoredBotOwner] Personality assigned: {PersonalityName}");
-                }
             }
             catch (Exception ex)
             {
                 Logger.LogError($"[AIRefactoredBotOwner] InitProfile failed: {ex}");
-                BotFallbackUtility.FallbackToEFTLogic(_bot);
                 PersonalityProfile = new BotPersonalityProfile();
                 PersonalityName = "Default";
             }
@@ -182,23 +142,20 @@ namespace AIRefactored.AI.Core
                 if (profile == null)
                 {
                     Logger.LogError("[AIRefactoredBotOwner] InitProfile failed: profile is null.");
-                    BotFallbackUtility.FallbackToEFTLogic(_bot);
                     PersonalityProfile = new BotPersonalityProfile();
                     PersonalityName = "Default";
                     return;
                 }
+
                 PersonalityProfile = profile;
                 PersonalityName = string.IsNullOrEmpty(name) ? "Custom" : name;
 
                 if (!FikaHeadlessDetector.IsHeadless)
-                {
                     Logger.LogDebug($"[AIRefactoredBotOwner] Custom profile assigned: {PersonalityName}");
-                }
             }
             catch (Exception ex)
             {
-                Logger.LogError($"[AIRefactoredBotOwner] Exception in InitProfile(profile,name): {ex}");
-                BotFallbackUtility.FallbackToEFTLogic(_bot);
+                Logger.LogError($"[AIRefactoredBotOwner] Exception in InitProfile(profile, name): {ex}");
                 PersonalityProfile = new BotPersonalityProfile();
                 PersonalityName = "Default";
             }
@@ -212,39 +169,22 @@ namespace AIRefactored.AI.Core
                 PersonalityName = "Cleared";
 
                 if (!FikaHeadlessDetector.IsHeadless)
-                {
                     Logger.LogDebug("[AIRefactoredBotOwner] Personality cleared.");
-                }
             }
-            catch
-            {
-                // Silent fail
-            }
+            catch { }
         }
 
-        public bool HasPersonality()
-        {
-            return PersonalityProfile != null;
-        }
-
-        #endregion
-
-        #region Zone + Mission
+        public bool HasPersonality() => PersonalityProfile != null;
 
         public void SetZone(string zoneName)
         {
             try
             {
-                if (string.IsNullOrEmpty(zoneName))
+                if (!string.IsNullOrEmpty(zoneName))
                 {
-                    Logger.LogWarning("[AIRefactoredBotOwner] Ignored empty zone assignment.");
-                    return;
-                }
-                AssignedZone = zoneName;
-
-                if (!FikaHeadlessDetector.IsHeadless)
-                {
-                    Logger.LogDebug($"[AIRefactoredBotOwner] Zone assigned: {zoneName}");
+                    AssignedZone = zoneName;
+                    if (!FikaHeadlessDetector.IsHeadless)
+                        Logger.LogDebug($"[AIRefactoredBotOwner] Zone assigned: {zoneName}");
                 }
             }
             catch (Exception ex)
@@ -260,18 +200,27 @@ namespace AIRefactored.AI.Core
                 if (controller == null)
                 {
                     Logger.LogError("[AIRefactoredBotOwner] SetMissionController failed: controller is null.");
-                    BotFallbackUtility.FallbackToEFTLogic(_bot);
                     return;
                 }
+
                 _missionController = controller;
             }
             catch (Exception ex)
             {
                 Logger.LogError($"[AIRefactoredBotOwner] Exception in SetMissionController: {ex}");
-                BotFallbackUtility.FallbackToEFTLogic(_bot);
             }
         }
 
-        #endregion
+        private static BotOwner LogAndReturnNull(string msg)
+        {
+            Logger.LogError(msg);
+            return null;
+        }
+
+        private static BotComponentCache LogAndReturnEmptyCache()
+        {
+            Logger.LogError("[AIRefactoredBotOwner] Cache accessed before initialization.");
+            return BotComponentCache.Empty;
+        }
     }
 }

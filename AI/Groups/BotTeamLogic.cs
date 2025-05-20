@@ -15,7 +15,6 @@ namespace AIRefactored.AI.Groups
     using AIRefactored.AI.Core;
     using AIRefactored.AI.Helpers;
     using AIRefactored.Core;
-    using AIRefactored.Runtime;
     using EFT;
     using UnityEngine;
     using static AIRefactored.AI.Missions.BotMissionController;
@@ -48,7 +47,6 @@ namespace AIRefactored.AI.Groups
         {
             if (!EFTPlayerUtil.IsValidBotOwner(bot))
                 throw new ArgumentException("[BotTeamLogic] Invalid or non-AI bot owner.");
-
             _bot = bot;
         }
 
@@ -79,10 +77,7 @@ namespace AIRefactored.AI.Groups
                     }
                 }
             }
-            catch
-            {
-                // Fail silently: squad logic is always isolated
-            }
+            catch { }
         }
 
         public static void BroadcastMissionType(BotOwner bot, MissionType mission)
@@ -102,10 +97,7 @@ namespace AIRefactored.AI.Groups
                     }
                 }
             }
-            catch
-            {
-                // Fail silently
-            }
+            catch { }
         }
 
         public void BroadcastFallback(Vector3 retreatPoint)
@@ -155,10 +147,7 @@ namespace AIRefactored.AI.Groups
                     BotMovementHelper.SmoothMoveTo(_bot, target, false);
                 }
             }
-            catch
-            {
-                // Fail silently; squad logic is always local
-            }
+            catch { }
         }
 
         public void InjectCombatState(BotOwner mate, CombatStateMachine fsm)
@@ -170,16 +159,12 @@ namespace AIRefactored.AI.Groups
                     _combatMap.Add(mate, fsm);
                 }
             }
-            catch
-            {
-                // Fail silently
-            }
+            catch { }
         }
 
         public void SetTeammates(List<BotOwner> allBots)
         {
             _teammates.Clear();
-
             try
             {
                 Player self = _bot.GetPlayer;
@@ -201,10 +186,7 @@ namespace AIRefactored.AI.Groups
                     }
                 }
             }
-            catch
-            {
-                // Fail silently
-            }
+            catch { }
         }
 
         public void ShareTarget(IPlayer enemy)
@@ -219,7 +201,6 @@ namespace AIRefactored.AI.Groups
                     return;
 
                 IPlayer safe = EFTPlayerUtil.AsSafeIPlayer(resolved);
-
                 for (int i = 0; i < _teammates.Count; i++)
                 {
                     BotOwner mate = _teammates[i];
@@ -229,10 +210,7 @@ namespace AIRefactored.AI.Groups
                     }
                 }
             }
-            catch
-            {
-                // Fail silently
-            }
+            catch { }
         }
 
         #endregion
@@ -254,10 +232,7 @@ namespace AIRefactored.AI.Groups
                     receiver.Memory?.AddEnemy(enemy, settings, false);
                 }
             }
-            catch
-            {
-                // Fail silently: never break squad logic or AI
-            }
+            catch { }
         }
 
         private static void TriggerDelayedFallback(CombatStateMachine fsm, Vector3 point)
@@ -272,10 +247,7 @@ namespace AIRefactored.AI.Groups
                     await Task.Delay(Random.Range(150, 400));
                     fsm.TriggerFallback(point);
                 }
-                catch
-                {
-                    // Fail silently or log if needed
-                }
+                catch { }
             });
         }
 

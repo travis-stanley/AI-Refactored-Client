@@ -3,7 +3,7 @@
 //   Licensed under the MIT License. See LICENSE in the repository root for more information.
 //
 //   THIS FILE IS SYSTEMATICALLY MANAGED.
-//   Bulletproof fallback: all subsystem failures are isolated, trigger vanilla fallback, and never propagate.
+//   Bulletproof: All errors are locally isolated, never disables handler, never triggers fallback AI.
 // </auto-generated>
 
 namespace AIRefactored.AI.Combat.States
@@ -21,98 +21,45 @@ namespace AIRefactored.AI.Combat.States
     /// <summary>
     /// Controls direct combat engagement logic.
     /// Pushes toward the enemy, recalculates stance and movement based on distance, visibility, and cover presence.
-    /// Fully bulletproof: all failures are isolated and fallback to vanilla AI when required.
+    /// Bulletproof: all errors are locally isolated, never disables handler, never disables bot, never falls back.
     /// </summary>
     public sealed class AttackHandler
     {
-        #region Constants
-
         private const float PositionUpdateThresholdSqr = 1.0f;
-
-        #endregion
-
-        #region Fields
 
         private readonly BotOwner _bot;
         private readonly BotComponentCache _cache;
-
         private Vector3 _lastTargetPosition;
         private bool _hasLastTarget;
 
-        private bool _isFallbackMode;
-
-        #endregion
-
-        #region Constructor
-
-        /// <summary>
-        /// Initializes the attack handler with bot component cache.
-        /// </summary>
         public AttackHandler(BotComponentCache cache)
         {
             _cache = cache;
             _bot = cache?.Bot;
             _lastTargetPosition = Vector3.zero;
             _hasLastTarget = false;
-
-            if (_cache == null || _bot == null)
-            {
-                BotFallbackUtility.Trigger(this, _bot, "Null cache or BotOwner during construction.");
-                _isFallbackMode = true;
-            }
-            else
-            {
-                _isFallbackMode = false;
-            }
         }
 
-        #endregion
-
-        #region Public Methods
-
-        /// <summary>
-        /// Clears last known enemy position tracking.
-        /// </summary>
         public void ClearTarget()
         {
-            if (_isFallbackMode)
-                return;
-
             _hasLastTarget = false;
             _lastTargetPosition = Vector3.zero;
         }
 
-        /// <summary>
-        /// Determines if the bot currently has a valid target to attack.
-        /// </summary>
         public bool ShallUseNow()
         {
-            if (_isFallbackMode)
-                return false;
-
             Player _;
             return TryResolveEnemy(out _);
         }
 
-        /// <summary>
-        /// Executes per-frame attack logic: move toward enemy and adjust stance.
-        /// Bulletproof: on any failure, disables only attack and falls back, never breaks other AI.
-        /// </summary>
         public void Tick(float deltaTime)
         {
-            if (_isFallbackMode)
-                return;
-
             try
             {
                 if (_bot == null || _cache == null)
-                {
-                    EnterFallback("Null bot or cache in Tick.");
                     return;
-                }
 
-                Player enemy;
-                if (!TryResolveEnemy(out enemy))
+                if (!TryResolveEnemy(out Player enemy))
                     return;
 
                 Transform enemyTransform = EFTPlayerUtil.GetTransform(enemy);
@@ -122,31 +69,17 @@ namespace AIRefactored.AI.Combat.States
                 Vector3 currentTargetPos = enemyTransform.position;
                 float deltaSqr = (currentTargetPos - _lastTargetPosition).sqrMagnitude;
 
-                // Only update path if target has moved enough or this is the first assignment.
                 if (!_hasLastTarget || deltaSqr > PositionUpdateThresholdSqr)
                 {
                     _lastTargetPosition = currentTargetPos;
                     _hasLastTarget = true;
 
-                    // If the squad system is active, allow formation/offset logic; else go direct.
-                    Vector3 destination = (_cache.SquadPath != null)
-                        ? _cache.SquadPath.ApplyOffsetTo(currentTargetPos)
-                        : currentTargetPos;
+                    Vector3 destination = currentTargetPos;
 
-                    bool navValid = false;
-                    try
+                    // Use internal EFT/Unity logic if custom nav fails
+                    if (!BotNavHelper.TryGetSafeTarget(_bot, out destination) || !IsValidTarget(destination))
                     {
-                        navValid = BotNavValidator.Validate(_bot, "AttackHandlerTarget");
-                    }
-                    catch (Exception ex)
-                    {
-                        BotFallbackUtility.Trigger(this, _bot, "BotNavValidator.Validate exception.", ex);
-                        navValid = false;
-                    }
-
-                    if (!navValid)
-                    {
-                        destination = FallbackNavPointProvider.GetSafePoint(_bot.Position);
+                        destination = GetSafeRandomAttackPoint(_bot, currentTargetPos);
                     }
 
                     if (_bot.Mover != null)
@@ -154,74 +87,84 @@ namespace AIRefactored.AI.Combat.States
                         try
                         {
                             BotMovementHelper.SmoothMoveTo(_bot, destination);
-                            BotCoverHelper.TrySetStanceFromNearbyCover(_cache, destination);
+                            TrySetCombatStance(destination);
                         }
                         catch (Exception ex)
                         {
-                            BotFallbackUtility.Trigger(this, _bot, "SmoothMoveTo or stance logic failed.", ex);
-                            EnterFallback("SmoothMoveTo or stance logic failed.");
+                            Plugin.LoggerInstance.LogError("[AttackHandler] SmoothMoveTo or stance logic failed: " + ex);
                         }
-                    }
-                    else
-                    {
-                        EnterFallback("BotMover missing or not ready. Falling back to EFT AI.");
                     }
                 }
             }
             catch (Exception ex)
             {
-                BotFallbackUtility.Trigger(this, _bot, "General Tick failure.", ex);
-                EnterFallback("General Tick failure.");
+                Plugin.LoggerInstance.LogError("[AttackHandler] General Tick failure: " + ex);
             }
         }
 
-        #endregion
-
-        #region Private Methods
-
-        /// <summary>
-        /// Attempts to resolve the most appropriate enemy target for attack.
-        /// </summary>
         private bool TryResolveEnemy(out Player result)
         {
             result = null;
-            if (_isFallbackMode || _cache == null)
+            if (_cache == null)
                 return false;
 
-            // Prefer current threat selector target.
-            BotThreatSelector selector = _cache.ThreatSelector;
+            var selector = _cache.ThreatSelector;
             if (selector != null && EFTPlayerUtil.IsValid(selector.CurrentTarget))
             {
                 result = selector.CurrentTarget;
                 return true;
             }
 
-            // Fallback to vanilla bot memory GoalEnemy if present.
-            if (_bot != null && _bot.Memory != null && _bot.Memory.GoalEnemy != null)
+            if (_bot?.Memory?.GoalEnemy?.Person is Player fallback && EFTPlayerUtil.IsValid(fallback))
             {
-                Player fallback = _bot.Memory.GoalEnemy.Person as Player;
-                if (EFTPlayerUtil.IsValid(fallback))
-                {
-                    result = fallback;
-                    return true;
-                }
+                result = fallback;
+                return true;
             }
 
             return false;
         }
 
-        /// <summary>
-        /// Enters fallback mode for this attack handler only. Never disables or breaks other bot logic.
-        /// </summary>
-        private void EnterFallback(string reason)
+        private void TrySetCombatStance(Vector3 destination)
         {
-            if (!_isFallbackMode)
+            try
             {
-                _isFallbackMode = true;
-                BotFallbackUtility.Trigger(this, _bot, reason);
+                _cache.PoseController?.TrySetStanceFromNearbyCover(destination);
+            }
+            catch (Exception ex)
+            {
+                Plugin.LoggerInstance.LogError("[AttackHandler] Exception in TrySetCombatStance: " + ex);
             }
         }
 
-        #endregion
+        private static bool IsValidTarget(Vector3 pos)
+        {
+            return pos != Vector3.zero &&
+                   !float.IsNaN(pos.x) &&
+                   !float.IsNaN(pos.y) &&
+                   !float.IsNaN(pos.z);
+        }
+
+        /// <summary>
+        /// Returns a safe target for attack movement using only internal EFT/Unity logic.
+        /// </summary>
+        private static Vector3 GetSafeRandomAttackPoint(BotOwner bot, Vector3 fallback)
+        {
+            if (bot != null && bot.PatrollingData != null)
+            {
+                Vector3 patrol = bot.PatrollingData.CurTargetPoint;
+                if (IsValidTarget(patrol) && Vector3.Distance(patrol, fallback) > 1.0f)
+                    return patrol;
+            }
+
+            // Use NavMesh to sample a point near fallback
+            Vector3 candidate = fallback + UnityEngine.Random.onUnitSphere * 2.0f;
+            candidate.y = fallback.y;
+
+            UnityEngine.AI.NavMeshHit hit;
+            if (UnityEngine.AI.NavMesh.SamplePosition(candidate, out hit, 2.5f, UnityEngine.AI.NavMesh.AllAreas))
+                candidate = hit.position;
+
+            return IsValidTarget(candidate) ? candidate : fallback + Vector3.forward * 0.25f;
+        }
     }
 }

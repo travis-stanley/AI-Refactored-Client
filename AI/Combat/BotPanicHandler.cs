@@ -3,7 +3,7 @@
 //   Licensed under the MIT License. See LICENSE in the repository root for more information.
 //
 //   THIS FILE IS SYSTEMATICALLY MANAGED.
-//   Failures in AIRefactored logic must always trigger safe fallback to EFT base AI.
+//   All fallback logic is removed: bot panic logic is always eligible, self-recovering, and never disables the bot.
 // </auto-generated>
 
 namespace AIRefactored.AI.Combat
@@ -12,7 +12,7 @@ namespace AIRefactored.AI.Combat
     using AIRefactored.AI.Core;
     using AIRefactored.AI.Helpers;
     using AIRefactored.AI.Memory;
-    using AIRefactored.AI.Optimization;
+    using AIRefactored.AI.Navigation;
     using AIRefactored.Core;
     using EFT;
     using EFT.HealthSystem;
@@ -21,21 +21,15 @@ namespace AIRefactored.AI.Combat
     /// <summary>
     /// Handles bot suppression, flash, injury, and squad danger panic behavior.
     /// Manages composure, retreat direction, danger zones, and voice triggers.
-    /// Bulletproof: All failures are isolated; only this handler disables itself and triggers vanilla fallback if required.
+    /// All failures are isolated; panic logic never disables itself, never triggers fallback logic.
     /// </summary>
     public sealed class BotPanicHandler
     {
-        #region Constants
-
         private const float PanicCooldown = 5f;
         private const float PanicDuration = 3.5f;
         private const float RecoverySpeed = 0.2f;
         private const float SquadRadiusSqr = 225f;
         private const float LowHealthThreshold = 25f;
-
-        #endregion
-
-        #region Fields
 
         private BotOwner _bot;
         private BotComponentCache _cache;
@@ -44,35 +38,21 @@ namespace AIRefactored.AI.Combat
         private float _panicStartTime = -1f;
         private float _lastPanicExitTime = -99f;
         private bool _isPanicking;
-        private bool _isFallbackMode;
-
-        #endregion
-
-        #region Properties
 
         public bool IsPanicking => _isPanicking;
 
-        #endregion
-
-        #region Public Methods
-
-        public float GetComposureLevel()
-        {
-            return _composureLevel;
-        }
+        public float GetComposureLevel() => _composureLevel;
 
         public void Initialize(BotComponentCache componentCache)
         {
             if (componentCache == null || componentCache.Bot == null)
             {
-                BotFallbackUtility.Trigger(this, null, "[BotPanicHandler] Cannot initialize with null BotComponentCache or Bot.");
-                _isFallbackMode = true;
+                Plugin.LoggerInstance?.LogError("[BotPanicHandler] Cannot initialize with null BotComponentCache or Bot.");
                 return;
             }
 
             _cache = componentCache;
             _bot = componentCache.Bot;
-            _isFallbackMode = false;
 
             try
             {
@@ -83,15 +63,13 @@ namespace AIRefactored.AI.Combat
             }
             catch (Exception ex)
             {
-                BotFallbackUtility.Trigger(this, _bot, "Exception subscribing to ApplyDamageEvent.", ex);
-                _isFallbackMode = true;
+                Plugin.LoggerInstance?.LogError("[BotPanicHandler] Exception subscribing to ApplyDamageEvent: " + ex);
             }
         }
 
         public void Tick(float time)
         {
-            if (_isFallbackMode || !IsValid())
-                return;
+            if (!IsValid()) return;
 
             try
             {
@@ -121,14 +99,13 @@ namespace AIRefactored.AI.Combat
             }
             catch (Exception ex)
             {
-                BotFallbackUtility.Trigger(this, _bot, "Exception in Tick.", ex);
-                _isFallbackMode = true;
+                Plugin.LoggerInstance?.LogError("[BotPanicHandler] Exception in Tick: " + ex);
             }
         }
 
         public void TriggerPanic()
         {
-            if (_isFallbackMode || !IsValid() || _isPanicking || Time.time < _lastPanicExitTime + PanicCooldown)
+            if (!IsValid() || _isPanicking || Time.time < _lastPanicExitTime + PanicCooldown)
                 return;
 
             try
@@ -142,18 +119,13 @@ namespace AIRefactored.AI.Combat
             }
             catch (Exception ex)
             {
-                BotFallbackUtility.Trigger(this, _bot, "Exception in TriggerPanic.", ex);
-                _isFallbackMode = true;
+                Plugin.LoggerInstance?.LogError("[BotPanicHandler] Exception in TriggerPanic: " + ex);
             }
         }
 
-        #endregion
-
-        #region Private Methods
-
         private void OnDamaged(EBodyPart part, float damage, DamageInfoStruct info)
         {
-            if (_isFallbackMode || !IsValid() || _isPanicking || Time.time < _lastPanicExitTime + PanicCooldown)
+            if (!IsValid() || _isPanicking || Time.time < _lastPanicExitTime + PanicCooldown)
                 return;
 
             try
@@ -173,8 +145,7 @@ namespace AIRefactored.AI.Combat
             }
             catch (Exception ex)
             {
-                BotFallbackUtility.Trigger(this, _bot, "Exception in OnDamaged.", ex);
-                _isFallbackMode = true;
+                Plugin.LoggerInstance?.LogError("[BotPanicHandler] Exception in OnDamaged: " + ex);
             }
         }
 
@@ -186,7 +157,7 @@ namespace AIRefactored.AI.Combat
                 if (profile == null || profile.IsFrenzied || profile.IsStubborn)
                     return false;
 
-                if (_cache.FlashGrenade != null && _cache.FlashGrenade.IsFlashed())
+                if (_cache.FlashGrenade?.IsFlashed() == true)
                     return true;
 
                 if (_bot.HealthController == null)
@@ -197,8 +168,7 @@ namespace AIRefactored.AI.Combat
             }
             catch (Exception ex)
             {
-                BotFallbackUtility.Trigger(this, _bot, "Exception in ShouldPanicFromThreat.", ex);
-                _isFallbackMode = true;
+                Plugin.LoggerInstance?.LogError("[BotPanicHandler] Exception in ShouldPanicFromThreat: " + ex);
                 return false;
             }
         }
@@ -211,15 +181,13 @@ namespace AIRefactored.AI.Combat
             }
             catch (Exception ex)
             {
-                BotFallbackUtility.Trigger(this, _bot, "Exception in RecoverComposure.", ex);
-                _isFallbackMode = true;
+                Plugin.LoggerInstance?.LogError("[BotPanicHandler] Exception in RecoverComposure: " + ex);
             }
         }
 
         private void TryStartPanic(float now, Vector3 retreatDir)
         {
-            if (_isFallbackMode || !IsValid())
-                return;
+            if (!IsValid()) return;
 
             try
             {
@@ -230,47 +198,31 @@ namespace AIRefactored.AI.Combat
                 _cache.Escalation?.NotifyPanicTriggered();
 
                 float cohesion = _cache.AIRefactoredBotOwner?.PersonalityProfile?.Cohesion ?? 1f;
-                Vector3 fallback = _bot.Position + retreatDir.normalized * 8f;
 
-                if (_cache.Pathing != null)
-                {
-                    var path = BotCoverRetreatPlanner.GetCoverRetreatPath(_bot, retreatDir, _cache.Pathing);
-                    if (path != null && path.Count > 0)
-                    {
-                        fallback = (Vector3.Distance(path[0], _bot.Position) < 1f && path.Count > 1) ? path[1] : path[0];
-                    }
-                }
+                Vector3 fallback = _bot.Position + retreatDir.normalized * 8f;
+                if (BotNavHelper.TryGetSafeTarget(_bot, out var navTarget) && IsVectorValid(navTarget))
+                    fallback = navTarget;
 
                 if (_bot.Mover != null)
                 {
                     BotMovementHelper.SmoothMoveTo(_bot, fallback, false, cohesion);
                     BotCoverHelper.TrySetStanceFromNearbyCover(_cache, fallback);
                 }
-                else
-                {
-                    BotFallbackUtility.Trigger(this, _bot, "BotMover missing. Fallback to EFT AI.");
-                    _isFallbackMode = true;
-                    BotFallbackUtility.FallbackToEFTLogic(_bot);
-                    return;
-                }
 
                 if (GameWorldHandler.TryGetValidMapName() is string mapId)
-                {
                     BotMemoryStore.AddDangerZone(mapId, _bot.Position, DangerTriggerType.Panic, 0.6f);
-                }
 
                 _bot.Sprint(true);
 
                 if (!FikaHeadlessDetector.IsHeadless && _bot.BotTalk != null)
                 {
                     try { _bot.BotTalk.TrySay(EPhraseTrigger.OnBeingHurt); }
-                    catch { /* no-op */ }
+                    catch { }
                 }
             }
             catch (Exception ex)
             {
-                BotFallbackUtility.Trigger(this, _bot, "Exception in TryStartPanic.", ex);
-                _isFallbackMode = true;
+                Plugin.LoggerInstance?.LogError("[BotPanicHandler] Exception in TryStartPanic: " + ex);
             }
         }
 
@@ -289,8 +241,7 @@ namespace AIRefactored.AI.Combat
             }
             catch (Exception ex)
             {
-                BotFallbackUtility.Trigger(this, _bot, "Exception in EndPanic.", ex);
-                _isFallbackMode = true;
+                Plugin.LoggerInstance?.LogError("[BotPanicHandler] Exception in EndPanic: " + ex);
             }
         }
 
@@ -321,8 +272,7 @@ namespace AIRefactored.AI.Combat
             }
             catch (Exception ex)
             {
-                BotFallbackUtility.Trigger(this, _bot, "Exception in CheckNearbySquadDanger.", ex);
-                _isFallbackMode = true;
+                Plugin.LoggerInstance?.LogError("[BotPanicHandler] Exception in CheckNearbySquadDanger: " + ex);
             }
 
             return false;
@@ -335,8 +285,8 @@ namespace AIRefactored.AI.Combat
                 return _bot != null &&
                        _cache != null &&
                        !_bot.IsDead &&
-                       _bot.GetPlayer is Player player &&
-                       player.IsAI;
+                       _bot.GetPlayer is Player p &&
+                       p.IsAI;
             }
             catch
             {
@@ -344,6 +294,9 @@ namespace AIRefactored.AI.Combat
             }
         }
 
-        #endregion
+        private static bool IsVectorValid(Vector3 v)
+        {
+            return !float.IsNaN(v.x) && !float.IsNaN(v.y) && !float.IsNaN(v.z);
+        }
     }
 }

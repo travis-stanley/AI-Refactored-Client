@@ -3,7 +3,6 @@
 //   Licensed under the MIT License. See LICENSE in the repository root for more information.
 //
 //   THIS FILE IS SYSTEMATICALLY MANAGED.
-//   Please follow strict StyleCop, ReSharper, and AI-Refactored code standards for all modifications.
 //   All errors are locally isolated; registry logic never affects other systems or causes global faults.
 // </auto-generated>
 
@@ -179,9 +178,7 @@ namespace AIRefactored.AI.Looting
             try
             {
                 if (container == null || container.transform == null)
-                {
                     return;
-                }
 
                 Containers[container] = new TrackedContainer
                 {
@@ -203,9 +200,7 @@ namespace AIRefactored.AI.Looting
             try
             {
                 if (item == null || item.transform == null)
-                {
                     return;
-                }
 
                 Items[item] = new TrackedItem
                 {
@@ -232,9 +227,7 @@ namespace AIRefactored.AI.Looting
             try
             {
                 if (string.IsNullOrWhiteSpace(name))
-                {
                     return false;
-                }
 
                 foreach (var kv in Containers)
                 {
@@ -258,9 +251,7 @@ namespace AIRefactored.AI.Looting
             try
             {
                 if (string.IsNullOrWhiteSpace(name))
-                {
                     return false;
-                }
 
                 foreach (var kv in Items)
                 {
@@ -337,9 +328,7 @@ namespace AIRefactored.AI.Looting
             try
             {
                 if (go == null)
-                {
                     return;
-                }
 
                 int id = go.GetInstanceID();
                 if (WatchedInstanceIds.Add(id))

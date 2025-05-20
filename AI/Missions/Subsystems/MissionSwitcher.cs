@@ -86,19 +86,13 @@ namespace AIRefactored.AI.Missions.Subsystems
             try
             {
                 if (_bot == null || _cache == null || _profile == null)
-                {
                     return;
-                }
 
                 if (_bot.IsDead || _bot.GetPlayer == null || !_bot.GetPlayer.IsAI)
-                {
                     return;
-                }
 
                 if (time - _lastSwitchTime < SwitchCooldown)
-                {
                     return;
-                }
 
                 string name = _bot.Profile?.Info?.Nickname ?? "Unknown";
 
@@ -110,7 +104,8 @@ namespace AIRefactored.AI.Missions.Subsystems
                 {
                     currentMission = MissionType.Fight;
                     _lastSwitchTime = time;
-                    switchToFight?.Invoke();
+                    if (switchToFight != null)
+                        switchToFight();
                     _log.LogDebug("[MissionSwitcher] " + name + " escalating → Fight (under fire + aggressive)");
                     return;
                 }
@@ -136,7 +131,8 @@ namespace AIRefactored.AI.Missions.Subsystems
                 {
                     currentMission = MissionType.Quest;
                     _lastSwitchTime = time;
-                    resumeQuesting?.Invoke();
+                    if (resumeQuesting != null)
+                        resumeQuesting();
                     _log.LogDebug("[MissionSwitcher] " + name + " falling back → Quest (squad separation)");
                 }
             }

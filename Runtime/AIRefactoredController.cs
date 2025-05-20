@@ -3,8 +3,8 @@
 //   Licensed under the MIT License. See LICENSE in the repository root for more information.
 //
 //   THIS FILE IS SYSTEMATICALLY MANAGED.
-//   Failures in AIRefactored logic must always trigger safe fallback to EFT base AI, never break global logic.
-//   Bulletproof: All failures are locally contained, never break other subsystems, and always trigger fallback isolation.
+//   Bulletproof: All failures are locally contained, never break other subsystems. No vanilla fallback is triggered.
+//   No bot is ever marked as terminal or failed — all systems retry until successful.
 // </auto-generated>
 
 namespace AIRefactored.Runtime
@@ -18,10 +18,11 @@ namespace AIRefactored.Runtime
     using Comfort.Common;
     using EFT;
     using UnityEngine;
+    using System.Collections.Generic;
 
     /// <summary>
     /// Global AIRefactored lifecycle manager. Spawns persistent host and routes raid start/end logic and tick delegation.
-    /// Bulletproof: All lifecycle operations are strictly contained, multiplayer/headless safe, and never cascade errors.
+    /// Bulletproof: All lifecycle operations are strictly contained, multiplayer/headless safe, and retry on incomplete state.
     /// </summary>
     public sealed class AIRefactoredController : MonoBehaviour
     {
@@ -38,7 +39,7 @@ namespace AIRefactored.Runtime
         #region Properties
 
         /// <summary>
-        /// Gets the shared logger from Plugin.cs.
+        /// Shared logger instance for all AIRefactored systems.
         /// </summary>
         public static ManualLogSource Logger
         {
@@ -56,8 +57,7 @@ namespace AIRefactored.Runtime
         #region Public API
 
         /// <summary>
-        /// Initializes the controller by spawning the persistent host and attaching required components.
-        /// Bulletproof: All failures are locally contained, cannot break startup.
+        /// Initializes the persistent AIRefactored host and controller. Idempotent, thread-safe, and retry-safe.
         /// </summary>
         public static void Initialize()
         {
@@ -90,10 +90,8 @@ namespace AIRefactored.Runtime
         }
 
         /// <summary>
-        /// Triggered when the GameWorld becomes active. Launches phase bootstrapper.
-        /// Bulletproof: All failures are locally contained; cannot break global state.
+        /// Called when a raid (GameWorld) has started and world is ready for AI system boot.
         /// </summary>
-        /// <param name="world">Active GameWorld instance.</param>
         public static void OnRaidStarted(GameWorld world)
         {
             try
@@ -102,88 +100,35 @@ namespace AIRefactored.Runtime
                     return;
 
                 if (!GameWorldHandler.IsHost)
-                {
-                    LogDebug("[AIRefactoredController] Skipped OnRaidStarted — not a valid host.");
                     return;
-                }
 
-                // Headless/FIKA: Only proceed if raid started.
                 if (FikaHeadlessDetector.IsHeadless && !FikaHeadlessDetector.HasRaidStarted())
-                {
-                    LogWarn("[AIRefactoredController] Skipped — Headless mode but raid not started.");
                     return;
-                }
 
-                // World must have registered players, all valid, and must be fully ready (no partial loads)
-                if (world.RegisteredPlayers == null || world.RegisteredPlayers.Count == 0)
-                {
-                    LogWarn("[AIRefactoredController] Skipped — RegisteredPlayers not ready.");
+                if (!IsWorldAndPlayersValid(world))
                     return;
-                }
 
-                bool hasValidPlayer = false;
-                for (int i = 0; i < world.RegisteredPlayers.Count; i++)
-                {
-                    Player p = EFTPlayerUtil.AsEFTPlayer(world.RegisteredPlayers[i]);
-                    if (p != null && EFTPlayerUtil.IsValid(p))
-                    {
-                        hasValidPlayer = true;
-                        break;
-                    }
-                }
-
-                if (!hasValidPlayer)
-                {
-                    LogWarn("[AIRefactoredController] Skipped — no valid EFT.Player found.");
-                    return;
-                }
-
-                // Only run if world/map/phase is truly ready
                 if (!GameWorldHandler.IsReady())
-                {
-                    LogWarn("[AIRefactoredController] OnRaidStarted — GameWorldHandler not ready, will retry.");
-                    // Optionally: Schedule retry logic here if desired
                     return;
-                }
 
-                LogInfo("[AIRefactoredController] 🚀 GameWorld valid — starting AI systems.");
-
-                // NAVMESH/NAVPOINT BOOTSTRAP — Strict WorldReady check
                 string mapId = GameWorldHandler.TryGetValidMapName();
-                if (string.IsNullOrEmpty(mapId))
-                {
-                    LogWarn("[AIRefactoredController] OnRaidStarted — mapId is empty.");
-                }
-                else
-                {
-                    // NavMesh must be prebuilt before NavPointRegistry is registered for correct timing
-                    if (!NavMeshWarmupManager.IsNavMeshReady)
-                    {
-                        try { NavMeshWarmupManager.TryPrebuildNavMesh(); }
-                        catch (Exception ex) { LogError("[AIRefactoredController] NavMeshWarmupManager error: " + ex); }
-                    }
-                    if (!NavPointRegistry.IsInitialized)
-                    {
-                        try { NavPointRegistry.RegisterAll(mapId); }
-                        catch (Exception ex) { LogError("[AIRefactoredController] NavPointRegistry error: " + ex); }
-                    }
-                }
 
-                // Main world initialization after navmesh/navpoint
+                // No NavMeshWarmupManager logic remains here.
+
                 GameWorldHandler.Initialize(world);
                 WorldBootstrapper.Begin(Logger, mapId);
-
                 s_RaidActive = true;
+
+                Logger.LogInfo("[AIRefactoredController] 🚀 Raid systems initialized.");
             }
             catch (Exception ex)
             {
-                LogError("[AIRefactoredController] ❌ OnRaidStarted error: " + ex);
+                Logger.LogError("[AIRefactoredController] ❌ OnRaidStarted error: " + ex);
             }
         }
 
         /// <summary>
-        /// Called at end of raid. Cleans up all state and stops world logic.
-        /// Bulletproof: All failures are locally contained.
+        /// Called when a raid (GameWorld) ends; triggers teardown of all AIRefactored systems.
         /// </summary>
         public static void OnRaidEnded()
         {
@@ -192,7 +137,7 @@ namespace AIRefactored.Runtime
 
             try
             {
-                LogInfo("[AIRefactoredController] 🧹 Raid ended — cleaning up world systems...");
+                Logger.LogInfo("[AIRefactoredController] 🧹 Raid ended — cleaning up world systems...");
 
                 InitPhaseRunner.Stop();
                 WorldBootstrapper.Stop();
@@ -203,7 +148,7 @@ namespace AIRefactored.Runtime
             }
             catch (Exception ex)
             {
-                LogError("[AIRefactoredController] ❌ OnRaidEnded error: " + ex);
+                Logger.LogError("[AIRefactoredController] ❌ OnRaidEnded error: " + ex);
             }
         }
 
@@ -211,14 +156,15 @@ namespace AIRefactored.Runtime
 
         #region Unity Lifecycle
 
+        /// <summary>
+        /// Ticks the global WorldTickDispatcher for all subsystems.
+        /// </summary>
         private void Update()
         {
             try
             {
                 if (WorldInitState.IsInitialized)
-                {
                     WorldTickDispatcher.Tick(Time.deltaTime);
-                }
             }
             catch (Exception ex)
             {
@@ -226,11 +172,15 @@ namespace AIRefactored.Runtime
             }
         }
 
+        /// <summary>
+        /// Called when this controller is destroyed (typically on scene/raid end).
+        /// Ensures full and safe teardown of all systems.
+        /// </summary>
         private void OnDestroy()
         {
             try
             {
-                LogInfo("[AIRefactoredController] 🔻 OnDestroy — executing full shutdown.");
+                Logger.LogInfo("[AIRefactoredController] 🔻 OnDestroy — executing full shutdown.");
 
                 InitPhaseRunner.Stop();
                 WorldBootstrapper.Stop();
@@ -240,40 +190,37 @@ namespace AIRefactored.Runtime
                 s_Initialized = false;
                 s_RaidActive = false;
 
-                LogInfo("[AIRefactoredController] ✅ AIRefactoredController teardown complete.");
+                Logger.LogInfo("[AIRefactoredController] ✅ AIRefactoredController teardown complete.");
             }
             catch (Exception ex)
             {
-                LogError("[AIRefactoredController] ❌ OnDestroy error: " + ex);
+                Logger.LogError("[AIRefactoredController] ❌ OnDestroy error: " + ex);
             }
         }
 
         #endregion
 
-        #region Log Helpers
+        #region Validation Helpers
 
-        private static void LogInfo(string msg)
+        /// <summary>
+        /// Checks if the provided GameWorld and all registered players are valid and unique.
+        /// </summary>
+        private static bool IsWorldAndPlayersValid(GameWorld world)
         {
-            if (!FikaHeadlessDetector.IsHeadless)
-                Logger.LogInfo(msg);
-        }
+            if (world == null || world.RegisteredPlayers == null || world.RegisteredPlayers.Count == 0)
+                return false;
 
-        private static void LogWarn(string msg)
-        {
-            if (!FikaHeadlessDetector.IsHeadless)
-                Logger.LogWarning(msg);
-        }
-
-        private static void LogError(string msg)
-        {
-            if (!FikaHeadlessDetector.IsHeadless)
-                Logger.LogError(msg);
-        }
-
-        private static void LogDebug(string msg)
-        {
-            if (!FikaHeadlessDetector.IsHeadless)
-                Logger.LogDebug(msg);
+            var seenProfiles = new HashSet<string>();
+            for (int i = 0; i < world.RegisteredPlayers.Count; i++)
+            {
+                Player p = EFTPlayerUtil.AsEFTPlayer(world.RegisteredPlayers[i]);
+                string id = p?.Profile?.Id;
+                if (!EFTPlayerUtil.IsValid(p) || string.IsNullOrEmpty(id))
+                    continue;
+                if (!seenProfiles.Add(id))
+                    return false;
+            }
+            return seenProfiles.Count > 0;
         }
 
         #endregion

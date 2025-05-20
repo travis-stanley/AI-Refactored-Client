@@ -3,7 +3,7 @@
 //   Licensed under the MIT License. See LICENSE in the repository root for more information.
 //
 //   THIS FILE IS SYSTEMATICALLY MANAGED.
-//   Failures in AIRefactored logic must always trigger safe fallback to EFT base AI, never break the stack.
+//   All failures are logged locally; no subsystem can trigger fallback to vanilla EFT AI.
 //   Please follow strict StyleCop, ReSharper, and AI-Refactored code standards for all modifications.
 // </auto-generated>
 
@@ -13,7 +13,6 @@ namespace AIRefactored.AI.Reactions
     using AIRefactored.AI.Combat;
     using AIRefactored.AI.Core;
     using AIRefactored.AI.Helpers;
-    using AIRefactored.AI.Optimization;
     using AIRefactored.Core;
     using EFT;
     using UnityEngine;
@@ -21,6 +20,7 @@ namespace AIRefactored.AI.Reactions
     /// <summary>
     /// Handles bot reactions to intense light exposure (e.g., flashlights or flashbangs).
     /// Applies suppression, triggers scored fallback movement, and panic if threshold reached.
+    /// All failures are locally isolated; never trigger fallback to vanilla AI.
     /// </summary>
     public sealed class BotFlashReactionComponent
     {
@@ -181,27 +181,26 @@ namespace AIRefactored.AI.Reactions
 
         /// <summary>
         /// Calculates and executes bot fallback movement due to flash suppression.
+        /// Uses only EFT-native navigation. Never triggers fallback to vanilla AI.
         /// </summary>
         private static void TriggerFallback(BotOwner bot)
         {
             try
             {
-                Vector3 dir = bot.LookDirection;
-                Vector3? retreat = HybridFallbackResolver.GetBestRetreatPoint(bot, dir);
-
-                if (retreat.HasValue)
-                {
-                    BotMovementHelper.SmoothMoveTo(bot, retreat.Value);
+                if (bot == null)
                     return;
-                }
 
-                Vector3 lateral = new Vector3(-dir.x, 0f, -dir.z).normalized;
-                Vector3 fallback = bot.Position + lateral * FallbackDistance + UnityEngine.Random.insideUnitSphere * FallbackJitter;
+                Vector3 dir = bot.LookDirection;
+                Vector3 fallback = bot.Position - dir.normalized * FallbackDistance;
+                fallback += UnityEngine.Random.insideUnitSphere * FallbackJitter;
                 fallback.y = bot.Position.y;
 
-                BotMovementHelper.SmoothMoveTo(bot, fallback);
+                BotMovementHelper.SmoothMoveToSafe(bot, fallback);
             }
-            catch { }
+            catch (Exception ex)
+            {
+                Plugin.LoggerInstance.LogError($"[BotFlashReactionComponent] TriggerFallback failed: {ex}");
+            }
         }
 
         /// <summary>
@@ -216,7 +215,10 @@ namespace AIRefactored.AI.Reactions
                     panic.TriggerPanic();
                 }
             }
-            catch { }
+            catch (Exception ex)
+            {
+                Plugin.LoggerInstance.LogError($"[BotFlashReactionComponent] TriggerPanic failed: {ex}");
+            }
         }
 
         #endregion

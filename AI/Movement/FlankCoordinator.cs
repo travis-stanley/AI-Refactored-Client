@@ -42,25 +42,20 @@ namespace AIRefactored.AI.Movement
 
         /// <summary>
         /// Determines the best flank side based on squad spacing, suppression, and enemy angle.
-        /// Enforces per-side cooldown to avoid flank spam.
+        /// Enforces per-side cooldown to avoid flank spam. Bulletproof: always returns a valid side.
         /// </summary>
         public static FlankPositionPlanner.Side GetOptimalFlankSide(BotOwner bot, BotComponentCache cache)
         {
             try
             {
-                // Null-guarded: fallback always succeeds (never breaks AI stack)
                 if (!EFTPlayerUtil.IsValidBotOwner(bot) || cache == null || bot.Memory == null || bot.Memory.GoalEnemy == null)
-                {
                     return FlankPositionPlanner.Side.Left;
-                }
 
                 Vector3 botPos = bot.Position;
                 Vector3 enemyPos = bot.Memory.GoalEnemy.CurrPosition;
                 BifacialTransform enemyTransform = bot.Memory.GoalEnemy.Person?.Transform;
                 if (enemyTransform == null)
-                {
                     return FlankPositionPlanner.Side.Left;
-                }
 
                 float now = Time.time;
                 Vector3 enemyForward = enemyTransform.forward;
@@ -76,36 +71,27 @@ namespace AIRefactored.AI.Movement
                 float leftScore = 0f;
                 float rightScore = 0f;
 
+                // Favor left if bot is on enemy's right, right if on enemy's left
                 if (angle > FlankAngleThreshold)
-                {
                     leftScore += 1f;
-                }
                 else if (angle < -FlankAngleThreshold)
-                {
                     rightScore += 1f;
-                }
 
                 leftScore += squadBias + suppressionBias;
                 rightScore -= squadBias;
                 rightScore += suppressionBias;
 
                 if (leftCooldown < RecentlyUsedFlankCooldown)
-                {
                     leftScore -= 0.75f;
-                }
-
                 if (rightCooldown < RecentlyUsedFlankCooldown)
-                {
                     rightScore -= 0.75f;
-                }
 
-                // Hard fallback: always update state to avoid drift/desync
+                // Select best, always update use time for state sync
                 if (leftScore >= rightScore)
                 {
                     _lastLeftUseTime = now;
                     return FlankPositionPlanner.Side.Left;
                 }
-
                 _lastRightUseTime = now;
                 return FlankPositionPlanner.Side.Right;
             }
@@ -146,9 +132,7 @@ namespace AIRefactored.AI.Movement
             {
                 BotsGroup group = bot.BotsGroup;
                 if (group == null || group.MembersCount <= 1)
-                {
                     return 0f;
-                }
 
                 Vector3 selfOffset = bot.Position - enemyPosition;
                 Vector3 normSelf = selfOffset.sqrMagnitude > 0.001f ? selfOffset.normalized : Vector3.forward;
@@ -160,9 +144,7 @@ namespace AIRefactored.AI.Movement
                 {
                     BotOwner mate = group.Member(i);
                     if (mate == null || mate == bot || mate.IsDead)
-                    {
                         continue;
-                    }
 
                     Vector3 toMate = mate.Position - enemyPosition;
                     if (toMate.sqrMagnitude > 0.001f)

@@ -74,6 +74,9 @@ namespace AIRefactored.AI.Movement
 
         #region Initialization
 
+        /// <summary>
+        /// Initializes this corner/edge scanner for the given bot and cache.
+        /// </summary>
         public void Initialize(BotOwner bot, BotComponentCache cache)
         {
             try
@@ -106,34 +109,23 @@ namespace AIRefactored.AI.Movement
 
         #region Public API
 
+        /// <summary>
+        /// Ticks the corner/edge scan logic for this bot.
+        /// </summary>
         public void Tick(float time)
         {
             try
             {
                 if (!_isInitialized || _bot == null || _cache == null || _profile == null)
-                {
                     return;
-                }
-
                 if (_bot.IsDead || _bot.Mover == null || _bot.Transform == null)
-                {
                     return;
-                }
-
                 if (_cache.Tilt == null || _cache.PoseController == null)
-                {
                     return;
-                }
-
                 if (_bot.Memory != null && _bot.Memory.GoalEnemy != null)
-                {
                     return;
-                }
-
                 if (time < _pauseUntil || time < _prepCrouchUntil)
-                {
                     return;
-                }
 
                 if (IsApproachingEdge())
                 {
@@ -142,9 +134,7 @@ namespace AIRefactored.AI.Movement
                 }
 
                 if (TryCornerPeekWithCrouch(time))
-                {
                     return;
-                }
 
                 ResetLean(time);
             }
@@ -158,6 +148,9 @@ namespace AIRefactored.AI.Movement
 
         #region Edge + Corner Logic
 
+        /// <summary>
+        /// Returns true if an edge/ledge/drop-off is detected in front of the bot.
+        /// </summary>
         private bool IsApproachingEdge()
         {
             try
@@ -191,6 +184,9 @@ namespace AIRefactored.AI.Movement
             return false;
         }
 
+        /// <summary>
+        /// Checks both left/right for a wall and triggers lean or crouch.
+        /// </summary>
         private bool TryCornerPeekWithCrouch(float time)
         {
             try
@@ -201,32 +197,27 @@ namespace AIRefactored.AI.Movement
                 float dist = BaseWallCheckDistance + ((1f - _profile.Caution) * 0.5f);
 
                 if (CheckWall(origin, left, dist))
-                {
                     return TriggerLeanOrCrouch(BotTiltType.left, time);
-                }
 
                 if (CheckWall(origin, right, dist))
-                {
                     return TriggerLeanOrCrouch(BotTiltType.right, time);
-                }
             }
             catch (Exception ex)
             {
                 Log.LogError("[BotCornerScanner] TryCornerPeekWithCrouch failed: " + ex);
             }
-
             return false;
         }
 
+        /// <summary>
+        /// Returns true if a wall is detected in the given direction from origin.
+        /// </summary>
         private bool CheckWall(Vector3 origin, Vector3 dir, float dist)
         {
             try
             {
                 if (!Physics.Raycast(origin, dir, out RaycastHit hit, dist, AIRefactoredLayerMasks.CoverRayMask))
-                {
                     return false;
-                }
-
                 return Vector3.Dot(hit.normal, dir) < WallAngleThreshold;
             }
             catch (Exception ex)
@@ -236,6 +227,9 @@ namespace AIRefactored.AI.Movement
             }
         }
 
+        /// <summary>
+        /// Triggers a crouch (first) or a lean (second) depending on pose/state.
+        /// </summary>
         private bool TriggerLeanOrCrouch(BotTiltType side, float time)
         {
             try
@@ -245,14 +239,12 @@ namespace AIRefactored.AI.Movement
                     _isCrouching = true;
                     return true;
                 }
-
                 if (!_isLeaning)
                 {
                     _cache.Tilt.Set(side);
                     PauseMovement(time);
                     _isLeaning = true;
                 }
-
                 return true;
             }
             catch (Exception ex)
@@ -262,6 +254,9 @@ namespace AIRefactored.AI.Movement
             }
         }
 
+        /// <summary>
+        /// Attempts to crouch using the pose controller.
+        /// </summary>
         private bool AttemptCrouch(float time)
         {
             try
@@ -284,6 +279,9 @@ namespace AIRefactored.AI.Movement
 
         #region Helpers
 
+        /// <summary>
+        /// Pauses movement for a context-dependent duration.
+        /// </summary>
         private void PauseMovement(float time)
         {
             try
@@ -298,6 +296,9 @@ namespace AIRefactored.AI.Movement
             }
         }
 
+        /// <summary>
+        /// Resets all lean and crouch states to normal.
+        /// </summary>
         private void ResetLean(float time)
         {
             try

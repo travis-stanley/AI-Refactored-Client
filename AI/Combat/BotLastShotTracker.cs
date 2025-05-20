@@ -18,13 +18,7 @@ namespace AIRefactored.AI.Combat
     /// </summary>
     public sealed class BotLastShotTracker
     {
-        #region Constants
-
-        private const float DefaultMemoryWindow = 10f;
-
-        #endregion
-
-        #region Fields
+        private static readonly float DefaultMemoryWindow = 10f;
 
         private string _lastAttackerId = string.Empty;
         private float _lastHitTime = float.NegativeInfinity;
@@ -32,14 +26,10 @@ namespace AIRefactored.AI.Combat
         private string _lastTargetId = string.Empty;
         private float _lastShotTime = float.NegativeInfinity;
 
-        #endregion
-
-        #region Public Methods
-
         /// <summary>
         /// Returns true if the specified profile was shot at recently by this bot.
         /// </summary>
-        public bool DidRecentlyShoot(string profileId, float now = -1f, float memoryWindow = DefaultMemoryWindow)
+        public bool DidRecentlyShoot(string profileId, float now = -1f, float memoryWindow = -1f)
         {
             try
             {
@@ -49,20 +39,18 @@ namespace AIRefactored.AI.Combat
                 if (!string.Equals(_lastTargetId, profileId, StringComparison.Ordinal))
                     return false;
 
-                float currentTime = now >= 0f ? now : Time.time;
-                return (currentTime - _lastShotTime) <= memoryWindow;
+                float window = memoryWindow > 0f ? memoryWindow : DefaultMemoryWindow;
+                float time = now >= 0f ? now : Time.time;
+
+                return (time - _lastShotTime) <= window;
             }
-            catch
-            {
-                // Always fail safely, never break the caller.
-                return false;
-            }
+            catch { return false; }
         }
 
         /// <summary>
         /// Returns true if this bot was recently hit by the specified profile.
         /// </summary>
-        public bool WasRecentlyShotBy(string profileId, float now = -1f, float memoryWindow = DefaultMemoryWindow)
+        public bool WasRecentlyShotBy(string profileId, float now = -1f, float memoryWindow = -1f)
         {
             try
             {
@@ -72,13 +60,12 @@ namespace AIRefactored.AI.Combat
                 if (!string.Equals(_lastAttackerId, profileId, StringComparison.Ordinal))
                     return false;
 
-                float currentTime = now >= 0f ? now : Time.time;
-                return (currentTime - _lastHitTime) <= memoryWindow;
+                float window = memoryWindow > 0f ? memoryWindow : DefaultMemoryWindow;
+                float time = now >= 0f ? now : Time.time;
+
+                return (time - _lastHitTime) <= window;
             }
-            catch
-            {
-                return false;
-            }
+            catch { return false; }
         }
 
         /// <summary>
@@ -115,7 +102,5 @@ namespace AIRefactored.AI.Combat
             _lastHitTime = float.NegativeInfinity;
             _lastShotTime = float.NegativeInfinity;
         }
-
-        #endregion
     }
 }

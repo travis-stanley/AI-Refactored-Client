@@ -3,7 +3,7 @@
 //   Licensed under the MIT License. See LICENSE in the repository root for more information.
 //
 //   THIS FILE IS SYSTEMATICALLY MANAGED.
-//   Failures in AIRefactored logic must always trigger safe fallback to EFT base AI.
+//   Bulletproof: No fallback logic. All navigation and stuck correction failures are locally contained and only log or skip.
 // </auto-generated>
 
 namespace AIRefactored.AI.Missions.Subsystems
@@ -13,6 +13,7 @@ namespace AIRefactored.AI.Missions.Subsystems
     using AIRefactored.AI.Core;
     using AIRefactored.AI.Groups;
     using AIRefactored.AI.Helpers;
+    using AIRefactored.AI.Navigation;
     using AIRefactored.AI.Optimization;
     using AIRefactored.Core;
     using AIRefactored.Pools;
@@ -82,10 +83,12 @@ namespace AIRefactored.AI.Missions.Subsystems
         {
             try
             {
-                if (_group == null) return true;
+                if (_group == null)
+                    return true;
 
                 IReadOnlyList<BotOwner> squad = _group.GetTeammates();
-                if (squad == null || squad.Count == 0) return true;
+                if (squad == null || squad.Count == 0)
+                    return true;
 
                 int nearby = 0;
                 Vector3 selfPos = _bot.Position;
@@ -95,9 +98,7 @@ namespace AIRefactored.AI.Missions.Subsystems
                 {
                     BotOwner mate = squad[i];
                     if (mate != null && !mate.IsDead && (mate.Position - selfPos).sqrMagnitude <= sqrRange)
-                    {
                         nearby++;
-                    }
                 }
 
                 int required = Mathf.CeilToInt(squad.Count * 0.6f);
@@ -114,13 +115,16 @@ namespace AIRefactored.AI.Missions.Subsystems
         {
             try
             {
-                if (_profile.IsFrenzied || _profile.Caution <= 0.6f) return false;
+                if (_profile.IsFrenzied || _profile.Caution <= 0.6f)
+                    return false;
 
                 Player player = _bot.GetPlayer;
-                if (player?.Inventory?.Equipment == null) return false;
+                if (player?.Inventory?.Equipment == null)
+                    return false;
 
                 Slot backpackSlot = player.Inventory.Equipment.GetSlot(EquipmentSlot.Backpack);
-                if (backpackSlot?.ContainedItem == null) return false;
+                if (backpackSlot?.ContainedItem == null)
+                    return false;
 
                 List<Item> items = TempListPool.Rent<Item>();
                 try
@@ -146,7 +150,8 @@ namespace AIRefactored.AI.Missions.Subsystems
             try
             {
                 ExfiltrationPoint[] allPoints = GameObject.FindObjectsOfType<ExfiltrationPoint>();
-                if (allPoints == null || allPoints.Length == 0) return;
+                if (allPoints == null || allPoints.Length == 0)
+                    return;
 
                 ExfiltrationPoint closest = null;
                 float minDist = float.MaxValue;
@@ -207,12 +212,17 @@ namespace AIRefactored.AI.Missions.Subsystems
                     _fallbackAttempts++;
 
                     Vector3 dir = _bot.LookDirection;
-                    Vector3? fallback = HybridFallbackResolver.GetBestRetreatPoint(_bot, dir);
-                    if (fallback.HasValue && _bot.Mover != null)
+                    Vector3 target = _bot.Position - dir.normalized * 4f;
+                    if (!BotNavHelper.TryGetSafeTarget(_bot, out target))
+                        target = _bot.Position - dir.normalized * 4f;
+                    if (!IsValidTarget(target))
+                        target = _bot.Position;
+
+                    if (_bot.Mover != null)
                     {
                         Logger.LogDebug("[MissionEvaluator] " + (_bot.Profile?.Info?.Nickname ?? "Unknown") +
-                                        " fallback #" + _fallbackAttempts + " → " + fallback.Value);
-                        BotMovementHelper.SmoothMoveTo(_bot, fallback.Value);
+                                        " fallback #" + _fallbackAttempts + " → " + target);
+                        BotMovementHelper.SmoothMoveTo(_bot, target);
                     }
                 }
             }
@@ -239,6 +249,14 @@ namespace AIRefactored.AI.Missions.Subsystems
             {
                 Logger.LogWarning("[MissionEvaluator] VO failed: " + ex.Message);
             }
+        }
+
+        private static bool IsValidTarget(Vector3 pos)
+        {
+            return pos != Vector3.zero &&
+                   !float.IsNaN(pos.x) &&
+                   !float.IsNaN(pos.y) &&
+                   !float.IsNaN(pos.z);
         }
 
         #endregion

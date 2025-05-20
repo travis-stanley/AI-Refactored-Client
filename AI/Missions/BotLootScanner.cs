@@ -94,25 +94,19 @@ namespace AIRefactored.AI.Looting
             try
             {
                 if (_bot == null || _bot.IsDead || time < _nextScanTime)
-                {
                     return;
-                }
 
                 _nextScanTime = time + ScanInterval;
 
                 if (!IsEligibleToLoot())
-                {
                     return;
-                }
 
                 TryLootNearby();
 
                 _cachedLootValue = CalculateNearbyLootValue();
 
                 if (_cachedLootValue <= 0f && time - _lastUpdateTime > StaleResetSeconds)
-                {
                     _cachedLootValue = 0f;
-                }
 
                 _lastUpdateTime = time;
             }
@@ -130,9 +124,7 @@ namespace AIRefactored.AI.Looting
             try
             {
                 if (_bot == null)
-                {
                     return Vector3.zero;
-                }
 
                 Vector3 origin = _bot.Position;
                 Vector3 best = origin;
@@ -143,15 +135,11 @@ namespace AIRefactored.AI.Looting
                 {
                     LootableContainer container = containers[i];
                     if (container == null || !container.enabled || IsOnCooldown(container.name))
-                    {
                         continue;
-                    }
 
                     Vector3 position = container.transform.position;
                     if (Vector3.Distance(origin, position) > HighValueRadius || !HasLineOfSight(position))
-                    {
                         continue;
-                    }
 
                     float value = EstimateContainerValue(container);
                     if (value > bestValue)
@@ -178,9 +166,7 @@ namespace AIRefactored.AI.Looting
             try
             {
                 if (_bot == null)
-                {
                     return;
-                }
 
                 Vector3 origin = _bot.Position;
 
@@ -299,17 +285,16 @@ namespace AIRefactored.AI.Looting
 
         private float EstimateContainerValue(LootableContainer container)
         {
+            List<Item> items = null;
             try
             {
                 if (container.ItemOwner == null || container.ItemOwner.RootItem == null)
-                {
                     return 0f;
-                }
 
                 Item root = container.ItemOwner.RootItem;
                 float total = 0f;
 
-                List<Item> items = TempListPool.Rent<Item>();
+                items = TempListPool.Rent<Item>();
                 root.GetAllItemsNonAlloc(items);
 
                 for (int i = 0; i < items.Count; i++)
@@ -319,19 +304,21 @@ namespace AIRefactored.AI.Looting
                     {
                         float price = item.Template.CreditsPrice;
                         if (price > 0f)
-                        {
                             total += price;
-                        }
                     }
                 }
 
-                TempListPool.Return(items);
                 return total;
             }
             catch (Exception ex)
             {
                 Plugin.LoggerInstance.LogError($"[BotLootScanner] EstimateContainerValue failed: {ex}");
                 return 0f;
+            }
+            finally
+            {
+                if (items != null)
+                    TempListPool.Return(items);
             }
         }
 
@@ -343,9 +330,7 @@ namespace AIRefactored.AI.Looting
                 Vector3 direction = target - origin;
 
                 if (_bot.WeaponRoot != null && Vector3.Angle(_bot.WeaponRoot.forward, direction) > MaxAngle)
-                {
                     return false;
-                }
 
                 float distance = direction.magnitude + 0.3f;
                 return Physics.Raycast(origin, direction.normalized, out RaycastHit hit, distance, AIRefactoredLayerMasks.HighPolyWithTerrainMaskAI)
@@ -363,9 +348,7 @@ namespace AIRefactored.AI.Looting
             try
             {
                 if (!string.IsNullOrEmpty(id))
-                {
                     _cooldowns[id.Trim()] = Time.time + CooldownSeconds;
-                }
             }
             catch (Exception ex)
             {
@@ -378,9 +361,7 @@ namespace AIRefactored.AI.Looting
             try
             {
                 if (string.IsNullOrEmpty(id))
-                {
                     return true;
-                }
 
                 float expires;
                 return _cooldowns.TryGetValue(id.Trim(), out expires) && Time.time < expires;

@@ -93,12 +93,13 @@ namespace AIRefactored.AI.Medical
 
         #region Public API
 
+        /// <summary>
+        /// Resets healing state and unsubscribes from first aid events.
+        /// </summary>
         public void Reset()
         {
             if (!_isActive)
-            {
                 return;
-            }
 
             try
             {
@@ -113,33 +114,27 @@ namespace AIRefactored.AI.Medical
             }
         }
 
+        /// <summary>
+        /// Main tick for bot medical logic; checks healing conditions and processes squad or self heal as needed.
+        /// </summary>
         public void Tick(float time)
         {
             if (!_isActive || _isHealing || time < _nextHealCheck)
-            {
                 return;
-            }
 
             try
             {
                 if (!EFTPlayerUtil.IsValidBotOwner(_bot) || (_cache.PanicHandler != null && _cache.PanicHandler.IsPanicking))
-                {
                     return;
-                }
 
                 if (_bot.HealAnotherTarget != null && _bot.HealAnotherTarget.IsInProcess)
-                {
                     return;
-                }
 
                 _nextHealCheck = time + HealCheckInterval;
-
                 _injurySystem.Tick(time);
 
                 if (TryHealSquadmate())
-                {
                     return;
-                }
 
                 TrySelfHeal();
             }
@@ -154,20 +149,19 @@ namespace AIRefactored.AI.Medical
 
         #region Healing Logic
 
+        /// <summary>
+        /// Attempts to heal a squadmate within range who needs aid.
+        /// </summary>
         private bool TryHealSquadmate()
         {
             try
             {
                 if (_bot.BotsGroup == null)
-                {
                     return false;
-                }
 
                 Player self = EFTPlayerUtil.ResolvePlayer(_bot);
                 if (!EFTPlayerUtil.IsValidGroupPlayer(self))
-                {
                     return false;
-                }
 
                 Vector3 selfPos = EFTPlayerUtil.GetPosition(self);
                 int count = _bot.BotsGroup.MembersCount;
@@ -176,23 +170,17 @@ namespace AIRefactored.AI.Medical
                 {
                     BotOwner mate = _bot.BotsGroup.Member(i);
                     if (!EFTPlayerUtil.IsValidBotOwner(mate) || mate == _bot)
-                    {
                         continue;
-                    }
 
                     Player target = EFTPlayerUtil.ResolvePlayer(mate);
                     if (!EFTPlayerUtil.IsValidGroupPlayer(target))
-                    {
                         continue;
-                    }
 
                     Vector3 targetPos = EFTPlayerUtil.GetPosition(target);
                     float dx = targetPos.x - selfPos.x;
                     float dz = targetPos.z - selfPos.z;
                     if ((dx * dx + dz * dz) > HealSquadRangeSqr)
-                    {
                         continue;
-                    }
 
                     IPlayer iTarget = EFTPlayerUtil.AsSafeIPlayer(target);
                     if (iTarget != null)
@@ -210,6 +198,9 @@ namespace AIRefactored.AI.Medical
             return false;
         }
 
+        /// <summary>
+        /// Attempts self-healing using available medkits, surgical kits, or stimulators.
+        /// </summary>
         private void TrySelfHeal()
         {
             try
@@ -253,6 +244,9 @@ namespace AIRefactored.AI.Medical
 
         #region Callbacks
 
+        /// <summary>
+        /// Called when this bot is asked to heal another player.
+        /// </summary>
         private void OnHealAsked(IPlayer target)
         {
             try
@@ -266,6 +260,9 @@ namespace AIRefactored.AI.Medical
             }
         }
 
+        /// <summary>
+        /// Called when a first aid application finishes.
+        /// </summary>
         private void OnHealComplete(BotOwner _)
         {
             try
@@ -280,6 +277,9 @@ namespace AIRefactored.AI.Medical
             }
         }
 
+        /// <summary>
+        /// Called when a stimulator application finishes.
+        /// </summary>
         private void OnStimComplete(bool success)
         {
             try

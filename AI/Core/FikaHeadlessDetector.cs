@@ -66,17 +66,11 @@ namespace AIRefactored.AI.Core
             try
             {
                 string cmd = Environment.CommandLine;
-                bool foundHeadless = Application.isBatchMode || cmd.IndexOf("-nographics", StringComparison.OrdinalIgnoreCase) >= 0;
-
-                _isHeadless = foundHeadless;
+                _isHeadless = Application.isBatchMode || cmd.IndexOf("-nographics", StringComparison.OrdinalIgnoreCase) >= 0;
 
                 if (_isHeadless)
                 {
-                    string result = TryParseRaidLocationFromArgs();
-                    if (!string.IsNullOrEmpty(result))
-                    {
-                        _raidLocation = result;
-                    }
+                    _raidLocation = TryParseRaidLocationFromArgs();
                 }
             }
             catch
@@ -111,16 +105,12 @@ namespace AIRefactored.AI.Core
 
                 if (match.Success && match.Groups.Count > 1)
                 {
-                    string location = match.Groups[1].Value;
-                    if (!string.IsNullOrEmpty(location))
-                    {
-                        return location;
-                    }
+                    return match.Groups[1].Value;
                 }
             }
             catch
             {
-                // Silent fail, fallback to string.Empty
+                // Silent fail
             }
 
             return string.Empty;

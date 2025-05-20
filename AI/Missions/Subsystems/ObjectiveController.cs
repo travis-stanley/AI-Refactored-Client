@@ -43,13 +43,9 @@ namespace AIRefactored.AI.Missions.Subsystems
         public ObjectiveController(BotOwner bot, BotComponentCache cache)
         {
             if (!EFTPlayerUtil.IsValidBotOwner(bot))
-            {
                 throw new ArgumentException("[ObjectiveController] Invalid BotOwner.");
-            }
             if (cache == null)
-            {
                 throw new ArgumentNullException(nameof(cache));
-            }
 
             _bot = bot;
             _cache = cache;
@@ -96,9 +92,7 @@ namespace AIRefactored.AI.Missions.Subsystems
             try
             {
                 if (_questRoute.Count == 0)
-                {
                     PopulateQuestRoute();
-                }
 
                 if (_questRoute.Count > 0)
                 {
@@ -163,9 +157,7 @@ namespace AIRefactored.AI.Missions.Subsystems
             {
                 BotZone[] zones = GameObject.FindObjectsOfType<BotZone>();
                 if (zones == null || zones.Length == 0)
-                {
                     return _bot.Position;
-                }
                 int index = _rng.Next(0, zones.Length);
                 BotZone zone = zones[index];
                 return zone != null ? zone.transform.position : _bot.Position;
@@ -224,9 +216,7 @@ namespace AIRefactored.AI.Missions.Subsystems
 
                 List<HotspotRegistry.Hotspot> candidates = HotspotRegistry.QueryNearby(origin, 100f, directionFilter);
                 if (candidates == null || candidates.Count == 0)
-                {
                     return;
-                }
 
                 int desired = UnityEngine.Random.Range(2, 4);
                 HashSet<int> used = TempHashSetPool.Rent<int>();
@@ -235,9 +225,7 @@ namespace AIRefactored.AI.Missions.Subsystems
                 {
                     int index = UnityEngine.Random.Range(0, candidates.Count);
                     if (used.Add(index))
-                    {
                         _questRoute.Enqueue(candidates[index].Position);
-                    }
                 }
 
                 TempHashSetPool.Return(used);

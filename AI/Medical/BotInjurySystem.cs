@@ -64,27 +64,24 @@ namespace AIRefactored.AI.Medical
 
         #region Public API
 
+        /// <summary>
+        /// Should be called when a bot receives damage to a limb.
+        /// </summary>
         public void OnHit(EBodyPart part, float damage)
         {
             if (!_isActive)
-            {
                 return;
-            }
 
             try
             {
                 BotOwner bot = _cache.Bot;
                 if (!EFTPlayerUtil.IsValidBotOwner(bot))
-                {
                     return;
-                }
 
                 Player player = bot.GetPlayer;
                 IHealthController health = player != null ? player.HealthController : null;
                 if (health == null)
-                {
                     return;
-                }
 
                 _lastHitTime = Time.time;
                 _nextHealTime = _lastHitTime + HealCooldown;
@@ -99,6 +96,9 @@ namespace AIRefactored.AI.Medical
             }
         }
 
+        /// <summary>
+        /// Resets all injury state.
+        /// </summary>
         public void Reset()
         {
             _injuredLimb = EBodyPart.Common;
@@ -108,34 +108,32 @@ namespace AIRefactored.AI.Medical
             _hasBlackLimb = false;
         }
 
+        /// <summary>
+        /// Returns true if the bot should heal now.
+        /// </summary>
         public bool ShouldHeal()
         {
             return ShouldHeal(Time.time);
         }
 
+        /// <summary>
+        /// Returns true if the bot should heal at the provided time.
+        /// </summary>
         public bool ShouldHeal(float time)
         {
             if (!_isActive)
-            {
                 return false;
-            }
 
             try
             {
                 if (!_hasInjury || !_hasBlackLimb || time < _nextHealTime)
-                {
                     return false;
-                }
 
                 if (_cache.PanicHandler != null && _cache.PanicHandler.IsPanicking)
-                {
                     return false;
-                }
 
                 if (_cache.Combat != null && _cache.Combat.IsInCombatState())
-                {
                     return false;
-                }
 
                 return true;
             }
@@ -147,12 +145,13 @@ namespace AIRefactored.AI.Medical
             }
         }
 
+        /// <summary>
+        /// Main update for the injury system; attempts healing if appropriate.
+        /// </summary>
         public void Tick(float time)
         {
             if (!_isActive)
-            {
                 return;
-            }
 
             try
             {
@@ -178,23 +177,17 @@ namespace AIRefactored.AI.Medical
             {
                 BotOwner bot = _cache.Bot;
                 if (!EFTPlayerUtil.IsValidBotOwner(bot) || !_hasInjury)
-                {
                     return;
-                }
 
                 Player player = bot.GetPlayer;
                 IHealthController health = player != null ? player.HealthController : null;
                 if (health == null || !health.IsBodyPartDestroyed(_injuredLimb))
-                {
                     return;
-                }
 
                 // The true surgical kit type in EFT is a derived class of Medecine, here GClass473 is the correct reflection-based EFT type.
                 GClass473 surgery = bot.Medecine?.SurgicalKit as GClass473;
                 if (surgery == null || !surgery.HaveWork || !surgery.ShallStartUse())
-                {
                     return;
-                }
 
                 bot.Sprint(false);
                 bot.WeaponManager?.Selector?.TakePrevWeapon();

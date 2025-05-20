@@ -3,7 +3,7 @@
 //   Licensed under the MIT License. See LICENSE in the repository root for more information.
 //
 //   THIS FILE IS SYSTEMATICALLY MANAGED.
-//   Failures in AIRefactored logic must always trigger safe fallback to EFT base AI.
+//   Bulletproof: All errors are locally isolated, never disables itself, never triggers fallback AI, never enters terminal state.
 // </auto-generated>
 
 namespace AIRefactored.AI.Combat.States
@@ -12,36 +12,25 @@ namespace AIRefactored.AI.Combat.States
     using System.Collections.Generic;
     using AIRefactored.AI.Core;
     using AIRefactored.AI.Helpers;
+    using AIRefactored.AI.Navigation;
     using AIRefactored.Core;
     using AIRefactored.Pools;
-    using AIRefactored.Runtime;
     using EFT;
     using UnityEngine;
+    using UnityEngine.AI;
 
     /// <summary>
     /// Handles suppression fallback, retreat routing, and cover movement during engagements.
-    /// Bulletproof: All failures are isolated; only this handler disables itself and triggers vanilla fallback if required.
+    /// Bulletproof: All errors are locally isolated, never disables itself, never triggers fallback AI, never enters terminal state.
     /// </summary>
     public sealed class FallbackHandler : IDisposable
     {
-        #region Constants
-
-        private const float MinArrivalDistance = 2.0f;
-
-        #endregion
-
-        #region Fields
+        private const float MinArrivalDistance = 0.1f;
 
         private readonly BotOwner _bot;
         private readonly BotComponentCache _cache;
         private readonly List<Vector3> _currentFallbackPath;
-
         private Vector3 _fallbackTarget;
-        private bool _isFallbackMode;
-
-        #endregion
-
-        #region Constructor
 
         public FallbackHandler(BotComponentCache cache)
         {
@@ -49,86 +38,44 @@ namespace AIRefactored.AI.Combat.States
             _bot = cache?.Bot;
             _fallbackTarget = _bot != null ? _bot.Position : Vector3.zero;
             _currentFallbackPath = TempListPool.Rent<Vector3>();
-
-            if (_cache == null || _bot == null)
-            {
-                BotFallbackUtility.Trigger(this, _bot, "Null Bot or cache during initialization.");
-                _isFallbackMode = true;
-            }
-            else
-            {
-                _isFallbackMode = false;
-            }
         }
 
-        #endregion
+        public Vector3 GetFallbackPosition() => _fallbackTarget;
 
-        #region Public Methods
-
-        /// <summary>
-        /// Gets the current fallback target position.
-        /// </summary>
-        public Vector3 GetFallbackPosition()
-        {
-            return _fallbackTarget;
-        }
-
-        /// <summary>
-        /// Gets the fallback position, or the provided default if path is invalid.
-        /// </summary>
         public Vector3 GetFallbackPositionOrDefault(Vector3 defaultPos)
         {
             return HasValidFallbackPath() ? _fallbackTarget : defaultPos;
         }
 
-        /// <summary>
-        /// True if the fallback path is valid and nontrivial.
-        /// </summary>
         public bool HasValidFallbackPath()
         {
             return _currentFallbackPath.Count >= 2 && IsVectorValid(_fallbackTarget);
         }
 
-        /// <summary>
-        /// Sets the fallback target, if valid.
-        /// </summary>
         public void SetFallbackTarget(Vector3 target)
         {
-            if (_isFallbackMode)
-                return;
-
             if (!IsVectorValid(target))
             {
-                BotFallbackUtility.Trigger(this, _bot, "Ignored fallback target with invalid vector.");
+                Plugin.LoggerInstance.LogWarning("[FallbackHandler] Ignored fallback target with invalid vector.");
                 return;
             }
-
             _fallbackTarget = target;
         }
 
-        /// <summary>
-        /// Sets the fallback path using a list of valid points.
-        /// </summary>
         public void SetFallbackPath(List<Vector3> path)
         {
-            if (_isFallbackMode)
-                return;
-
+            // Silently ignore too-short or invalid paths
             if (path == null || path.Count < 2)
             {
-                BotFallbackUtility.Trigger(this, _bot, "Rejected fallback path: path too short.");
                 return;
             }
 
             _currentFallbackPath.Clear();
-
             for (int i = 0; i < path.Count; i++)
             {
                 Vector3 point = path[i];
                 if (IsVectorValid(point))
-                {
                     _currentFallbackPath.Add(point);
-                }
             }
 
             if (_currentFallbackPath.Count >= 2)
@@ -137,136 +84,89 @@ namespace AIRefactored.AI.Combat.States
             }
             else
             {
-                BotFallbackUtility.Trigger(this, _bot, "Final fallback path was invalid.");
+                // Do not log: final fallback path was invalid
             }
         }
 
-        /// <summary>
-        /// Returns true if fallback should be used right now.
-        /// </summary>
         public bool ShallUseNow(float time)
         {
-            if (_isFallbackMode)
-                return false;
-
-            return !_cache.IsFallbackMode &&
-                   _bot != null &&
+            return _bot != null &&
                    IsVectorValid(_fallbackTarget) &&
                    Vector3.Distance(_bot.Position, _fallbackTarget) > MinArrivalDistance;
         }
 
-        /// <summary>
-        /// Determines if fallback should be triggered due to suppression.
-        /// </summary>
         public bool ShouldTriggerSuppressedFallback(float now, float lastStateChangeTime, float minStateDuration)
         {
-            if (_isFallbackMode)
-                return false;
-
-            return _cache.Suppression != null &&
-                   _cache.Suppression.IsSuppressed() &&
+            return _cache?.Suppression?.IsSuppressed() == true &&
                    (now - lastStateChangeTime) >= minStateDuration;
         }
 
-        /// <summary>
-        /// Tick update: drives fallback movement and cover, triggers patrol on arrival.
-        /// </summary>
         public void Tick(float time, Action<CombatState, float> forceState)
         {
-            if (_isFallbackMode || _cache.IsFallbackMode || _bot == null || !IsVectorValid(_fallbackTarget))
+            if (_bot == null || !IsVectorValid(_fallbackTarget))
                 return;
 
             try
             {
                 Player player = _bot.GetPlayer;
                 if (!EFTPlayerUtil.IsValid(player))
-                {
-                    BotFallbackUtility.Trigger(this, _bot, "Tick skipped: bot player invalid.");
                     return;
+
+                Vector3 fallbackPoint = _fallbackTarget;
+                if (!BotNavHelper.TryGetSafeTarget(_bot, out fallbackPoint) || !IsVectorValid(fallbackPoint))
+                {
+                    fallbackPoint = GetSafeRandomFallback(_bot.Position);
                 }
 
                 if (_bot.Mover != null)
                 {
                     try
                     {
-                        BotMovementHelper.SmoothMoveTo(_bot, _fallbackTarget);
-                        BotCoverHelper.TrySetStanceFromNearbyCover(_cache, _fallbackTarget);
+                        BotMovementHelper.SmoothMoveTo(_bot, fallbackPoint);
+                        BotCoverHelper.TrySetStanceFromNearbyCover(_cache, fallbackPoint);
                     }
                     catch (Exception ex)
                     {
-                        BotFallbackUtility.Trigger(this, _bot, "SmoothMoveTo or stance logic failed.", ex);
-                        _isFallbackMode = true;
-                        BotFallbackUtility.FallbackToEFTLogic(_bot);
-                        return;
+                        Plugin.LoggerInstance.LogError($"[FallbackHandler] SmoothMoveTo/stance logic failed: {ex}");
                     }
                 }
-                else
-                {
-                    BotFallbackUtility.Trigger(this, _bot, "BotMover missing. Fallback to EFT AI.");
-                    _isFallbackMode = true;
-                    BotFallbackUtility.FallbackToEFTLogic(_bot);
-                    return;
-                }
 
-                if (Vector3.Distance(_bot.Position, _fallbackTarget) < MinArrivalDistance)
+                if (Vector3.Distance(_bot.Position, fallbackPoint) < MinArrivalDistance)
                 {
                     forceState?.Invoke(CombatState.Patrol, time);
 
                     if (!FikaHeadlessDetector.IsHeadless && _bot.BotTalk != null)
                     {
                         try { _bot.BotTalk.TrySay(EPhraseTrigger.NeedHelp); }
-                        catch { /* no-op */ }
+                        catch { }
                     }
                 }
             }
             catch (Exception ex)
             {
-                BotFallbackUtility.Trigger(this, _bot, "General Tick exception.", ex);
-                _isFallbackMode = true;
+                Plugin.LoggerInstance.LogError($"[FallbackHandler] General Tick exception: {ex}");
             }
         }
 
-        /// <summary>
-        /// Returns true if fallback state is still active.
-        /// </summary>
         public bool IsActive()
         {
-            if (_isFallbackMode)
-                return false;
-
             return _bot != null &&
                    EFTPlayerUtil.IsValid(_bot.GetPlayer) &&
                    IsVectorValid(_fallbackTarget) &&
                    Vector3.Distance(_bot.Position, _fallbackTarget) > MinArrivalDistance;
         }
 
-        /// <summary>
-        /// Cancels fallback and clears any cached path.
-        /// </summary>
         public void Cancel()
         {
-            if (_isFallbackMode)
-                return;
-
-            _fallbackTarget = (_bot != null) ? _bot.Position : Vector3.zero;
+            _fallbackTarget = _bot != null ? _bot.Position : Vector3.zero;
             _currentFallbackPath.Clear();
         }
 
-        /// <summary>
-        /// Releases pooled resources.
-        /// </summary>
         public void Dispose()
         {
             TempListPool.Return(_currentFallbackPath);
         }
 
-        #endregion
-
-        #region Private Methods
-
-        /// <summary>
-        /// Validates a Vector3 for fallback/AI purposes.
-        /// </summary>
         private static bool IsVectorValid(Vector3 v)
         {
             return !float.IsNaN(v.x) &&
@@ -275,6 +175,28 @@ namespace AIRefactored.AI.Combat.States
                    v != Vector3.zero;
         }
 
-        #endregion
+        /// <summary>
+        /// Returns a random valid fallback position using only internal EFT/Unity logic, never PathController.
+        /// </summary>
+        private Vector3 GetSafeRandomFallback(Vector3 origin)
+        {
+            // Use PatrollingData.CurTargetPoint if valid and not too close.
+            if (_bot != null && _bot.PatrollingData != null)
+            {
+                Vector3 curPatrolTarget = _bot.PatrollingData.CurTargetPoint;
+                if (IsVectorValid(curPatrolTarget) && Vector3.Distance(curPatrolTarget, origin) > 1.0f)
+                    return curPatrolTarget;
+            }
+
+            // Otherwise, use NavMesh to sample a nearby point.
+            Vector3 candidate = origin + UnityEngine.Random.onUnitSphere * 2.0f;
+            candidate.y = origin.y;
+
+            NavMeshHit hit;
+            if (NavMesh.SamplePosition(candidate, out hit, 2.5f, NavMesh.AllAreas))
+                candidate = hit.position;
+
+            return IsVectorValid(candidate) ? candidate : origin + Vector3.forward * 0.25f;
+        }
     }
 }

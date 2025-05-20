@@ -11,10 +11,13 @@ namespace AIRefactored.AI.Core
 {
     using System;
     using AIRefactored.Bootstrap;
+    using AIRefactored.Core;
+    using BepInEx.Logging;
 
     /// <summary>
     /// Abstract base class for all AI world-level systems.
     /// Provides diamond-standard lifecycle binding, tick gating, and bulletproof fallback isolation.
+    /// All failures are strictly locally contained; no failures may cascade or break global mod state.
     /// </summary>
     public abstract class BaseAIWorldSystemBootstrapper : IAIWorldSystemBootstrapper
     {
@@ -27,9 +30,8 @@ namespace AIRefactored.AI.Core
         public virtual void Initialize()
         {
             if (_hasFailed)
-            {
                 return;
-            }
+
             try
             {
                 OnInitialize();
@@ -45,9 +47,7 @@ namespace AIRefactored.AI.Core
         /// <summary>
         /// Override for system-specific initialization logic.
         /// </summary>
-        protected virtual void OnInitialize()
-        {
-        }
+        protected virtual void OnInitialize() { }
 
         /// <summary>
         /// Called every frame or tick if active and not failed.
@@ -57,9 +57,8 @@ namespace AIRefactored.AI.Core
         public virtual void Tick(float deltaTime)
         {
             if (_hasFailed)
-            {
                 return;
-            }
+
             try
             {
                 OnTick(deltaTime);
@@ -76,9 +75,7 @@ namespace AIRefactored.AI.Core
         /// Override for per-frame/tick system logic.
         /// </summary>
         /// <param name="deltaTime">Elapsed time since last tick.</param>
-        protected virtual void OnTick(float deltaTime)
-        {
-        }
+        protected virtual void OnTick(float deltaTime) { }
 
         /// <summary>
         /// Called at raid end or world teardown. Always guarded, disables system if failed.
@@ -86,9 +83,8 @@ namespace AIRefactored.AI.Core
         public virtual void OnRaidEnd()
         {
             if (_hasFailed)
-            {
                 return;
-            }
+
             try
             {
                 Cleanup();
@@ -104,9 +100,7 @@ namespace AIRefactored.AI.Core
         /// <summary>
         /// Override to implement per-system teardown and memory cleanup.
         /// </summary>
-        protected virtual void Cleanup()
-        {
-        }
+        protected virtual void Cleanup() { }
 
         /// <summary>
         /// Returns true if this system is ready and not failed, and should be ticked.
@@ -138,8 +132,13 @@ namespace AIRefactored.AI.Core
         /// </summary>
         protected virtual void OnFailover()
         {
-            // Optionally trigger fallback to vanilla logic for this system if needed.
-            // Never disable parent systems, never affect other bots or global mod state.
+            // Override in subclasses if fallback behavior is needed.
+            // Never allow escalation. Do not affect global mod state or other systems.
         }
+
+        /// <summary>
+        /// Returns true if this system is permanently failed and will never tick again.
+        /// </summary>
+        public bool IsFailed => _hasFailed;
     }
 }

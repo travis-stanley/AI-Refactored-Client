@@ -3,8 +3,7 @@
 //   Licensed under the MIT License. See LICENSE in the repository root for more information.
 //
 //   THIS FILE IS SYSTEMATICALLY MANAGED.
-//   Please follow strict StyleCop, ReSharper, and AI-Refactored code standards for all modifications.
-//   Bulletproof: All failures are locally contained, never break other subsystems, and always trigger fallback isolation.
+//   Bulletproof: All failures are strictly contained. No fallback logic is used — all systems retry until valid.
 // </auto-generated>
 
 namespace AIRefactored.Runtime
@@ -12,7 +11,7 @@ namespace AIRefactored.Runtime
     using System;
     using System.Reflection;
     using AIRefactored.AI.Core;
-    using AIRefactored.AI.Navigation;
+    using AIRefactored.Bootstrap;
     using AIRefactored.Core;
     using BepInEx.Logging;
     using Comfort.Common;
@@ -21,9 +20,8 @@ namespace AIRefactored.Runtime
     using UnityEngine;
 
     /// <summary>
-    /// Detects the creation of a GameWorld and immediately invokes InitPhaseRunner when ready.
-    /// Hooks into EFT world lifecycle to bypass polling.
-    /// Bulletproof: All errors are strictly contained; global state and mod safety is never at risk.
+    /// Hooks into GameWorld startup to invoke InitPhaseRunner during world spawn.
+    /// Bulletproof: All errors are strictly localized. No fallback logic — systems retry until valid.
     /// </summary>
     public sealed class GameWorldSpawnHook : MonoBehaviour
     {
@@ -36,48 +34,31 @@ namespace AIRefactored.Runtime
             {
                 if (_hooked)
                 {
-                    Logger.LogDebug("[GameWorldSpawnHook] Already hooked — skipping duplicate patch.");
+                    LogDebug("[GameWorldSpawnHook] Already hooked — skipping duplicate patch.");
                     Destroy(this);
                     return;
                 }
 
-                Logger.LogDebug("[GameWorldSpawnHook] Hooking GameWorld.OnGameStarted...");
+                LogDebug("[GameWorldSpawnHook] Hooking GameWorld.OnGameStarted...");
 
-                MethodInfo method = null;
-                try
-                {
-                    method = AccessTools.Method(typeof(GameWorld), "OnGameStarted");
-                }
-                catch (Exception ex)
-                {
-                    Logger.LogError("[GameWorldSpawnHook] ❌ AccessTools.Method exception: " + ex);
-                }
-
+                MethodInfo method = AccessTools.Method(typeof(GameWorld), "OnGameStarted");
                 if (method == null)
                 {
-                    Logger.LogError("[GameWorldSpawnHook] ❌ Failed to locate GameWorld.OnGameStarted.");
+                    LogError("[GameWorldSpawnHook] ❌ Failed to locate GameWorld.OnGameStarted.");
                     Destroy(this);
                     return;
                 }
 
-                try
-                {
-                    Harmony harmony = new Harmony("ai.refactored.spawnhook");
-                    harmony.Patch(method, postfix: new HarmonyMethod(typeof(GameWorldSpawnPatch), nameof(GameWorldSpawnPatch.Postfix)));
-                }
-                catch (Exception ex)
-                {
-                    Logger.LogError("[GameWorldSpawnHook] ❌ Harmony patch exception: " + ex);
-                    Destroy(this);
-                    return;
-                }
+                Harmony harmony = new Harmony("ai.refactored.spawnhook");
+                harmony.Patch(method, postfix: new HarmonyMethod(typeof(GameWorldSpawnPatch), nameof(GameWorldSpawnPatch.Postfix)));
 
                 _hooked = true;
-                Logger.LogDebug("[GameWorldSpawnHook] ✅ Harmony patch installed.");
+                LogDebug("[GameWorldSpawnHook] ✅ Harmony patch installed.");
             }
             catch (Exception ex)
             {
-                Logger.LogError("[GameWorldSpawnHook] ❌ Exception during Awake: " + ex);
+                LogError("[GameWorldSpawnHook] ❌ Exception during Awake: " + ex);
+                Destroy(this);
             }
         }
 
@@ -87,8 +68,8 @@ namespace AIRefactored.Runtime
         }
 
         /// <summary>
-        /// Harmony patch for GameWorld.OnGameStarted to trigger InitPhaseRunner.
-        /// Bulletproof: all errors are locally contained.
+        /// Triggers AI init as soon as EFT calls GameWorld.OnGameStarted.
+        /// Does not bootstrap world systems — only begins InitPhaseRunner safely.
         /// </summary>
         private static class GameWorldSpawnPatch
         {
@@ -99,31 +80,60 @@ namespace AIRefactored.Runtime
                     GameWorld world = Singleton<GameWorld>.Instantiated ? Singleton<GameWorld>.Instance : null;
                     if (world == null)
                     {
-                        Logger.LogWarning("[GameWorldSpawnHook] GameWorld.Instance is null — skipping init.");
+                        LogWarning("[GameWorldSpawnHook] GameWorld.Instance is null — skipping init.");
                         return;
                     }
 
                     if (!GameWorldHandler.IsHost)
                     {
-                        Logger.LogDebug("[GameWorldSpawnHook] Skipped init — not a valid host.");
+                        LogDebug("[GameWorldSpawnHook] Skipped init — not a valid host.");
                         return;
                     }
 
                     if (FikaHeadlessDetector.IsHeadless && !FikaHeadlessDetector.HasRaidStarted())
                     {
-                        Logger.LogDebug("[GameWorldSpawnHook] FIKA Headless not ready — skipping early init.");
+                        LogDebug("[GameWorldSpawnHook] FIKA headless raid not started yet — deferring init.");
                         return;
                     }
 
-                    // No more NavMesh or NavPoint registration here!
-                    Logger.LogDebug("[GameWorldSpawnHook] ✅ Triggering InitPhaseRunner...");
+                    LogDebug("[GameWorldSpawnHook] ✅ Triggering InitPhaseRunner...");
                     InitPhaseRunner.Begin(Logger);
                 }
                 catch (Exception ex)
                 {
-                    Logger.LogError("[GameWorldSpawnHook] ❌ Postfix error: " + ex);
+                    LogError("[GameWorldSpawnHook] ❌ Postfix error: " + ex);
                 }
             }
+
+            private static void LogDebug(string msg)
+            {
+                if (!FikaHeadlessDetector.IsHeadless)
+                    Logger.LogDebug(msg);
+            }
+
+            private static void LogWarning(string msg)
+            {
+                if (!FikaHeadlessDetector.IsHeadless)
+                    Logger.LogWarning(msg);
+            }
+
+            private static void LogError(string msg)
+            {
+                if (!FikaHeadlessDetector.IsHeadless)
+                    Logger.LogError(msg);
+            }
+        }
+
+        private static void LogDebug(string msg)
+        {
+            if (!FikaHeadlessDetector.IsHeadless)
+                Logger.LogDebug(msg);
+        }
+
+        private static void LogError(string msg)
+        {
+            if (!FikaHeadlessDetector.IsHeadless)
+                Logger.LogError(msg);
         }
     }
 }

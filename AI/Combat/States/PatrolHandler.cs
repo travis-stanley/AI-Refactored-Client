@@ -3,18 +3,16 @@
 //   Licensed under the MIT License. See LICENSE in the repository root for more information.
 //
 //   THIS FILE IS SYSTEMATICALLY MANAGED.
-//   Failures in AIRefactored logic must always trigger safe fallback to EFT base AI.
+//   Bulletproof: All failures are locally isolated, never disables itself, never triggers fallback AI.
 // </auto-generated>
 
 namespace AIRefactored.AI.Combat.States
 {
     using System;
-    using System.Collections.Generic;
     using AIRefactored.AI.Core;
     using AIRefactored.AI.Helpers;
     using AIRefactored.AI.Hotspots;
     using AIRefactored.AI.Navigation;
-    using AIRefactored.AI.Optimization;
     using AIRefactored.Core;
     using AIRefactored.Pools;
     using AIRefactored.Runtime;
@@ -24,20 +22,13 @@ namespace AIRefactored.AI.Combat.States
     /// <summary>
     /// Handles bot behavior while in Patrol state.
     /// Evaluates suppression, panic, wounds, or nearby deaths to trigger fallback, and moves bots between hotspots.
-    /// Bulletproof: All failures are isolated; only this handler disables itself and triggers vanilla fallback if required.
+    /// Bulletproof: All failures are locally isolated, never disables itself, never triggers fallback AI.
     /// </summary>
     public sealed class PatrolHandler
     {
-        #region Constants
-
         private const float DeadAllyRadius = 10.0f;
         private const float InvestigateSoundDelay = 3.0f;
         private const float PanicThreshold = 0.25f;
-        private const int FallbackPathMinLength = 2;
-
-        #endregion
-
-        #region Fields
 
         private readonly BotOwner _bot;
         private readonly BotComponentCache _cache;
@@ -45,11 +36,6 @@ namespace AIRefactored.AI.Combat.States
         private readonly float _switchCooldownBase;
 
         private float _nextSwitchTime;
-        private bool _isFallbackMode;
-
-        #endregion
-
-        #region Constructor
 
         public PatrolHandler(BotComponentCache cache, float minStateDuration, float switchCooldownBase)
         {
@@ -57,32 +43,13 @@ namespace AIRefactored.AI.Combat.States
             _bot = cache?.Bot;
             _minStateDuration = minStateDuration;
             _switchCooldownBase = switchCooldownBase;
-
-            if (_cache == null || _bot == null)
-            {
-                BotFallbackUtility.Trigger(this, _bot, "Constructor failed: cache or bot is null.");
-                _isFallbackMode = true;
-            }
-            else
-            {
-                _isFallbackMode = false;
-            }
         }
 
-        #endregion
-
-        #region Public Methods
-
-        public bool ShallUseNow()
-        {
-            if (_isFallbackMode)
-                return false;
-            return true;
-        }
+        public bool ShallUseNow() => true;
 
         public bool ShouldTransitionToInvestigate(float time)
         {
-            if (_isFallbackMode || _cache?.Combat == null || _cache.AIRefactoredBotOwner?.PersonalityProfile == null)
+            if (_cache?.Combat == null || _cache.AIRefactoredBotOwner?.PersonalityProfile == null)
                 return false;
 
             try
@@ -95,15 +62,14 @@ namespace AIRefactored.AI.Combat.States
             }
             catch (Exception ex)
             {
-                BotFallbackUtility.Trigger(this, _bot, "Exception in ShouldTransitionToInvestigate.", ex);
-                _isFallbackMode = true;
+                Plugin.LoggerInstance.LogError($"[PatrolHandler] Exception in ShouldTransitionToInvestigate: {ex}");
                 return false;
             }
         }
 
         public void Tick(float time)
         {
-            if (_isFallbackMode || _cache == null || _bot == null)
+            if (_cache == null || _bot == null)
                 return;
 
             try
@@ -111,21 +77,9 @@ namespace AIRefactored.AI.Combat.States
                 if (ShouldTriggerFallback())
                 {
                     Vector3 fallback = TryGetFallbackPosition();
-                    bool navValid = false;
-                    try
-                    {
-                        navValid = BotNavValidator.Validate(_bot, "PatrolFallback");
-                    }
-                    catch (Exception ex)
-                    {
-                        BotFallbackUtility.Trigger(this, _bot, "Nav validation exception in Tick.", ex);
-                        navValid = false;
-                    }
 
-                    if (!navValid)
-                    {
-                        fallback = FallbackNavPointProvider.GetSafePoint(_bot.Position);
-                    }
+                    if (!BotNavHelper.TryGetSafeTarget(_bot, out fallback) || !IsVectorValid(fallback))
+                        fallback = _bot.Position;
 
                     try
                     {
@@ -133,10 +87,7 @@ namespace AIRefactored.AI.Combat.States
                     }
                     catch (Exception ex)
                     {
-                        BotFallbackUtility.Trigger(this, _bot, "TriggerFallback exception in Tick.", ex);
-                        _isFallbackMode = true;
-                        BotFallbackUtility.FallbackToEFTLogic(_bot);
-                        return;
+                        Plugin.LoggerInstance.LogError($"[PatrolHandler] TriggerFallback exception in Tick: {ex}");
                     }
                     return;
                 }
@@ -144,21 +95,20 @@ namespace AIRefactored.AI.Combat.States
                 if (time < _nextSwitchTime)
                     return;
 
-                HotspotRegistry.Hotspot hotspot = null;
+                HotspotRegistry.Hotspot hotspot;
                 try
                 {
                     hotspot = HotspotRegistry.GetRandomHotspot();
                 }
                 catch (Exception ex)
                 {
-                    BotFallbackUtility.Trigger(this, _bot, "HotspotRegistry exception in Tick.", ex);
-                    _isFallbackMode = true;
+                    Plugin.LoggerInstance.LogError($"[PatrolHandler] HotspotRegistry exception in Tick: {ex}");
                     return;
                 }
 
                 if (hotspot == null || !IsVectorValid(hotspot.Position))
                 {
-                    BotFallbackUtility.Trigger(this, _bot, "Skipped patrol: hotspot was null or invalid.");
+                    Plugin.LoggerInstance.LogWarning("[PatrolHandler] Skipped patrol: hotspot was null or invalid.");
                     return;
                 }
 
@@ -167,27 +117,8 @@ namespace AIRefactored.AI.Combat.States
                     ? _cache.SquadPath.ApplyOffsetTo(target)
                     : target;
 
-                if (!IsVectorValid(destination))
-                {
-                    BotFallbackUtility.Trigger(this, _bot, "Skipped patrol move: destination contains NaN.");
-                    return;
-                }
-
-                bool navValid2 = false;
-                try
-                {
-                    navValid2 = BotNavValidator.Validate(_bot, "PatrolDestination");
-                }
-                catch (Exception ex)
-                {
-                    BotFallbackUtility.Trigger(this, _bot, "Nav validation exception (destination) in Tick.", ex);
-                    navValid2 = false;
-                }
-
-                if (!navValid2)
-                {
-                    destination = FallbackNavPointProvider.GetSafePoint(_bot.Position);
-                }
+                if (!BotNavHelper.TryGetSafeTarget(_bot, out destination) || !IsVectorValid(destination))
+                    destination = _bot.Position;
 
                 if (_bot.Mover != null)
                 {
@@ -198,17 +129,12 @@ namespace AIRefactored.AI.Combat.States
                     }
                     catch (Exception ex)
                     {
-                        BotFallbackUtility.Trigger(this, _bot, "Exception in SmoothMoveTo or TrySetStance.", ex);
-                        _isFallbackMode = true;
-                        BotFallbackUtility.FallbackToEFTLogic(_bot);
-                        return;
+                        Plugin.LoggerInstance.LogError($"[PatrolHandler] Exception in SmoothMoveTo or TrySetStance: {ex}");
                     }
                 }
                 else
                 {
-                    BotFallbackUtility.Trigger(this, _bot, "BotMover missing. Fallback to EFT AI.");
-                    _isFallbackMode = true;
-                    BotFallbackUtility.FallbackToEFTLogic(_bot);
+                    Plugin.LoggerInstance.LogWarning("[PatrolHandler] BotMover missing; cannot move.");
                     return;
                 }
 
@@ -217,34 +143,29 @@ namespace AIRefactored.AI.Combat.States
                 if (!FikaHeadlessDetector.IsHeadless && _bot.BotTalk != null && UnityEngine.Random.value < 0.25f)
                 {
                     try { _bot.BotTalk.TrySay(EPhraseTrigger.GoForward); }
-                    catch { /* no-op */ }
+                    catch { }
                 }
             }
             catch (Exception ex)
             {
-                BotFallbackUtility.Trigger(this, _bot, "General exception in Tick.", ex);
-                _isFallbackMode = true;
+                Plugin.LoggerInstance.LogError($"[PatrolHandler] General exception in Tick: {ex}");
             }
         }
 
-        #endregion
-
-        #region Private Methods
-
         private bool ShouldTriggerFallback()
         {
-            if (_isFallbackMode || _cache == null || _bot == null)
+            if (_cache == null || _bot == null)
                 return false;
 
             try
             {
-                if (_cache.PanicHandler != null && _cache.PanicHandler.GetComposureLevel() < PanicThreshold)
+                if (_cache.PanicHandler?.GetComposureLevel() < PanicThreshold)
                     return true;
 
-                if (_cache.InjurySystem != null && _cache.InjurySystem.ShouldHeal())
+                if (_cache.InjurySystem?.ShouldHeal() == true)
                     return true;
 
-                if (_cache.Suppression != null && _cache.Suppression.IsSuppressed())
+                if (_cache.Suppression?.IsSuppressed() == true)
                     return true;
 
                 BotsGroup group = _bot.BotsGroup;
@@ -266,32 +187,30 @@ namespace AIRefactored.AI.Combat.States
             }
             catch (Exception ex)
             {
-                BotFallbackUtility.Trigger(this, _bot, "Exception in ShouldTriggerFallback.", ex);
-                _isFallbackMode = true;
+                Plugin.LoggerInstance.LogError($"[PatrolHandler] Exception in ShouldTriggerFallback: {ex}");
                 return false;
             }
         }
 
         private Vector3 TryGetFallbackPosition()
         {
-            if (_isFallbackMode || _cache?.Pathing == null || _bot == null)
-                return _bot != null ? _bot.Position : Vector3.zero;
+            if (_bot == null)
+                return Vector3.zero;
 
             try
             {
                 Vector3 direction = _bot.LookDirection.normalized;
-                List<Vector3> path = BotCoverRetreatPlanner.GetCoverRetreatPath(_bot, direction, _cache.Pathing);
+                Vector3 fallback = _bot.Position - direction * 7.5f;
 
-                if (path != null && path.Count >= FallbackPathMinLength)
-                    return path[path.Count - 1];
+                if (!BotNavHelper.TryGetSafeTarget(_bot, out fallback) || !IsVectorValid(fallback))
+                    fallback = _bot.Position;
 
-                return FallbackNavPointProvider.GetSafePoint(_bot.Position);
+                return fallback;
             }
             catch (Exception ex)
             {
-                BotFallbackUtility.Trigger(this, _bot, "Exception in TryGetFallbackPosition.", ex);
-                _isFallbackMode = true;
-                return _bot != null ? _bot.Position : Vector3.zero;
+                Plugin.LoggerInstance.LogError($"[PatrolHandler] Exception in TryGetFallbackPosition: {ex}");
+                return _bot.Position;
             }
         }
 
@@ -299,7 +218,5 @@ namespace AIRefactored.AI.Combat.States
         {
             return !float.IsNaN(v.x) && !float.IsNaN(v.y) && !float.IsNaN(v.z);
         }
-
-        #endregion
     }
 }

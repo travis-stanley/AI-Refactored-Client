@@ -3,7 +3,7 @@
 //   Licensed under the MIT License. See LICENSE in the repository root for more information.
 //
 //   THIS FILE IS SYSTEMATICALLY MANAGED.
-//   Failures in AIRefactored logic must always trigger safe fallback to EFT base AI.
+//   Bulletproof: All errors are locally isolated, never disables itself, never triggers fallback AI.
 // </auto-generated>
 
 namespace AIRefactored.AI.Combat.States
@@ -19,220 +19,147 @@ namespace AIRefactored.AI.Combat.States
     /// <summary>
     /// Guides tactical movement toward enemy's last known location.
     /// Supports cautious advancement and squad-aware pathing.
-    /// Bulletproof: all failures are isolated and fallback to vanilla AI when required.
+    /// Bulletproof: all failures are isolated; never disables itself or squadmates.
     /// </summary>
     public sealed class EngageHandler
     {
-        #region Constants
-
         private const float DefaultEngagementRange = 25.0f;
-
-        #endregion
-
-        #region Fields
 
         private readonly BotOwner _bot;
         private readonly BotComponentCache _cache;
         private readonly float _fallbackRange;
-        private bool _isFallbackMode;
-
-        #endregion
-
-        #region Constructor
 
         public EngageHandler(BotComponentCache cache)
         {
             _cache = cache;
             _bot = cache?.Bot;
 
-            if (_cache == null || _bot == null)
-            {
-                BotFallbackUtility.Trigger(this, _bot, "Invalid bot cache provided.");
-                _isFallbackMode = true;
-                return;
-            }
-
-            float profileRange = cache.PersonalityProfile?.EngagementRange ?? 0f;
+            float profileRange = cache?.PersonalityProfile?.EngagementRange ?? 0f;
             _fallbackRange = profileRange > 0f ? profileRange : DefaultEngagementRange;
-            _isFallbackMode = false;
         }
 
-        #endregion
-
-        #region Public Methods
-
-        /// <summary>
-        /// Determines if the bot should begin advancing toward the enemy.
-        /// </summary>
         public bool ShallUseNow()
         {
-            if (_isFallbackMode || !IsCombatCapable())
+            if (!IsCombatCapable())
                 return false;
 
-            Vector3 enemyPos;
             try
             {
-                return TryGetLastKnownEnemy(out enemyPos) && !IsWithinRange(enemyPos);
+                return TryGetLastKnownEnemy(out Vector3 enemyPos) && !IsWithinRange(enemyPos);
             }
             catch (Exception ex)
             {
-                BotFallbackUtility.Trigger(this, _bot, "Exception in ShallUseNow.", ex);
-                _isFallbackMode = true;
+                Plugin.LoggerInstance.LogError($"[EngageHandler] Exception in ShallUseNow: {ex}");
                 return false;
             }
         }
 
-        /// <summary>
-        /// Determines if the bot is close enough to start direct attack behavior.
-        /// </summary>
         public bool CanAttack()
         {
-            if (_isFallbackMode || !IsCombatCapable())
+            if (!IsCombatCapable())
                 return false;
 
-            Vector3 enemyPos;
             try
             {
-                return TryGetLastKnownEnemy(out enemyPos) && IsWithinRange(enemyPos);
+                return TryGetLastKnownEnemy(out Vector3 enemyPos) && IsWithinRange(enemyPos);
             }
             catch (Exception ex)
             {
-                BotFallbackUtility.Trigger(this, _bot, "Exception in CanAttack.", ex);
-                _isFallbackMode = true;
+                Plugin.LoggerInstance.LogError($"[EngageHandler] Exception in CanAttack: {ex}");
                 return false;
             }
         }
 
-        /// <summary>
-        /// Advances the bot toward last known enemy position with squad offset and cover-aware stance.
-        /// </summary>
         public void Tick()
         {
-            if (_isFallbackMode || !IsCombatCapable())
+            if (!IsCombatCapable())
                 return;
 
             try
             {
-                Vector3 enemyPos;
-                if (!TryGetLastKnownEnemy(out enemyPos))
+                if (!TryGetLastKnownEnemy(out Vector3 enemyPos))
                     return;
 
-                Vector3 destination = (_cache.SquadPath != null)
-                    ? _cache.SquadPath.ApplyOffsetTo(enemyPos)
-                    : enemyPos;
-
-                bool navValid = false;
-                if (!IsValid(destination))
-                {
-                    navValid = false;
-                }
-                else
+                Vector3 destination = enemyPos;
+                // SquadPath is a tactical offset, never replaces vanilla nav
+                if (_cache.SquadPath != null)
                 {
                     try
                     {
-                        navValid = BotNavValidator.Validate(_bot, "EngageHandlerDestination");
+                        destination = _cache.SquadPath.ApplyOffsetTo(enemyPos);
                     }
-                    catch (Exception ex)
+                    catch
                     {
-                        BotFallbackUtility.Trigger(this, _bot, "NavValidator exception in Tick.", ex);
-                        navValid = false;
+                        destination = enemyPos;
                     }
                 }
 
-                if (!navValid)
-                {
-                    destination = FallbackNavPointProvider.GetSafePoint(_bot.Position);
-                }
+                // Only valid positions allowed
+                if (!IsValid(destination))
+                    return;
 
+                // Use vanilla EFT-compatible movement helper, never custom fallback
                 if (_bot.Mover != null)
                 {
                     try
                     {
                         BotMovementHelper.SmoothMoveTo(_bot, destination);
-                        if (_cache.Combat != null)
-                            _cache.Combat.TrySetStanceFromNearbyCover(destination);
+                        _cache.Combat?.TrySetStanceFromNearbyCover(destination);
                     }
                     catch (Exception ex)
                     {
-                        BotFallbackUtility.Trigger(this, _bot, "Exception in SmoothMoveTo or TrySetStance.", ex);
-                        _isFallbackMode = true;
-                        BotFallbackUtility.FallbackToEFTLogic(_bot);
+                        Plugin.LoggerInstance.LogError($"[EngageHandler] Exception in SmoothMoveTo or TrySetStance: {ex}");
                     }
                 }
                 else
                 {
-                    BotFallbackUtility.Trigger(this, _bot, "BotMover missing. Fallback to EFT AI.");
-                    _isFallbackMode = true;
+                    Plugin.LoggerInstance.LogError("[EngageHandler] BotMover missing; cannot move.");
                 }
             }
             catch (Exception ex)
             {
-                BotFallbackUtility.Trigger(this, _bot, "General exception in Tick.", ex);
-                _isFallbackMode = true;
+                Plugin.LoggerInstance.LogError($"[EngageHandler] General exception in Tick: {ex}");
             }
         }
 
-        /// <summary>
-        /// Returns whether the bot is currently engaging based on distance to last known enemy.
-        /// </summary>
         public bool IsEngaging()
         {
-            if (_isFallbackMode || !IsCombatCapable())
+            if (!IsCombatCapable())
                 return false;
 
-            Vector3 enemyPos;
             try
             {
-                return TryGetLastKnownEnemy(out enemyPos) && !IsWithinRange(enemyPos);
+                return TryGetLastKnownEnemy(out Vector3 enemyPos) && !IsWithinRange(enemyPos);
             }
             catch (Exception ex)
             {
-                BotFallbackUtility.Trigger(this, _bot, "Exception in IsEngaging.", ex);
-                _isFallbackMode = true;
+                Plugin.LoggerInstance.LogError($"[EngageHandler] Exception in IsEngaging: {ex}");
                 return false;
             }
         }
 
-        #endregion
-
-        #region Private Methods
-
-        /// <summary>
-        /// Checks whether bot is in valid state to perform combat operations.
-        /// </summary>
         private bool IsCombatCapable()
         {
-            return _cache != null && !_cache.IsFallbackMode && _bot != null && _cache.Combat != null;
+            return _cache != null && _bot != null && _cache.Combat != null;
         }
 
-        /// <summary>
-        /// Attempts to retrieve a valid last known enemy position.
-        /// </summary>
         private bool TryGetLastKnownEnemy(out Vector3 result)
         {
-            result = (_cache != null && _cache.Combat != null) ? _cache.Combat.LastKnownEnemyPos : Vector3.zero;
-            return result != Vector3.zero &&
-                   !float.IsNaN(result.x) &&
-                   !float.IsNaN(result.y) &&
-                   !float.IsNaN(result.z);
+            result = _cache?.Combat?.LastKnownEnemyPos ?? Vector3.zero;
+            return IsValid(result) && result != Vector3.zero;
         }
 
-        /// <summary>
-        /// Returns true if the enemy position is within range to attack.
-        /// </summary>
         private bool IsWithinRange(Vector3 enemyPos)
         {
             return Vector3.SqrMagnitude(_bot.Position - enemyPos) < (_fallbackRange * _fallbackRange);
         }
 
-        /// <summary>
-        /// Validates that a position contains finite and usable coordinates.
-        /// </summary>
         private static bool IsValid(Vector3 pos)
         {
-            return !float.IsNaN(pos.x) && !float.IsNaN(pos.y) && !float.IsNaN(pos.z);
+            return pos != Vector3.zero &&
+                   !float.IsNaN(pos.x) &&
+                   !float.IsNaN(pos.y) &&
+                   !float.IsNaN(pos.z);
         }
-
-        #endregion
     }
 }

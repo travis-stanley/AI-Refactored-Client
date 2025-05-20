@@ -3,7 +3,7 @@
 //   Licensed under the MIT License. See LICENSE in the repository root for more information.
 //
 //   THIS FILE IS SYSTEMATICALLY MANAGED.
-//   Failures in AIRefactored logic must always trigger safe fallback to EFT base AI.
+//   Bulletproof: No fallback logic. All look direction and update failures are locally logged and isolated only.
 // </auto-generated>
 
 namespace AIRefactored.AI.Movement
@@ -29,6 +29,8 @@ namespace AIRefactored.AI.Movement
         private const float BlindLookRadius = 4f;
         private const float HeardDirectionWeight = 6f;
         private const float SoundMemoryDuration = 4f;
+        private const float IdleScanInterval = 2.4f;
+        private const float IdleScanAngleMax = 65f;
 
         #endregion
 
@@ -38,8 +40,13 @@ namespace AIRefactored.AI.Movement
 
         private readonly BotOwner _bot;
         private readonly BotComponentCache _cache;
+
         private Vector3 _fallbackLookTarget;
         private bool _frozen;
+
+        private float _nextIdleScanTime;
+        private float _currentIdleAngle;
+        private int _idleScanDirection; // -1 or 1
 
         #endregion
 
@@ -56,6 +63,9 @@ namespace AIRefactored.AI.Movement
             _bot = bot;
             _cache = cache;
             _fallbackLookTarget = bot.Position + bot.LookDirection;
+            _nextIdleScanTime = Time.time + UnityEngine.Random.Range(0.5f, 2.2f);
+            _currentIdleAngle = 0f;
+            _idleScanDirection = UnityEngine.Random.value > 0.5f ? 1 : -1;
         }
 
         #endregion
@@ -71,31 +81,23 @@ namespace AIRefactored.AI.Movement
             try
             {
                 if (_frozen || _bot == null || _cache == null || _bot.IsDead || !GameWorldHandler.IsSafeToInitialize)
-                {
                     return;
-                }
 
                 Player player = EFTPlayerUtil.ResolvePlayer(_bot);
                 if (!EFTPlayerUtil.IsValid(player))
-                {
                     return;
-                }
 
                 Transform body = EFTPlayerUtil.GetTransform(player);
                 if (body == null)
-                {
                     return;
-                }
 
                 Vector3 origin = body.position;
-                Vector3 target = ResolveLookTarget(origin);
+                Vector3 target = ResolveLookTarget(origin, deltaTime);
                 Vector3 dir = target - origin;
                 dir.y = 0f;
 
                 if (dir.sqrMagnitude < MinLookDistanceSqr)
-                {
                     return;
-                }
 
                 Quaternion from = body.rotation;
                 Quaternion to = Quaternion.LookRotation(dir.normalized);
@@ -104,7 +106,7 @@ namespace AIRefactored.AI.Movement
             catch (Exception ex)
             {
                 Logger.LogError("[BotLookController] Tick failed: " + ex);
-                try { BotFallbackUtility.FallbackToEFTLogic(_bot); } catch { }
+                // Fallback logic removed; log only.
             }
         }
 
@@ -163,9 +165,10 @@ namespace AIRefactored.AI.Movement
 
         /// <summary>
         /// Computes the next look target, considering blindness, panic, sound, and enemy threat.
+        /// Also simulates realistic idle scanning/head rotation like a real player.
         /// All failures are locally isolated and fallback target is always valid.
         /// </summary>
-        private Vector3 ResolveLookTarget(Vector3 origin)
+        private Vector3 ResolveLookTarget(Vector3 origin, float deltaTime)
         {
             try
             {
@@ -183,9 +186,7 @@ namespace AIRefactored.AI.Movement
                 if (_cache != null && _cache.Panic != null && _cache.Panic.IsPanicking)
                 {
                     if (_cache.HasHeardDirection)
-                    {
                         return origin + _cache.LastHeardDirection.normalized * HeardDirectionWeight;
-                    }
                     return origin + _bot.LookDirection;
                 }
 
@@ -200,9 +201,7 @@ namespace AIRefactored.AI.Movement
                         {
                             Vector3 pos = EFTPlayerUtil.GetPosition(enemy);
                             if (pos.sqrMagnitude > 0.01f)
-                            {
                                 return pos;
-                            }
                         }
                     }
                 }
@@ -213,8 +212,22 @@ namespace AIRefactored.AI.Movement
                     return origin + _cache.LastHeardDirection.normalized * HeardDirectionWeight;
                 }
 
-                // Idle scanning: fallback (e.g., previously set patrol/scan direction).
-                return _fallbackLookTarget;
+                // Idle scanning: smoothly scan back and forth like a human player.
+                if (now > _nextIdleScanTime)
+                {
+                    _idleScanDirection = UnityEngine.Random.value > 0.5f ? 1 : -1;
+                    _nextIdleScanTime = now + IdleScanInterval + UnityEngine.Random.Range(-0.5f, 0.7f);
+                }
+
+                // Calculate idle scan angle: slowly oscillate between -IdleScanAngleMax and +IdleScanAngleMax
+                float angleDelta = IdleScanAngleMax * _idleScanDirection * deltaTime * 0.5f;
+                _currentIdleAngle = Mathf.Clamp(_currentIdleAngle + angleDelta, -IdleScanAngleMax, IdleScanAngleMax);
+
+                Vector3 fwd = _bot.LookDirection.sqrMagnitude > 0.5f ? _bot.LookDirection.normalized : Vector3.forward;
+                Quaternion idleYaw = Quaternion.AngleAxis(_currentIdleAngle, Vector3.up);
+                Vector3 idleLook = idleYaw * fwd;
+
+                return origin + idleLook * BlindLookRadius;
             }
             catch (Exception ex)
             {

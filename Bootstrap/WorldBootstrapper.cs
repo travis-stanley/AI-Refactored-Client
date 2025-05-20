@@ -27,12 +27,10 @@ namespace AIRefactored.Bootstrap
 
     /// <summary>
     /// Main coordinator for AIRefactored world systems. Handles initialization, tick/update, and teardown.
-    /// Fully bulletproof: all errors are locally contained and never break the AIRefactored stack.
+    /// Fully bulletproof: all errors are locally contained and never break the AIRefactored stack. No fallback logic is ever triggered.
     /// </summary>
     public static class WorldBootstrapper
     {
-        #region Fields
-
         private static readonly List<IAIWorldSystemBootstrapper> Systems = new List<IAIWorldSystemBootstrapper>(16);
         private static ManualLogSource _loggerInstance = Plugin.LoggerInstance;
 
@@ -43,14 +41,6 @@ namespace AIRefactored.Bootstrap
 
         private static ManualLogSource Logger => _loggerInstance ?? Plugin.LoggerInstance;
 
-        #endregion
-
-        #region Lifecycle
-
-        /// <summary>
-        /// Begins world system initialization. Does NOT register navmesh or navpoints.
-        /// Bulletproof: all exceptions contained, never cascades or breaks global mod state.
-        /// </summary>
         public static void Begin(ManualLogSource logger, string mapId)
         {
             _loggerInstance = logger ?? Plugin.LoggerInstance;
@@ -66,7 +56,6 @@ namespace AIRefactored.Bootstrap
                 _hasShutdownLogged = false;
                 Systems.Clear();
 
-                // Bulletproof global resets: never triggers navmesh/navpoint population here!
                 TrySafe(BotRecoveryService.Reset, "[WorldBootstrapper] BotRecoveryService.Reset() failed: ");
                 TrySafe(BotSpawnWatcherService.Reset, "[WorldBootstrapper] BotSpawnWatcherService.Reset() failed: ");
                 TrySafe(LootRuntimeWatcher.Reset, "[WorldBootstrapper] LootRuntimeWatcher.Reset() failed: ");
@@ -74,9 +63,7 @@ namespace AIRefactored.Bootstrap
                 TrySafe(DeadBodyContainerCache.Clear, "[WorldBootstrapper] DeadBodyContainerCache.Clear() failed: ");
                 TrySafe(LootRegistry.Clear, "[WorldBootstrapper] LootRegistry.Clear() failed: ");
                 TrySafe(HotspotRegistry.Clear, "[WorldBootstrapper] HotspotRegistry.Clear() failed: ");
-                TrySafe(NavPointRegistry.Clear, "[WorldBootstrapper] NavPointRegistry.Clear() failed: ");
 
-                // Only initialize HotspotRegistry if mapId is valid.
                 if (!string.IsNullOrEmpty(mapId))
                 {
                     TrySafe(() => HotspotRegistry.Initialize(mapId), "[WorldBootstrapper] HotspotRegistry.Initialize() failed: ");
@@ -86,7 +73,6 @@ namespace AIRefactored.Bootstrap
                     Logger.LogWarning("[WorldBootstrapper] Cannot initialize registries — mapId is invalid.");
                 }
 
-                // Register world systems (do not add navmesh/navpoint managers here)
                 RegisterSystemSafe(new RaidLifecycleWatcher());
                 RegisterSystemSafe(new BotRecoveryService());
                 RegisterSystemSafe(new BotSpawnWatcherService());
@@ -94,11 +80,9 @@ namespace AIRefactored.Bootstrap
                 RegisterSystemSafe(new DeadBodyObserverService());
                 RegisterSystemSafe(new HotspotRegistryBootstrapper());
 
-                // Initialize all systems (never break loop on single error)
                 for (int i = 0; i < Systems.Count; i++)
                 {
-                    IAIWorldSystemBootstrapper sys = Systems[i];
-                    TrySafe(sys.Initialize, $"[WorldBootstrapper] Failed to initialize {sys.GetType().Name}: ");
+                    TrySafe(Systems[i].Initialize, $"[WorldBootstrapper] Failed to initialize {Systems[i].GetType().Name}: ");
                 }
 
                 _hasInitialized = true;
@@ -110,19 +94,16 @@ namespace AIRefactored.Bootstrap
             }
         }
 
-        /// <summary>
-        /// Stops and tears down world systems. Does not touch navmesh/navpoint state.
-        /// </summary>
         public static void Stop()
         {
-            if (!_hasInitialized) return;
+            if (!_hasInitialized)
+                return;
 
             try
             {
                 for (int i = 0; i < Systems.Count; i++)
                 {
-                    IAIWorldSystemBootstrapper sys = Systems[i];
-                    TrySafe(sys.OnRaidEnd, $"[WorldBootstrapper] OnRaidEnd error in {sys.GetType().Name}: ");
+                    TrySafe(Systems[i].OnRaidEnd, $"[WorldBootstrapper] OnRaidEnd error in {Systems[i].GetType().Name}: ");
                 }
 
                 Systems.Clear();
@@ -140,14 +121,6 @@ namespace AIRefactored.Bootstrap
             }
         }
 
-        #endregion
-
-        #region Tick
-
-        /// <summary>
-        /// Ticks all registered world systems and attached BotBrains (per frame/tick).
-        /// Bulletproof: all tick errors are contained and never propagate.
-        /// </summary>
         public static void Tick(float deltaTime)
         {
             if (!_hasInitialized)
@@ -160,7 +133,8 @@ namespace AIRefactored.Bootstrap
                 for (int i = 0; i < Systems.Count; i++)
                 {
                     IAIWorldSystemBootstrapper system = Systems[i];
-                    if (system == null) continue;
+                    if (system == null)
+                        continue;
 
                     try
                     {
@@ -181,16 +155,24 @@ namespace AIRefactored.Bootstrap
                     for (int i = 0; i < players.Count; i++)
                     {
                         Player player = players[i];
-                        if (!EFTPlayerUtil.IsValid(player) || !player.IsAI) continue;
+                        if (!EFTPlayerUtil.IsValid(player) || !player.IsAI)
+                            continue;
 
                         GameObject go = player.gameObject;
-                        if (go == null) continue;
+                        if (go == null)
+                            continue;
 
                         BotBrain brain = go.GetComponent<BotBrain>();
                         if (brain != null && brain.enabled)
                         {
-                            try { brain.Tick(deltaTime); }
-                            catch (Exception ex) { Logger.LogError("[WorldBootstrapper] BotBrain.Tick() error: " + ex); }
+                            try
+                            {
+                                brain.Tick(deltaTime);
+                            }
+                            catch (Exception ex)
+                            {
+                                Logger.LogError("[WorldBootstrapper] BotBrain.Tick() error: " + ex);
+                            }
                         }
                     }
                 }
@@ -212,52 +194,56 @@ namespace AIRefactored.Bootstrap
             }
         }
 
-        #endregion
-
-        #region BotBrain Injection
-
-        /// <summary>
-        /// Ensures the given player has a BotBrain attached and initialized.
-        /// </summary>
         public static void EnforceBotBrain(Player player, BotOwner bot)
         {
-            if (!EFTPlayerUtil.IsValid(player) || !player.IsAI) return;
+            if (!EFTPlayerUtil.IsValid(player) || !player.IsAI || bot == null)
+                return;
+
+            string profileId = bot.Profile?.Id;
+            if (string.IsNullOrEmpty(profileId))
+                return;
 
             GameObject go = player.gameObject;
-            if (go == null) return;
+            if (go == null)
+                return;
 
             try
             {
+                BotComponentCache cache = BotComponentCacheRegistry.GetOrCreate(bot);
+                if (cache == null || cache.AIRefactoredBotOwner == null)
+                {
+                    Logger.LogWarning("[WorldBootstrapper] ❌ Cache or owner missing — deferring BotBrain injection for: " + profileId);
+                    return;
+                }
+
                 BotBrainGuardian.Enforce(go);
 
                 BotBrain existing = go.GetComponent<BotBrain>();
-                if (existing == null && bot != null)
+                if (existing == null)
                 {
                     BotBrain brain = go.AddComponent<BotBrain>();
                     brain.enabled = true;
                     brain.Initialize(bot);
                 }
-                else if (existing != null && !existing.enabled)
+                else if (!existing.enabled)
                 {
                     existing.enabled = true;
-                    Logger.LogWarning("[WorldBootstrapper] Re-enabled BotBrain for: " + player.ProfileId);
+                    Logger.LogWarning("[WorldBootstrapper] Re-enabled BotBrain for: " + profileId);
                 }
             }
             catch (Exception ex)
             {
-                Logger.LogWarning("[WorldBootstrapper] BotBrain init failed for " + player.ProfileId + ": " + ex);
+                Logger.LogWarning("[WorldBootstrapper] BotBrain init failed for " + profileId + ": " + ex);
             }
         }
-
-        #endregion
-
-        #region System Registration
 
         private static void RegisterSystemSafe(IAIWorldSystemBootstrapper system)
         {
             try
             {
-                if (system == null || Systems.Contains(system)) return;
+                if (system == null || Systems.Contains(system))
+                    return;
+
                 Systems.Add(system);
             }
             catch (Exception ex)
@@ -271,16 +257,10 @@ namespace AIRefactored.Bootstrap
             RegisterSystemSafe(system);
         }
 
-        #endregion
-
-        #region Helpers
-
         private static void TrySafe(Action action, string errorPrefix)
         {
             try { action(); }
             catch (Exception ex) { Logger.LogError(errorPrefix + ex); }
         }
-
-        #endregion
     }
 }

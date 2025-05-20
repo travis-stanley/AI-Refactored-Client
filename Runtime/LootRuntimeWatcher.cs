@@ -3,8 +3,7 @@
 //   Licensed under the MIT License. See LICENSE in the repository root for more information.
 //
 //   THIS FILE IS SYSTEMATICALLY MANAGED.
-//   Failures in AIRefactored logic must always trigger safe fallback to EFT base AI.
-//   Bulletproof: All failures are locally contained, never break other subsystems, and always trigger fallback isolation.
+//   All loot tracking and registry refreshes are retry-safe and isolated. No fallback or terminal state.
 // </auto-generated>
 
 namespace AIRefactored.Runtime
@@ -20,17 +19,11 @@ namespace AIRefactored.Runtime
     /// <summary>
     /// Detects dynamic runtime loot additions (e.g. player death drops, mission rewards).
     /// Triggers a delayed loot registry refresh on authoritative hosts.
-    /// Bulletproof: All errors are strictly contained; mod/global state is never at risk.
+    /// Bulletproof: All errors are strictly contained; retry-safe. No fallback logic used.
     /// </summary>
     public sealed class LootRuntimeWatcher : IAIWorldSystemBootstrapper
     {
-        #region Constants
-
         private const float RefreshDelaySeconds = 0.15f;
-
-        #endregion
-
-        #region Static Fields
 
         private static readonly ManualLogSource Logger = Plugin.LoggerInstance;
         private static readonly HashSet<int> RegisteredInstanceIds = new HashSet<int>();
@@ -38,11 +31,6 @@ namespace AIRefactored.Runtime
         private static float _nextAllowedRefreshTime = -1f;
         private static bool _isQueued;
 
-        #endregion
-
-        #region Lifecycle
-
-        /// <inheritdoc />
         public void Initialize()
         {
             try
@@ -56,7 +44,6 @@ namespace AIRefactored.Runtime
             }
         }
 
-        /// <inheritdoc />
         public void Tick(float deltaTime)
         {
             try
@@ -68,6 +55,7 @@ namespace AIRefactored.Runtime
                     return;
 
                 _isQueued = false;
+
                 try
                 {
                     GameWorldHandler.RefreshLootRegistry();
@@ -84,7 +72,6 @@ namespace AIRefactored.Runtime
             }
         }
 
-        /// <inheritdoc />
         public void OnRaidEnd()
         {
             try
@@ -98,25 +85,12 @@ namespace AIRefactored.Runtime
             }
         }
 
-        /// <inheritdoc />
-        public bool IsReady()
-        {
-            return true;
-        }
+        public bool IsReady() => true;
 
-        /// <inheritdoc />
-        public WorldPhase RequiredPhase()
-        {
-            return WorldPhase.WorldReady;
-        }
-
-        #endregion
-
-        #region Public API
+        public WorldPhase RequiredPhase() => WorldPhase.WorldReady;
 
         /// <summary>
-        /// Queues a delayed refresh of the loot registry.
-        /// Bulletproof: All errors are locally contained.
+        /// Triggers a delayed loot registry refresh if not already queued.
         /// </summary>
         public static void TriggerQueuedRefresh()
         {
@@ -135,8 +109,7 @@ namespace AIRefactored.Runtime
         }
 
         /// <summary>
-        /// Forces an immediate loot registry refresh.
-        /// Bulletproof: All errors are locally contained.
+        /// Immediately refreshes the loot registry (manual trigger).
         /// </summary>
         public static void TriggerManualRefresh()
         {
@@ -146,6 +119,7 @@ namespace AIRefactored.Runtime
                     return;
 
                 _isQueued = false;
+
                 try
                 {
                     GameWorldHandler.RefreshLootRegistry();
@@ -163,10 +137,8 @@ namespace AIRefactored.Runtime
         }
 
         /// <summary>
-        /// Registers a GameObject for loot tracking. Triggers a refresh if new.
-        /// Bulletproof: All errors are locally contained.
+        /// Registers a loot GameObject for tracking and queues refresh if new.
         /// </summary>
-        /// <param name="go">GameObject representing loot.</param>
         public static void Register(GameObject go)
         {
             try
@@ -187,10 +159,8 @@ namespace AIRefactored.Runtime
         }
 
         /// <summary>
-        /// Unregisters a GameObject from loot tracking.
-        /// Bulletproof: All errors are locally contained.
+        /// Unregisters a loot GameObject from tracking.
         /// </summary>
-        /// <param name="go">GameObject previously registered as loot.</param>
         public static void Unregister(GameObject go)
         {
             try
@@ -205,10 +175,7 @@ namespace AIRefactored.Runtime
                     {
                         Logger.LogDebug("[LootRuntimeWatcher] Unregistered loot object: " + go.name);
                     }
-                    catch
-                    {
-                        // Logger may be disposed during teardown
-                    }
+                    catch { }
                 }
             }
             catch (Exception ex)
@@ -218,8 +185,7 @@ namespace AIRefactored.Runtime
         }
 
         /// <summary>
-        /// Resets internal state for new raids.
-        /// Bulletproof: All errors are locally contained.
+        /// Clears all state and tracked instance IDs for full reset.
         /// </summary>
         public static void Reset()
         {
@@ -231,12 +197,7 @@ namespace AIRefactored.Runtime
 
                 Logger.LogDebug("[LootRuntimeWatcher] 🔄 Reset complete.");
             }
-            catch
-            {
-                // Logger may be null during teardown
-            }
+            catch { }
         }
-
-        #endregion
     }
 }

@@ -3,13 +3,13 @@
 //   Licensed under the MIT License. See LICENSE in the repository root for more information.
 //
 //   THIS FILE IS SYSTEMATICALLY MANAGED.
-//   Failures in AIRefactored logic must always trigger safe fallback to EFT base AI.
-//   Bulletproof: All failures are locally contained, never break other subsystems, and always trigger fallback isolation.
+//   All fallback/terminal lockouts removed: all bots are always eligible for registration and participation.
 // </auto-generated>
 
 namespace AIRefactored.Runtime
 {
     using System;
+    using System.Collections.Generic;
     using AIRefactored.AI.Core;
     using AIRefactored.AI.Navigation;
     using AIRefactored.Bootstrap;
@@ -21,34 +21,26 @@ namespace AIRefactored.Runtime
     /// <summary>
     /// Orchestrates the full AI-Refactored initialization lifecycle using staged world boot phases.
     /// Triggered directly from GameWorldSpawnHook instead of polling.
-    /// Bulletproof: All failures are strictly isolated; no global state can be broken.
+    /// Bulletproof: All failures are strictly isolated. All bots are always eligible. No fallback logic used.
     /// </summary>
     public static class InitPhaseRunner
     {
-        #region Fields
-
         private static bool _hasStarted;
 
-        #endregion
-
-        #region Lifecycle
-
         /// <summary>
-        /// Starts the full AI-Refactored boot sequence exactly once.
-        /// Bulletproof: All failures are locally contained and cannot break mod.
+        /// Begins the full world and AIRefactored initialization sequence.
         /// </summary>
-        /// <param name="logger">Logger for runtime diagnostics.</param>
         public static void Begin(ManualLogSource logger)
         {
             if (_hasStarted)
             {
-                logger?.LogWarning("[InitPhaseRunner] Begin() already called — skipping.");
+                LogWarn(logger, "[InitPhaseRunner] Begin() already called — skipping.");
                 return;
             }
 
             if (FikaHeadlessDetector.IsHeadless && !FikaHeadlessDetector.HasRaidStarted())
             {
-                logger?.LogDebug("[InitPhaseRunner] Skipped — FIKA headless raid not started.");
+                LogDebug(logger, "[InitPhaseRunner] Skipped — FIKA headless raid not started.");
                 return;
             }
 
@@ -57,51 +49,45 @@ namespace AIRefactored.Runtime
             try
             {
                 WorldInitState.SetPhase(WorldPhase.PreInit);
-                logger?.LogDebug("[InitPhaseRunner] 🚀 Beginning AIRefactored world initialization...");
+                LogDebug(logger, "[InitPhaseRunner] 🚀 Beginning AIRefactored world initialization...");
 
-                if (!IsWorldSafe())
+                if (!IsWorldSafeAndUnique())
                 {
-                    logger?.LogWarning("[InitPhaseRunner] ❌ Unsafe world state — aborting.");
+                    LogWarn(logger, "[InitPhaseRunner] ❌ Unsafe or duplicate world state — aborting.");
                     ResetInternal(logger);
                     return;
                 }
 
                 WorldInitState.SetPhase(WorldPhase.AwaitWorld);
-                NavMeshStatus.Reset();
 
                 string mapId = GameWorldHandler.TryGetValidMapName();
                 if (string.IsNullOrEmpty(mapId))
                 {
-                    logger?.LogWarning("[InitPhaseRunner] ⚠ No valid map ID.");
+                    LogWarn(logger, "[InitPhaseRunner] ⚠ No valid map ID.");
                 }
-
-                // NavMesh/navpoint building is strictly deferred from here.
 
                 GameWorldHandler.Initialize();
                 WorldBootstrapper.Begin(logger, mapId);
 
                 WorldInitState.SetPhase(WorldPhase.WorldReady);
-                logger?.LogDebug("[InitPhaseRunner] ✅ World systems initialized.");
+                LogDebug(logger, "[InitPhaseRunner] ✅ World systems initialized.");
 
                 WorldInitState.SetPhase(WorldPhase.PostInit);
             }
             catch (Exception ex)
             {
-                logger?.LogError("[InitPhaseRunner] ❌ Fatal error during Begin(): " + ex);
+                LogError(logger, "[InitPhaseRunner] ❌ Fatal error during Begin(): " + ex);
                 ResetInternal(logger);
             }
         }
 
         /// <summary>
-        /// Stops and resets all world systems in preparation for a new raid.
-        /// Bulletproof: No errors can propagate or break the mod.
+        /// Stops and resets all AIRefactored init state and subsystems.
         /// </summary>
         public static void Stop()
         {
             if (!_hasStarted)
-            {
                 return;
-            }
 
             try
             {
@@ -113,10 +99,9 @@ namespace AIRefactored.Runtime
             }
         }
 
-        #endregion
-
-        #region Internal Reset
-
+        /// <summary>
+        /// Resets internal phase and all associated world state.
+        /// </summary>
         private static void ResetInternal(ManualLogSource logger)
         {
             _hasStarted = false;
@@ -125,16 +110,14 @@ namespace AIRefactored.Runtime
             try { WorldTickDispatcher.Reset(); } catch { }
             try { WorldBootstrapper.Stop(); } catch { }
             try { GameWorldHandler.Cleanup(); } catch { }
-            try { NavMeshStatus.Reset(); } catch { }
 
-            try { logger?.LogDebug("[InitPhaseRunner] 🧹 Cleanup complete — initialization state reset."); } catch { }
+            try { LogDebug(logger, "[InitPhaseRunner] 🧹 Cleanup complete — initialization state reset."); } catch { }
         }
 
-        #endregion
-
-        #region Validation
-
-        private static bool IsWorldSafe()
+        /// <summary>
+        /// Checks if the GameWorld is valid, non-duplicate, and ready for AI init.
+        /// </summary>
+        private static bool IsWorldSafeAndUnique()
         {
             try
             {
@@ -142,15 +125,18 @@ namespace AIRefactored.Runtime
                 if (world == null || world.RegisteredPlayers == null || world.RegisteredPlayers.Count == 0)
                     return false;
 
+                var seenProfiles = new HashSet<string>();
                 for (int i = 0; i < world.RegisteredPlayers.Count; i++)
                 {
                     Player player = EFTPlayerUtil.AsEFTPlayer(world.RegisteredPlayers[i]);
-                    if (player != null && EFTPlayerUtil.IsValid(player))
-                    {
-                        return true;
-                    }
+                    string profileId = player?.Profile?.Id;
+                    if (!EFTPlayerUtil.IsValid(player) || string.IsNullOrEmpty(profileId))
+                        continue;
+                    if (!seenProfiles.Add(profileId))
+                        return false;
                 }
-                return false;
+
+                return seenProfiles.Count > 0;
             }
             catch
             {
@@ -158,6 +144,22 @@ namespace AIRefactored.Runtime
             }
         }
 
-        #endregion
+        private static void LogDebug(ManualLogSource logger, string msg)
+        {
+            if (!FikaHeadlessDetector.IsHeadless)
+                logger?.LogDebug(msg);
+        }
+
+        private static void LogWarn(ManualLogSource logger, string msg)
+        {
+            if (!FikaHeadlessDetector.IsHeadless)
+                logger?.LogWarning(msg);
+        }
+
+        private static void LogError(ManualLogSource logger, string msg)
+        {
+            if (!FikaHeadlessDetector.IsHeadless)
+                logger?.LogError(msg);
+        }
     }
 }

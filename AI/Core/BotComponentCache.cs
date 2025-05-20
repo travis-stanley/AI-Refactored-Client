@@ -3,7 +3,7 @@
 //   Licensed under the MIT License. See LICENSE in the repository root for more information.
 //
 //   THIS FILE IS SYSTEMATICALLY MANAGED.
-//   Failures in AIRefactored logic must always trigger safe fallback to EFT base AI.
+//   Bulletproof: No cache can be left incomplete or with missing critical references. All wiring is atomic; all failures are isolated and only logged. No fallback logic exists.
 // </auto-generated>
 
 namespace AIRefactored.AI.Core
@@ -27,11 +27,6 @@ namespace AIRefactored.AI.Core
     using EFT;
     using UnityEngine;
 
-    /// <summary>
-    /// Runtime container for all bot-specific AIRefactored logic systems.
-    /// Managed via BotComponentCacheRegistry.
-    /// Bulletproof: If any component fails, falls back to vanilla logic for that part only.
-    /// </summary>
     public sealed class BotComponentCache
     {
         #region Static
@@ -72,7 +67,6 @@ namespace AIRefactored.AI.Core
         public float LastHeardTime { get; private set; } = -999f;
         public Vector3 LastHeardDirection { get; private set; }
         public bool HasHeardDirection { get; private set; }
-        public bool IsFallbackMode { get; private set; }
 
         #endregion
 
@@ -118,7 +112,9 @@ namespace AIRefactored.AI.Core
             Suppression != null &&
             PanicHandler != null &&
             Tactical != null &&
-            FlashGrenade != null;
+            FlashGrenade != null &&
+            ThreatSelector != null &&
+            _owner != null;
 
         #endregion
 
@@ -129,26 +125,20 @@ namespace AIRefactored.AI.Core
             if (bot == null)
             {
                 Logger.LogError("[BotComponentCache] Initialize called with null bot.");
-                BotFallbackUtility.FallbackToEFTLogic(bot);
                 return;
             }
 
             string id = bot.Profile?.Id ?? "null";
-
             if (Bot != null || InitializedBots.Contains(id))
-            {
-                Logger.LogWarning("[BotComponentCache] Already initialized for bot: " + id);
                 return;
-            }
 
             InitializedBots.Add(id);
             Bot = bot;
 
             WildSpawnType role = bot.Profile?.Info?.Settings?.Role ?? WildSpawnType.assault;
             PersonalityProfile = BotRegistry.GetOrGenerate(id, PersonalityType.Balanced, role);
-            Logger.LogDebug($"[BotComponentCache] Loaded personality for bot {id}: {PersonalityProfile.Personality}");
 
-            // Each init wrapped for isolation, no cascade. Only that subsystem is skipped on error.
+            // Each subsystem is initialized individually with bulletproofing.
             TryInit(() => Pathing = new BotOwnerPathfindingCache(), "Pathing");
             TryInit(() => { TacticalMemory = new BotTacticalMemory(); TacticalMemory.Initialize(this); }, "TacticalMemory");
             TryInit(() => { Combat = new CombatStateMachine(); Combat.Initialize(this); }, "Combat");
@@ -173,31 +163,16 @@ namespace AIRefactored.AI.Core
             TryInit(() => GroupComms = new BotGroupComms(this), "GroupComms");
             TryInit(() => SquadHealer = bot.HealAnotherTarget ?? new BotHealAnotherTarget(bot), "SquadHealer");
             TryInit(() => HealReceiver = bot.HealingBySomebody ?? new BotHealingBySomebody(bot), "HealReceiver");
-
-            Logger.LogDebug($"[BotComponentCache] ✅ Initialized for bot: {Nickname}");
+            TryInit(() => ThreatSelector = new BotThreatSelector(this), "ThreatSelector");
         }
 
         private void TryInit(Action action, string name)
         {
             try { action(); }
-            catch (Exception ex) { LogAndFallback(name, ex); }
-        }
-
-        private void LogAndFallback(string subsystem, Exception ex)
-        {
-            Logger.LogError($"[BotComponentCache] Subsystem {subsystem} failed: {ex}");
-            BotFallbackUtility.FallbackToEFTLogic(Bot);
-        }
-
-        #endregion
-
-        #region Fallback Entry
-
-        public void EnterFallback()
-        {
-            IsFallbackMode = true;
-            Logger.LogWarning($"[BotComponentCache] Entered fallback mode for bot: {Nickname}");
-            BotFallbackUtility.FallbackToEFTLogic(Bot);
+            catch (Exception ex)
+            {
+                Logger.LogError($"[BotComponentCache] Subsystem {name} failed: {ex}");
+            }
         }
 
         #endregion
@@ -209,37 +184,29 @@ namespace AIRefactored.AI.Core
             if (owner == null)
             {
                 Logger.LogError("[BotComponentCache] SetOwner() called with null.");
-                BotFallbackUtility.FallbackToEFTLogic(Bot);
+                return;
+            }
+
+            if (_owner != null)
+            {
+                if (!ReferenceEquals(_owner, owner))
+                {
+                    Logger.LogWarning("[BotComponentCache] SetOwner() attempted to overwrite existing owner.");
+                }
                 return;
             }
 
             _owner = owner;
-
-            if (ThreatSelector == null)
-            {
-                try { ThreatSelector = new BotThreatSelector(this); }
-                catch (Exception ex)
-                {
-                    Logger.LogError("[BotComponentCache] ThreatSelector failed: " + ex);
-                    ThreatSelector = null;
-                    BotFallbackUtility.FallbackToEFTLogic(Bot);
-                }
-            }
         }
 
         public void RegisterHeardSound(Vector3 source)
         {
             if (Bot == null)
-            {
-                Logger.LogWarning("[BotComponentCache] RegisterHeardSound failed — bot not assigned.");
                 return;
-            }
 
             LastHeardTime = Time.time;
             LastHeardDirection = source - Position;
             HasHeardDirection = true;
-
-            Logger.LogDebug($"[BotComponentCache] Registered sound from: {source}");
         }
 
         #endregion

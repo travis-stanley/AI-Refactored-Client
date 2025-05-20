@@ -81,7 +81,7 @@ namespace AIRefactored.AI.Groups
             catch (Exception ex)
             {
                 Plugin.LoggerInstance.LogError("[BotGroupBehavior] Initialization failed: " + ex);
-                _bot?.Mover?.GoToPoint(_bot.Position, true, 1.0f); // fallback to static point
+                FallbackMoveStatic();
             }
         }
 
@@ -147,7 +147,7 @@ namespace AIRefactored.AI.Groups
             catch (Exception ex)
             {
                 Plugin.LoggerInstance.LogError("[BotGroupBehavior] Tick failed: " + ex);
-                _bot?.Mover?.GoToPoint(_bot.Position, true, 1.0f); // fallback to static point
+                FallbackMoveStatic();
             }
         }
 
@@ -160,7 +160,8 @@ namespace AIRefactored.AI.Groups
             return _bot != null &&
                    _group != null &&
                    !_bot.IsDead &&
-                   EFTPlayerUtil.IsValidBotOwner(_bot);
+                   EFTPlayerUtil.IsValidBotOwner(_bot) &&
+                   _group.MembersCount > 1;
         }
 
         private void IssueMove(Vector3 target)
@@ -180,7 +181,22 @@ namespace AIRefactored.AI.Groups
             catch (Exception ex)
             {
                 Plugin.LoggerInstance.LogError("[BotGroupBehavior] IssueMove failed: " + ex);
-                _bot?.Mover?.GoToPoint(_bot.Position, true, 1.0f); // fallback to static point
+                FallbackMoveStatic();
+            }
+        }
+
+        private void FallbackMoveStatic()
+        {
+            try
+            {
+                if (_bot?.Mover != null && !_bot.IsDead)
+                {
+                    _bot.Mover.GoToPoint(_bot.Position, true, 1.0f);
+                }
+            }
+            catch
+            {
+                // Hard fail-safe: never break global logic
             }
         }
 

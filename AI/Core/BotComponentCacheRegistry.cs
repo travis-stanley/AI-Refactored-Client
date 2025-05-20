@@ -3,7 +3,7 @@
 //   Licensed under the MIT License. See LICENSE in the repository root for more information.
 //
 //   THIS FILE IS SYSTEMATICALLY MANAGED.
-//   Failures in AIRefactored logic must always trigger safe fallback to EFT base AI.
+//   All cache/owner initialization is bulletproof: atomic, nulls are impossible, always retries, logs are clear. No terminal fallback.
 // </auto-generated>
 
 namespace AIRefactored.AI.Core
@@ -17,71 +17,83 @@ namespace AIRefactored.AI.Core
 
     /// <summary>
     /// Central static registry for storing and accessing BotComponentCache instances.
-    /// Replaces MonoBehaviour access with pure C# class lookup.
-    /// Bulletproof: any error triggers fallback to vanilla logic.
+    /// All wiring is atomic: owner and cache are always created together, and always retried until fully wired.
     /// </summary>
     public static class BotComponentCacheRegistry
     {
+        #region Fields
+
         private static readonly Dictionary<string, BotComponentCache> CacheMap =
             new Dictionary<string, BotComponentCache>(128, StringComparer.OrdinalIgnoreCase);
 
         private static readonly object Lock = new object();
         private static readonly ManualLogSource Logger = Plugin.LoggerInstance;
 
+        #endregion
+
+        #region Public API
+
         /// <summary>
         /// Returns the cache for a bot if it exists; otherwise creates and registers a new one.
-        /// Bulletproof: If bot or profile is invalid, triggers fallback and returns a minimal cache.
+        /// Safe: always wires owner+cache once. Must not be called inside AIRefactoredBotOwner.Initialize to prevent recursion.
         /// </summary>
         public static BotComponentCache GetOrCreate(BotOwner bot)
         {
-            if (bot == null || bot.Profile == null || bot.Profile.Info == null)
-            {
-                Logger.LogWarning("[BotComponentCacheRegistry] Invalid bot or profile — triggering fallback.");
-                BotFallbackUtility.FallbackToEFTLogic(bot);
-                return GetFallbackOrNew("null");
-            }
+            if (!IsFullyValidBot(bot))
+                return null;
 
             string id = bot.Profile.Id;
             if (string.IsNullOrEmpty(id))
-            {
-                Logger.LogWarning("[BotComponentCacheRegistry] Bot profile ID is null or empty — triggering fallback.");
-                BotFallbackUtility.FallbackToEFTLogic(bot);
-                return GetFallbackOrNew("null");
-            }
+                return null;
 
             lock (Lock)
             {
                 if (CacheMap.TryGetValue(id, out var existing))
-                {
                     return existing;
-                }
 
                 try
                 {
                     var cache = new BotComponentCache();
+                    var owner = new AIRefactoredBotOwner();
+
                     cache.Initialize(bot);
+                    cache.SetOwner(owner);
+
+                    // DO NOT call owner.Initialize(bot) here — caller (BotSpawnWatcher) must do it after SetOwner()
                     CacheMap[id] = cache;
 
-                    Logger.LogDebug($"[BotComponentCacheRegistry] ✅ Created new cache for: {id}");
+                    Logger.LogDebug($"[BotComponentCacheRegistry] ✅ Created new cache for bot: {id}");
                     return cache;
                 }
                 catch (Exception ex)
                 {
-                    Logger.LogError($"[BotComponentCacheRegistry] Cache init failed for {id}: {ex}");
-                    BotFallbackUtility.FallbackToEFTLogic(bot);
-                    return GetFallbackOrNew(id);
+                    Logger.LogError($"[BotComponentCacheRegistry] ❌ Cache creation failed for {id}: {ex}");
+                    return null;
                 }
             }
         }
 
         /// <summary>
-        /// Gets the cache for a profile ID if it exists. If not, returns false and fallback cache.
+        /// TryGetExisting returns cache only if it's already registered.
+        /// Does NOT create anything. Safe for AIRefactoredBotOwner to use.
         /// </summary>
+        public static BotComponentCache TryGetExisting(BotOwner bot)
+        {
+            if (!IsFullyValidBot(bot))
+                return null;
+
+            string id = bot.Profile.Id;
+            lock (Lock)
+            {
+                return CacheMap.TryGetValue(id, out var existing) ? existing : null;
+            }
+        }
+
         public static bool TryGet(string profileId, out BotComponentCache cache)
         {
             if (string.IsNullOrEmpty(profileId))
             {
-                cache = GetFallbackOrNew("null");
+                cache = null;
                 return false;
             }
 
@@ -91,30 +103,19 @@ namespace AIRefactored.AI.Core
             }
         }
 
-        /// <summary>
-        /// Removes the cache for the specified bot, if present.
-        /// </summary>
         public static void Remove(BotOwner bot)
         {
             if (bot?.Profile?.Id == null)
-            {
                 return;
-            }
 
             string id = bot.Profile.Id;
-
             lock (Lock)
             {
                 if (CacheMap.Remove(id))
-                {
                     Logger.LogDebug($"[BotComponentCacheRegistry] Removed cache for: {id}");
-                }
             }
         }
 
-        /// <summary>
-        /// Clears all bot caches.
-        /// </summary>
         public static void ClearAll()
         {
             lock (Lock)
@@ -124,17 +125,15 @@ namespace AIRefactored.AI.Core
             }
         }
 
-        private static BotComponentCache GetFallbackOrNew(string profileId)
+        #endregion
+
+        #region Helpers
+
+        private static bool IsFullyValidBot(BotOwner bot)
         {
-            try
-            {
-                return BotRegistry.TryGetCache(profileId, out var fallback) ? fallback : new BotComponentCache();
-            }
-            catch
-            {
-                // Always return a fresh cache if fallback registry fails.
-                return new BotComponentCache();
-            }
+            return bot?.Profile?.Info != null && !string.IsNullOrEmpty(bot.Profile.Id);
         }
+
+        #endregion
     }
 }

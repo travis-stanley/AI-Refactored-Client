@@ -54,12 +54,10 @@ namespace AIRefactored.AI.Memory
             try
             {
                 if (!TryGetSafeKey(mapId, out string key)) key = "unknown";
-
                 if (Zones.Count >= MaxZones)
                 {
                     Zones.RemoveAt(0);
                 }
-
                 Zones.Add(new DangerZone(key, position, type, radius, Time.time));
             }
             catch (Exception ex)
@@ -109,13 +107,11 @@ namespace AIRefactored.AI.Memory
             try
             {
                 if (!TryGetSafeKey(mapId, out string key)) return false;
-
                 float now = Time.time;
                 for (int i = 0; i < Zones.Count; i++)
                 {
                     DangerZone zone = Zones[i];
                     if (zone.Map != key || now - zone.Timestamp > DangerZoneTTL) continue;
-
                     if ((zone.Position - position).sqrMagnitude <= zone.Radius * zone.Radius)
                     {
                         return true;
@@ -157,7 +153,6 @@ namespace AIRefactored.AI.Memory
                     list = TempListPool.Rent<HeardSound>();
                     ShortTermHeardSounds[key] = list;
                 }
-
                 list.Add(new HeardSound(position, time));
             }
             catch (Exception ex)
@@ -185,7 +180,6 @@ namespace AIRefactored.AI.Memory
             try
             {
                 if (!TryGetSafeKey(profileId, out string key)) return;
-
                 HeardSounds.Remove(key);
                 if (ShortTermHeardSounds.TryGetValue(key, out List<HeardSound> list))
                 {
@@ -227,7 +221,6 @@ namespace AIRefactored.AI.Memory
                 {
                     return;
                 }
-
                 LastHitSources[victim] = new LastHitInfo(attacker, Time.time);
             }
             catch (Exception ex)
@@ -245,7 +238,6 @@ namespace AIRefactored.AI.Memory
                 {
                     return false;
                 }
-
                 return LastHitSources.TryGetValue(victim, out LastHitInfo hit) &&
                        hit.AttackerId == attacker &&
                        Time.time - hit.Time <= HitMemoryDuration;
@@ -293,7 +285,6 @@ namespace AIRefactored.AI.Memory
             try
             {
                 if (!TryGetSafeKey(profileId, out string key)) return false;
-
                 return !LastFlankTimes.TryGetValue(key, out float last) || (Time.time - last >= cooldown);
             }
             catch (Exception ex)
@@ -326,7 +317,6 @@ namespace AIRefactored.AI.Memory
             {
                 List<Player> players = GameWorldHandler.GetAllAlivePlayers();
                 float rangeSqr = radius * radius;
-
                 for (int i = 0; i < players.Count; i++)
                 {
                     Player p = players[i];

@@ -3,397 +3,187 @@
 //   Licensed under the MIT License. See LICENSE in the repository root for more information.
 //
 //   THIS FILE IS SYSTEMATICALLY MANAGED.
-//   Failures in AIRefactored logic must always trigger safe fallback to EFT base AI.
+//   All movement, combat lean, and strafe logic is bulletproof and layered over EFT BotMover.
+//   No fallback logic. No invalid targets. Smooth, human-like movement only.
 // </auto-generated>
 
 namespace AIRefactored.AI.Movement
 {
     using System;
     using AIRefactored.AI.Core;
-    using AIRefactored.AI.Helpers;
-    using AIRefactored.AI.Navigation;
     using AIRefactored.Core;
-    using AIRefactored.Pools;
-    using AIRefactored.Runtime;
     using BepInEx.Logging;
     using EFT;
     using UnityEngine;
-    using UnityEngine.AI;
 
     /// <summary>
-    /// Controls bot movement, leaning, path inertia, and flanking during combat.
-    /// Includes stuck recovery, fallback pathing, and door blocking detection.
-    /// All failures are locally isolated; cannot break or cascade into other systems.
+    /// Realistic overlay for BotMover navigation. Adds combat lean, strafe, and human-like directionality.
+    /// Fully native to EFT movement system. All behaviors are multiplayer and headless safe.
     /// </summary>
     public sealed class BotMovementController
     {
-        #region Constants
-
-        private const float CornerScanInterval = 1.2f;
-        private const float InertiaWeight = 8f;
-        private const float LeanCooldown = 1.5f;
-        private const float LookSmoothSpeed = 6f;
-        private const float MaxStuckDuration = 1.5f;
-        private const float MinMoveThreshold = 0.05f;
-        private const float ScanDistance = 2.5f;
-        private const float ScanRadius = 0.25f;
-        private const float StuckThreshold = 0.1f;
-        private const float FlankCooldown = 4.5f;
-
-        #endregion
-
-        #region Fields
-
         private static readonly ManualLogSource Logger = Plugin.LoggerInstance;
 
         private BotOwner _bot;
         private BotComponentCache _cache;
-        private BotJumpController _jump;
-        private BotMovementTrajectoryPlanner _trajectory;
 
-        private Vector3 _lastVelocity;
-        private float _nextLeanAllowed;
-        private float _nextScanTime;
-        private float _nextFlankAllowed;
+        private float _lastScanTime;
+        private float _nextLeanTime;
         private float _strafeTimer;
-        private float _stuckTimer;
-        private bool _isStrafingRight;
-        private bool _inLootingMode;
+        private bool _strafeRight;
+        private bool _lootingMode;
 
-        #endregion
-
-        #region Public API
-
-        /// <summary>
-        /// Initializes the movement controller with required subsystems.
-        /// </summary>
         public void Initialize(BotComponentCache cache)
         {
-            try
-            {
-                if (cache == null || cache.Bot == null || cache.PersonalityProfile == null)
-                {
-                    throw new InvalidOperationException("[BotMovementController] Invalid initialization.");
-                }
+            if (cache == null || cache.Bot == null)
+                throw new InvalidOperationException("[BotMovementController] Invalid initialization.");
 
-                _cache = cache;
-                _bot = cache.Bot;
-                _jump = new BotJumpController(_bot, cache);
-                _trajectory = new BotMovementTrajectoryPlanner(_bot, cache);
-                _lastVelocity = Vector3.zero;
-                _nextScanTime = Time.time;
-                _nextLeanAllowed = Time.time;
-                _nextFlankAllowed = Time.time;
-            }
-            catch (Exception ex)
-            {
-                Logger.LogError($"[BotMovementController] Initialize failed: {ex}");
-            }
+            _cache = cache;
+            _bot = cache.Bot;
+
+            _lastScanTime = Time.time;
+            _nextLeanTime = Time.time;
+            _strafeTimer = 0.5f;
+            _lootingMode = false;
         }
 
-        /// <summary>
-        /// Ticks the movement logic for the bot.
-        /// </summary>
         public void Tick(float deltaTime)
         {
             try
             {
-                if (_bot == null || _cache == null || _bot.IsDead || _bot.GetPlayer == null || !_bot.GetPlayer.IsAI)
+                if (_bot == null)
                     return;
 
-                // If the registry disables nav, skip all custom nav and fallback to EFT
-                if (NavPointRegistry.AIRefactoredNavDisabled)
-                {
-                    BotFallbackUtility.FallbackToEFTLogic(_bot);
+                var mover = _bot.Mover;
+                if (mover == null || _bot.IsDead)
                     return;
-                }
 
-                // NavMesh not ready (still building), allow looting mode or fallback
-                if (!NavMeshStatus.IsReady && !_inLootingMode)
-                {
-                    if (!NavPointRegistry.IsEmpty)
-                        return;
-                }
-
-                _jump.Tick(deltaTime);
-
-                if (_cache.DoorInteraction != null)
-                {
-                    _cache.DoorInteraction.Tick(Time.time);
-                    if (_cache.DoorInteraction.IsBlockedByDoor)
-                        return;
-                }
-
-                if (Time.time >= _nextScanTime)
-                {
-                    ScanAhead();
-                    _nextScanTime = Time.time + CornerScanInterval;
-                }
-
-                Vector3 target = SafeGetTargetPoint();
-                if (!IsValidTarget(target))
-                {
-                    BotFallbackUtility.FallbackToEFTLogic(_bot);
+                var player = _bot.GetPlayer;
+                if (player == null || !player.IsAI)
                     return;
-                }
 
-                SmoothLookTo(target, deltaTime);
-                ApplyInertia(target, deltaTime);
-
-                if (!_inLootingMode &&
-                    _bot.Memory.GoalEnemy != null &&
-                    _bot.WeaponManager != null &&
-                    _bot.WeaponManager.IsReady)
+                if (!_lootingMode)
                 {
-                    CombatStrafe(deltaTime);
-                    TryCombatLean();
-                    TryFlankAroundEnemy();
+                    TryCombatStrafe(mover, deltaTime);
+                    TryLean();
                 }
 
-                DetectStuck(deltaTime);
+                TrySmoothLook(mover, deltaTime);
+                TryScan();
             }
             catch (Exception ex)
             {
-                Logger.LogError($"[BotMovementController] Tick failed: {ex}");
-                try { BotFallbackUtility.FallbackToEFTLogic(_bot); } catch { }
+                Logger.LogError("[BotMovementController] Tick error: " + ex);
             }
         }
 
-        public void EnterLootingMode() => _inLootingMode = true;
-        public void ExitLootingMode() => _inLootingMode = false;
-
-        #endregion
-
-        #region Internal Movement
+        public void EnterLootingMode() => _lootingMode = true;
+        public void ExitLootingMode() => _lootingMode = false;
 
         /// <summary>
-        /// Returns a safe and valid target point for movement.
-        /// Bulletproof: never throws, always attempts fallback, never returns NaN.
+        /// Smoothly rotates bot to look toward its current navigation target (next corner or destination).
         /// </summary>
-        private Vector3 SafeGetTargetPoint()
+        private void TrySmoothLook(BotMover mover, float deltaTime)
         {
-            // 1. Always fallback to vanilla logic if nav system is disabled for this raid
-            if (NavPointRegistry.AIRefactoredNavDisabled)
-                return Vector3.zero;
-
-            // 2. EFT BotMover/PathController fallback (null-guarded)
             try
             {
-                if (_bot?.Mover != null)
-                {
-                    // Prefer direct call if signature exists
-                    try
-                    {
-                        Vector3 eftTarget = _bot.Mover.LastTargetPoint(1.0f);
-                        if (IsValidTarget(eftTarget))
-                            return eftTarget;
-                    }
-                    catch { }
+                if (mover == null || _bot == null || _bot.Transform == null)
+                    return;
 
-                    // Use reflection as backup for internal EFT path controller
-                    try
-                    {
-                        var moverType = _bot.Mover.GetType();
-                        var controllerProp = moverType.GetProperty("PathController");
-                        if (controllerProp != null)
-                        {
-                            object pathController = controllerProp.GetValue(_bot.Mover, null);
-                            if (pathController != null)
-                            {
-                                var lastTargetMethod = moverType.GetMethod("LastTargetPoint");
-                                if (lastTargetMethod != null)
-                                {
-                                    Vector3 point = (Vector3)lastTargetMethod.Invoke(_bot.Mover, new object[] { 1.0f });
-                                    if (IsValidTarget(point))
-                                        return point;
-                                }
-                            }
-                        }
-                    }
-                    catch { }
-                }
-            }
-            catch { }
+                var pathController = mover._pathController;
+                if (pathController == null)
+                    return;
 
-            // 3. NavPointRegistry position (if ready)
-            try
-            {
-                if (_bot != null && NavPointRegistry.IsReady && !NavPointRegistry.IsEmpty)
-                {
-                    Vector3 closest = NavPointRegistry.GetClosestPosition(_bot.Position);
-                    if (IsValidTarget(closest))
-                        return closest;
-                }
+                Vector3 point = pathController.LastTargetPoint(1.0f);
+                if (point == Vector3.zero)
+                    return;
 
-                // 4. Fallback static nav provider
-                Vector3 fallback = FallbackNavPointProvider.GetSafePoint(_bot.Position);
-                if (IsValidTarget(fallback))
-                    return fallback;
+                Vector3 dir = point - _bot.Position;
+                dir.y = 0f;
 
-                // 5. Default to current bot position
-                if (_bot != null && IsValidTarget(_bot.Position))
-                    return _bot.Position;
+                if (dir.sqrMagnitude < 0.01f)
+                    return;
+
+                Quaternion desired = Quaternion.LookRotation(dir);
+                _bot.Transform.rotation = Quaternion.Lerp(_bot.Transform.rotation, desired, 6f * deltaTime);
             }
             catch (Exception ex)
             {
-                Logger.LogError($"[BotMovementController] SafeGetTargetPoint failed: {ex}");
-            }
-
-            return Vector3.zero;
-        }
-
-        private void ApplyInertia(Vector3 target, float deltaTime)
-        {
-            try
-            {
-                if (!IsValidTarget(target) || !IsValidTarget(_bot.Position))
-                    return;
-
-                Vector3 toTarget = target - _bot.Position;
-                toTarget.y = 0f;
-
-                if (toTarget.sqrMagnitude < MinMoveThreshold * MinMoveThreshold)
-                    return;
-
-                Vector3 modified = _trajectory.ModifyTrajectory(toTarget, deltaTime);
-                Vector3 velocity = modified.normalized * 1.65f;
-
-                if (_cache.PersonalityProfile.AggressionLevel > 0.7f)
-                    velocity *= 1.2f;
-
-                _lastVelocity = Vector3.Lerp(_lastVelocity, velocity, InertiaWeight * deltaTime);
-                Vector3 moveTo = Vector3.MoveTowards(_bot.Position, target, _lastVelocity.magnitude * deltaTime);
-
-                // Full bulletproofing: CharacterController may be missing/null (EFT bot loss), must null-guard
-                try
-                {
-                    _bot.GetPlayer?.CharacterController?.Move(moveTo, deltaTime);
-                }
-                catch { }
-            }
-            catch (Exception ex)
-            {
-                Logger.LogError($"[BotMovementController] ApplyInertia failed: {ex}");
+                Logger.LogError("[BotMovementController] TrySmoothLook error: " + ex);
             }
         }
 
-        private void SmoothLookTo(Vector3 target, float deltaTime)
+        /// <summary>
+        /// Adds realistic side-to-side strafing during combat using only native BotMover and CharacterController logic.
+        /// </summary>
+        private void TryCombatStrafe(BotMover mover, float deltaTime)
         {
             try
             {
-                if (!IsValidTarget(target))
+                if (_bot == null || mover == null)
                     return;
 
-                Vector3 direction = target - _bot.Transform.position;
-                direction.y = 0f;
-
-                if (direction.sqrMagnitude < 0.01f ||
-                    (_cache.Tilt != null && _cache.Tilt._coreTilt && Vector3.Angle(_bot.Transform.forward, direction) > 80f))
+                var memory = _bot.Memory;
+                if (memory == null || memory.GoalEnemy == null)
                     return;
 
-                Quaternion desired = Quaternion.LookRotation(direction);
-                _bot.Transform.rotation = Quaternion.Lerp(_bot.Transform.rotation, desired, LookSmoothSpeed * deltaTime);
-            }
-            catch (Exception ex)
-            {
-                Logger.LogError($"[BotMovementController] SmoothLookTo failed: {ex}");
-            }
-        }
+                if (!mover.HasPathAndNoComplete || !mover.IsMoving)
+                    return;
 
-        private void ScanAhead()
-        {
-            try
-            {
-                Vector3 origin = _bot.Position + Vector3.up * 1.5f;
-                Vector3 direction = _bot.LookDirection;
+                if (_bot.Transform == null)
+                    return;
 
-                if (Physics.SphereCast(origin, ScanRadius, direction, out _, ScanDistance, AIRefactoredLayerMasks.VisionBlockers))
-                {
-                    if (_bot.BotTalk != null && UnityEngine.Random.value < 0.2f)
-                    {
-                        _bot.BotTalk.TrySay(EPhraseTrigger.Look);
-                    }
-                }
-            }
-            catch (Exception ex)
-            {
-                Logger.LogError($"[BotMovementController] ScanAhead failed: {ex}");
-            }
-        }
-
-        #endregion
-
-        #region Combat Movement
-
-        private void CombatStrafe(float deltaTime)
-        {
-            try
-            {
                 _strafeTimer -= deltaTime;
                 if (_strafeTimer <= 0f)
                 {
-                    _isStrafingRight = UnityEngine.Random.value > 0.5f;
-                    _strafeTimer = UnityEngine.Random.Range(0.4f, 0.7f);
+                    _strafeRight = UnityEngine.Random.value > 0.5f;
+                    _strafeTimer = UnityEngine.Random.Range(0.5f, 1.0f);
                 }
 
-                Vector3 lateral = _isStrafingRight ? _bot.Transform.right : -_bot.Transform.right;
-                Vector3 avoid = Vector3.zero;
+                Vector3 offset = _strafeRight ? _bot.Transform.right : -_bot.Transform.right;
+                Vector3 randomJitter = UnityEngine.Random.insideUnitSphere * 0.05f;
+                Vector3 strafeVector = (offset + randomJitter).normalized * 1.1f * deltaTime;
 
-                BotsGroup group = _bot.BotsGroup;
-                if (group != null)
+                Vector3 navDir = mover.NormDirCurPoint;
+                Vector3 blend = Vector3.Lerp(navDir, strafeVector, 0.25f).normalized * 1.0f * deltaTime;
+
+                var player = _bot.GetPlayer;
+                if (player?.CharacterController != null)
                 {
-                    for (int i = 0; i < group.MembersCount; i++)
-                    {
-                        BotOwner mate = group.Member(i);
-                        if (mate != null && mate != _bot && !mate.IsDead)
-                        {
-                            float dist = Vector3.Distance(_bot.Position, mate.Position);
-                            if (dist < 2f && dist > 0.01f)
-                                avoid += (_bot.Position - mate.Position).normalized / dist;
-                        }
-                    }
+                    player.CharacterController.Move(blend, deltaTime);
                 }
-
-                Vector3 dir = (lateral + avoid * 1.2f).normalized;
-                float speed = 1.2f + UnityEngine.Random.Range(-0.1f, 0.15f);
-                try
-                {
-                    _bot.GetPlayer?.CharacterController?.Move(dir * speed * deltaTime, deltaTime);
-                }
-                catch { }
             }
             catch (Exception ex)
             {
-                Logger.LogError($"[BotMovementController] CombatStrafe failed: {ex}");
+                Logger.LogError("[BotMovementController] TryCombatStrafe error: " + ex);
             }
         }
 
-        private void TryCombatLean()
+        /// <summary>
+        /// Simulates human-like peeking or leaning around corners or obstacles, with cover/obstacle logic.
+        /// </summary>
+        private void TryLean()
         {
             try
             {
-                if (_cache.Tilt == null || Time.time < _nextLeanAllowed)
+                if (_cache == null || _cache.Tilt == null || _bot == null)
                     return;
 
-                var profile = _cache.PersonalityProfile;
-                if (profile.LeaningStyle == LeanPreference.Never || _bot.Memory.GoalEnemy == null)
+                if (Time.time < _nextLeanTime)
                     return;
 
-                Vector3 origin = _bot.Position + Vector3.up * 1.5f;
-                bool wallLeft = Physics.Raycast(origin, -_bot.Transform.right, 1.5f, AIRefactoredLayerMasks.VisionBlockers);
-                bool wallRight = Physics.Raycast(origin, _bot.Transform.right, 1.5f, AIRefactoredLayerMasks.VisionBlockers);
-                Vector3 coverPos = _bot.Memory.BotCurrentCoverInfo?.LastCover?.Position ?? Vector3.zero;
-
-                if (profile.LeaningStyle == LeanPreference.Conservative && coverPos == Vector3.zero && !wallLeft && !wallRight)
+                var memory = _bot.Memory;
+                if (memory == null || memory.GoalEnemy == null)
                     return;
 
-                if (coverPos != Vector3.zero && !BotCoverHelper.WasRecentlyUsed(coverPos))
-                {
-                    BotCoverHelper.MarkUsed(coverPos);
-                    float dir = Vector3.Dot((_bot.Position - coverPos).normalized, _bot.Transform.right);
-                    _cache.Tilt.Set(dir > 0f ? BotTiltType.right : BotTiltType.left);
-                }
-                else if (wallLeft && !wallRight)
+                if (_bot.Transform == null)
+                    return;
+
+                Vector3 head = _bot.Position + Vector3.up * 1.5f;
+                bool wallLeft = Physics.Raycast(head, -_bot.Transform.right, 1.5f, AIRefactoredLayerMasks.VisionBlockers);
+                bool wallRight = Physics.Raycast(head, _bot.Transform.right, 1.5f, AIRefactoredLayerMasks.VisionBlockers);
+
+                if (wallLeft && !wallRight)
                 {
                     _cache.Tilt.Set(BotTiltType.right);
                 }
@@ -401,144 +191,49 @@ namespace AIRefactored.AI.Movement
                 {
                     _cache.Tilt.Set(BotTiltType.left);
                 }
-                else
+                else if (memory.GoalEnemy != null)
                 {
-                    Vector3 toEnemy = _bot.Memory.GoalEnemy.CurrPosition - _bot.Position;
+                    Vector3 toEnemy = memory.GoalEnemy.CurrPosition - _bot.Position;
                     float dot = Vector3.Dot(toEnemy.normalized, _bot.Transform.right);
                     _cache.Tilt.Set(dot > 0f ? BotTiltType.right : BotTiltType.left);
                 }
 
-                _nextLeanAllowed = Time.time + LeanCooldown;
+                _nextLeanTime = Time.time + 1.5f;
             }
             catch (Exception ex)
             {
-                Logger.LogError($"[BotMovementController] TryCombatLean failed: {ex}");
+                Logger.LogError("[BotMovementController] TryLean error: " + ex);
             }
         }
 
-        private void TryFlankAroundEnemy()
+        /// <summary>
+        /// Randomized head/vision scan for realism (pauses and checks vision line).
+        /// </summary>
+        private void TryScan()
         {
             try
             {
-                if (_bot.Memory.GoalEnemy == null || Time.time < _nextFlankAllowed)
+                if (_bot == null || _bot.Transform == null)
                     return;
 
-                float aggression = _cache.PersonalityProfile.AggressionLevel;
-                float distance = Vector3.Distance(_bot.Position, _bot.Memory.GoalEnemy.CurrPosition);
-                float required = aggression > 0.7f ? 30f : 22f;
+                if (Time.time - _lastScanTime < 1.25f)
+                    return;
 
-                if (distance < required)
+                Vector3 head = _bot.Position + Vector3.up * 1.5f;
+                Vector3 dir = _bot.Transform.forward;
+
+                if (Physics.SphereCast(head, 0.25f, dir, out _, 2.5f, AIRefactoredLayerMasks.VisionBlockers))
                 {
-                    FlankPositionPlanner.Side preferred = FlankCoordinator.GetOptimalFlankSide(_bot, _cache);
-                    Vector3[] buffer = TempVector3Pool.Rent(1);
-                    try
-                    {
-                        if (FlankPositionPlanner.TryFindFlankPosition(_bot.Position, _bot.Memory.GoalEnemy.CurrPosition, out buffer[0], preferred))
-                        {
-                            BotMovementHelper.SmoothMoveTo(_bot, buffer[0], false);
-                            _nextFlankAllowed = Time.time + FlankCooldown;
-                            Logger.LogDebug("[Movement] Flank triggered: " + buffer[0]);
-                        }
-                    }
-                    finally
-                    {
-                        TempVector3Pool.Return(buffer);
-                    }
+                    if (_bot.BotTalk != null && UnityEngine.Random.value < 0.25f)
+                        _bot.BotTalk.TrySay(EPhraseTrigger.Look);
                 }
+
+                _lastScanTime = Time.time;
             }
             catch (Exception ex)
             {
-                Logger.LogError($"[BotMovementController] TryFlankAroundEnemy failed: {ex}");
+                Logger.LogError("[BotMovementController] TryScan error: " + ex);
             }
         }
-
-        #endregion
-
-        #region Recovery
-
-        private void DetectStuck(float deltaTime)
-        {
-            try
-            {
-                if (_inLootingMode || _bot.Mover == null)
-                    return;
-
-                if (NavPointRegistry.AIRefactoredNavDisabled)
-                    return;
-
-                Vector3 target = SafeGetTargetPoint();
-                if (!ValidateNavMeshTarget(target))
-                {
-                    Vector3 safe = FallbackNavPointProvider.GetSafePoint(_bot.Position);
-                    if (IsValidTarget(safe))
-                    {
-                        BotMovementHelper.SmoothMoveTo(_bot, safe, true);
-                    }
-                    return;
-                }
-
-                Vector3 velocity = _bot.GetPlayer?.Velocity ?? Vector3.zero;
-                if (velocity.sqrMagnitude < StuckThreshold * StuckThreshold)
-                {
-                    _stuckTimer += deltaTime;
-                    if (_stuckTimer > MaxStuckDuration)
-                    {
-                        Vector3[] buffer = TempVector3Pool.Rent(1);
-                        try
-                        {
-                            buffer[0] = target + UnityEngine.Random.insideUnitSphere * 1.0f;
-                            buffer[0].y = target.y;
-                            if (IsValidTarget(buffer[0]))
-                            {
-                                BotMovementHelper.SmoothMoveTo(_bot, buffer[0], false);
-                                Logger.LogDebug("[Movement] Stuck recovery triggered.");
-                            }
-                        }
-                        finally
-                        {
-                            TempVector3Pool.Return(buffer);
-                        }
-                        _stuckTimer = 0f;
-                    }
-                }
-                else
-                {
-                    _stuckTimer = 0f;
-                }
-            }
-            catch (Exception ex)
-            {
-                Logger.LogError($"[BotMovementController] DetectStuck failed: {ex}");
-            }
-        }
-
-        private bool ValidateNavMeshTarget(Vector3 pos)
-        {
-            try
-            {
-                if (!IsValidTarget(pos))
-                    return false;
-
-                if (!BotNavValidator.Validate(_bot, "NavTargetValidation"))
-                    return false;
-
-                if (NavMesh.SamplePosition(pos, out NavMeshHit hit, 1.5f, NavMesh.AllAreas))
-                {
-                    return (hit.position - pos).sqrMagnitude < 1.0f;
-                }
-            }
-            catch (Exception ex)
-            {
-                Logger.LogError($"[BotMovementController] ValidateNavMeshTarget failed: {ex}");
-            }
-            return false;
-        }
-
-        private bool IsValidTarget(Vector3 pos)
-        {
-            return pos != Vector3.zero && !float.IsNaN(pos.x) && !float.IsNaN(pos.y) && !float.IsNaN(pos.z);
-        }
-
-        #endregion
     }
 }

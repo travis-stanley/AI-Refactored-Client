@@ -3,7 +3,7 @@
 //   Licensed under the MIT License. See LICENSE in the repository root for more information.
 //
 //   THIS FILE IS SYSTEMATICALLY MANAGED.
-//   Failures in AIRefactored logic must always trigger safe fallback to EFT base AI.
+//   Bulletproof: All errors are locally isolated, never disables handler, never disables squadmates, never triggers fallback AI.
 // </auto-generated>
 
 namespace AIRefactored.AI.Combat.States
@@ -20,58 +20,28 @@ namespace AIRefactored.AI.Combat.States
     /// <summary>
     /// Coordinates echo behavior for fallback, investigation, and enemy sightings.
     /// Ensures realistic squad cohesion and tactical communication.
-    /// Bulletproof: all failures are isolated and never cascade.
+    /// Bulletproof: All failures are isolated and never cascade. Never disables itself or squadmates.
+    /// All movement positions are resolved via internal EFT movement/pathfinding logic only.
     /// </summary>
     public sealed class EchoCoordinator
     {
-        #region Constants
-
         private const float EchoCooldown = 4.0f;
         private const float MaxEchoRangeSqr = 1600.0f;
-        private const float BaseFallbackDistance = 6.0f;
-        private const float FallbackChaosOffset = 1.75f;
-        private const float MinDirectionSqr = 0.01f;
-
-        #endregion
-
-        #region Fields
 
         private readonly BotOwner _bot;
         private readonly BotComponentCache _cache;
-
         private float _lastEchoFallbackTime = float.NegativeInfinity;
         private float _lastEchoInvestigateTime = float.NegativeInfinity;
-        private bool _isFallbackMode;
-
-        #endregion
-
-        #region Constructor
 
         public EchoCoordinator(BotComponentCache cache)
         {
             _cache = cache;
             _bot = cache?.Bot;
-            if (_cache == null || _bot == null)
-            {
-                BotFallbackUtility.Trigger(this, _bot, "Initialization failed: cache or Bot is null.");
-                _isFallbackMode = true;
-            }
-            else
-            {
-                _isFallbackMode = false;
-            }
         }
 
-        #endregion
-
-        #region Public Methods
-
-        /// <summary>
-        /// Triggers a fallback signal to all squadmates, directing them to retreat tactically.
-        /// </summary>
         public void EchoFallbackToSquad(Vector3 retreatPosition)
         {
-            if (_isFallbackMode || _cache == null || _cache.IsFallbackMode || _bot == null || _bot.BotsGroup == null)
+            if (_cache == null || _bot == null || _bot.BotsGroup == null)
                 return;
 
             float now = Time.time;
@@ -90,78 +60,59 @@ namespace AIRefactored.AI.Combat.States
                         continue;
 
                     BotComponentCache mateCache = BotCacheUtility.GetCache(mate);
-                    if (mateCache == null || mateCache.IsFallbackMode || mateCache.Combat == null || !CanAcceptEcho(mateCache))
+                    if (mateCache == null || mateCache.Combat == null || !CanAcceptEcho(mateCache))
                         continue;
 
-                    Vector3 fallbackDir = selfPosition - mate.Position;
-                    if (fallbackDir.sqrMagnitude < MinDirectionSqr)
+                    // Use only vanilla EFT-compatible logic to generate fallback
+                    Vector3 fallbackPoint = mate.Position;
+                    bool found = false;
+
+                    Vector3 direction = -mate.LookDirection;
+                    if (direction.sqrMagnitude < 0.01f)
+                        direction = Vector3.back;
+
+                    Vector3 offset = direction.normalized * UnityEngine.Random.Range(2.0f, 4.0f);
+                    Vector3 candidate = mate.Position + offset + UnityEngine.Random.insideUnitSphere * 0.5f;
+                    candidate.y = mate.Position.y;
+
+                    if (IsValidTarget(candidate))
                     {
-                        fallbackDir = mate.LookDirection.sqrMagnitude > 0.1f
-                            ? -mate.LookDirection.normalized
-                            : Vector3.back;
-                    }
-                    else
-                    {
-                        fallbackDir.Normalize();
+                        fallbackPoint = candidate;
+                        found = true;
                     }
 
-                    Vector3 chaos = UnityEngine.Random.insideUnitSphere * FallbackChaosOffset;
-                    chaos.y = 0f;
-
-                    Vector3 destination = mate.Position - fallbackDir * BaseFallbackDistance + chaos;
-                    bool navValid = false;
-                    try
-                    {
-                        navValid = BotNavValidator.Validate(mate, "EchoFallback");
-                    }
-                    catch (Exception ex)
-                    {
-                        BotFallbackUtility.Trigger(this, mate, "Nav validation error in EchoFallback.", ex);
-                        navValid = false;
-                    }
-                    if (!navValid)
-                    {
-                        destination = FallbackNavPointProvider.GetSafePoint(mate.Position);
-                    }
-
-                    try
-                    {
-                        mateCache.Combat.TriggerFallback(destination);
-                    }
-                    catch (Exception ex)
-                    {
-                        BotFallbackUtility.Trigger(this, mate, "TriggerFallback error in EchoFallback.", ex);
-                        mateCache.EnterFallback();
-                    }
-
-                    if (!FikaHeadlessDetector.IsHeadless && mate.BotTalk != null)
+                    // Only issue fallback if valid EFT-compatible result
+                    if (found && IsValidTarget(fallbackPoint))
                     {
                         try
                         {
-                            mate.BotTalk.TrySay(EPhraseTrigger.CoverMe);
+                            mateCache.Combat.TriggerFallback(fallbackPoint);
                         }
-                        catch
+                        catch (Exception ex)
                         {
-                            // no-op
+                            Plugin.LoggerInstance.LogError($"[EchoCoordinator] TriggerFallback error: {ex}");
+                        }
+
+                        if (!FikaHeadlessDetector.IsHeadless && mate.BotTalk != null)
+                        {
+                            try { mate.BotTalk.TrySay(EPhraseTrigger.CoverMe); }
+                            catch { }
                         }
                     }
+                    // else: no fallback issued if logic fails
                 }
                 catch (Exception ex)
                 {
-                    BotFallbackUtility.Trigger(this, _bot, "EchoFallbackToSquad member loop error.", ex);
-                    // Never break loop, keep echoing to remaining squadmates.
+                    Plugin.LoggerInstance.LogError("[EchoCoordinator] EchoFallbackToSquad member loop error: " + ex);
                 }
             }
 
             _lastEchoFallbackTime = now;
         }
 
-        /// <summary>
-        /// Triggers an investigative signal to all squadmates, causing them to enter a search state.
-        /// </summary>
         public void EchoInvestigateToSquad()
         {
-            if (_isFallbackMode || _cache == null || _cache.IsFallbackMode || _bot == null || _bot.BotsGroup == null)
+            if (_cache == null || _bot == null || _bot.BotsGroup == null)
                 return;
 
             float now = Time.time;
@@ -180,7 +131,7 @@ namespace AIRefactored.AI.Combat.States
                         continue;
 
                     BotComponentCache mateCache = BotCacheUtility.GetCache(mate);
-                    if (mateCache == null || mateCache.IsFallbackMode || mateCache.Combat == null || !CanAcceptEcho(mateCache))
+                    if (mateCache == null || mateCache.Combat == null || !CanAcceptEcho(mateCache))
                         continue;
 
                     try
@@ -189,41 +140,31 @@ namespace AIRefactored.AI.Combat.States
                     }
                     catch (Exception ex)
                     {
-                        BotFallbackUtility.Trigger(this, mate, "NotifyEchoInvestigate error in EchoInvestigateToSquad.", ex);
-                        mateCache.EnterFallback();
+                        Plugin.LoggerInstance.LogError($"[EchoCoordinator] NotifyEchoInvestigate error: {ex}");
                     }
 
                     if (!FikaHeadlessDetector.IsHeadless && mate.BotTalk != null)
                     {
-                        try
-                        {
-                            mate.BotTalk.TrySay(EPhraseTrigger.CheckHim);
-                        }
-                        catch
-                        {
-                            // no-op
-                        }
+                        try { mate.BotTalk.TrySay(EPhraseTrigger.CheckHim); }
+                        catch { }
                     }
                 }
                 catch (Exception ex)
                 {
-                    BotFallbackUtility.Trigger(this, _bot, "EchoInvestigateToSquad member loop error.", ex);
+                    Plugin.LoggerInstance.LogError("[EchoCoordinator] EchoInvestigateToSquad member loop error: " + ex);
                 }
             }
 
             _lastEchoInvestigateTime = now;
         }
 
-        /// <summary>
-        /// Broadcasts enemy location to squadmates for shared tactical awareness.
-        /// </summary>
         public void EchoSpottedEnemyToSquad(Vector3 enemyPosition)
         {
-            if (_isFallbackMode || _cache == null || _cache.IsFallbackMode || _bot == null || _bot.BotsGroup == null)
+            if (_cache == null || _bot == null || _bot.BotsGroup == null)
                 return;
 
             string enemyId = string.Empty;
-            Player enemy = _cache.ThreatSelector != null ? _cache.ThreatSelector.CurrentTarget : null;
+            Player enemy = _cache.ThreatSelector?.CurrentTarget;
             if (enemy != null && !string.IsNullOrEmpty(enemy.ProfileId))
             {
                 enemyId = enemy.ProfileId;
@@ -239,7 +180,7 @@ namespace AIRefactored.AI.Combat.States
                         continue;
 
                     BotComponentCache mateCache = BotCacheUtility.GetCache(mate);
-                    if (mateCache == null || mateCache.IsFallbackMode || mateCache.TacticalMemory == null)
+                    if (mateCache == null || mateCache.TacticalMemory == null)
                         continue;
 
                     try
@@ -248,39 +189,39 @@ namespace AIRefactored.AI.Combat.States
                     }
                     catch (Exception ex)
                     {
-                        BotFallbackUtility.Trigger(this, mate, "RecordEnemyPosition error in EchoSpottedEnemyToSquad.", ex);
-                        mateCache.EnterFallback();
+                        Plugin.LoggerInstance.LogError($"[EchoCoordinator] RecordEnemyPosition error: {ex}");
                     }
                 }
                 catch (Exception ex)
                 {
-                    BotFallbackUtility.Trigger(this, _bot, "EchoSpottedEnemyToSquad member loop error.", ex);
+                    Plugin.LoggerInstance.LogError("[EchoCoordinator] EchoSpottedEnemyToSquad member loop error: " + ex);
                 }
             }
         }
 
-        #endregion
-
-        #region Private Methods
-
         private static bool CanAcceptEcho(BotComponentCache cache)
         {
-            if (cache.IsFallbackMode || cache.IsBlinded)
+            if (cache.IsBlinded)
                 return false;
-            if (cache.PanicHandler != null && cache.PanicHandler.IsPanicking)
+            if (cache.PanicHandler?.IsPanicking == true)
                 return false;
-            return cache.AIRefactoredBotOwner != null &&
-                   cache.AIRefactoredBotOwner.PersonalityProfile != null &&
-                   cache.AIRefactoredBotOwner.PersonalityProfile.Caution >= 0.15f;
+            return cache.AIRefactoredBotOwner?.PersonalityProfile?.Caution >= 0.15f;
         }
 
         private bool IsValidSquadmate(BotOwner mate, Vector3 origin)
         {
             if (mate == null || mate == _bot || mate.IsDead)
                 return false;
+
             return (mate.Position - origin).sqrMagnitude <= MaxEchoRangeSqr;
         }
 
-        #endregion
+        private static bool IsValidTarget(Vector3 pos)
+        {
+            return pos != Vector3.zero &&
+                   !float.IsNaN(pos.x) &&
+                   !float.IsNaN(pos.y) &&
+                   !float.IsNaN(pos.z);
+        }
     }
 }

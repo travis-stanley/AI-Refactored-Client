@@ -25,7 +25,6 @@ namespace AIRefactored.AI.Perception
 
         private const float BoneVisibilityDuration = 0.5f;
         private const float LinecastSlack = 0.15f;
-
         private static readonly Vector3 EyeOffset = new Vector3(0f, 1.4f, 0f);
 
         #endregion
@@ -42,7 +41,6 @@ namespace AIRefactored.AI.Perception
         /// <summary>
         /// Constructs a new bone visibility tracker for the given bot origin transform.
         /// </summary>
-        /// <param name="botOrigin">The bot's eye or head transform (never null).</param>
         public TrackedEnemyVisibility(Transform botOrigin)
         {
             _botOrigin = botOrigin;
@@ -50,23 +48,17 @@ namespace AIRefactored.AI.Perception
 
         #endregion
 
-        #region Properties
+        #region Public Properties
 
         /// <summary>
         /// Gets whether the bot has enough visual data to estimate a threat confidently.
         /// </summary>
-        public bool HasEnoughData
-        {
-            get { return _visibleBones.Count >= 2; }
-        }
+        public bool HasEnoughData => _visibleBones.Count >= 2;
 
         #endregion
 
         #region Public Methods
 
-        /// <summary>
-        /// Returns true if any bones are currently visible and unexpired.
-        /// </summary>
         public bool CanSeeAny()
         {
             try
@@ -80,10 +72,6 @@ namespace AIRefactored.AI.Perception
             }
         }
 
-        /// <summary>
-        /// Returns true if the bot has line of sight to the given bone, with slack for near-misses.
-        /// </summary>
-        /// <param name="boneName">Bone key (e.g. "Head").</param>
         public bool CanShootTo(string boneName)
         {
             try
@@ -91,23 +79,18 @@ namespace AIRefactored.AI.Perception
                 if (_botOrigin == null || string.IsNullOrEmpty(boneName))
                     return false;
 
-                BoneInfo info;
-                if (!_visibleBones.TryGetValue(boneName, out info))
-                {
+                if (!_visibleBones.TryGetValue(boneName, out BoneInfo info))
                     return false;
-                }
 
                 float now = Time.time;
                 if (now - info.Timestamp > BoneVisibilityDuration)
-                {
                     return false;
-                }
 
                 Vector3 eye = _botOrigin.position + EyeOffset;
                 float dist = Vector3.Distance(eye, info.Position);
 
                 return !Physics.Linecast(eye, info.Position, out RaycastHit hit, AIRefactoredLayerMasks.LineOfSightMask)
-                       || hit.distance >= dist - LinecastSlack;
+                    || hit.distance >= dist - LinecastSlack;
             }
             catch
             {
@@ -115,23 +98,18 @@ namespace AIRefactored.AI.Perception
             }
         }
 
-        /// <summary>
-        /// Updates visibility data for the given bone.
-        /// </summary>
         public void UpdateBoneVisibility(string boneName, Vector3 worldPosition)
         {
             try
             {
                 if (_botOrigin == null || string.IsNullOrEmpty(boneName))
                     return;
+
                 _visibleBones[boneName] = new BoneInfo(worldPosition, Time.time);
             }
             catch { }
         }
 
-        /// <summary>
-        /// Updates bone visibility, including motion bonus and ambient occlusion penalty.
-        /// </summary>
         public void UpdateBoneVisibility(string boneName, Vector3 worldPosition, float motionBonus, float ambientOcclusionFactor)
         {
             try
@@ -140,37 +118,32 @@ namespace AIRefactored.AI.Perception
                     return;
 
                 float now = Time.time;
-                float extra = Mathf.Clamp(motionBonus, 0f, 0.4f);
+                float bonus = Mathf.Clamp(motionBonus, 0f, 0.4f);
                 float penalty = Mathf.Lerp(0f, 0.2f, 1f - ambientOcclusionFactor);
-                float timestamp = now + extra - penalty;
+                float timestamp = now + bonus - penalty;
+
                 _visibleBones[boneName] = new BoneInfo(worldPosition, timestamp);
             }
             catch { }
         }
 
-        /// <summary>
-        /// Gradually decays all confidence values by the specified amount.
-        /// </summary>
         public void DecayConfidence(float decayAmount)
         {
             float now = Time.time;
             List<string> keys = TempListPool.Rent<string>();
             try
             {
-                foreach (KeyValuePair<string, BoneInfo> kv in _visibleBones)
-                {
+                foreach (var kv in _visibleBones)
                     keys.Add(kv.Key);
-                }
 
                 for (int i = 0; i < keys.Count; i++)
                 {
                     string key = keys[i];
                     BoneInfo info = _visibleBones[key];
-                    float decayed = Mathf.Max(0f, info.Timestamp - decayAmount);
-                    _visibleBones[key] = new BoneInfo(info.Position, decayed);
+                    float decayedTime = Mathf.Max(0f, info.Timestamp - decayAmount);
+                    _visibleBones[key] = new BoneInfo(info.Position, decayedTime);
                 }
 
-                // Only clean expired once after all keys processed
                 CleanExpired(now);
             }
             catch { }
@@ -180,9 +153,6 @@ namespace AIRefactored.AI.Perception
             }
         }
 
-        /// <summary>
-        /// Gets the overall visibility confidence as a [0,1] value.
-        /// </summary>
         public float GetOverallConfidence()
         {
             try
@@ -196,9 +166,6 @@ namespace AIRefactored.AI.Perception
             }
         }
 
-        /// <summary>
-        /// Returns the current count of exposed bones.
-        /// </summary>
         public int ExposedBoneCount()
         {
             try
@@ -212,9 +179,6 @@ namespace AIRefactored.AI.Perception
             }
         }
 
-        /// <summary>
-        /// Resets all bone visibility data.
-        /// </summary>
         public void Clear()
         {
             try
@@ -228,20 +192,15 @@ namespace AIRefactored.AI.Perception
 
         #region Internal Methods
 
-        /// <summary>
-        /// Removes expired bone data.
-        /// </summary>
         private void CleanExpired(float now)
         {
             List<string> expired = TempListPool.Rent<string>();
             try
             {
-                foreach (KeyValuePair<string, BoneInfo> kv in _visibleBones)
+                foreach (var kv in _visibleBones)
                 {
                     if (now - kv.Value.Timestamp > BoneVisibilityDuration)
-                    {
                         expired.Add(kv.Key);
-                    }
                 }
 
                 for (int i = 0; i < expired.Count; i++)

@@ -3,7 +3,8 @@
 //   Licensed under the MIT License. See LICENSE in the repository root for more information.
 //
 //   THIS FILE IS SYSTEMATICALLY MANAGED.
-//   Failures are locally isolated, never disables bot, never triggers fallback AI.
+//   All logic is bulletproof, null-free, pooling-optimized, multiplayer and headless safe.
+//   Realism: Loots corpses with human-like memory, hesitation, prioritization, and risk assessment.
 // </auto-generated>
 
 namespace AIRefactored.AI.Looting
@@ -19,9 +20,8 @@ namespace AIRefactored.AI.Looting
     using UnityEngine;
 
     /// <summary>
-    /// Opportunistically loots dead enemies by checking proximity, visibility, and internal corpse memory cache.
-    /// Aligns with EFT's native BotDeadBodyWork and DeadBodiesController behavior.
-    /// All scan/loot logic is bulletproof, memory-driven, and as human-like as possible.
+    /// Scans for and opportunistically loots dead enemies, factoring proximity, line of sight, and memory.
+    /// Mimics human looting caution, timing, and limited recall; compatible with multiplayer and headless.
     /// </summary>
     public sealed class BotDeadBodyScanner
     {
@@ -34,6 +34,7 @@ namespace AIRefactored.AI.Looting
         private const float ScanRadius = 12f;
         private const float MaxContainerDistance = 0.75f;
         private const float CooldownVariance = 1.5f;
+        private const float MinPersonalCooldown = 0.33f;
 
         #endregion
 
@@ -55,9 +56,6 @@ namespace AIRefactored.AI.Looting
 
         #region Static API
 
-        /// <summary>
-        /// One-time scan to pair dead players with nearby lootable containers.
-        /// </summary>
         public static void ScanAll()
         {
             try
@@ -73,21 +71,21 @@ namespace AIRefactored.AI.Looting
                 List<IPlayer> rawPlayers = world.RegisteredPlayers;
                 List<Player> deadPlayers = TempListPool.Rent<Player>();
 
-                for (int i = 0; i < rawPlayers.Count; i++)
+                for (int i = 0, n = rawPlayers.Count; i < n; i++)
                 {
                     Player p = EFTPlayerUtil.AsEFTPlayer(rawPlayers[i]);
                     if (p != null && p.HealthController != null && !p.HealthController.IsAlive)
                         deadPlayers.Add(p);
                 }
 
-                for (int i = 0; i < containers.Count; i++)
+                for (int i = 0, n = containers.Count; i < n; i++)
                 {
                     LootableContainer container = containers[i];
                     if (container == null)
                         continue;
 
                     Vector3 containerPos = container.transform.position;
-                    for (int j = 0; j < deadPlayers.Count; j++)
+                    for (int j = 0, m = deadPlayers.Count; j < m; j++)
                     {
                         Player player = deadPlayers[j];
                         if (player == null || string.IsNullOrEmpty(player.ProfileId) || DeadBodyContainerCache.Contains(player.ProfileId))
@@ -101,6 +99,7 @@ namespace AIRefactored.AI.Looting
                         }
                     }
                 }
+
                 TempListPool.Return(deadPlayers);
             }
             catch (Exception ex)
@@ -109,9 +108,6 @@ namespace AIRefactored.AI.Looting
             }
         }
 
-        /// <summary>
-        /// Clears all static loot/corpse memory caches. Should be called on world/raid end.
-        /// </summary>
         public static void ClearStaticState()
         {
             LootTimestamps.Clear();
@@ -122,9 +118,6 @@ namespace AIRefactored.AI.Looting
 
         #region Lifecycle
 
-        /// <summary>
-        /// Initializes the scanner for a specific bot and its cache.
-        /// </summary>
         public void Initialize(BotComponentCache cache)
         {
             if (cache == null || cache.Bot == null)
@@ -147,15 +140,16 @@ namespace AIRefactored.AI.Looting
             _bot = resolved;
             _cache = cache;
             _personalScanVariance = UnityEngine.Random.Range(-CooldownVariance * 0.5f, CooldownVariance * 0.5f);
+            _nextScanTime = Mathf.Max(Time.time, Time.time + MinPersonalCooldown + _personalScanVariance);
         }
 
-        /// <summary>
-        /// Ticks looting logic. Called each frame with current time.
-        /// </summary>
         public void Tick(float time)
         {
             try
             {
+                if (_bot == null || _cache == null)
+                    return;
+
                 if (time < _nextScanTime || !IsReady())
                     return;
 
@@ -170,9 +164,6 @@ namespace AIRefactored.AI.Looting
             }
         }
 
-        /// <summary>
-        /// Immediately attempts to loot a nearby corpse if ready.
-        /// </summary>
         public void TryLootNearby()
         {
             try
@@ -236,12 +227,17 @@ namespace AIRefactored.AI.Looting
             try
             {
                 allCorpses = TempListPool.Rent<Player>();
-                allCorpses.AddRange(GameWorldHandler.GetAllAlivePlayers());
+                List<Player> possible = GameWorldHandler.GetAllAlivePlayers();
+                for (int i = 0; i < possible.Count; i++)
+                {
+                    Player p = possible[i];
+                    if (p != null && !p.HealthController.IsAlive)
+                        allCorpses.Add(p);
+                }
 
                 Player best = null;
                 float bestDist = ScanRadius + 1f;
-
-                for (int i = 0; i < allCorpses.Count; i++)
+                for (int i = 0, n = allCorpses.Count; i < n; i++)
                 {
                     Player candidate = allCorpses[i];
                     if (!IsValidCorpse(candidate))
@@ -337,7 +333,7 @@ namespace AIRefactored.AI.Looting
                 EquipmentSlot.Pockets
             };
 
-            for (int i = 0; i < prioritySlots.Length; i++)
+            for (int i = 0, n = prioritySlots.Length; i < n; i++)
             {
                 try
                 {
@@ -354,7 +350,7 @@ namespace AIRefactored.AI.Looting
                         continue;
 
                     if (InteractionsHandlerClass.Move(item, destination, target, true).Succeeded)
-                        break; // Only one item looted per scan for realism
+                        break;
                 }
                 catch (Exception ex)
                 {

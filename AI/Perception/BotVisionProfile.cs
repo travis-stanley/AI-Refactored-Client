@@ -15,13 +15,17 @@ namespace AIRefactored.AI.Perception
     /// </summary>
     public sealed class BotVisionProfile
     {
-        #region Defaults
+        #region Constants
 
-        private static readonly float DefaultAdaptationSpeed = 1.25f;
-        private static readonly float DefaultAggressionResponse = 0.85f;
-        private static readonly float DefaultLightSensitivity = 1.0f;
-        private static readonly float DefaultMaxBlindness = 1.0f;
-        private static readonly float DefaultClarityRecoverySpeed = 0.3f;
+        private const float DefaultAdaptationSpeed = 1.25f;
+        private const float DefaultAggressionResponse = 0.85f;
+        private const float DefaultLightSensitivity = 1.0f;
+        private const float DefaultMaxBlindness = 1.0f;
+        private const float DefaultClarityRecoverySpeed = 0.3f;
+
+        #endregion
+
+        #region Static
 
         /// <summary>
         /// Gets a singleton default profile for safe reuse.
@@ -32,19 +36,29 @@ namespace AIRefactored.AI.Perception
 
         #region Properties
 
-        /// <summary>How quickly the bot recovers from vision impairment.</summary>
+        /// <summary>
+        /// How quickly the bot recovers from vision impairment.
+        /// </summary>
         public float AdaptationSpeed { get; set; } = DefaultAdaptationSpeed;
 
-        /// <summary>How aggressively the bot responds to vision impairment or sudden light changes.</summary>
+        /// <summary>
+        /// How aggressively the bot responds to vision impairment or sudden light changes.
+        /// </summary>
         public float AggressionResponse { get; set; } = DefaultAggressionResponse;
 
-        /// <summary>How sensitive the bot is to light sources, flashlights, and flares.</summary>
+        /// <summary>
+        /// How sensitive the bot is to light sources, flashlights, and flares.
+        /// </summary>
         public float LightSensitivity { get; set; } = DefaultLightSensitivity;
 
-        /// <summary>Maximum level of temporary blindness the bot can experience.</summary>
+        /// <summary>
+        /// Maximum level of temporary blindness the bot can experience.
+        /// </summary>
         public float MaxBlindness { get; set; } = DefaultMaxBlindness;
 
-        /// <summary>Speed at which clarity returns after blindness (e.g. flashbang, suppression).</summary>
+        /// <summary>
+        /// Speed at which clarity returns after blindness (e.g. flashbang, suppression).
+        /// </summary>
         public float ClarityRecoverySpeed { get; set; } = DefaultClarityRecoverySpeed;
 
         #endregion
@@ -68,13 +82,14 @@ namespace AIRefactored.AI.Perception
         /// </summary>
         public void Reset(bool resetAggression = true)
         {
-            this.AdaptationSpeed = DefaultAdaptationSpeed;
-            this.LightSensitivity = DefaultLightSensitivity;
-            this.MaxBlindness = DefaultMaxBlindness;
-            this.ClarityRecoverySpeed = DefaultClarityRecoverySpeed;
+            AdaptationSpeed = DefaultAdaptationSpeed;
+            LightSensitivity = DefaultLightSensitivity;
+            MaxBlindness = DefaultMaxBlindness;
+            ClarityRecoverySpeed = DefaultClarityRecoverySpeed;
+
             if (resetAggression)
             {
-                this.AggressionResponse = DefaultAggressionResponse;
+                AggressionResponse = DefaultAggressionResponse;
             }
         }
 
@@ -85,17 +100,17 @@ namespace AIRefactored.AI.Perception
         /// <summary>
         /// Copies all values from another profile instance.
         /// </summary>
+        /// <param name="source">The profile to copy from.</param>
         public void SetFrom(BotVisionProfile source)
         {
             if (ReferenceEquals(this, source) || source == null)
-            {
                 return;
-            }
-            this.AdaptationSpeed = source.AdaptationSpeed;
-            this.AggressionResponse = source.AggressionResponse;
-            this.LightSensitivity = source.LightSensitivity;
-            this.MaxBlindness = source.MaxBlindness;
-            this.ClarityRecoverySpeed = source.ClarityRecoverySpeed;
+
+            AdaptationSpeed = source.AdaptationSpeed;
+            AggressionResponse = source.AggressionResponse;
+            LightSensitivity = source.LightSensitivity;
+            MaxBlindness = source.MaxBlindness;
+            ClarityRecoverySpeed = source.ClarityRecoverySpeed;
         }
 
         #endregion

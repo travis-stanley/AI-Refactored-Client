@@ -3,14 +3,15 @@
 //   Licensed under the MIT License. See LICENSE in the repository root for more information.
 //
 //   THIS FILE IS SYSTEMATICALLY MANAGED.
-//   Failures in AIRefactored logic must always trigger safe fallback to EFT base AI, never break the stack.
-//   Please follow strict StyleCop, ReSharper, and AI-Refactored code standards for all modifications.
+//   Realism: Flashlight, laser, NVG, and thermal logic is humanized with chaos-bait, ambient awareness, and fog response.
+//   Bulletproof: Pooling-optimized, multiplayer and headless safe, null-free and error-isolated.
 // </auto-generated>
 
 namespace AIRefactored.AI.Perception
 {
     using System;
     using System.Collections.Generic;
+    using System.Linq;
     using AIRefactored.AI.Core;
     using AIRefactored.Core;
     using AIRefactored.Pools;
@@ -22,8 +23,8 @@ namespace AIRefactored.AI.Perception
     /// <summary>
     /// Controls and manages tactical device toggling for bot AI:
     /// Flashlights, lasers, NVGs, and thermals.
-    /// Handles ambient/fog-based logic and chaos-driven baiting,
-    /// ensuring full headless and multiplayer safety.
+    /// Handles ambient/fog-based logic and chaos-driven baiting.
+    /// Fully null-safe, pooling-optimized, and headless/multiplayer compatible.
     /// </summary>
     public sealed class BotTacticalDeviceController
     {
@@ -32,21 +33,19 @@ namespace AIRefactored.AI.Perception
         private BotOwner _bot;
         private BotComponentCache _cache;
         private float _nextDecisionTime;
-        private bool _failed; // disables this subsystem on hard error
+        private bool _failed;
 
         #endregion
 
         #region Initialization
 
-        /// <summary>
-        /// Initializes the controller for the provided bot component cache.
-        /// </summary>
-        /// <param name="cache">The bot's runtime component cache.</param>
         public void Initialize(BotComponentCache cache)
         {
+            _failed = false;
+            _nextDecisionTime = 0f;
+
             try
             {
-                _failed = false;
                 if (cache == null || cache.Bot == null)
                 {
                     _failed = true;
@@ -55,7 +54,6 @@ namespace AIRefactored.AI.Perception
 
                 _bot = cache.Bot;
                 _cache = cache;
-                _nextDecisionTime = 0f;
             }
             catch (Exception ex)
             {
@@ -68,26 +66,18 @@ namespace AIRefactored.AI.Perception
 
         #region Tick
 
-        /// <summary>
-        /// Updates tactical device logic. Must be called every frame by BotBrain.
-        /// Fully allocation- and null-safe, with pooling and headless/multiplayer support.
-        /// </summary>
         public void Tick()
         {
             if (_failed || !CanThink())
-            {
                 return;
-            }
 
             try
             {
                 _nextDecisionTime = Time.time + TacticalConfig.CheckInterval;
 
-                Weapon weapon = _bot.WeaponManager != null ? _bot.WeaponManager.CurrentWeapon : null;
+                Weapon weapon = _bot.WeaponManager?.CurrentWeapon;
                 if (weapon == null)
-                {
                     return;
-                }
 
                 List<LightComponent> devices = TempListPool.Rent<LightComponent>();
                 try
@@ -108,7 +98,6 @@ namespace AIRefactored.AI.Perception
                         }
                     }
 
-                    // If chaos bait is triggered, flash the lights briefly, then force-off for bait
                     if (baitTrigger)
                     {
                         _nextDecisionTime = Time.time + 1.5f;
@@ -138,40 +127,27 @@ namespace AIRefactored.AI.Perception
 
         #region Logic
 
-        /// <summary>
-        /// Determines if tactical device logic should run this frame.
-        /// </summary>
         private bool CanThink()
         {
-            return !_failed
-                && _bot != null
-                && _cache != null
-                && !_bot.IsDead
-                && Time.time >= _nextDecisionTime
-                && EFTPlayerUtil.IsValid(_bot.GetPlayer)
-                && _bot.GetPlayer.IsAI;
+            return !_failed &&
+                   _bot != null &&
+                   _cache != null &&
+                   !_bot.IsDead &&
+                   Time.time >= _nextDecisionTime &&
+                   EFTPlayerUtil.IsValid(_bot.GetPlayer) &&
+                   _bot.GetPlayer.IsAI;
         }
 
-        /// <summary>
-        /// Computes bait/chaos chance from the bot's personality and awareness.
-        /// </summary>
         private float GetChaosBaitChance()
         {
             try
             {
-                var owner = _cache != null ? _cache.AIRefactoredBotOwner : null;
-                if (owner == null)
-                {
-                    return 0f;
-                }
-
-                BotPersonalityProfile profile = owner.PersonalityProfile;
-                if (profile == null)
+                var owner = _cache?.AIRefactoredBotOwner;
+                if (owner == null || owner.PersonalityProfile == null)
                     return 0f;
 
-                // Awareness slightly reduces chaos chance for smarter bots (realism)
-                float baseChaos = profile.ChaosFactor * 0.25f;
-                float awarenessMod = 1f - Mathf.Clamp01(profile.Awareness); // High awareness, less baiting
+                float baseChaos = owner.PersonalityProfile.ChaosFactor * 0.25f;
+                float awarenessMod = 1f - Mathf.Clamp01(owner.PersonalityProfile.Awareness);
                 return Mathf.Clamp01(baseChaos * (0.7f + 0.6f * awarenessMod));
             }
             catch (Exception ex)
@@ -182,9 +158,6 @@ namespace AIRefactored.AI.Perception
             }
         }
 
-        /// <summary>
-        /// Returns true if the environment is considered low-visibility.
-        /// </summary>
         private static bool IsLowVisibility()
         {
             try
@@ -195,45 +168,31 @@ namespace AIRefactored.AI.Perception
             }
             catch
             {
-                // On RenderSettings/graphics API error, default to false (safe for headless)
                 return false;
             }
         }
 
-        /// <summary>
-        /// Adds all valid tactical devices on the weapon to the result list.
-        /// </summary>
         private static void ScanModsForTacticalDevices(Weapon weapon, List<LightComponent> result)
         {
             if (weapon == null || result == null)
-            {
                 return;
-            }
 
             var slots = weapon.AllSlots;
             if (slots == null)
-            {
                 return;
-            }
 
             foreach (Slot slot in slots)
             {
                 if (slot == null)
-                {
                     continue;
-                }
 
                 Item mod = slot.ContainedItem;
                 if (mod == null || mod.Template == null)
-                {
                     continue;
-                }
 
                 string name = mod.Template.Name?.ToLowerInvariant();
                 if (string.IsNullOrEmpty(name) || !IsTacticalName(name))
-                {
                     continue;
-                }
 
                 if (mod is FlashlightItemClass flash && flash.Light != null)
                 {
@@ -250,18 +209,13 @@ namespace AIRefactored.AI.Perception
             }
         }
 
-        /// <summary>
-        /// Checks if the mod name contains tactical keywords.
-        /// </summary>
         private static bool IsTacticalName(string name)
         {
-            var keywords = TacticalConfig.Keywords;
-            for (int i = 0, count = keywords.Length; i < count; i++)
+            string[] keywords = TacticalConfig.Keywords;
+            for (int i = 0; i < keywords.Length; i++)
             {
                 if (name.Contains(keywords[i]))
-                {
                     return true;
-                }
             }
             return false;
         }
@@ -270,9 +224,6 @@ namespace AIRefactored.AI.Perception
 
         #region TacticalConfig
 
-        /// <summary>
-        /// Static tactical device config for thresholds and keywords.
-        /// </summary>
         private static class TacticalConfig
         {
             public const float CheckInterval = 2.0f;

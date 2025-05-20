@@ -52,11 +52,10 @@ namespace AIRefactored.AI.Groups
                     return BotMissionController.MissionType.Loot;
 
                 string groupId = bot.GetPlayer?.Profile?.Info?.GroupId;
-
                 if (string.IsNullOrEmpty(groupId))
                     return PickMission(bot);
 
-                if (!AssignedMissions.TryGetValue(groupId, out var mission))
+                if (!AssignedMissions.TryGetValue(groupId, out BotMissionController.MissionType mission))
                 {
                     mission = PickMission(bot);
                     AssignedMissions[groupId] = mission;
@@ -66,7 +65,6 @@ namespace AIRefactored.AI.Groups
             }
             catch
             {
-                // Always safe fallback: Loot is least risky
                 return BotMissionController.MissionType.Loot;
             }
         }
@@ -87,10 +85,7 @@ namespace AIRefactored.AI.Groups
                     AssignedMissions[groupId] = PickMission(bot);
                 }
             }
-            catch
-            {
-                // Always safe
-            }
+            catch { }
         }
 
         /// <summary>
@@ -115,6 +110,7 @@ namespace AIRefactored.AI.Groups
             try
             {
                 string map = GameWorldHandler.TryGetValidMapName();
+
                 switch (map)
                 {
                     case "factory4_day":
@@ -173,7 +169,7 @@ namespace AIRefactored.AI.Groups
             }
             catch
             {
-                // Use base values if anything fails
+                // Use default weights
             }
 
             float total = loot + fight + quest;
@@ -181,8 +177,10 @@ namespace AIRefactored.AI.Groups
 
             if (roll < loot)
                 return BotMissionController.MissionType.Loot;
+
             if (roll < loot + fight)
                 return BotMissionController.MissionType.Fight;
+
             return BotMissionController.MissionType.Quest;
         }
 

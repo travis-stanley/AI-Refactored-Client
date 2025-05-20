@@ -19,7 +19,13 @@ namespace AIRefactored.AI.Combat
     /// </summary>
     public sealed class BotLastShotTracker
     {
-        private static readonly float DefaultMemoryWindow = 10f;
+        #region Constants
+
+        private const float DefaultMemoryWindow = 10f;
+
+        #endregion
+
+        #region State
 
         private string _lastAttackerId = string.Empty;
         private float _lastHitTime = float.NegativeInfinity;
@@ -32,9 +38,10 @@ namespace AIRefactored.AI.Combat
         private float _lastShotDistance = -1f;
         private Vector3 _lastShotDirection = Vector3.zero;
 
-        /// <summary>
-        /// Returns true if the specified profile was shot at recently by this bot.
-        /// </summary>
+        #endregion
+
+        #region Public API
+
         public bool DidRecentlyShoot(string profileId, float now = -1f, float memoryWindow = -1f)
         {
             try
@@ -45,17 +52,13 @@ namespace AIRefactored.AI.Combat
                 if (!string.Equals(_lastTargetId, profileId, StringComparison.Ordinal))
                     return false;
 
-                float window = memoryWindow > 0f ? memoryWindow : DefaultMemoryWindow;
                 float time = now >= 0f ? now : Time.time;
-
+                float window = memoryWindow > 0f ? memoryWindow : DefaultMemoryWindow;
                 return (time - _lastShotTime) <= window;
             }
             catch { return false; }
         }
 
-        /// <summary>
-        /// Returns true if this bot was recently hit by the specified profile.
-        /// </summary>
         public bool WasRecentlyShotBy(string profileId, float now = -1f, float memoryWindow = -1f)
         {
             try
@@ -66,18 +69,14 @@ namespace AIRefactored.AI.Combat
                 if (!string.Equals(_lastAttackerId, profileId, StringComparison.Ordinal))
                     return false;
 
-                float window = memoryWindow > 0f ? memoryWindow : DefaultMemoryWindow;
                 float time = now >= 0f ? now : Time.time;
-
+                float window = memoryWindow > 0f ? memoryWindow : DefaultMemoryWindow;
                 return (time - _lastHitTime) <= window;
             }
             catch { return false; }
         }
 
-        /// <summary>
-        /// Registers that this bot was hit by the specified profile ID, and optionally records body part, distance, and direction.
-        /// </summary>
-        public void RegisterHit(string profileId, EBodyPart hitPart = EBodyPart.Common, float distance = -1f, Vector3 direction = default(Vector3))
+        public void RegisterHit(string profileId, EBodyPart hitPart = EBodyPart.Common, float distance = -1f, Vector3 direction = default)
         {
             if (string.IsNullOrEmpty(profileId))
                 return;
@@ -89,10 +88,7 @@ namespace AIRefactored.AI.Combat
             _lastHitDirection = direction;
         }
 
-        /// <summary>
-        /// Registers a shot fired by this bot at the specified profile ID, with optional distance and direction.
-        /// </summary>
-        public void RegisterShot(string profileId, float distance = -1f, Vector3 direction = default(Vector3))
+        public void RegisterShot(string profileId, float distance = -1f, Vector3 direction = default)
         {
             if (string.IsNullOrEmpty(profileId))
                 return;
@@ -103,9 +99,6 @@ namespace AIRefactored.AI.Combat
             _lastShotDirection = direction;
         }
 
-        /// <summary>
-        /// Returns the recency-weighted "threat" from recent hits, for threat escalation realism.
-        /// </summary>
         public float GetRecentHitHeat(float now = -1f)
         {
             float time = now >= 0f ? now : Time.time;
@@ -115,9 +108,6 @@ namespace AIRefactored.AI.Combat
             return 1f - Mathf.Clamp01(delta / DefaultMemoryWindow);
         }
 
-        /// <summary>
-        /// Returns the recency-weighted "engagement focus" toward the recent target.
-        /// </summary>
         public float GetRecentShotHeat(float now = -1f)
         {
             float time = now >= 0f ? now : Time.time;
@@ -127,9 +117,6 @@ namespace AIRefactored.AI.Combat
             return 1f - Mathf.Clamp01(delta / DefaultMemoryWindow);
         }
 
-        /// <summary>
-        /// Clears all recent shot and hit memory.
-        /// </summary>
         public void Reset()
         {
             _lastAttackerId = string.Empty;
@@ -143,7 +130,10 @@ namespace AIRefactored.AI.Combat
             _lastShotDirection = Vector3.zero;
         }
 
-        // Exposed for realism integration:
+        #endregion
+
+        #region Exposed Properties
+
         public string LastAttackerId => _lastAttackerId;
         public float LastHitTime => _lastHitTime;
         public EBodyPart LastHitPart => _lastHitPart;
@@ -154,5 +144,7 @@ namespace AIRefactored.AI.Combat
         public float LastShotTime => _lastShotTime;
         public float LastShotDistance => _lastShotDistance;
         public Vector3 LastShotDirection => _lastShotDirection;
+
+        #endregion
     }
 }

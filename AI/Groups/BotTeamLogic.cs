@@ -16,6 +16,7 @@ namespace AIRefactored.AI.Groups
     using AIRefactored.AI.Core;
     using AIRefactored.AI.Helpers;
     using AIRefactored.Core;
+    using AIRefactored.Pools;
     using EFT;
     using UnityEngine;
     using static AIRefactored.AI.Missions.BotMissionController;
@@ -23,7 +24,7 @@ namespace AIRefactored.AI.Groups
 
     /// <summary>
     /// Coordinates squad-level tactical behavior: fallback, enemy sharing, organic regrouping.
-    /// Bulletproof: All errors are isolated, squad logic never breaks parent AI or the mod.
+    /// Bulletproof: All errors are locally isolated, squad logic never breaks parent AI or the mod.
     /// </summary>
     public sealed class BotTeamLogic
     {
@@ -69,7 +70,6 @@ namespace AIRefactored.AI.Groups
                 IPlayer safe = EFTPlayerUtil.AsSafeIPlayer(resolved);
                 int count = bot.BotsGroup.MembersCount;
 
-                // Staggered, realistic squad-wide enemy propagation
                 for (int i = 0; i < count; i++)
                 {
                     BotOwner mate = bot.BotsGroup.Member(i);
@@ -96,10 +96,17 @@ namespace AIRefactored.AI.Groups
                     BotOwner mate = bot.BotsGroup.Member(i);
                     if (EFTPlayerUtil.IsValidBotOwner(mate) && mate != bot && mate.BotTalk != null)
                     {
-                        if (Random.value < 0.7f)
+                        float delay = Random.Range(0.15f, 0.45f);
+                        Task.Run(async () =>
                         {
-                            mate.BotTalk.TrySay(EPhraseTrigger.Cooperation);
-                        }
+                            try
+                            {
+                                await Task.Delay((int)(delay * 1000f));
+                                if (Random.value < 0.7f)
+                                    mate.BotTalk.TrySay(EPhraseTrigger.Cooperation);
+                            }
+                            catch { }
+                        });
                     }
                 }
             }
@@ -245,7 +252,9 @@ namespace AIRefactored.AI.Groups
 
         private static void TriggerDelayedRegisterEnemy(BotOwner receiver, IPlayer enemy, float delay)
         {
-            if (receiver == null || enemy == null) return;
+            if (receiver == null || enemy == null)
+                return;
+
             Task.Run(async () =>
             {
                 try

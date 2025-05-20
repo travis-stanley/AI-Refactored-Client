@@ -25,6 +25,8 @@ namespace AIRefactored.AI.Combat
     /// </summary>
     public sealed class BotPanicHandler
     {
+        #region Constants
+
         private const float PanicCooldown = 5f;
         private const float PanicDuration = 3.5f;
         private const float RecoverySpeed = 0.21f;
@@ -33,24 +35,36 @@ namespace AIRefactored.AI.Combat
         private const float MinHumanDelay = 0.05f;
         private const float MaxHumanDelay = 0.12f;
 
+        #endregion
+
+        #region Fields
+
         private BotOwner _bot;
         private BotComponentCache _cache;
 
         private float _composureLevel = 1f;
         private float _panicStartTime = -1f;
         private float _lastPanicExitTime = -99f;
-        private bool _isPanicking;
         private float _lastVoiceTime = -99f;
 
-        public bool IsPanicking => _isPanicking;
+        private bool _isPanicking;
 
+        #endregion
+
+        #region Properties
+
+        public bool IsPanicking => _isPanicking;
         public float GetComposureLevel() => _composureLevel;
+
+        #endregion
+
+        #region Lifecycle
 
         public void Initialize(BotComponentCache componentCache)
         {
             if (componentCache == null || componentCache.Bot == null)
             {
-                Plugin.LoggerInstance?.LogError("[BotPanicHandler] Cannot initialize with null BotComponentCache or Bot.");
+                Plugin.LoggerInstance?.LogError("[BotPanicHandler] Initialization failed.");
                 return;
             }
 
@@ -60,13 +74,11 @@ namespace AIRefactored.AI.Combat
             try
             {
                 if (_bot.GetPlayer is Player player && player.HealthController != null)
-                {
                     player.HealthController.ApplyDamageEvent += OnDamaged;
-                }
             }
             catch (Exception ex)
             {
-                Plugin.LoggerInstance?.LogError("[BotPanicHandler] Exception subscribing to ApplyDamageEvent: " + ex);
+                Plugin.LoggerInstance?.LogError("[BotPanicHandler] Subscribe failed: " + ex);
             }
         }
 
@@ -76,13 +88,11 @@ namespace AIRefactored.AI.Combat
 
             try
             {
-                // Add slight human micro-delay for realism
                 if (UnityEngine.Random.value < 0.04f)
                     return;
 
                 if (_isPanicking)
                 {
-                    // Flinch, heavy breathing, "frozen" moment
                     if (time - _panicStartTime > PanicDuration)
                         EndPanic(time);
                     else if (!FikaHeadlessDetector.IsHeadless && _bot.BotTalk != null && time - _lastVoiceTime > 1.5f && UnityEngine.Random.value < 0.38f)
@@ -90,6 +100,7 @@ namespace AIRefactored.AI.Combat
                         _lastVoiceTime = time;
                         try { _bot.BotTalk.TrySay(EPhraseTrigger.OnBeingHurt); } catch { }
                     }
+
                     return;
                 }
 
@@ -98,7 +109,6 @@ namespace AIRefactored.AI.Combat
                 if (time <= _lastPanicExitTime + PanicCooldown)
                     return;
 
-                // Multiple triggers: composure loss, threat, nearby panic, or sudden injury/flash
                 if (ShouldPanicFromThreat())
                 {
                     Vector3 retreat = -_bot.LookDirection.normalized;
@@ -106,14 +116,12 @@ namespace AIRefactored.AI.Combat
                     return;
                 }
 
-                if (CheckNearbySquadDanger(out Vector3 squadDir))
-                {
-                    TryStartPanic(time, squadDir);
-                }
+                if (CheckNearbySquadDanger(out Vector3 squadRetreat))
+                    TryStartPanic(time, squadRetreat);
             }
             catch (Exception ex)
             {
-                Plugin.LoggerInstance?.LogError("[BotPanicHandler] Exception in Tick: " + ex);
+                Plugin.LoggerInstance?.LogError("[BotPanicHandler] Tick exception: " + ex);
             }
         }
 
@@ -128,14 +136,18 @@ namespace AIRefactored.AI.Combat
                 if (profile == null || profile.IsFrenzied || profile.IsStubborn)
                     return;
 
-                Vector3 retreatDir = -_bot.LookDirection.normalized;
-                TryStartPanic(Time.time, retreatDir);
+                Vector3 dir = -_bot.LookDirection.normalized;
+                TryStartPanic(Time.time, dir);
             }
             catch (Exception ex)
             {
-                Plugin.LoggerInstance?.LogError("[BotPanicHandler] Exception in TriggerPanic: " + ex);
+                Plugin.LoggerInstance?.LogError("[BotPanicHandler] TriggerPanic failed: " + ex);
             }
         }
+
+        #endregion
+
+        #region Panic Triggers
 
         private void OnDamaged(EBodyPart part, float damage, DamageInfoStruct info)
         {
@@ -148,18 +160,18 @@ namespace AIRefactored.AI.Combat
                 if (profile == null || profile.IsFrenzied || profile.IsStubborn || profile.AggressionLevel > 0.8f)
                     return;
 
-                Vector3 retreatDir = (_bot.Position - info.HitPoint).normalized;
-                TryStartPanic(Time.time, retreatDir);
+                Vector3 retreat = (_bot.Position - info.HitPoint).normalized;
+                TryStartPanic(Time.time, retreat);
 
                 if (_bot.Memory?.GoalEnemy?.Person is Player enemy && !string.IsNullOrEmpty(enemy.ProfileId))
-                    _cache.LastShotTracker?.RegisterHit(enemy.ProfileId, part, Vector3.Distance(_bot.Position, info.HitPoint), retreatDir);
+                    _cache.LastShotTracker?.RegisterHit(enemy.ProfileId, part, Vector3.Distance(_bot.Position, info.HitPoint), retreat);
 
                 _cache.InjurySystem?.OnHit(part, damage);
                 _cache.GroupComms?.SayHit();
             }
             catch (Exception ex)
             {
-                Plugin.LoggerInstance?.LogError("[BotPanicHandler] Exception in OnDamaged: " + ex);
+                Plugin.LoggerInstance?.LogError("[BotPanicHandler] OnDamaged failed: " + ex);
             }
         }
 
@@ -171,42 +183,54 @@ namespace AIRefactored.AI.Combat
                 if (profile == null || profile.IsFrenzied || profile.IsStubborn)
                     return false;
 
-                // Flash, very low health, or extremely low composure can all panic a bot
                 if (_cache.FlashGrenade?.IsFlashed() == true)
                     return true;
 
                 if (_composureLevel < 0.18f)
                     return true;
 
-                if (_bot.HealthController == null)
-                    return false;
-
-                ValueStruct health = _bot.HealthController.GetBodyPartHealth(EBodyPart.Common);
-                if (health.Current < LowHealthThreshold)
-                    return true;
-
-                return false;
+                ValueStruct health = _bot.HealthController?.GetBodyPartHealth(EBodyPart.Common) ?? default;
+                return health.Current < LowHealthThreshold;
             }
             catch (Exception ex)
             {
-                Plugin.LoggerInstance?.LogError("[BotPanicHandler] Exception in ShouldPanicFromThreat: " + ex);
+                Plugin.LoggerInstance?.LogError("[BotPanicHandler] Panic threat check failed: " + ex);
                 return false;
             }
         }
 
-        private void RecoverComposure(float deltaTime)
+        private bool CheckNearbySquadDanger(out Vector3 retreatDir)
         {
+            retreatDir = Vector3.zero;
+
             try
             {
-                // Human-like: recovery is slightly randomized per frame for organic feel
-                float mod = UnityEngine.Random.Range(0.93f, 1.11f);
-                _composureLevel = Mathf.Clamp01(_composureLevel + deltaTime * RecoverySpeed * mod);
+                string mapId = GameWorldHandler.TryGetValidMapName();
+                if (string.IsNullOrEmpty(mapId)) return false;
+
+                Vector3 myPos = _bot.Position;
+                var zones = BotMemoryStore.GetZonesForMap(mapId);
+
+                for (int i = 0; i < zones.Count; i++)
+                {
+                    if ((zones[i].Position - myPos).sqrMagnitude <= SquadRadiusSqr)
+                    {
+                        retreatDir = (myPos - zones[i].Position).normalized;
+                        return true;
+                    }
+                }
             }
             catch (Exception ex)
             {
-                Plugin.LoggerInstance?.LogError("[BotPanicHandler] Exception in RecoverComposure: " + ex);
+                Plugin.LoggerInstance?.LogError("[BotPanicHandler] Squad panic check failed: " + ex);
             }
+
+            return false;
         }
+
+        #endregion
+
+        #region Panic Actions
 
         private void TryStartPanic(float now, Vector3 retreatDir)
         {
@@ -221,7 +245,6 @@ namespace AIRefactored.AI.Combat
                 _cache.Escalation?.NotifyPanicTriggered();
 
                 float cohesion = _cache.AIRefactoredBotOwner?.PersonalityProfile?.Cohesion ?? 1f;
-
                 Vector3 fallback = _bot.Position + retreatDir.normalized * UnityEngine.Random.Range(7.5f, 10.5f);
                 fallback += UnityEngine.Random.insideUnitSphere * 0.55f;
                 fallback.y = _bot.Position.y;
@@ -240,19 +263,17 @@ namespace AIRefactored.AI.Combat
 
                 _bot.Sprint(true);
 
-                if (!FikaHeadlessDetector.IsHeadless && _bot.BotTalk != null)
+                if (!FikaHeadlessDetector.IsHeadless && _bot.BotTalk != null &&
+                    Time.time - _lastVoiceTime > 1.2f && UnityEngine.Random.value < 0.65f)
                 {
-                    if (Time.time - _lastVoiceTime > 1.2f && UnityEngine.Random.value < 0.65f)
-                    {
-                        try { _bot.BotTalk.TrySay(EPhraseTrigger.OnBeingHurt); }
-                        catch { }
-                        _lastVoiceTime = Time.time;
-                    }
+                    try { _bot.BotTalk.TrySay(EPhraseTrigger.OnBeingHurt); }
+                    catch { }
+                    _lastVoiceTime = Time.time;
                 }
             }
             catch (Exception ex)
             {
-                Plugin.LoggerInstance?.LogError("[BotPanicHandler] Exception in TryStartPanic: " + ex);
+                Plugin.LoggerInstance?.LogError("[BotPanicHandler] StartPanic failed: " + ex);
             }
         }
 
@@ -263,50 +284,31 @@ namespace AIRefactored.AI.Combat
                 _isPanicking = false;
                 _lastPanicExitTime = now;
 
-                if (_bot.Memory != null)
-                {
-                    _bot.Memory.SetLastTimeSeeEnemy();
-                    _bot.Memory.CheckIsPeace();
-                }
+                _bot.Memory?.SetLastTimeSeeEnemy();
+                _bot.Memory?.CheckIsPeace();
             }
             catch (Exception ex)
             {
-                Plugin.LoggerInstance?.LogError("[BotPanicHandler] Exception in EndPanic: " + ex);
+                Plugin.LoggerInstance?.LogError("[BotPanicHandler] EndPanic failed: " + ex);
             }
         }
 
-        private bool CheckNearbySquadDanger(out Vector3 retreatDir)
+        private void RecoverComposure(float deltaTime)
         {
-            retreatDir = Vector3.zero;
-
             try
             {
-                if (_bot.Profile?.Info?.GroupId == null)
-                    return false;
-
-                string mapId = GameWorldHandler.TryGetValidMapName();
-                if (string.IsNullOrEmpty(mapId))
-                    return false;
-
-                Vector3 myPos = _bot.Position;
-                var zones = BotMemoryStore.GetZonesForMap(mapId);
-
-                for (int i = 0; i < zones.Count; i++)
-                {
-                    if ((zones[i].Position - myPos).sqrMagnitude <= SquadRadiusSqr)
-                    {
-                        retreatDir = (myPos - zones[i].Position).normalized;
-                        return true;
-                    }
-                }
+                float mod = UnityEngine.Random.Range(0.93f, 1.11f);
+                _composureLevel = Mathf.Clamp01(_composureLevel + deltaTime * RecoverySpeed * mod);
             }
             catch (Exception ex)
             {
-                Plugin.LoggerInstance?.LogError("[BotPanicHandler] Exception in CheckNearbySquadDanger: " + ex);
+                Plugin.LoggerInstance?.LogError("[BotPanicHandler] RecoverComposure failed: " + ex);
             }
-
-            return false;
         }
+
+        #endregion
+
+        #region Helpers
 
         private bool IsValid()
         {
@@ -318,15 +320,14 @@ namespace AIRefactored.AI.Combat
                        _bot.GetPlayer is Player p &&
                        p.IsAI;
             }
-            catch
-            {
-                return false;
-            }
+            catch { return false; }
         }
 
         private static bool IsVectorValid(Vector3 v)
         {
             return !float.IsNaN(v.x) && !float.IsNaN(v.y) && !float.IsNaN(v.z);
         }
+
+        #endregion
     }
 }

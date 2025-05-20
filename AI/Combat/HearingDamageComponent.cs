@@ -24,7 +24,7 @@ namespace AIRefactored.AI.Combat
         private float _deafnessLevel;
         private float _deafDuration;
         private float _elapsedTime;
-        private float _recoverySlope; // Curve to humanize recovery rate
+        private float _recoverySlope;
 
         #endregion
 
@@ -61,8 +61,6 @@ namespace AIRefactored.AI.Combat
             {
                 float newIntensity = Mathf.Clamp01(intensity);
                 float newDuration = Mathf.Max(duration, 0.1f);
-
-                // Use a nonlinear (logistic) recovery slope for realism—more intense = slower early recovery, fast at the end
                 float slope = 1.5f + 2.5f * newIntensity;
 
                 if (newIntensity > _targetDeafness ||
@@ -108,7 +106,7 @@ namespace AIRefactored.AI.Combat
                     return;
                 }
 
-                _elapsedTime += Mathf.Max(deltaTime, 0f);
+                _elapsedTime += Mathf.Max(0f, deltaTime);
 
                 if (_elapsedTime >= _deafDuration)
                 {
@@ -116,9 +114,8 @@ namespace AIRefactored.AI.Combat
                     return;
                 }
 
-                // Realistic recovery: fade slow, then fast at the end.
                 float t = Mathf.Clamp01(_elapsedTime / _deafDuration);
-                float recovery = 1f - Mathf.Pow(1f - t, _recoverySlope); // Logistic-ish curve
+                float recovery = 1f - Mathf.Pow(1f - t, _recoverySlope);
                 _deafnessLevel = Mathf.Lerp(_targetDeafness, 0f, recovery);
             }
             catch

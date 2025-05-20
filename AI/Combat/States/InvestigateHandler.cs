@@ -25,22 +25,32 @@ namespace AIRefactored.AI.Combat.States
     /// </summary>
     public sealed class InvestigateHandler
     {
-        private const float InvestigateCooldown = 10.0f;
-        private const float ScanRadius = 4.0f;
-        private const float SoundReactTime = 1.0f;
-        private const float MaxInvestigateTime = 15.0f;
-        private const float MinCaution = 0.3f;
-        private const float ExitDelayBuffer = 1.25f;
-        private const float ActiveWindow = 5.0f;
+        #region Constants
 
+        private const float InvestigateCooldown = 10f;
+        private const float ScanRadius = 4f;
+        private const float SoundReactTime = 1f;
+        private const float MaxInvestigateTime = 15f;
+        private const float ExitDelayBuffer = 1.25f;
+        private const float ActiveWindow = 5f;
+        private const float MinCaution = 0.3f;
         private const float MinHumanDelay = 0.07f;
         private const float MaxHumanDelay = 0.18f;
         private const float RandomSweepDistance = 0.65f;
 
+        #endregion
+
+        #region Fields
+
         private readonly BotOwner _bot;
         private readonly BotComponentCache _cache;
         private readonly BotTacticalMemory _memory;
+
         private float _lastInvestigateTime = -1000f;
+
+        #endregion
+
+        #region Constructor
 
         public InvestigateHandler(BotComponentCache cache)
         {
@@ -49,6 +59,10 @@ namespace AIRefactored.AI.Combat.States
             _memory = cache?.TacticalMemory;
         }
 
+        #endregion
+
+        #region Main API
+
         public Vector3 GetInvestigateTarget(Vector3 visualLastKnown)
         {
             try
@@ -56,16 +70,15 @@ namespace AIRefactored.AI.Combat.States
                 if (IsVectorValid(visualLastKnown))
                     return ApplyHumanRandomness(visualLastKnown);
 
-                if (TryGetMemoryEnemyPosition(out Vector3 memoryPos))
-                    return ApplyHumanRandomness(memoryPos);
+                if (TryGetMemoryEnemyPosition(out Vector3 memory))
+                    return ApplyHumanRandomness(memory);
 
-                Vector3 fallback = GetSafeNearbyPosition();
-                return fallback;
+                return GetSafeNearbyPosition();
             }
             catch (Exception ex)
             {
-                Plugin.LoggerInstance.LogError($"[InvestigateHandler] Exception in GetInvestigateTarget: {ex}");
-                return _bot != null ? _bot.Position : Vector3.zero;
+                Plugin.LoggerInstance.LogError($"[InvestigateHandler] GetInvestigateTarget failed: {ex}");
+                return _bot?.Position ?? Vector3.zero;
             }
         }
 
@@ -76,21 +89,21 @@ namespace AIRefactored.AI.Combat.States
 
             try
             {
-                // Add human-like delay to reaction/movement
                 float now = Time.time;
-                float delay = UnityEngine.Random.Range(MinHumanDelay, MaxHumanDelay);
-                if (now - _lastInvestigateTime < delay)
+                float hesitation = UnityEngine.Random.Range(MinHumanDelay, MaxHumanDelay);
+                if (now - _lastInvestigateTime < hesitation)
                     return;
+
                 _lastInvestigateTime = now;
 
                 Vector3 destination = target;
+
                 if (_cache.SquadPath != null)
                 {
                     try { destination = _cache.SquadPath.ApplyOffsetTo(target); }
                     catch { destination = target; }
                 }
 
-                // Human-like sweep: bots sometimes search slightly away from direct memory/target for realism
                 destination = ApplyHumanRandomness(destination);
 
                 if (!BotNavHelper.TryGetSafeTarget(_bot, out destination) || !IsVectorValid(destination))
@@ -98,44 +111,37 @@ namespace AIRefactored.AI.Combat.States
 
                 if (_bot.Mover != null)
                 {
-                    try
-                    {
-                        BotMovementHelper.SmoothMoveTo(_bot, destination);
-                        _memory?.MarkCleared(destination);
-                        _cache.Combat?.TrySetStanceFromNearbyCover(destination);
-                    }
-                    catch (Exception ex)
-                    {
-                        Plugin.LoggerInstance.LogError($"[InvestigateHandler] Exception in SmoothMoveTo/MarkCleared: {ex}");
-                    }
+                    BotMovementHelper.SmoothMoveTo(_bot, destination);
+                    _memory?.MarkCleared(destination);
+                    _cache.Combat?.TrySetStanceFromNearbyCover(destination);
                 }
                 else
                 {
-                    Plugin.LoggerInstance.LogWarning("[InvestigateHandler] BotMover missing; cannot move.");
+                    Plugin.LoggerInstance.LogWarning("[InvestigateHandler] Cannot move, Mover missing.");
                 }
             }
             catch (Exception ex)
             {
-                Plugin.LoggerInstance.LogError($"[InvestigateHandler] General exception in Investigate: {ex}");
+                Plugin.LoggerInstance.LogError($"[InvestigateHandler] Investigate failed: {ex}");
             }
         }
 
-        public bool ShallUseNow(float time, float lastTransition)
+        public bool ShallUseNow(float now, float lastTransition)
         {
-            if (_cache == null || _cache.AIRefactoredBotOwner?.PersonalityProfile == null)
-                return false;
-
             try
             {
+                if (_cache?.AIRefactoredBotOwner?.PersonalityProfile == null)
+                    return false;
+
                 if (_cache.AIRefactoredBotOwner.PersonalityProfile.Caution < MinCaution)
                     return false;
 
-                float heardTime = _cache.LastHeardTime;
-                return (heardTime + SoundReactTime) > time && (time - lastTransition) > ExitDelayBuffer;
+                return (_cache.LastHeardTime + SoundReactTime) > now &&
+                       (now - lastTransition) > ExitDelayBuffer;
             }
             catch (Exception ex)
             {
-                Plugin.LoggerInstance.LogError($"[InvestigateHandler] Exception in ShallUseNow: {ex}");
+                Plugin.LoggerInstance.LogError($"[InvestigateHandler] ShallUseNow failed: {ex}");
                 return false;
             }
         }
@@ -149,26 +155,27 @@ namespace AIRefactored.AI.Combat.States
             }
             catch (Exception ex)
             {
-                Plugin.LoggerInstance.LogError($"[InvestigateHandler] Exception in ShouldExit: {ex}");
+                Plugin.LoggerInstance.LogError($"[InvestigateHandler] ShouldExit failed: {ex}");
                 return true;
             }
         }
 
         public bool IsInvestigating()
         {
-            if (_cache == null)
-                return false;
-
             try
             {
                 return (Time.time - _cache.LastHeardTime) <= ActiveWindow;
             }
             catch (Exception ex)
             {
-                Plugin.LoggerInstance.LogError($"[InvestigateHandler] Exception in IsInvestigating: {ex}");
+                Plugin.LoggerInstance.LogError($"[InvestigateHandler] IsInvestigating failed: {ex}");
                 return false;
             }
         }
+
+        #endregion
+
+        #region Internals
 
         private bool TryGetMemoryEnemyPosition(out Vector3 result)
         {
@@ -187,42 +194,31 @@ namespace AIRefactored.AI.Combat.States
             }
             catch (Exception ex)
             {
-                Plugin.LoggerInstance.LogError($"[InvestigateHandler] Exception in TryGetMemoryEnemyPosition: {ex}");
+                Plugin.LoggerInstance.LogError($"[InvestigateHandler] Memory lookup failed: {ex}");
             }
+
             return false;
         }
 
-        /// <summary>
-        /// Uses EFT internal nav logic to sample a valid random nearby position.
-        /// Never returns an invalid or off-mesh result.
-        /// </summary>
         private Vector3 GetSafeNearbyPosition()
         {
-            Vector3 basePos = _bot != null ? _bot.Position : Vector3.zero;
-            Vector3 candidate = basePos + UnityEngine.Random.insideUnitSphere * ScanRadius;
-            candidate.y = basePos.y; // flatten for ground nav
+            Vector3 origin = _bot?.Position ?? Vector3.zero;
+            Vector3 candidate = origin + UnityEngine.Random.insideUnitSphere * ScanRadius;
+            candidate.y = origin.y;
 
-            NavMeshHit hit;
-            if (UnityEngine.AI.NavMesh.SamplePosition(candidate, out hit, ScanRadius, NavMesh.AllAreas))
+            if (NavMesh.SamplePosition(candidate, out NavMeshHit hit, ScanRadius, NavMesh.AllAreas))
             {
                 if (IsVectorValid(hit.position))
                     return hit.position;
             }
 
-            // Fallback: nudge forward
-            return IsVectorValid(basePos) ? basePos + Vector3.forward * 0.15f : Vector3.zero;
+            return origin + Vector3.forward * 0.15f;
         }
 
-        /// <summary>
-        /// Adds slight "human" error/jitter to destination so bots do not converge unnaturally.
-        /// </summary>
         private Vector3 ApplyHumanRandomness(Vector3 pos)
         {
-            if (_cache?.AIRefactoredBotOwner?.PersonalityProfile == null)
-                return pos;
-
-            float caution = _cache.AIRefactoredBotOwner.PersonalityProfile.Caution;
-            float maxOffset = Mathf.Lerp(RandomSweepDistance, 0.16f, caution); // bolder bots search tighter
+            float caution = _cache?.AIRefactoredBotOwner?.PersonalityProfile?.Caution ?? 0.5f;
+            float maxOffset = Mathf.Lerp(RandomSweepDistance, 0.16f, caution);
             Vector3 jitter = UnityEngine.Random.insideUnitSphere * maxOffset;
             jitter.y = 0f;
             return pos + jitter;
@@ -232,5 +228,7 @@ namespace AIRefactored.AI.Combat.States
         {
             return !float.IsNaN(v.x) && !float.IsNaN(v.y) && !float.IsNaN(v.z) && v != Vector3.zero;
         }
+
+        #endregion
     }
 }

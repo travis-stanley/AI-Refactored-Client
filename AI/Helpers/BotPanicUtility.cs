@@ -58,7 +58,6 @@ namespace AIRefactored.AI.Helpers
                 try
                 {
                     var cache = group[i];
-                    // Staggered group panic (simulate squadmate lag/hesitation)
                     if (IsEligible(cache))
                     {
                         float delay = 0.03f * i + GetPanicJitter(cache.Bot?.ProfileId, i);
@@ -162,7 +161,7 @@ namespace AIRefactored.AI.Helpers
             {
                 hash = (int)((hash ^ (hash >> 15)) * 0x6B1F29);
                 float frac = (hash & 0xFFF) / 4096f;
-                return frac * 0.13f; // [0, ~0.13]
+                return frac * 0.13f; // [0, ~0.13s]
             }
         }
 
@@ -173,6 +172,7 @@ namespace AIRefactored.AI.Helpers
         {
             if (cache == null)
                 return;
+
             Task.Run(async () =>
             {
                 try
@@ -180,6 +180,7 @@ namespace AIRefactored.AI.Helpers
                     int ms = Mathf.Max(0, (int)(delay * 1000f));
                     if (ms > 0)
                         await Task.Delay(ms);
+
                     if (IsEligible(cache))
                         cache.PanicHandler.TriggerPanic();
                 }

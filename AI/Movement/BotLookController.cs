@@ -162,73 +162,60 @@ namespace AIRefactored.AI.Movement
         /// </summary>
         private Vector3 ResolveLookTarget(Vector3 origin, float deltaTime)
         {
-            try
+            float now = Time.time;
+
+            if (_cache != null && _cache.IsBlinded && now < _cache.BlindUntilTime)
             {
-                float now = Time.time;
+                Vector3 offset = UnityEngine.Random.insideUnitSphere;
+                offset.y = 0f;
+                return origin + offset.normalized * BlindLookRadius;
+            }
 
-                // Blind state: look around randomly within a radius.
-                if (_cache != null && _cache.IsBlinded && now < _cache.BlindUntilTime)
-                {
-                    Vector3 offset = UnityEngine.Random.insideUnitSphere;
-                    offset.y = 0f;
-                    return origin + offset.normalized * BlindLookRadius;
-                }
+            if (_cache?.Panic?.IsPanicking == true)
+            {
+                if (_cache.HasHeardDirection)
+                    return origin + _cache.LastHeardDirection.normalized * HeardDirectionWeight;
+                return origin + _bot.LookDirection;
+            }
 
-                // Panic state: look toward last heard sound, or fallback.
-                if (_cache != null && _cache.Panic != null && _cache.Panic.IsPanicking)
+            if (_cache?.ThreatSelector != null)
+            {
+                string id = _cache.ThreatSelector.GetTargetProfileId();
+                if (!string.IsNullOrEmpty(id))
                 {
-                    if (_cache.HasHeardDirection)
-                        return origin + _cache.LastHeardDirection.normalized * HeardDirectionWeight;
-                    return origin + _bot.LookDirection;
-                }
-
-                // Target enemy.
-                if (_cache != null && _cache.ThreatSelector != null)
-                {
-                    string id = _cache.ThreatSelector.GetTargetProfileId();
-                    if (!string.IsNullOrEmpty(id))
+                    Player enemy = EFTPlayerUtil.ResolvePlayerById(id);
+                    if (EFTPlayerUtil.IsValid(enemy))
                     {
-                        Player enemy = EFTPlayerUtil.ResolvePlayerById(id);
-                        if (EFTPlayerUtil.IsValid(enemy))
-                        {
-                            Vector3 pos = EFTPlayerUtil.GetPosition(enemy);
-                            if (pos.sqrMagnitude > 0.01f)
-                                return pos;
-                        }
+                        Vector3 pos = EFTPlayerUtil.GetPosition(enemy);
+                        if (pos.sqrMagnitude > 0.01f)
+                            return pos;
                     }
                 }
-
-                // Heard sound direction within memory duration.
-                if (_cache != null && _cache.HasHeardDirection && now - _cache.LastHeardTime < SoundMemoryDuration)
-                {
-                    return origin + _cache.LastHeardDirection.normalized * HeardDirectionWeight;
-                }
-
-                // Idle scanning: smoothly scan, with occasional micro "drift" (miss), like a real player's eyes/head.
-                if (now > _nextIdleScanTime)
-                {
-                    _idleScanDirection = UnityEngine.Random.value > 0.5f ? 1 : -1;
-                    _nextIdleScanTime = now + IdleScanInterval + UnityEngine.Random.Range(-0.5f, 0.7f);
-                    _idleJitterOffset = UnityEngine.Random.Range(-IdleScanJitter, IdleScanJitter);
-                }
-
-                if (UnityEngine.Random.value < IdleMissChance)
-                    _currentIdleAngle += UnityEngine.Random.Range(-5f, 5f);
-
-                float baseAngle = IdleScanAngleMax * _idleScanDirection * deltaTime * 0.5f;
-                _currentIdleAngle = Mathf.Clamp(_currentIdleAngle + baseAngle + _idleJitterOffset * deltaTime * 0.15f, -IdleScanAngleMax, IdleScanAngleMax);
-
-                Vector3 fwd = _bot.LookDirection.sqrMagnitude > 0.5f ? _bot.LookDirection.normalized : Vector3.forward;
-                Quaternion idleYaw = Quaternion.AngleAxis(_currentIdleAngle, Vector3.up);
-                Vector3 idleLook = idleYaw * fwd;
-
-                return origin + idleLook * BlindLookRadius;
             }
-            catch (Exception ex)
+
+            if (_cache != null && _cache.HasHeardDirection && now - _cache.LastHeardTime < SoundMemoryDuration)
             {
-                Logger.LogError("[BotLookController] ResolveLookTarget failed: " + ex);
-                return _fallbackLookTarget;
+                return origin + _cache.LastHeardDirection.normalized * HeardDirectionWeight;
             }
+
+            if (now > _nextIdleScanTime)
+            {
+                _idleScanDirection = UnityEngine.Random.value > 0.5f ? 1 : -1;
+                _nextIdleScanTime = now + IdleScanInterval + UnityEngine.Random.Range(-0.5f, 0.7f);
+                _idleJitterOffset = UnityEngine.Random.Range(-IdleScanJitter, IdleScanJitter);
+            }
+
+            if (UnityEngine.Random.value < IdleMissChance)
+                _currentIdleAngle += UnityEngine.Random.Range(-5f, 5f);
+
+            float baseAngle = IdleScanAngleMax * _idleScanDirection * deltaTime * 0.5f;
+            _currentIdleAngle = Mathf.Clamp(_currentIdleAngle + baseAngle + _idleJitterOffset * deltaTime * 0.15f, -IdleScanAngleMax, IdleScanAngleMax);
+
+            Vector3 fwd = _bot.LookDirection.sqrMagnitude > 0.5f ? _bot.LookDirection.normalized : Vector3.forward;
+            Quaternion idleYaw = Quaternion.AngleAxis(_currentIdleAngle, Vector3.up);
+            Vector3 idleLook = idleYaw * fwd;
+
+            return origin + idleLook * BlindLookRadius;
         }
 
         private static bool IsValid(Vector3 pos)

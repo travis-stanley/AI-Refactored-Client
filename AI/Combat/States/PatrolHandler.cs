@@ -29,8 +29,8 @@ namespace AIRefactored.AI.Combat.States
     {
         #region Constants
 
-        private const float DeadAllyRadius = 10.0f;
-        private const float InvestigateSoundDelay = 3.0f;
+        private const float DeadAllyRadius = 10f;
+        private const float InvestigateSoundDelay = 3f;
         private const float PanicThreshold = 0.25f;
         private const float MinHumanDelay = 0.07f;
         private const float MaxHumanDelay = 0.21f;
@@ -45,6 +45,7 @@ namespace AIRefactored.AI.Combat.States
         private readonly BotComponentCache _cache;
         private readonly float _minStateDuration;
         private readonly float _switchCooldownBase;
+
         private float _nextSwitchTime;
         private float _lastPatrolTime = -1000f;
 
@@ -64,14 +65,8 @@ namespace AIRefactored.AI.Combat.States
 
         #region API
 
-        /// <summary>
-        /// Always enabled for patrol state.
-        /// </summary>
         public bool ShallUseNow() => true;
 
-        /// <summary>
-        /// Should transition to investigate state if personality and tactical context fit.
-        /// </summary>
         public bool ShouldTransitionToInvestigate(float time)
         {
             if (_cache?.Combat == null || _cache.AIRefactoredBotOwner?.PersonalityProfile == null)
@@ -87,43 +82,31 @@ namespace AIRefactored.AI.Combat.States
             }
             catch (Exception ex)
             {
-                Plugin.LoggerInstance.LogError($"[PatrolHandler] Exception in ShouldTransitionToInvestigate: {ex}");
+                Plugin.LoggerInstance.LogError($"[PatrolHandler] ShouldTransitionToInvestigate failed: {ex}");
                 return false;
             }
         }
 
-        /// <summary>
-        /// Ticks the patrol logic, moving the bot or triggering fallback as needed.
-        /// </summary>
         public void Tick(float time)
         {
-            if (_cache == null || _bot == null)
+            if (_bot == null || _cache == null)
                 return;
 
             try
             {
-                // Human-like micro-hesitation between state switches or patrol moves
                 float delay = UnityEngine.Random.Range(MinHumanDelay, MaxHumanDelay);
                 if (time - _lastPatrolTime < delay)
                     return;
+
                 _lastPatrolTime = time;
 
-                // Fallback if panicked, suppressed, wounded, or near a dead ally
                 if (ShouldTriggerFallback(time))
                 {
                     Vector3 fallback = TryGetFallbackPosition();
-
                     if (!BotNavHelper.TryGetSafeTarget(_bot, out fallback) || !IsVectorValid(fallback))
                         fallback = _bot.Position;
 
-                    try
-                    {
-                        _cache.Combat?.TriggerFallback(fallback);
-                    }
-                    catch (Exception ex)
-                    {
-                        Plugin.LoggerInstance.LogError($"[PatrolHandler] TriggerFallback exception in Tick: {ex}");
-                    }
+                    _cache.Combat?.TriggerFallback(fallback);
                     return;
                 }
 
@@ -131,82 +114,70 @@ namespace AIRefactored.AI.Combat.States
                     return;
 
                 HotspotRegistry.Hotspot hotspot = null;
-                try
-                {
-                    hotspot = HotspotRegistry.GetRandomHotspot();
-                }
+                try { hotspot = HotspotRegistry.GetRandomHotspot(); }
                 catch (Exception ex)
                 {
-                    Plugin.LoggerInstance.LogError($"[PatrolHandler] HotspotRegistry exception in Tick: {ex}");
+                    Plugin.LoggerInstance.LogError($"[PatrolHandler] Hotspot lookup failed: {ex}");
                     return;
                 }
 
                 if (hotspot == null || !IsVectorValid(hotspot.Position))
                 {
-                    Plugin.LoggerInstance.LogWarning("[PatrolHandler] Skipped patrol: hotspot was null or invalid.");
+                    Plugin.LoggerInstance.LogWarning("[PatrolHandler] Hotspot was null or invalid.");
                     return;
                 }
 
-                // Realism: Add random offset, prevent stacking or robotic lines
-                Vector3 target = hotspot.Position + UnityEngine.Random.insideUnitSphere * UnityEngine.Random.Range(MinHotspotRandomOffset, MaxHotspotRandomOffset);
-                target.y = hotspot.Position.y;
+                Vector3 offset = UnityEngine.Random.insideUnitSphere * UnityEngine.Random.Range(MinHotspotRandomOffset, MaxHotspotRandomOffset);
+                offset.y = 0f;
 
-                Vector3 destination = _cache.SquadPath != null
-                    ? _cache.SquadPath.ApplyOffsetTo(target)
-                    : target;
+                Vector3 target = hotspot.Position + offset;
 
-                if (!BotNavHelper.TryGetSafeTarget(_bot, out destination) || !IsVectorValid(destination))
-                    destination = _bot.Position;
+                if (_cache.SquadPath != null)
+                {
+                    try { target = _cache.SquadPath.ApplyOffsetTo(target); }
+                    catch { }
+                }
+
+                if (!BotNavHelper.TryGetSafeTarget(_bot, out target) || !IsVectorValid(target))
+                    target = _bot.Position;
 
                 if (_bot.Mover != null)
                 {
-                    try
-                    {
-                        BotMovementHelper.SmoothMoveTo(_bot, destination);
-                        BotCoverHelper.TrySetStanceFromNearbyCover(_cache, destination);
-                    }
-                    catch (Exception ex)
-                    {
-                        Plugin.LoggerInstance.LogError($"[PatrolHandler] Exception in SmoothMoveTo or TrySetStance: {ex}");
-                    }
+                    BotMovementHelper.SmoothMoveTo(_bot, target);
+                    BotCoverHelper.TrySetStanceFromNearbyCover(_cache, target);
                 }
                 else
                 {
-                    Plugin.LoggerInstance.LogWarning("[PatrolHandler] BotMover missing; cannot move.");
+                    Plugin.LoggerInstance.LogWarning("[PatrolHandler] BotMover missing.");
                     return;
                 }
 
-                _nextSwitchTime = time + UnityEngine.Random.Range(_switchCooldownBase, _switchCooldownBase + 18.0f);
+                _nextSwitchTime = time + UnityEngine.Random.Range(_switchCooldownBase, _switchCooldownBase + 18f);
 
-                // Realistic, randomized patrol chatter
                 if (!FikaHeadlessDetector.IsHeadless && _bot.BotTalk != null && UnityEngine.Random.value < 0.25f)
                 {
                     try
                     {
-                        if (UnityEngine.Random.value < 0.5f)
-                            _bot.BotTalk.TrySay(EPhraseTrigger.GoForward);
-                        else
-                            _bot.BotTalk.TrySay(EPhraseTrigger.CoverMe);
+                        _bot.BotTalk.TrySay(UnityEngine.Random.value < 0.5f
+                            ? EPhraseTrigger.GoForward
+                            : EPhraseTrigger.CoverMe);
                     }
                     catch { }
                 }
             }
             catch (Exception ex)
             {
-                Plugin.LoggerInstance.LogError($"[PatrolHandler] General exception in Tick: {ex}");
+                Plugin.LoggerInstance.LogError($"[PatrolHandler] Tick failed: {ex}");
             }
         }
 
         #endregion
 
-        #region Fallback / Danger Triggers
+        #region Danger Detection
 
-        /// <summary>
-        /// Returns true if bot should fallback (panic, injury, suppression, dead ally nearby).
-        /// </summary>
         private bool ShouldTriggerFallback(float time)
         {
-            if (_cache == null || _bot == null)
+            if (_bot == null || _cache == null)
                 return false;
 
             try
@@ -214,24 +185,23 @@ namespace AIRefactored.AI.Combat.States
                 if (_cache.PanicHandler?.GetComposureLevel() < PanicThreshold)
                     return true;
 
-                // Correct: Always pass current time to ShouldHeal
-                if (_cache.InjurySystem != null && _cache.InjurySystem.ShouldHeal(time))
+                if (_cache.InjurySystem?.ShouldHeal(time) == true)
                     return true;
 
                 if (_cache.Suppression?.IsSuppressed() == true)
                     return true;
 
-                BotsGroup group = _bot.BotsGroup;
+                var group = _bot.BotsGroup;
                 if (group == null)
                     return false;
 
-                Vector3 selfPos = _bot.Position;
-                for (int i = 0, count = group.MembersCount; i < count; i++)
+                Vector3 self = _bot.Position;
+                for (int i = 0; i < group.MembersCount; i++)
                 {
-                    BotOwner member = group.Member(i);
+                    var member = group.Member(i);
                     if (member != null && member != _bot && member.IsDead)
                     {
-                        if (Vector3.Distance(selfPos, member.Position) < DeadAllyRadius)
+                        if (Vector3.Distance(self, member.Position) < DeadAllyRadius)
                             return true;
                     }
                 }
@@ -240,14 +210,14 @@ namespace AIRefactored.AI.Combat.States
             }
             catch (Exception ex)
             {
-                Plugin.LoggerInstance.LogError($"[PatrolHandler] Exception in ShouldTriggerFallback: {ex}");
+                Plugin.LoggerInstance.LogError($"[PatrolHandler] ShouldTriggerFallback failed: {ex}");
                 return false;
             }
         }
 
         #endregion
 
-        #region Fallback Position Logic
+        #region Fallback Logic
 
         private Vector3 TryGetFallbackPosition()
         {
@@ -256,21 +226,18 @@ namespace AIRefactored.AI.Combat.States
 
             try
             {
-                Vector3 direction = _bot.LookDirection.normalized;
-                Vector3 fallback = _bot.Position - direction * 7.5f;
+                Vector3 retreat = _bot.Position - _bot.LookDirection.normalized * 7.5f;
+                retreat += UnityEngine.Random.insideUnitSphere * 0.45f;
+                retreat.y = _bot.Position.y;
 
-                // Add slight deviation for realism under stress
-                fallback += UnityEngine.Random.insideUnitSphere * 0.45f;
-                fallback.y = _bot.Position.y;
+                if (!BotNavHelper.TryGetSafeTarget(_bot, out retreat) || !IsVectorValid(retreat))
+                    retreat = _bot.Position;
 
-                if (!BotNavHelper.TryGetSafeTarget(_bot, out fallback) || !IsVectorValid(fallback))
-                    fallback = _bot.Position;
-
-                return fallback;
+                return retreat;
             }
             catch (Exception ex)
             {
-                Plugin.LoggerInstance.LogError($"[PatrolHandler] Exception in TryGetFallbackPosition: {ex}");
+                Plugin.LoggerInstance.LogError($"[PatrolHandler] TryGetFallbackPosition failed: {ex}");
                 return _bot.Position;
             }
         }

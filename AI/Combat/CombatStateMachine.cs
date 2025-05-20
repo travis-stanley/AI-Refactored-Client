@@ -27,10 +27,16 @@ namespace AIRefactored.AI.Combat
     /// </summary>
     public sealed class CombatStateMachine
     {
+        #region Constants
+
         private const float MinTransitionDelay = 0.4f;
         private const float PatrolMinDuration = 1.25f;
         private const float PatrolCooldown = 12.0f;
         private const float ReentryCooldown = 3.0f;
+
+        #endregion
+
+        #region Fields
 
         private BotComponentCache _cache;
         private BotOwner _bot;
@@ -47,12 +53,17 @@ namespace AIRefactored.AI.Combat
         private float _lastStateChangeTime;
         private bool _initialized;
 
+        #endregion
+
+        #region Properties
+
         public Vector3 LastKnownEnemyPos => _lastKnownEnemyPos;
         public float LastStateChangeTime => _lastStateChangeTime;
 
-        /// <summary>
-        /// Initializes all combat state handlers and context.
-        /// </summary>
+        #endregion
+
+        #region Initialization
+
         public void Initialize(BotComponentCache componentCache)
         {
             if (componentCache == null || componentCache.Bot == null)
@@ -65,7 +76,7 @@ namespace AIRefactored.AI.Combat
             try
             {
                 _cache = componentCache;
-                _bot = componentCache.Bot;
+                _bot = _cache.Bot;
 
                 _patrol = new PatrolHandler(_cache, PatrolMinDuration, PatrolCooldown);
                 _investigate = new InvestigateHandler(_cache);
@@ -83,9 +94,10 @@ namespace AIRefactored.AI.Combat
             }
         }
 
-        /// <summary>
-        /// True if bot is in any combat-related state.
-        /// </summary>
+        #endregion
+
+        #region Public API
+
         public bool IsInCombatState()
         {
             if (!_initialized)
@@ -105,12 +117,10 @@ namespace AIRefactored.AI.Combat
             }
         }
 
-        /// <summary>
-        /// Notifies state machine that the bot was damaged and should evaluate fallback.
-        /// </summary>
         public void NotifyDamaged()
         {
-            if (!_initialized) return;
+            if (!_initialized)
+                return;
 
             try
             {
@@ -128,12 +138,10 @@ namespace AIRefactored.AI.Combat
             }
         }
 
-        /// <summary>
-        /// Notifies state machine of a squad echo investigation trigger.
-        /// </summary>
         public void NotifyEchoInvestigate()
         {
-            if (!_initialized) return;
+            if (!_initialized)
+                return;
 
             try
             {
@@ -150,9 +158,6 @@ namespace AIRefactored.AI.Combat
             }
         }
 
-        /// <summary>
-        /// Main tick for combat state machine; transitions between all sub-states.
-        /// </summary>
         public void Tick(float time)
         {
             if (!_initialized || _bot == null || _bot.IsDead || !EFTPlayerUtil.IsValid(_bot.GetPlayer))
@@ -231,12 +236,10 @@ namespace AIRefactored.AI.Combat
             }
         }
 
-        /// <summary>
-        /// Force a fallback state at the given position.
-        /// </summary>
         public void TriggerFallback(Vector3 fallbackPos)
         {
-            if (!_initialized) return;
+            if (!_initialized)
+                return;
 
             try
             {
@@ -250,9 +253,6 @@ namespace AIRefactored.AI.Combat
             }
         }
 
-        /// <summary>
-        /// Triggers a pose evaluation for cover near the given position.
-        /// </summary>
         public void TrySetStanceFromNearbyCover(Vector3 pos)
         {
             try
@@ -265,10 +265,10 @@ namespace AIRefactored.AI.Combat
             }
         }
 
-        /// <summary>
-        /// Always builds a fallback path with at least two points (current position and fallback target),
-        /// eliminating invalid fallback warnings and ensuring correct fallback handler logic.
-        /// </summary>
+        #endregion
+
+        #region Internal Logic
+
         private void AssignFallbackIfNeeded()
         {
             try
@@ -286,8 +286,8 @@ namespace AIRefactored.AI.Combat
 
                 var path = TempListPool.Rent<Vector3>();
                 path.Clear();
-                path.Add(_bot.Position); // Start position (must be included!)
-                path.Add(fallback);      // Fallback target
+                path.Add(_bot.Position);
+                path.Add(fallback);
 
                 _fallback.SetFallbackPath(path);
                 _fallback.SetFallbackTarget(fallback);
@@ -316,9 +316,6 @@ namespace AIRefactored.AI.Combat
             }
         }
 
-        /// <summary>
-        /// Returns true if fallback should be cancelled (e.g., threat reappeared or squadmates close).
-        /// </summary>
         private bool TryReenterCombatState(float time)
         {
             try
@@ -377,5 +374,7 @@ namespace AIRefactored.AI.Combat
         {
             return !float.IsNaN(v.x) && !float.IsNaN(v.y) && !float.IsNaN(v.z);
         }
+
+        #endregion
     }
 }

@@ -73,39 +73,32 @@ namespace AIRefactored.AI.Movement
 
         public void Tick(float deltaTime)
         {
+            if (!IsJumpAllowed())
+                return;
+
+            float now = Time.time;
+            if (now < _nextAllowedJumpTime)
+                return;
+
+            Vector3[] temp = TempVector3Pool.Rent(1);
             try
             {
-                if (!IsJumpAllowed())
-                    return;
-
-                float now = Time.time;
-                if (now < _nextAllowedJumpTime)
-                    return;
-
-                Vector3[] temp = TempVector3Pool.Rent(1);
-                try
+                if (TryFindJumpTarget(out temp[0]))
                 {
-                    if (TryFindJumpTarget(out temp[0]))
+                    if (UnityEngine.Random.value < HumanMistakeChance)
                     {
-                        if (UnityEngine.Random.value < HumanMistakeChance)
-                        {
-                            _nextAllowedJumpTime = now + UnityEngine.Random.Range(0.22f, 0.39f);
-                            return;
-                        }
-
-                        float anticipation = UnityEngine.Random.Range(HumanJumpDelayMin, HumanJumpDelayMax);
-                        _nextAllowedJumpTime = now + JumpCooldown + anticipation;
-                        ExecuteJump(temp[0], deltaTime);
+                        _nextAllowedJumpTime = now + UnityEngine.Random.Range(0.22f, 0.39f);
+                        return;
                     }
-                }
-                finally
-                {
-                    TempVector3Pool.Return(temp);
+
+                    float anticipation = UnityEngine.Random.Range(HumanJumpDelayMin, HumanJumpDelayMax);
+                    _nextAllowedJumpTime = now + JumpCooldown + anticipation;
+                    ExecuteJump(temp[0], deltaTime);
                 }
             }
-            catch (Exception ex)
+            finally
             {
-                Plugin.LoggerInstance.LogError($"[BotJumpController] Tick failed: {ex}");
+                TempVector3Pool.Return(temp);
             }
         }
 
@@ -115,118 +108,95 @@ namespace AIRefactored.AI.Movement
 
         private bool IsJumpAllowed()
         {
-            try
-            {
-                float now = Time.time;
+            float now = Time.time;
 
-                if (_hasRecentlyJumped && now - _lastJumpTime < JumpCooldown)
-                    return false;
-
-                if (_context == null || !_context.IsGrounded || _context.IsInPronePose)
-                    return false;
-
-                if (_cache != null && _cache.PanicHandler != null && _cache.PanicHandler.IsPanicking)
-                    return false;
-
-                if (_bot.IsDead || _bot.Memory == null || _bot.Memory.GoalEnemy != null)
-                    return false;
-
-                _hasRecentlyJumped = false;
-                return true;
-            }
-            catch (Exception ex)
-            {
-                Plugin.LoggerInstance.LogError($"[BotJumpController] IsJumpAllowed failed: {ex}");
+            if (_hasRecentlyJumped && now - _lastJumpTime < JumpCooldown)
                 return false;
-            }
+
+            if (_context == null || !_context.IsGrounded || _context.IsInPronePose)
+                return false;
+
+            if (_cache?.PanicHandler?.IsPanicking == true)
+                return false;
+
+            if (_bot.IsDead || _bot.Memory?.GoalEnemy != null)
+                return false;
+
+            _hasRecentlyJumped = false;
+            return true;
         }
 
         private void ExecuteJump(Vector3 target, float deltaTime)
         {
-            try
-            {
-                if (_context == null)
-                    return;
+            if (_context == null)
+                return;
 
-                _context.OnJump();
-                _lastJumpTime = Time.time;
-                _hasRecentlyJumped = true;
+            _context.OnJump();
+            _lastJumpTime = Time.time;
+            _hasRecentlyJumped = true;
 
-                Vector3 direction = (target - _context.TransformPosition).normalized;
-                if (direction.sqrMagnitude < 0.01f)
-                    return;
+            Vector3 direction = (target - _context.TransformPosition).normalized;
+            if (direction.sqrMagnitude < 0.01f)
+                return;
 
-                Vector3 velocity = direction * JumpVelocityMultiplier;
-                _context.ApplyMotion(velocity, deltaTime);
-            }
-            catch (Exception ex)
-            {
-                Plugin.LoggerInstance.LogError($"[BotJumpController] ExecuteJump failed: {ex}");
-            }
+            Vector3 velocity = direction * JumpVelocityMultiplier;
+            _context.ApplyMotion(velocity, deltaTime);
         }
 
         private bool TryFindJumpTarget(out Vector3 target)
         {
             target = Vector3.zero;
+
+            if (_context == null)
+                return false;
+
+            Vector3 origin = _context.PlayerColliderCenter + Vector3.up * 0.25f;
+            Vector3 forward = _context.TransformForwardVector;
+
+            RaycastHit[] hits = TempRaycastHitPool.Rent(1);
             try
             {
-                if (_context == null)
+                if (!Physics.SphereCast(origin, ObstacleCheckRadius, forward, out hits[0], JumpCheckDistance, AIRefactoredLayerMasks.ObstacleRayMask))
                     return false;
 
-                Vector3 origin = _context.PlayerColliderCenter + Vector3.up * 0.25f;
-                Vector3 forward = _context.TransformForwardVector;
-
-                RaycastHit[] hits = TempRaycastHitPool.Rent(1);
+                Bounds[] boundsArray = TempBoundsPool.Rent(1);
                 try
                 {
-                    if (!Physics.SphereCast(origin, ObstacleCheckRadius, forward, out hits[0], JumpCheckDistance, AIRefactoredLayerMasks.ObstacleRayMask))
+                    boundsArray[0] = hits[0].collider.bounds;
+                    float height = boundsArray[0].max.y - _context.TransformPosition.y;
+
+                    if (height < MinJumpHeight || height > MaxJumpHeight)
                         return false;
 
-                    Bounds[] boundsArray = TempBoundsPool.Rent(1);
+                    Vector3 vaultPoint = boundsArray[0].max + (forward * VaultForwardOffset);
+
+                    RaycastHit[] landHits = TempRaycastHitPool.Rent(1);
                     try
                     {
-                        boundsArray[0] = hits[0].collider.bounds;
-                        float height = boundsArray[0].max.y - _context.TransformPosition.y;
-
-                        if (height < MinJumpHeight || height > MaxJumpHeight)
+                        if (!Physics.Raycast(vaultPoint, Vector3.down, out landHits[0], 2.5f, AIRefactoredLayerMasks.JumpRayMask))
                             return false;
 
-                        Vector3 vaultPoint = boundsArray[0].max + (forward * VaultForwardOffset);
+                        float fallHeight = Mathf.Abs(_context.TransformPosition.y - landHits[0].point.y);
+                        if (fallHeight > SafeFallHeight)
+                            return false;
 
-                        RaycastHit[] landHits = TempRaycastHitPool.Rent(1);
-                        try
-                        {
-                            if (!Physics.Raycast(vaultPoint, Vector3.down, out landHits[0], 2.5f, AIRefactoredLayerMasks.JumpRayMask))
-                                return false;
-
-                            float fallHeight = Mathf.Abs(_context.TransformPosition.y - landHits[0].point.y);
-                            if (fallHeight > SafeFallHeight)
-                                return false;
-
-                            target = landHits[0].point;
-                            return true;
-                        }
-                        finally
-                        {
-                            TempRaycastHitPool.Return(landHits);
-                        }
+                        target = landHits[0].point;
+                        return true;
                     }
                     finally
                     {
-                        TempBoundsPool.Return(boundsArray);
+                        TempRaycastHitPool.Return(landHits);
                     }
                 }
                 finally
                 {
-                    TempRaycastHitPool.Return(hits);
+                    TempBoundsPool.Return(boundsArray);
                 }
             }
-            catch (Exception ex)
+            finally
             {
-                Plugin.LoggerInstance.LogError($"[BotJumpController] TryFindJumpTarget failed: {ex}");
+                TempRaycastHitPool.Return(hits);
             }
-
-            return false;
         }
 
         #endregion

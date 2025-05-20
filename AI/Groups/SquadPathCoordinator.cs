@@ -25,8 +25,8 @@ namespace AIRefactored.AI.Groups
         private const float MaxSpacing = 6.5f;
         private const float MinSpacing = 1.25f;
         private const float FormationJitterRadius = 0.28f;
-        private const float DriftChangeInterval = 5.7f; // Seconds
-        private const float MaxDriftDistance = 0.41f;   // Max meters of personal drift from formation
+        private const float DriftChangeInterval = 5.7f;
+        private const float MaxDriftDistance = 0.41f;
 
         #endregion
 
@@ -38,7 +38,6 @@ namespace AIRefactored.AI.Groups
         private int _lastGroupSize;
         private bool _offsetInitialized;
 
-        // Realistic "human error" drift
         private float _nextDriftUpdate;
         private Vector2 _driftOffset;
 
@@ -53,13 +52,7 @@ namespace AIRefactored.AI.Groups
         {
             if (cache == null || cache.Bot == null || cache.Bot.IsDead)
             {
-                _bot = null;
-                _group = null;
-                _offsetInitialized = false;
-                _lastGroupSize = -1;
-                _cachedOffset = Vector3.zero;
-                _driftOffset = Vector2.zero;
-                _nextDriftUpdate = 0f;
+                Reset();
                 return;
             }
 
@@ -68,20 +61,26 @@ namespace AIRefactored.AI.Groups
 
             if (_group == null)
             {
-                _bot = null;
-                _offsetInitialized = false;
-                _lastGroupSize = -1;
-                _cachedOffset = Vector3.zero;
-                _driftOffset = Vector2.zero;
-                _nextDriftUpdate = 0f;
+                Reset();
                 return;
             }
 
-            _cachedOffset = Vector3.zero;
             _offsetInitialized = false;
             _lastGroupSize = -1;
+            _cachedOffset = Vector3.zero;
             _driftOffset = Vector2.zero;
             _nextDriftUpdate = Time.realtimeSinceStartup + GetInitialDriftInterval();
+        }
+
+        private void Reset()
+        {
+            _bot = null;
+            _group = null;
+            _offsetInitialized = false;
+            _lastGroupSize = -1;
+            _cachedOffset = Vector3.zero;
+            _driftOffset = Vector2.zero;
+            _nextDriftUpdate = 0f;
         }
 
         #endregion
@@ -113,18 +112,14 @@ namespace AIRefactored.AI.Groups
             }
 
             UpdateDrift();
-            Vector3 drift = new Vector3(_driftOffset.x, 0f, _driftOffset.y);
-            return _cachedOffset + drift;
+
+            return _cachedOffset + new Vector3(_driftOffset.x, 0f, _driftOffset.y);
         }
 
         #endregion
 
         #region Private Methods
 
-        /// <summary>
-        /// Computes a unique, naturalistic squad offset for this bot using deterministic per-bot random seed.
-        /// Uses variable angle, spacing, and a small personal bias to simulate a real human squad.
-        /// </summary>
         private Vector3 ComputeOffset()
         {
             try
@@ -144,63 +139,52 @@ namespace AIRefactored.AI.Groups
                 int seed = unchecked(profileId.GetHashCode() ^ (squadSize * 397));
                 var localRand = new System.Random(seed);
 
-                // Base spacing and randomness
-                float baseNoise = (float)(localRand.NextDouble() * 0.9 - 0.45f); // [-0.45, 0.45]
+                float baseNoise = (float)(localRand.NextDouble() * 0.9 - 0.45f);
                 float spacing = Mathf.Clamp(BaseSpacing + baseNoise, MinSpacing, MaxSpacing);
 
-                // Organic, asymmetric formation instead of strict circle
                 float formationTypeRand = (float)localRand.NextDouble();
                 float angleStep, formationAngle;
                 if (formationTypeRand < 0.43f)
                 {
-                    // Looser arc or "comet tail" behind leader
                     angleStep = 70f / (squadSize - 1);
-                    formationAngle = (-35f) + (index * angleStep);
+                    formationAngle = -35f + (index * angleStep);
                 }
                 else if (formationTypeRand < 0.76f)
                 {
-                    // Broad V formation
                     angleStep = 60f / (squadSize - 1);
-                    formationAngle = (-30f) + (index * angleStep);
+                    formationAngle = -30f + (index * angleStep);
                 }
                 else
                 {
-                    // Partial circle for static/idle
                     angleStep = 360f / squadSize;
-                    formationAngle = (index * angleStep) + (float)(localRand.NextDouble() * 16.0 - 8.0); // [-8, 8]
+                    formationAngle = index * angleStep + (float)(localRand.NextDouble() * 16.0 - 8.0);
                 }
 
                 float radians = formationAngle * Mathf.Deg2Rad;
                 float x = Mathf.Cos(radians) * spacing;
                 float z = Mathf.Sin(radians) * spacing;
 
-                // Subtle per-bot offset to avoid identical overlaps
-                float biasX = (float)(localRand.NextDouble() * 0.16 - 0.08); // [-0.08, 0.08]
-                float biasZ = (float)(localRand.NextDouble() * 0.16 - 0.08);
+                float biasX = (float)(localRand.NextDouble() * 0.16 - 0.08f);
+                float biasZ = (float)(localRand.NextDouble() * 0.16 - 0.08f);
 
                 return new Vector3(x + biasX, 0f, z + biasZ);
             }
             catch
             {
-                // If anything fails, disable offset for this bot only (zero offset)
                 return Vector3.zero;
             }
         }
 
-        /// <summary>
-        /// Periodically updates per-bot "drift" for organic, player-like movement.
-        /// </summary>
         private void UpdateDrift()
         {
             float now = Time.realtimeSinceStartup;
             if (now < _nextDriftUpdate)
                 return;
 
-            // Deterministic seed: per-bot, but updates with time for drift
             int tick = Mathf.FloorToInt(now / DriftChangeInterval);
             int driftSeed = unchecked((_bot.ProfileId?.GetHashCode() ?? 0) ^ tick ^ 0x1F4B6C3);
-
             var rand = new System.Random(driftSeed);
+
             float angle = (float)(rand.NextDouble() * Mathf.PI * 2.0);
             float radius = (float)(rand.NextDouble() * MaxDriftDistance);
 
@@ -209,12 +193,9 @@ namespace AIRefactored.AI.Groups
                 Mathf.Sin(angle) * radius
             );
 
-            _nextDriftUpdate = now + DriftChangeInterval + (float)(rand.NextDouble() * 2.2 - 1.1f);
+            _nextDriftUpdate = now + DriftChangeInterval + (float)(rand.NextDouble() * 2.2f - 1.1f);
         }
 
-        /// <summary>
-        /// Used only at initialization for slight randomization.
-        /// </summary>
         private float GetInitialDriftInterval()
         {
             int seed = unchecked((_bot?.ProfileId?.GetHashCode() ?? 0) ^ 0xBADC0DE);
@@ -222,9 +203,6 @@ namespace AIRefactored.AI.Groups
             return DriftChangeInterval * 0.66f + (float)(rand.NextDouble() * 0.66f);
         }
 
-        /// <summary>
-        /// Finds the index of the bot within its squad for formation placement.
-        /// </summary>
         private static int GetBotIndexInGroup(BotOwner bot, BotsGroup group)
         {
             if (bot == null || group == null || string.IsNullOrEmpty(bot.ProfileId))
@@ -235,9 +213,7 @@ namespace AIRefactored.AI.Groups
             {
                 BotOwner member = group.Member(i);
                 if (member != null && !member.IsDead && member.ProfileId == bot.ProfileId)
-                {
                     return i;
-                }
             }
 
             return -1;

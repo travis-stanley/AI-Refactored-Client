@@ -26,15 +26,25 @@ namespace AIRefactored.AI.Combat.States
     /// </summary>
     public sealed class AttackHandler
     {
-        private const float PositionUpdateThresholdSqr = 0.64f; // 0.8m - higher reactivity, not robotic snapping
-        private const float MicroAdjustRadius = 0.65f;          // Small side-step/wobble to mimic human repositioning
-        private const float MinAdvanceDistance = 1.4f;          // Avoid pointless micro-movements at melee range
-        private const float MaxAggroDistance = 52f;             // Max chase before aborting (real player limit)
+        #region Constants
+
+        private const float PositionUpdateThresholdSqr = 0.64f;
+        private const float MicroAdjustRadius = 0.65f;
+        private const float MinAdvanceDistance = 1.4f;
+        private const float MaxAggroDistance = 52f;
+
+        #endregion
+
+        #region Fields
 
         private readonly BotOwner _bot;
         private readonly BotComponentCache _cache;
         private Vector3 _lastTargetPosition;
         private bool _hasLastTarget;
+
+        #endregion
+
+        #region Constructor
 
         public AttackHandler(BotComponentCache cache)
         {
@@ -43,6 +53,10 @@ namespace AIRefactored.AI.Combat.States
             _lastTargetPosition = Vector3.zero;
             _hasLastTarget = false;
         }
+
+        #endregion
+
+        #region Public API
 
         /// <summary>
         /// Clears the internal target tracking state.
@@ -82,7 +96,6 @@ namespace AIRefactored.AI.Combat.States
                 Vector3 targetPos = enemyTransform.position;
                 float distToTarget = (_bot.Position - targetPos).magnitude;
 
-                // Limit max pursuit to avoid bots chasing forever across map (like players)
                 if (distToTarget > MaxAggroDistance)
                 {
                     ClearTarget();
@@ -90,38 +103,37 @@ namespace AIRefactored.AI.Combat.States
                 }
 
                 float deltaSqr = (targetPos - _lastTargetPosition).sqrMagnitude;
-
-                // Human micro-movement: don't robotically snap unless enemy moves enough
                 if (!_hasLastTarget || deltaSqr > PositionUpdateThresholdSqr)
                 {
                     _lastTargetPosition = targetPos;
                     _hasLastTarget = true;
 
-                    Vector3 advancePoint = GetRealisticAttackPoint(_bot, _cache, targetPos, distToTarget, MicroAdjustRadius);
+                    Vector3 advancePoint = GetRealisticAdvancePoint(_bot, _cache, targetPos, distToTarget, MicroAdjustRadius);
 
                     if (_bot.Mover != null)
                     {
                         try
                         {
                             BotMovementHelper.SmoothMoveTo(_bot, advancePoint);
-                            TrySetCombatStance(advancePoint, targetPos, distToTarget);
+                            SetStanceFromCombatContext(distToTarget, advancePoint);
                         }
-                        catch (Exception ex)
+                        catch (Exception moveEx)
                         {
-                            Plugin.LoggerInstance.LogError("[AttackHandler] SmoothMoveTo or stance logic failed: " + ex);
+                            Plugin.LoggerInstance.LogError("[AttackHandler] SmoothMoveTo or stance adjustment failed: " + moveEx);
                         }
                     }
                 }
             }
             catch (Exception ex)
             {
-                Plugin.LoggerInstance.LogError("[AttackHandler] General Tick failure: " + ex);
+                Plugin.LoggerInstance.LogError("[AttackHandler] Tick failed: " + ex);
             }
         }
 
-        /// <summary>
-        /// Resolves the current combat enemy for attack logic.
-        /// </summary>
+        #endregion
+
+        #region Internal Logic
+
         private bool TryResolveEnemy(out Player result)
         {
             result = null;
@@ -144,10 +156,7 @@ namespace AIRefactored.AI.Combat.States
             return false;
         }
 
-        /// <summary>
-        /// Applies realistic stance logic: crouch when closing in, lean at corners, adjust when under fire.
-        /// </summary>
-        private void TrySetCombatStance(Vector3 destination, Vector3 targetPos, float distToTarget)
+        private void SetStanceFromCombatContext(float distance, Vector3 advancePos)
         {
             try
             {
@@ -155,63 +164,54 @@ namespace AIRefactored.AI.Combat.States
                 if (pose == null)
                     return;
 
-                // Crouch or lean if closing in and cover is nearby; stand when pushing
-                if (distToTarget < 8f)
+                if (distance < 8f)
                 {
-                    pose.TrySetStanceFromNearbyCover(destination);
+                    pose.TrySetStanceFromNearbyCover(advancePos);
                 }
-                else if (distToTarget < 16f)
+                else if (distance < 16f)
                 {
                     pose.Stand();
                 }
 
-                // If suppressed, always crouch and hug cover (simulate human ducking)
-                if (_cache.Perception?.IsSuppressed ?? false)
+                if (_cache.Perception != null && _cache.Perception.IsSuppressed)
+                {
                     pose.Crouch();
+                }
             }
             catch (Exception ex)
             {
-                Plugin.LoggerInstance.LogError("[AttackHandler] Exception in TrySetCombatStance: " + ex);
+                Plugin.LoggerInstance.LogError("[AttackHandler] Stance logic exception: " + ex);
             }
         }
 
-        /// <summary>
-        /// Returns a valid, realistic attack position using nav, micro-wobble, and cover sampling.
-        /// </summary>
-        private static Vector3 GetRealisticAttackPoint(BotOwner bot, BotComponentCache cache, Vector3 target, float distToTarget, float microAdjust)
+        private static Vector3 GetRealisticAdvancePoint(BotOwner bot, BotComponentCache cache, Vector3 target, float dist, float adjustRadius)
         {
-            // Micro-move/strafe for realism if close, else approach directly or via nav/covers
-            Vector3 approach = target;
-
-            // Avoid closing in if already at melee range (don't crowd or jitter)
-            if (distToTarget < MinAdvanceDistance)
+            if (dist < MinAdvanceDistance)
             {
-                // Micro-randomize left/right step (simulate player jiggle/peeking)
-                Vector3 side = Vector3.Cross(Vector3.up, bot.LookDirection.normalized);
-                float wiggle = UnityEngine.Random.Range(-1.0f, 1.0f) * microAdjust;
-                approach += side * wiggle;
-                return approach;
+                Vector3 sidestep = Vector3.Cross(Vector3.up, bot.LookDirection.normalized);
+                float shuffle = UnityEngine.Random.Range(-1.0f, 1.0f) * adjustRadius;
+                return target + sidestep * shuffle;
             }
 
-            // If NavPointRegistry and cover available, prefer cover for advance point
-            Vector3 coverPoint;
-            if (cache.CoverPlanner != null && cache.CoverPlanner.TryGetBestCoverNear(target, bot.Position, out coverPoint))
+            Vector3 cover;
+            if (cache.CoverPlanner != null && cache.CoverPlanner.TryGetBestCoverNear(target, bot.Position, out cover))
             {
-                // Slightly offset to the side for human-like peek angle
-                Vector3 lateral = Vector3.Cross(Vector3.up, (target - coverPoint).normalized) * UnityEngine.Random.Range(-0.5f, 0.5f);
-                coverPoint += lateral;
-                return coverPoint;
+                Vector3 lateral = Vector3.Cross(Vector3.up, (target - cover).normalized);
+                float offset = UnityEngine.Random.Range(-0.5f, 0.5f);
+                return cover + lateral * offset;
             }
 
-            // Otherwise, use basic nav logic to pick a point near the enemy
             Vector3 fallback = target + UnityEngine.Random.insideUnitSphere * 1.5f;
             fallback.y = target.y;
 
-            UnityEngine.AI.NavMeshHit hit;
-            if (UnityEngine.AI.NavMesh.SamplePosition(fallback, out hit, 2.2f, UnityEngine.AI.NavMesh.AllAreas))
-                fallback = hit.position;
+            if (UnityEngine.AI.NavMesh.SamplePosition(fallback, out UnityEngine.AI.NavMeshHit hit, 2.2f, UnityEngine.AI.NavMesh.AllAreas))
+            {
+                return hit.position;
+            }
 
             return fallback;
         }
+
+        #endregion
     }
 }

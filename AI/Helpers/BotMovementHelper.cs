@@ -29,7 +29,10 @@ namespace AIRefactored.AI.Helpers
 
         #region Public Methods
 
-        public static void Reset(BotOwner bot) { }
+        public static void Reset(BotOwner bot)
+        {
+            // Reserved for future cooldown/movement reset state
+        }
 
         public static void RetreatToCover(BotOwner bot, Vector3 threatDir, float distance = RetreatDistance, bool sprint = true)
         {

@@ -22,11 +22,16 @@ namespace AIRefactored.AI.Combat
     using GClass2814 = GClass2814<HealthControllerClass.GClass2819>;
     using Random = UnityEngine.Random;
 
+    /// <summary>
+    /// Core weapon fire controller for bots. Handles aiming, cadence, suppression effects, and fire mode switching.
+    /// Bulletproof: All failures are locally isolated. Never disables itself, never triggers fallback AI.
+    /// </summary>
     public sealed class BotFireLogic
     {
         private const float MaxAimPitch = 70f;
 
         private static readonly EBodyPart[] AllBodyParts = (EBodyPart[])Enum.GetValues(typeof(EBodyPart));
+
         private static readonly Dictionary<string, float> WeaponTypeRanges = new Dictionary<string, float>(StringComparer.OrdinalIgnoreCase)
         {
             { "sniper", 180f },
@@ -81,14 +86,12 @@ namespace AIRefactored.AI.Combat
                 float weaponRange = EstimateWeaponRange(weapon);
                 float maxRange = Mathf.Min(profile.EngagementRange, weaponRange, 200f);
 
-                // Human-like hesitation, bots sometimes stutter-advance if outside preferred range
                 if (distance > maxRange)
                 {
                     if (profile.ChaosFactor > 0f && Random.value < profile.ChaosFactor * 0.6f)
                     {
                         if (BotNavHelper.TryGetSafeTarget(_bot, out var advance) && IsVectorValid(advance))
                         {
-                            // Occasionally wait, then advance—do not always immediately move
                             if (Random.value < 0.6f)
                                 BotMovementHelper.SmoothMoveTo(_bot, advance, false, profile.Cohesion);
                         }
@@ -96,7 +99,6 @@ namespace AIRefactored.AI.Combat
                     return;
                 }
 
-                // Micro-delays between decisions (to simulate human reaction time)
                 if (time < _nextDecisionTime)
                     return;
 
@@ -117,18 +119,16 @@ namespace AIRefactored.AI.Combat
 
                 if (weaponManager.IsWeaponReady)
                 {
-                    // Realistic: bots may occasionally "choke" firing if suppressed/panicked
                     if (suppressionPenalty < 0.65f || Random.value > (0.16f + suppressionPenalty * 0.7f))
                     {
                         shootData.Shoot();
                         _cache.LastShotTracker?.RegisterShot(target.ProfileId);
                     }
-                    // else: bot hesitated and did not shoot this frame (simulate hesitation/panic)
                 }
             }
             catch (Exception ex)
             {
-                Plugin.LoggerInstance?.LogError($"[BotFireLogic] Exception in Tick: {ex}");
+                Plugin.LoggerInstance?.LogError($"[BotFireLogic] Tick exception: {ex}");
             }
         }
 
@@ -149,7 +149,7 @@ namespace AIRefactored.AI.Combat
             }
             catch (Exception ex)
             {
-                Plugin.LoggerInstance?.LogError($"[BotFireLogic] Exception in UpdateBotAiming: {ex}");
+                Plugin.LoggerInstance?.LogError($"[BotFireLogic] Aiming exception: {ex}");
             }
         }
 
@@ -164,7 +164,6 @@ namespace AIRefactored.AI.Combat
                 if (memory != Vector3.zero)
                     return memory;
 
-                // Idle "look around" for realism: bots scan surroundings when no clear target
                 if (time - _lastLookAroundTime > 1.5f)
                 {
                     float yaw = Random.Range(-75f, 75f);
@@ -179,22 +178,15 @@ namespace AIRefactored.AI.Combat
             }
             catch (Exception ex)
             {
-                Plugin.LoggerInstance?.LogError($"[BotFireLogic] Exception in GetValidatedAimPosition: {ex}");
+                Plugin.LoggerInstance?.LogError($"[BotFireLogic] AimPos exception: {ex}");
                 return _bot.Position;
             }
         }
 
-        private void ApplyFireMode(
-            BotWeaponInfo info,
-            Weapon weapon,
-            float distance,
-            BotPersonalityProfile profile,
-            GClass592 settings,
-            float suppressionPenalty)
+        private void ApplyFireMode(BotWeaponInfo info, Weapon weapon, float distance, BotPersonalityProfile profile, GClass592 settings, float suppressionPenalty)
         {
             try
             {
-                // Realistic: bots sometimes switch to less optimal mode under heavy suppression or chaos
                 if (suppressionPenalty > 0.45f && Random.value < 0.34f)
                 {
                     SetFireMode(info, Weapon.EFireMode.single);
@@ -220,7 +212,7 @@ namespace AIRefactored.AI.Combat
             }
             catch (Exception ex)
             {
-                Plugin.LoggerInstance?.LogError($"[BotFireLogic] Exception in ApplyFireMode: {ex}");
+                Plugin.LoggerInstance?.LogError($"[BotFireLogic] ApplyFireMode exception: {ex}");
             }
         }
 
@@ -233,7 +225,7 @@ namespace AIRefactored.AI.Combat
             }
             catch (Exception ex)
             {
-                Plugin.LoggerInstance?.LogError($"[BotFireLogic] Exception in SetFireMode: {ex}");
+                Plugin.LoggerInstance?.LogError($"[BotFireLogic] FireMode switch failed: {ex}");
             }
         }
 
@@ -249,7 +241,7 @@ namespace AIRefactored.AI.Combat
             }
             catch (Exception ex)
             {
-                Plugin.LoggerInstance?.LogError($"[BotFireLogic] Exception in SupportsFireMode: {ex}");
+                Plugin.LoggerInstance?.LogError($"[BotFireLogic] SupportsFireMode exception: {ex}");
             }
             return false;
         }
@@ -262,24 +254,20 @@ namespace AIRefactored.AI.Combat
             }
             catch (Exception ex)
             {
-                Plugin.LoggerInstance?.LogError($"[BotFireLogic] Exception in RecoverAccuracy: {ex}");
+                Plugin.LoggerInstance?.LogError($"[BotFireLogic] RecoverAccuracy failed: {ex}");
             }
         }
 
-        private void ApplyScatter(
-            GClass592 settings,
-            bool underFire,
-            BotPersonalityProfile profile,
-            float suppressionPenalty)
+        private void ApplyScatter(GClass592 settings, bool underFire, BotPersonalityProfile profile, float suppressionPenalty)
         {
             try
             {
                 float composure = _cache.PanicHandler?.GetComposureLevel() ?? 1f;
                 float scatterPenalty = underFire ? (1f - profile.AccuracyUnderFire) * (1f - composure) : 0f;
                 scatterPenalty += suppressionPenalty * 0.55f;
+
                 float scatterFactor = 1.1f + scatterPenalty;
 
-                // Realistic: sometimes overcompensate under stress
                 if (suppressionPenalty > 0.2f && Random.value < 0.35f)
                     scatterFactor *= Random.Range(1.08f, 1.2f);
 
@@ -287,7 +275,7 @@ namespace AIRefactored.AI.Combat
             }
             catch (Exception ex)
             {
-                Plugin.LoggerInstance?.LogError($"[BotFireLogic] Exception in ApplyScatter: {ex}");
+                Plugin.LoggerInstance?.LogError($"[BotFireLogic] ApplyScatter failed: {ex}");
             }
         }
 
@@ -309,7 +297,7 @@ namespace AIRefactored.AI.Combat
             }
             catch (Exception ex)
             {
-                Plugin.LoggerInstance?.LogError($"[BotFireLogic] Exception in EstimateWeaponRange: {ex}");
+                Plugin.LoggerInstance?.LogError($"[BotFireLogic] EstimateWeaponRange failed: {ex}");
                 return 90f;
             }
         }
@@ -325,7 +313,7 @@ namespace AIRefactored.AI.Combat
             }
             catch (Exception ex)
             {
-                Plugin.LoggerInstance?.LogError($"[BotFireLogic] Exception in GetBurstCadence: {ex}");
+                Plugin.LoggerInstance?.LogError($"[BotFireLogic] GetBurstCadence failed: {ex}");
                 return 0.45f;
             }
         }
@@ -349,8 +337,9 @@ namespace AIRefactored.AI.Combat
             }
             catch (Exception ex)
             {
-                Plugin.LoggerInstance?.LogError($"[BotFireLogic] Exception in TryResolveEnemy: {ex}");
+                Plugin.LoggerInstance?.LogError($"[BotFireLogic] TryResolveEnemy failed: {ex}");
             }
+
             return false;
         }
 

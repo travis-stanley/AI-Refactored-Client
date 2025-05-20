@@ -76,9 +76,7 @@ namespace AIRefactored.AI.Groups
             try
             {
                 if (!IsMuted && IsEligible())
-                {
                     _bot.BotTalk.TrySay(phrase);
-                }
             }
             catch
             {
@@ -91,7 +89,7 @@ namespace AIRefactored.AI.Groups
         /// </summary>
         public void SayFallback()
         {
-            TryTriggerVoice(EPhraseTrigger.GetBack, 0.53f); // More likely than default for realism
+            TryTriggerVoice(EPhraseTrigger.GetBack, 0.53f);
         }
 
         /// <summary>
@@ -99,8 +97,7 @@ namespace AIRefactored.AI.Groups
         /// </summary>
         public void SayFragOut()
         {
-            float chance = HasNearbyAlly() ? 0.78f : 0.0f;
-            TryTriggerVoice(EPhraseTrigger.OnEnemyGrenade, chance);
+            TryTriggerVoice(EPhraseTrigger.OnEnemyGrenade, HasNearbyAlly() ? 0.78f : 0f);
         }
 
         /// <summary>
@@ -123,9 +120,6 @@ namespace AIRefactored.AI.Groups
 
         #region Private Methods
 
-        /// <summary>
-        /// Checks if this bot is eligible to speak a VO line.
-        /// </summary>
         private bool IsEligible()
         {
             return _bot != null &&
@@ -136,9 +130,6 @@ namespace AIRefactored.AI.Groups
                    !FikaHeadlessDetector.IsHeadless;
         }
 
-        /// <summary>
-        /// Tries to issue a VO line based on cooldown and random chance.
-        /// </summary>
         private void TryTriggerVoice(EPhraseTrigger phrase, float chance)
         {
             try
@@ -153,7 +144,6 @@ namespace AIRefactored.AI.Groups
                 if (chance < 1.0f && UnityEngine.Random.value > chance)
                     return;
 
-                // Add slight randomization for realism
                 _nextVoiceTime = now + (VoiceCooldown * UnityEngine.Random.Range(0.85f, 1.17f));
                 _bot.BotTalk.TrySay(phrase);
             }
@@ -163,9 +153,6 @@ namespace AIRefactored.AI.Groups
             }
         }
 
-        /// <summary>
-        /// Checks for living squadmates within VO radius.
-        /// </summary>
         private bool HasNearbyAlly()
         {
             try
@@ -184,11 +171,8 @@ namespace AIRefactored.AI.Groups
                     if (ReferenceEquals(other, _cache) || other.Bot == null || other.Bot.IsDead)
                         continue;
 
-                    Profile otherProfile = other.Bot.Profile;
-                    if (otherProfile?.Info == null)
-                        continue;
-
-                    if (!groupId.Equals(otherProfile.Info.GroupId, StringComparison.Ordinal))
+                    Profile profile = other.Bot.Profile;
+                    if (profile?.Info == null || !groupId.Equals(profile.Info.GroupId, StringComparison.Ordinal))
                         continue;
 
                     if ((other.Bot.Position - myPos).sqrMagnitude <= AllyRadiusSqr)
@@ -197,7 +181,7 @@ namespace AIRefactored.AI.Groups
             }
             catch
             {
-                // Silent fail: treat as no ally nearby
+                // Silent fail: treat as no ally nearby.
             }
 
             return false;

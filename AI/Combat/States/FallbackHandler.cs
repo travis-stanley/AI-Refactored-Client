@@ -25,15 +25,26 @@ namespace AIRefactored.AI.Combat.States
     /// </summary>
     public sealed class FallbackHandler : IDisposable
     {
+        #region Constants
+
         private const float MinArrivalDistance = 0.1f;
         private const float MinHumanDelay = 0.09f;
         private const float MaxHumanDelay = 0.22f;
 
+        #endregion
+
+        #region Fields
+
         private readonly BotOwner _bot;
         private readonly BotComponentCache _cache;
         private readonly List<Vector3> _currentFallbackPath;
+
         private Vector3 _fallbackTarget;
         private float _lastMoveTime;
+
+        #endregion
+
+        #region Constructor
 
         public FallbackHandler(BotComponentCache cache)
         {
@@ -43,6 +54,10 @@ namespace AIRefactored.AI.Combat.States
             _currentFallbackPath = TempListPool.Rent<Vector3>();
             _lastMoveTime = -1000f;
         }
+
+        #endregion
+
+        #region Public API
 
         public Vector3 GetFallbackPosition() => _fallbackTarget;
 
@@ -63,16 +78,14 @@ namespace AIRefactored.AI.Combat.States
                 Plugin.LoggerInstance.LogWarning("[FallbackHandler] Ignored fallback target with invalid vector.");
                 return;
             }
+
             _fallbackTarget = target;
         }
 
         public void SetFallbackPath(List<Vector3> path)
         {
-            // Silently ignore too-short or invalid paths
             if (path == null || path.Count < 2)
-            {
                 return;
-            }
 
             _currentFallbackPath.Clear();
             for (int i = 0; i < path.Count; i++)
@@ -83,15 +96,9 @@ namespace AIRefactored.AI.Combat.States
             }
 
             if (_currentFallbackPath.Count >= 2)
-            {
                 _fallbackTarget = _currentFallbackPath[_currentFallbackPath.Count - 1];
-            }
-            // No log needed for short/invalid
         }
 
-        /// <summary>
-        /// True if bot needs to perform fallback now.
-        /// </summary>
         public bool ShallUseNow(float time)
         {
             return _bot != null &&
@@ -99,31 +106,25 @@ namespace AIRefactored.AI.Combat.States
                    Vector3.Distance(_bot.Position, _fallbackTarget) > MinArrivalDistance;
         }
 
-        /// <summary>
-        /// Context-sensitive: bots may hesitate/fail fallback under stress.
-        /// </summary>
         public bool ShouldTriggerSuppressedFallback(float now, float lastStateChangeTime, float minStateDuration)
         {
-            var suppression = _cache?.Suppression ?? null;
-            var panic = _cache?.PanicHandler ?? null;
+            var suppression = _cache?.Suppression;
+            var panic = _cache?.PanicHandler;
             float caution = _cache?.PersonalityProfile?.Caution ?? 0.5f;
 
-            bool isSuppressed = suppression != null && suppression.IsSuppressed();
-            bool isPanicking = panic != null && panic.IsPanicking;
+            bool isSuppressed = suppression?.IsSuppressed() == true;
+            bool isPanicking = panic?.IsPanicking == true;
 
-            // Hesitant bots may fumble fallback; only assert if enough time has passed and chance succeeds
             if (isSuppressed && (now - lastStateChangeTime) >= minStateDuration)
             {
                 if (isPanicking || (caution < 0.2f && UnityEngine.Random.value < 0.4f))
-                    return false; // Simulate "freeze" or panic-fail
+                    return false;
                 return true;
             }
+
             return false;
         }
 
-        /// <summary>
-        /// Main tick. Moves along fallback path with realistic hesitation, human-like path deviation, and speech/stance.
-        /// </summary>
         public void Tick(float time, Action<CombatState, float> forceState)
         {
             if (_bot == null || !IsVectorValid(_fallbackTarget))
@@ -131,41 +132,31 @@ namespace AIRefactored.AI.Combat.States
 
             try
             {
-                Player player = _bot.GetPlayer;
-                if (!EFTPlayerUtil.IsValid(player))
+                if (!EFTPlayerUtil.IsValid(_bot.GetPlayer))
                     return;
 
-                // Human-like delay/hesitation between fallback actions
                 float now = Time.time;
                 float delay = UnityEngine.Random.Range(MinHumanDelay, MaxHumanDelay);
                 if (now - _lastMoveTime < delay)
                     return;
+
                 _lastMoveTime = now;
 
-                Vector3 fallbackPoint = _fallbackTarget;
-                if (!BotNavHelper.TryGetSafeTarget(_bot, out fallbackPoint) || !IsVectorValid(fallbackPoint))
-                {
-                    fallbackPoint = GetSafeRandomFallback(_bot.Position);
-                }
+                Vector3 destination = _fallbackTarget;
 
-                // Small random jitter to simulate human error/adjustment under stress
-                fallbackPoint += UnityEngine.Random.insideUnitSphere * 0.15f;
-                fallbackPoint.y = _bot.Position.y;
+                if (!BotNavHelper.TryGetSafeTarget(_bot, out destination) || !IsVectorValid(destination))
+                    destination = GetSafeRandomFallback(_bot.Position);
+
+                destination += UnityEngine.Random.insideUnitSphere * 0.15f;
+                destination.y = _bot.Position.y;
 
                 if (_bot.Mover != null)
                 {
-                    try
-                    {
-                        BotMovementHelper.SmoothMoveTo(_bot, fallbackPoint);
-                        BotCoverHelper.TrySetStanceFromNearbyCover(_cache, fallbackPoint);
-                    }
-                    catch (Exception ex)
-                    {
-                        Plugin.LoggerInstance.LogError($"[FallbackHandler] SmoothMoveTo/stance logic failed: {ex}");
-                    }
+                    BotMovementHelper.SmoothMoveTo(_bot, destination);
+                    BotCoverHelper.TrySetStanceFromNearbyCover(_cache, destination);
                 }
 
-                if (Vector3.Distance(_bot.Position, fallbackPoint) < MinArrivalDistance)
+                if (Vector3.Distance(_bot.Position, destination) < MinArrivalDistance)
                 {
                     forceState?.Invoke(CombatState.Patrol, time);
 
@@ -178,7 +169,7 @@ namespace AIRefactored.AI.Combat.States
             }
             catch (Exception ex)
             {
-                Plugin.LoggerInstance.LogError($"[FallbackHandler] General Tick exception: {ex}");
+                Plugin.LoggerInstance.LogError($"[FallbackHandler] Tick exception: {ex}");
             }
         }
 
@@ -201,34 +192,33 @@ namespace AIRefactored.AI.Combat.States
             TempListPool.Return(_currentFallbackPath);
         }
 
+        #endregion
+
+        #region Internal Helpers
+
         private static bool IsVectorValid(Vector3 v)
         {
-            return !float.IsNaN(v.x) &&
-                   !float.IsNaN(v.y) &&
-                   !float.IsNaN(v.z) &&
-                   v != Vector3.zero;
+            return !float.IsNaN(v.x) && !float.IsNaN(v.y) && !float.IsNaN(v.z) && v != Vector3.zero;
         }
 
-        /// <summary>
-        /// Returns a random valid fallback position using only internal EFT/Unity logic, never PathController.
-        /// </summary>
         private Vector3 GetSafeRandomFallback(Vector3 origin)
         {
-            if (_bot != null && _bot.PatrollingData != null)
+            if (_bot?.PatrollingData != null)
             {
-                Vector3 curPatrolTarget = _bot.PatrollingData.CurTargetPoint;
-                if (IsVectorValid(curPatrolTarget) && Vector3.Distance(curPatrolTarget, origin) > 1.0f)
-                    return curPatrolTarget;
+                Vector3 patrol = _bot.PatrollingData.CurTargetPoint;
+                if (IsVectorValid(patrol) && Vector3.Distance(patrol, origin) > 1.0f)
+                    return patrol;
             }
 
             Vector3 candidate = origin + UnityEngine.Random.onUnitSphere * 2.0f;
             candidate.y = origin.y;
 
-            NavMeshHit hit;
-            if (NavMesh.SamplePosition(candidate, out hit, 2.5f, NavMesh.AllAreas))
+            if (NavMesh.SamplePosition(candidate, out NavMeshHit hit, 2.5f, NavMesh.AllAreas))
                 candidate = hit.position;
 
             return IsVectorValid(candidate) ? candidate : origin + Vector3.forward * 0.25f;
         }
+
+        #endregion
     }
 }

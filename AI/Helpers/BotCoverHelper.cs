@@ -34,7 +34,6 @@ namespace AIRefactored.AI.Helpers
 
         #region Static Memory
 
-        // Covers are keyed by rounded position, with time-stamp.
         private static readonly Dictionary<string, float> CoverMemory = new Dictionary<string, float>(128);
 
         #endregion
@@ -58,29 +57,26 @@ namespace AIRefactored.AI.Helpers
 
         #endregion
 
-        #region Cover Memory Usage
+        #region Cover Memory
 
         public static void MarkUsed(CustomNavigationPoint point)
         {
-            if (point == null)
-                return;
-            MarkUsed(point.Position);
+            if (point != null)
+                MarkUsed(point.Position);
         }
 
         public static void MarkUsed(Vector3 position)
         {
             if (!IsValidPos(position))
                 return;
+
             try
             {
                 string key = GetKey(position);
                 if (!string.IsNullOrEmpty(key))
                     CoverMemory[key] = Time.time;
             }
-            catch
-            {
-                // Ignore, never break bot logic
-            }
+            catch { }
         }
 
         public static bool WasRecentlyUsed(CustomNavigationPoint point)
@@ -115,19 +111,20 @@ namespace AIRefactored.AI.Helpers
 
             try
             {
-                // EFT-native: look for CustomNavigationPoint MonoBehaviours nearby
                 Collider[] colliders = Physics.OverlapSphere(position, 4f);
                 float bestDist = float.MaxValue;
                 CustomNavigationPoint bestPoint = null;
+
                 for (int i = 0; i < colliders.Length; i++)
                 {
                     var point = colliders[i].GetComponent<CustomNavigationPoint>();
                     if (point == null || !IsValidPos(point.Position))
                         continue;
+
                     float distSqr = (point.Position - position).sqrMagnitude;
                     if (distSqr > MaxValidDistanceSqr || distSqr < MinCoverDistance * MinCoverDistance)
                         continue;
-                    // Prefer the closest valid cover point
+
                     if (distSqr < bestDist)
                     {
                         bestDist = distSqr;
@@ -142,12 +139,13 @@ namespace AIRefactored.AI.Helpers
                         cache.PoseController.SetProne(true);
                         return;
                     }
+
                     if (IsLowCover(bestPoint))
                     {
                         cache.PoseController.SetCrouch(true);
                         return;
                     }
-                    // Optionally, set standing if that's the only cover (rare in EFT, but possible)
+
                     if (IsStandingCover(bestPoint))
                     {
                         cache.PoseController.SetCrouch(false);
@@ -155,10 +153,7 @@ namespace AIRefactored.AI.Helpers
                     }
                 }
             }
-            catch
-            {
-                // Never break bot logic if posture fails
-            }
+            catch { }
         }
 
         #endregion
@@ -171,7 +166,9 @@ namespace AIRefactored.AI.Helpers
         /// </summary>
         public static float Score(CustomNavigationPoint point, Vector3 botPos, Vector3 threatPos)
         {
-            if (point == null) return 0f;
+            if (point == null)
+                return 0f;
+
             try
             {
                 float distBot = Vector3.Distance(botPos, point.Position);
@@ -183,12 +180,9 @@ namespace AIRefactored.AI.Helpers
                 else if (IsLowCover(point)) bonus = 1.0f;
                 else if (IsStandingCover(point)) bonus = 0.85f;
 
-                // Heavily prefer cover further from the threat and closer to the bot, but never right on the threat
                 float threatFactor = Mathf.Clamp01(distThreat / 22f);
                 float angleFactor = Mathf.Clamp01(angle / 180f);
                 float distPenalty = 1f + Mathf.Clamp(distBot * 0.16f, 0.8f, 2.8f);
-
-                // Penalize if the cover was recently used
                 float memoryPenalty = WasRecentlyUsed(point) ? 0.55f : 1f;
 
                 return ((bonus + threatFactor + angleFactor) * memoryPenalty) / distPenalty;
@@ -244,7 +238,8 @@ namespace AIRefactored.AI.Helpers
 
         private static bool IsValidPos(Vector3 pos)
         {
-            return pos != Vector3.zero && !float.IsNaN(pos.x) && !float.IsNaN(pos.y) && !float.IsNaN(pos.z);
+            return pos != Vector3.zero &&
+                   !float.IsNaN(pos.x) && !float.IsNaN(pos.y) && !float.IsNaN(pos.z);
         }
 
         #endregion

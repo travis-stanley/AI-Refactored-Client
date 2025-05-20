@@ -80,7 +80,7 @@ namespace AIRefactored.AI.Groups
                 _group.OnMemberRemove += OnMemberRemoved;
 
                 LastDangerBroadcastTime = -999f;
-                _nextSyncTime = Time.time + GetDeterministicSyncJitter(_bot?.ProfileId, Time.frameCount);
+                _nextSyncTime = Time.time + GetDeterministicSyncJitter(_bot.ProfileId, Time.frameCount);
             }
             catch
             {
@@ -91,18 +91,14 @@ namespace AIRefactored.AI.Groups
 
         public void InjectLocalCache(BotComponentCache localCache)
         {
-            if (localCache == null)
-                return;
-            _cache = localCache;
+            if (localCache != null)
+                _cache = localCache;
         }
 
         #endregion
 
         #region Broadcasts
 
-        /// <summary>
-        /// Broadcasts a fallback point (retreat location) to all squadmates.
-        /// </summary>
         public void BroadcastFallbackPoint(Vector3 point)
         {
             try
@@ -119,9 +115,7 @@ namespace AIRefactored.AI.Groups
                         {
                             mate.Combat?.TriggerFallback(point);
                             if (mate.PanicHandler != null && !mate.PanicHandler.IsPanicking)
-                            {
                                 mate.PanicHandler.TriggerPanic();
-                            }
                         }
                         catch { }
                     }
@@ -130,16 +124,12 @@ namespace AIRefactored.AI.Groups
             catch { }
         }
 
-        /// <summary>
-        /// Broadcasts a danger event to all squadmates (panic with delay for realism).
-        /// </summary>
         public void BroadcastDanger(Vector3 position)
         {
             try
             {
                 LastDangerPosition = position;
                 LastDangerBroadcastTime = Time.time;
-
                 int botIdx = GetSquadIndex(_bot, _group);
 
                 foreach (var kv in _teammateCaches)
@@ -147,7 +137,6 @@ namespace AIRefactored.AI.Groups
                     var mate = kv.Value;
                     if (mate?.Bot != null && !mate.Bot.IsDead && mate.PanicHandler != null && !mate.PanicHandler.IsPanicking)
                     {
-                        // Realistic stagger: each bot gets a slightly different delay based on profileId and squad order
                         float baseDelay = 0.10f + 0.05f * botIdx;
                         float personalJitter = GetDeterministicPanicJitter(mate.Bot.ProfileId);
                         float delay = Mathf.Clamp(baseDelay + personalJitter, 0.07f, 0.55f);
@@ -158,18 +147,12 @@ namespace AIRefactored.AI.Groups
             catch { }
         }
 
-        /// <summary>
-        /// Broadcasts a loot target to all squadmates (e.g. share found loot).
-        /// </summary>
         public void BroadcastLootPoint(Vector3 point)
         {
             _lootPoint = point;
             _hasLoot = true;
         }
 
-        /// <summary>
-        /// Broadcasts a valid extract/exit point to all squadmates.
-        /// </summary>
         public void BroadcastExtractPoint(Vector3 point)
         {
             _extractPoint = point;
@@ -184,14 +167,8 @@ namespace AIRefactored.AI.Groups
         public Vector3? GetSharedLootTarget() => _hasLoot ? (Vector3?)_lootPoint : null;
         public Vector3? GetSharedExtractTarget() => _hasExtract ? (Vector3?)_extractPoint : null;
 
-        /// <summary>
-        /// Returns true if squad has any teammates (excluding self).
-        /// </summary>
         public bool IsSquadReady() => _teammateCaches.Count > 0;
 
-        /// <summary>
-        /// Gets a readonly list of all active squadmates.
-        /// </summary>
         public IReadOnlyList<BotOwner> GetTeammates()
         {
             var result = TempListPool.Rent<BotOwner>();
@@ -199,12 +176,11 @@ namespace AIRefactored.AI.Groups
             {
                 foreach (var kv in _teammateCaches)
                 {
-                    var bot = kv.Key;
+                    BotOwner bot = kv.Key;
                     if (bot != null && !bot.IsDead && bot.GetPlayer?.IsAI == true)
-                    {
                         result.Add(bot);
-                    }
                 }
+
                 return result;
             }
             catch
@@ -214,14 +190,10 @@ namespace AIRefactored.AI.Groups
             }
         }
 
-        /// <summary>
-        /// Gets the BotComponentCache for a teammate, or returns BotComponentCache.Empty.
-        /// </summary>
         public BotComponentCache GetCache(BotOwner teammate)
         {
             if (teammate == null || !_teammateCaches.TryGetValue(teammate, out BotComponentCache cache) || cache == null)
                 return BotComponentCache.Empty;
-
             return cache;
         }
 
@@ -229,9 +201,6 @@ namespace AIRefactored.AI.Groups
 
         #region Tick
 
-        /// <summary>
-        /// Updates sync logic (every 0.5s with deterministic offset) to propagate panic/fallback.
-        /// </summary>
         public void Tick(float time)
         {
             try
@@ -239,8 +208,7 @@ namespace AIRefactored.AI.Groups
                 if (!IsActive || _teammateCaches.Count == 0 || time < _nextSyncTime)
                     return;
 
-                // Each bot gets a unique but deterministic jitter to avoid exact sync (prevents "AI echo chamber")
-                float interval = BaseSyncInterval * (0.86f + GetDeterministicSyncJitter(_bot?.ProfileId, Time.frameCount));
+                float interval = BaseSyncInterval * (0.86f + GetDeterministicSyncJitter(_bot.ProfileId, Time.frameCount));
                 _nextSyncTime = time + Mathf.Clamp(interval, 0.41f, 0.68f);
 
                 if (_cache?.PanicHandler == null || !_cache.PanicHandler.IsPanicking)
@@ -249,14 +217,10 @@ namespace AIRefactored.AI.Groups
                 Vector3 myPos = _bot.Position;
 
                 if (!_hasFallback || (myPos - _fallbackPoint).sqrMagnitude > PositionEpsilonSqr)
-                {
                     BroadcastFallbackPoint(myPos);
-                }
 
                 if ((myPos - LastDangerPosition).sqrMagnitude > PositionEpsilonSqr)
-                {
                     BroadcastDanger(myPos);
-                }
             }
             catch { }
         }
@@ -269,18 +233,23 @@ namespace AIRefactored.AI.Groups
         {
             try
             {
-                if (teammate == null || teammate == _bot || _teammateCaches.ContainsKey(teammate))
+                if (teammate == null || ReferenceEquals(teammate, _bot) || _teammateCaches.ContainsKey(teammate))
                     return;
+
                 if (teammate.IsDead || teammate.GetPlayer?.IsAI != true)
                     return;
+
                 string profileId = teammate.ProfileId;
                 if (string.IsNullOrEmpty(profileId))
                     return;
+
                 if (!BotRegistry.TryGetRefactoredOwner(profileId, out AIRefactoredBotOwner owner))
                     return;
+
                 BotComponentCache cache = new BotComponentCache();
                 cache.Initialize(teammate);
                 cache.SetOwner(owner);
+
                 _teammateCaches[teammate] = cache;
             }
             catch { }
@@ -292,34 +261,28 @@ namespace AIRefactored.AI.Groups
             catch { }
         }
 
-        /// <summary>
-        /// Delays triggering panic to create realistic, non-instantaneous squad reactions.
-        /// </summary>
         private static void TriggerDelayedPanic(BotComponentCache cache, float delay)
         {
             if (cache == null)
                 return;
+
             Task.Run(async () =>
             {
                 try
                 {
                     await Task.Delay((int)(delay * 1000f));
                     if (cache.Bot != null && !cache.Bot.IsDead && cache.PanicHandler != null && !cache.PanicHandler.IsPanicking)
-                    {
                         cache.PanicHandler.TriggerPanic();
-                    }
                 }
                 catch { }
             });
         }
 
-        /// <summary>
-        /// Squad order index used to stagger panic delay.
-        /// </summary>
         private static int GetSquadIndex(BotOwner bot, BotsGroup group)
         {
             if (bot == null || group == null)
                 return 0;
+
             int count = group.MembersCount;
             for (int i = 0; i < count; i++)
             {
@@ -327,34 +290,29 @@ namespace AIRefactored.AI.Groups
                 if (member != null && member.ProfileId == bot.ProfileId)
                     return i;
             }
+
             return 0;
         }
 
-        /// <summary>
-        /// Deterministic per-bot jitter for sync interval. Prevents perfectly synchronized AI response.
-        /// </summary>
         private static float GetDeterministicSyncJitter(string profileId, int tick)
         {
             int hash = (profileId?.GetHashCode() ?? 0) ^ (tick * 17) ^ 0x6B1F29;
             unchecked
             {
-                hash = (int)((hash ^ (hash >> 13)) * 0x85ebca6b);
-                float frac = (hash & 0xFFFF) / 65536f;
-                return 0.11f + frac * 0.18f; // [0.11, 0.29]
+                hash = (int)((uint)(hash ^ (hash >> 13)) * 0x85ebca6bU);
+                float frac = ((int)(hash & 0xFFFF)) / 65536f;
+                return 0.11f + frac * 0.18f;
             }
         }
 
-        /// <summary>
-        /// Deterministic per-bot jitter for panic delay. Prevents robots yelling at same millisecond.
-        /// </summary>
         private static float GetDeterministicPanicJitter(string profileId)
         {
             int hash = (profileId?.GetHashCode() ?? 0) ^ unchecked((int)0xBA5EBA11);
             unchecked
             {
-                hash = (int)((hash ^ (hash >> 11)) * 0xC2B2AE35);
-                float frac = (hash & 0xFFF) / 4096f;
-                return frac * 0.16f; // [0, 0.16]
+                hash = (int)((uint)(hash ^ (hash >> 11)) * 0xC2B2AE35U);
+                float frac = ((int)(hash & 0xFFF)) / 4096f;
+                return frac * 0.16f;
             }
         }
 

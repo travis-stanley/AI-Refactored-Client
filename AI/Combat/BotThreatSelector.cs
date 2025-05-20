@@ -13,16 +13,18 @@ namespace AIRefactored.AI.Combat
     using AIRefactored.AI.Memory;
     using AIRefactored.AI.Navigation;
     using AIRefactored.Core;
+    using BepInEx.Logging;
     using EFT;
     using UnityEngine;
-    using BepInEx.Logging;
 
     /// <summary>
-    /// Selects and prioritizes threats based on real-time awareness, memory, and personality.
-    /// Bulletproof: All errors are isolated; never disables bot, never triggers fallback AI.
+    /// Selects and prioritizes threats based on real-time awareness, memory, and bot personality.
+    /// Bulletproof: All errors are isolated; no fallback AI is ever triggered.
     /// </summary>
     public sealed class BotThreatSelector
     {
+        #region Constants
+
         private const float EvaluationCooldown = 0.35f;
         private const float MaxScanDistance = 120f;
         private const float SwitchCooldown = 2.0f;
@@ -37,6 +39,12 @@ namespace AIRefactored.AI.Combat
         private const float AggressionMaxBonus = 15f;
         private const float TargetSwitchThreshold = 10f;
 
+        #endregion
+
+        #region Fields
+
+        private static readonly ManualLogSource Logger = Plugin.LoggerInstance;
+
         private readonly BotOwner _bot;
         private readonly BotComponentCache _cache;
         private readonly BotPersonalityProfile _profile;
@@ -45,31 +53,30 @@ namespace AIRefactored.AI.Combat
         private float _nextEvaluateTime;
         private Player _currentTarget;
 
-        private static readonly ManualLogSource Logger = Plugin.LoggerInstance;
-        private static bool _hasLoggedConstructorError;
+        #endregion
+
+        #region Properties
 
         public Player CurrentTarget => _currentTarget;
+
+        #endregion
+
+        #region Constructor
 
         public BotThreatSelector(BotComponentCache cache)
         {
             if (cache == null || cache.Bot == null || cache.AIRefactoredBotOwner == null)
-            {
-                if (!_hasLoggedConstructorError)
-                {
-                    Logger.LogWarning("[BotThreatSelector] Null cache, bot, or AIRefactoredBotOwner in constructor.");
-                    _hasLoggedConstructorError = true;
-                }
                 return;
-            }
 
             _cache = cache;
             _bot = cache.Bot;
             _profile = cache.AIRefactoredBotOwner.PersonalityProfile ?? BotPersonalityPresets.GenerateProfile(PersonalityType.Balanced);
         }
 
-        /// <summary>
-        /// Evaluates all visible threats and updates the bot's priority target in real-time, based on realism scoring.
-        /// </summary>
+        #endregion
+
+        #region Public Methods
+
         public void Tick(float time)
         {
             if (time < _nextEvaluateTime || _bot == null || _bot.IsDead || !_bot.IsAI)
@@ -92,7 +99,7 @@ namespace AIRefactored.AI.Combat
                     if (!EFTPlayerUtil.IsValid(candidate))
                         continue;
 
-                    if (string.IsNullOrEmpty(candidate.ProfileId) || candidate.ProfileId == _bot.ProfileId)
+                    if (candidate.ProfileId == _bot.ProfileId)
                         continue;
 
                     if (!EFTPlayerUtil.IsEnemyOf(_bot, candidate))
@@ -118,7 +125,6 @@ namespace AIRefactored.AI.Combat
                 float currentScore = ScoreTarget(_currentTarget, time);
                 float cooldown = SwitchCooldown * (1f - (_profile.AggressionLevel * 0.5f));
 
-                // Realistic: Only switch if target score exceeds current by enough and cooldown elapsed
                 if (bestScore > currentScore + TargetSwitchThreshold &&
                     time > _lastTargetSwitchTime + cooldown)
                 {
@@ -131,17 +137,11 @@ namespace AIRefactored.AI.Combat
             }
         }
 
-        /// <summary>
-        /// Resets the current target (e.g., on death or forced mode).
-        /// </summary>
         public void ResetTarget()
         {
             _currentTarget = null;
         }
 
-        /// <summary>
-        /// Gets the highest priority target, using memory if the live target is invalid.
-        /// </summary>
         public Player GetPriorityTarget()
         {
             try
@@ -163,17 +163,15 @@ namespace AIRefactored.AI.Combat
             }
         }
 
-        /// <summary>
-        /// Returns the ProfileId of the current target, or empty string if none.
-        /// </summary>
         public string GetTargetProfileId()
         {
             return _currentTarget?.ProfileId ?? string.Empty;
         }
 
-        /// <summary>
-        /// Calculates the realism score for a candidate player based on distance, visibility, memory, and current bot state.
-        /// </summary>
+        #endregion
+
+        #region Internal Scoring
+
         private float ScoreTarget(Player candidate, float time)
         {
             try
@@ -197,7 +195,6 @@ namespace AIRefactored.AI.Combat
                     {
                         score += VisibilityBonus;
 
-                        // Recently seen/peeked bonuses
                         if (info.PersonalLastSeenTime + 2f > time)
                             score += RecentSeenBonus;
 
@@ -211,7 +208,6 @@ namespace AIRefactored.AI.Combat
                     {
                         score -= HiddenPenalty;
 
-                        // Aggressive bots "persist" on enemies that vanished recently
                         if (_profile.AggressionLevel > 0.7f)
                         {
                             float unseen = time - info.PersonalLastSeenTime;
@@ -228,11 +224,8 @@ namespace AIRefactored.AI.Combat
                     score -= UnknownPenalty;
                 }
 
-                // Human-like adjustment: If current bot is panicking, reduce trust in unknowns
                 if (_cache.PanicHandler != null && _cache.PanicHandler.IsPanicking)
-                {
                     score -= 8f;
-                }
 
                 return score;
             }
@@ -243,9 +236,6 @@ namespace AIRefactored.AI.Combat
             }
         }
 
-        /// <summary>
-        /// Returns the EnemyInfo for a candidate player using internal EFT memory.
-        /// </summary>
         private EnemyInfo GetEnemyInfo(Player candidate)
         {
             try
@@ -279,9 +269,10 @@ namespace AIRefactored.AI.Combat
             }
         }
 
-        /// <summary>
-        /// Sets a new target and updates tactical memory/shot tracker.
-        /// </summary>
+        #endregion
+
+        #region Target Setter
+
         private void SetTarget(Player target, float time)
         {
             try
@@ -300,14 +291,12 @@ namespace AIRefactored.AI.Combat
                 }
 
                 if (_cache?.Movement != null &&
-                    !_cache.Bot.IsDead &&
-                    _cache.Bot.Mover != null &&
-                    !_cache.Bot.Mover.IsMoving)
+                    !_bot.IsDead &&
+                    _bot.Mover != null &&
+                    !_bot.Mover.IsMoving)
                 {
-                    if (BotNavHelper.TryGetSafeTarget(_cache.Bot, out var fallback) && IsVectorValid(fallback))
-                    {
-                        _cache.Bot.Mover.GoToPoint(fallback, true, 1.0f);
-                    }
+                    if (BotNavHelper.TryGetSafeTarget(_bot, out Vector3 fallback) && IsVectorValid(fallback))
+                        _bot.Mover.GoToPoint(fallback, true, 1.0f);
                 }
             }
             catch (Exception ex)
@@ -321,5 +310,7 @@ namespace AIRefactored.AI.Combat
             return !float.IsNaN(v.x) && !float.IsNaN(v.y) && !float.IsNaN(v.z) &&
                    Mathf.Abs(v.x) < 10000f && Mathf.Abs(v.y) < 10000f && Mathf.Abs(v.z) < 10000f;
         }
+
+        #endregion
     }
 }

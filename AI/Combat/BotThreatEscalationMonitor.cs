@@ -9,7 +9,6 @@
 namespace AIRefactored.AI.Combat
 {
     using System;
-    using System.Collections.Generic;
     using AIRefactored.AI.Core;
     using AIRefactored.AI.Navigation;
     using AIRefactored.AI.Optimization;
@@ -19,6 +18,11 @@ namespace AIRefactored.AI.Combat
     using EFT;
     using UnityEngine;
 
+    /// <summary>
+    /// Monitors panic duration, enemy presence, and squad casualties.
+    /// Escalates bot aggression and perception settings for realism under extreme threat.
+    /// All logic is bulletproof, headless-safe, and never disables itself or any bot.
+    /// </summary>
     public sealed class BotThreatEscalationMonitor
     {
         private const float CheckInterval = 1.0f;
@@ -31,6 +35,7 @@ namespace AIRefactored.AI.Combat
         private float _panicStartTime = -1f;
         private float _nextCheckTime = -1f;
         private bool _hasEscalated;
+        private float _lastVoiceTime = -1f;
 
         public void Initialize(BotOwner botOwner)
         {
@@ -44,8 +49,12 @@ namespace AIRefactored.AI.Combat
             _panicStartTime = -1f;
             _nextCheckTime = -1f;
             _hasEscalated = false;
+            _lastVoiceTime = -1f;
         }
 
+        /// <summary>
+        /// Call when a panic state begins; used for tracking escalation timing.
+        /// </summary>
         public void NotifyPanicTriggered()
         {
             if (_panicStartTime < 0f)
@@ -65,7 +74,7 @@ namespace AIRefactored.AI.Combat
 
                 if (ShouldEscalate(time))
                 {
-                    EscalateBot();
+                    EscalateBot(time);
                 }
             }
             catch (Exception ex)
@@ -156,7 +165,7 @@ namespace AIRefactored.AI.Combat
             }
         }
 
-        private void EscalateBot()
+        private void EscalateBot(float time)
         {
             try
             {
@@ -165,18 +174,22 @@ namespace AIRefactored.AI.Combat
                 string nickname = _bot.Profile?.Info?.Nickname ?? "Unknown";
                 Logger.LogDebug($"[AIRefactored-Escalation] Escalating behavior for bot '{nickname}'.");
 
+                // Re-tune AI settings (simulate adrenaline/fear boost)
                 AIOptimizationManager.Reset(_bot);
                 AIOptimizationManager.Apply(_bot);
 
                 ApplyEscalationTuning(_bot);
                 ApplyPersonalityTuning(_bot);
 
-                if (!FikaHeadlessDetector.IsHeadless && _bot.BotTalk != null)
+                // Squad comms: voice escalation, only if not spammed recently
+                if (!FikaHeadlessDetector.IsHeadless && _bot.BotTalk != null && time - _lastVoiceTime > 2.5f)
                 {
                     try { _bot.BotTalk.TrySay(EPhraseTrigger.OnFight); }
                     catch { }
+                    _lastVoiceTime = time;
                 }
 
+                // Move to cover/adrenaline run after escalation, if not already moving
                 Vector3 fallback = _bot.Position;
                 if (BotNavHelper.TryGetSafeTarget(_bot, out var navTarget) && IsVectorValid(navTarget))
                     fallback = navTarget;
@@ -193,6 +206,9 @@ namespace AIRefactored.AI.Combat
             }
         }
 
+        /// <summary>
+        /// Realistically boosts AI tuning to simulate adrenaline/fear-based improvement.
+        /// </summary>
         private void ApplyEscalationTuning(BotOwner bot)
         {
             try
@@ -202,19 +218,19 @@ namespace AIRefactored.AI.Combat
 
                 if (file.Shoot != null)
                 {
-                    file.Shoot.RECOIL_PER_METER = Mathf.Clamp(file.Shoot.RECOIL_PER_METER * 0.85f, 0.1f, 2.0f);
+                    file.Shoot.RECOIL_PER_METER = Mathf.Clamp(file.Shoot.RECOIL_PER_METER * 0.82f, 0.1f, 2.0f);
                 }
 
                 if (file.Mind != null)
                 {
-                    file.Mind.DIST_TO_FOUND_SQRT = Mathf.Clamp(file.Mind.DIST_TO_FOUND_SQRT * 1.2f, 200f, 800f);
-                    file.Mind.ENEMY_LOOK_AT_ME_ANG = Mathf.Clamp(file.Mind.ENEMY_LOOK_AT_ME_ANG * 0.75f, 5f, 45f);
-                    file.Mind.CHANCE_TO_RUN_CAUSE_DAMAGE_0_100 = Mathf.Clamp(file.Mind.CHANCE_TO_RUN_CAUSE_DAMAGE_0_100 + 20f, 0f, 100f);
+                    file.Mind.DIST_TO_FOUND_SQRT = Mathf.Clamp(file.Mind.DIST_TO_FOUND_SQRT * 1.23f, 200f, 900f);
+                    file.Mind.ENEMY_LOOK_AT_ME_ANG = Mathf.Clamp(file.Mind.ENEMY_LOOK_AT_ME_ANG * 0.7f, 4f, 45f);
+                    file.Mind.CHANCE_TO_RUN_CAUSE_DAMAGE_0_100 = Mathf.Clamp(file.Mind.CHANCE_TO_RUN_CAUSE_DAMAGE_0_100 + 28f, 0f, 100f);
                 }
 
                 if (file.Look != null)
                 {
-                    file.Look.MAX_VISION_GRASS_METERS = Mathf.Clamp(file.Look.MAX_VISION_GRASS_METERS + 5f, 5f, 40f);
+                    file.Look.MAX_VISION_GRASS_METERS = Mathf.Clamp(file.Look.MAX_VISION_GRASS_METERS + 7f, 5f, 42f);
                 }
 
                 Logger.LogDebug($"[AIRefactored-Tuning] Escalation tuning applied to '{bot.Profile?.Info?.Nickname ?? "Unknown"}'.");
@@ -225,6 +241,9 @@ namespace AIRefactored.AI.Combat
             }
         }
 
+        /// <summary>
+        /// Adjusts bot's personality for realism: more aggressive, less cautious, better comms, slightly more accurate.
+        /// </summary>
         private void ApplyPersonalityTuning(BotOwner bot)
         {
             try
@@ -238,10 +257,10 @@ namespace AIRefactored.AI.Combat
                     return;
 
                 profile.AggressionLevel = Mathf.Clamp01(profile.AggressionLevel + 0.25f);
-                profile.Caution = Mathf.Clamp01(profile.Caution - 0.25f);
-                profile.SuppressionSensitivity = Mathf.Clamp01(profile.SuppressionSensitivity * 0.75f);
-                profile.AccuracyUnderFire = Mathf.Clamp01(profile.AccuracyUnderFire + 0.2f);
-                profile.CommunicationLevel = Mathf.Clamp01(profile.CommunicationLevel + 0.2f);
+                profile.Caution = Mathf.Clamp01(profile.Caution - 0.23f);
+                profile.SuppressionSensitivity = Mathf.Clamp01(profile.SuppressionSensitivity * 0.7f);
+                profile.AccuracyUnderFire = Mathf.Clamp01(profile.AccuracyUnderFire + 0.22f);
+                profile.CommunicationLevel = Mathf.Clamp01(profile.CommunicationLevel + 0.22f);
 
                 Logger.LogDebug(
                     $"[AIRefactored-Tuning] Personality tuned for '{bot.Profile?.Info?.Nickname ?? "Unknown"}': " +

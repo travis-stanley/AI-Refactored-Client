@@ -3,7 +3,7 @@
 //   Licensed under the MIT License. See LICENSE in the repository root for more information.
 //
 //   THIS FILE IS SYSTEMATICALLY MANAGED.
-//   Please follow strict StyleCop, ReSharper, and AI-Refactored code standards for all modifications.
+//   All squad comms logic is strictly human-like: organic cadence, real proximity checks, context-aware. No global fallback ever.
 // </auto-generated>
 
 namespace AIRefactored.AI.Groups
@@ -91,7 +91,7 @@ namespace AIRefactored.AI.Groups
         /// </summary>
         public void SayFallback()
         {
-            TryTriggerVoice(EPhraseTrigger.GetBack, 0.5f);
+            TryTriggerVoice(EPhraseTrigger.GetBack, 0.53f); // More likely than default for realism
         }
 
         /// <summary>
@@ -99,7 +99,7 @@ namespace AIRefactored.AI.Groups
         /// </summary>
         public void SayFragOut()
         {
-            float chance = HasNearbyAlly() ? 0.8f : 0.0f;
+            float chance = HasNearbyAlly() ? 0.78f : 0.0f;
             TryTriggerVoice(EPhraseTrigger.OnEnemyGrenade, chance);
         }
 
@@ -108,7 +108,7 @@ namespace AIRefactored.AI.Groups
         /// </summary>
         public void SayHit()
         {
-            TryTriggerVoice(EPhraseTrigger.OnBeingHurt, 0.7f);
+            TryTriggerVoice(EPhraseTrigger.OnBeingHurt, UnityEngine.Random.Range(0.62f, 0.84f));
         }
 
         /// <summary>
@@ -116,22 +116,29 @@ namespace AIRefactored.AI.Groups
         /// </summary>
         public void SaySuppression()
         {
-            TryTriggerVoice(EPhraseTrigger.Suppress, 0.6f);
+            TryTriggerVoice(EPhraseTrigger.Suppress, 0.68f);
         }
 
         #endregion
 
         #region Private Methods
 
+        /// <summary>
+        /// Checks if this bot is eligible to speak a VO line.
+        /// </summary>
         private bool IsEligible()
         {
             return _bot != null &&
                    !_bot.IsDead &&
                    _bot.GetPlayer != null &&
                    _bot.GetPlayer.IsAI &&
-                   _bot.BotTalk != null;
+                   _bot.BotTalk != null &&
+                   !FikaHeadlessDetector.IsHeadless;
         }
 
+        /// <summary>
+        /// Tries to issue a VO line based on cooldown and random chance.
+        /// </summary>
         private void TryTriggerVoice(EPhraseTrigger phrase, float chance)
         {
             try
@@ -146,7 +153,8 @@ namespace AIRefactored.AI.Groups
                 if (chance < 1.0f && UnityEngine.Random.value > chance)
                     return;
 
-                _nextVoiceTime = now + (VoiceCooldown * UnityEngine.Random.Range(0.8f, 1.2f));
+                // Add slight randomization for realism
+                _nextVoiceTime = now + (VoiceCooldown * UnityEngine.Random.Range(0.85f, 1.17f));
                 _bot.BotTalk.TrySay(phrase);
             }
             catch
@@ -155,6 +163,9 @@ namespace AIRefactored.AI.Groups
             }
         }
 
+        /// <summary>
+        /// Checks for living squadmates within VO radius.
+        /// </summary>
         private bool HasNearbyAlly()
         {
             try

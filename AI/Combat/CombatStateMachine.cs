@@ -9,7 +9,6 @@
 namespace AIRefactored.AI.Combat
 {
     using System;
-    using System.Collections.Generic;
     using AIRefactored.AI.Combat.States;
     using AIRefactored.AI.Core;
     using AIRefactored.AI.Groups;
@@ -24,7 +23,7 @@ namespace AIRefactored.AI.Combat
 
     /// <summary>
     /// Drives bot combat state logic including fallback, engagement, patrol, and escalation.
-    /// All errors are locally contained; never disables or falls back to vanilla AI.
+    /// Bulletproof: All errors are locally isolated, never disables or triggers fallback AI.
     /// </summary>
     public sealed class CombatStateMachine
     {
@@ -51,6 +50,9 @@ namespace AIRefactored.AI.Combat
         public Vector3 LastKnownEnemyPos => _lastKnownEnemyPos;
         public float LastStateChangeTime => _lastStateChangeTime;
 
+        /// <summary>
+        /// Initializes all combat state handlers and context.
+        /// </summary>
         public void Initialize(BotComponentCache componentCache)
         {
             if (componentCache == null || componentCache.Bot == null)
@@ -81,6 +83,9 @@ namespace AIRefactored.AI.Combat
             }
         }
 
+        /// <summary>
+        /// True if bot is in any combat-related state.
+        /// </summary>
         public bool IsInCombatState()
         {
             if (!_initialized)
@@ -100,6 +105,9 @@ namespace AIRefactored.AI.Combat
             }
         }
 
+        /// <summary>
+        /// Notifies state machine that the bot was damaged and should evaluate fallback.
+        /// </summary>
         public void NotifyDamaged()
         {
             if (!_initialized) return;
@@ -120,6 +128,9 @@ namespace AIRefactored.AI.Combat
             }
         }
 
+        /// <summary>
+        /// Notifies state machine of a squad echo investigation trigger.
+        /// </summary>
         public void NotifyEchoInvestigate()
         {
             if (!_initialized) return;
@@ -139,6 +150,9 @@ namespace AIRefactored.AI.Combat
             }
         }
 
+        /// <summary>
+        /// Main tick for combat state machine; transitions between all sub-states.
+        /// </summary>
         public void Tick(float time)
         {
             if (!_initialized || _bot == null || _bot.IsDead || !EFTPlayerUtil.IsValid(_bot.GetPlayer))
@@ -217,6 +231,9 @@ namespace AIRefactored.AI.Combat
             }
         }
 
+        /// <summary>
+        /// Force a fallback state at the given position.
+        /// </summary>
         public void TriggerFallback(Vector3 fallbackPos)
         {
             if (!_initialized) return;
@@ -233,6 +250,9 @@ namespace AIRefactored.AI.Combat
             }
         }
 
+        /// <summary>
+        /// Triggers a pose evaluation for cover near the given position.
+        /// </summary>
         public void TrySetStanceFromNearbyCover(Vector3 pos)
         {
             try
@@ -296,6 +316,9 @@ namespace AIRefactored.AI.Combat
             }
         }
 
+        /// <summary>
+        /// Returns true if fallback should be cancelled (e.g., threat reappeared or squadmates close).
+        /// </summary>
         private bool TryReenterCombatState(float time)
         {
             try

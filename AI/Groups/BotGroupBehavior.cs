@@ -3,7 +3,7 @@
 //   Licensed under the MIT License. See LICENSE in the repository root for more information.
 //
 //   THIS FILE IS SYSTEMATICALLY MANAGED.
-//   Failures in AIRefactored logic must always trigger safe fallback to EFT base AI.
+//   All squad cohesion is human-like: realistic organic spacing, gentle repulsion, and flocking. No vanilla fallback unless nav is invalid.
 // </auto-generated>
 
 namespace AIRefactored.AI.Groups
@@ -17,10 +17,10 @@ namespace AIRefactored.AI.Groups
 
     /// <summary>
     /// Maintains passive squad cohesion when idle or patrolling:
-    /// • Repels bots that are too close
-    /// • Follows furthest idle mate if too far
-    /// • Adds subtle jitter to mimic organic movement
-    /// Bulletproof: All failures are isolated and fallback to vanilla AI for movement only.
+    /// • Repels bots that are too close (human-like personal space)
+    /// • Follows furthest idle mate if too far (flocking)
+    /// • Adds subtle deterministic jitter and drift for organic movement
+    /// Bulletproof: All failures isolated; fallback to vanilla AI movement only on total nav failure.
     /// </summary>
     public sealed class BotGroupBehavior
     {
@@ -28,12 +28,16 @@ namespace AIRefactored.AI.Groups
 
         private const float MaxSpacing = 7.5f;
         private const float MinSpacing = 2.25f;
-        private const float SpacingTolerance = 0.3f;
-        private const float RepulseStrength = 1.25f;
-        private const float JitterAmount = 0.1f;
+        private const float SpacingTolerance = 0.28f;
+        private const float RepulseStrength = 1.15f;
+        private const float JitterAmount = 0.11f;
+        private const float DriftSpeed = 0.13f;
+        private const float MaxSquadRadius = 12.0f; // Never attempt flocking if mate is beyond this (prevents unrealistic chase)
+        private const float MinTickMoveInterval = 0.37f;
 
         private static readonly float MinSpacingSqr = MinSpacing * MinSpacing;
         private static readonly float MaxSpacingSqr = MaxSpacing * MaxSpacing;
+        private static readonly float MaxSquadRadiusSqr = MaxSquadRadius * MaxSquadRadius;
 
         #endregion
 
@@ -45,6 +49,8 @@ namespace AIRefactored.AI.Groups
 
         private Vector3 _lastMoveTarget;
         private bool _hasLastTarget;
+        private float _lastMoveTime;
+        private Vector2 _personalDrift; // persistent for this bot instance
 
         #endregion
 
@@ -62,7 +68,6 @@ namespace AIRefactored.AI.Groups
         /// <summary>
         /// Initializes the group behavior system with the specified bot.
         /// </summary>
-        /// <param name="componentCache">Bot component cache.</param>
         public void Initialize(BotComponentCache componentCache)
         {
             try
@@ -77,6 +82,10 @@ namespace AIRefactored.AI.Groups
                 GroupSync = new BotGroupSyncCoordinator();
                 GroupSync.Initialize(_bot);
                 GroupSync.InjectLocalCache(componentCache);
+
+                // Persistent personal drift/jitter for human-like "favorite side"
+                _personalDrift = ComputePersonalDrift(_bot?.ProfileId);
+                _hasLastTarget = false;
             }
             catch (Exception ex)
             {
@@ -92,7 +101,6 @@ namespace AIRefactored.AI.Groups
         /// <summary>
         /// Executes squad cohesion and repulsion logic.
         /// </summary>
-        /// <param name="deltaTime">Frame delta time.</param>
         public void Tick(float deltaTime)
         {
             try
@@ -116,12 +124,14 @@ namespace AIRefactored.AI.Groups
                     Vector3 offset = mate.Position - myPos;
                     float distSqr = offset.sqrMagnitude;
 
+                    // Repel from mates that are too close, for smooth human-like spacing
                     if (distSqr < MinSpacingSqr)
                     {
                         float push = MinSpacing - Mathf.Sqrt(distSqr);
-                        repulsion += -offset.normalized * push;
+                        repulsion += -offset.normalized * push * 0.73f;
                     }
-                    else if (distSqr > MaxSpacingSqr && distSqr > maxDistSqr && mate.Memory.GoalEnemy == null)
+                    // Track the furthest mate for follow/flocking (only if within max squad radius and not chasing a threat)
+                    else if (distSqr > MaxSpacingSqr && distSqr > maxDistSqr && distSqr < MaxSquadRadiusSqr && mate.Memory.GoalEnemy == null)
                     {
                         maxDistSqr = distSqr;
                         furthest = mate.Position;
@@ -129,18 +139,22 @@ namespace AIRefactored.AI.Groups
                     }
                 }
 
-                if (repulsion.sqrMagnitude > 0.01f)
+                // If too close to someone, repel softly with drift/jitter for realism
+                if (repulsion.sqrMagnitude > 0.012f)
                 {
-                    IssueMove(myPos + repulsion.normalized * RepulseStrength);
+                    Vector3 repelTarget = SmoothDriftMove(myPos, repulsion.normalized * RepulseStrength, deltaTime);
+                    IssueMove(repelTarget);
                     return;
                 }
 
+                // If anyone is too far, gently steer toward them, with flocking drift
                 if (hasFurthest)
                 {
                     Vector3 dir = furthest - myPos;
-                    if (dir.sqrMagnitude > 0.001f)
+                    if (dir.sqrMagnitude > 0.0007f)
                     {
-                        IssueMove(myPos + dir.normalized * MaxSpacing);
+                        Vector3 flockTarget = SmoothDriftMove(myPos, dir.normalized * MaxSpacing * 0.65f, deltaTime);
+                        IssueMove(flockTarget);
                     }
                 }
             }
@@ -164,18 +178,38 @@ namespace AIRefactored.AI.Groups
                    _group.MembersCount > 1;
         }
 
+        /// <summary>
+        /// Adds gentle, deterministic delay and jitter for lifelike organic movement.
+        /// </summary>
+        private Vector3 SmoothDriftMove(Vector3 basePos, Vector3 direction, float deltaTime)
+        {
+            // Gentle drift smoothing for non-instant, realistic following, with persistent per-bot drift
+            Vector3 jitter = DeterministicJitter(_bot?.ProfileId, Time.frameCount) * JitterAmount;
+            jitter.y = 0f;
+
+            Vector3 drift = direction.normalized * DriftSpeed * Mathf.Clamp(deltaTime * 2f, 0.12f, 0.32f);
+            Vector3 personalBias = new Vector3(_personalDrift.x, 0f, _personalDrift.y) * 0.6f;
+
+            return basePos + drift + jitter + personalBias;
+        }
+
+        /// <summary>
+        /// Issues a move command with realism-maximized smoothing and target throttling.
+        /// </summary>
         private void IssueMove(Vector3 target)
         {
             try
             {
-                Vector3 jittered = target + UnityEngine.Random.insideUnitSphere * JitterAmount;
-                jittered.y = target.y;
+                Vector3 moveTarget = target + DeterministicJitter(_bot?.ProfileId, Time.frameCount * 2) * JitterAmount;
+                moveTarget.y = target.y;
 
-                if (!_hasLastTarget || Vector3.Distance(_lastMoveTarget, jittered) > SpacingTolerance)
+                float now = Time.time;
+                if (!_hasLastTarget || Vector3.Distance(_lastMoveTarget, moveTarget) > SpacingTolerance || now - _lastMoveTime > MinTickMoveInterval)
                 {
-                    _lastMoveTarget = jittered;
+                    _lastMoveTarget = moveTarget;
                     _hasLastTarget = true;
-                    BotMovementHelper.SmoothMoveTo(_bot, jittered, false);
+                    _lastMoveTime = now;
+                    BotMovementHelper.SmoothMoveTo(_bot, moveTarget, false);
                 }
             }
             catch (Exception ex)
@@ -185,6 +219,37 @@ namespace AIRefactored.AI.Groups
             }
         }
 
+        /// <summary>
+        /// Uses a deterministic, per-bot, per-frame jitter (not UnityEngine.Random) for multiplayer and replay safety.
+        /// </summary>
+        private static Vector3 DeterministicJitter(string profileId, int tick)
+        {
+            // Simple xorshift hash for deterministic, unique but 'random-like' jitter
+            int hash = (profileId?.GetHashCode() ?? 0) ^ (tick * 31) ^ 0x7F4A12B;
+            unchecked
+            {
+                hash = (hash ^ (hash >> 13)) * 0x5bd1e995;
+                float x = ((hash & 0xFFFF) / 32768f) - 1.0f;
+                float z = (((hash >> 16) & 0xFFFF) / 32768f) - 1.0f;
+                return new Vector3(x, 0f, z);
+            }
+        }
+
+        /// <summary>
+        /// Persistent personal drift—each bot subtly prefers a unique side of the formation, like real players.
+        /// </summary>
+        private static Vector2 ComputePersonalDrift(string profileId)
+        {
+            int seed = (profileId?.GetHashCode() ?? 0) ^ 0x181A91C;
+            var rand = new System.Random(seed);
+            float angle = (float)(rand.NextDouble() * Mathf.PI * 2.0);
+            float radius = 0.18f + (float)(rand.NextDouble() * 0.18f);
+            return new Vector2(Mathf.Cos(angle) * radius, Mathf.Sin(angle) * radius);
+        }
+
+        /// <summary>
+        /// Ultimate failsafe: static position reset if all else fails.
+        /// </summary>
         private void FallbackMoveStatic()
         {
             try

@@ -4,6 +4,8 @@
 //
 //   THIS FILE IS SYSTEMATICALLY MANAGED.
 //   Failures in AIRefactored logic must always trigger safe fallback to EFT base AI.
+//   Bulletproof: All failures are locally isolated; cannot break or cascade into other systems.
+//   Realism Pass: Personality-driven, smoothly-varying chaos; organic avoidance; no robotic movement artifacts.
 // </auto-generated>
 
 namespace AIRefactored.AI.Movement
@@ -30,6 +32,8 @@ namespace AIRefactored.AI.Movement
         private const float SquadOffsetScale = 0.75f;
         private const float VelocityFactor = 1.5f;
         private const float MinMagnitude = 0.0001f;
+        private const float ChaosLerpSpeed = 3.8f; // smooth chaos updates
+        private const float AvoidanceMissChance = 0.07f; // ~7% chance to "miss" avoidance, human error
 
         #endregion
 
@@ -37,7 +41,9 @@ namespace AIRefactored.AI.Movement
 
         private readonly BotOwner _bot;
         private readonly BotComponentCache _cache;
+
         private Vector3 _chaosOffset;
+        private Vector3 _targetChaosOffset;
         private float _nextChaosUpdate;
 
         #endregion
@@ -56,6 +62,9 @@ namespace AIRefactored.AI.Movement
 
             _bot = bot;
             _cache = cache;
+            _chaosOffset = Vector3.zero;
+            _targetChaosOffset = Vector3.zero;
+            _nextChaosUpdate = 0f;
         }
 
         #endregion
@@ -76,10 +85,12 @@ namespace AIRefactored.AI.Movement
             {
                 float now = Time.unscaledTime;
 
+                // Realistic: Chaos is smoothly interpolated over time, not abrupt
                 if (now >= _nextChaosUpdate)
                 {
-                    UpdateChaosOffset(now);
+                    UpdateTargetChaosOffset(now);
                 }
+                _chaosOffset = Vector3.Lerp(_chaosOffset, _targetChaosOffset, deltaTime * ChaosLerpSpeed);
 
                 Vector3 baseDir = (targetDir.sqrMagnitude > MinMagnitude) ? targetDir.normalized : Vector3.forward;
                 Vector3 adjusted = baseDir;
@@ -99,7 +110,7 @@ namespace AIRefactored.AI.Movement
                     }
                 }
 
-                // Avoidance
+                // Avoidance (now includes human error)
                 Vector3 avoidVector = ComputeAvoidance();
                 if (avoidVector.sqrMagnitude > MinMagnitude)
                 {
@@ -135,12 +146,16 @@ namespace AIRefactored.AI.Movement
 
         /// <summary>
         /// Computes avoidance vector from nearby squadmates.
+        /// Realism: 7% chance to "miss" avoidance (human error).
         /// </summary>
         /// <returns>Repulsion vector (may be zero).</returns>
         private Vector3 ComputeAvoidance()
         {
             try
             {
+                if (UnityEngine.Random.value < AvoidanceMissChance)
+                    return Vector3.zero;
+
                 BotsGroup group = _bot.BotsGroup;
                 if (group == null || group.MembersCount <= 1) return Vector3.zero;
 
@@ -171,18 +186,18 @@ namespace AIRefactored.AI.Movement
         }
 
         /// <summary>
-        /// Updates the chaos (random) movement offset based on bot personality.
-        /// More cautious bots have less chaos; bias is always forward.
+        /// Updates the target chaos (random) movement offset based on bot personality.
+        /// More cautious bots have less chaos; bias is always forward. Lerp to this value over time for smoothness.
         /// </summary>
         /// <param name="now">Current time (unscaled).</param>
-        private void UpdateChaosOffset(float now)
+        private void UpdateTargetChaosOffset(float now)
         {
             try
             {
                 AIRefactoredBotOwner owner = _cache.AIRefactoredBotOwner;
                 if (owner == null || owner.PersonalityProfile == null)
                 {
-                    _chaosOffset = Vector3.zero;
+                    _targetChaosOffset = Vector3.zero;
                     _nextChaosUpdate = now + ChaosInterval;
                     return;
                 }
@@ -193,12 +208,12 @@ namespace AIRefactored.AI.Movement
                 float x = UnityEngine.Random.Range(-chaosRange * 0.5f, chaosRange * 0.5f);
                 float z = UnityEngine.Random.Range(0.1f, chaosRange); // Always forward biased
 
-                _chaosOffset = new Vector3(x, 0f, z);
+                _targetChaosOffset = new Vector3(x, 0f, z);
                 _nextChaosUpdate = now + ChaosInterval;
             }
             catch
             {
-                _chaosOffset = Vector3.zero;
+                _targetChaosOffset = Vector3.zero;
                 _nextChaosUpdate = now + ChaosInterval;
             }
         }

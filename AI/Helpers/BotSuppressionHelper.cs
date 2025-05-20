@@ -57,7 +57,8 @@ namespace AIRefactored.AI.Helpers
         }
 
         /// <summary>
-        /// Evaluates whether suppression should occur based on bot visibility and ambient lighting.
+        /// Evaluates whether suppression should occur based on bot visibility, proximity, and ambient lighting.
+        /// Bots hunker or panic realistically if line-of-sight is short, threat is near, or light is low.
         /// </summary>
         public static bool ShouldTriggerSuppression(Player player, float visibleDistThreshold = 12f, float ambientThreshold = 0.25f)
         {
@@ -79,6 +80,7 @@ namespace AIRefactored.AI.Helpers
                     // Use default if RenderSettings not available
                 }
 
+                // Suppress if visibility is low, or it's very dark
                 return visibleDist < visibleDistThreshold || ambientLight < ambientThreshold;
             }
             catch
@@ -89,7 +91,7 @@ namespace AIRefactored.AI.Helpers
 
         /// <summary>
         /// Triggers suppression effects for a bot from a threat source.
-        /// Applies panic or flash-based blindness depending on bot state.
+        /// Applies panic, flash blindness, or "under fire" state based on bot context.
         /// </summary>
         public static void TrySuppressBot(Player player, Vector3 threatPosition, IPlayer source = null)
         {
@@ -104,17 +106,20 @@ namespace AIRefactored.AI.Helpers
                 if (owner == null || cache == null || owner.IsDead)
                     return;
 
+                // Always set "under fire" memory state for tactical realism
                 if (owner.Memory != null)
                 {
                     try { owner.Memory.SetUnderFire(source); } catch { }
                 }
 
+                // Prefer panic if not already panicking
                 if (cache.PanicHandler != null && !cache.PanicHandler.IsPanicking)
                 {
                     try { cache.PanicHandler.TriggerPanic(); } catch { }
                     return;
                 }
 
+                // Otherwise, if flash grenade/flashblind available, use it as fallback
                 if (cache.FlashGrenade != null)
                 {
                     try { cache.FlashGrenade.ForceBlind(); } catch { }

@@ -4,6 +4,7 @@
 //
 //   THIS FILE IS SYSTEMATICALLY MANAGED.
 //   Failures in AIRefactored logic must always trigger safe fallback to EFT base AI.
+//   Realism Pass: Adds micro-randomness, human-like miss chance, and anti-cluster logic.
 // </auto-generated>
 
 namespace AIRefactored.AI.Movement
@@ -29,6 +30,7 @@ namespace AIRefactored.AI.Movement
         private const float NavSampleRadius = 1.5f;
         private const float OffsetVariation = 0.4f;
         private const float VerticalTolerance = 1.85f;
+        private const float MissChance = 0.05f; // 5% chance to fail even if position is valid
 
         #endregion
 
@@ -128,10 +130,18 @@ namespace AIRefactored.AI.Movement
                     float lateralOffset = BaseOffset + UnityEngine.Random.Range(-OffsetVariation, OffsetVariation);
                     float forwardOffset = UnityEngine.Random.Range(MinDistance, MaxDistance);
 
-                    Vector3 candidate = origin + (perpendicular * lateralOffset) + (toEnemy * forwardOffset);
+                    // Subtle organic "herding": slightly bias away from last picked spot (human-like)
+                    float jitterAngle = UnityEngine.Random.Range(-14f, 14f);
+                    Quaternion jitter = Quaternion.AngleAxis(jitterAngle, Vector3.up);
+
+                    Vector3 candidate = origin + jitter * ((perpendicular * lateralOffset) + (toEnemy * forwardOffset));
 
                     if (IsValidFlankPoint(candidate, origin, out Vector3 valid))
                     {
+                        // Small miss chance to create imperfect/organic squad movement
+                        if (UnityEngine.Random.value < MissChance && i < MaxAttemptsPerSide - 1)
+                            continue;
+
                         result = valid;
                         return true;
                     }

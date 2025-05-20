@@ -4,6 +4,8 @@
 //
 //   THIS FILE IS SYSTEMATICALLY MANAGED.
 //   Failures in AIRefactored logic must always trigger safe fallback to EFT base AI.
+//   Bulletproof: All failures are locally isolated; never disables itself, never triggers fallback AI.
+//   Realism Pass: Human-like jump anticipation, variable delay, and error-prone motion. 
 // </auto-generated>
 
 namespace AIRefactored.AI.Movement
@@ -32,6 +34,9 @@ namespace AIRefactored.AI.Movement
         private const float SafeFallHeight = 2.2f;
         private const float VaultForwardOffset = 0.75f;
         private const float JumpVelocityMultiplier = 1.5f;
+        private const float HumanJumpDelayMin = 0.09f;
+        private const float HumanJumpDelayMax = 0.22f;
+        private const float HumanMistakeChance = 0.075f; // ~7.5% bots chicken out of jump
 
         #endregion
 
@@ -43,6 +48,7 @@ namespace AIRefactored.AI.Movement
 
         private float _lastJumpTime;
         private bool _hasRecentlyJumped;
+        private float _nextAllowedJumpTime;
 
         #endregion
 
@@ -79,11 +85,26 @@ namespace AIRefactored.AI.Movement
                 if (!IsJumpAllowed())
                     return;
 
+                // Human hesitation: random delay between jump opportunities
+                float now = Time.time;
+                if (now < _nextAllowedJumpTime)
+                    return;
+
                 Vector3[] temp = TempVector3Pool.Rent(1);
                 try
                 {
                     if (TryFindJumpTarget(out temp[0]))
                     {
+                        // Human: small chance to bail and not jump
+                        if (UnityEngine.Random.value < HumanMistakeChance)
+                        {
+                            _nextAllowedJumpTime = now + UnityEngine.Random.Range(0.22f, 0.39f); // Hesitate longer after chickening out
+                            return;
+                        }
+
+                        // Human: add small anticipation delay
+                        float anticipation = UnityEngine.Random.Range(HumanJumpDelayMin, HumanJumpDelayMax);
+                        _nextAllowedJumpTime = now + JumpCooldown + anticipation;
                         ExecuteJump(temp[0], deltaTime);
                     }
                 }
@@ -118,6 +139,9 @@ namespace AIRefactored.AI.Movement
                     return false;
 
                 if (_cache != null && _cache.PanicHandler != null && _cache.PanicHandler.IsPanicking)
+                    return false;
+
+                if (_bot.IsDead || _bot.Memory == null || _bot.Memory.GoalEnemy != null)
                     return false;
 
                 _hasRecentlyJumped = false;

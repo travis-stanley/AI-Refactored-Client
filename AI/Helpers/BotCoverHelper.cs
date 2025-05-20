@@ -27,6 +27,8 @@ namespace AIRefactored.AI.Helpers
 
         private const float MemoryDuration = 20f;
         private const float MaxValidDistanceSqr = 16f;
+        private const float MinCoverDistance = 1.25f;
+        private const float MaxCoverDistance = 15.0f;
 
         #endregion
 
@@ -115,22 +117,41 @@ namespace AIRefactored.AI.Helpers
             {
                 // EFT-native: look for CustomNavigationPoint MonoBehaviours nearby
                 Collider[] colliders = Physics.OverlapSphere(position, 4f);
+                float bestDist = float.MaxValue;
+                CustomNavigationPoint bestPoint = null;
                 for (int i = 0; i < colliders.Length; i++)
                 {
                     var point = colliders[i].GetComponent<CustomNavigationPoint>();
                     if (point == null || !IsValidPos(point.Position))
                         continue;
-                    if ((point.Position - position).sqrMagnitude > MaxValidDistanceSqr)
+                    float distSqr = (point.Position - position).sqrMagnitude;
+                    if (distSqr > MaxValidDistanceSqr || distSqr < MinCoverDistance * MinCoverDistance)
                         continue;
-                    if (IsProneCover(point))
+                    // Prefer the closest valid cover point
+                    if (distSqr < bestDist)
+                    {
+                        bestDist = distSqr;
+                        bestPoint = point;
+                    }
+                }
+
+                if (bestPoint != null)
+                {
+                    if (IsProneCover(bestPoint))
                     {
                         cache.PoseController.SetProne(true);
                         return;
                     }
-                    if (IsLowCover(point))
+                    if (IsLowCover(bestPoint))
                     {
                         cache.PoseController.SetCrouch(true);
                         return;
+                    }
+                    // Optionally, set standing if that's the only cover (rare in EFT, but possible)
+                    if (IsStandingCover(bestPoint))
+                    {
+                        cache.PoseController.SetCrouch(false);
+                        cache.PoseController.SetProne(false);
                     }
                 }
             }
@@ -144,6 +165,10 @@ namespace AIRefactored.AI.Helpers
 
         #region Cover Scoring
 
+        /// <summary>
+        /// Scores a cover point based on its protection type, distance from bot/threat, and exposure.
+        /// Higher scores = more desirable.
+        /// </summary>
         public static float Score(CustomNavigationPoint point, Vector3 botPos, Vector3 threatPos)
         {
             if (point == null) return 0f;
@@ -153,15 +178,20 @@ namespace AIRefactored.AI.Helpers
                 float distThreat = Vector3.Distance(threatPos, point.Position);
                 float angle = Vector3.Angle(threatPos - point.Position, botPos - point.Position);
 
-                float bonus = 0.5f;
-                if (IsProneCover(point)) bonus = 1.25f;
+                float bonus = 0.65f;
+                if (IsProneCover(point)) bonus = 1.20f;
                 else if (IsLowCover(point)) bonus = 1.0f;
                 else if (IsStandingCover(point)) bonus = 0.85f;
 
-                float threatFactor = Mathf.Clamp01(distThreat / 20f);
+                // Heavily prefer cover further from the threat and closer to the bot, but never right on the threat
+                float threatFactor = Mathf.Clamp01(distThreat / 22f);
                 float angleFactor = Mathf.Clamp01(angle / 180f);
+                float distPenalty = 1f + Mathf.Clamp(distBot * 0.16f, 0.8f, 2.8f);
 
-                return (bonus + threatFactor + angleFactor) / (1f + distBot * 0.15f);
+                // Penalize if the cover was recently used
+                float memoryPenalty = WasRecentlyUsed(point) ? 0.55f : 1f;
+
+                return ((bonus + threatFactor + angleFactor) * memoryPenalty) / distPenalty;
             }
             catch
             {
@@ -173,6 +203,9 @@ namespace AIRefactored.AI.Helpers
 
         #region Cover Validation
 
+        /// <summary>
+        /// Validates a cover point for tactical use. Must be free, unspotted, and optionally indoor.
+        /// </summary>
         public static bool IsValidCoverPoint(CustomNavigationPoint point, BotOwner bot, bool requireFree, bool preferIndoor)
         {
             try

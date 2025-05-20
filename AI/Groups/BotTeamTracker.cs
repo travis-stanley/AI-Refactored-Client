@@ -3,7 +3,8 @@
 //   Licensed under the MIT License. See LICENSE in the repository root for more information.
 //
 //   THIS FILE IS SYSTEMATICALLY MANAGED.
-//   Please follow strict StyleCop, ReSharper, and AI-Refactored code standards for all modifications.
+//   Bulletproof: All squad tracking logic is null-guarded, race-safe, and never propagates errors.
+//   Realism: Squads dynamically maintain only live, valid AI bots at all times.
 // </auto-generated>
 
 namespace AIRefactored.AI.Groups
@@ -34,6 +35,7 @@ namespace AIRefactored.AI.Groups
         public static void Clear()
         {
             Groups.Clear();
+            TempBuffer.Clear();
         }
 
         /// <summary>

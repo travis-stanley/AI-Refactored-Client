@@ -62,7 +62,6 @@ namespace AIRefactored.AI.Perception
         /// <summary>
         /// Initializes vision system for the given bot cache.
         /// </summary>
-        /// <param name="cache">Bot component cache.</param>
         public void Initialize(BotComponentCache cache)
         {
             try
@@ -129,18 +128,14 @@ namespace AIRefactored.AI.Perception
                 {
                     Player p = players[i];
                     if (!IsValidTarget(p))
-                    {
                         continue;
-                    }
 
                     Vector3 pos = EFTPlayerUtil.GetPosition(p);
                     float dist = Vector3.Distance(eye, pos);
                     float maxVis = MaxDetectionDistance * (1f - fogFactor);
 
                     if (dist > maxVis)
-                    {
                         continue;
-                    }
 
                     bool inCone = IsInViewCone(forward, eye, pos, viewCone);
                     bool close = dist <= AutoDetectRadius;
@@ -186,20 +181,14 @@ namespace AIRefactored.AI.Perception
             {
                 TrackedEnemyVisibility tracker = _cache.VisibilityTracker;
                 if (tracker == null || !tracker.HasEnoughData)
-                {
                     return;
-                }
 
                 float confidence = tracker.GetOverallConfidence();
                 if (_bot.Memory.IsUnderFire && UnityEngine.Random.value < SuppressionMissChance)
-                {
                     return;
-                }
 
                 if (confidence < BoneConfidenceThreshold)
-                {
                     return;
-                }
 
                 CommitEnemyIfAllowed(target, time);
             }
@@ -215,21 +204,15 @@ namespace AIRefactored.AI.Perception
             try
             {
                 if (!EFTPlayerUtil.IsEnemyOf(_bot, target))
-                {
                     return;
-                }
 
                 float delay = Mathf.Lerp(0.1f, 0.6f, 1f - _profile.ReactionTime);
                 if (time - _lastCommitTime < delay)
-                {
                     return;
-                }
 
                 IPlayer enemy = EFTPlayerUtil.AsSafeIPlayer(target);
                 if (enemy == null || _bot.BotsGroup == null)
-                {
                     return;
-                }
 
                 _bot.BotsGroup.AddEnemy(enemy, EBotEnemyCause.addPlayer);
                 _lastCommitTime = time;
@@ -308,24 +291,27 @@ namespace AIRefactored.AI.Perception
         private void ShareMemoryToSquad(Vector3 pos)
         {
             if (_cache.GroupSync == null)
-            {
                 return;
-            }
 
             List<BotComponentCache> teammates = TempListPool.Rent<BotComponentCache>();
             try
             {
                 IReadOnlyList<BotOwner> squad = _cache.GroupSync.GetTeammates();
+                if (squad == null || squad.Count == 0)
+                    return;
+
                 for (int i = 0, count = squad.Count; i < count; i++)
                 {
                     BotOwner mate = squad[i];
-                    if (mate != null && BotRegistry.TryGetCache(mate.ProfileId, out BotComponentCache comp))
-                    {
+                    if (mate == null)
+                        continue;
+                    BotComponentCache comp = BotComponentCacheRegistry.TryGetExisting(mate);
+                    if (comp != null)
                         teammates.Add(comp);
-                    }
                 }
 
-                _memory.ShareMemoryWith(teammates);
+                if (teammates.Count > 0)
+                    _memory.ShareMemoryWith(teammates);
             }
             finally
             {
@@ -341,9 +327,7 @@ namespace AIRefactored.AI.Perception
         {
             Transform t = EFTPlayerUtil.GetTransform(target);
             if (t == null)
-            {
                 return false;
-            }
 
             Vector3 to = t.position + EyeOffset;
             return !Physics.Linecast(from, to, out RaycastHit hit, AIRefactoredLayerMasks.LineOfSightMask)

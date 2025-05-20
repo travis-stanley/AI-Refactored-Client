@@ -3,8 +3,8 @@
 //   Licensed under the MIT License. See LICENSE in the repository root for more information.
 //
 //   THIS FILE IS SYSTEMATICALLY MANAGED.
-//   Failures in AIRefactored logic must always trigger safe fallback to EFT base AI, never break the stack.
 //   Please follow strict StyleCop, ReSharper, and AI-Refactored code standards for all modifications.
+//   All perception logic is bulletproof and strictly null-guarded.
 // </auto-generated>
 
 namespace AIRefactored.AI.Perception
@@ -88,7 +88,7 @@ namespace AIRefactored.AI.Perception
         {
             try
             {
-                if (_botOrigin == null)
+                if (_botOrigin == null || string.IsNullOrEmpty(boneName))
                     return false;
 
                 BoneInfo info;
@@ -122,6 +122,8 @@ namespace AIRefactored.AI.Perception
         {
             try
             {
+                if (_botOrigin == null || string.IsNullOrEmpty(boneName))
+                    return;
                 _visibleBones[boneName] = new BoneInfo(worldPosition, Time.time);
             }
             catch { }
@@ -134,6 +136,9 @@ namespace AIRefactored.AI.Perception
         {
             try
             {
+                if (_botOrigin == null || string.IsNullOrEmpty(boneName))
+                    return;
+
                 float now = Time.time;
                 float extra = Mathf.Clamp(motionBonus, 0f, 0.4f);
                 float penalty = Mathf.Lerp(0f, 0.2f, 1f - ambientOcclusionFactor);
@@ -164,12 +169,14 @@ namespace AIRefactored.AI.Perception
                     float decayed = Mathf.Max(0f, info.Timestamp - decayAmount);
                     _visibleBones[key] = new BoneInfo(info.Position, decayed);
                 }
+
+                // Only clean expired once after all keys processed
+                CleanExpired(now);
             }
             catch { }
             finally
             {
                 TempListPool.Return(keys);
-                CleanExpired(now);
             }
         }
 

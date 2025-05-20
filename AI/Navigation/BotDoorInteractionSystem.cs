@@ -4,6 +4,7 @@
 //
 //   THIS FILE IS SYSTEMATICALLY MANAGED.
 //   Failures in AIRefactored logic must always trigger safe fallback to EFT base AI.
+//   Realism Pass: Human-like hesitation, micro-randomization, and organic error handling.
 // </auto-generated>
 
 namespace AIRefactored.AI.Navigation
@@ -28,6 +29,9 @@ namespace AIRefactored.AI.Navigation
         private const float DoorCheckInterval = 0.4f;
         private const float DoorCastRange = 1.75f;
         private const float DoorCastRadius = 0.4f;
+        private const float HesitateChance = 0.11f; // 11% chance to hesitate before interacting
+        private const float HesitateMinDelay = 0.17f;
+        private const float HesitateMaxDelay = 0.52f;
 
         #endregion
 
@@ -39,6 +43,7 @@ namespace AIRefactored.AI.Navigation
         private float _lastDoorCheckTime;
         private float _nextRetryTime;
         private Door _currentDoor;
+        private float _hesitateUntil;
 
         #endregion
 
@@ -63,6 +68,7 @@ namespace AIRefactored.AI.Navigation
 
             _bot = bot;
             _log = Plugin.LoggerInstance;
+            _hesitateUntil = 0f;
         }
 
         #endregion
@@ -85,7 +91,6 @@ namespace AIRefactored.AI.Navigation
 
                 if (time < _lastDoorCheckTime + DoorCheckInterval)
                     return;
-
                 _lastDoorCheckTime = time;
 
                 Vector3 origin = _bot.Position + Vector3.up * 1.2f;
@@ -127,6 +132,19 @@ namespace AIRefactored.AI.Navigation
 
                 if (time < _nextRetryTime)
                 {
+                    MarkBlocked(door);
+                    return;
+                }
+
+                // Human-like hesitation: bots sometimes pause before interacting with a door, like a real player double-checking the risk.
+                if (_hesitateUntil > time)
+                {
+                    MarkBlocked(door);
+                    return;
+                }
+                if (UnityEngine.Random.value < HesitateChance)
+                {
+                    _hesitateUntil = time + UnityEngine.Random.Range(HesitateMinDelay, HesitateMaxDelay);
                     MarkBlocked(door);
                     return;
                 }
@@ -184,6 +202,7 @@ namespace AIRefactored.AI.Navigation
             IsBlockedByDoor = false;
             _nextRetryTime = 0f;
             _lastDoorCheckTime = 0f;
+            _hesitateUntil = 0f;
         }
 
         #endregion
@@ -197,6 +216,7 @@ namespace AIRefactored.AI.Navigation
         {
             _currentDoor = null;
             IsBlockedByDoor = false;
+            _hesitateUntil = 0f;
         }
 
         /// <summary>

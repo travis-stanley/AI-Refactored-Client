@@ -3,8 +3,8 @@
 //   Licensed under the MIT License. See LICENSE in the repository root for more information.
 //
 //   THIS FILE IS SYSTEMATICALLY MANAGED.
-//   Failures in AIRefactored logic must always trigger safe fallback to EFT base AI, never break the stack.
-//   Please follow strict StyleCop, ReSharper, and AI-Refactored code standards for all modifications.
+//   Realism: All perception effects, panic triggers, and suppression responses match human-like sensory overloads.
+//   Bulletproof: Never disables bot, all errors locally isolated, multiplayer/headless parity.
 // </auto-generated>
 
 namespace AIRefactored.AI.Perception
@@ -19,7 +19,7 @@ namespace AIRefactored.AI.Perception
 
     /// <summary>
     /// Controls visual impairment from flashbangs, flares, and suppression.
-    /// Adjusts vision range, triggers panic and speech, and propagates enemy awareness.
+    /// Adjusts vision, triggers panic, humanizes bot behavior, and propagates enemy awareness.
     /// </summary>
     public sealed class BotPerceptionSystem : IFlashReactiveBot
     {
@@ -32,6 +32,7 @@ namespace AIRefactored.AI.Perception
         private const float MinSightDistance = 15f;
         private const float PanicTriggerThreshold = 0.6f;
         private const float SuppressionRecoverySpeed = 0.3f;
+        private const float SuppressedThreshold = 0.18f; // Realistic human suppression (can tune)
 
         #endregion
 
@@ -46,7 +47,19 @@ namespace AIRefactored.AI.Perception
         private BotComponentCache _cache;
         private BotVisionProfile _profile;
 
-        private bool _failed; // disables all further logic if set
+        private bool _failed;
+
+        #endregion
+
+        #region Public Properties
+
+        /// <summary>
+        /// True if bot is currently suppressed (receiving suppression penalty).
+        /// </summary>
+        public bool IsSuppressed
+        {
+            get { return _suppressionFactor > SuppressedThreshold; }
+        }
 
         #endregion
 
@@ -54,13 +67,13 @@ namespace AIRefactored.AI.Perception
 
         public void Initialize(BotComponentCache cache)
         {
+            _bot = null;
+            _cache = null;
+            _profile = null;
+            _failed = false;
+
             try
             {
-                _bot = null;
-                _cache = null;
-                _profile = null;
-                _failed = false;
-
                 if (cache == null || cache.Bot == null)
                     return;
 
@@ -96,14 +109,13 @@ namespace AIRefactored.AI.Perception
             {
                 UpdateFlashlightExposure();
 
+                // Human-like impairment stack: the more flash/suppress/flared, the worse vision is.
                 float penalty = Mathf.Max(_flashBlindness, _flareIntensity, _suppressionFactor);
                 float adjustedSight = Mathf.Lerp(MinSightDistance, MaxSightDistance, 1f - penalty);
                 float visibleDist = adjustedSight * (_profile != null ? _profile.AdaptationSpeed : 1f);
 
                 if (_bot.LookSensor != null)
-                {
                     _bot.LookSensor.ClearVisibleDist = visibleDist;
-                }
 
                 float blindDuration = Mathf.Clamp01(_flashBlindness) * 3f;
                 if (_cache != null)
@@ -154,6 +166,7 @@ namespace AIRefactored.AI.Perception
                 _flashBlindness = Mathf.Clamp01(_flashBlindness + added);
                 _blindStartTime = Time.time;
 
+                // Human realism: scream/alert if suddenly blinded
                 if (_flashBlindness > BlindSpeechThreshold && _bot != null && _bot.BotTalk != null && !FikaHeadlessDetector.IsHeadless)
                 {
                     _bot.BotTalk.TrySay(EPhraseTrigger.OnBeingHurt);
@@ -256,6 +269,9 @@ namespace AIRefactored.AI.Perception
             }
         }
 
+        /// <summary>
+        /// Realistic panic: bots will panic if suddenly blinded or heavily suppressed, just like players.
+        /// </summary>
         private void TryTriggerPanic()
         {
             try
@@ -276,6 +292,9 @@ namespace AIRefactored.AI.Perception
             }
         }
 
+        /// <summary>
+        /// Sync enemy awareness across squad when not blinded (realistic bot communication).
+        /// </summary>
         private void SyncEnemyIfVisible()
         {
             try

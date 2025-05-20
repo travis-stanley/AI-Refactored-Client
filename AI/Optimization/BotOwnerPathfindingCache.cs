@@ -3,8 +3,8 @@
 //   Licensed under the MIT License. See LICENSE in the repository root for more information.
 //
 //   THIS FILE IS SYSTEMATICALLY MANAGED.
-//   Please follow strict StyleCop, ReSharper, and AI-Refactored code standards for all modifications.
-//   All pathfinding and cache logic is bulletproof and fully isolated. NavPointRegistry logic removed.
+//   All pathfinding and cache logic is bulletproof, fully isolated, and simulates real-player caution and behavior.
+//   NavPointRegistry logic removed. All navigation is NavMesh-based and influenced by tactical memory.
 // </auto-generated>
 
 namespace AIRefactored.AI.Optimization
@@ -22,9 +22,8 @@ namespace AIRefactored.AI.Optimization
 
     /// <summary>
     /// Caches NavMesh paths and fallback scoring for individual bots.
-    /// Optimizes retreat and navigation behaviors with smart path reuse and avoidance heuristics.
+    /// Optimizes retreat and navigation behaviors with smart path reuse, avoidance heuristics, and human-like caution.
     /// All failures are strictly isolated to the affected bot; all pools are always returned.
-    /// NavPointRegistry and custom navpoint logic removed.
     /// </summary>
     public sealed class BotOwnerPathfindingCache
     {
@@ -32,6 +31,8 @@ namespace AIRefactored.AI.Optimization
 
         private const float BlockCheckHeight = 1.2f;
         private const float BlockCheckMargin = 0.5f;
+        private const float PathStaleSeconds = 7.5f; // Subtle randomization, bots periodically reevaluate for realism
+        private const float RetryDelay = 1.2f;
 
         #endregion
 
@@ -41,7 +42,8 @@ namespace AIRefactored.AI.Optimization
 
         private readonly Dictionary<string, float> _coverWeights = new Dictionary<string, float>(64);
         private readonly Dictionary<string, List<Vector3>> _fallbackCache = new Dictionary<string, List<Vector3>>(64);
-        private readonly Dictionary<string, List<Vector3>> _pathCache = new Dictionary<string, List<Vector3>>(64);
+        private readonly Dictionary<string, (List<Vector3> path, float time)> _pathCache = new Dictionary<string, (List<Vector3>, float)>(64);
+        private readonly Dictionary<string, float> _lastPathAttempt = new Dictionary<string, float>(64);
 
         private BotTacticalMemory _tacticalMemory;
 
@@ -115,6 +117,11 @@ namespace AIRefactored.AI.Optimization
             _tacticalMemory = memory;
         }
 
+        /// <summary>
+        /// Returns a path from the cache or computes a fresh NavMesh path if expired or invalid.
+        /// Adds slight randomization to cache expiry for realism, simulating player hesitation/reevaluation.
+        /// Avoids recently-cleared danger zones using tactical memory.
+        /// </summary>
         public List<Vector3> GetOptimizedPath(BotOwner bot, Vector3 destination)
         {
             List<Vector3> fallback = null;
@@ -136,13 +143,29 @@ namespace AIRefactored.AI.Optimization
                 }
 
                 string key = id + "_" + destination.ToString("F2");
-                if (_pathCache.TryGetValue(key, out List<Vector3> cached) && !IsPathBlocked(cached))
+                float now = Time.time;
+
+                // Path cache staleness & retry logic for realism
+                if (_pathCache.TryGetValue(key, out var cached)
+                    && !IsPathBlocked(cached.path)
+                    && !IsPathInClearedZone(cached.path)
+                    && (now - cached.time) < (PathStaleSeconds + UnityEngine.Random.Range(-0.7f, 0.8f)))
                 {
-                    return cached;
+                    return cached.path;
                 }
 
+                // If a recent failed attempt exists, delay re-attempting to avoid spam
+                if (_lastPathAttempt.TryGetValue(key, out float lastTry) && now - lastTry < RetryDelay)
+                {
+                    fallback = TempListPool.Rent<Vector3>();
+                    fallback.Add(destination);
+                    return fallback;
+                }
+                _lastPathAttempt[key] = now;
+
                 List<Vector3> path = BuildNavPath(bot.Position, destination);
-                _pathCache[key] = path;
+                _pathCache[key] = (path, now);
+
                 return path;
             }
             catch (Exception ex)
@@ -163,6 +186,10 @@ namespace AIRefactored.AI.Optimization
             return path.Count >= 2 && !IsPathBlocked(path);
         }
 
+        /// <summary>
+        /// Computes a fallback (retreat) path in the opposite direction from a threat, always NavMesh-based,
+        /// and avoids recently-cleared tactical zones and obstacles.
+        /// </summary>
         public List<Vector3> GetFallbackPath(BotOwner bot, Vector3 threatDirection)
         {
             List<Vector3> empty = null;
@@ -179,13 +206,18 @@ namespace AIRefactored.AI.Optimization
                 Vector3 fallbackTarget = origin - threatDirection.normalized * 8f;
                 string key = id + "_fb_" + HashVecDir(origin, threatDirection);
 
-                if (_fallbackCache.TryGetValue(key, out List<Vector3> cached) && cached.Count > 1 && !IsPathBlocked(cached))
+                if (_fallbackCache.TryGetValue(key, out List<Vector3> cached)
+                    && cached.Count > 1
+                    && !IsPathBlocked(cached)
+                    && !IsPathInClearedZone(cached))
                 {
                     return cached;
                 }
 
                 // Only fallback to direct NavMesh path (custom navpoint/zone logic removed)
                 List<Vector3> fallback = BuildNavPath(origin, fallbackTarget);
+
+                // Avoids danger zones and cleared routes (simulates real player caution)
                 if (fallback.Count > 1 && !IsPathBlocked(fallback) && !IsPathInClearedZone(fallback))
                 {
                     _fallbackCache[key] = fallback;
@@ -234,6 +266,10 @@ namespace AIRefactored.AI.Optimization
             return hashVec.x.ToString("F1") + "_" + hashVec.y.ToString("F1") + "_" + hashVec.z.ToString("F1");
         }
 
+        /// <summary>
+        /// Always uses the NavMesh for pathfinding; never uses direct line-only unless mesh fails.
+        /// All failures are isolated; never allocates outside pool.
+        /// </summary>
         private List<Vector3> BuildNavPath(Vector3 origin, Vector3 target)
         {
             NavMeshPath navPath = TempNavMeshPathPool.Rent();
@@ -241,7 +277,7 @@ namespace AIRefactored.AI.Optimization
             {
                 bool valid = NavMesh.CalculatePath(origin, target, NavMesh.AllAreas, navPath);
 
-                if (valid && navPath.status == NavMeshPathStatus.PathComplete)
+                if (valid && navPath.status == NavMeshPathStatus.PathComplete && navPath.corners.Length > 1)
                 {
                     List<Vector3> result = TempListPool.Rent<Vector3>();
                     result.AddRange(navPath.corners);
@@ -249,6 +285,7 @@ namespace AIRefactored.AI.Optimization
                     return result;
                 }
 
+                // fallback is straight-line, never single-point unless truly blocked
                 List<Vector3> fallback = TempListPool.Rent<Vector3>();
                 fallback.Add(origin);
                 fallback.Add(target);
@@ -266,14 +303,15 @@ namespace AIRefactored.AI.Optimization
             }
         }
 
+        /// <summary>
+        /// Returns true if the first segment of the path is blocked by a door or obstacle.
+        /// </summary>
         private bool IsPathBlocked(List<Vector3> path)
         {
             try
             {
                 if (path == null || path.Count < 2)
-                {
                     return false;
-                }
 
                 Vector3 origin = path[0] + Vector3.up * BlockCheckHeight;
                 Vector3 target = path[1];
@@ -291,7 +329,6 @@ namespace AIRefactored.AI.Optimization
                         return blocked;
                     }
                 }
-
                 return false;
             }
             catch
@@ -300,14 +337,15 @@ namespace AIRefactored.AI.Optimization
             }
         }
 
+        /// <summary>
+        /// Returns true if any segment of the path passes through a recently-cleared or danger zone.
+        /// </summary>
         private bool IsPathInClearedZone(List<Vector3> path)
         {
             try
             {
                 if (_tacticalMemory == null || path == null || path.Count == 0)
-                {
                     return false;
-                }
 
                 for (int i = 0; i < path.Count; i++)
                 {
@@ -316,7 +354,6 @@ namespace AIRefactored.AI.Optimization
                         return true;
                     }
                 }
-
                 return false;
             }
             catch

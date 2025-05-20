@@ -188,9 +188,10 @@ namespace AIRefactored.AI.Missions.Subsystems
         {
             try
             {
-                return _questRoute.Count > 0
-                    ? _questRoute.Dequeue()
-                    : _bot.Position;
+                if (_questRoute.Count > 0)
+                    return _questRoute.Dequeue();
+                PopulateQuestRoute();
+                return _questRoute.Count > 0 ? _questRoute.Dequeue() : _bot.Position;
             }
             catch (Exception ex)
             {
@@ -214,21 +215,26 @@ namespace AIRefactored.AI.Missions.Subsystems
                     return dir.sqrMagnitude > 1f && Vector3.Dot(dir.normalized, forward) > 0.25f;
                 };
 
+                // Pool-safe list from HotspotRegistry
                 List<HotspotRegistry.Hotspot> candidates = HotspotRegistry.QueryNearby(origin, 100f, directionFilter);
                 if (candidates == null || candidates.Count == 0)
                     return;
 
                 int desired = UnityEngine.Random.Range(2, 4);
-                HashSet<int> used = TempHashSetPool.Rent<int>();
-
-                while (_questRoute.Count < desired && used.Count < candidates.Count)
+                var used = TempHashSetPool.Rent<int>();
+                try
                 {
-                    int index = UnityEngine.Random.Range(0, candidates.Count);
-                    if (used.Add(index))
-                        _questRoute.Enqueue(candidates[index].Position);
+                    while (_questRoute.Count < desired && used.Count < candidates.Count)
+                    {
+                        int index = UnityEngine.Random.Range(0, candidates.Count);
+                        if (used.Add(index))
+                            _questRoute.Enqueue(candidates[index].Position);
+                    }
                 }
-
-                TempHashSetPool.Return(used);
+                finally
+                {
+                    TempHashSetPool.Return(used);
+                }
             }
             catch (Exception ex)
             {

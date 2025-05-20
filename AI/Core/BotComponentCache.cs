@@ -99,6 +99,9 @@ namespace AIRefactored.AI.Core
         public HearingDamageComponent HearingDamage { get; private set; }
         public TrackedEnemyVisibility VisibilityTracker { get; set; }
 
+        public BotPerceptionSystem Perception { get; private set; }
+        public BotCoverRetreatPlanner CoverPlanner { get; private set; }
+
         public BotGroupSyncCoordinator GroupSync => GroupBehavior?.GroupSync;
         public BotPanicHandler Panic => PanicHandler;
 
@@ -164,6 +167,8 @@ namespace AIRefactored.AI.Core
             TryInit(() => SquadHealer = bot.HealAnotherTarget ?? new BotHealAnotherTarget(bot), "SquadHealer");
             TryInit(() => HealReceiver = bot.HealingBySomebody ?? new BotHealingBySomebody(bot), "HealReceiver");
             TryInit(() => ThreatSelector = new BotThreatSelector(this), "ThreatSelector");
+            TryInit(() => { Perception = new BotPerceptionSystem(); Perception.Initialize(this); }, "Perception");
+            TryInit(() => { CoverPlanner = new BotCoverRetreatPlanner(bot, Pathing); }, "CoverPlanner");
         }
 
         private void TryInit(Action action, string name)

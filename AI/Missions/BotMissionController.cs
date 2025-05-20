@@ -76,9 +76,7 @@ namespace AIRefactored.AI.Missions
             try
             {
                 if (!EFTPlayerUtil.IsValidBotOwner(bot) || cache == null)
-                {
                     throw new ArgumentException("[BotMissionController] Invalid bot or cache reference.");
-                }
 
                 _bot = bot;
                 _cache = cache;
@@ -140,14 +138,10 @@ namespace AIRefactored.AI.Missions
                 IHealthController health = player?.HealthController;
 
                 if (_bot.IsDead || player == null || health == null || !health.IsAlive)
-                {
                     return;
-                }
 
                 if (_cache.IsBlinded || (_cache.PanicHandler != null && _cache.PanicHandler.IsPanicking))
-                {
                     return;
-                }
 
                 _evaluator.UpdateStuckCheck(time);
 
@@ -176,14 +170,10 @@ namespace AIRefactored.AI.Missions
                 if (!_evaluator.IsGroupAligned() && _missionType != MissionType.Fight)
                 {
                     if (_groupWaitStart < 0f)
-                    {
                         _groupWaitStart = time;
-                    }
 
                     if (time - _groupWaitStart < GroupRejoinTimeout)
-                    {
                         return;
-                    }
 
                     _groupWaitStart = -1f;
                 }

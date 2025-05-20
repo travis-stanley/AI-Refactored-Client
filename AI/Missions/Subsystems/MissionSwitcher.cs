@@ -4,6 +4,8 @@
 //
 //   THIS FILE IS SYSTEMATICALLY MANAGED.
 //   Failures in AIRefactored logic must always trigger safe fallback to EFT base AI.
+//   Bulletproof: All failures are locally isolated; never disables itself, never cascades to other systems.
+//   Realism Pass: All mission switching logic closely mirrors authentic human priorities and squad behaviors.
 // </auto-generated>
 
 using MissionType = AIRefactored.AI.Missions.BotMissionController.MissionType;
@@ -104,13 +106,12 @@ namespace AIRefactored.AI.Missions.Subsystems
                 {
                     currentMission = MissionType.Fight;
                     _lastSwitchTime = time;
-                    if (switchToFight != null)
-                        switchToFight();
+                    switchToFight?.Invoke();
                     _log.LogDebug("[MissionSwitcher] " + name + " escalating → Fight (under fire + aggressive)");
                     return;
                 }
 
-                // Opportunistically switch to Loot if mission bias allows it
+                // Switch to Loot if personality prefers and loot is present
                 if (currentMission == MissionType.Quest &&
                     _profile.PreferredMission == MissionBias.Loot &&
                     _lootDecision != null &&
@@ -131,8 +132,7 @@ namespace AIRefactored.AI.Missions.Subsystems
                 {
                     currentMission = MissionType.Quest;
                     _lastSwitchTime = time;
-                    if (resumeQuesting != null)
-                        resumeQuesting();
+                    resumeQuesting?.Invoke();
                     _log.LogDebug("[MissionSwitcher] " + name + " falling back → Quest (squad separation)");
                 }
             }

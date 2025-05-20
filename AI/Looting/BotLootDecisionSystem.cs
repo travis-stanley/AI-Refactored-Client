@@ -73,6 +73,7 @@ namespace AIRefactored.AI.Looting
 
         /// <summary>
         /// Determines whether the bot is eligible to begin looting.
+        /// Considers panic, squad enemies, nearby threats, and loot value.
         /// </summary>
         public bool ShouldLootNow()
         {
@@ -93,6 +94,23 @@ namespace AIRefactored.AI.Looting
                 if (_bot.EnemiesController != null && _bot.EnemiesController.EnemyInfos != null && _bot.EnemiesController.EnemyInfos.Count > 0)
                     return false;
 
+                // Never loot if squadmates are fighting in immediate proximity
+                if (_bot.BotsGroup != null && _bot.BotsGroup.MembersCount > 1)
+                {
+                    for (int i = 0; i < _bot.BotsGroup.MembersCount; i++)
+                    {
+                        var mate = _bot.BotsGroup.Member(i);
+                        if (mate == null || mate == _bot || mate.IsDead) continue;
+                        if (mate.Memory != null && mate.Memory.GoalEnemy != null)
+                        {
+                            float dist = Vector3.Distance(_bot.Position, mate.Position);
+                            if (dist < 16f)
+                                return false;
+                        }
+                    }
+                }
+
+                // Only loot if a valuable container is nearby
                 return _cache.LootScanner != null && _cache.LootScanner.TotalLootValue >= HighValueThreshold;
             }
             catch (Exception ex)
@@ -104,7 +122,7 @@ namespace AIRefactored.AI.Looting
         }
 
         /// <summary>
-        /// Finds the best nearby loot container destination based on value.
+        /// Finds the best nearby loot container destination based on value, proximity, and recent usage.
         /// </summary>
         public Vector3 GetLootDestination()
         {
@@ -126,12 +144,18 @@ namespace AIRefactored.AI.Looting
                     if (container == null || !container.enabled || container.transform == null)
                         continue;
 
+                    string lootId = container.Id;
+                    if (string.IsNullOrWhiteSpace(lootId) || WasRecentlyLooted(lootId))
+                        continue;
+
                     Vector3 pos = container.transform.position;
-                    if ((_bot.Position - pos).sqrMagnitude > (MaxLootDistance * MaxLootDistance))
+                    float dist = Vector3.Distance(_bot.Position, pos);
+                    if (dist > MaxLootDistance)
                         continue;
 
                     float value = EstimateValue(container);
-                    if (value > bestValue)
+                    // Favor closer containers if values are tied (simulates human impatience)
+                    if (value > bestValue || (Mathf.Approximately(value, bestValue) && dist < Vector3.Distance(_bot.Position, bestPoint)))
                     {
                         bestValue = value;
                         bestPoint = pos;
@@ -170,7 +194,7 @@ namespace AIRefactored.AI.Looting
         }
 
         /// <summary>
-        /// Checks if a container was recently looted.
+        /// Checks if a container was recently looted by this bot.
         /// </summary>
         public bool WasRecentlyLooted(string lootId)
         {

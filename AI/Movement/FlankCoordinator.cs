@@ -4,6 +4,7 @@
 //
 //   THIS FILE IS SYSTEMATICALLY MANAGED.
 //   Failures in AIRefactored logic must always trigger safe fallback to EFT base AI.
+//   Realism Pass: Groupthink, anti-cluster, rare human error, and personality-driven flank bias.
 // </auto-generated>
 
 namespace AIRefactored.AI.Movement
@@ -28,6 +29,7 @@ namespace AIRefactored.AI.Movement
         private const float SuppressionBiasWeight = 0.3f;
         private const float SquadSpreadBias = 0.15f;
         private const float RecentlyUsedFlankCooldown = 6f;
+        private const float IndecisionChance = 0.055f; // ~5.5% chance to hesitate
 
         #endregion
 
@@ -51,48 +53,68 @@ namespace AIRefactored.AI.Movement
                 if (!EFTPlayerUtil.IsValidBotOwner(bot) || cache == null || bot.Memory == null || bot.Memory.GoalEnemy == null)
                     return FlankPositionPlanner.Side.Left;
 
+                // Human error: rare indecision or groupthink (follow herd)
+                if (UnityEngine.Random.value < IndecisionChance)
+                {
+                    float now = Time.time;
+                    if (_lastLeftUseTime > _lastRightUseTime)
+                    {
+                        _lastLeftUseTime = now;
+                        return FlankPositionPlanner.Side.Left;
+                    }
+                    _lastRightUseTime = now;
+                    return FlankPositionPlanner.Side.Right;
+                }
+
                 Vector3 botPos = bot.Position;
                 Vector3 enemyPos = bot.Memory.GoalEnemy.CurrPosition;
                 BifacialTransform enemyTransform = bot.Memory.GoalEnemy.Person?.Transform;
                 if (enemyTransform == null)
                     return FlankPositionPlanner.Side.Left;
 
-                float now = Time.time;
+                float nowT = Time.time;
                 Vector3 enemyForward = enemyTransform.forward;
                 Vector3 toBot = botPos - enemyPos;
 
                 float angle = Vector3.SignedAngle(enemyForward, toBot, Vector3.up);
-                float squadBias = GetSquadBias(bot, enemyPos);
-                float suppressionBias = GetSuppressionBias(cache);
 
-                float leftCooldown = now - _lastLeftUseTime;
-                float rightCooldown = now - _lastRightUseTime;
+                // Personality: Aggressive bots more likely to pick wide, risky angles
+                AIRefactoredBotOwner owner = cache.AIRefactoredBotOwner;
+                float aggression = owner?.PersonalityProfile?.AggressionLevel ?? 0.5f;
+                float caution = owner?.PersonalityProfile?.Caution ?? 0.5f;
+
+                float squadBias = GetSquadBias(bot, enemyPos, aggression);
+                float suppressionBias = GetSuppressionBias(cache, caution);
+
+                float leftCooldown = nowT - _lastLeftUseTime;
+                float rightCooldown = nowT - _lastRightUseTime;
 
                 float leftScore = 0f;
                 float rightScore = 0f;
 
                 // Favor left if bot is on enemy's right, right if on enemy's left
                 if (angle > FlankAngleThreshold)
-                    leftScore += 1f;
+                    leftScore += 1f + aggression * 0.33f;
                 else if (angle < -FlankAngleThreshold)
-                    rightScore += 1f;
+                    rightScore += 1f + aggression * 0.33f;
 
                 leftScore += squadBias + suppressionBias;
                 rightScore -= squadBias;
-                rightScore += suppressionBias;
+                rightScore += suppressionBias * (1f - caution);
 
+                // Herding: if too many bots used one side, discourage it more
                 if (leftCooldown < RecentlyUsedFlankCooldown)
-                    leftScore -= 0.75f;
+                    leftScore -= 0.82f - aggression * 0.2f;
                 if (rightCooldown < RecentlyUsedFlankCooldown)
-                    rightScore -= 0.75f;
+                    rightScore -= 0.82f - aggression * 0.2f;
 
                 // Select best, always update use time for state sync
                 if (leftScore >= rightScore)
                 {
-                    _lastLeftUseTime = now;
+                    _lastLeftUseTime = nowT;
                     return FlankPositionPlanner.Side.Left;
                 }
-                _lastRightUseTime = now;
+                _lastRightUseTime = nowT;
                 return FlankPositionPlanner.Side.Right;
             }
             catch
@@ -107,14 +129,14 @@ namespace AIRefactored.AI.Movement
         #region Helpers
 
         /// <summary>
-        /// Adds a suppression bias to side selection if bot is under suppression.
+        /// Adds a suppression bias to side selection if bot is under suppression. Cautious bots bias more conservatively.
         /// </summary>
-        private static float GetSuppressionBias(BotComponentCache cache)
+        private static float GetSuppressionBias(BotComponentCache cache, float caution)
         {
             try
             {
                 return cache != null && cache.Suppression != null && cache.Suppression.IsSuppressed()
-                    ? SuppressionBiasWeight
+                    ? SuppressionBiasWeight * (1f + caution)
                     : 0f;
             }
             catch
@@ -125,8 +147,9 @@ namespace AIRefactored.AI.Movement
 
         /// <summary>
         /// Biases away from squadmates to avoid clustering; spreads squad across angles.
+        /// Aggressive bots bias harder to open angles, cautious to safety.
         /// </summary>
-        private static float GetSquadBias(BotOwner bot, Vector3 enemyPosition)
+        private static float GetSquadBias(BotOwner bot, Vector3 enemyPosition, float aggression)
         {
             try
             {
@@ -154,7 +177,9 @@ namespace AIRefactored.AI.Movement
                     }
                 }
 
-                return contributors > 0 ? (dotSum / contributors) * SquadSpreadBias : 0f;
+                // Aggression exaggerates bias away from cluster, caution softens it.
+                float scale = SquadSpreadBias * (1.0f + aggression * 0.55f);
+                return contributors > 0 ? (dotSum / contributors) * scale : 0f;
             }
             catch
             {

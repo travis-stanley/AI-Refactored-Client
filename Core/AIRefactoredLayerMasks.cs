@@ -152,6 +152,10 @@ namespace AIRefactored.Core
         public static readonly LayerMask NavPointScanMask = SafeGetMask(
             "Terrain", "HighPolyCollider", "LowPolyCollider", "InvisibleCollider", "Door");
 
+        // NEW: Used for tactical cover/occlusion raycasts (e.g. BotCoverRetreatPlanner, combat AI)
+        public static readonly LayerMask CoverColliderMask = SafeGetMask(
+            "HighPolyCollider", "LowPolyCollider", "DoorHighPolyCollider", "DoorLowPolyCollider", "Terrain");
+
         #endregion
 
         #region Utilities

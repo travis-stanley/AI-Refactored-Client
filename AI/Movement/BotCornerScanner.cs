@@ -4,6 +4,8 @@
 //
 //   THIS FILE IS SYSTEMATICALLY MANAGED.
 //   Failures in AIRefactored logic must always trigger safe fallback to EFT base AI.
+//   Bulletproof: All failures are locally isolated, never disables itself, never triggers fallback AI.
+//   Realism Pass: Human-like micro-hesitation, imperfect scanning, and personality-based peeking logic.
 // </auto-generated>
 
 namespace AIRefactored.AI.Movement
@@ -34,6 +36,9 @@ namespace AIRefactored.AI.Movement
         private const float WallAngleThreshold = 0.7f;
         private const float WallCheckHeight = 1.5f;
         private const float NavSampleTolerance = 0.65f;
+        private const float MinPauseJitter = 0.1f;
+        private const float MaxPauseJitter = 0.38f;
+        private const float FalsePositiveChance = 0.045f; // Human error: ~4.5%
 
         #endregion
 
@@ -127,6 +132,13 @@ namespace AIRefactored.AI.Movement
                 if (time < _pauseUntil || time < _prepCrouchUntil)
                     return;
 
+                // Human error: sometimes miss a scan
+                if (UnityEngine.Random.value < FalsePositiveChance)
+                {
+                    ResetLean(time);
+                    return;
+                }
+
                 if (IsApproachingEdge())
                 {
                     PauseMovement(time);
@@ -172,6 +184,9 @@ namespace AIRefactored.AI.Movement
                     {
                         if (!NavMesh.SamplePosition(rayDown, out NavMeshHit hit, 1.0f, NavMesh.AllAreas) || hit.distance > NavSampleTolerance)
                         {
+                            // Human error: sometimes misjudge
+                            if (UnityEngine.Random.value < (FalsePositiveChance * 1.5f))
+                                continue;
                             return true;
                         }
                     }
@@ -195,6 +210,10 @@ namespace AIRefactored.AI.Movement
                 Vector3 right = _bot.Transform.right;
                 Vector3 left = -right;
                 float dist = BaseWallCheckDistance + ((1f - _profile.Caution) * 0.5f);
+
+                // Human: sometimes misreads and does nothing
+                if (UnityEngine.Random.value < FalsePositiveChance)
+                    return false;
 
                 if (CheckWall(origin, left, dist))
                     return TriggerLeanOrCrouch(BotTiltType.left, time);
@@ -228,13 +247,14 @@ namespace AIRefactored.AI.Movement
         }
 
         /// <summary>
-        /// Triggers a crouch (first) or a lean (second) depending on pose/state.
+        /// Triggers a crouch (first) or a lean (second) depending on pose/state and personality.
         /// </summary>
         private bool TriggerLeanOrCrouch(BotTiltType side, float time)
         {
             try
             {
-                if (!_isCrouching && AttemptCrouch(time))
+                // Cautious bots crouch before leaning, aggressive bots lean fast
+                if (_profile.Caution > 0.54f && !_isCrouching && AttemptCrouch(time))
                 {
                     _isCrouching = true;
                     return true;
@@ -280,13 +300,14 @@ namespace AIRefactored.AI.Movement
         #region Helpers
 
         /// <summary>
-        /// Pauses movement for a context-dependent duration.
+        /// Pauses movement for a context-dependent duration with jitter for realism.
         /// </summary>
         private void PauseMovement(float time)
         {
             try
             {
-                float duration = BasePauseDuration * Mathf.Clamp(0.5f + _profile.Caution, 0.35f, 2.0f);
+                float humanJitter = UnityEngine.Random.Range(MinPauseJitter, MaxPauseJitter);
+                float duration = (BasePauseDuration + humanJitter) * Mathf.Clamp(0.5f + _profile.Caution, 0.35f, 2.0f);
                 _bot.Mover.MovementPause(duration);
                 _pauseUntil = time + duration;
             }

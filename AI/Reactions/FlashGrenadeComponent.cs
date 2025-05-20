@@ -20,6 +20,7 @@ namespace AIRefactored.AI.Reactions
     /// <summary>
     /// Detects sudden bright light exposure from flashlights or flashbangs.
     /// Simulates temporary blindness and optionally applies suppression/fallback.
+    /// Bulletproof: all logic is fully null-guarded, local, and never breaks the AI stack.
     /// </summary>
     public sealed class FlashGrenadeComponent
     {
@@ -167,6 +168,9 @@ namespace AIRefactored.AI.Reactions
                 }
 
                 IReadOnlyList<Vector3> sources = FlashlightRegistry.GetLastKnownFlashlightPositions();
+                if (sources == null || sources.Count == 0)
+                    return;
+
                 for (int i = 0, count = sources.Count; i < count; i++)
                 {
                     if (FlashlightRegistry.IsExposingBot(head, out Light light) && light != null)
@@ -205,7 +209,7 @@ namespace AIRefactored.AI.Reactions
             {
                 if (_cache != null && _cache.PanicHandler != null)
                 {
-                    composure = _cache.PanicHandler.GetComposureLevel();
+                    composure = Mathf.Clamp01(_cache.PanicHandler.GetComposureLevel());
                 }
             }
             catch
@@ -213,6 +217,7 @@ namespace AIRefactored.AI.Reactions
                 composure = 1f;
             }
 
+            // Higher composure = faster recovery.
             return Mathf.Lerp(2f, BaseBlindDuration, 1f - composure);
         }
 

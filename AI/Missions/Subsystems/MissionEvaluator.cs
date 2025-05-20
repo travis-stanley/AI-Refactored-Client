@@ -14,7 +14,6 @@ namespace AIRefactored.AI.Missions.Subsystems
     using AIRefactored.AI.Groups;
     using AIRefactored.AI.Helpers;
     using AIRefactored.AI.Navigation;
-    using AIRefactored.AI.Optimization;
     using AIRefactored.Core;
     using AIRefactored.Pools;
     using AIRefactored.Runtime;
@@ -79,6 +78,9 @@ namespace AIRefactored.AI.Missions.Subsystems
 
         #region Mission Checks
 
+        /// <summary>
+        /// Returns true if enough squadmates are nearby for the bot to consider group actions.
+        /// </summary>
         public bool IsGroupAligned()
         {
             try
@@ -111,11 +113,14 @@ namespace AIRefactored.AI.Missions.Subsystems
             }
         }
 
+        /// <summary>
+        /// Returns true if the bot's loot threshold and profile suggest early extraction is best.
+        /// </summary>
         public bool ShouldExtractEarly()
         {
             try
             {
-                if (_profile.IsFrenzied || _profile.Caution <= 0.6f)
+                if (_profile == null || _profile.IsFrenzied || _profile.Caution <= 0.6f)
                     return false;
 
                 Player player = _bot.GetPlayer;
@@ -145,6 +150,9 @@ namespace AIRefactored.AI.Missions.Subsystems
             }
         }
 
+        /// <summary>
+        /// Attempts to extract the bot by sending it to the nearest valid extraction point.
+        /// </summary>
         public void TryExtract()
         {
             try
@@ -187,6 +195,9 @@ namespace AIRefactored.AI.Missions.Subsystems
 
         #region Stuck Detection
 
+        /// <summary>
+        /// Detects if the bot is stuck and triggers a short, human-like fallback movement if so.
+        /// </summary>
         public void UpdateStuckCheck(float time)
         {
             try
@@ -236,13 +247,16 @@ namespace AIRefactored.AI.Missions.Subsystems
 
         #region Utilities
 
+        /// <summary>
+        /// Plays an in-character phrase if not in headless mode and bot is valid.
+        /// </summary>
         private void Say(EPhraseTrigger phrase)
         {
             try
             {
-                if (!FikaHeadlessDetector.IsHeadless && _bot?.GetPlayer != null)
+                if (!FikaHeadlessDetector.IsHeadless && _bot?.BotTalk != null)
                 {
-                    _bot.GetPlayer.Say(phrase);
+                    _bot.BotTalk.TrySay(phrase);
                 }
             }
             catch (Exception ex)

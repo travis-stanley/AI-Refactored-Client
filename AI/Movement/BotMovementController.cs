@@ -5,6 +5,7 @@
 //   THIS FILE IS SYSTEMATICALLY MANAGED.
 //   All movement, combat lean, and strafe logic is bulletproof and layered over EFT BotMover.
 //   No fallback logic. No invalid targets. Smooth, human-like movement only.
+//   Realism Pass: Adds subtle randomness, human hesitation, personality-driven leaning, and micro-scanning.
 // </auto-generated>
 
 namespace AIRefactored.AI.Movement
@@ -33,6 +34,10 @@ namespace AIRefactored.AI.Movement
         private bool _strafeRight;
         private bool _lootingMode;
 
+        private float _lastRandomPause;
+        private float _nextRandomPause;
+        private float _leanMissChance = 0.07f;
+
         public void Initialize(BotComponentCache cache)
         {
             if (cache == null || cache.Bot == null)
@@ -45,6 +50,8 @@ namespace AIRefactored.AI.Movement
             _nextLeanTime = Time.time;
             _strafeTimer = 0.5f;
             _lootingMode = false;
+            _lastRandomPause = Time.time;
+            _nextRandomPause = Time.time + UnityEngine.Random.Range(1.5f, 3.8f);
         }
 
         public void Tick(float deltaTime)
@@ -91,11 +98,20 @@ namespace AIRefactored.AI.Movement
                     return;
 
                 var pathController = mover._pathController;
-                if (pathController == null)
+                if (pathController == null || !pathController.HavePath)
                     return;
 
-                Vector3 point = pathController.LastTargetPoint(1.0f);
-                if (point == Vector3.zero)
+                Vector3 point;
+                try
+                {
+                    point = pathController.LastTargetPoint(1.0f);
+                }
+                catch
+                {
+                    return;
+                }
+
+                if (point == Vector3.zero || float.IsNaN(point.x) || float.IsInfinity(point.x))
                     return;
 
                 Vector3 dir = point - _bot.Position;
@@ -104,8 +120,17 @@ namespace AIRefactored.AI.Movement
                 if (dir.sqrMagnitude < 0.01f)
                     return;
 
+                if (Time.time < _lastRandomPause + 0.13f && UnityEngine.Random.value < 0.09f)
+                    return;
+
                 Quaternion desired = Quaternion.LookRotation(dir);
                 _bot.Transform.rotation = Quaternion.Lerp(_bot.Transform.rotation, desired, 6f * deltaTime);
+
+                if (Time.time > _nextRandomPause)
+                {
+                    _lastRandomPause = Time.time;
+                    _nextRandomPause = Time.time + UnityEngine.Random.Range(1.2f, 3.7f);
+                }
             }
             catch (Exception ex)
             {
@@ -137,15 +162,15 @@ namespace AIRefactored.AI.Movement
                 if (_strafeTimer <= 0f)
                 {
                     _strafeRight = UnityEngine.Random.value > 0.5f;
-                    _strafeTimer = UnityEngine.Random.Range(0.5f, 1.0f);
+                    _strafeTimer = UnityEngine.Random.Range(0.42f, 1.11f);
                 }
 
                 Vector3 offset = _strafeRight ? _bot.Transform.right : -_bot.Transform.right;
-                Vector3 randomJitter = UnityEngine.Random.insideUnitSphere * 0.05f;
-                Vector3 strafeVector = (offset + randomJitter).normalized * 1.1f * deltaTime;
+                Vector3 randomJitter = UnityEngine.Random.insideUnitSphere * 0.08f;
+                Vector3 strafeVector = (offset + randomJitter).normalized * 1.08f * deltaTime;
 
                 Vector3 navDir = mover.NormDirCurPoint;
-                Vector3 blend = Vector3.Lerp(navDir, strafeVector, 0.25f).normalized * 1.0f * deltaTime;
+                Vector3 blend = Vector3.Lerp(navDir, strafeVector, UnityEngine.Random.Range(0.21f, 0.32f)).normalized * 1.0f * deltaTime;
 
                 var player = _bot.GetPlayer;
                 if (player?.CharacterController != null)
@@ -161,6 +186,7 @@ namespace AIRefactored.AI.Movement
 
         /// <summary>
         /// Simulates human-like peeking or leaning around corners or obstacles, with cover/obstacle logic.
+        /// Personality: Cautious bots lean less; aggressive bots lean more. Adds rare "miss" for realism.
         /// </summary>
         private void TryLean()
         {
@@ -178,6 +204,13 @@ namespace AIRefactored.AI.Movement
 
                 if (_bot.Transform == null)
                     return;
+
+                float leanMiss = (_cache.AIRefactoredBotOwner?.PersonalityProfile?.Caution ?? 0.5f) * _leanMissChance;
+                if (UnityEngine.Random.value < leanMiss)
+                {
+                    _nextLeanTime = Time.time + UnityEngine.Random.Range(1.1f, 2.3f);
+                    return;
+                }
 
                 Vector3 head = _bot.Position + Vector3.up * 1.5f;
                 bool wallLeft = Physics.Raycast(head, -_bot.Transform.right, 1.5f, AIRefactoredLayerMasks.VisionBlockers);
@@ -198,7 +231,7 @@ namespace AIRefactored.AI.Movement
                     _cache.Tilt.Set(dot > 0f ? BotTiltType.right : BotTiltType.left);
                 }
 
-                _nextLeanTime = Time.time + 1.5f;
+                _nextLeanTime = Time.time + UnityEngine.Random.Range(1.1f, 2.3f);
             }
             catch (Exception ex)
             {
@@ -216,7 +249,7 @@ namespace AIRefactored.AI.Movement
                 if (_bot == null || _bot.Transform == null)
                     return;
 
-                if (Time.time - _lastScanTime < 1.25f)
+                if (Time.time - _lastScanTime < UnityEngine.Random.Range(1.15f, 1.65f))
                     return;
 
                 Vector3 head = _bot.Position + Vector3.up * 1.5f;

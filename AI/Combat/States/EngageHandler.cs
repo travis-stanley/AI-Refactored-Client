@@ -24,10 +24,13 @@ namespace AIRefactored.AI.Combat.States
     public sealed class EngageHandler
     {
         private const float DefaultEngagementRange = 25.0f;
+        private const float MinAdvanceDelay = 0.05f;
+        private const float MaxAdvanceDelay = 0.15f;
 
         private readonly BotOwner _bot;
         private readonly BotComponentCache _cache;
         private readonly float _fallbackRange;
+        private float _lastAdvanceTime;
 
         public EngageHandler(BotComponentCache cache)
         {
@@ -36,8 +39,12 @@ namespace AIRefactored.AI.Combat.States
 
             float profileRange = cache?.PersonalityProfile?.EngagementRange ?? 0f;
             _fallbackRange = profileRange > 0f ? profileRange : DefaultEngagementRange;
+            _lastAdvanceTime = -1000f;
         }
 
+        /// <summary>
+        /// True if bot should be in engage (advance) mode.
+        /// </summary>
         public bool ShallUseNow()
         {
             if (!IsCombatCapable())
@@ -54,6 +61,9 @@ namespace AIRefactored.AI.Combat.States
             }
         }
 
+        /// <summary>
+        /// True if bot should attack instead of advancing.
+        /// </summary>
         public bool CanAttack()
         {
             if (!IsCombatCapable())
@@ -70,6 +80,9 @@ namespace AIRefactored.AI.Combat.States
             }
         }
 
+        /// <summary>
+        /// Main tick. Moves toward last known enemy, using human-like hesitation and offset if needed.
+        /// </summary>
         public void Tick()
         {
             if (!IsCombatCapable())
@@ -80,8 +93,16 @@ namespace AIRefactored.AI.Combat.States
                 if (!TryGetLastKnownEnemy(out Vector3 enemyPos))
                     return;
 
+                // Human-like hesitation: bots sometimes pause, wait, or stagger movement to mimic uncertainty
+                float now = Time.time;
+                float humanDelay = UnityEngine.Random.Range(MinAdvanceDelay, MaxAdvanceDelay);
+                if (now - _lastAdvanceTime < humanDelay)
+                    return;
+                _lastAdvanceTime = now;
+
                 Vector3 destination = enemyPos;
-                // SquadPath is a tactical offset, never replaces vanilla nav
+
+                // Use squad offset for realism if possible
                 if (_cache.SquadPath != null)
                 {
                     try
@@ -94,17 +115,20 @@ namespace AIRefactored.AI.Combat.States
                     }
                 }
 
-                // Only valid positions allowed
+                // Add slight randomization to path for "wiggle"/hesitation effect (avoids straight-line movement)
+                destination += UnityEngine.Random.insideUnitSphere * 0.25f;
+                destination.y = enemyPos.y;
+
                 if (!IsValid(destination))
                     return;
 
-                // Use vanilla EFT-compatible movement helper, never custom fallback
+                // Vanilla EFT-compatible movement, never custom fallback
                 if (_bot.Mover != null)
                 {
                     try
                     {
                         BotMovementHelper.SmoothMoveTo(_bot, destination);
-                        _cache.Combat?.TrySetStanceFromNearbyCover(destination);
+                        _cache.PoseController?.TrySetStanceFromNearbyCover(destination);
                     }
                     catch (Exception ex)
                     {
@@ -122,6 +146,9 @@ namespace AIRefactored.AI.Combat.States
             }
         }
 
+        /// <summary>
+        /// True if bot is actively advancing to engage.
+        /// </summary>
         public bool IsEngaging()
         {
             if (!IsCombatCapable())
@@ -143,12 +170,18 @@ namespace AIRefactored.AI.Combat.States
             return _cache != null && _bot != null && _cache.Combat != null;
         }
 
+        /// <summary>
+        /// Last known enemy position (from Combat memory). Bulletproof and realistic.
+        /// </summary>
         private bool TryGetLastKnownEnemy(out Vector3 result)
         {
             result = _cache?.Combat?.LastKnownEnemyPos ?? Vector3.zero;
             return IsValid(result) && result != Vector3.zero;
         }
 
+        /// <summary>
+        /// Is bot close enough to attack, or still needs to advance.
+        /// </summary>
         private bool IsWithinRange(Vector3 enemyPos)
         {
             return Vector3.SqrMagnitude(_bot.Position - enemyPos) < (_fallbackRange * _fallbackRange);

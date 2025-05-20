@@ -3,8 +3,8 @@
 //   Licensed under the MIT License. See LICENSE in the repository root for more information.
 //
 //   THIS FILE IS SYSTEMATICALLY MANAGED.
-//   Failures in AIRefactored logic must always trigger safe fallback to EFT base AI.
-//   All navigation and cover checks use only EFT vanilla logic. No custom navpoint registry is used.
+//   Failures in AIRefactored logic never break the stack. All navigation and cover checks use only EFT vanilla logic.
+//   All pose controls are realism-tuned: instant stance, smooth transitions, and human-like animation logic.
 // </auto-generated>
 
 namespace AIRefactored.AI.Movement
@@ -19,7 +19,7 @@ namespace AIRefactored.AI.Movement
 
     /// <summary>
     /// Controls bot stance transitions (standing, crouching, prone) based on combat, panic, suppression, and cover logic.
-    /// Smoothly blends transitions for realistic animation flow. All failures are locally isolated; never propagate.
+    /// Smoothly blends transitions for realistic animation flow. Failures are locally isolated.
     /// </summary>
     public sealed class BotPoseController
     {
@@ -83,14 +83,8 @@ namespace AIRefactored.AI.Movement
         /// </summary>
         public float GetPoseLevel()
         {
-            try
-            {
-                return _movement.PoseLevel;
-            }
-            catch
-            {
-                return StandPose;
-            }
+            try { return _movement.PoseLevel; }
+            catch { return StandPose; }
         }
 
         /// <summary>
@@ -108,6 +102,22 @@ namespace AIRefactored.AI.Movement
         public void UnlockPose()
         {
             _isLocked = false;
+        }
+
+        /// <summary>
+        /// Directly set the bot to crouch pose, realism-correct and network-safe.
+        /// </summary>
+        public void Crouch()
+        {
+            SetCrouch(false);
+        }
+
+        /// <summary>
+        /// Directly set the bot to standing pose, realism-correct and network-safe.
+        /// </summary>
+        public void Stand()
+        {
+            SetStand();
         }
 
         /// <summary>
@@ -192,7 +202,7 @@ namespace AIRefactored.AI.Movement
                         }
                     }
                 }
-                // If no valid cover found, do nothing. (Do not call fallback, since stance logic is not critical.)
+                // If no valid cover found, do nothing.
             }
             catch
             {

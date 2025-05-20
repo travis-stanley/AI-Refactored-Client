@@ -81,20 +81,30 @@ namespace AIRefactored.AI.Combat
                 float weaponRange = EstimateWeaponRange(weapon);
                 float maxRange = Mathf.Min(profile.EngagementRange, weaponRange, 200f);
 
+                // Human-like hesitation, bots sometimes stutter-advance if outside preferred range
                 if (distance > maxRange)
                 {
-                    if (profile.ChaosFactor > 0f && Random.value < profile.ChaosFactor)
+                    if (profile.ChaosFactor > 0f && Random.value < profile.ChaosFactor * 0.6f)
                     {
                         if (BotNavHelper.TryGetSafeTarget(_bot, out var advance) && IsVectorValid(advance))
-                            BotMovementHelper.SmoothMoveTo(_bot, advance, false, profile.Cohesion);
+                        {
+                            // Occasionally wait, then advance—do not always immediately move
+                            if (Random.value < 0.6f)
+                                BotMovementHelper.SmoothMoveTo(_bot, advance, false, profile.Cohesion);
+                        }
                     }
                     return;
                 }
 
+                // Micro-delays between decisions (to simulate human reaction time)
                 if (time < _nextDecisionTime)
                     return;
 
-                _nextDecisionTime = time + GetBurstCadence(profile);
+                float composure = _cache.PanicHandler?.GetComposureLevel() ?? 1f;
+                float suppressionPenalty = _cache.Suppression?.IsSuppressed() == true ? (1f - composure) : 0f;
+                float microFlinch = Random.Range(-0.07f, 0.15f) * suppressionPenalty;
+
+                _nextDecisionTime = time + GetBurstCadence(profile) + microFlinch;
 
                 if (weaponInfo.BulletCount <= 0 && !weaponInfo.CheckHaveAmmoForReload())
                 {
@@ -103,12 +113,17 @@ namespace AIRefactored.AI.Combat
                     return;
                 }
 
-                ApplyFireMode(weaponInfo, weapon, distance, profile, settings);
+                ApplyFireMode(weaponInfo, weapon, distance, profile, settings, suppressionPenalty);
 
                 if (weaponManager.IsWeaponReady)
                 {
-                    shootData.Shoot();
-                    _cache.LastShotTracker?.RegisterShot(target.ProfileId);
+                    // Realistic: bots may occasionally "choke" firing if suppressed/panicked
+                    if (suppressionPenalty < 0.65f || Random.value > (0.16f + suppressionPenalty * 0.7f))
+                    {
+                        shootData.Shoot();
+                        _cache.LastShotTracker?.RegisterShot(target.ProfileId);
+                    }
+                    // else: bot hesitated and did not shoot this frame (simulate hesitation/panic)
                 }
             }
             catch (Exception ex)
@@ -149,6 +164,7 @@ namespace AIRefactored.AI.Combat
                 if (memory != Vector3.zero)
                     return memory;
 
+                // Idle "look around" for realism: bots scan surroundings when no clear target
                 if (time - _lastLookAroundTime > 1.5f)
                 {
                     float yaw = Random.Range(-75f, 75f);
@@ -168,10 +184,24 @@ namespace AIRefactored.AI.Combat
             }
         }
 
-        private void ApplyFireMode(BotWeaponInfo info, Weapon weapon, float distance, BotPersonalityProfile profile, GClass592 settings)
+        private void ApplyFireMode(
+            BotWeaponInfo info,
+            Weapon weapon,
+            float distance,
+            BotPersonalityProfile profile,
+            GClass592 settings,
+            float suppressionPenalty)
         {
             try
             {
+                // Realistic: bots sometimes switch to less optimal mode under heavy suppression or chaos
+                if (suppressionPenalty > 0.45f && Random.value < 0.34f)
+                {
+                    SetFireMode(info, Weapon.EFireMode.single);
+                    ApplyScatter(settings, true, profile, suppressionPenalty);
+                    return;
+                }
+
                 if (distance <= 40f)
                 {
                     SetFireMode(info, Weapon.EFireMode.fullauto);
@@ -180,12 +210,12 @@ namespace AIRefactored.AI.Combat
                 else if (distance <= 100f && SupportsFireMode(weapon, Weapon.EFireMode.burst))
                 {
                     SetFireMode(info, Weapon.EFireMode.burst);
-                    ApplyScatter(settings, true, profile);
+                    ApplyScatter(settings, true, profile, suppressionPenalty);
                 }
                 else
                 {
                     SetFireMode(info, Weapon.EFireMode.single);
-                    ApplyScatter(settings, true, profile);
+                    ApplyScatter(settings, true, profile, suppressionPenalty);
                 }
             }
             catch (Exception ex)
@@ -236,13 +266,22 @@ namespace AIRefactored.AI.Combat
             }
         }
 
-        private void ApplyScatter(GClass592 settings, bool underFire, BotPersonalityProfile profile)
+        private void ApplyScatter(
+            GClass592 settings,
+            bool underFire,
+            BotPersonalityProfile profile,
+            float suppressionPenalty)
         {
             try
             {
                 float composure = _cache.PanicHandler?.GetComposureLevel() ?? 1f;
                 float scatterPenalty = underFire ? (1f - profile.AccuracyUnderFire) * (1f - composure) : 0f;
+                scatterPenalty += suppressionPenalty * 0.55f;
                 float scatterFactor = 1.1f + scatterPenalty;
+
+                // Realistic: sometimes overcompensate under stress
+                if (suppressionPenalty > 0.2f && Random.value < 0.35f)
+                    scatterFactor *= Random.Range(1.08f, 1.2f);
 
                 settings.ScatteringPerMeter = Mathf.Clamp(settings.ScatteringPerMeter * scatterFactor, 0.6f, 3.5f);
             }

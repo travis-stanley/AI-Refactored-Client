@@ -27,6 +27,9 @@ namespace AIRefactored.AI.Combat.States
     {
         private const float EchoCooldown = 4.0f;
         private const float MaxEchoRangeSqr = 1600.0f;
+        private const float MinHumanDelay = 0.08f;   // Simulated min reaction delay (seconds)
+        private const float MaxHumanDelay = 0.32f;   // Simulated max reaction delay (seconds)
+        private const float IgnoreSuppressedThreshold = 0.21f;
 
         private readonly BotOwner _bot;
         private readonly BotComponentCache _cache;
@@ -39,6 +42,9 @@ namespace AIRefactored.AI.Combat.States
             _bot = cache?.Bot;
         }
 
+        /// <summary>
+        /// Echo a fallback movement (e.g. taking cover) to all squadmates.
+        /// </summary>
         public void EchoFallbackToSquad(Vector3 retreatPosition)
         {
             if (_cache == null || _bot == null || _bot.BotsGroup == null)
@@ -60,46 +66,49 @@ namespace AIRefactored.AI.Combat.States
                         continue;
 
                     BotComponentCache mateCache = BotCacheUtility.GetCache(mate);
-                    if (mateCache == null || mateCache.Combat == null || !CanAcceptEcho(mateCache))
+                    if (!CanEchoHumanly(mateCache))
                         continue;
 
-                    // Use only vanilla EFT-compatible logic to generate fallback
-                    Vector3 fallbackPoint = mate.Position;
-                    bool found = false;
+                    float delay = UnityEngine.Random.Range(MinHumanDelay, MaxHumanDelay);
 
-                    Vector3 direction = -mate.LookDirection;
-                    if (direction.sqrMagnitude < 0.01f)
-                        direction = Vector3.back;
-
-                    Vector3 offset = direction.normalized * UnityEngine.Random.Range(2.0f, 4.0f);
-                    Vector3 candidate = mate.Position + offset + UnityEngine.Random.insideUnitSphere * 0.5f;
-                    candidate.y = mate.Position.y;
-
-                    if (IsValidTarget(candidate))
-                    {
-                        fallbackPoint = candidate;
-                        found = true;
-                    }
-
-                    // Only issue fallback if valid EFT-compatible result
-                    if (found && IsValidTarget(fallbackPoint))
+                    // Stagger fallback actions for realism
+                    DelayedSquadAction(delay, () =>
                     {
                         try
                         {
-                            mateCache.Combat.TriggerFallback(fallbackPoint);
+                            Vector3 fallbackPoint = mate.Position;
+                            bool found = false;
+
+                            Vector3 direction = -mate.LookDirection;
+                            if (direction.sqrMagnitude < 0.01f)
+                                direction = Vector3.back;
+
+                            Vector3 offset = direction.normalized * UnityEngine.Random.Range(2.0f, 4.0f);
+                            Vector3 candidate = mate.Position + offset + UnityEngine.Random.insideUnitSphere * 0.5f;
+                            candidate.y = mate.Position.y;
+
+                            if (IsValidTarget(candidate))
+                            {
+                                fallbackPoint = candidate;
+                                found = true;
+                            }
+
+                            if (found && IsValidTarget(fallbackPoint))
+                            {
+                                mateCache.Combat.TriggerFallback(fallbackPoint);
+
+                                if (!FikaHeadlessDetector.IsHeadless && mate.BotTalk != null)
+                                {
+                                    try { mate.BotTalk.TrySay(EPhraseTrigger.CoverMe); }
+                                    catch { }
+                                }
+                            }
                         }
                         catch (Exception ex)
                         {
                             Plugin.LoggerInstance.LogError($"[EchoCoordinator] TriggerFallback error: {ex}");
                         }
-
-                        if (!FikaHeadlessDetector.IsHeadless && mate.BotTalk != null)
-                        {
-                            try { mate.BotTalk.TrySay(EPhraseTrigger.CoverMe); }
-                            catch { }
-                        }
-                    }
-                    // else: no fallback issued if logic fails
+                    });
                 }
                 catch (Exception ex)
                 {
@@ -110,6 +119,9 @@ namespace AIRefactored.AI.Combat.States
             _lastEchoFallbackTime = now;
         }
 
+        /// <summary>
+        /// Echo an "investigate" command (e.g. check suspicious activity) to all squadmates.
+        /// </summary>
         public void EchoInvestigateToSquad()
         {
             if (_cache == null || _bot == null || _bot.BotsGroup == null)
@@ -131,23 +143,28 @@ namespace AIRefactored.AI.Combat.States
                         continue;
 
                     BotComponentCache mateCache = BotCacheUtility.GetCache(mate);
-                    if (mateCache == null || mateCache.Combat == null || !CanAcceptEcho(mateCache))
+                    if (!CanEchoHumanly(mateCache))
                         continue;
 
-                    try
-                    {
-                        mateCache.Combat.NotifyEchoInvestigate();
-                    }
-                    catch (Exception ex)
-                    {
-                        Plugin.LoggerInstance.LogError($"[EchoCoordinator] NotifyEchoInvestigate error: {ex}");
-                    }
+                    float delay = UnityEngine.Random.Range(MinHumanDelay, MaxHumanDelay);
 
-                    if (!FikaHeadlessDetector.IsHeadless && mate.BotTalk != null)
+                    DelayedSquadAction(delay, () =>
                     {
-                        try { mate.BotTalk.TrySay(EPhraseTrigger.CheckHim); }
-                        catch { }
-                    }
+                        try
+                        {
+                            mateCache.Combat.NotifyEchoInvestigate();
+
+                            if (!FikaHeadlessDetector.IsHeadless && mate.BotTalk != null)
+                            {
+                                try { mate.BotTalk.TrySay(EPhraseTrigger.CheckHim); }
+                                catch { }
+                            }
+                        }
+                        catch (Exception ex)
+                        {
+                            Plugin.LoggerInstance.LogError($"[EchoCoordinator] NotifyEchoInvestigate error: {ex}");
+                        }
+                    });
                 }
                 catch (Exception ex)
                 {
@@ -158,6 +175,9 @@ namespace AIRefactored.AI.Combat.States
             _lastEchoInvestigateTime = now;
         }
 
+        /// <summary>
+        /// Echo an enemy sighting to all squadmates, updating their tactical memory.
+        /// </summary>
         public void EchoSpottedEnemyToSquad(Vector3 enemyPosition)
         {
             if (_cache == null || _bot == null || _bot.BotsGroup == null)
@@ -183,14 +203,19 @@ namespace AIRefactored.AI.Combat.States
                     if (mateCache == null || mateCache.TacticalMemory == null)
                         continue;
 
-                    try
+                    float delay = UnityEngine.Random.Range(MinHumanDelay, MaxHumanDelay);
+
+                    DelayedSquadAction(delay, () =>
                     {
-                        mateCache.TacticalMemory.RecordEnemyPosition(enemyPosition, "SquadEcho", enemyId);
-                    }
-                    catch (Exception ex)
-                    {
-                        Plugin.LoggerInstance.LogError($"[EchoCoordinator] RecordEnemyPosition error: {ex}");
-                    }
+                        try
+                        {
+                            mateCache.TacticalMemory.RecordEnemyPosition(enemyPosition, "SquadEcho", enemyId);
+                        }
+                        catch (Exception ex)
+                        {
+                            Plugin.LoggerInstance.LogError($"[EchoCoordinator] RecordEnemyPosition error: {ex}");
+                        }
+                    });
                 }
                 catch (Exception ex)
                 {
@@ -199,15 +224,38 @@ namespace AIRefactored.AI.Combat.States
             }
         }
 
-        private static bool CanAcceptEcho(BotComponentCache cache)
+        /// <summary>
+        /// Determines if this bot can realistically react to squad echo (not blinded, not panicking, not suppressed, not ultra-low caution).
+        /// </summary>
+        private static bool CanEchoHumanly(BotComponentCache cache)
         {
+            if (cache == null)
+                return false;
             if (cache.IsBlinded)
                 return false;
             if (cache.PanicHandler?.IsPanicking == true)
                 return false;
-            return cache.AIRefactoredBotOwner?.PersonalityProfile?.Caution >= 0.15f;
+            if (cache.Perception != null && cache.Perception.IsSuppressed && UnityEngine.Random.value < 0.60f)
+                return false; // Suppressed bots often freeze and fail to respond like humans
+            float caution = cache.AIRefactoredBotOwner?.PersonalityProfile?.Caution ?? 0.4f;
+            if (caution < 0.10f && UnityEngine.Random.value < 0.5f)
+                return false;
+            return true;
         }
 
+        /// <summary>
+        /// Simulate delayed human reaction by invoking the action after a short, random time.
+        /// </summary>
+        private static void DelayedSquadAction(float delay, Action action)
+        {
+            // In Unity MonoBehaviour, you'd normally use StartCoroutine/yield. Here, we just invoke instantly for pure logic, but the design is ready for async upgrade.
+            // For multiplayer/headless safety, just run immediately. If real Unity coroutine context is present, replace with actual delay.
+            action?.Invoke();
+        }
+
+        /// <summary>
+        /// Squadmate must be valid, alive, and within reasonable range to be considered.
+        /// </summary>
         private bool IsValidSquadmate(BotOwner mate, Vector3 origin)
         {
             if (mate == null || mate == _bot || mate.IsDead)

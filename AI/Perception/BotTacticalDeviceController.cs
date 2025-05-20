@@ -153,7 +153,7 @@ namespace AIRefactored.AI.Perception
         }
 
         /// <summary>
-        /// Computes bait/chaos chance from the bot's personality.
+        /// Computes bait/chaos chance from the bot's personality and awareness.
         /// </summary>
         private float GetChaosBaitChance()
         {
@@ -166,7 +166,13 @@ namespace AIRefactored.AI.Perception
                 }
 
                 BotPersonalityProfile profile = owner.PersonalityProfile;
-                return profile != null ? profile.ChaosFactor * 0.25f : 0f;
+                if (profile == null)
+                    return 0f;
+
+                // Awareness slightly reduces chaos chance for smarter bots (realism)
+                float baseChaos = profile.ChaosFactor * 0.25f;
+                float awarenessMod = 1f - Mathf.Clamp01(profile.Awareness); // High awareness, less baiting
+                return Mathf.Clamp01(baseChaos * (0.7f + 0.6f * awarenessMod));
             }
             catch (Exception ex)
             {

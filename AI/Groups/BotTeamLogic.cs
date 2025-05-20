@@ -3,7 +3,8 @@
 //   Licensed under the MIT License. See LICENSE in the repository root for more information.
 //
 //   THIS FILE IS SYSTEMATICALLY MANAGED.
-//   Failures in AIRefactored logic must always trigger safe fallback to EFT base AI.
+//   Realism: Squad logic is human-like, staggered, never instant, and never disables itself or others.
+//   Bulletproof: All errors are locally isolated, squad logic never breaks parent AI or the mod.
 // </auto-generated>
 
 namespace AIRefactored.AI.Groups
@@ -21,8 +22,8 @@ namespace AIRefactored.AI.Groups
     using Random = UnityEngine.Random;
 
     /// <summary>
-    /// Coordinates squad-level tactical behavior including fallback broadcast, enemy sharing, and regrouping.
-    /// Bulletproof: All errors are isolated, and squad logic never breaks parent AI or mod.
+    /// Coordinates squad-level tactical behavior: fallback, enemy sharing, organic regrouping.
+    /// Bulletproof: All errors are isolated, squad logic never breaks parent AI or the mod.
     /// </summary>
     public sealed class BotTeamLogic
     {
@@ -68,12 +69,14 @@ namespace AIRefactored.AI.Groups
                 IPlayer safe = EFTPlayerUtil.AsSafeIPlayer(resolved);
                 int count = bot.BotsGroup.MembersCount;
 
+                // Staggered, realistic squad-wide enemy propagation
                 for (int i = 0; i < count; i++)
                 {
                     BotOwner mate = bot.BotsGroup.Member(i);
                     if (EFTPlayerUtil.IsValidBotOwner(mate) && mate != bot)
                     {
-                        ForceRegisterEnemy(mate, safe);
+                        float delay = Random.Range(0.07f, 0.27f);
+                        TriggerDelayedRegisterEnemy(mate, safe, delay);
                     }
                 }
             }
@@ -93,7 +96,10 @@ namespace AIRefactored.AI.Groups
                     BotOwner mate = bot.BotsGroup.Member(i);
                     if (EFTPlayerUtil.IsValidBotOwner(mate) && mate != bot && mate.BotTalk != null)
                     {
-                        mate.BotTalk.TrySay(EPhraseTrigger.Cooperation);
+                        if (Random.value < 0.7f)
+                        {
+                            mate.BotTalk.TrySay(EPhraseTrigger.Cooperation);
+                        }
                     }
                 }
             }
@@ -109,7 +115,8 @@ namespace AIRefactored.AI.Groups
 
                 if (EFTPlayerUtil.IsValidBotOwner(mate) && mate != _bot && fsm != null)
                 {
-                    TriggerDelayedFallback(fsm, retreatPoint);
+                    float delay = Random.Range(0.10f, 0.28f);
+                    TriggerDelayedFallback(fsm, retreatPoint, delay);
                 }
             }
         }
@@ -206,7 +213,8 @@ namespace AIRefactored.AI.Groups
                     BotOwner mate = _teammates[i];
                     if (EFTPlayerUtil.IsValidBotOwner(mate))
                     {
-                        ForceRegisterEnemy(mate, safe);
+                        float delay = Random.Range(0.07f, 0.25f);
+                        TriggerDelayedRegisterEnemy(mate, safe, delay);
                     }
                 }
             }
@@ -235,7 +243,21 @@ namespace AIRefactored.AI.Groups
             catch { }
         }
 
-        private static void TriggerDelayedFallback(CombatStateMachine fsm, Vector3 point)
+        private static void TriggerDelayedRegisterEnemy(BotOwner receiver, IPlayer enemy, float delay)
+        {
+            if (receiver == null || enemy == null) return;
+            Task.Run(async () =>
+            {
+                try
+                {
+                    await Task.Delay((int)(delay * 1000f));
+                    ForceRegisterEnemy(receiver, enemy);
+                }
+                catch { }
+            });
+        }
+
+        private static void TriggerDelayedFallback(CombatStateMachine fsm, Vector3 point, float delay)
         {
             if (fsm == null)
                 return;
@@ -244,7 +266,7 @@ namespace AIRefactored.AI.Groups
             {
                 try
                 {
-                    await Task.Delay(Random.Range(150, 400));
+                    await Task.Delay((int)(delay * 1000f));
                     fsm.TriggerFallback(point);
                 }
                 catch { }

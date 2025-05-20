@@ -4,6 +4,7 @@
 //
 //   THIS FILE IS SYSTEMATICALLY MANAGED.
 //   Failures in AIRefactored logic must always trigger safe fallback to EFT base AI.
+//   Realism Pass: Now includes Awareness, HearingBias, StanceBias. All clamps and blending upgraded.
 // </auto-generated>
 
 namespace AIRefactored.AI
@@ -77,6 +78,9 @@ namespace AIRefactored.AI
                 ChaosFactor = 0f,
                 EngagementRange = 55f,
                 StuckTolerance = 0.5f,
+                Awareness = 0.5f,
+                HearingBias = 0.5f,
+                StanceBias = 0.0f,
                 IsFearful = false,
                 IsFrenzied = false,
                 IsStubborn = false,
@@ -96,6 +100,9 @@ namespace AIRefactored.AI
                         p.CommunicationLevel = 0.8f;
                         p.ReactionSpeed = 0.75f;
                         p.SuppressiveFireBias = 0.4f;
+                        p.Awareness = 0.65f;
+                        p.HearingBias = 0.65f;
+                        p.StanceBias = 0.25f;
                         break;
                     case PersonalityType.Aggressive:
                         p.AggressionLevel = 1f;
@@ -105,6 +112,9 @@ namespace AIRefactored.AI
                         p.LeaningStyle = LeanPreference.Aggressive;
                         p.Greed = 0.4f;
                         p.StuckTolerance = 0.3f;
+                        p.Awareness = 0.85f;
+                        p.HearingBias = 0.55f;
+                        p.StanceBias = -0.3f;
                         break;
                     case PersonalityType.Balanced:
                         p.Accuracy = 0.7f;
@@ -112,6 +122,9 @@ namespace AIRefactored.AI
                         p.Caution = 0.5f;
                         p.Greed = 0.6f;
                         p.StuckTolerance = 0.6f;
+                        p.Awareness = 0.6f;
+                        p.HearingBias = 0.6f;
+                        p.StanceBias = 0.0f;
                         break;
                     case PersonalityType.Camper:
                         p.IsCamper = true;
@@ -123,6 +136,9 @@ namespace AIRefactored.AI
                         p.SuppressiveFireBias = 0.8f;
                         p.Greed = 0.8f;
                         p.StuckTolerance = 0.2f;
+                        p.Awareness = 0.35f;
+                        p.HearingBias = 0.35f;
+                        p.StanceBias = 1.0f;
                         break;
                     case PersonalityType.Cautious:
                         p.Caution = 0.95f;
@@ -131,6 +147,9 @@ namespace AIRefactored.AI
                         p.SuppressiveFireBias = 0.3f;
                         p.Greed = 0.4f;
                         p.StuckTolerance = 0.3f;
+                        p.Awareness = 0.8f;
+                        p.HearingBias = 0.7f;
+                        p.StanceBias = 0.5f;
                         break;
                     case PersonalityType.ColdBlooded:
                         p.FlinchThreshold = 1f;
@@ -139,6 +158,9 @@ namespace AIRefactored.AI
                         p.SuppressiveFireBias = 0.4f;
                         p.Greed = 0.3f;
                         p.StuckTolerance = 0.9f;
+                        p.Awareness = 0.9f;
+                        p.HearingBias = 0.6f;
+                        p.StanceBias = 0.1f;
                         break;
                     case PersonalityType.Defensive:
                         p.Caution = 0.8f;
@@ -147,6 +169,9 @@ namespace AIRefactored.AI
                         p.SuppressiveFireBias = 0.5f;
                         p.Greed = 0.3f;
                         p.StuckTolerance = 0.7f;
+                        p.Awareness = 0.7f;
+                        p.HearingBias = 0.65f;
+                        p.StanceBias = 0.7f;
                         break;
                     case PersonalityType.Dumb:
                         p.IsDumb = true;
@@ -157,6 +182,9 @@ namespace AIRefactored.AI
                         p.SuppressiveFireBias = 0.1f;
                         p.Greed = 0.2f;
                         p.StuckTolerance = 0.1f;
+                        p.Awareness = 0.25f;
+                        p.HearingBias = 0.25f;
+                        p.StanceBias = -0.2f;
                         break;
                     case PersonalityType.Explorer:
                         p.EngagementRange = 110f;
@@ -167,6 +195,9 @@ namespace AIRefactored.AI
                         p.SuppressiveFireBias = 0.4f;
                         p.Greed = 0.6f;
                         p.StuckTolerance = 0.8f;
+                        p.Awareness = 0.7f;
+                        p.HearingBias = 0.6f;
+                        p.StanceBias = 0.0f;
                         break;
                     case PersonalityType.Fearful:
                         p.IsFearful = true;
@@ -178,6 +209,9 @@ namespace AIRefactored.AI
                         p.SuppressiveFireBias = 0.25f;
                         p.Greed = 0.5f;
                         p.StuckTolerance = 0.2f;
+                        p.Awareness = 0.85f;
+                        p.HearingBias = 0.8f;
+                        p.StanceBias = 0.75f;
                         break;
                     case PersonalityType.Frenzied:
                         p.IsFrenzied = true;
@@ -190,6 +224,9 @@ namespace AIRefactored.AI
                         p.SuppressiveFireBias = 0.1f;
                         p.Greed = 0.3f;
                         p.StuckTolerance = 0.1f;
+                        p.Awareness = 0.3f;
+                        p.HearingBias = 0.25f;
+                        p.StanceBias = -0.5f;
                         break;
                     case PersonalityType.Greedy:
                         p.RiskTolerance = 0.8f;
@@ -198,6 +235,9 @@ namespace AIRefactored.AI
                         p.SuppressiveFireBias = 0.3f;
                         p.Greed = 1f;
                         p.StuckTolerance = 0.4f;
+                        p.Awareness = 0.55f;
+                        p.HearingBias = 0.5f;
+                        p.StanceBias = 0.0f;
                         break;
                     case PersonalityType.Heroic:
                         p.AggressionLevel = 0.8f;
@@ -209,6 +249,9 @@ namespace AIRefactored.AI
                         p.SuppressiveFireBias = 0.7f;
                         p.Greed = 0.5f;
                         p.StuckTolerance = 0.8f;
+                        p.Awareness = 0.95f;
+                        p.HearingBias = 0.7f;
+                        p.StanceBias = 0.0f;
                         break;
                     case PersonalityType.Loner:
                         p.Cohesion = 0f;
@@ -216,6 +259,9 @@ namespace AIRefactored.AI
                         p.SuppressiveFireBias = 0.1f;
                         p.Greed = 0.4f;
                         p.StuckTolerance = 0.3f;
+                        p.Awareness = 0.55f;
+                        p.HearingBias = 0.45f;
+                        p.StanceBias = 0.0f;
                         break;
                     case PersonalityType.Methodical:
                         p.Caution = 0.75f;
@@ -225,6 +271,9 @@ namespace AIRefactored.AI
                         p.SuppressiveFireBias = 0.6f;
                         p.Greed = 0.5f;
                         p.StuckTolerance = 0.6f;
+                        p.Awareness = 0.7f;
+                        p.HearingBias = 0.7f;
+                        p.StanceBias = 0.4f;
                         break;
                     case PersonalityType.Paranoid:
                         p.ReactionSpeed = 0.85f;
@@ -234,6 +283,9 @@ namespace AIRefactored.AI
                         p.SuppressiveFireBias = 0.5f;
                         p.Greed = 0.3f;
                         p.StuckTolerance = 0.4f;
+                        p.Awareness = 1.0f;
+                        p.HearingBias = 1.0f;
+                        p.StanceBias = 0.7f;
                         break;
                     case PersonalityType.Patient:
                         p.ReactionTime = 0.5f;
@@ -241,6 +293,9 @@ namespace AIRefactored.AI
                         p.SuppressiveFireBias = 0.4f;
                         p.Greed = 0.4f;
                         p.StuckTolerance = 0.7f;
+                        p.Awareness = 0.65f;
+                        p.HearingBias = 0.7f;
+                        p.StanceBias = 0.2f;
                         break;
                     case PersonalityType.Reckless:
                         p.AggressionLevel = 0.95f;
@@ -249,6 +304,9 @@ namespace AIRefactored.AI
                         p.SuppressiveFireBias = 0.3f;
                         p.Greed = 0.4f;
                         p.StuckTolerance = 0.2f;
+                        p.Awareness = 0.4f;
+                        p.HearingBias = 0.3f;
+                        p.StanceBias = -0.5f;
                         break;
                     case PersonalityType.RiskTaker:
                         p.RiskTolerance = 1f;
@@ -257,6 +315,9 @@ namespace AIRefactored.AI
                         p.SuppressiveFireBias = 0.35f;
                         p.Greed = 0.6f;
                         p.StuckTolerance = 0.3f;
+                        p.Awareness = 0.45f;
+                        p.HearingBias = 0.55f;
+                        p.StanceBias = -0.2f;
                         break;
                     case PersonalityType.SilentHunter:
                         p.IsSilentHunter = true;
@@ -267,6 +328,9 @@ namespace AIRefactored.AI
                         p.SuppressiveFireBias = 0.0f;
                         p.Greed = 0.3f;
                         p.StuckTolerance = 0.7f;
+                        p.Awareness = 0.9f;
+                        p.HearingBias = 0.9f;
+                        p.StanceBias = 0.7f;
                         break;
                     case PersonalityType.Sniper:
                         p.EngagementRange = 130f;
@@ -276,6 +340,9 @@ namespace AIRefactored.AI
                         p.SuppressiveFireBias = 0.3f;
                         p.Greed = 0.4f;
                         p.StuckTolerance = 0.6f;
+                        p.Awareness = 0.85f;
+                        p.HearingBias = 0.6f;
+                        p.StanceBias = 1.0f;
                         break;
                     case PersonalityType.Strategic:
                         p.Caution = 0.7f;
@@ -284,6 +351,9 @@ namespace AIRefactored.AI
                         p.SuppressiveFireBias = 0.5f;
                         p.Greed = 0.5f;
                         p.StuckTolerance = 0.7f;
+                        p.Awareness = 0.8f;
+                        p.HearingBias = 0.75f;
+                        p.StanceBias = 0.5f;
                         break;
                     case PersonalityType.Stubborn:
                         p.IsStubborn = true;
@@ -292,6 +362,9 @@ namespace AIRefactored.AI
                         p.SuppressiveFireBias = 0.5f;
                         p.Greed = 0.3f;
                         p.StuckTolerance = 0.8f;
+                        p.Awareness = 0.5f;
+                        p.HearingBias = 0.5f;
+                        p.StanceBias = 0.0f;
                         break;
                     case PersonalityType.Tactical:
                         p.Accuracy = 0.85f;
@@ -300,6 +373,9 @@ namespace AIRefactored.AI
                         p.SuppressiveFireBias = 0.6f;
                         p.Greed = 0.6f;
                         p.StuckTolerance = 0.7f;
+                        p.Awareness = 0.7f;
+                        p.HearingBias = 0.7f;
+                        p.StanceBias = 0.3f;
                         break;
                     case PersonalityType.TeamPlayer:
                         p.CommunicationLevel = 1f;
@@ -308,12 +384,18 @@ namespace AIRefactored.AI
                         p.SuppressiveFireBias = 0.45f;
                         p.Greed = 0.5f;
                         p.StuckTolerance = 0.8f;
+                        p.Awareness = 0.8f;
+                        p.HearingBias = 0.85f;
+                        p.StanceBias = 0.25f;
                         break;
                     case PersonalityType.Unpredictable:
                         p.ChaosFactor = 1f;
                         p.SuppressiveFireBias = 0.3f;
                         p.Greed = 0.5f;
                         p.StuckTolerance = 0.3f;
+                        p.Awareness = 0.3f;
+                        p.HearingBias = 0.3f;
+                        p.StanceBias = 0.0f;
                         break;
                     case PersonalityType.Vengeful:
                         p.AggressionLevel = 0.9f;
@@ -322,6 +404,9 @@ namespace AIRefactored.AI
                         p.SuppressiveFireBias = 0.4f;
                         p.Greed = 0.6f;
                         p.StuckTolerance = 0.6f;
+                        p.Awareness = 0.6f;
+                        p.HearingBias = 0.5f;
+                        p.StanceBias = 0.0f;
                         break;
                     case PersonalityType.Vigilant:
                         p.ReactionSpeed = 1f;
@@ -329,6 +414,9 @@ namespace AIRefactored.AI
                         p.FlinchThreshold = 0.65f;
                         p.Greed = 0.4f;
                         p.StuckTolerance = 0.7f;
+                        p.Awareness = 1.0f;
+                        p.HearingBias = 0.95f;
+                        p.StanceBias = 0.2f;
                         break;
                     case PersonalityType.Calculating:
                         p.FlinchThreshold = 0.8f;
@@ -337,6 +425,9 @@ namespace AIRefactored.AI
                         p.SuppressiveFireBias = 0.5f;
                         p.Greed = 0.4f;
                         p.StuckTolerance = 0.9f;
+                        p.Awareness = 0.75f;
+                        p.HearingBias = 0.8f;
+                        p.StanceBias = 0.1f;
                         break;
                     case PersonalityType.Panicked:
                         p.FlinchThreshold = 0.1f;
@@ -348,6 +439,9 @@ namespace AIRefactored.AI
                         p.LeaningStyle = LeanPreference.Never;
                         p.Greed = 0.3f;
                         p.StuckTolerance = 0.2f;
+                        p.Awareness = 0.2f;
+                        p.HearingBias = 0.6f;
+                        p.StanceBias = 0.85f;
                         break;
                     case PersonalityType.Stoic:
                         p.FlinchThreshold = 1f;
@@ -356,6 +450,9 @@ namespace AIRefactored.AI
                         p.SuppressiveFireBias = 0.3f;
                         p.Greed = 0.4f;
                         p.StuckTolerance = 0.8f;
+                        p.Awareness = 0.8f;
+                        p.HearingBias = 0.7f;
+                        p.StanceBias = 0.0f;
                         break;
                     case PersonalityType.Bulldozer:
                         p.AggressionLevel = 1f;
@@ -364,6 +461,9 @@ namespace AIRefactored.AI
                         p.SuppressiveFireBias = 0.6f;
                         p.Greed = 0.5f;
                         p.StuckTolerance = 0.3f;
+                        p.Awareness = 0.55f;
+                        p.HearingBias = 0.5f;
+                        p.StanceBias = -0.6f;
                         break;
                     case PersonalityType.Covert:
                         p.PreferredMission = MissionBias.Quest;
@@ -372,6 +472,9 @@ namespace AIRefactored.AI
                         p.LeaningStyle = LeanPreference.Never;
                         p.Greed = 0.3f;
                         p.StuckTolerance = 0.6f;
+                        p.Awareness = 0.9f;
+                        p.HearingBias = 0.95f;
+                        p.StanceBias = 0.5f;
                         break;
                     case PersonalityType.Cowardly:
                         p.Caution = 1f;
@@ -381,6 +484,9 @@ namespace AIRefactored.AI
                         p.LeaningStyle = LeanPreference.Never;
                         p.Greed = 0.2f;
                         p.StuckTolerance = 0.2f;
+                        p.Awareness = 0.85f;
+                        p.HearingBias = 0.9f;
+                        p.StanceBias = 0.8f;
                         break;
                     case PersonalityType.Disruptor:
                         p.ChaosFactor = 1f;
@@ -388,6 +494,9 @@ namespace AIRefactored.AI
                         p.SuppressiveFireBias = 0.7f;
                         p.Greed = 0.5f;
                         p.StuckTolerance = 0.4f;
+                        p.Awareness = 0.4f;
+                        p.HearingBias = 0.5f;
+                        p.StanceBias = -0.3f;
                         break;
                     case PersonalityType.Supportive:
                         p.CommunicationLevel = 1f;
@@ -396,6 +505,9 @@ namespace AIRefactored.AI
                         p.Cohesion = 1f;
                         p.Greed = 0.5f;
                         p.StuckTolerance = 0.9f;
+                        p.Awareness = 0.7f;
+                        p.HearingBias = 0.9f;
+                        p.StanceBias = 0.1f;
                         break;
                     case PersonalityType.Hunter:
                         p.Accuracy = 0.85f;
@@ -403,6 +515,9 @@ namespace AIRefactored.AI
                         p.SuppressiveFireBias = 0.4f;
                         p.Greed = 0.5f;
                         p.StuckTolerance = 0.6f;
+                        p.Awareness = 0.8f;
+                        p.HearingBias = 0.6f;
+                        p.StanceBias = 0.2f;
                         break;
                     case PersonalityType.Stalker:
                         p.Accuracy = 0.8f;
@@ -410,6 +525,9 @@ namespace AIRefactored.AI
                         p.SuppressiveFireBias = 0.3f;
                         p.Greed = 0.6f;
                         p.StuckTolerance = 0.6f;
+                        p.Awareness = 0.65f;
+                        p.HearingBias = 0.8f;
+                        p.StanceBias = 0.5f;
                         break;
                     case PersonalityType.Vigilante:
                         p.AggressionLevel = 0.7f;
@@ -418,6 +536,9 @@ namespace AIRefactored.AI
                         p.LeaningStyle = LeanPreference.Aggressive;
                         p.Greed = 0.5f;
                         p.StuckTolerance = 0.7f;
+                        p.Awareness = 0.85f;
+                        p.HearingBias = 0.8f;
+                        p.StanceBias = -0.1f;
                         break;
                     case PersonalityType.Sentinel:
                         p.RepositionPriority = 0f;
@@ -425,6 +546,9 @@ namespace AIRefactored.AI
                         p.SuppressiveFireBias = 0.6f;
                         p.Greed = 0.4f;
                         p.StuckTolerance = 0.8f;
+                        p.Awareness = 0.7f;
+                        p.HearingBias = 0.65f;
+                        p.StanceBias = 0.8f;
                         break;
                     case PersonalityType.Erratic:
                         p.ChaosFactor = 1f;
@@ -433,6 +557,9 @@ namespace AIRefactored.AI
                         p.SuppressiveFireBias = 0.4f;
                         p.Greed = 0.5f;
                         p.StuckTolerance = 0.4f;
+                        p.Awareness = 0.5f;
+                        p.HearingBias = 0.35f;
+                        p.StanceBias = 0.0f;
                         break;
                     case PersonalityType.Cowboy:
                         p.AggressionLevel = 0.9f;
@@ -441,6 +568,9 @@ namespace AIRefactored.AI
                         p.LeaningStyle = LeanPreference.Aggressive;
                         p.Greed = 0.4f;
                         p.StuckTolerance = 0.5f;
+                        p.Awareness = 0.6f;
+                        p.HearingBias = 0.5f;
+                        p.StanceBias = -0.4f;
                         break;
                     case PersonalityType.Saboteur:
                         p.PreferredMission = MissionBias.Loot;
@@ -450,6 +580,9 @@ namespace AIRefactored.AI
                         p.LeaningStyle = LeanPreference.Never;
                         p.Greed = 0.9f;
                         p.StuckTolerance = 0.3f;
+                        p.Awareness = 0.3f;
+                        p.HearingBias = 0.6f;
+                        p.StanceBias = 0.3f;
                         break;
                         // Unknown/future enum values safely use defaults.
                 }
@@ -472,12 +605,11 @@ namespace AIRefactored.AI
             return p;
         }
 
-
         /// <summary>
         /// Applies randomized trait blending to add variance within safe bounds.
         /// Used after base personality profile generation to simulate organic differences.
+        /// Now includes Awareness, HearingBias, StanceBias blending and clamping.
         /// </summary>
-        /// <param name="p">The personality profile to modify.</param>
         private static void ApplyRandomBlend(BotPersonalityProfile p)
         {
             const float Min = 0f;
@@ -504,13 +636,17 @@ namespace AIRefactored.AI
                 p.SuppressiveFireBias += UnityEngine.Random.Range(-0.05f, 0.1f);
                 p.Greed += UnityEngine.Random.Range(-0.1f, 0.15f);
                 p.StuckTolerance += UnityEngine.Random.Range(-0.1f, 0.15f);
+                // Realism extension:
+                p.Awareness += UnityEngine.Random.Range(-0.1f, 0.1f);
+                p.HearingBias += UnityEngine.Random.Range(-0.1f, 0.1f);
+                p.StanceBias += UnityEngine.Random.Range(-0.2f, 0.2f);
             }
             catch (Exception ex)
             {
                 Debug.LogError("[BotPersonalityPresets] ApplyRandomBlend: Randomization failed: " + ex);
             }
 
-            // Always clamp, even if exception occurred above (all clamps are infallible)
+            // Always clamp, including new fields
             try
             {
                 p.Accuracy = Mathf.Clamp(p.Accuracy, Min, Max);
@@ -532,13 +668,16 @@ namespace AIRefactored.AI
                 p.SuppressiveFireBias = Mathf.Clamp(p.SuppressiveFireBias, Min, Max);
                 p.Greed = Mathf.Clamp(p.Greed, Min, Max);
                 p.StuckTolerance = Mathf.Clamp(p.StuckTolerance, Min, Max);
+                // Realism extension:
+                p.Awareness = Mathf.Clamp(p.Awareness, Min, Max);
+                p.HearingBias = Mathf.Clamp(p.HearingBias, Min, Max);
+                p.StanceBias = Mathf.Clamp(p.StanceBias, -1.0f, 2.0f); // -1 = standing, 0 = neutral, 1 = crouch, 2 = prone
             }
             catch (Exception ex)
             {
                 Debug.LogError("[BotPersonalityPresets] ApplyRandomBlend: Clamping failed: " + ex);
             }
         }
-
     }
 }
 

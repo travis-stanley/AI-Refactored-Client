@@ -24,12 +24,15 @@ namespace AIRefactored.AI.Combat
     public sealed class BotSuppressionReactionComponent
     {
         private const float MinSuppressionRetreatDistance = 6.0f;
-        private const float SuppressionDuration = 2.0f;
+        private const float SuppressionDuration = 2.2f;
+        private const float SquadSuppressionRadiusSqr = 144f;
+        private const float SuppressionVoiceCooldown = 1.5f;
 
         private BotOwner _bot;
         private BotComponentCache _cache;
         private bool _isSuppressed;
         private float _suppressionStartTime = float.NegativeInfinity;
+        private float _lastVoiceTime = float.NegativeInfinity;
 
         public void Initialize(BotComponentCache componentCache)
         {
@@ -43,13 +46,17 @@ namespace AIRefactored.AI.Combat
             _bot = componentCache.Bot;
             _isSuppressed = false;
             _suppressionStartTime = float.NegativeInfinity;
+            _lastVoiceTime = float.NegativeInfinity;
         }
 
-        public bool IsSuppressed()
-        {
-            return _isSuppressed;
-        }
+        /// <summary>
+        /// Returns true if bot is actively suppressed.
+        /// </summary>
+        public bool IsSuppressed() => _isSuppressed;
 
+        /// <summary>
+        /// Tick: handles suppression decay, voice effects, and group propagation.
+        /// </summary>
         public void Tick(float time)
         {
             if (!_isSuppressed)
@@ -63,6 +70,14 @@ namespace AIRefactored.AI.Combat
                     return;
                 }
 
+                // Suppression effects (human-like): trembling, hesitation, muttering
+                if (!FikaHeadlessDetector.IsHeadless && _bot.BotTalk != null && time - _lastVoiceTime > SuppressionVoiceCooldown && UnityEngine.Random.value < 0.28f)
+                {
+                    _lastVoiceTime = time;
+                    try { _bot.BotTalk.TrySay(EPhraseTrigger.NeedHelp); } catch { }
+                }
+
+                // Duration check
                 if (time - _suppressionStartTime >= SuppressionDuration)
                 {
                     _isSuppressed = false;
@@ -75,6 +90,9 @@ namespace AIRefactored.AI.Combat
             }
         }
 
+        /// <summary>
+        /// Triggers suppression from an incoming source, optionally with group escalation.
+        /// </summary>
         public void TriggerSuppression(Vector3? source)
         {
             if (_isSuppressed || !IsValid())
@@ -89,11 +107,22 @@ namespace AIRefactored.AI.Combat
                 _isSuppressed = true;
                 _suppressionStartTime = Time.time;
 
+                // Human-like: Suppression degrades composure (propagates to panic handler)
+                if (panic != null)
+                {
+                    float composureLoss = UnityEngine.Random.Range(0.12f, 0.25f);
+                    float oldComposure = panic.GetComposureLevel();
+                    typeof(BotPanicHandler).GetField("_composureLevel", System.Reflection.BindingFlags.NonPublic | System.Reflection.BindingFlags.Instance)
+                        ?.SetValue(panic, Mathf.Clamp01(oldComposure - composureLoss));
+                }
+
                 Vector3 retreatDir = source.HasValue
                     ? (_bot.Position - source.Value).normalized
                     : GetDefaultRetreatDirection();
 
                 Vector3 fallback = _bot.Position + retreatDir.normalized * MinSuppressionRetreatDistance;
+                fallback += UnityEngine.Random.insideUnitSphere * 0.8f;
+                fallback.y = _bot.Position.y;
 
                 if (BotNavHelper.TryGetSafeTarget(_bot, out var navTarget) && IsVectorValid(navTarget))
                 {
@@ -106,20 +135,66 @@ namespace AIRefactored.AI.Combat
                 {
                     BotMovementHelper.SmoothMoveTo(_bot, fallback, false, cohesion);
                     _bot.Sprint(true);
+                    BotCoverHelper.TrySetStanceFromNearbyCover(_cache, fallback);
                 }
 
-                panic?.TriggerPanic();
+                // Escalate panic logic if composure is very low
+                if (panic != null && panic.GetComposureLevel() < 0.18f)
+                {
+                    panic.TriggerPanic();
+                }
+
+                // Notify global escalation system
                 _cache.Escalation?.NotifyPanicTriggered();
 
-                if (!FikaHeadlessDetector.IsHeadless && _bot.BotTalk != null)
+                // Human-like: Squad-wide fear propagation (others in squad within radius may also become suppressed)
+                TryPropagateSuppression();
+
+                if (!FikaHeadlessDetector.IsHeadless && _bot.BotTalk != null && Time.time - _lastVoiceTime > SuppressionVoiceCooldown)
                 {
-                    try { _bot.BotTalk.TrySay(EPhraseTrigger.OnLostVisual); }
+                    try { _bot.BotTalk.TrySay(EPhraseTrigger.NeedHelp); }
                     catch { }
+                    _lastVoiceTime = Time.time;
                 }
             }
             catch (Exception ex)
             {
                 Plugin.LoggerInstance?.LogError("[BotSuppression] Exception in TriggerSuppression: " + ex);
+            }
+        }
+
+        /// <summary>
+        /// Attempts to propagate suppression to nearby squadmates for realism.
+        /// </summary>
+        private void TryPropagateSuppression()
+        {
+            try
+            {
+                if (_bot == null || _bot.BotsGroup == null)
+                    return;
+
+                int count = _bot.BotsGroup.MembersCount;
+                Vector3 selfPos = _bot.Position;
+
+                for (int i = 0; i < count; i++)
+                {
+                    BotOwner mate = _bot.BotsGroup.Member(i);
+                    if (mate == null || mate == _bot || mate.IsDead)
+                        continue;
+
+                    if ((mate.Position - selfPos).sqrMagnitude > SquadSuppressionRadiusSqr)
+                        continue;
+
+                    BotComponentCache mateCache = BotCacheUtility.GetCache(mate);
+                    if (mateCache?.Suppression != null && !mateCache.Suppression.IsSuppressed())
+                    {
+                        mateCache.Suppression.TriggerSuppression(selfPos);
+                    }
+                }
+            }
+            catch (Exception ex)
+            {
+                Plugin.LoggerInstance?.LogError("[BotSuppression] Exception in TryPropagateSuppression: " + ex);
             }
         }
 

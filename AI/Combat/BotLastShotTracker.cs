@@ -3,12 +3,13 @@
 //   Licensed under the MIT License. See LICENSE in the repository root for more information.
 //
 //   THIS FILE IS SYSTEMATICALLY MANAGED.
-//   Failures in AIRefactored logic must always trigger safe fallback to EFT base AI.
+//   Bulletproof: All logic is strictly null-guarded, errors never propagate.
 // </auto-generated>
 
 namespace AIRefactored.AI.Combat
 {
     using System;
+    using EFT;
     using UnityEngine;
 
     /// <summary>
@@ -22,9 +23,14 @@ namespace AIRefactored.AI.Combat
 
         private string _lastAttackerId = string.Empty;
         private float _lastHitTime = float.NegativeInfinity;
+        private EBodyPart _lastHitPart = EBodyPart.Common;
+        private float _lastHitDistance = -1f;
+        private Vector3 _lastHitDirection = Vector3.zero;
 
         private string _lastTargetId = string.Empty;
         private float _lastShotTime = float.NegativeInfinity;
+        private float _lastShotDistance = -1f;
+        private Vector3 _lastShotDirection = Vector3.zero;
 
         /// <summary>
         /// Returns true if the specified profile was shot at recently by this bot.
@@ -69,27 +75,56 @@ namespace AIRefactored.AI.Combat
         }
 
         /// <summary>
-        /// Registers that this bot was hit by the specified profile ID.
+        /// Registers that this bot was hit by the specified profile ID, and optionally records body part, distance, and direction.
         /// </summary>
-        public void RegisterHit(string profileId)
+        public void RegisterHit(string profileId, EBodyPart hitPart = EBodyPart.Common, float distance = -1f, Vector3 direction = default(Vector3))
         {
             if (string.IsNullOrEmpty(profileId))
                 return;
 
             _lastAttackerId = profileId;
             _lastHitTime = Time.time;
+            _lastHitPart = hitPart;
+            _lastHitDistance = distance;
+            _lastHitDirection = direction;
         }
 
         /// <summary>
-        /// Registers a shot fired by this bot at the specified profile ID.
+        /// Registers a shot fired by this bot at the specified profile ID, with optional distance and direction.
         /// </summary>
-        public void RegisterShot(string profileId)
+        public void RegisterShot(string profileId, float distance = -1f, Vector3 direction = default(Vector3))
         {
             if (string.IsNullOrEmpty(profileId))
                 return;
 
             _lastTargetId = profileId;
             _lastShotTime = Time.time;
+            _lastShotDistance = distance;
+            _lastShotDirection = direction;
+        }
+
+        /// <summary>
+        /// Returns the recency-weighted "threat" from recent hits, for threat escalation realism.
+        /// </summary>
+        public float GetRecentHitHeat(float now = -1f)
+        {
+            float time = now >= 0f ? now : Time.time;
+            float delta = time - _lastHitTime;
+            if (delta > DefaultMemoryWindow)
+                return 0f;
+            return 1f - Mathf.Clamp01(delta / DefaultMemoryWindow);
+        }
+
+        /// <summary>
+        /// Returns the recency-weighted "engagement focus" toward the recent target.
+        /// </summary>
+        public float GetRecentShotHeat(float now = -1f)
+        {
+            float time = now >= 0f ? now : Time.time;
+            float delta = time - _lastShotTime;
+            if (delta > DefaultMemoryWindow)
+                return 0f;
+            return 1f - Mathf.Clamp01(delta / DefaultMemoryWindow);
         }
 
         /// <summary>
@@ -101,6 +136,23 @@ namespace AIRefactored.AI.Combat
             _lastTargetId = string.Empty;
             _lastHitTime = float.NegativeInfinity;
             _lastShotTime = float.NegativeInfinity;
+            _lastHitPart = EBodyPart.Common;
+            _lastHitDistance = -1f;
+            _lastHitDirection = Vector3.zero;
+            _lastShotDistance = -1f;
+            _lastShotDirection = Vector3.zero;
         }
+
+        // Exposed for realism integration:
+        public string LastAttackerId => _lastAttackerId;
+        public float LastHitTime => _lastHitTime;
+        public EBodyPart LastHitPart => _lastHitPart;
+        public float LastHitDistance => _lastHitDistance;
+        public Vector3 LastHitDirection => _lastHitDirection;
+
+        public string LastTargetId => _lastTargetId;
+        public float LastShotTime => _lastShotTime;
+        public float LastShotDistance => _lastShotDistance;
+        public Vector3 LastShotDirection => _lastShotDirection;
     }
 }

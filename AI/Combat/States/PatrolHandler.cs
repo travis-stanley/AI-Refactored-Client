@@ -4,6 +4,7 @@
 //
 //   THIS FILE IS SYSTEMATICALLY MANAGED.
 //   Bulletproof: All failures are locally isolated, never disables itself, never triggers fallback AI.
+//   Realism Pass: All movement, fallback, and voice logic mimics real player patrolling.
 // </auto-generated>
 
 namespace AIRefactored.AI.Combat.States
@@ -26,16 +27,30 @@ namespace AIRefactored.AI.Combat.States
     /// </summary>
     public sealed class PatrolHandler
     {
+        #region Constants
+
         private const float DeadAllyRadius = 10.0f;
         private const float InvestigateSoundDelay = 3.0f;
         private const float PanicThreshold = 0.25f;
+        private const float MinHumanDelay = 0.07f;
+        private const float MaxHumanDelay = 0.21f;
+        private const float MinHotspotRandomOffset = 0.17f;
+        private const float MaxHotspotRandomOffset = 1.1f;
+
+        #endregion
+
+        #region Fields
 
         private readonly BotOwner _bot;
         private readonly BotComponentCache _cache;
         private readonly float _minStateDuration;
         private readonly float _switchCooldownBase;
-
         private float _nextSwitchTime;
+        private float _lastPatrolTime = -1000f;
+
+        #endregion
+
+        #region Constructor
 
         public PatrolHandler(BotComponentCache cache, float minStateDuration, float switchCooldownBase)
         {
@@ -45,8 +60,18 @@ namespace AIRefactored.AI.Combat.States
             _switchCooldownBase = switchCooldownBase;
         }
 
+        #endregion
+
+        #region API
+
+        /// <summary>
+        /// Always enabled for patrol state.
+        /// </summary>
         public bool ShallUseNow() => true;
 
+        /// <summary>
+        /// Should transition to investigate state if personality and tactical context fit.
+        /// </summary>
         public bool ShouldTransitionToInvestigate(float time)
         {
             if (_cache?.Combat == null || _cache.AIRefactoredBotOwner?.PersonalityProfile == null)
@@ -67,6 +92,9 @@ namespace AIRefactored.AI.Combat.States
             }
         }
 
+        /// <summary>
+        /// Ticks the patrol logic, moving the bot or triggering fallback as needed.
+        /// </summary>
         public void Tick(float time)
         {
             if (_cache == null || _bot == null)
@@ -74,7 +102,14 @@ namespace AIRefactored.AI.Combat.States
 
             try
             {
-                if (ShouldTriggerFallback())
+                // Human-like micro-hesitation between state switches or patrol moves
+                float delay = UnityEngine.Random.Range(MinHumanDelay, MaxHumanDelay);
+                if (time - _lastPatrolTime < delay)
+                    return;
+                _lastPatrolTime = time;
+
+                // Fallback if panicked, suppressed, wounded, or near a dead ally
+                if (ShouldTriggerFallback(time))
                 {
                     Vector3 fallback = TryGetFallbackPosition();
 
@@ -95,7 +130,7 @@ namespace AIRefactored.AI.Combat.States
                 if (time < _nextSwitchTime)
                     return;
 
-                HotspotRegistry.Hotspot hotspot;
+                HotspotRegistry.Hotspot hotspot = null;
                 try
                 {
                     hotspot = HotspotRegistry.GetRandomHotspot();
@@ -112,7 +147,10 @@ namespace AIRefactored.AI.Combat.States
                     return;
                 }
 
-                Vector3 target = hotspot.Position;
+                // Realism: Add random offset, prevent stacking or robotic lines
+                Vector3 target = hotspot.Position + UnityEngine.Random.insideUnitSphere * UnityEngine.Random.Range(MinHotspotRandomOffset, MaxHotspotRandomOffset);
+                target.y = hotspot.Position.y;
+
                 Vector3 destination = _cache.SquadPath != null
                     ? _cache.SquadPath.ApplyOffsetTo(target)
                     : target;
@@ -140,9 +178,16 @@ namespace AIRefactored.AI.Combat.States
 
                 _nextSwitchTime = time + UnityEngine.Random.Range(_switchCooldownBase, _switchCooldownBase + 18.0f);
 
+                // Realistic, randomized patrol chatter
                 if (!FikaHeadlessDetector.IsHeadless && _bot.BotTalk != null && UnityEngine.Random.value < 0.25f)
                 {
-                    try { _bot.BotTalk.TrySay(EPhraseTrigger.GoForward); }
+                    try
+                    {
+                        if (UnityEngine.Random.value < 0.5f)
+                            _bot.BotTalk.TrySay(EPhraseTrigger.GoForward);
+                        else
+                            _bot.BotTalk.TrySay(EPhraseTrigger.CoverMe);
+                    }
                     catch { }
                 }
             }
@@ -152,7 +197,14 @@ namespace AIRefactored.AI.Combat.States
             }
         }
 
-        private bool ShouldTriggerFallback()
+        #endregion
+
+        #region Fallback / Danger Triggers
+
+        /// <summary>
+        /// Returns true if bot should fallback (panic, injury, suppression, dead ally nearby).
+        /// </summary>
+        private bool ShouldTriggerFallback(float time)
         {
             if (_cache == null || _bot == null)
                 return false;
@@ -162,7 +214,8 @@ namespace AIRefactored.AI.Combat.States
                 if (_cache.PanicHandler?.GetComposureLevel() < PanicThreshold)
                     return true;
 
-                if (_cache.InjurySystem?.ShouldHeal() == true)
+                // Correct: Always pass current time to ShouldHeal
+                if (_cache.InjurySystem != null && _cache.InjurySystem.ShouldHeal(time))
                     return true;
 
                 if (_cache.Suppression?.IsSuppressed() == true)
@@ -192,6 +245,10 @@ namespace AIRefactored.AI.Combat.States
             }
         }
 
+        #endregion
+
+        #region Fallback Position Logic
+
         private Vector3 TryGetFallbackPosition()
         {
             if (_bot == null)
@@ -201,6 +258,10 @@ namespace AIRefactored.AI.Combat.States
             {
                 Vector3 direction = _bot.LookDirection.normalized;
                 Vector3 fallback = _bot.Position - direction * 7.5f;
+
+                // Add slight deviation for realism under stress
+                fallback += UnityEngine.Random.insideUnitSphere * 0.45f;
+                fallback.y = _bot.Position.y;
 
                 if (!BotNavHelper.TryGetSafeTarget(_bot, out fallback) || !IsVectorValid(fallback))
                     fallback = _bot.Position;
@@ -218,5 +279,7 @@ namespace AIRefactored.AI.Combat.States
         {
             return !float.IsNaN(v.x) && !float.IsNaN(v.y) && !float.IsNaN(v.z);
         }
+
+        #endregion
     }
 }

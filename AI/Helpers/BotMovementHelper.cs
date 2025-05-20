@@ -30,6 +30,8 @@ namespace AIRefactored.AI.Helpers
         private const float DefaultRadius = 0.8f;
         private const float DefaultStrafeDistance = 3f;
         private const float RetreatDistance = 6f;
+        private const float MinMoveEpsilon = 0.09f;
+        private const float SlerpBias = 0.96f;
 
         #endregion
 
@@ -49,9 +51,7 @@ namespace AIRefactored.AI.Helpers
             {
                 Vector3 fallback = bot.Position - threatDirection.normalized * distance;
                 if (!BotNavHelper.TryGetSafeTarget(bot, out fallback))
-                {
                     fallback = bot.Position - threatDirection.normalized * distance;
-                }
                 if (!IsValidTarget(fallback))
                     fallback = bot.Position;
 
@@ -89,11 +89,12 @@ namespace AIRefactored.AI.Helpers
 
                 Vector3 direction = lookTarget - bot.Position;
                 direction.y = 0f;
-                if (direction.sqrMagnitude < 0.01f)
+                if (direction.sqrMagnitude < MinMoveEpsilon)
                     return;
 
+                // Human-like slerp with bias for realistic aim inertia (slightly "lags behind" target for realism)
                 Quaternion targetRotation = Quaternion.LookRotation(direction.normalized, Vector3.up);
-                float t = Time.deltaTime * Mathf.Clamp(speed, 1f, 8f);
+                float t = SlerpBias * Time.deltaTime * Mathf.Clamp(speed, 1.1f, 9.5f);
                 transform.rotation = Quaternion.Slerp(transform.rotation, targetRotation, t);
             }
             catch
@@ -110,9 +111,7 @@ namespace AIRefactored.AI.Helpers
             try
             {
                 if (!BotNavHelper.TryGetSafeTarget(bot, out Vector3 safeTarget))
-                {
                     safeTarget = target;
-                }
                 if (!IsValidTarget(safeTarget))
                     safeTarget = bot.Position;
 
@@ -126,7 +125,10 @@ namespace AIRefactored.AI.Helpers
 
                 if (bot.Mover != null)
                 {
-                    bot.Mover.GoToPoint(safeTarget, slow, cohesionScale);
+                    bot.Mover.GoToPoint(
+                        // Subtle per-move random jitter for "organic" micro-adjustment
+                        ApplyMicroDrift(safeTarget, bot.ProfileId, Time.frameCount),
+                        slow, cohesionScale);
                     return true;
                 }
             }
@@ -163,7 +165,9 @@ namespace AIRefactored.AI.Helpers
 
                 if (bot.Mover != null)
                 {
-                    bot.Mover.GoToPoint(target, false, 1f);
+                    bot.Mover.GoToPoint(
+                        ApplyMicroDrift(target, bot.ProfileId, Time.frameCount + 15),
+                        false, 1f);
                 }
             }
             catch
@@ -189,7 +193,9 @@ namespace AIRefactored.AI.Helpers
 
                 if (bot.Mover != null)
                 {
-                    bot.Mover.GoToPoint(target, true, 1f);
+                    bot.Mover.GoToPoint(
+                        ApplyMicroDrift(target, bot.ProfileId, Time.frameCount + 21),
+                        true, 1f);
                 }
             }
             catch
@@ -214,7 +220,9 @@ namespace AIRefactored.AI.Helpers
 
                 if (bot.Mover != null)
                 {
-                    bot.Mover.GoToPoint(fallback, true, 1f);
+                    bot.Mover.GoToPoint(
+                        ApplyMicroDrift(fallback, bot.ProfileId, Time.frameCount + 35),
+                        true, 1f);
                 }
             }
             catch
@@ -241,6 +249,21 @@ namespace AIRefactored.AI.Helpers
                    !float.IsNaN(pos.x) &&
                    !float.IsNaN(pos.y) &&
                    !float.IsNaN(pos.z);
+        }
+
+        /// <summary>
+        /// Adds subtle, deterministic per-move drift to mimic human error and micro-correction.
+        /// </summary>
+        private static Vector3 ApplyMicroDrift(Vector3 pos, string profileId, int tick)
+        {
+            int hash = (profileId?.GetHashCode() ?? 0) ^ (tick * 11) ^ 0x17DF413;
+            unchecked
+            {
+                hash = (int)((hash ^ (hash >> 13)) * 0x7FEDCBA9);
+                float dx = ((hash & 0xFF) / 255f - 0.5f) * 0.09f;
+                float dz = (((hash >> 8) & 0xFF) / 255f - 0.5f) * 0.09f;
+                return new Vector3(pos.x + dx, pos.y, pos.z + dz);
+            }
         }
 
         #endregion

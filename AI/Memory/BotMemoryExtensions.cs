@@ -3,7 +3,7 @@
 //   Licensed under the MIT License. See LICENSE in the repository root for more information.
 //
 //   THIS FILE IS SYSTEMATICALLY MANAGED.
-//   Failures in AIRefactored logic must always trigger safe fallback to EFT base AI.
+//   All methods are bulletproof and locally isolated; never break the mod or bot logic on failure.
 // </auto-generated>
 
 namespace AIRefactored.AI.Memory
@@ -48,9 +48,7 @@ namespace AIRefactored.AI.Memory
             try
             {
                 if (bot != null)
-                {
                     BotMemoryStore.ClearHeardSound(bot.ProfileId);
-                }
             }
             catch (Exception ex)
             {
@@ -63,15 +61,11 @@ namespace AIRefactored.AI.Memory
             try
             {
                 if (!EFTPlayerUtil.IsValidBotOwner(bot) || fallbackPosition.sqrMagnitude < MinMoveThreshold)
-                {
                     return;
-                }
 
                 BotComponentCache cache = BotCacheUtility.GetCache(bot);
                 if (cache?.PanicHandler?.IsPanicking == true)
-                {
                     return;
-                }
 
                 BotMovementHelper.SmoothMoveTo(bot, fallbackPosition);
             }
@@ -86,9 +80,7 @@ namespace AIRefactored.AI.Memory
             try
             {
                 if (EFTPlayerUtil.IsValidBotOwner(bot) && position.sqrMagnitude >= MinMoveThreshold)
-                {
                     BotMovementHelper.SmoothMoveTo(bot, position);
-                }
             }
             catch (Exception ex)
             {
@@ -125,9 +117,9 @@ namespace AIRefactored.AI.Memory
                 Vector3 destination = new Vector3(fallback.x, bot.Position.y, fallback.z);
 
                 BotComponentCache cache = BotCacheUtility.GetCache(bot);
-                if (cache?.Pathing != null)
+                if (cache?.CoverPlanner != null)
                 {
-                    List<Vector3> path = BotCoverRetreatPlanner.GetCoverRetreatPath(bot, toEnemy, cache.Pathing);
+                    List<Vector3> path = cache.CoverPlanner.GetCoverRetreatPath(toEnemy);
                     if (path != null && path.Count > 0)
                     {
                         Vector3 last = path[path.Count - 1];
@@ -138,9 +130,7 @@ namespace AIRefactored.AI.Memory
                 BotMovementHelper.SmoothMoveTo(bot, destination);
 
                 if (!FikaHeadlessDetector.IsHeadless && bot.BotTalk != null)
-                {
                     bot.BotTalk.TrySay(EPhraseTrigger.OnLostVisual);
-                }
             }
             catch (Exception ex)
             {
@@ -225,9 +215,7 @@ namespace AIRefactored.AI.Memory
                 BotMovementHelper.SmoothMoveTo(bot, cautiousAdvance);
 
                 if (!FikaHeadlessDetector.IsHeadless && bot.BotTalk != null)
-                {
                     bot.BotTalk.TrySay(EPhraseTrigger.OnEnemyShot);
-                }
             }
             catch (Exception ex)
             {

@@ -33,9 +33,14 @@ namespace AIRefactored.AI.Combat.States
         private const float ExitDelayBuffer = 1.25f;
         private const float ActiveWindow = 5.0f;
 
+        private const float MinHumanDelay = 0.07f;
+        private const float MaxHumanDelay = 0.18f;
+        private const float RandomSweepDistance = 0.65f;
+
         private readonly BotOwner _bot;
         private readonly BotComponentCache _cache;
         private readonly BotTacticalMemory _memory;
+        private float _lastInvestigateTime = -1000f;
 
         public InvestigateHandler(BotComponentCache cache)
         {
@@ -49,10 +54,10 @@ namespace AIRefactored.AI.Combat.States
             try
             {
                 if (IsVectorValid(visualLastKnown))
-                    return visualLastKnown;
+                    return ApplyHumanRandomness(visualLastKnown);
 
                 if (TryGetMemoryEnemyPosition(out Vector3 memoryPos))
-                    return memoryPos;
+                    return ApplyHumanRandomness(memoryPos);
 
                 Vector3 fallback = GetSafeNearbyPosition();
                 return fallback;
@@ -71,6 +76,13 @@ namespace AIRefactored.AI.Combat.States
 
             try
             {
+                // Add human-like delay to reaction/movement
+                float now = Time.time;
+                float delay = UnityEngine.Random.Range(MinHumanDelay, MaxHumanDelay);
+                if (now - _lastInvestigateTime < delay)
+                    return;
+                _lastInvestigateTime = now;
+
                 Vector3 destination = target;
                 if (_cache.SquadPath != null)
                 {
@@ -78,7 +90,9 @@ namespace AIRefactored.AI.Combat.States
                     catch { destination = target; }
                 }
 
-                // Only use safe targets validated by internal nav logic
+                // Human-like sweep: bots sometimes search slightly away from direct memory/target for realism
+                destination = ApplyHumanRandomness(destination);
+
                 if (!BotNavHelper.TryGetSafeTarget(_bot, out destination) || !IsVectorValid(destination))
                     destination = _bot.Position;
 
@@ -185,7 +199,6 @@ namespace AIRefactored.AI.Combat.States
         private Vector3 GetSafeNearbyPosition()
         {
             Vector3 basePos = _bot != null ? _bot.Position : Vector3.zero;
-
             Vector3 candidate = basePos + UnityEngine.Random.insideUnitSphere * ScanRadius;
             candidate.y = basePos.y; // flatten for ground nav
 
@@ -198,6 +211,21 @@ namespace AIRefactored.AI.Combat.States
 
             // Fallback: nudge forward
             return IsVectorValid(basePos) ? basePos + Vector3.forward * 0.15f : Vector3.zero;
+        }
+
+        /// <summary>
+        /// Adds slight "human" error/jitter to destination so bots do not converge unnaturally.
+        /// </summary>
+        private Vector3 ApplyHumanRandomness(Vector3 pos)
+        {
+            if (_cache?.AIRefactoredBotOwner?.PersonalityProfile == null)
+                return pos;
+
+            float caution = _cache.AIRefactoredBotOwner.PersonalityProfile.Caution;
+            float maxOffset = Mathf.Lerp(RandomSweepDistance, 0.16f, caution); // bolder bots search tighter
+            Vector3 jitter = UnityEngine.Random.insideUnitSphere * maxOffset;
+            jitter.y = 0f;
+            return pos + jitter;
         }
 
         private static bool IsVectorValid(Vector3 v)

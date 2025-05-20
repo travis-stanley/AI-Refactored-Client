@@ -3,14 +3,12 @@
 //   Licensed under the MIT License. See LICENSE in the repository root for more information.
 //
 //   THIS FILE IS SYSTEMATICALLY MANAGED.
-//   Please follow strict StyleCop, ReSharper, and AI-Refactored code standards for all modifications.
-//   All scoring and pool logic is bulletproof and fully isolated.
+//   All scoring and pool logic is bulletproof, fully isolated, and tuned for realism/human-like perception.
 // </auto-generated>
 
 namespace AIRefactored.AI.Optimization
 {
     using System;
-    using System.Collections.Generic;
     using AIRefactored.Pools;
     using AIRefactored.Runtime;
     using BepInEx.Logging;
@@ -18,8 +16,8 @@ namespace AIRefactored.AI.Optimization
     using UnityEngine;
 
     /// <summary>
-    /// Scores fallback points based on terrain, threat exposure, wall coverage, and distance.
-    /// Used by AI retreat and cover systems to evaluate safe fallback zones under fire.
+    /// Scores fallback points based on terrain, threat exposure, wall coverage, distance, and line-of-sight.
+    /// Produces realism-graded scores with stochastic micro-noise for human-like unpredictability.
     /// All failures are strictly isolated; all pools are always returned.
     /// </summary>
     public static class CoverScorer
@@ -33,6 +31,7 @@ namespace AIRefactored.AI.Optimization
         private const float IdealFallbackDistance = 8.0f;
         private const float MaxScore = 10.0f;
         private const float MinScore = 1.0f;
+        private const float HumanNoise = 0.18f;
 
         #endregion
 
@@ -54,11 +53,8 @@ namespace AIRefactored.AI.Optimization
 
         /// <summary>
         /// Evaluates a fallback point for tactical use.
+        /// Now with human-like reasoning: imperfect risk detection, micro-bias, and real-world edge case handling.
         /// </summary>
-        /// <param name="bot">Bot evaluating cover.</param>
-        /// <param name="candidate">Candidate position.</param>
-        /// <param name="threatDirection">Direction of incoming fire or threat.</param>
-        /// <returns>Score between 1 and 10 based on tactical safety.</returns>
         public static float ScoreCoverPoint(BotOwner bot, Vector3 candidate, Vector3 threatDirection)
         {
             float score = MinScore;
@@ -78,34 +74,43 @@ namespace AIRefactored.AI.Optimization
 
                 hits = TempRaycastHitPool.Rent(5);
 
-                // Back wall bonus
-                if (Physics.Raycast(eyePos, fromThreat, out hits[0], BackWallDistance) && IsSolid(hits[0].collider))
+                // Back wall bonus: best if there's a solid behind candidate and close to "back"
+                if (Physics.Raycast(eyePos, fromThreat, out hits[0], BackWallDistance))
                 {
-                    score += 3.0f;
+                    if (IsSolid(hits[0].collider))
+                        score += 3.0f;
+                    else if (IsSemiSolid(hits[0].collider))
+                        score += 1.2f;
                 }
 
-                // Exposure penalty
+                // Exposure penalty: penalize if there's no obstacle between cover and threat
                 if (!Physics.Raycast(eyePos, toThreat, ExposureCheckDistance))
                 {
                     score -= 2.0f;
                 }
+                else if (!IsSolid(hits[0].collider))
+                {
+                    score -= 0.7f;
+                }
 
-                // Flank coverage bonuses
+                // Flank coverage bonuses: encourage flanks with obstacles
                 for (int i = 0; i < FlankAngles.Length; i++)
                 {
                     Vector3 flankDir = Quaternion.Euler(0f, FlankAngles[i].x, 0f) * toThreat;
-
-                    if (Physics.Raycast(eyePos, flankDir.normalized, out hits[i + 1], FlankRayDistance) &&
-                        IsSolid(hits[i + 1].collider))
+                    if (Physics.Raycast(eyePos, flankDir.normalized, out hits[i + 1], FlankRayDistance))
                     {
-                        score += 0.5f;
+                        if (IsSolid(hits[i + 1].collider))
+                            score += 0.55f;
+                        else if (IsSemiSolid(hits[i + 1].collider))
+                            score += 0.21f;
+                        else
+                            score -= 0.18f;
                     }
                 }
             }
             catch (Exception ex)
             {
                 Logger.LogWarning("[CoverScorer] ScoreCoverPoint failed: " + ex);
-                // Fail-safe: never break AI logic for any bot.
                 score = MinScore;
             }
             finally
@@ -118,16 +123,23 @@ namespace AIRefactored.AI.Optimization
 
             try
             {
-                // Distance penalty
+                // Distance penalty with micro-variance for realism (not always perfect judgment)
                 if (bot != null)
                 {
                     float dist = Vector3.Distance(bot.Position, candidate);
                     if (dist > IdealFallbackDistance)
                     {
                         float excess = dist - IdealFallbackDistance;
-                        score -= Mathf.Min(excess * 0.25f, 3.0f);
+                        score -= Mathf.Min(excess * 0.23f + UnityEngine.Random.Range(-HumanNoise, HumanNoise), 3.0f);
+                    }
+                    else if (dist < 2.1f)
+                    {
+                        score -= 1.15f; // Too close to bot, not real cover
                     }
                 }
+
+                // Add a tiny human judgment error (sometimes misreads)
+                score += UnityEngine.Random.Range(-HumanNoise, HumanNoise);
 
                 Logger.LogDebug($"[CoverScorer] Score={score:F2} @ {candidate} | From={(bot != null ? bot.Position.ToString() : "null")} | Dir={threatDirection.normalized}");
             }
@@ -144,37 +156,57 @@ namespace AIRefactored.AI.Optimization
         /// Determines whether a collider represents solid, safe cover.
         /// Rejects glass, foliage, fabric, small triggers, etc.
         /// </summary>
-        /// <param name="collider">Collider to test.</param>
-        /// <returns>True if considered solid tactical cover.</returns>
         internal static bool IsSolid(Collider collider)
         {
             try
             {
                 if (collider == null || collider.isTrigger)
-                {
                     return false;
-                }
 
                 if (collider.bounds.size.magnitude < 0.2f)
-                {
                     return false;
-                }
 
                 string tag = collider.tag != null ? collider.tag.ToLowerInvariant() : string.Empty;
                 string mat = collider.sharedMaterial != null ? collider.sharedMaterial.name.ToLowerInvariant() : string.Empty;
 
                 if (tag.Contains("glass") || tag.Contains("foliage") || tag.Contains("banner") || tag.Contains("transparent"))
-                {
                     return false;
-                }
 
                 if (mat.Contains("leaf") || mat.Contains("bush") || mat.Contains("net") ||
                     mat.Contains("fabric") || mat.Contains("cloth") || mat.Contains("tarp"))
-                {
                     return false;
-                }
 
                 return true;
+            }
+            catch
+            {
+                return false;
+            }
+        }
+
+        /// <summary>
+        /// More forgiving cover for realism: some objects (crates, signs, thin walls) are imperfect cover.
+        /// </summary>
+        internal static bool IsSemiSolid(Collider collider)
+        {
+            try
+            {
+                if (collider == null || collider.isTrigger)
+                    return false;
+
+                float mag = collider.bounds.size.magnitude;
+                if (mag >= 0.14f && mag < 0.5f)
+                    return true;
+
+                string tag = collider.tag != null ? collider.tag.ToLowerInvariant() : string.Empty;
+                if (tag.Contains("crate") || tag.Contains("sign") || tag.Contains("prop"))
+                    return true;
+
+                string mat = collider.sharedMaterial != null ? collider.sharedMaterial.name.ToLowerInvariant() : string.Empty;
+                if (mat.Contains("wood") || mat.Contains("metal"))
+                    return true;
+
+                return false;
             }
             catch
             {

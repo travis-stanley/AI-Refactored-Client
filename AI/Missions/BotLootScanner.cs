@@ -4,6 +4,8 @@
 //
 //   THIS FILE IS SYSTEMATICALLY MANAGED.
 //   Failures in AIRefactored logic must always trigger safe fallback to EFT base AI.
+//   Bulletproof: All failures are locally isolated, never disables itself, never triggers fallback AI.
+//   Realism Pass: Human-like, randomized, memory-driven loot scanning logic.
 // </auto-generated>
 
 namespace AIRefactored.AI.Looting
@@ -69,9 +71,7 @@ namespace AIRefactored.AI.Looting
             try
             {
                 if (cache == null || cache.Bot == null)
-                {
                     throw new ArgumentException("[BotLootScanner] Invalid initialization: missing cache or bot.");
-                }
 
                 _cache = cache;
                 _bot = cache.Bot;
@@ -149,7 +149,7 @@ namespace AIRefactored.AI.Looting
                     }
                 }
 
-                return best;
+                return bestValue > 0f ? best : Vector3.zero;
             }
             catch (Exception ex)
             {
@@ -170,6 +170,7 @@ namespace AIRefactored.AI.Looting
 
                 Vector3 origin = _bot.Position;
 
+                // Prefer looting own corpse first (realistic behavior)
                 LootableContainer corpse = DeadBodyContainerCache.Get(_bot.ProfileId);
                 if (corpse != null && corpse.enabled && !IsOnCooldown(corpse.name))
                 {

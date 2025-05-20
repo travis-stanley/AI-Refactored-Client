@@ -4,6 +4,7 @@
 //
 //   THIS FILE IS SYSTEMATICALLY MANAGED.
 //   Bulletproof: No fallback logic. All look direction and update failures are locally logged and isolated only.
+//   Realism Pass: Human-like micro-scanning, distraction, and organic idle head/eye movement.
 // </auto-generated>
 
 namespace AIRefactored.AI.Movement
@@ -31,6 +32,8 @@ namespace AIRefactored.AI.Movement
         private const float SoundMemoryDuration = 4f;
         private const float IdleScanInterval = 2.4f;
         private const float IdleScanAngleMax = 65f;
+        private const float IdleScanJitter = 7f;
+        private const float IdleMissChance = 0.02f; // ~2% chance per tick to drift off idle
 
         #endregion
 
@@ -47,6 +50,7 @@ namespace AIRefactored.AI.Movement
         private float _nextIdleScanTime;
         private float _currentIdleAngle;
         private int _idleScanDirection; // -1 or 1
+        private float _idleJitterOffset;
 
         #endregion
 
@@ -66,6 +70,7 @@ namespace AIRefactored.AI.Movement
             _nextIdleScanTime = Time.time + UnityEngine.Random.Range(0.5f, 2.2f);
             _currentIdleAngle = 0f;
             _idleScanDirection = UnityEngine.Random.value > 0.5f ? 1 : -1;
+            _idleJitterOffset = UnityEngine.Random.Range(-IdleScanJitter, IdleScanJitter);
         }
 
         #endregion
@@ -106,7 +111,6 @@ namespace AIRefactored.AI.Movement
             catch (Exception ex)
             {
                 Logger.LogError("[BotLookController] Tick failed: " + ex);
-                // Fallback logic removed; log only.
             }
         }
 
@@ -212,16 +216,21 @@ namespace AIRefactored.AI.Movement
                     return origin + _cache.LastHeardDirection.normalized * HeardDirectionWeight;
                 }
 
-                // Idle scanning: smoothly scan back and forth like a human player.
+                // Idle scanning: smoothly scan, with occasional micro "drift" (miss), like a real player's eyes/head.
                 if (now > _nextIdleScanTime)
                 {
                     _idleScanDirection = UnityEngine.Random.value > 0.5f ? 1 : -1;
                     _nextIdleScanTime = now + IdleScanInterval + UnityEngine.Random.Range(-0.5f, 0.7f);
+                    _idleJitterOffset = UnityEngine.Random.Range(-IdleScanJitter, IdleScanJitter);
                 }
 
-                // Calculate idle scan angle: slowly oscillate between -IdleScanAngleMax and +IdleScanAngleMax
-                float angleDelta = IdleScanAngleMax * _idleScanDirection * deltaTime * 0.5f;
-                _currentIdleAngle = Mathf.Clamp(_currentIdleAngle + angleDelta, -IdleScanAngleMax, IdleScanAngleMax);
+                // Randomly "drift" the angle or snap back for realism.
+                if (UnityEngine.Random.value < IdleMissChance)
+                    _currentIdleAngle += UnityEngine.Random.Range(-5f, 5f);
+
+                // Slowly oscillate between -IdleScanAngleMax and +IdleScanAngleMax, jitter included.
+                float baseAngle = IdleScanAngleMax * _idleScanDirection * deltaTime * 0.5f;
+                _currentIdleAngle = Mathf.Clamp(_currentIdleAngle + baseAngle + _idleJitterOffset * deltaTime * 0.15f, -IdleScanAngleMax, IdleScanAngleMax);
 
                 Vector3 fwd = _bot.LookDirection.sqrMagnitude > 0.5f ? _bot.LookDirection.normalized : Vector3.forward;
                 Quaternion idleYaw = Quaternion.AngleAxis(_currentIdleAngle, Vector3.up);

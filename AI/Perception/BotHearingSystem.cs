@@ -5,6 +5,7 @@
 //   THIS FILE IS SYSTEMATICALLY MANAGED.
 //   Failures in AIRefactored logic must always trigger safe fallback to EFT base AI, never break the stack.
 //   Please follow strict StyleCop, ReSharper, and AI-Refactored code standards for all modifications.
+//   Realism Pass: Personality-driven hearing, squad filtering, and variable auditory delay for lifelike response.
 // </auto-generated>
 
 namespace AIRefactored.AI.Perception
@@ -20,8 +21,9 @@ namespace AIRefactored.AI.Perception
     using UnityEngine;
 
     /// <summary>
-    /// Detects footsteps and gunfire from nearby bots and players, filtered by hearing range.
-    /// Ignores self and squadmates based on GroupId.
+    /// Detects footsteps and gunfire from nearby bots and players, filtered by dynamic hearing range.
+    /// Ignores self and squadmates by active GroupId, but always hears enemies and unknowns.
+    /// Response is randomized for lifelike auditory delay and awareness.
     /// </summary>
     public sealed class BotHearingSystem
     {
@@ -29,6 +31,8 @@ namespace AIRefactored.AI.Perception
 
         private const float BaseHearingRange = 35f;
         private const float TimeWindow = 3f;
+        private const float MinScanJitter = -0.45f;
+        private const float MaxScanJitter = 0.75f;
 
         #endregion
 
@@ -36,15 +40,16 @@ namespace AIRefactored.AI.Perception
 
         private BotOwner _bot;
         private BotComponentCache _cache;
+        private float _nextScanTime;
+        private float _personalScanJitter;
 
         #endregion
 
         #region Public API
 
         /// <summary>
-        /// Initializes the hearing system with the bot's component cache.
+        /// Initializes the hearing system for the bot.
         /// </summary>
-        /// <param name="cache">Runtime bot cache.</param>
         public void Initialize(BotComponentCache cache)
         {
             try
@@ -53,6 +58,8 @@ namespace AIRefactored.AI.Perception
                 {
                     _bot = null;
                     _cache = null;
+                    _nextScanTime = 0f;
+                    _personalScanJitter = 0f;
                     return;
                 }
 
@@ -61,59 +68,66 @@ namespace AIRefactored.AI.Perception
                 {
                     _bot = null;
                     _cache = null;
+                    _nextScanTime = 0f;
+                    _personalScanJitter = 0f;
                     return;
                 }
 
                 _bot = cache.Bot;
                 _cache = cache;
+                _personalScanJitter = UnityEngine.Random.Range(MinScanJitter, MaxScanJitter);
+                _nextScanTime = Time.time + 1f + _personalScanJitter;
             }
             catch (Exception ex)
             {
                 _bot = null;
                 _cache = null;
+                _nextScanTime = 0f;
+                _personalScanJitter = 0f;
                 Plugin.LoggerInstance.LogError($"[BotHearingSystem] Initialize exception: {ex}");
             }
         }
 
         /// <summary>
-        /// Scans for sound cues from nearby players and bots.
+        /// Ticks the hearing system logic.
         /// </summary>
-        /// <param name="deltaTime">Frame time in seconds.</param>
         public void Tick(float deltaTime)
         {
             try
             {
                 if (!GameWorldHandler.IsSafeToInitialize || _bot == null || _cache == null)
-                {
                     return;
-                }
-
                 if (!IsActive())
-                {
                     return;
-                }
+
+                float now = Time.time;
+                if (now < _nextScanTime)
+                    return;
+
+                float hearingRange = GetEffectiveHearingRange(_bot, _cache);
+
+                _nextScanTime = now + UnityEngine.Random.Range(1.4f, 2.1f) + _personalScanJitter;
 
                 Vector3 origin = _bot.Position;
-                float rangeSqr = BaseHearingRange * BaseHearingRange;
+                float rangeSqr = hearingRange * hearingRange;
 
                 List<Player> players = null;
                 try
                 {
-                    players = BotMemoryStore.GetNearbyPlayers(origin, BaseHearingRange);
+                    players = BotMemoryStore.GetNearbyPlayers(origin, hearingRange);
                     int count = players != null ? players.Count : 0;
                     for (int i = 0; i < count; i++)
                     {
                         Player candidate = players[i];
                         if (!IsAudibleSource(candidate, origin, rangeSqr))
-                        {
                             continue;
-                        }
 
                         if (HeardSomething(candidate))
                         {
                             Vector3 pos = EFTPlayerUtil.GetPosition(candidate);
                             if (pos.sqrMagnitude > 0.01f)
                             {
+                                // Register heard sound immediately. Jittered delay not supported in scheduler.
                                 _cache.RegisterHeardSound(pos);
                             }
                         }
@@ -122,15 +136,12 @@ namespace AIRefactored.AI.Perception
                 finally
                 {
                     if (players != null)
-                    {
                         TempListPool.Return(players);
-                    }
                 }
             }
             catch (Exception ex)
             {
                 Plugin.LoggerInstance.LogError($"[BotHearingSystem] Tick exception: {ex}");
-                // Never break or nullify other systems. Only disable hearing for this bot if repeated exceptions occur.
                 _bot = null;
                 _cache = null;
             }
@@ -162,36 +173,79 @@ namespace AIRefactored.AI.Perception
         private bool IsAudibleSource(Player candidate, Vector3 origin, float rangeSqr)
         {
             if (!EFTPlayerUtil.IsValid(candidate))
-            {
                 return false;
-            }
 
             Player self = _bot.GetPlayer;
             if (candidate == self)
-            {
                 return false;
-            }
 
-            if (IsSameGroup(self, candidate))
-            {
+            // Only ignore squadmates, not all bots
+            if (IsSameActiveSquad(self, candidate))
                 return false;
-            }
 
             Vector3 pos = EFTPlayerUtil.GetPosition(candidate);
             return (pos - origin).sqrMagnitude <= rangeSqr;
         }
 
-        private static bool IsSameGroup(Player a, Player b)
+        private static bool IsSameActiveSquad(Player a, Player b)
         {
             if (a == null || b == null)
-            {
                 return false;
-            }
 
             string ag = a.Profile?.Info?.GroupId;
             string bg = b.Profile?.Info?.GroupId;
+            bool same = !string.IsNullOrEmpty(ag) && ag == bg;
 
-            return !string.IsNullOrEmpty(ag) && ag == bg;
+            return same && b.HealthController != null && b.HealthController.IsAlive;
+        }
+
+        /// <summary>
+        /// Computes effective hearing radius based on personality, stance, and mild environmental factor.
+        /// </summary>
+        private static float GetEffectiveHearingRange(BotOwner bot, BotComponentCache cache)
+        {
+            float baseRange = BaseHearingRange;
+            float awareness = 0.5f;
+            float hearing = 0.5f;
+            float caution = 0.5f;
+            float stanceBias = 0f;
+
+            var profile = cache.AIRefactoredBotOwner?.PersonalityProfile;
+            if (profile != null)
+            {
+                if (profile.Awareness > 0f)
+                    awareness = Mathf.Clamp01(profile.Awareness);
+                if (profile.HearingBias > 0f)
+                    hearing = Mathf.Clamp01(profile.HearingBias);
+                if (profile.Caution > 0f)
+                    caution = Mathf.Clamp01(profile.Caution);
+                stanceBias = Mathf.Clamp(profile.StanceBias, -1.0f, 2.0f); // -1 standing, 0 neutral, 1 crouch, 2 prone
+            }
+
+            float stanceFactor = 1.0f;
+            try
+            {
+                var movement = bot.GetPlayer?.MovementContext;
+                if (movement != null)
+                {
+                    float pose = movement.PoseLevel;
+                    if (pose > 20f && pose < 65f) stanceFactor = 1.1f + 0.1f * stanceBias; // Crouched, with bias
+                    else if (pose <= 20f) stanceFactor = 1.05f + 0.1f * stanceBias; // Prone, with bias
+                    else stanceFactor = 1.0f + 0.05f * stanceBias; // Standing/other, with bias
+                }
+            }
+            catch { }
+
+            // Environmental: mild noise dampening (simulate weather)
+            float environmentNoise = UnityEngine.Random.Range(0.93f, 1.04f);
+
+            // Final range: base scaled by awareness, hearing bias, caution, stance, and environment
+            float range = baseRange
+                * (0.90f + 0.14f * awareness + 0.13f * hearing + 0.09f * caution)
+                * stanceFactor
+                * environmentNoise;
+
+            return Mathf.Clamp(range, 15f, 55f);
         }
 
         #endregion

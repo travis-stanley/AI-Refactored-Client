@@ -27,9 +27,11 @@ namespace AIRefactored.AI.Combat
     {
         private const float PanicCooldown = 5f;
         private const float PanicDuration = 3.5f;
-        private const float RecoverySpeed = 0.2f;
+        private const float RecoverySpeed = 0.21f;
         private const float SquadRadiusSqr = 225f;
         private const float LowHealthThreshold = 25f;
+        private const float MinHumanDelay = 0.05f;
+        private const float MaxHumanDelay = 0.12f;
 
         private BotOwner _bot;
         private BotComponentCache _cache;
@@ -38,6 +40,7 @@ namespace AIRefactored.AI.Combat
         private float _panicStartTime = -1f;
         private float _lastPanicExitTime = -99f;
         private bool _isPanicking;
+        private float _lastVoiceTime = -99f;
 
         public bool IsPanicking => _isPanicking;
 
@@ -73,10 +76,20 @@ namespace AIRefactored.AI.Combat
 
             try
             {
+                // Add slight human micro-delay for realism
+                if (UnityEngine.Random.value < 0.04f)
+                    return;
+
                 if (_isPanicking)
                 {
+                    // Flinch, heavy breathing, "frozen" moment
                     if (time - _panicStartTime > PanicDuration)
                         EndPanic(time);
+                    else if (!FikaHeadlessDetector.IsHeadless && _bot.BotTalk != null && time - _lastVoiceTime > 1.5f && UnityEngine.Random.value < 0.38f)
+                    {
+                        _lastVoiceTime = time;
+                        try { _bot.BotTalk.TrySay(EPhraseTrigger.OnBeingHurt); } catch { }
+                    }
                     return;
                 }
 
@@ -85,6 +98,7 @@ namespace AIRefactored.AI.Combat
                 if (time <= _lastPanicExitTime + PanicCooldown)
                     return;
 
+                // Multiple triggers: composure loss, threat, nearby panic, or sudden injury/flash
                 if (ShouldPanicFromThreat())
                 {
                     Vector3 retreat = -_bot.LookDirection.normalized;
@@ -138,7 +152,7 @@ namespace AIRefactored.AI.Combat
                 TryStartPanic(Time.time, retreatDir);
 
                 if (_bot.Memory?.GoalEnemy?.Person is Player enemy && !string.IsNullOrEmpty(enemy.ProfileId))
-                    _cache.LastShotTracker?.RegisterHit(enemy.ProfileId);
+                    _cache.LastShotTracker?.RegisterHit(enemy.ProfileId, part, Vector3.Distance(_bot.Position, info.HitPoint), retreatDir);
 
                 _cache.InjurySystem?.OnHit(part, damage);
                 _cache.GroupComms?.SayHit();
@@ -157,14 +171,21 @@ namespace AIRefactored.AI.Combat
                 if (profile == null || profile.IsFrenzied || profile.IsStubborn)
                     return false;
 
+                // Flash, very low health, or extremely low composure can all panic a bot
                 if (_cache.FlashGrenade?.IsFlashed() == true)
+                    return true;
+
+                if (_composureLevel < 0.18f)
                     return true;
 
                 if (_bot.HealthController == null)
                     return false;
 
                 ValueStruct health = _bot.HealthController.GetBodyPartHealth(EBodyPart.Common);
-                return health.Current < LowHealthThreshold;
+                if (health.Current < LowHealthThreshold)
+                    return true;
+
+                return false;
             }
             catch (Exception ex)
             {
@@ -177,7 +198,9 @@ namespace AIRefactored.AI.Combat
         {
             try
             {
-                _composureLevel = Mathf.Clamp01(_composureLevel + deltaTime * RecoverySpeed);
+                // Human-like: recovery is slightly randomized per frame for organic feel
+                float mod = UnityEngine.Random.Range(0.93f, 1.11f);
+                _composureLevel = Mathf.Clamp01(_composureLevel + deltaTime * RecoverySpeed * mod);
             }
             catch (Exception ex)
             {
@@ -199,7 +222,10 @@ namespace AIRefactored.AI.Combat
 
                 float cohesion = _cache.AIRefactoredBotOwner?.PersonalityProfile?.Cohesion ?? 1f;
 
-                Vector3 fallback = _bot.Position + retreatDir.normalized * 8f;
+                Vector3 fallback = _bot.Position + retreatDir.normalized * UnityEngine.Random.Range(7.5f, 10.5f);
+                fallback += UnityEngine.Random.insideUnitSphere * 0.55f;
+                fallback.y = _bot.Position.y;
+
                 if (BotNavHelper.TryGetSafeTarget(_bot, out var navTarget) && IsVectorValid(navTarget))
                     fallback = navTarget;
 
@@ -216,8 +242,12 @@ namespace AIRefactored.AI.Combat
 
                 if (!FikaHeadlessDetector.IsHeadless && _bot.BotTalk != null)
                 {
-                    try { _bot.BotTalk.TrySay(EPhraseTrigger.OnBeingHurt); }
-                    catch { }
+                    if (Time.time - _lastVoiceTime > 1.2f && UnityEngine.Random.value < 0.65f)
+                    {
+                        try { _bot.BotTalk.TrySay(EPhraseTrigger.OnBeingHurt); }
+                        catch { }
+                        _lastVoiceTime = Time.time;
+                    }
                 }
             }
             catch (Exception ex)

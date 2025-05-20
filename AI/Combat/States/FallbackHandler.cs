@@ -26,11 +26,14 @@ namespace AIRefactored.AI.Combat.States
     public sealed class FallbackHandler : IDisposable
     {
         private const float MinArrivalDistance = 0.1f;
+        private const float MinHumanDelay = 0.09f;
+        private const float MaxHumanDelay = 0.22f;
 
         private readonly BotOwner _bot;
         private readonly BotComponentCache _cache;
         private readonly List<Vector3> _currentFallbackPath;
         private Vector3 _fallbackTarget;
+        private float _lastMoveTime;
 
         public FallbackHandler(BotComponentCache cache)
         {
@@ -38,6 +41,7 @@ namespace AIRefactored.AI.Combat.States
             _bot = cache?.Bot;
             _fallbackTarget = _bot != null ? _bot.Position : Vector3.zero;
             _currentFallbackPath = TempListPool.Rent<Vector3>();
+            _lastMoveTime = -1000f;
         }
 
         public Vector3 GetFallbackPosition() => _fallbackTarget;
@@ -82,12 +86,12 @@ namespace AIRefactored.AI.Combat.States
             {
                 _fallbackTarget = _currentFallbackPath[_currentFallbackPath.Count - 1];
             }
-            else
-            {
-                // Do not log: final fallback path was invalid
-            }
+            // No log needed for short/invalid
         }
 
+        /// <summary>
+        /// True if bot needs to perform fallback now.
+        /// </summary>
         public bool ShallUseNow(float time)
         {
             return _bot != null &&
@@ -95,12 +99,31 @@ namespace AIRefactored.AI.Combat.States
                    Vector3.Distance(_bot.Position, _fallbackTarget) > MinArrivalDistance;
         }
 
+        /// <summary>
+        /// Context-sensitive: bots may hesitate/fail fallback under stress.
+        /// </summary>
         public bool ShouldTriggerSuppressedFallback(float now, float lastStateChangeTime, float minStateDuration)
         {
-            return _cache?.Suppression?.IsSuppressed() == true &&
-                   (now - lastStateChangeTime) >= minStateDuration;
+            var suppression = _cache?.Suppression ?? null;
+            var panic = _cache?.PanicHandler ?? null;
+            float caution = _cache?.PersonalityProfile?.Caution ?? 0.5f;
+
+            bool isSuppressed = suppression != null && suppression.IsSuppressed();
+            bool isPanicking = panic != null && panic.IsPanicking;
+
+            // Hesitant bots may fumble fallback; only assert if enough time has passed and chance succeeds
+            if (isSuppressed && (now - lastStateChangeTime) >= minStateDuration)
+            {
+                if (isPanicking || (caution < 0.2f && UnityEngine.Random.value < 0.4f))
+                    return false; // Simulate "freeze" or panic-fail
+                return true;
+            }
+            return false;
         }
 
+        /// <summary>
+        /// Main tick. Moves along fallback path with realistic hesitation, human-like path deviation, and speech/stance.
+        /// </summary>
         public void Tick(float time, Action<CombatState, float> forceState)
         {
             if (_bot == null || !IsVectorValid(_fallbackTarget))
@@ -112,11 +135,22 @@ namespace AIRefactored.AI.Combat.States
                 if (!EFTPlayerUtil.IsValid(player))
                     return;
 
+                // Human-like delay/hesitation between fallback actions
+                float now = Time.time;
+                float delay = UnityEngine.Random.Range(MinHumanDelay, MaxHumanDelay);
+                if (now - _lastMoveTime < delay)
+                    return;
+                _lastMoveTime = now;
+
                 Vector3 fallbackPoint = _fallbackTarget;
                 if (!BotNavHelper.TryGetSafeTarget(_bot, out fallbackPoint) || !IsVectorValid(fallbackPoint))
                 {
                     fallbackPoint = GetSafeRandomFallback(_bot.Position);
                 }
+
+                // Small random jitter to simulate human error/adjustment under stress
+                fallbackPoint += UnityEngine.Random.insideUnitSphere * 0.15f;
+                fallbackPoint.y = _bot.Position.y;
 
                 if (_bot.Mover != null)
                 {
@@ -180,7 +214,6 @@ namespace AIRefactored.AI.Combat.States
         /// </summary>
         private Vector3 GetSafeRandomFallback(Vector3 origin)
         {
-            // Use PatrollingData.CurTargetPoint if valid and not too close.
             if (_bot != null && _bot.PatrollingData != null)
             {
                 Vector3 curPatrolTarget = _bot.PatrollingData.CurTargetPoint;
@@ -188,7 +221,6 @@ namespace AIRefactored.AI.Combat.States
                     return curPatrolTarget;
             }
 
-            // Otherwise, use NavMesh to sample a nearby point.
             Vector3 candidate = origin + UnityEngine.Random.onUnitSphere * 2.0f;
             candidate.y = origin.y;
 

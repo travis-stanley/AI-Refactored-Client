@@ -3,14 +3,13 @@
 //   Licensed under the MIT License. See LICENSE in the repository root for more information.
 //
 //   THIS FILE IS SYSTEMATICALLY MANAGED.
-//   All async and optimization routines are bulletproof and fully isolated.
+//   All async and optimization routines are bulletproof and fully isolated. Realism Pass: robust async safety, deterministic group sync, personality logic is atomic.
 // </auto-generated>
 
 namespace AIRefactored.AI.Optimization
 {
     using System;
     using System.Collections.Generic;
-    using System.Threading;
     using System.Threading.Tasks;
     using AIRefactored.AI.Core;
     using AIRefactored.AI.Groups;
@@ -69,6 +68,7 @@ namespace AIRefactored.AI.Optimization
                 _hasInitialized = false;
                 _lastThinkTime = 0f;
 
+                // Detach task: no cancellation, bulletproof
                 Task.Run(async () =>
                 {
                     try
@@ -81,8 +81,7 @@ namespace AIRefactored.AI.Optimization
                     }
                     catch (Exception ex)
                     {
-                        if (!FikaHeadlessDetector.IsHeadless)
-                            Logger.LogWarning("[BotAsyncProcessor] Async init failed: " + ex.Message);
+                        LogWarn("[BotAsyncProcessor] Async init failed: " + ex.Message);
                     }
                 });
             }
@@ -114,7 +113,8 @@ namespace AIRefactored.AI.Optimization
 
                 if (FikaHeadlessDetector.IsHeadless)
                 {
-                    ThreadPool.QueueUserWorkItem(_ =>
+                    // ThreadPool work item for true headless async
+                    System.Threading.ThreadPool.QueueUserWorkItem(_ =>
                     {
                         try { Think(); }
                         catch (Exception ex) { LogWarn("[BotAsyncProcessor] Async headless think failed: " + ex.Message); }
@@ -182,7 +182,7 @@ namespace AIRefactored.AI.Optimization
                 if (_bot == null || _bot.IsDead)
                     return;
 
-                // Mumble phrase simulation with ultra-low random chance.
+                // Simulate human-like random mumble phrases extremely rarely, only on main thread.
                 if (UnityEngine.Random.value < 0.008f)
                 {
                     BotWorkScheduler.EnqueueToMainThread(() =>

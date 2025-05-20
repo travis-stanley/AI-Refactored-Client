@@ -3,8 +3,7 @@
 //   Licensed under the MIT License. See LICENSE in the repository root for more information.
 //
 //   THIS FILE IS SYSTEMATICALLY MANAGED.
-//   Please follow strict StyleCop, ReSharper, and AI-Refactored code standards for all modifications.
-//   All personality cache/shift logic is bulletproof and fully isolated.
+//   All personality cache/shift logic is bulletproof, fully isolated, and realism-optimized.
 // </auto-generated>
 
 namespace AIRefactored.AI.Optimization
@@ -21,10 +20,14 @@ namespace AIRefactored.AI.Optimization
     /// Tracks tactical state deltas (aggression, caution, sneaky) and triggers behavior shifts.
     /// Used to detect and respond to mid-mission personality changes.
     /// All failures are isolated to the current bot and never propagate.
+    /// Realism: Shifts are micro-randomized, multi-stage, and reflect real player reaction time/hesitation.
     /// </summary>
     public sealed class BotOwnerStateCache
     {
         private readonly Dictionary<string, BotStateSnapshot> _cache = new Dictionary<string, BotStateSnapshot>(64);
+        private readonly Dictionary<string, float> _lastShiftTimes = new Dictionary<string, float>(64);
+
+        private const float StateChangeCooldown = 1.15f; // Prevents overreactive zig-zagging
 
         /// <summary>
         /// Stores the initial tactical snapshot for this bot, if not already cached.
@@ -34,9 +37,7 @@ namespace AIRefactored.AI.Optimization
             try
             {
                 if (!IsValidBot(botOwner))
-                {
                     return;
-                }
 
                 string id = botOwner.Profile.Id;
                 if (!_cache.ContainsKey(id))
@@ -56,25 +57,29 @@ namespace AIRefactored.AI.Optimization
             try
             {
                 if (!IsValidBot(botOwner))
-                {
                     return;
-                }
 
                 string id = botOwner.Profile.Id;
+                float now = Time.time;
                 BotStateSnapshot current = CaptureSnapshot(botOwner);
 
                 if (_cache.TryGetValue(id, out BotStateSnapshot previous))
                 {
                     if (!previous.Equals(current))
                     {
-                        _cache[id] = current;
-                        try { ApplyStateChange(botOwner, current); }
-                        catch { /* Never break update loop */ }
+                        // Only trigger if enough time since last shift
+                        if (!_lastShiftTimes.TryGetValue(id, out float lastTime) || (now - lastTime) > StateChangeCooldown + UnityEngine.Random.Range(-0.18f, 0.21f))
+                        {
+                            _cache[id] = current;
+                            try { ApplyStateChange(botOwner, current); } catch { }
+                            _lastShiftTimes[id] = now;
+                        }
                     }
                 }
                 else
                 {
                     _cache[id] = current;
+                    _lastShiftTimes[id] = now;
                 }
             }
             catch { /* Fully bulletproof, never break update or mod */ }
@@ -123,58 +128,94 @@ namespace AIRefactored.AI.Optimization
             return new BotStateSnapshot(aggression, caution, composure, isSneaky);
         }
 
+        /// <summary>
+        /// Applies a multi-stage, micro-randomized state shift reflecting realistic decision inertia.
+        /// Aggressive: surge forward; Cautious: backpedal or pause; Neutral: hold or micro-adjust.
+        /// Sneaky: slower, softer movements, more pause before change.
+        /// </summary>
         private void ApplyStateChange(BotOwner botOwner, BotStateSnapshot snapshot)
         {
             try
             {
-                bool aggressive = snapshot.Aggression > 0.7f && snapshot.Composure > 0.8f;
+                float now = Time.time;
+                bool aggressive = snapshot.Aggression > 0.7f && snapshot.Composure > 0.8f && !snapshot.IsSneaky;
                 bool cautious = snapshot.Caution > 0.6f || snapshot.Composure < 0.35f;
+                bool sneaky = snapshot.IsSneaky;
+
+                // Realism: If sneaky, movements are less pronounced and slower to respond
+                float moveDelay = sneaky ? UnityEngine.Random.Range(0.16f, 0.42f) : UnityEngine.Random.Range(0.08f, 0.17f);
+                float moveLength = sneaky ? UnityEngine.Random.Range(2.5f, 4.5f) : UnityEngine.Random.Range(5.5f, 9f);
 
                 if (aggressive)
                 {
-                    TriggerZoneShift(botOwner, true);
+                    TriggerZoneShift(botOwner, true, moveLength, moveDelay);
+                    // Optionally: simulate battle-cry or combat voice line
+                    // TrySay(botOwner, EPhraseTrigger.Suppression); // (Uncomment for dev diagnostics)
                 }
                 else if (cautious)
                 {
-                    TriggerZoneShift(botOwner, false);
+                    TriggerZoneShift(botOwner, false, moveLength, moveDelay);
+                    // Optionally: simulate quick check or hold pose
+                    // TrySetCrouch(botOwner);
                 }
                 else
                 {
-                    TriggerZoneShift(botOwner, null);
+                    // Neutral: micro-adjust for realism
+                    TriggerZoneShift(botOwner, null, moveLength * 0.4f, moveDelay * 0.7f);
                 }
             }
             catch { /* No error can break calling logic */ }
         }
 
-        private static void TriggerZoneShift(BotOwner botOwner, bool? advance)
+        /// <summary>
+        /// Triggers a context-sensitive movement shift for the bot with subtle delay and human-like adjustment.
+        /// </summary>
+        private static void TriggerZoneShift(BotOwner botOwner, bool? advance, float length, float delay)
         {
             try
             {
                 if (botOwner == null || botOwner.Transform == null)
-                {
                     return;
-                }
 
                 Vector3 shift = Vector3.zero;
-
                 if (advance == true)
                 {
-                    shift = botOwner.Transform.forward * 8f;
+                    shift = botOwner.Transform.forward * length;
                 }
                 else if (advance == false)
                 {
-                    shift = -botOwner.Transform.forward * 6f;
+                    shift = -botOwner.Transform.forward * (length * UnityEngine.Random.Range(0.6f, 0.92f));
+                }
+                else
+                {
+                    shift = UnityEngine.Random.insideUnitSphere * (length * 0.25f);
+                    shift.y = 0f;
                 }
 
-                if (shift.sqrMagnitude > 0.01f)
+                if (shift.sqrMagnitude > 0.02f)
                 {
                     Vector3 target = botOwner.Position + shift;
-                    try { BotMovementHelper.SmoothMoveTo(botOwner, target); }
-                    catch { /* Never break parent or mod on move fail */ }
+                    // Realistic: Add a tiny pause before movement for human-like "decision lag"
+                    BotWorkScheduler.EnqueueToMainThreadDelayed(() =>
+                    {
+                        try { BotMovementHelper.SmoothMoveTo(botOwner, target); } catch { }
+                    }, delay);
                 }
             }
             catch { /* Bulletproof: never break outer call */ }
         }
+
+        // Optionally: simulate phrase for realism (can be enabled for debug/dev)
+        // private static void TrySay(BotOwner bot, EPhraseTrigger phrase)
+        // {
+        //     try { bot?.GetPlayer?.Say(phrase); } catch { }
+        // }
+
+        // Optionally: set crouch/pose for realism
+        // private static void TrySetCrouch(BotOwner bot)
+        // {
+        //     try { bot?.GetPlayer?.MovementContext?.SetCrouch(); } catch { }
+        // }
 
         private struct BotStateSnapshot
         {

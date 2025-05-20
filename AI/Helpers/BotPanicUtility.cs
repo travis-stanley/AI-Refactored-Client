@@ -3,13 +3,14 @@
 //   Licensed under the MIT License. See LICENSE in the repository root for more information.
 //
 //   THIS FILE IS SYSTEMATICALLY MANAGED.
-//   Failures in AIRefactored logic must always trigger safe fallback to EFT base AI.
+//   All panic propagation is bulletproof, organic, and never blocks the group.
 // </auto-generated>
 
 namespace AIRefactored.AI.Helpers
 {
     using System;
     using System.Collections.Generic;
+    using System.Threading.Tasks;
     using AIRefactored.AI.Combat;
     using AIRefactored.AI.Core;
     using EFT;
@@ -43,7 +44,8 @@ namespace AIRefactored.AI.Helpers
         }
 
         /// <summary>
-        /// Triggers panic across an entire squad or cache group.
+        /// Triggers panic across an entire squad or cache group,
+        /// using staggered human-like delays for realism.
         /// All failures are local; one bot's error cannot affect the rest.
         /// </summary>
         public static void TriggerGroup(List<BotComponentCache> group)
@@ -55,7 +57,13 @@ namespace AIRefactored.AI.Helpers
             {
                 try
                 {
-                    Trigger(group[i]);
+                    var cache = group[i];
+                    // Staggered group panic (simulate squadmate lag/hesitation)
+                    if (IsEligible(cache))
+                    {
+                        float delay = 0.03f * i + GetPanicJitter(cache.Bot?.ProfileId, i);
+                        TriggerDelayedPanic(cache, delay);
+                    }
                 }
                 catch
                 {
@@ -65,7 +73,8 @@ namespace AIRefactored.AI.Helpers
         }
 
         /// <summary>
-        /// Triggers panic in all bots within a radius of the given origin.
+        /// Triggers panic in all bots within a radius of the given origin,
+        /// using staggered delays for realism.
         /// All failures are local; each bot handled independently.
         /// </summary>
         public static void TriggerNearby(Vector3 origin, float radius)
@@ -74,6 +83,7 @@ namespace AIRefactored.AI.Helpers
                 return;
 
             float radiusSqr = radius * radius;
+            int panicOrder = 0;
 
             foreach (BotComponentCache cache in BotCacheUtility.AllActiveBots())
             {
@@ -90,7 +100,9 @@ namespace AIRefactored.AI.Helpers
 
                     if (distSqr <= radiusSqr)
                     {
-                        cache.PanicHandler.TriggerPanic();
+                        float delay = 0.02f * panicOrder + GetPanicJitter(cache.Bot?.ProfileId, panicOrder);
+                        TriggerDelayedPanic(cache, delay);
+                        panicOrder++;
                     }
                 }
                 catch
@@ -137,6 +149,45 @@ namespace AIRefactored.AI.Helpers
                    !cache.Bot.IsDead &&
                    cache.PanicHandler != null &&
                    !cache.PanicHandler.IsPanicking;
+        }
+
+        /// <summary>
+        /// Deterministic per-bot, per-order jitter for panic delays.
+        /// Prevents robotic, perfectly-synchronized reactions.
+        /// </summary>
+        private static float GetPanicJitter(string profileId, int order)
+        {
+            int hash = (profileId?.GetHashCode() ?? 0) ^ (order * 31) ^ unchecked((int)0xACD1423B);
+            unchecked
+            {
+                hash = (int)((hash ^ (hash >> 15)) * 0x6B1F29);
+                float frac = (hash & 0xFFF) / 4096f;
+                return frac * 0.13f; // [0, ~0.13]
+            }
+        }
+
+        /// <summary>
+        /// Triggers panic on this bot after the given delay (in seconds), async/safe.
+        /// </summary>
+        private static void TriggerDelayedPanic(BotComponentCache cache, float delay)
+        {
+            if (cache == null)
+                return;
+            Task.Run(async () =>
+            {
+                try
+                {
+                    int ms = Mathf.Max(0, (int)(delay * 1000f));
+                    if (ms > 0)
+                        await Task.Delay(ms);
+                    if (IsEligible(cache))
+                        cache.PanicHandler.TriggerPanic();
+                }
+                catch
+                {
+                    // Never break async thread
+                }
+            });
         }
 
         #endregion

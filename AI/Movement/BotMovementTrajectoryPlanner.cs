@@ -5,6 +5,7 @@
 //   THIS FILE IS SYSTEMATICALLY MANAGED.
 //   Bulletproof: All failures are locally isolated; cannot break or cascade into other systems.
 //   Realism Pass: Personality-driven, smoothly-varying chaos; organic avoidance; no robotic movement artifacts.
+//   All movement is direction-based—never sets position or teleports.
 // </auto-generated>
 
 namespace AIRefactored.AI.Movement
@@ -19,6 +20,7 @@ namespace AIRefactored.AI.Movement
     /// Modifies a bot’s movement vector by applying chaos wobble, squad staggering offsets,
     /// and teammate collision avoidance. Produces natural movement flow and reduces clustering.
     /// All failures are locally isolated; cannot break or cascade into other systems.
+    /// Never directly sets position—modifies only the movement direction.
     /// </summary>
     public sealed class BotMovementTrajectoryPlanner
     {
@@ -74,6 +76,7 @@ namespace AIRefactored.AI.Movement
         /// Computes a modified movement direction vector for the bot.
         /// Applies chaos, squad offsets, avoidance, and velocity blending.
         /// Always bulletproof, never allocates, never throws, always returns a valid direction.
+        /// Never directly sets position—modifies only direction for path-based or controller-based movement.
         /// </summary>
         public Vector3 ModifyTrajectory(Vector3 targetDir, float deltaTime)
         {
@@ -81,7 +84,7 @@ namespace AIRefactored.AI.Movement
             {
                 float now = Time.unscaledTime;
 
-                // Chaos offset is updated only at a fixed interval
+                // Update chaos offset at a fixed interval
                 if (now >= _nextChaosUpdate)
                 {
                     UpdateTargetChaosOffset(now);
@@ -91,12 +94,13 @@ namespace AIRefactored.AI.Movement
                 Vector3 baseDir = (targetDir.sqrMagnitude > MinMagnitude) ? targetDir.normalized : Vector3.forward;
                 Vector3 adjusted = baseDir;
 
+                // Apply chaos offset (personality-driven, never causes jerkiness)
                 if (_chaosOffset.sqrMagnitude > MinMagnitude)
                 {
                     adjusted += _chaosOffset;
                 }
 
-                // Squad offset logic
+                // Squad offset for natural spacing
                 if (_cache.SquadPath != null)
                 {
                     Vector3 squadOffset = _cache.SquadPath.GetCurrentOffset();
@@ -106,14 +110,14 @@ namespace AIRefactored.AI.Movement
                     }
                 }
 
-                // Avoidance vector from nearby squadmates, with human-like "miss" chance
+                // Avoidance from squadmates (organic and includes miss chance)
                 Vector3 avoidVector = ComputeAvoidance();
                 if (avoidVector.sqrMagnitude > MinMagnitude)
                 {
                     adjusted += avoidVector.normalized * AvoidanceScale;
                 }
 
-                // Bot's current velocity (for true organic blending)
+                // Organic blend of bot's velocity (never abrupt)
                 Vector3 velocity = Vector3.zero;
                 try
                 {
@@ -131,6 +135,7 @@ namespace AIRefactored.AI.Movement
             }
             catch
             {
+                // If anything goes wrong, fall back to a neutral forward movement
                 return Vector3.forward;
             }
         }

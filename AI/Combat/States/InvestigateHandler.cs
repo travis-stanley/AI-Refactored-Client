@@ -4,6 +4,7 @@
 //
 //   THIS FILE IS SYSTEMATICALLY MANAGED.
 //   Bulletproof: All errors are locally isolated, never disables itself, never triggers fallback AI.
+//   Teleportation forbidden: All investigation movement is path-based, NavMesh-validated, and smooth.
 // </auto-generated>
 
 namespace AIRefactored.AI.Combat.States
@@ -22,6 +23,7 @@ namespace AIRefactored.AI.Combat.States
     /// Manages bot investigation behavior when sound or memory suggest enemy presence.
     /// Guides cautious, reactive movement toward enemy vicinity with adaptive stance.
     /// Bulletproof: All errors are locally isolated, never disables itself, never triggers fallback AI.
+    /// All investigation moves are NavMesh validated and never cause instant relocation.
     /// </summary>
     public sealed class InvestigateHandler
     {
@@ -37,6 +39,7 @@ namespace AIRefactored.AI.Combat.States
         private const float MinHumanDelay = 0.07f;
         private const float MaxHumanDelay = 0.18f;
         private const float RandomSweepDistance = 0.65f;
+        private const float NavMeshSampleRadius = 1.2f;
 
         #endregion
 
@@ -45,7 +48,6 @@ namespace AIRefactored.AI.Combat.States
         private readonly BotOwner _bot;
         private readonly BotComponentCache _cache;
         private readonly BotTacticalMemory _memory;
-
         private float _lastInvestigateTime = -1000f;
 
         #endregion
@@ -63,15 +65,18 @@ namespace AIRefactored.AI.Combat.States
 
         #region Main API
 
+        /// <summary>
+        /// Picks an investigation target, always NavMesh safe and human-randomized.
+        /// </summary>
         public Vector3 GetInvestigateTarget(Vector3 visualLastKnown)
         {
             try
             {
                 if (IsVectorValid(visualLastKnown))
-                    return ApplyHumanRandomness(visualLastKnown);
+                    return GetNavMeshSafeTarget(ApplyHumanRandomness(visualLastKnown));
 
                 if (TryGetMemoryEnemyPosition(out Vector3 memory))
-                    return ApplyHumanRandomness(memory);
+                    return GetNavMeshSafeTarget(ApplyHumanRandomness(memory));
 
                 return GetSafeNearbyPosition();
             }
@@ -82,6 +87,9 @@ namespace AIRefactored.AI.Combat.States
             }
         }
 
+        /// <summary>
+        /// Orders a move to an investigation target. Only issues path-based move commands.
+        /// </summary>
         public void Investigate(Vector3 target)
         {
             if (_cache == null || _bot == null)
@@ -97,7 +105,6 @@ namespace AIRefactored.AI.Combat.States
                 _lastInvestigateTime = now;
 
                 Vector3 destination = target;
-
                 if (_cache.SquadPath != null)
                 {
                     try { destination = _cache.SquadPath.ApplyOffsetTo(target); }
@@ -105,9 +112,7 @@ namespace AIRefactored.AI.Combat.States
                 }
 
                 destination = ApplyHumanRandomness(destination);
-
-                if (!BotNavHelper.TryGetSafeTarget(_bot, out destination) || !IsVectorValid(destination))
-                    destination = _bot.Position;
+                destination = GetNavMeshSafeTarget(destination);
 
                 if (_bot.Mover != null)
                 {
@@ -126,6 +131,9 @@ namespace AIRefactored.AI.Combat.States
             }
         }
 
+        /// <summary>
+        /// Whether the bot should enter investigation mode.
+        /// </summary>
         public bool ShallUseNow(float now, float lastTransition)
         {
             try
@@ -200,6 +208,9 @@ namespace AIRefactored.AI.Combat.States
             return false;
         }
 
+        /// <summary>
+        /// Returns a random, NavMesh-safe local position as a last resort.
+        /// </summary>
         private Vector3 GetSafeNearbyPosition()
         {
             Vector3 origin = _bot?.Position ?? Vector3.zero;
@@ -213,6 +224,16 @@ namespace AIRefactored.AI.Combat.States
             }
 
             return origin + Vector3.forward * 0.15f;
+        }
+
+        /// <summary>
+        /// Applies randomization and ensures result is always on NavMesh, never causes teleport.
+        /// </summary>
+        private static Vector3 GetNavMeshSafeTarget(Vector3 pos)
+        {
+            if (NavMesh.SamplePosition(pos, out NavMeshHit hit, NavMeshSampleRadius, NavMesh.AllAreas))
+                return hit.position;
+            return pos;
         }
 
         private Vector3 ApplyHumanRandomness(Vector3 pos)

@@ -5,6 +5,7 @@
 //   THIS FILE IS SYSTEMATICALLY MANAGED.
 //   Bulletproof: All failures are locally isolated, never disables itself, never triggers fallback AI.
 //   Realism Pass: All movement, fallback, and voice logic mimics real player patrolling.
+//   Teleportation forbidden: All movement is NavMesh/path-based, never instant.
 // </auto-generated>
 
 namespace AIRefactored.AI.Combat.States
@@ -24,6 +25,7 @@ namespace AIRefactored.AI.Combat.States
     /// Handles bot behavior while in Patrol state.
     /// Evaluates suppression, panic, wounds, or nearby deaths to trigger fallback, and moves bots between hotspots.
     /// Bulletproof: All failures are locally isolated, never disables itself, never triggers fallback AI.
+    /// All patrol and fallback moves are NavMesh-validated and strictly path-based.
     /// </summary>
     public sealed class PatrolHandler
     {
@@ -36,6 +38,8 @@ namespace AIRefactored.AI.Combat.States
         private const float MaxHumanDelay = 0.21f;
         private const float MinHotspotRandomOffset = 0.17f;
         private const float MaxHotspotRandomOffset = 1.1f;
+        private const float NavMeshSampleRadius = 1.2f;
+        private const float MaxPatrolDistance = 18f;
 
         #endregion
 
@@ -103,7 +107,8 @@ namespace AIRefactored.AI.Combat.States
                 if (ShouldTriggerFallback(time))
                 {
                     Vector3 fallback = TryGetFallbackPosition();
-                    if (!BotNavHelper.TryGetSafeTarget(_bot, out fallback) || !IsVectorValid(fallback))
+                    fallback = GetNavMeshSafe(fallback, _bot.Position);
+                    if (!IsVectorValid(fallback))
                         fallback = _bot.Position;
 
                     _cache.Combat?.TriggerFallback(fallback);
@@ -138,7 +143,8 @@ namespace AIRefactored.AI.Combat.States
                     catch { }
                 }
 
-                if (!BotNavHelper.TryGetSafeTarget(_bot, out target) || !IsVectorValid(target))
+                target = GetNavMeshSafe(target, _bot.Position);
+                if (!IsVectorValid(target) || (target - _bot.Position).sqrMagnitude > MaxPatrolDistance * MaxPatrolDistance)
                     target = _bot.Position;
 
                 if (_bot.Mover != null)
@@ -219,6 +225,9 @@ namespace AIRefactored.AI.Combat.States
 
         #region Fallback Logic
 
+        /// <summary>
+        /// Picks a safe fallback direction behind the bot, always NavMesh validated.
+        /// </summary>
         private Vector3 TryGetFallbackPosition()
         {
             if (_bot == null)
@@ -230,16 +239,24 @@ namespace AIRefactored.AI.Combat.States
                 retreat += UnityEngine.Random.insideUnitSphere * 0.45f;
                 retreat.y = _bot.Position.y;
 
-                if (!BotNavHelper.TryGetSafeTarget(_bot, out retreat) || !IsVectorValid(retreat))
-                    retreat = _bot.Position;
-
-                return retreat;
+                return GetNavMeshSafe(retreat, _bot.Position);
             }
             catch (Exception ex)
             {
                 Plugin.LoggerInstance.LogError($"[PatrolHandler] TryGetFallbackPosition failed: {ex}");
                 return _bot.Position;
             }
+        }
+
+        /// <summary>
+        /// Returns a NavMesh-validated position, or the fallback if not walkable.
+        /// </summary>
+        private static Vector3 GetNavMeshSafe(Vector3 candidate, Vector3 fallback)
+        {
+            UnityEngine.AI.NavMeshHit navHit;
+            if (UnityEngine.AI.NavMesh.SamplePosition(candidate, out navHit, NavMeshSampleRadius, UnityEngine.AI.NavMesh.AllAreas))
+                return navHit.position;
+            return fallback;
         }
 
         private static bool IsVectorValid(Vector3 v)

@@ -4,6 +4,7 @@
 //
 //   THIS FILE IS SYSTEMATICALLY MANAGED.
 //   Bulletproof: All errors are locally isolated, never disables handler, never disables squadmates, never triggers fallback AI.
+//   All fallback/echo points are hints only—never direct teleportation. All movement is path-based, never direct assignment.
 // </auto-generated>
 
 namespace AIRefactored.AI.Combat.States
@@ -21,14 +22,14 @@ namespace AIRefactored.AI.Combat.States
     /// Coordinates echo behavior for fallback, investigation, and enemy sightings.
     /// Ensures realistic squad cohesion and tactical communication.
     /// Bulletproof: All failures are isolated and never cascade. Never disables itself or squadmates.
-    /// All movement positions are resolved via internal EFT movement/pathfinding logic only.
+    /// All movement positions are resolved via internal EFT movement/pathfinding logic only. Teleportation is forbidden.
     /// </summary>
     public sealed class EchoCoordinator
     {
         #region Constants
 
         private const float EchoCooldown = 4.0f;
-        private const float MaxEchoRangeSqr = 1600.0f;
+        private const float MaxEchoRangeSqr = 1600.0f; // 40m
         private const float MinHumanDelay = 0.08f;
         private const float MaxHumanDelay = 0.32f;
 
@@ -55,6 +56,9 @@ namespace AIRefactored.AI.Combat.States
 
         #region Echo Fallback
 
+        /// <summary>
+        /// Suggests a fallback position to all squadmates, using only path-based fallback—never direct teleport.
+        /// </summary>
         public void EchoFallbackToSquad(Vector3 retreatPosition)
         {
             if (_bot == null || _cache == null || _bot.BotsGroup == null)
@@ -83,8 +87,10 @@ namespace AIRefactored.AI.Combat.States
 
                     if (IsValidVector(fallbackPoint))
                     {
+                        // This only *suggests* fallback; movement is always through bot's own controller
                         mateCache.Combat.TriggerFallback(fallbackPoint);
 
+                        // Squad voice (client-only, never in headless)
                         if (!FikaHeadlessDetector.IsHeadless && mate.BotTalk != null)
                         {
                             try { mate.BotTalk.TrySay(EPhraseTrigger.CoverMe); } catch { }
@@ -100,6 +106,9 @@ namespace AIRefactored.AI.Combat.States
             _lastEchoFallbackTime = now;
         }
 
+        /// <summary>
+        /// Returns a human-like fallback point for a squadmate—never used to teleport.
+        /// </summary>
         private static Vector3 GetFallbackPoint(BotOwner mate)
         {
             Vector3 dir = -mate.LookDirection.normalized;
@@ -111,13 +120,20 @@ namespace AIRefactored.AI.Combat.States
             Vector3 candidate = mate.Position + offset + noise;
             candidate.y = mate.Position.y;
 
-            return candidate;
+            // Snap to NavMesh to guarantee it's pathable; never teleports, only hints
+            UnityEngine.AI.NavMeshHit navHit;
+            if (UnityEngine.AI.NavMesh.SamplePosition(candidate, out navHit, 1.1f, UnityEngine.AI.NavMesh.AllAreas))
+                return navHit.position;
+            return mate.Position; // If not valid, fallback to current pos (no movement/teleport)
         }
 
         #endregion
 
         #region Echo Investigate
 
+        /// <summary>
+        /// Informs squad to investigate; never moves anyone directly, only notifies.
+        /// </summary>
         public void EchoInvestigateToSquad()
         {
             if (_bot == null || _cache == null || _bot.BotsGroup == null)
@@ -162,6 +178,9 @@ namespace AIRefactored.AI.Combat.States
 
         #region Echo Enemy Spotted
 
+        /// <summary>
+        /// Shares an enemy sighting with all squadmates for tactical memory (never causes instant path/move).
+        /// </summary>
         public void EchoSpottedEnemyToSquad(Vector3 enemyPosition)
         {
             if (_bot == null || _cache == null || _bot.BotsGroup == null)
@@ -197,17 +216,17 @@ namespace AIRefactored.AI.Combat.States
 
         #region Helpers
 
+        /// <summary>
+        /// Determines if a squadmate is a valid target for echo.
+        /// </summary>
         private static bool CanEchoHumanly(BotComponentCache cache)
         {
             if (cache == null)
                 return false;
-
             if (cache.IsBlinded)
                 return false;
-
             if (cache.PanicHandler?.IsPanicking == true)
                 return false;
-
             if (cache.Perception != null && cache.Perception.IsSuppressed && UnityEngine.Random.value < 0.6f)
                 return false;
 
@@ -218,6 +237,9 @@ namespace AIRefactored.AI.Combat.States
             return true;
         }
 
+        /// <summary>
+        /// Validates a squadmate's participation in echo routines.
+        /// </summary>
         private bool IsValidSquadmate(BotOwner mate, Vector3 origin)
         {
             if (mate == null || mate == _bot || mate.IsDead)
@@ -226,6 +248,9 @@ namespace AIRefactored.AI.Combat.States
             return (mate.Position - origin).sqrMagnitude <= MaxEchoRangeSqr;
         }
 
+        /// <summary>
+        /// Vector validity check (no NaN or zero).
+        /// </summary>
         private static bool IsValidVector(Vector3 pos)
         {
             return pos != Vector3.zero &&

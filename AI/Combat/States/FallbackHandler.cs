@@ -4,6 +4,7 @@
 //
 //   THIS FILE IS SYSTEMATICALLY MANAGED.
 //   Bulletproof: All errors are locally isolated, never disables itself, never triggers fallback AI, never enters terminal state.
+//   Teleportation is strictly forbidden: all fallback movement is path-based and validated.
 // </auto-generated>
 
 namespace AIRefactored.AI.Combat.States
@@ -22,6 +23,7 @@ namespace AIRefactored.AI.Combat.States
     /// <summary>
     /// Handles suppression fallback, retreat routing, and cover movement during engagements.
     /// Bulletproof: All errors are locally isolated, never disables itself, never triggers fallback AI, never enters terminal state.
+    /// All fallback movement is smooth, path-based, and validated; teleportation is strictly forbidden.
     /// </summary>
     public sealed class FallbackHandler : IDisposable
     {
@@ -30,6 +32,8 @@ namespace AIRefactored.AI.Combat.States
         private const float MinArrivalDistance = 0.1f;
         private const float MinHumanDelay = 0.09f;
         private const float MaxHumanDelay = 0.22f;
+        private const float NavMeshSampleRadius = 2.5f;
+        private const float MaxFallbackDistance = 16f;
 
         #endregion
 
@@ -38,7 +42,6 @@ namespace AIRefactored.AI.Combat.States
         private readonly BotOwner _bot;
         private readonly BotComponentCache _cache;
         private readonly List<Vector3> _currentFallbackPath;
-
         private Vector3 _fallbackTarget;
         private float _lastMoveTime;
 
@@ -71,6 +74,9 @@ namespace AIRefactored.AI.Combat.States
             return _currentFallbackPath.Count >= 2 && IsVectorValid(_fallbackTarget);
         }
 
+        /// <summary>
+        /// Sets a new fallback target; always NavMesh validated, never allows instant relocation.
+        /// </summary>
         public void SetFallbackTarget(Vector3 target)
         {
             if (!IsVectorValid(target))
@@ -79,7 +85,9 @@ namespace AIRefactored.AI.Combat.States
                 return;
             }
 
-            _fallbackTarget = target;
+            // Validate on NavMesh to ensure it's always walkable
+            if (TrySampleNavMesh(target, NavMeshSampleRadius, out Vector3 navSafe))
+                _fallbackTarget = navSafe;
         }
 
         public void SetFallbackPath(List<Vector3> path)
@@ -125,6 +133,9 @@ namespace AIRefactored.AI.Combat.States
             return false;
         }
 
+        /// <summary>
+        /// Tick handler—executes validated, path-based fallback movement only.
+        /// </summary>
         public void Tick(float time, Action<CombatState, float> forceState)
         {
             if (_bot == null || !IsVectorValid(_fallbackTarget))
@@ -144,19 +155,24 @@ namespace AIRefactored.AI.Combat.States
 
                 Vector3 destination = _fallbackTarget;
 
+                // Prefer BotNavHelper for tactical fallback pathing, always NavMesh validated
                 if (!BotNavHelper.TryGetSafeTarget(_bot, out destination) || !IsVectorValid(destination))
                     destination = GetSafeRandomFallback(_bot.Position);
 
                 destination += UnityEngine.Random.insideUnitSphere * 0.15f;
                 destination.y = _bot.Position.y;
 
-                if (_bot.Mover != null)
+                // Absolute anti-teleport: only allow valid, walkable, and reasonable fallback destinations
+                if (!TrySampleNavMesh(destination, NavMeshSampleRadius, out Vector3 navSafe))
+                    navSafe = _bot.Position;
+
+                if ((_bot.Mover != null) && (Vector3.Distance(_bot.Position, navSafe) < MaxFallbackDistance))
                 {
-                    BotMovementHelper.SmoothMoveTo(_bot, destination);
-                    BotCoverHelper.TrySetStanceFromNearbyCover(_cache, destination);
+                    BotMovementHelper.SmoothMoveTo(_bot, navSafe); // Only issues path-based moves
+                    BotCoverHelper.TrySetStanceFromNearbyCover(_cache, navSafe);
                 }
 
-                if (Vector3.Distance(_bot.Position, destination) < MinArrivalDistance)
+                if (Vector3.Distance(_bot.Position, navSafe) < MinArrivalDistance)
                 {
                     forceState?.Invoke(CombatState.Patrol, time);
 
@@ -201,22 +217,38 @@ namespace AIRefactored.AI.Combat.States
             return !float.IsNaN(v.x) && !float.IsNaN(v.y) && !float.IsNaN(v.z) && v != Vector3.zero;
         }
 
+        /// <summary>
+        /// Returns a random fallback that is always walkable; never teleports.
+        /// </summary>
         private Vector3 GetSafeRandomFallback(Vector3 origin)
         {
             if (_bot?.PatrollingData != null)
             {
                 Vector3 patrol = _bot.PatrollingData.CurTargetPoint;
                 if (IsVectorValid(patrol) && Vector3.Distance(patrol, origin) > 1.0f)
-                    return patrol;
+                    return TrySampleNavMesh(patrol, NavMeshSampleRadius, out Vector3 patrolNav) ? patrolNav : origin;
             }
 
             Vector3 candidate = origin + UnityEngine.Random.onUnitSphere * 2.0f;
             candidate.y = origin.y;
 
-            if (NavMesh.SamplePosition(candidate, out NavMeshHit hit, 2.5f, NavMesh.AllAreas))
-                candidate = hit.position;
+            return TrySampleNavMesh(candidate, NavMeshSampleRadius, out Vector3 navSafe) && IsVectorValid(navSafe)
+                ? navSafe
+                : origin + Vector3.forward * 0.25f;
+        }
 
-            return IsVectorValid(candidate) ? candidate : origin + Vector3.forward * 0.25f;
+        /// <summary>
+        /// NavMesh validation wrapper—no teleports, no unwalkable fallback points.
+        /// </summary>
+        private static bool TrySampleNavMesh(Vector3 candidate, float radius, out Vector3 navSafe)
+        {
+            navSafe = candidate;
+            if (NavMesh.SamplePosition(candidate, out NavMeshHit hit, radius, NavMesh.AllAreas))
+            {
+                navSafe = hit.position;
+                return true;
+            }
+            return false;
         }
 
         #endregion

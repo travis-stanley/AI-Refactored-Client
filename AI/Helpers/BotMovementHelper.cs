@@ -4,6 +4,7 @@
 //
 //   THIS FILE IS SYSTEMATICALLY MANAGED.
 //   Bulletproof: No fallback logic exists. All navigation failures are isolated and only log or skip.
+//   All movement is strictly path-based, never teleports or sets position directly.
 // </auto-generated>
 
 namespace AIRefactored.AI.Helpers
@@ -29,11 +30,17 @@ namespace AIRefactored.AI.Helpers
 
         #region Public Methods
 
+        /// <summary>
+        /// Reserved for future use.
+        /// </summary>
         public static void Reset(BotOwner bot)
         {
-            // Reserved for future cooldown/movement reset state
+            // No-op: placeholder for cooldown/movement reset state.
         }
 
+        /// <summary>
+        /// Smooth, path-based retreat to cover away from a threat.
+        /// </summary>
         public static void RetreatToCover(BotOwner bot, Vector3 threatDir, float distance = RetreatDistance, bool sprint = true)
         {
             if (!IsAlive(bot))
@@ -58,6 +65,9 @@ namespace AIRefactored.AI.Helpers
                 bot.Sprint(true);
         }
 
+        /// <summary>
+        /// Smoothly rotates the bot to face a target (never sets position).
+        /// </summary>
         public static void SmoothLookTo(BotOwner bot, Vector3 lookTarget, float speed = DefaultLookSpeed)
         {
             if (!IsAlive(bot) || !IsValidTarget(lookTarget))
@@ -77,6 +87,9 @@ namespace AIRefactored.AI.Helpers
             transform.rotation = Quaternion.Slerp(transform.rotation, targetRotation, t);
         }
 
+        /// <summary>
+        /// Path-based, anti-teleport movement to a validated safe position.
+        /// </summary>
         public static bool SmoothMoveToSafe(BotOwner bot, Vector3 target, bool slow = true, float cohesionScale = 1f)
         {
             if (!IsAlive(bot) || !IsValidTarget(target))
@@ -95,11 +108,17 @@ namespace AIRefactored.AI.Helpers
             return true;
         }
 
+        /// <summary>
+        /// Alias for SmoothMoveToSafe.
+        /// </summary>
         public static void SmoothMoveTo(BotOwner bot, Vector3 target, bool slow = true, float cohesionScale = 1f)
         {
             SmoothMoveToSafe(bot, target, slow, cohesionScale);
         }
 
+        /// <summary>
+        /// Strafe movement, strictly path-based and drifted.
+        /// </summary>
         public static void SmoothStrafeFrom(BotOwner bot, Vector3 threatDir, float scale = 1f)
         {
             if (!IsAlive(bot))
@@ -119,6 +138,9 @@ namespace AIRefactored.AI.Helpers
             bot.Mover?.GoToPoint(ApplyMicroDrift(final, bot.ProfileId, Time.frameCount + 15), false, 1f);
         }
 
+        /// <summary>
+        /// Path-based fallback movement for last-resort recovery (never teleports).
+        /// </summary>
         public static void ForceFallbackMove(BotOwner bot)
         {
             if (!IsAlive(bot))
@@ -134,6 +156,9 @@ namespace AIRefactored.AI.Helpers
             bot.Mover?.GoToPoint(ApplyMicroDrift(final, bot.ProfileId, Time.frameCount + 21), true, 1f);
         }
 
+        /// <summary>
+        /// Moves bot to a safe exit direction (path-based, never instant).
+        /// </summary>
         public static void SmoothMoveToSafeExit(BotOwner bot)
         {
             if (!IsAlive(bot))
@@ -163,6 +188,9 @@ namespace AIRefactored.AI.Helpers
                    !float.IsInfinity(pos.x) && !float.IsInfinity(pos.y) && !float.IsInfinity(pos.z);
         }
 
+        /// <summary>
+        /// Adds unique microdrift to movement per bot and tick. Ensures no unnatural clustering or robotic paths.
+        /// </summary>
         private static Vector3 ApplyMicroDrift(Vector3 pos, string profileId, int tick)
         {
             int hash = (profileId?.GetHashCode() ?? 0) ^ (tick * 11) ^ 0x17DF413;

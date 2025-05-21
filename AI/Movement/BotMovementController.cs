@@ -6,6 +6,7 @@
 //   All movement, combat lean, and strafe logic is bulletproof and layered over EFT BotMover.
 //   No fallback logic. No invalid targets. Smooth, human-like movement only.
 //   Realism Pass: Subtle randomness, human hesitation, personality-driven leaning, and micro-scanning.
+//   Teleportation is strictly forbidden; all movement is path-based or animation-based only.
 // </auto-generated>
 
 namespace AIRefactored.AI.Movement
@@ -21,6 +22,7 @@ namespace AIRefactored.AI.Movement
     /// <summary>
     /// Realistic overlay for BotMover navigation. Adds combat lean, strafe, and human-like directionality.
     /// Fully native to EFT movement system. All behaviors are multiplayer and headless safe.
+    /// All movement is path-based, never instant, and never sets transform.position directly.
     /// </summary>
     public sealed class BotMovementController
     {
@@ -55,6 +57,9 @@ namespace AIRefactored.AI.Movement
             _nextRandomPause = Time.time + UnityEngine.Random.Range(1.5f, 3.8f);
         }
 
+        /// <summary>
+        /// Ticks all advanced movement logic for the bot (lean, strafe, scan, look).
+        /// </summary>
         public void Tick(float deltaTime)
         {
             try
@@ -84,6 +89,9 @@ namespace AIRefactored.AI.Movement
         public void EnterLootingMode() => _lootingMode = true;
         public void ExitLootingMode() => _lootingMode = false;
 
+        /// <summary>
+        /// Smoothly turns the bot toward the next path node; never sets position.
+        /// </summary>
         private void TrySmoothLook(BotMover mover, float deltaTime)
         {
             if (_bot?.Transform == null)
@@ -110,6 +118,9 @@ namespace AIRefactored.AI.Movement
             }
         }
 
+        /// <summary>
+        /// Human-like strafing overlays, strictly movement-based (never teleports).
+        /// </summary>
         private void TryCombatStrafe(BotMover mover, float deltaTime)
         {
             if (_bot == null || mover == null || _bot.Memory?.GoalEnemy == null)
@@ -136,6 +147,9 @@ namespace AIRefactored.AI.Movement
             player?.CharacterController?.Move(blend, deltaTime);
         }
 
+        /// <summary>
+        /// Handles lean logic, using environment and enemy location, with humanized hesitation and miss chance.
+        /// </summary>
         private void TryLean()
         {
             if (_cache?.Tilt == null || _bot == null || Time.time < _nextLeanTime)
@@ -174,6 +188,9 @@ namespace AIRefactored.AI.Movement
             _nextLeanTime = Time.time + UnityEngine.Random.Range(0.65f, 1.15f);
         }
 
+        /// <summary>
+        /// Occasionally scans with subtle head movement and voice cues; never moves body position.
+        /// </summary>
         private void TryScan()
         {
             if (_bot?.Transform == null)

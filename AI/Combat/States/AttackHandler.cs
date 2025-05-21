@@ -4,6 +4,7 @@
 //
 //   THIS FILE IS SYSTEMATICALLY MANAGED.
 //   Realism-hardened: Combat movement, micro-adjustments, and stance logic are fully humanized.
+//   Teleportation is 100% forbidden; all movement is path-based and smooth. No instant relocation is possible.
 //   All errors are locally isolated; never disables handler, never disables bot, never falls back.
 // </auto-generated>
 
@@ -23,15 +24,18 @@ namespace AIRefactored.AI.Combat.States
     /// Controls direct combat engagement logic.
     /// Pushes toward the enemy, recalculates stance and movement based on distance, visibility, micro-adjustment, and cover presence.
     /// All movement is smooth, adaptive, and indistinguishable from human player combat maneuvering.
+    /// Teleportation is strictly forbidden. All relocation is through pathing, never direct setting of position.
     /// </summary>
     public sealed class AttackHandler
     {
         #region Constants
 
-        private const float PositionUpdateThresholdSqr = 0.64f;
-        private const float MicroAdjustRadius = 0.65f;
-        private const float MinAdvanceDistance = 1.4f;
+        private const float PositionUpdateThresholdSqr = 0.49f; // 0.7m squared, for more responsive re-adjustment
+        private const float MicroAdjustRadius = 0.55f;
+        private const float MinAdvanceDistance = 1.2f;
         private const float MaxAggroDistance = 52f;
+        private const float AdvanceIntervalMin = 0.18f;
+        private const float AdvanceIntervalMax = 0.33f;
 
         #endregion
 
@@ -41,17 +45,22 @@ namespace AIRefactored.AI.Combat.States
         private readonly BotComponentCache _cache;
         private Vector3 _lastTargetPosition;
         private bool _hasLastTarget;
+        private float _nextAdvanceTime;
 
         #endregion
 
         #region Constructor
 
+        /// <summary>
+        /// Instantiates a new attack handler for the given bot.
+        /// </summary>
         public AttackHandler(BotComponentCache cache)
         {
             _cache = cache;
             _bot = cache?.Bot;
             _lastTargetPosition = Vector3.zero;
             _hasLastTarget = false;
+            _nextAdvanceTime = 0f;
         }
 
         #endregion
@@ -65,6 +74,7 @@ namespace AIRefactored.AI.Combat.States
         {
             _hasLastTarget = false;
             _lastTargetPosition = Vector3.zero;
+            _nextAdvanceTime = 0f;
         }
 
         /// <summary>
@@ -102,19 +112,27 @@ namespace AIRefactored.AI.Combat.States
                     return;
                 }
 
+                float now = Time.time;
                 float deltaSqr = (targetPos - _lastTargetPosition).sqrMagnitude;
-                if (!_hasLastTarget || deltaSqr > PositionUpdateThresholdSqr)
+                bool needsAdvance =
+                    (!_hasLastTarget) ||
+                    (deltaSqr > PositionUpdateThresholdSqr) ||
+                    (now >= _nextAdvanceTime);
+
+                if (needsAdvance)
                 {
                     _lastTargetPosition = targetPos;
                     _hasLastTarget = true;
+                    _nextAdvanceTime = now + UnityEngine.Random.Range(AdvanceIntervalMin, AdvanceIntervalMax);
 
                     Vector3 advancePoint = GetRealisticAdvancePoint(_bot, _cache, targetPos, distToTarget, MicroAdjustRadius);
 
-                    if (_bot.Mover != null)
+                    // Absolute anti-teleport: Only path-based movement, never direct assignment!
+                    if (_bot.Mover != null && IsAdvancePointSafe(_bot.Position, advancePoint))
                     {
                         try
                         {
-                            BotMovementHelper.SmoothMoveTo(_bot, advancePoint);
+                            BotMovementHelper.SmoothMoveTo(_bot, advancePoint); // Only issues a move order, never sets position
                             SetStanceFromCombatContext(distToTarget, advancePoint);
                         }
                         catch (Exception moveEx)
@@ -134,6 +152,9 @@ namespace AIRefactored.AI.Combat.States
 
         #region Internal Logic
 
+        /// <summary>
+        /// Resolves a valid enemy target for attack logic.
+        /// </summary>
         private bool TryResolveEnemy(out Player result)
         {
             result = null;
@@ -156,6 +177,9 @@ namespace AIRefactored.AI.Combat.States
             return false;
         }
 
+        /// <summary>
+        /// Sets a realistic stance based on current combat and suppression.
+        /// </summary>
         private void SetStanceFromCombatContext(float distance, Vector3 advancePos)
         {
             try
@@ -184,32 +208,70 @@ namespace AIRefactored.AI.Combat.States
             }
         }
 
+        /// <summary>
+        /// Calculates a safe and human-like point to move toward the enemy.
+        /// Ensures no teleport, only pathable moves.
+        /// </summary>
         private static Vector3 GetRealisticAdvancePoint(BotOwner bot, BotComponentCache cache, Vector3 target, float dist, float adjustRadius)
         {
+            // Human sidestep if close
             if (dist < MinAdvanceDistance)
             {
                 Vector3 sidestep = Vector3.Cross(Vector3.up, bot.LookDirection.normalized);
                 float shuffle = UnityEngine.Random.Range(-1.0f, 1.0f) * adjustRadius;
-                return target + sidestep * shuffle;
+                Vector3 candidate = target + sidestep * shuffle;
+                return NavMeshSafe(candidate, target, 1.25f) ?? bot.Position;
             }
 
+            // Try to use cover if available
             Vector3 cover;
             if (cache.CoverPlanner != null && cache.CoverPlanner.TryGetBestCoverNear(target, bot.Position, out cover))
             {
                 Vector3 lateral = Vector3.Cross(Vector3.up, (target - cover).normalized);
                 float offset = UnityEngine.Random.Range(-0.5f, 0.5f);
-                return cover + lateral * offset;
+                Vector3 candidate = cover + lateral * offset;
+                return NavMeshSafe(candidate, cover, 1.25f) ?? bot.Position;
             }
 
+            // Otherwise, micro-jitter forward toward target
             Vector3 fallback = target + UnityEngine.Random.insideUnitSphere * 1.5f;
             fallback.y = target.y;
+            return NavMeshSafe(fallback, target, 2.2f) ?? bot.Position;
+        }
 
-            if (UnityEngine.AI.NavMesh.SamplePosition(fallback, out UnityEngine.AI.NavMeshHit hit, 2.2f, UnityEngine.AI.NavMesh.AllAreas))
-            {
-                return hit.position;
-            }
+        /// <summary>
+        /// Validates that a move never results in teleporting or unwalkable positions.
+        /// </summary>
+        private static bool IsAdvancePointSafe(Vector3 current, Vector3 target)
+        {
+            // Absolutely forbid instant warps: only allow if >0.1m but <8m, and pathable
+            float dist = (target - current).magnitude;
+            if (dist < 0.09f || dist > 8f)
+                return false;
 
-            return fallback;
+            UnityEngine.AI.NavMeshHit navHit;
+            if (!UnityEngine.AI.NavMesh.SamplePosition(target, out navHit, 0.6f, UnityEngine.AI.NavMesh.AllAreas))
+                return false;
+
+            // Ensure y difference is not abnormally high (prevent vertical snaps)
+            if (Mathf.Abs(navHit.position.y - current.y) > 2.2f)
+                return false;
+
+            return true;
+        }
+
+        /// <summary>
+        /// Finds a valid, walkable navmesh point for a move, or returns null if unsafe.
+        /// </summary>
+        private static Vector3? NavMeshSafe(Vector3 candidate, Vector3 refPoint, float radius)
+        {
+            UnityEngine.AI.NavMeshHit navHit;
+            if (UnityEngine.AI.NavMesh.SamplePosition(candidate, out navHit, radius, UnityEngine.AI.NavMesh.AllAreas))
+                return navHit.position;
+            // Optionally, fallback to the reference point if walkable
+            if (UnityEngine.AI.NavMesh.SamplePosition(refPoint, out navHit, 0.9f, UnityEngine.AI.NavMesh.AllAreas))
+                return navHit.position;
+            return null;
         }
 
         #endregion

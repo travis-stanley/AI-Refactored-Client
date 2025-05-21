@@ -146,8 +146,8 @@ namespace AIRefactored.AI.Core
 
             TryInit(() => Pathing = new BotOwnerPathfindingCache(), "Pathing");
             TryInit(() => { TacticalMemory = new BotTacticalMemory(); TacticalMemory.Initialize(this); }, "TacticalMemory");
-            TryInit(() => { Combat = new CombatStateMachine(); Combat.Initialize(this); }, "Combat");
             TryInit(() => { _fallbackHandler = new FallbackHandler(this); }, "FallbackHandler");
+            TryInit(() => { Combat = new CombatStateMachine(); Combat.Initialize(this); }, "Combat");
             TryInit(() => { FlashGrenade = new FlashGrenadeComponent(); FlashGrenade.Initialize(this); }, "FlashGrenade");
             TryInit(() => { PanicHandler = new BotPanicHandler(); PanicHandler.Initialize(this); }, "PanicHandler");
             TryInit(() => { Suppression = new BotSuppressionReactionComponent(); Suppression.Initialize(this); }, "Suppression");
@@ -195,12 +195,9 @@ namespace AIRefactored.AI.Core
                 return;
             }
 
-            if (_owner != null)
+            if (_owner != null && !ReferenceEquals(_owner, owner))
             {
-                if (!ReferenceEquals(_owner, owner))
-                {
-                    Logger.LogWarning("[BotComponentCache] SetOwner() attempted to overwrite existing owner.");
-                }
+                Logger.LogWarning("[BotComponentCache] SetOwner() attempted to overwrite existing owner.");
                 return;
             }
 
@@ -223,7 +220,15 @@ namespace AIRefactored.AI.Core
 
         public void Dispose()
         {
-            _fallbackHandler?.Dispose();
+            try
+            {
+                _fallbackHandler?.Dispose();
+            }
+            catch (Exception ex)
+            {
+                Logger.LogWarning("[BotComponentCache] Dispose failed: " + ex);
+            }
+
             _fallbackHandler = null;
         }
 

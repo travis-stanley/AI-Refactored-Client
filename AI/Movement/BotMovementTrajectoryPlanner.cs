@@ -84,40 +84,28 @@ namespace AIRefactored.AI.Movement
             {
                 float now = Time.unscaledTime;
 
-                // Update chaos offset at a fixed interval
                 if (now >= _nextChaosUpdate)
-                {
                     UpdateTargetChaosOffset(now);
-                }
+
                 _chaosOffset = Vector3.Lerp(_chaosOffset, _targetChaosOffset, deltaTime * ChaosLerpSpeed);
 
                 Vector3 baseDir = (targetDir.sqrMagnitude > MinMagnitude) ? targetDir.normalized : Vector3.forward;
                 Vector3 adjusted = baseDir;
 
-                // Apply chaos offset (personality-driven, never causes jerkiness)
                 if (_chaosOffset.sqrMagnitude > MinMagnitude)
-                {
                     adjusted += _chaosOffset;
-                }
 
-                // Squad offset for natural spacing
                 if (_cache.SquadPath != null)
                 {
                     Vector3 squadOffset = _cache.SquadPath.GetCurrentOffset();
                     if (squadOffset.sqrMagnitude > MinMagnitude)
-                    {
                         adjusted += squadOffset.normalized * SquadOffsetScale;
-                    }
                 }
 
-                // Avoidance from squadmates (organic and includes miss chance)
                 Vector3 avoidVector = ComputeAvoidance();
                 if (avoidVector.sqrMagnitude > MinMagnitude)
-                {
                     adjusted += avoidVector.normalized * AvoidanceScale;
-                }
 
-                // Organic blend of bot's velocity (never abrupt)
                 Vector3 velocity = Vector3.zero;
                 try
                 {
@@ -126,16 +114,13 @@ namespace AIRefactored.AI.Movement
                 catch { }
 
                 if (velocity.sqrMagnitude > MinMagnitude)
-                {
                     adjusted += velocity.normalized * VelocityFactor;
-                }
 
                 adjusted.y = 0f;
                 return adjusted.sqrMagnitude > MinMagnitude ? adjusted.normalized : baseDir;
             }
             catch
             {
-                // If anything goes wrong, fall back to a neutral forward movement
                 return Vector3.forward;
             }
         }
@@ -144,9 +129,6 @@ namespace AIRefactored.AI.Movement
 
         #region Internal Helpers
 
-        /// <summary>
-        /// Computes avoidance vector from nearby squadmates. Includes human error.
-        /// </summary>
         private Vector3 ComputeAvoidance()
         {
             try
@@ -183,10 +165,6 @@ namespace AIRefactored.AI.Movement
             }
         }
 
-        /// <summary>
-        /// Updates the target chaos movement offset based on bot personality.
-        /// More cautious bots have less chaos. Lerp to this value for smoothness.
-        /// </summary>
         private void UpdateTargetChaosOffset(float now)
         {
             try
@@ -203,7 +181,7 @@ namespace AIRefactored.AI.Movement
                 float chaosRange = ChaosRadius * (1f - caution);
 
                 float x = UnityEngine.Random.Range(-chaosRange * 0.5f, chaosRange * 0.5f);
-                float z = UnityEngine.Random.Range(0.1f, chaosRange); // always forward-biased
+                float z = UnityEngine.Random.Range(0.1f, chaosRange);
 
                 _targetChaosOffset = new Vector3(x, 0f, z);
                 _nextChaosUpdate = now + ChaosInterval;

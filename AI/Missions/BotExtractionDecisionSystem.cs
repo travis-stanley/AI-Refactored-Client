@@ -68,9 +68,6 @@ namespace AIRefactored.AI.Missions
 
         #region Public Methods
 
-        /// <summary>
-        /// Tick/update for extraction decisions. Triggers extraction when warranted.
-        /// </summary>
         public void Tick(float time)
         {
             try
@@ -90,9 +87,6 @@ namespace AIRefactored.AI.Missions
             }
         }
 
-        /// <summary>
-        /// Returns true if the bot should extract based on panic, loot, squad, isolation, or mobility.
-        /// </summary>
         public bool ShouldExtract(float now)
         {
             try
@@ -105,7 +99,6 @@ namespace AIRefactored.AI.Missions
                 if (health == null || !health.IsAlive)
                     return false;
 
-                // 1. Panic/composure threshold (scales by bot caution)
                 float composure = _cache?.PanicHandler?.GetComposureLevel() ?? 1f;
                 float panicThreshold = Mathf.Lerp(0.35f, 0.15f, _profile.Caution);
                 if (composure < panicThreshold)
@@ -114,7 +107,6 @@ namespace AIRefactored.AI.Missions
                     return true;
                 }
 
-                // 2. Loot value threshold (scales by bot greed)
                 float lootValue = _cache?.LootScanner?.TotalLootValue ?? 0f;
                 float lootThreshold = Mathf.Lerp(85000f, 50000f, _profile.Greed);
                 if (lootValue >= lootThreshold)
@@ -123,14 +115,12 @@ namespace AIRefactored.AI.Missions
                     return true;
                 }
 
-                // 3. Squad wiped (all other members dead)
                 if (HasSquadWiped())
                 {
                     _log.LogDebug("[ExtractDecision] Squad wiped → " + _bot.name);
                     return true;
                 }
 
-                // 4. Isolation (no squadmate within radius)
                 float cohesionRadius = Mathf.Lerp(35f, 60f, 1f - _profile.Cohesion);
                 if (IsBotIsolated(cohesionRadius))
                 {
@@ -138,7 +128,6 @@ namespace AIRefactored.AI.Missions
                     return true;
                 }
 
-                // 5. Stuck check (retries before extracting)
                 float stuckTimeout = Mathf.Lerp(8f, 18f, 1f - _profile.Caution);
                 if (IsBotStuck(now, stuckTimeout))
                 {
@@ -162,9 +151,6 @@ namespace AIRefactored.AI.Missions
             }
         }
 
-        /// <summary>
-        /// Triggers bot extraction movement and state update.
-        /// </summary>
         public void TriggerExtraction()
         {
             try
@@ -178,10 +164,9 @@ namespace AIRefactored.AI.Missions
                     return;
                 }
 
-                if (_cache?.TacticalMemory != null)
-                    _cache.TacticalMemory.MarkExtractionStarted();
-
+                _cache?.TacticalMemory?.MarkExtractionStarted();
                 BotMovementHelper.SmoothMoveToSafeExit(_bot);
+
                 _log.LogDebug("[ExtractDecision] ✅ Extraction initiated for: " + _bot.name);
             }
             catch (Exception ex)
@@ -222,7 +207,7 @@ namespace AIRefactored.AI.Missions
             {
                 BotsGroup group = _bot.BotsGroup;
                 if (group == null || group.MembersCount <= 1)
-                    return false; // Solo bots do not extract due to squad wipe
+                    return false;
 
                 for (int i = 0; i < group.MembersCount; i++)
                 {

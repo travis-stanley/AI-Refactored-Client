@@ -90,26 +90,33 @@ namespace AIRefactored.AI.Movement
         public void ExitLootingMode() => _lootingMode = false;
 
         /// <summary>
-        /// Smoothly turns the bot toward the next path node; never sets position.
+        /// Smoothly turns the bot toward the next movement target or navigation goal.
         /// </summary>
         private void TrySmoothLook(BotMover mover, float deltaTime)
         {
-            if (_bot?.Transform == null)
+            if (_bot?.Transform == null || mover == null)
                 return;
 
-            if (!BotNavHelper.TryGetSafeTarget(_bot, out Vector3 point))
+            Vector3 target;
+            try
+            {
+                target = mover.LastTargetPoint(1f);
+            }
+            catch
+            {
                 return;
+            }
 
-            Vector3 dir = point - _bot.Position;
-            dir.y = 0f;
-            if (dir.sqrMagnitude < 0.0125f)
+            Vector3 direction = target - _bot.Position;
+            direction.y = 0f;
+            if (direction.sqrMagnitude < 0.01f)
                 return;
 
             if (Time.time < _lastRandomPause + 0.13f && UnityEngine.Random.value < 0.09f)
                 return;
 
-            Quaternion desired = Quaternion.LookRotation(dir);
-            _bot.Transform.rotation = Quaternion.Lerp(_bot.Transform.rotation, desired, 6f * deltaTime);
+            Quaternion desired = Quaternion.LookRotation(direction);
+            _bot.Transform.rotation = Quaternion.Lerp(_bot.Transform.rotation, desired, 5.5f * deltaTime);
 
             if (Time.time > _nextRandomPause)
             {
@@ -119,7 +126,7 @@ namespace AIRefactored.AI.Movement
         }
 
         /// <summary>
-        /// Human-like strafing overlays, strictly movement-based (never teleports).
+        /// Human-like combat strafing overlay.
         /// </summary>
         private void TryCombatStrafe(BotMover mover, float deltaTime)
         {
@@ -137,7 +144,7 @@ namespace AIRefactored.AI.Movement
             }
 
             Vector3 offset = _strafeRight ? _bot.Transform.right : -_bot.Transform.right;
-            Vector3 jitter = UnityEngine.Random.insideUnitSphere * 0.06f;
+            Vector3 jitter = UnityEngine.Random.insideUnitSphere * 0.05f;
             Vector3 strafe = (offset + jitter).normalized * 1.05f * deltaTime;
 
             Vector3 navDir = mover.NormDirCurPoint;
@@ -148,7 +155,7 @@ namespace AIRefactored.AI.Movement
         }
 
         /// <summary>
-        /// Handles lean logic, using environment and enemy location, with humanized hesitation and miss chance.
+        /// Handles leaning using wall checks and human hesitation logic.
         /// </summary>
         private void TryLean()
         {
@@ -189,7 +196,7 @@ namespace AIRefactored.AI.Movement
         }
 
         /// <summary>
-        /// Occasionally scans with subtle head movement and voice cues; never moves body position.
+        /// Subtle scanning motion and optional vocal cue. Never alters body rotation.
         /// </summary>
         private void TryScan()
         {

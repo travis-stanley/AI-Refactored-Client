@@ -11,25 +11,22 @@
 namespace AIRefactored.AI.Missions
 {
     using System;
+    using EFT;
+    using EFT.HealthSystem;
+    using EFT.Interactive;
     using AIRefactored.AI.Core;
     using AIRefactored.AI.Helpers;
     using AIRefactored.Core;
     using AIRefactored.Runtime;
-    using BepInEx.Logging;
-    using EFT;
-    using EFT.HealthSystem;
     using UnityEngine;
+    using BepInEx.Logging;
 
-    /// <summary>
-    /// Decides when a bot should attempt early extraction based on panic, loot value, squad status, isolation, or mobility state.
-    /// Decision thresholds scale based on bot personality.
-    /// All failures are locally isolated; cannot break or cascade into other systems.
-    /// </summary>
     public sealed class BotExtractionDecisionSystem
     {
         #region Constants
 
         private const int MaxStuckRetries = 3;
+        private const float MaxSearchDistance = 85f;
 
         #endregion
 
@@ -51,9 +48,7 @@ namespace AIRefactored.AI.Missions
 
         public BotExtractionDecisionSystem(BotOwner bot, BotComponentCache cache, BotPersonalityProfile profile)
         {
-            if (!EFTPlayerUtil.IsValidBotOwner(bot))
-                throw new ArgumentException("[BotExtractionDecisionSystem] Invalid BotOwner reference.");
-
+            if (!EFTPlayerUtil.IsValidBotOwner(bot)) throw new ArgumentException("[BotExtractionDecisionSystem] Invalid BotOwner.");
             _bot = bot;
             _cache = cache ?? throw new ArgumentNullException(nameof(cache));
             _profile = profile ?? throw new ArgumentNullException(nameof(profile));
@@ -72,8 +67,7 @@ namespace AIRefactored.AI.Missions
         {
             try
             {
-                if (_hasExtracted)
-                    return;
+                if (_hasExtracted) return;
 
                 if (ShouldExtract(time))
                 {
@@ -91,13 +85,8 @@ namespace AIRefactored.AI.Missions
         {
             try
             {
-                Player player = _bot.GetPlayer;
-                if (_bot.IsDead || player == null || !player.IsAI)
-                    return false;
-
-                IHealthController health = player.HealthController;
-                if (health == null || !health.IsAlive)
-                    return false;
+                if (_bot.IsDead || _bot.GetPlayer == null || !_bot.GetPlayer.IsAI) return false;
+                if (_bot.GetPlayer.HealthController == null || !_bot.GetPlayer.HealthController.IsAlive) return false;
 
                 float composure = _cache?.PanicHandler?.GetComposureLevel() ?? 1f;
                 float panicThreshold = Mathf.Lerp(0.35f, 0.15f, _profile.Caution);
@@ -138,7 +127,6 @@ namespace AIRefactored.AI.Missions
                         return true;
                     }
 
-                    _log.LogDebug("[ExtractDecision] Stuck detected, triggering fallback (" + _stuckRetryCount + ") → " + _bot.name);
                     BotMovementHelper.ForceFallbackMove(_bot);
                 }
 
@@ -155,17 +143,17 @@ namespace AIRefactored.AI.Missions
         {
             try
             {
-                Player player = _bot.GetPlayer;
-                IHealthController health = player?.HealthController;
-
-                if (_bot.IsDead || player == null || !player.IsAI || health == null || !health.IsAlive || _bot.BotState != EBotState.Active)
+                if (_bot.IsDead || _bot.GetPlayer == null || !_bot.GetPlayer.IsAI || _bot.GetPlayer.HealthController == null || !_bot.GetPlayer.HealthController.IsAlive)
                 {
                     _log.LogWarning("[ExtractDecision] ❌ Extraction aborted — invalid state for " + _bot.name);
                     return;
                 }
 
-                _cache?.TacticalMemory?.MarkExtractionStarted();
-                BotMovementHelper.SmoothMoveToSafeExit(_bot);
+                if (_cache?.TacticalMemory != null)
+                    _cache.TacticalMemory.MarkExtractionStarted();
+
+                Vector3 target = TryFindNearbyExfil() ?? _bot.Position + _bot.LookDirection.normalized * 6f;
+                BotMovementHelper.SmoothMoveTo(_bot, target, true);
 
                 _log.LogDebug("[ExtractDecision] ✅ Extraction initiated for: " + _bot.name);
             }
@@ -181,79 +169,70 @@ namespace AIRefactored.AI.Missions
 
         private bool IsBotStuck(float now, float threshold)
         {
-            try
+            float moved = (_bot.Position - _lastPosition).sqrMagnitude;
+            if (moved > 0.35f)
             {
-                float distanceMoved = (_bot.Position - _lastPosition).sqrMagnitude;
-                if (distanceMoved > 0.4f)
-                {
-                    _lastPosition = _bot.Position;
-                    _lastMoveUpdateTime = now;
-                    _stuckRetryCount = 0;
-                    return false;
-                }
-
-                return now - _lastMoveUpdateTime >= threshold;
-            }
-            catch (Exception ex)
-            {
-                _log.LogError($"[BotExtractionDecisionSystem] IsBotStuck failed: {ex}");
+                _lastPosition = _bot.Position;
+                _lastMoveUpdateTime = now;
+                _stuckRetryCount = 0;
                 return false;
             }
+
+            return now - _lastMoveUpdateTime >= threshold;
         }
 
         private bool HasSquadWiped()
         {
-            try
+            BotsGroup group = _bot.BotsGroup;
+            if (group == null || group.MembersCount <= 1) return false;
+
+            for (int i = 0; i < group.MembersCount; i++)
             {
-                BotsGroup group = _bot.BotsGroup;
-                if (group == null || group.MembersCount <= 1)
+                BotOwner mate = group.Member(i);
+                if (mate != null && mate != _bot && !mate.IsDead)
                     return false;
-
-                for (int i = 0; i < group.MembersCount; i++)
-                {
-                    BotOwner member = group.Member(i);
-                    if (member != null && member != _bot && !member.IsDead)
-                        return false;
-                }
-
-                return true;
             }
-            catch (Exception ex)
-            {
-                _log.LogError($"[BotExtractionDecisionSystem] HasSquadWiped failed: {ex}");
-                return false;
-            }
+
+            return true;
         }
 
         private bool IsBotIsolated(float radius)
         {
-            try
+            BotsGroup group = _bot.BotsGroup;
+            if (group == null || group.MembersCount <= 1) return true;
+
+            Vector3 pos = _bot.Position;
+            float radiusSqr = radius * radius;
+
+            for (int i = 0; i < group.MembersCount; i++)
             {
-                BotsGroup group = _bot.BotsGroup;
-                if (group == null || group.MembersCount <= 1)
-                    return true;
-
-                Vector3 currentPosition = _bot.Position;
-                float radiusSqr = radius * radius;
-
-                for (int i = 0; i < group.MembersCount; i++)
+                BotOwner mate = group.Member(i);
+                if (mate != null && mate != _bot && !mate.IsDead)
                 {
-                    BotOwner member = group.Member(i);
-                    if (member != null && member != _bot && !member.IsDead)
-                    {
-                        float distanceSqr = (member.Position - currentPosition).sqrMagnitude;
-                        if (distanceSqr < radiusSqr)
-                            return false;
-                    }
+                    if ((mate.Position - pos).sqrMagnitude < radiusSqr)
+                        return false;
                 }
+            }
 
-                return true;
-            }
-            catch (Exception ex)
+            return true;
+        }
+
+        private Vector3? TryFindNearbyExfil()
+        {
+            ExfiltrationPoint[] points = UnityEngine.Object.FindObjectsOfType<ExfiltrationPoint>();
+            Vector3 pos = _bot.Position;
+
+            foreach (ExfiltrationPoint point in points)
             {
-                _log.LogError($"[BotExtractionDecisionSystem] IsBotIsolated failed: {ex}");
-                return false;
+                if (point == null || !point.enabled)
+                    continue;
+
+                float dist = (point.transform.position - pos).sqrMagnitude;
+                if (dist <= MaxSearchDistance * MaxSearchDistance)
+                    return point.transform.position;
             }
+
+            return null;
         }
 
         #endregion

@@ -3,8 +3,8 @@
 //   Licensed under the MIT License. See LICENSE in the repository root for more information.
 //
 //   THIS FILE IS SYSTEMATICALLY MANAGED.
-//   All layer logic must be null/NaN-safe and multiplayer/headless compatible.
-//   Bulletproof: All failures are locally contained, never break other subsystems.
+//   All layer logic is null/NaN-safe and multiplayer/headless compatible.
+//   All names are strictly verified against EFT's internal LayerMaskClass.cs.
 // </auto-generated>
 
 namespace AIRefactored.Core
@@ -14,147 +14,88 @@ namespace AIRefactored.Core
     /// <summary>
     /// Centralized layer mask definitions aligned with Tarkov's internal physics layers.
     /// Used for vision checks, suppression rays, navigation safety, and collision awareness.
-    /// Bulletproof: All logic is null/NaN safe and multiplayer/headless compatible.
+    /// Bulletproof: All logic is validated, multiplayer and headless safe.
     /// </summary>
     public static class AIRefactoredLayerMasks
     {
-        #region Layer Indices
+        #region EFT-Validated Layer Indices
 
         public static readonly int Default = SafeLayer("Default");
-        public static readonly int TransparentFX = SafeLayer("TransparentFX");
-        public static readonly int IgnoreRaycast = SafeLayer("Ignore Raycast");
-        public static readonly int Water = SafeLayer("Water");
-        public static readonly int UI = SafeLayer("UI");
-
         public static readonly int Terrain = SafeLayer("Terrain");
-        public static readonly int Foliage = SafeLayer("Grass");
+        public static readonly int Grass = SafeLayer("Grass");
         public static readonly int HighPolyCollider = SafeLayer("HighPolyCollider");
         public static readonly int LowPolyCollider = SafeLayer("LowPolyCollider");
         public static readonly int DeadBody = SafeLayer("Deadbody");
         public static readonly int HitCollider = SafeLayer("HitCollider");
-
-        public static readonly int DoorHighPolyCollider = SafeLayer("DoorHighPolyCollider");
         public static readonly int DoorLowPolyCollider = SafeLayer("DoorLowPolyCollider");
-        public static readonly int Door = SafeLayer("Door");
-
-        public static readonly int InvisibleCollider = SafeLayer("InvisibleCollider");
-        public static readonly int ViewCollider = SafeLayer("ViewCollider");
-        public static readonly int Trigger = SafeLayer("Triggers");
         public static readonly int Interactive = SafeLayer("Interactive");
         public static readonly int Loot = SafeLayer("Loot");
         public static readonly int Player = SafeLayer("Player");
         public static readonly int Shells = SafeLayer("Shells");
-        public static readonly int WeaponPreview = SafeLayer("WeaponPreview");
-        public static readonly int PlayerCollisionTest = SafeLayer("PlayerCollisionTest");
-        public static readonly int DisablerCullingObject = SafeLayer("DisablerCullingObject");
+        public static readonly int Triggers = SafeLayer("Triggers");
 
         #endregion
 
         #region Precomputed LayerMasks
 
-        public static readonly LayerMask PlayerMask = MaskSafe(Player);
         public static readonly LayerMask DefaultMask = MaskSafe(Default);
-        public static readonly LayerMask HitColliderMask = MaskSafe(HitCollider);
-        public static readonly LayerMask LootLayerMask = MaskSafe(Loot);
-        public static readonly LayerMask InteractiveMask = MaskSafe(Interactive);
-        public static readonly LayerMask TriggersMask = MaskSafe(Trigger);
-        public static readonly LayerMask TransparentMask = MaskSafe(TransparentFX);
         public static readonly LayerMask TerrainMask = MaskSafe(Terrain);
-        public static readonly LayerMask DisablerCullingObjectMask = MaskSafe(DisablerCullingObject);
+        public static readonly LayerMask HighPolyMask = MaskSafe(HighPolyCollider);
+        public static readonly LayerMask LowPolyMask = MaskSafe(LowPolyCollider);
+        public static readonly LayerMask PlayerMask = MaskSafe(Player);
+        public static readonly LayerMask HitColliderMask = MaskSafe(HitCollider);
+        public static readonly LayerMask LootMask = MaskSafe(Loot);
+        public static readonly LayerMask InteractiveMask = MaskSafe(Interactive);
+        public static readonly LayerMask TriggersMask = MaskSafe(Triggers);
 
         #endregion
 
         #region Compound Masks
 
-        public static readonly LayerMask HighPolyWithTerrainMask =
+        public static readonly LayerMask TerrainAndHighPoly =
             MaskSafe(Terrain) | MaskSafe(HighPolyCollider);
 
-        public static readonly LayerMask HighPolyWithTerrainNoGrassMask =
-            HighPolyWithTerrainMask | MaskSafe(Foliage);
+        public static readonly LayerMask TerrainHighLow =
+            MaskSafe(Terrain) | MaskSafe(HighPolyCollider) | MaskSafe(LowPolyCollider);
 
-        public static readonly LayerMask HighPolyWithTerrainMaskAI =
-            HighPolyWithTerrainNoGrassMask | MaskSafe(LowPolyCollider);
+        public static readonly LayerMask SuppressionMask =
+            TerrainHighLow | MaskSafe(Grass);
 
-        public static readonly LayerMask TripwireCheckLayerMaskNoPlayer =
-            TerrainMask | MaskSafe(Door) | LootLayerMask | DefaultMask | HighPolyWithTerrainMask;
+        public static readonly LayerMask VisionBlockers =
+            MaskSafe(HighPolyCollider) | MaskSafe(Terrain);
 
-        public static readonly LayerMask TripwireCheckLayerMask =
-            TripwireCheckLayerMaskNoPlayer | PlayerMask;
+        public static readonly LayerMask LineOfSightMask =
+            MaskSafe(HighPolyCollider) | MaskSafe(Terrain);
 
-        public static readonly LayerMask AllColliders = SafeGetMask(
-            "Terrain", "HighPolyCollider", "LowPolyCollider", "DoorHighPolyCollider", "DoorLowPolyCollider");
+        public static readonly LayerMask AimRayMask =
+            MaskSafe(HighPolyCollider) | MaskSafe(LowPolyCollider) | MaskSafe(DeadBody);
 
-        public static readonly LayerMask SuppressionMask = SafeGetMask(
-            "Terrain", "HighPolyCollider", "LowPolyCollider", "Grass");
+        public static readonly LayerMask CoverRayMask =
+            MaskSafe(HighPolyCollider) | MaskSafe(LowPolyCollider) | MaskSafe(DoorLowPolyCollider) | MaskSafe(Terrain);
 
-        public static readonly LayerMask VisionBlockers = SafeGetMask(
-            "HighPolyCollider", "DoorHighPolyCollider", "Terrain", "InvisibleCollider");
+        public static readonly LayerMask CoverColliderMask =
+            MaskSafe(HighPolyCollider) | MaskSafe(LowPolyCollider) | MaskSafe(DoorLowPolyCollider) | MaskSafe(Terrain);
 
-        public static readonly LayerMask LineOfSightMask = SafeGetMask(
-            "HighPolyCollider", "DoorHighPolyCollider", "Terrain");
+        public static readonly LayerMask JumpRayMask =
+            MaskSafe(Terrain) | MaskSafe(HighPolyCollider) | MaskSafe(LowPolyCollider);
 
-        public static readonly LayerMask AimRayMask = SafeGetMask(
-            "HighPolyCollider", "LowPolyCollider", "Deadbody");
+        public static readonly LayerMask LootObstructionMask =
+            MaskSafe(HighPolyCollider) | MaskSafe(LowPolyCollider) | MaskSafe(DeadBody);
 
-        public static readonly LayerMask EdgeCheckMask = SafeGetMask(
-            "Terrain", "HighPolyCollider", "LowPolyCollider");
+        public static readonly LayerMask LootRaycastMask =
+            MaskSafe(Loot) | MaskSafe(Interactive) | MaskSafe(Player);
 
-        public static readonly LayerMask CoverRayMask = SafeGetMask(
-            "HighPolyCollider", "LowPolyCollider", "DoorLowPolyCollider", "Terrain");
+        public static readonly LayerMask NavObstacleMask =
+            MaskSafe(Terrain) | MaskSafe(HighPolyCollider) | MaskSafe(LowPolyCollider) | MaskSafe(DeadBody);
 
-        public static readonly LayerMask NavObstacleMask = SafeGetMask(
-            "Terrain", "HighPolyCollider", "LowPolyCollider", "Deadbody");
+        public static readonly LayerMask ObstacleRayMask =
+            MaskSafe(Terrain) | MaskSafe(HighPolyCollider) | MaskSafe(LowPolyCollider) | MaskSafe(Grass);
 
-        public static readonly LayerMask LootObstructionMask = SafeGetMask(
-            "HighPolyCollider", "LowPolyCollider", "Deadbody");
+        public static readonly LayerMask PlayerCollisionTestMask =
+            MaskSafe(LowPolyCollider) | MaskSafe(DoorLowPolyCollider) | MaskSafe(Terrain) | MaskSafe(Player);
 
-        public static readonly LayerMask LootRaycastMask = SafeGetMask(
-            "Loot", "Interactive", "Player");
-
-        public static readonly LayerMask OcclusionRaycastMask = SafeGetMask(
-            "HighPolyCollider", "Terrain", "InvisibleCollider");
-
-        public static readonly LayerMask JumpRayMask = SafeGetMask(
-            "Terrain", "HighPolyCollider", "LowPolyCollider");
-
-        public static readonly LayerMask ObstacleRayMask = SafeGetMask(
-            "Terrain", "HighPolyCollider", "LowPolyCollider", "Grass");
-
-        public static readonly LayerMask DoorColliderMask = SafeGetMask(
-            "Door", "DoorHighPolyCollider", "DoorLowPolyCollider");
-
-        public static readonly LayerMask PlayerStaticDoorMask = SafeGetMask("Door");
-
-        public static readonly LayerMask PlayerCollisionTestMask = SafeGetMask(
-            "LowPolyCollider", "Door", "Terrain", "Player");
-
-        public static readonly LayerMask GrenadeAffectedMask = SafeGetMask(
-            "Player", "Interactive");
-
-        public static readonly LayerMask GrenadeObstaclesColliderMask = SafeGetMask(
-            "HighPolyCollider", "Door", "Terrain");
-
-        public static readonly LayerMask TerrainAndObstacles = SafeGetMask(
-            "Terrain", "HighPolyCollider", "LowPolyCollider", "Door", "DoorHighPolyCollider", "DoorLowPolyCollider");
-
-        public static readonly LayerMask JumpSafeMask = SafeGetMask(
-            "Terrain", "HighPolyCollider", "LowPolyCollider");
-
-        public static readonly LayerMask ClimbObstructionMask = SafeGetMask(
-            "Terrain", "HighPolyCollider", "LowPolyCollider", "Door", "InvisibleCollider");
-
-        public static readonly LayerMask NavRaycastMask = SafeGetMask(
-            "Terrain", "HighPolyCollider", "LowPolyCollider", "InvisibleCollider", "Door");
-
-        public static readonly LayerMask MovementBlockerMask = SafeGetMask(
-            "Terrain", "HighPolyCollider", "LowPolyCollider", "Door", "DoorHighPolyCollider", "DoorLowPolyCollider");
-
-        public static readonly LayerMask NavPointScanMask = SafeGetMask(
-            "Terrain", "HighPolyCollider", "LowPolyCollider", "InvisibleCollider", "Door");
-
-        // NEW: Used for tactical cover/occlusion raycasts (e.g. BotCoverRetreatPlanner, combat AI)
-        public static readonly LayerMask CoverColliderMask = SafeGetMask(
-            "HighPolyCollider", "LowPolyCollider", "DoorHighPolyCollider", "DoorLowPolyCollider", "Terrain");
+        public static readonly LayerMask MovementBlockerMask =
+            MaskSafe(Terrain) | MaskSafe(HighPolyCollider) | MaskSafe(LowPolyCollider) | MaskSafe(DoorLowPolyCollider);
 
         #endregion
 
@@ -165,8 +106,8 @@ namespace AIRefactored.Core
             int layer = LayerMask.NameToLayer(name);
             if (layer < 0 || layer > 31)
             {
-                Plugin.LoggerInstance?.LogWarning("[AIRefactoredLayerMasks] Layer not found or invalid: " + name);
-                return 0; // fallback to Default
+                Plugin.LoggerInstance?.LogWarning("[AIRefactoredLayerMasks] Invalid or missing layer: " + name);
+                return 0;
             }
             return layer;
         }
@@ -176,17 +117,9 @@ namespace AIRefactored.Core
             return (layer >= 0 && layer < 32) ? (1 << layer) : 0;
         }
 
-        private static LayerMask SafeGetMask(params string[] names)
+        public static bool IsValidLayer(int layer)
         {
-            try
-            {
-                return LayerMask.GetMask(names);
-            }
-            catch
-            {
-                Plugin.LoggerInstance?.LogWarning("[AIRefactoredLayerMasks] SafeGetMask failed for: " + string.Join(",", names));
-                return 0;
-            }
+            return layer >= 0 && layer < 32;
         }
 
         public static bool IsWorldGeometry(int layer)
@@ -195,10 +128,12 @@ namespace AIRefactored.Core
                 layer == Terrain
                 || layer == HighPolyCollider
                 || layer == LowPolyCollider
-                || layer == Door
-                || layer == DoorHighPolyCollider
                 || layer == DoorLowPolyCollider
             );
+        }
+        public static bool IsDoorLayer(int layer)
+        {
+            return IsValidLayer(layer) && layer == DoorLowPolyCollider;
         }
 
         public static bool IsObstacleLayer(int layer)
@@ -207,59 +142,13 @@ namespace AIRefactored.Core
                 layer == Terrain
                 || layer == HighPolyCollider
                 || layer == LowPolyCollider
-                || layer == Foliage
+                || layer == Grass
             );
         }
 
-        public static bool IsPlayerLayer(int layer)
-        {
-            return IsValidLayer(layer) && layer == Player;
-        }
-
-        public static bool IsDoorLayer(int layer)
-        {
-            return IsValidLayer(layer) && (
-                layer == Door
-                || layer == DoorHighPolyCollider
-                || layer == DoorLowPolyCollider
-            );
-        }
-
-        public static bool IsLootLayer(int layer)
-        {
-            return IsValidLayer(layer) && layer == Loot;
-        }
-
-        public static bool IsInteractiveLayer(int layer)
-        {
-            return IsValidLayer(layer) && (layer == Interactive || layer == Trigger);
-        }
-
-        public static bool IsInvisibleCollider(int layer)
-        {
-            return IsValidLayer(layer) && layer == InvisibleCollider;
-        }
-
-        public static bool IsViewCollider(int layer)
-        {
-            return IsValidLayer(layer) && layer == ViewCollider;
-        }
-
-        public static bool IsNavBlocker(int layer)
-        {
-            return IsValidLayer(layer) && (
-                layer == Terrain
-                || layer == HighPolyCollider
-                || layer == LowPolyCollider
-                || layer == DeadBody
-            );
-        }
-
-        private static bool IsValidLayer(int layer)
-        {
-            // Ensures layer is in Unity range and not -1 (which NameToLayer returns if not found)
-            return layer >= 0 && layer < 32;
-        }
+        public static bool IsPlayerLayer(int layer) => IsValidLayer(layer) && layer == Player;
+        public static bool IsLootLayer(int layer) => IsValidLayer(layer) && layer == Loot;
+        public static bool IsInteractiveLayer(int layer) => IsValidLayer(layer) && (layer == Interactive || layer == Triggers);
 
         #endregion
     }

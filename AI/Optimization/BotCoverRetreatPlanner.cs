@@ -279,20 +279,35 @@ namespace AIRefactored.AI.Optimization
 		{
 			try
 			{
-				if (path.Count < 2)
+				if (path == null || path.Count < 2)
 					return false;
 
-				Vector3 origin = path[0] + Vector3.up * 1.2f;
-				Vector3 target = path[1];
-				Vector3 dir = (target - path[0]).normalized;
-				float dist = Vector3.Distance(path[0], target) + 0.5f;
+				Vector3 p0 = path[0];
+				Vector3 p1 = path[1];
 
-				if (Physics.Raycast(origin, dir, out RaycastHit hit, dist, AIRefactoredLayerMasks.DoorColliderMask))
-					return AIRefactoredLayerMasks.IsDoorLayer(hit.collider.gameObject.layer);
+				if (float.IsNaN(p0.x) || float.IsNaN(p1.x))
+					return false;
+
+				Vector3 origin = p0 + Vector3.up * 1.2f;
+				Vector3 direction = (p1 - p0).normalized;
+
+				if (direction.sqrMagnitude < 0.01f)
+					return false;
+
+				float distance = Vector3.Distance(p0, p1) + 0.5f;
+
+				if (Physics.Raycast(origin, direction, out RaycastHit hit, distance, AIRefactoredLayerMasks.MovementBlockerMask))
+				{
+					int layer = hit.collider.gameObject.layer;
+					return AIRefactoredLayerMasks.IsDoorLayer(layer);
+				}
 
 				return false;
 			}
-			catch { return false; }
+			catch
+			{
+				return false;
+			}
 		}
 
 		#endregion

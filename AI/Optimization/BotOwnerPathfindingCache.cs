@@ -316,19 +316,25 @@ namespace AIRefactored.AI.Optimization
                 Vector3 origin = path[0] + Vector3.up * BlockCheckHeight;
                 Vector3 target = path[1];
                 Vector3 direction = (target - path[0]).normalized;
+
+                if (direction.sqrMagnitude < 0.001f || float.IsNaN(direction.x) || float.IsNaN(direction.y))
+                    return false;
+
                 float distance = Vector3.Distance(path[0], target) + BlockCheckMargin;
 
-                RaycastHit hit;
-                if (Physics.Raycast(origin, direction, out hit, distance, AIRefactoredLayerMasks.DoorColliderMask))
+                if (Physics.Raycast(origin, direction, out RaycastHit hit, distance, AIRefactoredLayerMasks.MovementBlockerMask))
                 {
-                    if (AIRefactoredLayerMasks.IsDoorLayer(hit.collider.gameObject.layer))
+                    int layer = hit.collider.gameObject.layer;
+                    if (layer == AIRefactoredLayerMasks.DoorLowPolyCollider)
                     {
                         var navPath = TempNavMeshPathPool.Rent();
-                        bool blocked = !NavMesh.CalculatePath(origin, target, NavMesh.AllAreas, navPath) || navPath.status != NavMeshPathStatus.PathComplete;
+                        bool blocked = !NavMesh.CalculatePath(origin, target, NavMesh.AllAreas, navPath)
+                                       || navPath.status != NavMeshPathStatus.PathComplete;
                         TempNavMeshPathPool.Return(navPath);
                         return blocked;
                     }
                 }
+
                 return false;
             }
             catch

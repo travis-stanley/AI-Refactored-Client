@@ -327,14 +327,21 @@ namespace AIRefactored.AI.Looting
         {
             try
             {
+                if (_bot == null)
+                    return false;
+
                 Vector3 origin = _bot.WeaponRoot != null ? _bot.WeaponRoot.position : _bot.Position;
                 Vector3 direction = target - origin;
+
+                if (direction.sqrMagnitude < 0.01f || float.IsNaN(direction.x) || float.IsNaN(direction.y) || float.IsNaN(direction.z))
+                    return false;
 
                 if (_bot.WeaponRoot != null && Vector3.Angle(_bot.WeaponRoot.forward, direction) > MaxAngle)
                     return false;
 
                 float distance = direction.magnitude + 0.3f;
-                return Physics.Raycast(origin, direction.normalized, out RaycastHit hit, distance, AIRefactoredLayerMasks.HighPolyWithTerrainMaskAI)
+
+                return Physics.Raycast(origin, direction.normalized, out RaycastHit hit, distance, AIRefactoredLayerMasks.TerrainHighLow)
                        && Vector3.Distance(hit.point, target) < 0.4f;
             }
             catch (Exception ex)

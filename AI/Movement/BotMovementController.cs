@@ -18,6 +18,7 @@ namespace AIRefactored.AI.Movement
     using BepInEx.Logging;
     using EFT;
     using UnityEngine;
+    using UnityEngine.AI;
 
     /// <summary>
     /// Realistic overlay for BotMover navigation. Adds combat lean, strafe, and human-like directionality.
@@ -107,7 +108,10 @@ namespace AIRefactored.AI.Movement
                 return;
             }
 
-            Vector3 direction = target - _bot.Position;
+            if (!NavMesh.SamplePosition(target, out NavMeshHit navHit, 1.5f, NavMesh.AllAreas))
+                return;
+
+            Vector3 direction = navHit.position - _bot.Position;
             direction.y = 0f;
             if (direction.sqrMagnitude < 0.01f)
                 return;

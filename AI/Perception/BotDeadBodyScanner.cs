@@ -282,8 +282,14 @@ namespace AIRefactored.AI.Looting
         {
             try
             {
+                if (corpse?.Transform?.Original == null)
+                    return false;
+
+                if (direction.sqrMagnitude < 0.001f || float.IsNaN(direction.x) || float.IsNaN(direction.y) || float.IsNaN(direction.z))
+                    return false;
+
                 Ray ray = new Ray(origin, direction.normalized);
-                if (!Physics.Raycast(ray, out RaycastHit hit, distance + RaycastPadding, AIRefactoredLayerMasks.HighPolyWithTerrainMaskAI))
+                if (!Physics.Raycast(ray, out RaycastHit hit, distance + RaycastPadding, AIRefactoredLayerMasks.TerrainHighLow))
                     return false;
 
                 Transform hitRoot = hit.collider.transform.root;

@@ -45,6 +45,10 @@ namespace AIRefactored.AI.Groups
 
         #region Constructor
 
+        /// <summary>
+        /// Constructs a BotTeamLogic instance for the given bot owner.
+        /// </summary>
+        /// <param name="bot">BotOwner to coordinate squad logic for.</param>
         public BotTeamLogic(BotOwner bot)
         {
             if (!EFTPlayerUtil.IsValidBotOwner(bot))
@@ -56,6 +60,9 @@ namespace AIRefactored.AI.Groups
 
         #region Public Methods
 
+        /// <summary>
+        /// Registers an enemy with all squadmates except the caller, with organic delay.
+        /// </summary>
         public static void AddEnemy(BotOwner bot, IPlayer target)
         {
             try
@@ -83,6 +90,9 @@ namespace AIRefactored.AI.Groups
             catch { }
         }
 
+        /// <summary>
+        /// Broadcasts a mission type change to all squadmates except the caller, with VO and organic delay.
+        /// </summary>
         public static void BroadcastMissionType(BotOwner bot, MissionType mission)
         {
             try
@@ -113,6 +123,9 @@ namespace AIRefactored.AI.Groups
             catch { }
         }
 
+        /// <summary>
+        /// Orders all valid squadmates to fallback to the given point, with organic delay.
+        /// </summary>
         public void BroadcastFallback(Vector3 retreatPoint)
         {
             foreach (var pair in _combatMap)
@@ -128,6 +141,9 @@ namespace AIRefactored.AI.Groups
             }
         }
 
+        /// <summary>
+        /// Organically coordinates movement to keep squad grouped, using jitter and repulsion.
+        /// </summary>
         public void CoordinateMovement()
         {
             try
@@ -164,6 +180,9 @@ namespace AIRefactored.AI.Groups
             catch { }
         }
 
+        /// <summary>
+        /// Registers a CombatStateMachine for a given squadmate (never for self).
+        /// </summary>
         public void InjectCombatState(BotOwner mate, CombatStateMachine fsm)
         {
             try
@@ -176,6 +195,9 @@ namespace AIRefactored.AI.Groups
             catch { }
         }
 
+        /// <summary>
+        /// Sets squadmates using pooling, based on groupId (excludes self).
+        /// </summary>
         public void SetTeammates(List<BotOwner> allBots)
         {
             _teammates.Clear();
@@ -203,6 +225,9 @@ namespace AIRefactored.AI.Groups
             catch { }
         }
 
+        /// <summary>
+        /// Shares an enemy target with all valid squadmates, using organic delay.
+        /// </summary>
         public void ShareTarget(IPlayer enemy)
         {
             try
@@ -252,7 +277,7 @@ namespace AIRefactored.AI.Groups
 
         private static void TriggerDelayedRegisterEnemy(BotOwner receiver, IPlayer enemy, float delay)
         {
-            if (receiver == null || enemy == null)
+            if (!EFTPlayerUtil.IsValidBotOwner(receiver) || enemy == null)
                 return;
 
             Task.Run(async () =>

@@ -244,11 +244,12 @@ namespace AIRefactored.AI.Combat
 
                 _cache.Escalation?.NotifyPanicTriggered();
 
+                // Use BotMovementHelper for all movement and apply micro-drift only via helper
                 float cohesion = _cache.AIRefactoredBotOwner?.PersonalityProfile?.Cohesion ?? 1f;
                 Vector3 fallback = _bot.Position + retreatDir.normalized * UnityEngine.Random.Range(7.5f, 10.5f);
-                fallback += UnityEngine.Random.insideUnitSphere * 0.55f;
                 fallback.y = _bot.Position.y;
 
+                // Always NavMesh-safe: validate and finalize via BotNavHelper
                 if (BotNavHelper.TryGetSafeTarget(_bot, out var navTarget) && IsVectorValid(navTarget))
                     fallback = navTarget;
 

@@ -59,33 +59,21 @@ namespace AIRefactored.AI.Combat.States
 
         #region Public API
 
-        /// <summary>
-        /// Should the bot begin tactical engagement movement (not yet in attack range)?
-        /// </summary>
         public bool ShallUseNow()
         {
             return IsCombatCapable() && TryGetLastKnownEnemy(out Vector3 pos) && !IsWithinRange(pos);
         }
 
-        /// <summary>
-        /// Can the bot attack (in optimal range and position)?
-        /// </summary>
         public bool CanAttack()
         {
             return IsCombatCapable() && TryGetLastKnownEnemy(out Vector3 pos) && IsWithinRange(pos);
         }
 
-        /// <summary>
-        /// Is the bot actively engaging (closing distance but not yet attacking)?
-        /// </summary>
         public bool IsEngaging()
         {
             return IsCombatCapable() && TryGetLastKnownEnemy(out Vector3 pos) && !IsWithinRange(pos);
         }
 
-        /// <summary>
-        /// Ticks the engage logic. Handles path-based, anti-teleport approach toward enemy's last known location.
-        /// </summary>
         public void Tick()
         {
             if (!IsCombatCapable())
@@ -105,30 +93,29 @@ namespace AIRefactored.AI.Combat.States
 
                 Vector3 destination = enemyPos;
 
+                // Apply squad path offset if present
                 if (_cache.SquadPath != null)
                 {
                     try { destination = _cache.SquadPath.ApplyOffsetTo(enemyPos); }
                     catch { destination = enemyPos; }
                 }
 
-                // Human-like micro-adjust, but strictly path-based
-                destination += UnityEngine.Random.insideUnitSphere * 0.25f;
-                destination.y = enemyPos.y;
-
-                // NavMesh validate—no teleportation, never off-mesh, never direct set
+                // Validate destination and always route movement through the helper
                 Vector3 safeDest = GetNavMeshSafeDestination(_bot.Position, destination);
 
                 if (!IsValid(safeDest))
                     return;
 
-                if (_bot.Mover != null && (safeDest - _bot.Position).sqrMagnitude < (MaxAdvanceDistance * MaxAdvanceDistance))
+                float advanceSqr = (safeDest - _bot.Position).sqrMagnitude;
+                if (_bot.Mover != null && advanceSqr < (MaxAdvanceDistance * MaxAdvanceDistance))
                 {
-                    BotMovementHelper.SmoothMoveTo(_bot, safeDest); // always path-based, never teleports
+                    // Use cohesion from personality for more human-like spacing and engagement
+                    float cohesion = 1.0f;
+                    if (_cache?.PersonalityProfile != null)
+                        cohesion = Mathf.Clamp(_cache.PersonalityProfile.Cohesion, 0.7f, 1.3f);
+
+                    BotMovementHelper.SmoothMoveTo(_bot, safeDest, slow: false, cohesionScale: cohesion);
                     _cache.PoseController?.TrySetStanceFromNearbyCover(safeDest);
-                }
-                else
-                {
-                    Plugin.LoggerInstance.LogError("[EngageHandler] BotMover missing or invalid advance distance.");
                 }
             }
             catch (Exception ex)
@@ -162,21 +149,16 @@ namespace AIRefactored.AI.Combat.States
             return !float.IsNaN(pos.x) && !float.IsNaN(pos.y) && !float.IsNaN(pos.z) && pos != Vector3.zero;
         }
 
-        /// <summary>
-        /// Ensures a destination is always pathable, never a direct or teleport destination.
-        /// </summary>
         private static Vector3 GetNavMeshSafeDestination(Vector3 current, Vector3 candidate)
         {
             UnityEngine.AI.NavMeshHit navHit;
             if (UnityEngine.AI.NavMesh.SamplePosition(candidate, out navHit, MaxNavSampleRadius, UnityEngine.AI.NavMesh.AllAreas))
             {
-                // Prevent snap/teleport by capping allowed move distance
                 float dist = (navHit.position - current).magnitude;
                 if (dist < 0.08f || dist > MaxAdvanceDistance)
                     return current;
                 return navHit.position;
             }
-            // Fallback: never move if not valid
             return current;
         }
 

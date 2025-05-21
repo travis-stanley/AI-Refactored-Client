@@ -79,6 +79,7 @@ namespace AIRefactored.AI.Combat
                     return;
                 }
 
+                // Human-like panic voice (client only)
                 if (!FikaHeadlessDetector.IsHeadless &&
                     _bot.BotTalk != null &&
                     time - _lastVoiceTime > SuppressionVoiceCooldown &&
@@ -88,6 +89,7 @@ namespace AIRefactored.AI.Combat
                     try { _bot.BotTalk.TrySay(EPhraseTrigger.NeedHelp); } catch { }
                 }
 
+                // Recover after suppression duration
                 if (time - _suppressionStartTime >= SuppressionDuration)
                 {
                     _isSuppressed = false;
@@ -114,6 +116,7 @@ namespace AIRefactored.AI.Combat
                 _isSuppressed = true;
                 _suppressionStartTime = Time.time;
 
+                // Directly reduce composure via internal field (reflection is required)
                 if (panic != null)
                 {
                     float loss = UnityEngine.Random.Range(0.12f, 0.25f);
@@ -124,14 +127,16 @@ namespace AIRefactored.AI.Combat
                         ?.SetValue(panic, Mathf.Clamp01(current - loss));
                 }
 
+                // Always validate movement via BotMovementHelper and BotNavHelper only
                 Vector3 retreat = source.HasValue
                     ? (_bot.Position - source.Value).normalized
                     : GetDefaultRetreatDirection();
 
+                // Generate and validate retreat target
                 Vector3 fallback = _bot.Position + retreat * MinSuppressionRetreatDistance;
-                fallback += UnityEngine.Random.insideUnitSphere * 0.8f;
                 fallback.y = _bot.Position.y;
 
+                // NavMesh-safe fallback position
                 if (BotNavHelper.TryGetSafeTarget(_bot, out var navTarget) && IsVectorValid(navTarget))
                     fallback = navTarget;
 
@@ -144,6 +149,7 @@ namespace AIRefactored.AI.Combat
                     BotCoverHelper.TrySetStanceFromNearbyCover(_cache, fallback);
                 }
 
+                // Escalate to panic if composure too low
                 if (panic != null && panic.GetComposureLevel() < 0.18f)
                     panic.TriggerPanic();
 

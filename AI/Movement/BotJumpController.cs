@@ -4,7 +4,7 @@
 //
 //   THIS FILE IS SYSTEMATICALLY MANAGED.
 //   Bulletproof: All failures are locally isolated; never disables itself, never triggers fallback AI.
-//   Realism Pass: Human-like jump anticipation, variable delay, and error-prone motion. 
+//   Realism Pass: Human-like jump anticipation, variable delay, and error-prone motion.
 // </auto-generated>
 
 namespace AIRefactored.AI.Movement
@@ -46,8 +46,8 @@ namespace AIRefactored.AI.Movement
         private readonly MovementContext _context;
 
         private float _lastJumpTime;
-        private bool _hasRecentlyJumped;
         private float _nextAllowedJumpTime;
+        private bool _hasRecentlyJumped;
 
         #endregion
 
@@ -71,35 +71,43 @@ namespace AIRefactored.AI.Movement
 
         #region Public Methods
 
+        /// <summary>
+        /// Evaluates and triggers a jump if a valid obstacle is found and all safety checks pass.
+        /// </summary>
         public void Tick(float deltaTime)
         {
-            if (!IsJumpAllowed())
-                return;
-
-            float now = Time.time;
-            if (now < _nextAllowedJumpTime)
-                return;
-
-            Vector3[] temp = TempVector3Pool.Rent(1);
             try
             {
-                if (TryFindJumpTarget(out temp[0]))
-                {
-                    if (UnityEngine.Random.value < HumanMistakeChance)
-                    {
-                        _nextAllowedJumpTime = now + UnityEngine.Random.Range(0.22f, 0.39f);
-                        return;
-                    }
+                if (!IsJumpAllowed())
+                    return;
 
-                    float anticipation = UnityEngine.Random.Range(HumanJumpDelayMin, HumanJumpDelayMax);
-                    _nextAllowedJumpTime = now + JumpCooldown + anticipation;
-                    ExecuteJump(temp[0], deltaTime);
+                float now = Time.time;
+                if (now < _nextAllowedJumpTime)
+                    return;
+
+                Vector3[] temp = TempVector3Pool.Rent(1);
+                try
+                {
+                    if (TryFindJumpTarget(out temp[0]))
+                    {
+                        // Human-like random chance to "hesitate" and not jump
+                        if (UnityEngine.Random.value < HumanMistakeChance)
+                        {
+                            _nextAllowedJumpTime = now + UnityEngine.Random.Range(0.22f, 0.39f);
+                            return;
+                        }
+
+                        float anticipation = UnityEngine.Random.Range(HumanJumpDelayMin, HumanJumpDelayMax);
+                        _nextAllowedJumpTime = now + JumpCooldown + anticipation;
+                        ExecuteJump(temp[0], deltaTime);
+                    }
+                }
+                finally
+                {
+                    TempVector3Pool.Return(temp);
                 }
             }
-            finally
-            {
-                TempVector3Pool.Return(temp);
-            }
+            catch { }
         }
 
         #endregion
@@ -109,7 +117,6 @@ namespace AIRefactored.AI.Movement
         private bool IsJumpAllowed()
         {
             float now = Time.time;
-
             if (_hasRecentlyJumped && now - _lastJumpTime < JumpCooldown)
                 return false;
 
@@ -128,75 +135,86 @@ namespace AIRefactored.AI.Movement
 
         private void ExecuteJump(Vector3 target, float deltaTime)
         {
-            if (_context == null)
-                return;
+            try
+            {
+                if (_context == null)
+                    return;
 
-            _context.OnJump();
-            _lastJumpTime = Time.time;
-            _hasRecentlyJumped = true;
+                _context.OnJump();
+                _lastJumpTime = Time.time;
+                _hasRecentlyJumped = true;
 
-            Vector3 direction = (target - _context.TransformPosition).normalized;
-            if (direction.sqrMagnitude < 0.01f)
-                return;
+                Vector3 direction = (target - _context.TransformPosition).normalized;
+                if (direction.sqrMagnitude < 0.01f)
+                    return;
 
-            Vector3 velocity = direction * JumpVelocityMultiplier;
-            _context.ApplyMotion(velocity, deltaTime);
+                Vector3 velocity = direction * JumpVelocityMultiplier;
+                _context.ApplyMotion(velocity, deltaTime);
+            }
+            catch { }
         }
 
         private bool TryFindJumpTarget(out Vector3 target)
         {
             target = Vector3.zero;
-
             if (_context == null)
                 return false;
 
-            Vector3 origin = _context.PlayerColliderCenter + Vector3.up * 0.25f;
-            Vector3 forward = _context.TransformForwardVector;
-
-            RaycastHit[] hits = TempRaycastHitPool.Rent(1);
             try
             {
-                if (!Physics.SphereCast(origin, ObstacleCheckRadius, forward, out hits[0], JumpCheckDistance, AIRefactoredLayerMasks.ObstacleRayMask))
-                    return false;
+                Vector3 origin = _context.PlayerColliderCenter + Vector3.up * 0.25f;
+                Vector3 forward = _context.TransformForwardVector;
 
-                Bounds[] boundsArray = TempBoundsPool.Rent(1);
+                RaycastHit[] hits = TempRaycastHitPool.Rent(1);
                 try
                 {
-                    boundsArray[0] = hits[0].collider.bounds;
-                    float height = boundsArray[0].max.y - _context.TransformPosition.y;
-
-                    if (height < MinJumpHeight || height > MaxJumpHeight)
+                    if (!Physics.SphereCast(origin, ObstacleCheckRadius, forward, out hits[0], JumpCheckDistance, AIRefactoredLayerMasks.ObstacleRayMask))
                         return false;
 
-                    Vector3 vaultPoint = boundsArray[0].max + (forward * VaultForwardOffset);
-
-                    RaycastHit[] landHits = TempRaycastHitPool.Rent(1);
+                    Bounds[] boundsArray = TempBoundsPool.Rent(1);
                     try
                     {
-                        if (!Physics.Raycast(vaultPoint, Vector3.down, out landHits[0], 2.5f, AIRefactoredLayerMasks.JumpRayMask))
+                        boundsArray[0] = hits[0].collider.bounds;
+                        float height = boundsArray[0].max.y - _context.TransformPosition.y;
+
+                        if (height < MinJumpHeight || height > MaxJumpHeight)
                             return false;
 
-                        float fallHeight = Mathf.Abs(_context.TransformPosition.y - landHits[0].point.y);
-                        if (fallHeight > SafeFallHeight)
-                            return false;
+                        Vector3 vaultPoint = boundsArray[0].max + (forward * VaultForwardOffset);
 
-                        target = landHits[0].point;
-                        return true;
+                        RaycastHit[] landHits = TempRaycastHitPool.Rent(1);
+                        try
+                        {
+                            if (!Physics.Raycast(vaultPoint, Vector3.down, out landHits[0], 2.5f, AIRefactoredLayerMasks.JumpRayMask))
+                                return false;
+
+                            float fallHeight = Mathf.Abs(_context.TransformPosition.y - landHits[0].point.y);
+                            if (fallHeight > SafeFallHeight)
+                                return false;
+
+                            target = landHits[0].point;
+                            return true;
+                        }
+                        finally
+                        {
+                            TempRaycastHitPool.Return(landHits);
+                        }
                     }
                     finally
                     {
-                        TempRaycastHitPool.Return(landHits);
+                        TempBoundsPool.Return(boundsArray);
                     }
                 }
                 finally
                 {
-                    TempBoundsPool.Return(boundsArray);
+                    TempRaycastHitPool.Return(hits);
                 }
             }
-            finally
+            catch
             {
-                TempRaycastHitPool.Return(hits);
+                // All failures are isolated, jump is skipped.
             }
+            return false;
         }
 
         #endregion

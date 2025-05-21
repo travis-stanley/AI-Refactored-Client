@@ -17,6 +17,10 @@ namespace AIRefactored.AI.Movement
     using UnityEngine;
     using UnityEngine.AI;
 
+    /// <summary>
+    /// Provides realistic, human-like corner and edge scanning for bots.
+    /// All logic is null-guarded, error-isolated, and fully compliant with multiplayer/headless environments.
+    /// </summary>
     public sealed class BotCornerScanner
     {
         #region Constants
@@ -87,34 +91,42 @@ namespace AIRefactored.AI.Movement
 
         public void Tick(float time)
         {
-            if (!_isInitialized || _bot == null || _cache == null || _profile == null)
-                return;
-            if (_bot.IsDead || _bot.Mover == null || _bot.Transform == null)
-                return;
-            if (_cache.Tilt == null || _cache.PoseController == null)
-                return;
-            if (_bot.Memory?.GoalEnemy != null)
-                return;
-            if (time < _pauseUntil || time < _prepCrouchUntil)
-                return;
-
-            float falsePositiveRoll = UnityEngine.Random.value;
-            if (falsePositiveRoll < _profile.Caution * 0.05f)
+            try
             {
+                if (!_isInitialized || _bot == null || _cache == null || _profile == null)
+                    return;
+                if (_bot.IsDead || _bot.Mover == null || _bot.Transform == null)
+                    return;
+                if (_cache.Tilt == null || _cache.PoseController == null)
+                    return;
+                if (_bot.Memory?.GoalEnemy != null)
+                    return;
+                if (time < _pauseUntil || time < _prepCrouchUntil)
+                    return;
+
+                // Occasionally, cautious bots "overthink" and falsely pause at open corners
+                float falsePositiveRoll = UnityEngine.Random.value;
+                if (falsePositiveRoll < _profile.Caution * 0.05f)
+                {
+                    ResetLean(time);
+                    return;
+                }
+
+                if (IsApproachingEdge())
+                {
+                    PauseMovement(time);
+                    return;
+                }
+
+                if (TryCornerPeekWithCrouch(time))
+                    return;
+
                 ResetLean(time);
-                return;
             }
-
-            if (IsApproachingEdge())
+            catch (Exception ex)
             {
-                PauseMovement(time);
-                return;
+                Log.LogError("[BotCornerScanner] Tick failed: " + ex);
             }
-
-            if (TryCornerPeekWithCrouch(time))
-                return;
-
-            ResetLean(time);
         }
 
         #endregion
@@ -123,53 +135,74 @@ namespace AIRefactored.AI.Movement
 
         private bool IsApproachingEdge()
         {
-            Vector3 origin = _bot.Position + Vector3.up * 0.2f;
-            Vector3 forward = _bot.Transform.forward;
-            Vector3 right = _bot.Transform.right;
-            int rays = Mathf.CeilToInt((EdgeCheckDistance * 2f) / EdgeRaySpacing);
-
-            for (int i = 0; i < rays; i++)
+            try
             {
-                float offset = (i - (rays * 0.5f)) * EdgeRaySpacing;
-                Vector3 rayOrigin = origin + (right * offset) + (forward * EdgeCheckDistance);
-                Vector3 rayDown = rayOrigin + Vector3.down * MinFallHeight;
+                Vector3 origin = _bot.Position + Vector3.up * 0.2f;
+                Vector3 forward = _bot.Transform.forward;
+                Vector3 right = _bot.Transform.right;
+                int rays = Mathf.CeilToInt((EdgeCheckDistance * 2f) / EdgeRaySpacing);
 
-                if (!Physics.Raycast(rayOrigin, Vector3.down, MinFallHeight, AIRefactoredLayerMasks.NavObstacleMask))
+                for (int i = 0; i < rays; i++)
                 {
-                    if (!NavMesh.SamplePosition(rayDown, out NavMeshHit hit, 1.0f, NavMesh.AllAreas) || hit.distance > NavSampleTolerance)
-                    {
-                        if (UnityEngine.Random.value > 0.85f)
-                            continue;
+                    float offset = (i - (rays * 0.5f)) * EdgeRaySpacing;
+                    Vector3 rayOrigin = origin + (right * offset) + (forward * EdgeCheckDistance);
+                    Vector3 rayDown = rayOrigin + Vector3.down * MinFallHeight;
 
-                        return true;
+                    if (!Physics.Raycast(rayOrigin, Vector3.down, MinFallHeight, AIRefactoredLayerMasks.NavObstacleMask))
+                    {
+                        if (!NavMesh.SamplePosition(rayDown, out NavMeshHit hit, 1.0f, NavMesh.AllAreas) || hit.distance > NavSampleTolerance)
+                        {
+                            if (UnityEngine.Random.value > 0.85f)
+                                continue; // Minor chance of false negative to keep bots unpredictable
+
+                            return true;
+                        }
                     }
                 }
+                return false;
             }
-
-            return false;
+            catch
+            {
+                // Never allow edge checks to break scanning or movement
+                return false;
+            }
         }
 
         private bool TryCornerPeekWithCrouch(float time)
         {
-            Vector3 origin = _bot.Position + Vector3.up * WallCheckHeight;
-            Vector3 right = _bot.Transform.right;
-            Vector3 left = -right;
-            float dist = BaseWallCheckDistance + ((1f - _profile.Caution) * 0.5f);
+            try
+            {
+                Vector3 origin = _bot.Position + Vector3.up * WallCheckHeight;
+                Vector3 right = _bot.Transform.right;
+                Vector3 left = -right;
+                float dist = BaseWallCheckDistance + ((1f - _profile.Caution) * 0.5f);
 
-            if (CheckWall(origin, left, dist))
-                return TriggerLeanOrCrouch(BotTiltType.left, time);
-            if (CheckWall(origin, right, dist))
-                return TriggerLeanOrCrouch(BotTiltType.right, time);
+                if (CheckWall(origin, left, dist))
+                    return TriggerLeanOrCrouch(BotTiltType.left, time);
+                if (CheckWall(origin, right, dist))
+                    return TriggerLeanOrCrouch(BotTiltType.right, time);
 
-            return false;
+                return false;
+            }
+            catch
+            {
+                return false;
+            }
         }
 
         private bool CheckWall(Vector3 origin, Vector3 dir, float dist)
         {
-            if (!Physics.Raycast(origin, dir, out RaycastHit hit, dist, AIRefactoredLayerMasks.CoverRayMask))
-                return false;
+            try
+            {
+                if (!Physics.Raycast(origin, dir, out RaycastHit hit, dist, AIRefactoredLayerMasks.CoverRayMask))
+                    return false;
 
-            return Vector3.Dot(hit.normal, dir) < WallAngleThreshold;
+                return Vector3.Dot(hit.normal, dir) < WallAngleThreshold;
+            }
+            catch
+            {
+                return false;
+            }
         }
 
         private bool TriggerLeanOrCrouch(BotTiltType side, float time)
@@ -192,14 +225,20 @@ namespace AIRefactored.AI.Movement
 
         private bool AttemptCrouch(float time)
         {
-            if (_cache.PoseController.GetPoseLevel() > 30f)
+            try
             {
-                _cache.PoseController.SetCrouch();
-                _prepCrouchUntil = time + PrepCrouchTime;
-                return true;
+                if (_cache.PoseController.GetPoseLevel() > 30f)
+                {
+                    _cache.PoseController.SetCrouch();
+                    _prepCrouchUntil = time + PrepCrouchTime;
+                    return true;
+                }
+                return false;
             }
-
-            return false;
+            catch
+            {
+                return false;
+            }
         }
 
         #endregion
@@ -216,14 +255,22 @@ namespace AIRefactored.AI.Movement
 
         private void ResetLean(float time)
         {
-            if (_cache.Tilt != null && _cache.Tilt._coreTilt)
+            try
             {
-                _cache.Tilt.tiltOff = time - 1f;
-                _cache.Tilt.ManualUpdate();
-            }
+                if (_cache.Tilt != null && _cache.Tilt._coreTilt)
+                {
+                    _cache.Tilt.tiltOff = time - 1f;
+                    _cache.Tilt.ManualUpdate();
+                }
 
-            _isLeaning = false;
-            _isCrouching = false;
+                _isLeaning = false;
+                _isCrouching = false;
+            }
+            catch
+            {
+                _isLeaning = false;
+                _isCrouching = false;
+            }
         }
 
         #endregion

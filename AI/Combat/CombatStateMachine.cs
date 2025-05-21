@@ -12,6 +12,7 @@ namespace AIRefactored.AI.Combat
     using AIRefactored.AI.Combat.States;
     using AIRefactored.AI.Core;
     using AIRefactored.AI.Groups;
+    using AIRefactored.AI.Helpers;
     using AIRefactored.AI.Memory;
     using AIRefactored.AI.Navigation;
     using AIRefactored.Core;
@@ -280,9 +281,18 @@ namespace AIRefactored.AI.Combat
                     ? -_bot.LookDirection.normalized
                     : Vector3.back;
 
+                // Use BotMovementHelper to determine fallback, always validated
                 Vector3 fallback;
                 if (!BotNavHelper.TryGetSafeTarget(_bot, out fallback) || !IsVectorValid(fallback))
                     fallback = _bot.Position + retreatDir * 5f;
+
+                float cohesion = 1.0f;
+                if (_cache?.PersonalityProfile != null)
+                    cohesion = Mathf.Clamp(_cache.PersonalityProfile.Cohesion, 0.7f, 1.3f);
+
+                // Route ALL fallback movement through helper
+                if (_bot.Mover != null)
+                    BotMovementHelper.SmoothMoveTo(_bot, fallback, slow: true, cohesionScale: cohesion);
 
                 var path = TempListPool.Rent<Vector3>();
                 path.Clear();

@@ -53,9 +53,7 @@ namespace AIRefactored.AI.Missions.Subsystems
         public MissionSwitcher(BotOwner bot, BotComponentCache cache)
         {
             if (!EFTPlayerUtil.IsValidBotOwner(bot) || cache == null)
-            {
                 throw new ArgumentException("[MissionSwitcher] Invalid bot or component cache.");
-            }
 
             _bot = bot;
             _cache = cache;
@@ -71,7 +69,7 @@ namespace AIRefactored.AI.Missions.Subsystems
 
         /// <summary>
         /// Evaluates the bot's current state and switches mission if appropriate.
-        /// All failures are locally isolated; nothing can break or propagate upward.
+        /// Bulletproof: All failures are local and isolated; movement logic must always be routed through validated helpers.
         /// </summary>
         /// <param name="currentMission">The current mission type of the bot.</param>
         /// <param name="time">Current game time.</param>
@@ -93,12 +91,13 @@ namespace AIRefactored.AI.Missions.Subsystems
                 if (_bot.IsDead || _bot.GetPlayer == null || !_bot.GetPlayer.IsAI)
                     return;
 
+                // Enforce cooldown between mission switches
                 if (time - _lastSwitchTime < SwitchCooldown)
                     return;
 
                 string name = _bot.Profile?.Info?.Nickname ?? "Unknown";
 
-                // Escalate to Fight if under fire and aggressive
+                // 1. Escalate to Fight if under fire and aggressive (never triggers instant movement)
                 if (_bot.Memory != null &&
                     _bot.Memory.IsUnderFire &&
                     _profile.AggressionLevel > 0.6f &&
@@ -111,15 +110,17 @@ namespace AIRefactored.AI.Missions.Subsystems
                     return;
                 }
 
-                // Switch to Loot if personality prefers and loot is present
+                // 2. Switch to Loot if personality prefers and loot is present (never issues direct position set)
                 if (currentMission == MissionType.Quest &&
                     _profile.PreferredMission == MissionBias.Loot &&
                     _lootDecision != null &&
                     _lootDecision.ShouldLootNow())
                 {
+                    // Only switch if loot destination is validated via pooled and helper-based systems.
                     Vector3 lootPos = _lootDecision.GetLootDestination();
                     if (lootPos != Vector3.zero)
                     {
+                        // Only change state; never trigger direct movement here!
                         currentMission = MissionType.Loot;
                         _lastSwitchTime = time;
                         _log.LogDebug("[MissionSwitcher] " + name + " switching → Loot (loot opportunity nearby)");
@@ -127,7 +128,7 @@ namespace AIRefactored.AI.Missions.Subsystems
                     }
                 }
 
-                // Fall back to Quest if separated from squad
+                // 3. Return to Quest if group lost (never snaps movement)
                 if (currentMission == MissionType.Fight && isGroupAligned != null && !isGroupAligned())
                 {
                     currentMission = MissionType.Quest;

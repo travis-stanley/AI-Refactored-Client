@@ -182,7 +182,7 @@ namespace AIRefactored.AI.Groups
                 return;
 
             int tick = Mathf.FloorToInt(now / DriftChangeInterval);
-            int driftSeed = unchecked((_bot.ProfileId?.GetHashCode() ?? 0) ^ tick ^ 0x1F4B6C3);
+            int driftSeed = unchecked((_bot?.ProfileId?.GetHashCode() ?? 0) ^ tick ^ 0x1F4B6C3);
             var rand = new System.Random(driftSeed);
 
             float angle = (float)(rand.NextDouble() * Mathf.PI * 2.0);

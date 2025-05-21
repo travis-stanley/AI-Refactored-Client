@@ -150,19 +150,18 @@ namespace AIRefactored.AI.Combat.States
                 if (!BotNavHelper.TryGetSafeTarget(_bot, out destination) || !IsVectorValid(destination))
                     destination = GetSafeRandomFallback(_bot.Position);
 
-                destination += UnityEngine.Random.insideUnitSphere * 0.15f;
-                destination.y = _bot.Position.y;
+                // Always use only BotMovementHelper for micro-drift and personality scaling.
+                float cohesion = 1.0f;
+                if (_cache?.PersonalityProfile != null)
+                    cohesion = Mathf.Clamp(_cache.PersonalityProfile.Cohesion, 0.7f, 1.3f);
 
-                if (!TrySampleNavMesh(destination, NavMeshSampleRadius, out Vector3 navSafe))
-                    navSafe = _bot.Position;
-
-                if ((_bot.Mover != null) && (Vector3.Distance(_bot.Position, navSafe) < MaxFallbackDistance))
+                if (_bot.Mover != null && Vector3.Distance(_bot.Position, destination) < MaxFallbackDistance)
                 {
-                    BotMovementHelper.SmoothMoveTo(_bot, navSafe);
-                    BotCoverHelper.TrySetStanceFromNearbyCover(_cache, navSafe);
+                    BotMovementHelper.SmoothMoveTo(_bot, destination, slow: true, cohesionScale: cohesion);
+                    BotCoverHelper.TrySetStanceFromNearbyCover(_cache, destination);
                 }
 
-                if (Vector3.Distance(_bot.Position, navSafe) < MinArrivalDistance)
+                if (Vector3.Distance(_bot.Position, destination) < MinArrivalDistance)
                 {
                     forceState?.Invoke(CombatState.Patrol, time);
 

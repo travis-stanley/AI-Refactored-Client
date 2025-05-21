@@ -130,6 +130,8 @@ namespace AIRefactored.AI.Memory
             try
             {
                 Zones.Clear();
+                foreach (var kvp in ZoneCaches)
+                    kvp.Value.Clear();
                 ZoneCaches.Clear();
             }
             catch (Exception ex)

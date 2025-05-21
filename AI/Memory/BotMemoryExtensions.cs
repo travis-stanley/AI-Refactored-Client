@@ -12,6 +12,7 @@ namespace AIRefactored.AI.Memory
     using System.Collections.Generic;
     using AIRefactored.AI.Core;
     using AIRefactored.AI.Helpers;
+    using AIRefactored.AI.Navigation;
     using AIRefactored.AI.Optimization;
     using AIRefactored.Core;
     using AIRefactored.Pools;
@@ -67,7 +68,12 @@ namespace AIRefactored.AI.Memory
                 if (cache?.PanicHandler?.IsPanicking == true)
                     return;
 
-                BotMovementHelper.SmoothMoveTo(bot, fallbackPosition);
+                Vector3 safeTarget;
+                if (BotNavHelper.TryGetSafeTarget(bot, out safeTarget))
+                {
+                    BotMovementHelper.SmoothMoveTo(bot, safeTarget);
+                }
+                // If no safe target found, bot pauses and waits for retry. No teleport.
             }
             catch (Exception ex)
             {
@@ -80,7 +86,13 @@ namespace AIRefactored.AI.Memory
             try
             {
                 if (EFTPlayerUtil.IsValidBotOwner(bot) && position.sqrMagnitude >= MinMoveThreshold)
-                    BotMovementHelper.SmoothMoveTo(bot, position);
+                {
+                    Vector3 safeTarget;
+                    if (BotNavHelper.TryGetSafeTarget(bot, out safeTarget))
+                    {
+                        BotMovementHelper.SmoothMoveTo(bot, safeTarget);
+                    }
+                }
             }
             catch (Exception ex)
             {
@@ -127,7 +139,11 @@ namespace AIRefactored.AI.Memory
                     }
                 }
 
-                BotMovementHelper.SmoothMoveTo(bot, destination);
+                Vector3 safeTarget;
+                if (BotNavHelper.TryGetSafeTarget(bot, out safeTarget))
+                {
+                    BotMovementHelper.SmoothMoveTo(bot, safeTarget);
+                }
 
                 if (!FikaHeadlessDetector.IsHeadless && bot.BotTalk != null)
                     bot.BotTalk.TrySay(EPhraseTrigger.OnLostVisual);
@@ -211,8 +227,13 @@ namespace AIRefactored.AI.Memory
 
                 BotMemoryStore.AddHeardSound(bot.ProfileId, sourcePos, Time.time);
 
+                // Advance toward sound, but validate.
                 Vector3 cautiousAdvance = sourcePos + ((bot.Position - sourcePos).normalized * 3f);
-                BotMovementHelper.SmoothMoveTo(bot, cautiousAdvance);
+                Vector3 safeTarget;
+                if (BotNavHelper.TryGetSafeTarget(bot, out safeTarget))
+                {
+                    BotMovementHelper.SmoothMoveTo(bot, safeTarget);
+                }
 
                 if (!FikaHeadlessDetector.IsHeadless && bot.BotTalk != null)
                     bot.BotTalk.TrySay(EPhraseTrigger.OnEnemyShot);
@@ -250,7 +271,9 @@ namespace AIRefactored.AI.Memory
                     return Vector3.zero;
 
                 success = true;
-                return Vector3.Cross(enemyDir, Vector3.up);
+                // Always return a normalized, right-flank direction.
+                Vector3 flank = Vector3.Cross(enemyDir, Vector3.up).normalized * 1.2f;
+                return flank;
             }
             catch (Exception ex)
             {

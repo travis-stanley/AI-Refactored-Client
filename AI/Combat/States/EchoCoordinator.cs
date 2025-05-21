@@ -30,15 +30,13 @@ namespace AIRefactored.AI.Combat.States
 
         private const float EchoCooldown = 4.0f;
         private const float MaxEchoRangeSqr = 1600.0f; // 40m
-        private const float MinHumanDelay = 0.08f;
-        private const float MaxHumanDelay = 0.32f;
 
         #endregion
 
         #region Fields
 
-        private readonly BotOwner _bot;
         private readonly BotComponentCache _cache;
+        private readonly BotOwner _bot;
         private float _lastEchoFallbackTime = float.NegativeInfinity;
         private float _lastEchoInvestigateTime = float.NegativeInfinity;
 
@@ -87,10 +85,12 @@ namespace AIRefactored.AI.Combat.States
 
                     if (IsValidVector(fallbackPoint))
                     {
-                        // This only *suggests* fallback; movement is always through bot's own controller
-                        mateCache.Combat.TriggerFallback(fallbackPoint);
+                        float cohesion = 1.0f;
+                        if (mateCache?.PersonalityProfile != null)
+                            cohesion = Mathf.Clamp(mateCache.PersonalityProfile.Cohesion, 0.7f, 1.3f);
 
-                        // Squad voice (client-only, never in headless)
+                        BotMovementHelper.SmoothMoveTo(mate, fallbackPoint, slow: true, cohesionScale: cohesion);
+
                         if (!FikaHeadlessDetector.IsHeadless && mate.BotTalk != null)
                         {
                             try { mate.BotTalk.TrySay(EPhraseTrigger.CoverMe); } catch { }
@@ -116,15 +116,13 @@ namespace AIRefactored.AI.Combat.States
                 dir = Vector3.back;
 
             Vector3 offset = dir * UnityEngine.Random.Range(2.0f, 4.0f);
-            Vector3 noise = UnityEngine.Random.insideUnitSphere * 0.5f;
-            Vector3 candidate = mate.Position + offset + noise;
+            Vector3 candidate = mate.Position + offset;
             candidate.y = mate.Position.y;
 
-            // Snap to NavMesh to guarantee it's pathable; never teleports, only hints
             UnityEngine.AI.NavMeshHit navHit;
             if (UnityEngine.AI.NavMesh.SamplePosition(candidate, out navHit, 1.1f, UnityEngine.AI.NavMesh.AllAreas))
                 return navHit.position;
-            return mate.Position; // If not valid, fallback to current pos (no movement/teleport)
+            return mate.Position;
         }
 
         #endregion
@@ -187,7 +185,6 @@ namespace AIRefactored.AI.Combat.States
                 return;
 
             string enemyId = _cache.ThreatSelector?.CurrentTarget?.ProfileId ?? string.Empty;
-
             int count = _bot.BotsGroup.MembersCount;
             Vector3 origin = _bot.Position;
 
@@ -216,9 +213,6 @@ namespace AIRefactored.AI.Combat.States
 
         #region Helpers
 
-        /// <summary>
-        /// Determines if a squadmate is a valid target for echo.
-        /// </summary>
         private static bool CanEchoHumanly(BotComponentCache cache)
         {
             if (cache == null)
@@ -237,20 +231,13 @@ namespace AIRefactored.AI.Combat.States
             return true;
         }
 
-        /// <summary>
-        /// Validates a squadmate's participation in echo routines.
-        /// </summary>
         private bool IsValidSquadmate(BotOwner mate, Vector3 origin)
         {
             if (mate == null || mate == _bot || mate.IsDead)
                 return false;
-
             return (mate.Position - origin).sqrMagnitude <= MaxEchoRangeSqr;
         }
 
-        /// <summary>
-        /// Vector validity check (no NaN or zero).
-        /// </summary>
         private static bool IsValidVector(Vector3 pos)
         {
             return pos != Vector3.zero &&

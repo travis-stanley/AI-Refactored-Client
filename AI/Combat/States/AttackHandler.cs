@@ -127,12 +127,17 @@ namespace AIRefactored.AI.Combat.States
 
                     Vector3 advancePoint = GetRealisticAdvancePoint(_bot, _cache, targetPos, distToTarget, MicroAdjustRadius);
 
-                    // Absolute anti-teleport: Only path-based movement, never direct assignment!
+                    // Always get cohesion scale from personality for natural formation/human movement
+                    float cohesion = 1.0f;
+                    if (_cache?.PersonalityProfile != null)
+                        cohesion = Mathf.Clamp(_cache.PersonalityProfile.Cohesion, 0.7f, 1.3f);
+
+                    // All movement routed through BotMovementHelper (never direct assignment, no jitter outside helper)
                     if (_bot.Mover != null && IsAdvancePointSafe(_bot.Position, advancePoint))
                     {
                         try
                         {
-                            BotMovementHelper.SmoothMoveTo(_bot, advancePoint); // Only issues a move order, never sets position
+                            BotMovementHelper.SmoothMoveTo(_bot, advancePoint, slow: false, cohesionScale: cohesion);
                             SetStanceFromCombatContext(distToTarget, advancePoint);
                         }
                         catch (Exception moveEx)
@@ -214,29 +219,29 @@ namespace AIRefactored.AI.Combat.States
         /// </summary>
         private static Vector3 GetRealisticAdvancePoint(BotOwner bot, BotComponentCache cache, Vector3 target, float dist, float adjustRadius)
         {
-            // Human sidestep if close
+            // If close, do a micro-jittered sidestep
             if (dist < MinAdvanceDistance)
             {
                 Vector3 sidestep = Vector3.Cross(Vector3.up, bot.LookDirection.normalized);
                 float shuffle = UnityEngine.Random.Range(-1.0f, 1.0f) * adjustRadius;
                 Vector3 candidate = target + sidestep * shuffle;
-                return NavMeshSafe(candidate, target, 1.25f) ?? bot.Position;
+                return BotNavHelper.TryGetSafeTarget(bot, out Vector3 safe) ? safe : NavMeshSafe(candidate, target, 1.25f) ?? bot.Position;
             }
 
-            // Try to use cover if available
+            // Prefer cover if possible
             Vector3 cover;
             if (cache.CoverPlanner != null && cache.CoverPlanner.TryGetBestCoverNear(target, bot.Position, out cover))
             {
                 Vector3 lateral = Vector3.Cross(Vector3.up, (target - cover).normalized);
                 float offset = UnityEngine.Random.Range(-0.5f, 0.5f);
                 Vector3 candidate = cover + lateral * offset;
-                return NavMeshSafe(candidate, cover, 1.25f) ?? bot.Position;
+                return BotNavHelper.TryGetSafeTarget(bot, out Vector3 safe) ? safe : NavMeshSafe(candidate, cover, 1.25f) ?? bot.Position;
             }
 
-            // Otherwise, micro-jitter forward toward target
+            // Otherwise, micro-jitter forward (with micro-drift)
             Vector3 fallback = target + UnityEngine.Random.insideUnitSphere * 1.5f;
             fallback.y = target.y;
-            return NavMeshSafe(fallback, target, 2.2f) ?? bot.Position;
+            return BotNavHelper.TryGetSafeTarget(bot, out Vector3 safe2) ? safe2 : NavMeshSafe(fallback, target, 2.2f) ?? bot.Position;
         }
 
         /// <summary>
@@ -244,7 +249,6 @@ namespace AIRefactored.AI.Combat.States
         /// </summary>
         private static bool IsAdvancePointSafe(Vector3 current, Vector3 target)
         {
-            // Absolutely forbid instant warps: only allow if >0.1m but <8m, and pathable
             float dist = (target - current).magnitude;
             if (dist < 0.09f || dist > 8f)
                 return false;
@@ -253,7 +257,6 @@ namespace AIRefactored.AI.Combat.States
             if (!UnityEngine.AI.NavMesh.SamplePosition(target, out navHit, 0.6f, UnityEngine.AI.NavMesh.AllAreas))
                 return false;
 
-            // Ensure y difference is not abnormally high (prevent vertical snaps)
             if (Mathf.Abs(navHit.position.y - current.y) > 2.2f)
                 return false;
 
@@ -268,7 +271,6 @@ namespace AIRefactored.AI.Combat.States
             UnityEngine.AI.NavMeshHit navHit;
             if (UnityEngine.AI.NavMesh.SamplePosition(candidate, out navHit, radius, UnityEngine.AI.NavMesh.AllAreas))
                 return navHit.position;
-            // Optionally, fallback to the reference point if walkable
             if (UnityEngine.AI.NavMesh.SamplePosition(refPoint, out navHit, 0.9f, UnityEngine.AI.NavMesh.AllAreas))
                 return navHit.position;
             return null;

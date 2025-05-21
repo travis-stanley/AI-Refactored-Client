@@ -10,6 +10,7 @@ namespace AIRefactored.AI.Combat
 {
     using System;
     using AIRefactored.AI.Core;
+    using AIRefactored.AI.Helpers;
     using AIRefactored.AI.Memory;
     using AIRefactored.AI.Navigation;
     using AIRefactored.Core;
@@ -98,10 +99,8 @@ namespace AIRefactored.AI.Combat
                     Player candidate = players[i];
                     if (!EFTPlayerUtil.IsValid(candidate))
                         continue;
-
                     if (candidate.ProfileId == _bot.ProfileId)
                         continue;
-
                     if (!EFTPlayerUtil.IsEnemyOf(_bot, candidate))
                         continue;
 
@@ -290,13 +289,17 @@ namespace AIRefactored.AI.Combat
                     _cache?.LastShotTracker?.RegisterHit(id);
                 }
 
+                // All movement logic strictly through BotMovementHelper (never direct GoToPoint)
                 if (_cache?.Movement != null &&
                     !_bot.IsDead &&
                     _bot.Mover != null &&
                     !_bot.Mover.IsMoving)
                 {
                     if (BotNavHelper.TryGetSafeTarget(_bot, out Vector3 fallback) && IsVectorValid(fallback))
-                        _bot.Mover.GoToPoint(fallback, true, 1.0f);
+                    {
+                        float cohesion = _profile?.Cohesion ?? 1.0f;
+                        BotMovementHelper.SmoothMoveTo(_bot, fallback, false, cohesion);
+                    }
                 }
             }
             catch (Exception ex)

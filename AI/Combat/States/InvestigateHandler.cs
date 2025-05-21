@@ -73,10 +73,10 @@ namespace AIRefactored.AI.Combat.States
             try
             {
                 if (IsVectorValid(visualLastKnown))
-                    return GetNavMeshSafeTarget(ApplyHumanRandomness(visualLastKnown));
+                    return GetNavMeshSafeTarget(visualLastKnown);
 
                 if (TryGetMemoryEnemyPosition(out Vector3 memory))
-                    return GetNavMeshSafeTarget(ApplyHumanRandomness(memory));
+                    return GetNavMeshSafeTarget(memory);
 
                 return GetSafeNearbyPosition();
             }
@@ -111,12 +111,16 @@ namespace AIRefactored.AI.Combat.States
                     catch { destination = target; }
                 }
 
-                destination = ApplyHumanRandomness(destination);
                 destination = GetNavMeshSafeTarget(destination);
+
+                // Use cohesion for realistic group spacing and personality-driven caution
+                float cohesion = 1.0f;
+                if (_cache?.PersonalityProfile != null)
+                    cohesion = Mathf.Clamp(_cache.PersonalityProfile.Cohesion, 0.7f, 1.3f);
 
                 if (_bot.Mover != null)
                 {
-                    BotMovementHelper.SmoothMoveTo(_bot, destination);
+                    BotMovementHelper.SmoothMoveTo(_bot, destination, slow: true, cohesionScale: cohesion);
                     _memory?.MarkCleared(destination);
                     _cache.Combat?.TrySetStanceFromNearbyCover(destination);
                 }
@@ -227,22 +231,13 @@ namespace AIRefactored.AI.Combat.States
         }
 
         /// <summary>
-        /// Applies randomization and ensures result is always on NavMesh, never causes teleport.
+        /// Always NavMesh-validates. All human randomness is handled inside BotMovementHelper.
         /// </summary>
         private static Vector3 GetNavMeshSafeTarget(Vector3 pos)
         {
             if (NavMesh.SamplePosition(pos, out NavMeshHit hit, NavMeshSampleRadius, NavMesh.AllAreas))
                 return hit.position;
             return pos;
-        }
-
-        private Vector3 ApplyHumanRandomness(Vector3 pos)
-        {
-            float caution = _cache?.AIRefactoredBotOwner?.PersonalityProfile?.Caution ?? 0.5f;
-            float maxOffset = Mathf.Lerp(RandomSweepDistance, 0.16f, caution);
-            Vector3 jitter = UnityEngine.Random.insideUnitSphere * maxOffset;
-            jitter.y = 0f;
-            return pos + jitter;
         }
 
         private static bool IsVectorValid(Vector3 v)

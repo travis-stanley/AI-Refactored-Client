@@ -138,7 +138,7 @@ namespace AIRefactored.AI.Looting
                         continue;
 
                     Vector3 position = container.transform.position;
-                    if (Vector3.Distance(origin, position) > HighValueRadius || !HasLineOfSight(position))
+                    if ((origin - position).sqrMagnitude > HighValueRadius * HighValueRadius || !HasLineOfSight(position))
                         continue;
 
                     float value = EstimateContainerValue(container);
@@ -175,7 +175,7 @@ namespace AIRefactored.AI.Looting
                 if (corpse != null && corpse.enabled && !IsOnCooldown(corpse.name))
                 {
                     Vector3 position = corpse.transform.position;
-                    if (Vector3.Distance(origin, position) <= LootRadius && HasLineOfSight(position))
+                    if ((origin - position).sqrMagnitude <= LootRadius * LootRadius && HasLineOfSight(position))
                     {
                         Loot(corpse);
                         return;
@@ -189,7 +189,7 @@ namespace AIRefactored.AI.Looting
                     if (container != null && container.enabled && !IsOnCooldown(container.name))
                     {
                         Vector3 position = container.transform.position;
-                        if (Vector3.Distance(origin, position) <= LootRadius && HasLineOfSight(position))
+                        if ((origin - position).sqrMagnitude <= LootRadius * LootRadius && HasLineOfSight(position))
                         {
                             Loot(container);
                             return;
@@ -204,11 +204,11 @@ namespace AIRefactored.AI.Looting
                     if (item != null && item.enabled && !IsOnCooldown(item.name))
                     {
                         Vector3 position = item.transform.position;
-                        if (Vector3.Distance(origin, position) <= LootRadius && HasLineOfSight(position))
+                        if ((origin - position).sqrMagnitude <= LootRadius * LootRadius && HasLineOfSight(position))
                         {
                             MarkCooldown(item.name);
-                            _cache.Movement.EnterLootingMode();
-                            _cache.Movement.ExitLootingMode();
+                            _cache?.Movement?.EnterLootingMode();
+                            _cache?.Movement?.ExitLootingMode();
                             Plugin.LoggerInstance.LogDebug("[BotLootScanner] Picked up item: " + item.name);
                             return;
                         }
@@ -255,7 +255,7 @@ namespace AIRefactored.AI.Looting
                 for (int i = 0; i < containers.Count; i++)
                 {
                     LootableContainer container = containers[i];
-                    if (container != null && container.enabled && Vector3.Distance(origin, container.transform.position) <= LootRadius)
+                    if (container != null && container.enabled && (origin - container.transform.position).sqrMagnitude <= LootRadius * LootRadius)
                     {
                         sum += EstimateContainerValue(container);
                     }
@@ -273,9 +273,9 @@ namespace AIRefactored.AI.Looting
             try
             {
                 MarkCooldown(container.name);
-                _cache.Movement.EnterLootingMode();
+                _cache?.Movement?.EnterLootingMode();
                 container.Interact(new InteractionResult(EInteractionType.Open));
-                _cache.Movement.ExitLootingMode();
+                _cache?.Movement?.ExitLootingMode();
                 Plugin.LoggerInstance.LogDebug("[BotLootScanner] Looted container: " + container.name);
             }
             catch (Exception ex)

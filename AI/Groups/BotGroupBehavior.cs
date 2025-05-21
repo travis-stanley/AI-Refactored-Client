@@ -83,7 +83,7 @@ namespace AIRefactored.AI.Groups
             catch (Exception ex)
             {
                 Plugin.LoggerInstance.LogError("[BotGroupBehavior] Initialization failed: " + ex);
-                FallbackMoveStatic();
+                FallbackMoveHelper();
             }
         }
 
@@ -143,7 +143,7 @@ namespace AIRefactored.AI.Groups
             catch (Exception ex)
             {
                 Plugin.LoggerInstance.LogError("[BotGroupBehavior] Tick failed: " + ex);
-                FallbackMoveStatic();
+                FallbackMoveHelper();
             }
         }
 
@@ -165,7 +165,6 @@ namespace AIRefactored.AI.Groups
             Vector3 jitter = DeterministicJitter(_bot.ProfileId, Time.frameCount) * JitterAmount;
             Vector3 drift = direction.normalized * DriftSpeed * Mathf.Clamp(deltaTime * 2f, 0.12f, 0.32f);
             Vector3 personalBias = new Vector3(_personalDrift.x, 0f, _personalDrift.y) * 0.6f;
-
             return basePos + drift + jitter + personalBias;
         }
 
@@ -173,21 +172,26 @@ namespace AIRefactored.AI.Groups
         {
             try
             {
-                Vector3 jitteredTarget = target + DeterministicJitter(_bot.ProfileId, Time.frameCount * 2) * JitterAmount;
                 float now = Time.time;
+                Vector3 jitteredTarget = target + DeterministicJitter(_bot.ProfileId, Time.frameCount * 2) * JitterAmount;
+
+                // Always get cohesion/personality scaling.
+                float cohesion = _cache?.AIRefactoredBotOwner?.PersonalityProfile?.Cohesion ?? 1.0f;
 
                 if (!_hasLastTarget || Vector3.Distance(_lastMoveTarget, jitteredTarget) > SpacingTolerance || now - _lastMoveTime > MinTickMoveInterval)
                 {
                     _lastMoveTarget = jitteredTarget;
                     _hasLastTarget = true;
                     _lastMoveTime = now;
-                    BotMovementHelper.SmoothMoveTo(_bot, jitteredTarget, false);
+
+                    // Route all movement through helper, never GoToPoint.
+                    BotMovementHelper.SmoothMoveTo(_bot, jitteredTarget, false, cohesion);
                 }
             }
             catch (Exception ex)
             {
                 Plugin.LoggerInstance.LogError("[BotGroupBehavior] IssueMove failed: " + ex);
-                FallbackMoveStatic();
+                FallbackMoveHelper();
             }
         }
 
@@ -212,12 +216,16 @@ namespace AIRefactored.AI.Groups
             return new Vector2(Mathf.Cos(angle) * radius, Mathf.Sin(angle) * radius);
         }
 
-        private void FallbackMoveStatic()
+        private void FallbackMoveHelper()
         {
             try
             {
                 if (_bot != null && !_bot.IsDead && _bot.Mover != null)
-                    _bot.Mover.GoToPoint(_bot.Position, true, 1.0f);
+                {
+                    // Use movement helper with cohesion, never direct move or teleport.
+                    float cohesion = _cache?.AIRefactoredBotOwner?.PersonalityProfile?.Cohesion ?? 1.0f;
+                    BotMovementHelper.SmoothMoveTo(_bot, _bot.Position, false, cohesion);
+                }
             }
             catch
             {

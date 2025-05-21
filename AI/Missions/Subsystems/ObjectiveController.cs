@@ -16,6 +16,7 @@ namespace AIRefactored.AI.Missions.Subsystems
     using AIRefactored.AI.Helpers;
     using AIRefactored.AI.Hotspots;
     using AIRefactored.AI.Looting;
+    using AIRefactored.AI.Navigation;
     using AIRefactored.Core;
     using AIRefactored.Pools;
     using EFT;
@@ -76,7 +77,7 @@ namespace AIRefactored.AI.Missions.Subsystems
             {
                 Vector3 next = GetObjectiveTarget(type);
                 CurrentObjective = next;
-                BotMovementHelper.SmoothMoveTo(_bot, next);
+                MoveToObjective(next);
             }
             catch (Exception ex)
             {
@@ -98,7 +99,7 @@ namespace AIRefactored.AI.Missions.Subsystems
                 {
                     Vector3 next = GetNextQuestObjective();
                     CurrentObjective = next;
-                    BotMovementHelper.SmoothMoveTo(_bot, next);
+                    MoveToObjective(next);
                 }
             }
             catch (Exception ex)
@@ -116,7 +117,7 @@ namespace AIRefactored.AI.Missions.Subsystems
             {
                 Vector3 target = GetObjectiveTarget(type);
                 CurrentObjective = target;
-                BotMovementHelper.SmoothMoveTo(_bot, target);
+                MoveToObjective(target);
             }
             catch (Exception ex)
             {
@@ -127,6 +128,18 @@ namespace AIRefactored.AI.Missions.Subsystems
         #endregion
 
         #region Internal Logic
+
+        private void MoveToObjective(Vector3 dest)
+        {
+            if (!EFTPlayerUtil.IsValidBotOwner(_bot) || dest == Vector3.zero)
+                return;
+
+            if (BotNavHelper.TryGetSafeTarget(_bot, out Vector3 safeTarget))
+            {
+                BotMovementHelper.SmoothMoveTo(_bot, safeTarget);
+            }
+            // If NavHelper fails, do NOT teleport or move—bot simply pauses for next tick (per realism instruction set).
+        }
 
         private Vector3 GetObjectiveTarget(MissionType type)
         {
@@ -215,7 +228,6 @@ namespace AIRefactored.AI.Missions.Subsystems
                     return dir.sqrMagnitude > 1f && Vector3.Dot(dir.normalized, forward) > 0.25f;
                 };
 
-                // Pool-safe list from HotspotRegistry
                 List<HotspotRegistry.Hotspot> candidates = HotspotRegistry.QueryNearby(origin, 100f, directionFilter);
                 if (candidates == null || candidates.Count == 0)
                     return;

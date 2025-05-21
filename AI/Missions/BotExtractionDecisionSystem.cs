@@ -20,6 +20,7 @@ namespace AIRefactored.AI.Missions
     using AIRefactored.Runtime;
     using UnityEngine;
     using BepInEx.Logging;
+    using AIRefactored.AI.Navigation;
 
     public sealed class BotExtractionDecisionSystem
     {
@@ -48,7 +49,8 @@ namespace AIRefactored.AI.Missions
 
         public BotExtractionDecisionSystem(BotOwner bot, BotComponentCache cache, BotPersonalityProfile profile)
         {
-            if (!EFTPlayerUtil.IsValidBotOwner(bot)) throw new ArgumentException("[BotExtractionDecisionSystem] Invalid BotOwner.");
+            if (!EFTPlayerUtil.IsValidBotOwner(bot))
+                throw new ArgumentException("[BotExtractionDecisionSystem] Invalid BotOwner.");
             _bot = bot;
             _cache = cache ?? throw new ArgumentNullException(nameof(cache));
             _profile = profile ?? throw new ArgumentNullException(nameof(profile));
@@ -67,7 +69,8 @@ namespace AIRefactored.AI.Missions
         {
             try
             {
-                if (_hasExtracted) return;
+                if (_hasExtracted)
+                    return;
 
                 if (ShouldExtract(time))
                 {
@@ -126,7 +129,6 @@ namespace AIRefactored.AI.Missions
                         _log.LogDebug("[ExtractDecision] Movement failure x" + _stuckRetryCount + " → " + _bot.name);
                         return true;
                     }
-
                     BotMovementHelper.ForceFallbackMove(_bot);
                 }
 
@@ -143,19 +145,40 @@ namespace AIRefactored.AI.Missions
         {
             try
             {
-                if (_bot.IsDead || _bot.GetPlayer == null || !_bot.GetPlayer.IsAI || _bot.GetPlayer.HealthController == null || !_bot.GetPlayer.HealthController.IsAlive)
+                if (_bot.IsDead || _bot.GetPlayer == null || !_bot.GetPlayer.IsAI ||
+                    _bot.GetPlayer.HealthController == null || !_bot.GetPlayer.HealthController.IsAlive)
                 {
                     _log.LogWarning("[ExtractDecision] ❌ Extraction aborted — invalid state for " + _bot.name);
                     return;
                 }
 
-                if (_cache?.TacticalMemory != null)
-                    _cache.TacticalMemory.MarkExtractionStarted();
+                _cache?.TacticalMemory?.MarkExtractionStarted();
 
-                Vector3 target = TryFindNearbyExfil() ?? _bot.Position + _bot.LookDirection.normalized * 6f;
-                BotMovementHelper.SmoothMoveTo(_bot, target, true);
+                Vector3 exfilTarget;
+                if (TryFindNearbyExfil(out exfilTarget))
+                {
+                    // Issue move command to exfil point
+                    _bot.Mover?.GoToPoint(exfilTarget, true, 1f);
+                    // On the next frame, poll the actual target from the path
+                    if (BotNavHelper.TryGetSafeTarget(_bot, out Vector3 safeTarget))
+                    {
+                        BotMovementHelper.SmoothMoveTo(_bot, safeTarget, true);
+                        _log.LogDebug("[ExtractDecision] ✅ Extraction initiated (exfil found) for: " + _bot.name);
+                        return;
+                    }
+                }
+                else
+                {
+                    // Fallback: move forward, but only through path-based navigation
+                    Vector3 forwardTarget = _bot.Position + _bot.LookDirection.normalized * 6f;
+                    _bot.Mover?.GoToPoint(forwardTarget, true, 1f);
 
-                _log.LogDebug("[ExtractDecision] ✅ Extraction initiated for: " + _bot.name);
+                    if (BotNavHelper.TryGetSafeTarget(_bot, out Vector3 safeFallback))
+                    {
+                        BotMovementHelper.SmoothMoveTo(_bot, safeFallback, true);
+                        _log.LogDebug("[ExtractDecision] ✅ Extraction initiated (fallback forward) for: " + _bot.name);
+                    }
+                }
             }
             catch (Exception ex)
             {
@@ -217,10 +240,13 @@ namespace AIRefactored.AI.Missions
             return true;
         }
 
-        private Vector3? TryFindNearbyExfil()
+        private bool TryFindNearbyExfil(out Vector3 exfil)
         {
+            exfil = Vector3.zero;
             ExfiltrationPoint[] points = UnityEngine.Object.FindObjectsOfType<ExfiltrationPoint>();
             Vector3 pos = _bot.Position;
+            float bestDist = MaxSearchDistance * MaxSearchDistance + 1f;
+            bool found = false;
 
             foreach (ExfiltrationPoint point in points)
             {
@@ -228,11 +254,15 @@ namespace AIRefactored.AI.Missions
                     continue;
 
                 float dist = (point.transform.position - pos).sqrMagnitude;
-                if (dist <= MaxSearchDistance * MaxSearchDistance)
-                    return point.transform.position;
+                if (dist <= MaxSearchDistance * MaxSearchDistance && dist < bestDist)
+                {
+                    exfil = point.transform.position;
+                    bestDist = dist;
+                    found = true;
+                }
             }
 
-            return null;
+            return found;
         }
 
         #endregion

@@ -114,6 +114,9 @@ namespace AIRefactored.AI.Movement
             }
         }
 
+        /// <summary>
+        /// Explicitly set the next look target (usually for combat or investigation).
+        /// </summary>
         public void SetLookTarget(Vector3 worldPos)
         {
             try
@@ -129,16 +132,19 @@ namespace AIRefactored.AI.Movement
             }
         }
 
-        public void FreezeLook()
-        {
-            _frozen = true;
-        }
+        /// <summary>
+        /// Freeze all look updates (used for specific animations or critical actions).
+        /// </summary>
+        public void FreezeLook() { _frozen = true; }
 
-        public void ResumeLook()
-        {
-            _frozen = false;
-        }
+        /// <summary>
+        /// Resume normal look control after freeze.
+        /// </summary>
+        public void ResumeLook() { _frozen = false; }
 
+        /// <summary>
+        /// Returns the last known look direction of the bot.
+        /// </summary>
         public Vector3 GetLookDirection()
         {
             try
@@ -164,6 +170,7 @@ namespace AIRefactored.AI.Movement
         {
             float now = Time.time;
 
+            // Blinded: look around randomly, don't lock to any target.
             if (_cache != null && _cache.IsBlinded && now < _cache.BlindUntilTime)
             {
                 Vector3 offset = UnityEngine.Random.insideUnitSphere;
@@ -171,6 +178,7 @@ namespace AIRefactored.AI.Movement
                 return origin + offset.normalized * BlindLookRadius;
             }
 
+            // Panic state: look in the last heard direction or hold current look.
             if (_cache?.Panic?.IsPanicking == true)
             {
                 if (_cache.HasHeardDirection)
@@ -178,6 +186,7 @@ namespace AIRefactored.AI.Movement
                 return origin + _bot.LookDirection;
             }
 
+            // Threat selector: actively track enemy if available.
             if (_cache?.ThreatSelector != null)
             {
                 string id = _cache.ThreatSelector.GetTargetProfileId();
@@ -193,11 +202,13 @@ namespace AIRefactored.AI.Movement
                 }
             }
 
+            // Sound: look toward the last heard sound direction if within memory duration.
             if (_cache != null && _cache.HasHeardDirection && now - _cache.LastHeardTime < SoundMemoryDuration)
             {
                 return origin + _cache.LastHeardDirection.normalized * HeardDirectionWeight;
             }
 
+            // Idle scanning: perform subtle head turns and scan arcs as a real player would.
             if (now > _nextIdleScanTime)
             {
                 _idleScanDirection = UnityEngine.Random.value > 0.5f ? 1 : -1;

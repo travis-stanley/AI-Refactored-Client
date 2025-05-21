@@ -63,6 +63,9 @@ namespace AIRefactored.AI.Groups
 
         #region Initialization
 
+        /// <summary>
+        /// Initializes the group sync coordinator for a bot.
+        /// </summary>
         public void Initialize(BotOwner botOwner)
         {
             try
@@ -89,6 +92,9 @@ namespace AIRefactored.AI.Groups
             }
         }
 
+        /// <summary>
+        /// Injects the local bot's component cache for use in group sync logic.
+        /// </summary>
         public void InjectLocalCache(BotComponentCache localCache)
         {
             if (localCache != null)
@@ -99,6 +105,9 @@ namespace AIRefactored.AI.Groups
 
         #region Broadcasts
 
+        /// <summary>
+        /// Broadcasts a fallback point to all living teammates.
+        /// </summary>
         public void BroadcastFallbackPoint(Vector3 point)
         {
             try
@@ -124,6 +133,9 @@ namespace AIRefactored.AI.Groups
             catch { }
         }
 
+        /// <summary>
+        /// Broadcasts a danger position to all teammates.
+        /// </summary>
         public void BroadcastDanger(Vector3 position)
         {
             try
@@ -147,12 +159,18 @@ namespace AIRefactored.AI.Groups
             catch { }
         }
 
+        /// <summary>
+        /// Broadcasts a loot point to the squad.
+        /// </summary>
         public void BroadcastLootPoint(Vector3 point)
         {
             _lootPoint = point;
             _hasLoot = true;
         }
 
+        /// <summary>
+        /// Broadcasts an extract point to the squad.
+        /// </summary>
         public void BroadcastExtractPoint(Vector3 point)
         {
             _extractPoint = point;
@@ -163,12 +181,29 @@ namespace AIRefactored.AI.Groups
 
         #region Queries
 
+        /// <summary>
+        /// Gets the fallback target point shared by the squad, if any.
+        /// </summary>
         public Vector3? GetSharedFallbackTarget() => _hasFallback ? (Vector3?)_fallbackPoint : null;
+
+        /// <summary>
+        /// Gets the loot target point shared by the squad, if any.
+        /// </summary>
         public Vector3? GetSharedLootTarget() => _hasLoot ? (Vector3?)_lootPoint : null;
+
+        /// <summary>
+        /// Gets the extract target point shared by the squad, if any.
+        /// </summary>
         public Vector3? GetSharedExtractTarget() => _hasExtract ? (Vector3?)_extractPoint : null;
 
+        /// <summary>
+        /// Returns true if the squad has at least one living teammate.
+        /// </summary>
         public bool IsSquadReady() => _teammateCaches.Count > 0;
 
+        /// <summary>
+        /// Gets a pooled, read-only list of living AI teammates in the group.
+        /// </summary>
         public IReadOnlyList<BotOwner> GetTeammates()
         {
             var result = TempListPool.Rent<BotOwner>();
@@ -177,10 +212,9 @@ namespace AIRefactored.AI.Groups
                 foreach (var kv in _teammateCaches)
                 {
                     BotOwner bot = kv.Key;
-                    if (bot != null && !bot.IsDead && bot.GetPlayer?.IsAI == true)
+                    if (bot != null && !bot.IsDead && bot.GetPlayer != null && bot.GetPlayer.IsAI)
                         result.Add(bot);
                 }
-
                 return result;
             }
             catch
@@ -190,6 +224,9 @@ namespace AIRefactored.AI.Groups
             }
         }
 
+        /// <summary>
+        /// Gets the BotComponentCache for a teammate, or BotComponentCache.Empty if not found.
+        /// </summary>
         public BotComponentCache GetCache(BotOwner teammate)
         {
             if (teammate == null || !_teammateCaches.TryGetValue(teammate, out BotComponentCache cache) || cache == null)
@@ -201,6 +238,9 @@ namespace AIRefactored.AI.Groups
 
         #region Tick
 
+        /// <summary>
+        /// Ticks the group sync logic; may broadcast fallback or danger to squad on interval.
+        /// </summary>
         public void Tick(float time)
         {
             try
@@ -236,7 +276,7 @@ namespace AIRefactored.AI.Groups
                 if (teammate == null || ReferenceEquals(teammate, _bot) || _teammateCaches.ContainsKey(teammate))
                     return;
 
-                if (teammate.IsDead || teammate.GetPlayer?.IsAI != true)
+                if (teammate.IsDead || teammate.GetPlayer == null || !teammate.GetPlayer.IsAI)
                     return;
 
                 string profileId = teammate.ProfileId;
@@ -246,7 +286,7 @@ namespace AIRefactored.AI.Groups
                 if (!BotRegistry.TryGetRefactoredOwner(profileId, out AIRefactoredBotOwner owner))
                     return;
 
-                BotComponentCache cache = new BotComponentCache();
+                var cache = new BotComponentCache();
                 cache.Initialize(teammate);
                 cache.SetOwner(owner);
 

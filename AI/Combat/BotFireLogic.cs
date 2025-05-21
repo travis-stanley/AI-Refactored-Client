@@ -86,6 +86,7 @@ namespace AIRefactored.AI.Combat
                 float weaponRange = EstimateWeaponRange(weapon);
                 float maxRange = Mathf.Min(profile.EngagementRange, weaponRange, 200f);
 
+                // All advance/close-in movement is routed via the movement helper, using personality cohesion
                 if (distance > maxRange)
                 {
                     if (profile.ChaosFactor > 0f && Random.value < profile.ChaosFactor * 0.6f)
@@ -93,7 +94,7 @@ namespace AIRefactored.AI.Combat
                         if (BotNavHelper.TryGetSafeTarget(_bot, out var advance) && IsVectorValid(advance))
                         {
                             if (Random.value < 0.6f)
-                                BotMovementHelper.SmoothMoveTo(_bot, advance, false, profile.Cohesion);
+                                BotMovementHelper.SmoothMoveTo(_bot, advance, false, Mathf.Clamp(profile.Cohesion, 0.7f, 1.3f));
                         }
                     }
                     return;

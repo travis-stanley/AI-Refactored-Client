@@ -107,9 +107,15 @@ namespace AIRefactored.AI.Combat.States
                 if (ShouldTriggerFallback(time))
                 {
                     Vector3 fallback = TryGetFallbackPosition();
-                    fallback = GetNavMeshSafe(fallback, _bot.Position);
                     if (!IsVectorValid(fallback))
                         fallback = _bot.Position;
+
+                    float cohesion = 1.0f;
+                    if (_cache?.PersonalityProfile != null)
+                        cohesion = Mathf.Clamp(_cache.PersonalityProfile.Cohesion, 0.7f, 1.3f);
+
+                    if (_bot.Mover != null)
+                        BotMovementHelper.SmoothMoveTo(_bot, fallback, slow: true, cohesionScale: cohesion);
 
                     _cache.Combat?.TriggerFallback(fallback);
                     return;
@@ -134,7 +140,6 @@ namespace AIRefactored.AI.Combat.States
 
                 Vector3 offset = UnityEngine.Random.insideUnitSphere * UnityEngine.Random.Range(MinHotspotRandomOffset, MaxHotspotRandomOffset);
                 offset.y = 0f;
-
                 Vector3 target = hotspot.Position + offset;
 
                 if (_cache.SquadPath != null)
@@ -147,9 +152,13 @@ namespace AIRefactored.AI.Combat.States
                 if (!IsVectorValid(target) || (target - _bot.Position).sqrMagnitude > MaxPatrolDistance * MaxPatrolDistance)
                     target = _bot.Position;
 
+                float patrolCohesion = 1.0f;
+                if (_cache?.PersonalityProfile != null)
+                    patrolCohesion = Mathf.Clamp(_cache.PersonalityProfile.Cohesion, 0.7f, 1.3f);
+
                 if (_bot.Mover != null)
                 {
-                    BotMovementHelper.SmoothMoveTo(_bot, target);
+                    BotMovementHelper.SmoothMoveTo(_bot, target, slow: true, cohesionScale: patrolCohesion);
                     BotCoverHelper.TrySetStanceFromNearbyCover(_cache, target);
                 }
                 else
@@ -236,9 +245,7 @@ namespace AIRefactored.AI.Combat.States
             try
             {
                 Vector3 retreat = _bot.Position - _bot.LookDirection.normalized * 7.5f;
-                retreat += UnityEngine.Random.insideUnitSphere * 0.45f;
                 retreat.y = _bot.Position.y;
-
                 return GetNavMeshSafe(retreat, _bot.Position);
             }
             catch (Exception ex)

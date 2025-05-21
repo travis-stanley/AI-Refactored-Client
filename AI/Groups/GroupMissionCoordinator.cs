@@ -173,7 +173,7 @@ namespace AIRefactored.AI.Groups
             }
 
             float total = loot + fight + quest;
-            float roll = Random.value * total;
+            float roll = UnityEngine.Random.value * total;
 
             if (roll < loot)
                 return BotMissionController.MissionType.Loot;

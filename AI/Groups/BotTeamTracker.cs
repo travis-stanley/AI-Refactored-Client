@@ -69,7 +69,7 @@ namespace AIRefactored.AI.Groups
         }
 
         /// <summary>
-        /// Returns a list of valid, alive AI squadmates in the given group ID.
+        /// Returns a new list of valid, alive AI squadmates in the given group ID.
         /// </summary>
         public static List<BotOwner> GetGroup(string groupId)
         {

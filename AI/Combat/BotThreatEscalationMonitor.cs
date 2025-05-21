@@ -10,6 +10,7 @@ namespace AIRefactored.AI.Combat
 {
     using System;
     using AIRefactored.AI.Core;
+    using AIRefactored.AI.Helpers;
     using AIRefactored.AI.Navigation;
     using AIRefactored.AI.Optimization;
     using AIRefactored.Core;
@@ -167,6 +168,17 @@ namespace AIRefactored.AI.Combat
                 ApplyEscalationTuning(_bot);
                 ApplyPersonalityTuning(_bot);
 
+                // Squad-aware repositioning (via helpers only, never GoToPoint direct)
+                if (BotNavHelper.TryGetSafeTarget(_bot, out var navTarget) && IsVectorValid(navTarget))
+                {
+                    if (_bot.Mover != null && !_bot.Mover.IsMoving)
+                    {
+                        float cohesion = BotRegistry.Get(_bot.ProfileId)?.Cohesion ?? 1.0f;
+                        BotMovementHelper.SmoothMoveTo(_bot, navTarget, false, cohesion);
+                        Logger.LogDebug($"[AIRefactored-Escalation] '{name}' repositioned to cover (helper).");
+                    }
+                }
+
                 if (!FikaHeadlessDetector.IsHeadless &&
                     _bot.BotTalk != null &&
                     time - _lastVoiceTime > 2.5f)
@@ -175,15 +187,6 @@ namespace AIRefactored.AI.Combat
                     catch { }
 
                     _lastVoiceTime = time;
-                }
-
-                if (BotNavHelper.TryGetSafeTarget(_bot, out var navTarget) && IsVectorValid(navTarget))
-                {
-                    if (_bot.Mover != null && !_bot.Mover.IsMoving)
-                    {
-                        _bot.Mover.GoToPoint(navTarget, true, 1f);
-                        Logger.LogDebug($"[AIRefactored-Escalation] '{name}' repositioned to cover.");
-                    }
                 }
             }
             catch (Exception ex)

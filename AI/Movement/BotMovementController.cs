@@ -58,9 +58,6 @@ namespace AIRefactored.AI.Movement
             _nextRandomPause = Time.time + UnityEngine.Random.Range(1.5f, 3.8f);
         }
 
-        /// <summary>
-        /// Ticks all advanced movement logic for the bot (lean, strafe, scan, look).
-        /// </summary>
         public void Tick(float deltaTime)
         {
             try
@@ -90,23 +87,14 @@ namespace AIRefactored.AI.Movement
         public void EnterLootingMode() => _lootingMode = true;
         public void ExitLootingMode() => _lootingMode = false;
 
-        /// <summary>
-        /// Smoothly turns the bot toward the next movement target or navigation goal.
-        /// </summary>
         private void TrySmoothLook(BotMover mover, float deltaTime)
         {
             if (_bot?.Transform == null || mover == null)
                 return;
 
             Vector3 target;
-            try
-            {
-                target = mover.LastTargetPoint(1f);
-            }
-            catch
-            {
-                return;
-            }
+            try { target = mover.LastTargetPoint(1f); }
+            catch { return; }
 
             if (!NavMesh.SamplePosition(target, out NavMeshHit navHit, 1.5f, NavMesh.AllAreas))
                 return;
@@ -129,15 +117,16 @@ namespace AIRefactored.AI.Movement
             }
         }
 
-        /// <summary>
-        /// Human-like combat strafing overlay.
-        /// </summary>
         private void TryCombatStrafe(BotMover mover, float deltaTime)
         {
             if (_bot == null || mover == null || _bot.Memory?.GoalEnemy == null)
                 return;
 
-            if (!mover.HasPathAndNoComplete || !mover.IsMoving || _bot.Transform == null)
+            if (!mover.HasPathAndNoComplete || !_bot.Mover.IsMoving || _bot.Transform == null)
+                return;
+
+            float distToEnemy = Vector3.Distance(_bot.Position, _bot.Memory.GoalEnemy.CurrPosition);
+            if (distToEnemy > 40f)
                 return;
 
             _strafeTimer -= deltaTime;
@@ -149,7 +138,7 @@ namespace AIRefactored.AI.Movement
 
             Vector3 offset = _strafeRight ? _bot.Transform.right : -_bot.Transform.right;
             Vector3 jitter = UnityEngine.Random.insideUnitSphere * 0.05f;
-            Vector3 strafe = (offset + jitter).normalized * 1.05f * deltaTime;
+            Vector3 strafe = (offset + jitter).normalized * 1.05f;
 
             Vector3 navDir = mover.NormDirCurPoint;
             Vector3 blend = Vector3.Lerp(navDir, strafe, UnityEngine.Random.Range(0.2f, 0.28f)).normalized * deltaTime;
@@ -158,12 +147,12 @@ namespace AIRefactored.AI.Movement
             player?.CharacterController?.Move(blend, deltaTime);
         }
 
-        /// <summary>
-        /// Handles leaning using wall checks and human hesitation logic.
-        /// </summary>
         private void TryLean()
         {
             if (_cache?.Tilt == null || _bot == null || Time.time < _nextLeanTime)
+                return;
+
+            if (_cache.IsBlinded)
                 return;
 
             var memory = _bot.Memory;
@@ -173,7 +162,7 @@ namespace AIRefactored.AI.Movement
             float missChance = (_cache.AIRefactoredBotOwner?.PersonalityProfile?.Caution ?? 0.5f) * _leanMissChance;
             if (UnityEngine.Random.value < missChance)
             {
-                _nextLeanTime = Time.time + UnityEngine.Random.Range(0.65f, 1.35f);
+                _nextLeanTime = Time.time + UnityEngine.Random.Range(0.65f, 1.25f);
                 return;
             }
 
@@ -199,9 +188,6 @@ namespace AIRefactored.AI.Movement
             _nextLeanTime = Time.time + UnityEngine.Random.Range(0.65f, 1.15f);
         }
 
-        /// <summary>
-        /// Subtle scanning motion and optional vocal cue. Never alters body rotation.
-        /// </summary>
         private void TryScan()
         {
             if (_bot?.Transform == null)

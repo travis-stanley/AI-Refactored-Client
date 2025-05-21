@@ -54,18 +54,12 @@ namespace AIRefactored.AI.Perception
 
         #region Public Properties
 
-        /// <summary>
-        /// True if bot is currently suppressed (receiving suppression penalty).
-        /// </summary>
         public bool IsSuppressed => _suppressionFactor > SuppressedThreshold;
 
         #endregion
 
         #region Initialization
 
-        /// <summary>
-        /// Initializes perception and impairment tracking for the bot.
-        /// </summary>
         public void Initialize(BotComponentCache cache)
         {
             _bot = null;
@@ -101,9 +95,6 @@ namespace AIRefactored.AI.Perception
 
         #region Tick
 
-        /// <summary>
-        /// Main update: applies impairment, recovers clarity, and triggers human-like panic/communication.
-        /// </summary>
         public void Tick(float deltaTime)
         {
             if (_failed || !IsActive())

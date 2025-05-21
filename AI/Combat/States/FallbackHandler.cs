@@ -148,9 +148,12 @@ namespace AIRefactored.AI.Combat.States
                 Vector3 destination = _fallbackTarget;
 
                 if (!BotNavHelper.TryGetSafeTarget(_bot, out destination) || !IsVectorValid(destination))
+                {
                     destination = GetSafeRandomFallback(_bot.Position);
+                    if (!IsVectorValid(destination))
+                        return;
+                }
 
-                // Always use only BotMovementHelper for micro-drift and personality scaling.
                 float cohesion = 1.0f;
                 if (_cache?.PersonalityProfile != null)
                     cohesion = Mathf.Clamp(_cache.PersonalityProfile.Cohesion, 0.7f, 1.3f);
@@ -164,7 +167,6 @@ namespace AIRefactored.AI.Combat.States
                 if (Vector3.Distance(_bot.Position, destination) < MinArrivalDistance)
                 {
                     forceState?.Invoke(CombatState.Patrol, time);
-
                     if (!FikaHeadlessDetector.IsHeadless && _bot.BotTalk != null)
                     {
                         try { _bot.BotTalk.TrySay(EPhraseTrigger.NeedHelp); } catch { }
@@ -193,6 +195,7 @@ namespace AIRefactored.AI.Combat.States
 
         public void Dispose()
         {
+            _currentFallbackPath.Clear();
             TempListPool.Return(_currentFallbackPath);
         }
 
@@ -202,7 +205,7 @@ namespace AIRefactored.AI.Combat.States
 
         private static bool IsVectorValid(Vector3 v)
         {
-            return !float.IsNaN(v.x) && !float.IsNaN(v.y) && !float.IsNaN(v.z) && v != Vector3.zero;
+            return !float.IsNaN(v.x) && !float.IsNaN(v.y) && !float.IsNaN(v.z) && v != Vector3.zero && v.y > -2.5f;
         }
 
         private Vector3 GetSafeRandomFallback(Vector3 origin)

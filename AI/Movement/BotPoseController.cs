@@ -83,20 +83,10 @@ namespace AIRefactored.AI.Movement
             _isLocked = true;
         }
 
-        public void UnlockPose()
-        {
-            _isLocked = false;
-        }
+        public void UnlockPose() => _isLocked = false;
 
-        public void Crouch()
-        {
-            SetCrouch(false);
-        }
-
-        public void Stand()
-        {
-            SetStand();
-        }
+        public void Crouch() => SetCrouch(false);
+        public void Stand() => SetStand();
 
         public void SetCrouch(bool anticipate = false)
         {
@@ -190,6 +180,12 @@ namespace AIRefactored.AI.Movement
         {
             try
             {
+                if (_cache.IsBlinded && currentTime < _cache.BlindUntilTime)
+                {
+                    _targetPoseLevel = CrouchPose;
+                    return;
+                }
+
                 if (_cache.PanicHandler != null && _cache.PanicHandler.IsPanicking)
                 {
                     _targetPoseLevel = PronePose;
@@ -222,18 +218,18 @@ namespace AIRefactored.AI.Movement
                     }
                 }
 
-                if (_bot.Memory?.BotCurrentCoverInfo?.LastCover is CustomNavigationPoint lastCover2)
+                if (_bot.Memory?.BotCurrentCoverInfo?.LastCover is CustomNavigationPoint lastCover)
                 {
-                    float dist = Vector3.Distance(_bot.Position, lastCover2.Position);
+                    float dist = Vector3.Distance(_bot.Position, lastCover.Position);
                     if (dist < 2.5f)
                     {
-                        if (lastCover2.CoverLevel == CoverLevel.Lay)
+                        if (lastCover.CoverLevel == CoverLevel.Lay)
                         {
                             _targetPoseLevel = PronePose;
                             return;
                         }
 
-                        if (lastCover2.CoverLevel == CoverLevel.Sit)
+                        if (lastCover.CoverLevel == CoverLevel.Sit)
                         {
                             _targetPoseLevel = CrouchPose;
                             return;

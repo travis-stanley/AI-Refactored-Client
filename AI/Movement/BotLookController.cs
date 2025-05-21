@@ -16,11 +16,6 @@ namespace AIRefactored.AI.Movement
     using EFT;
     using UnityEngine;
 
-    /// <summary>
-    /// Controls bot look direction using smooth rotation logic and realistic perception response.
-    /// Integrates panic, blindness, sound, and enemy awareness.
-    /// All failures are locally isolated; cannot break or cascade into other systems.
-    /// </summary>
     public sealed class BotLookController
     {
         #region Constants
@@ -77,10 +72,6 @@ namespace AIRefactored.AI.Movement
 
         #region Public Methods
 
-        /// <summary>
-        /// Updates look direction every tick, enforcing smooth and realistic behavior.
-        /// All failures are locally isolated and logged; system cannot break.
-        /// </summary>
         public void Tick(float deltaTime)
         {
             try
@@ -114,9 +105,6 @@ namespace AIRefactored.AI.Movement
             }
         }
 
-        /// <summary>
-        /// Explicitly set the next look target (usually for combat or investigation).
-        /// </summary>
         public void SetLookTarget(Vector3 worldPos)
         {
             try
@@ -132,19 +120,9 @@ namespace AIRefactored.AI.Movement
             }
         }
 
-        /// <summary>
-        /// Freeze all look updates (used for specific animations or critical actions).
-        /// </summary>
-        public void FreezeLook() { _frozen = true; }
+        public void FreezeLook() => _frozen = true;
+        public void ResumeLook() => _frozen = false;
 
-        /// <summary>
-        /// Resume normal look control after freeze.
-        /// </summary>
-        public void ResumeLook() { _frozen = false; }
-
-        /// <summary>
-        /// Returns the last known look direction of the bot.
-        /// </summary>
         public Vector3 GetLookDirection()
         {
             try
@@ -161,16 +139,10 @@ namespace AIRefactored.AI.Movement
 
         #region Private Methods
 
-        /// <summary>
-        /// Computes the next look target, considering blindness, panic, sound, and enemy threat.
-        /// Also simulates realistic idle scanning/head rotation like a real player.
-        /// All failures are locally isolated and fallback target is always valid.
-        /// </summary>
         private Vector3 ResolveLookTarget(Vector3 origin, float deltaTime)
         {
             float now = Time.time;
 
-            // Blinded: look around randomly, don't lock to any target.
             if (_cache != null && _cache.IsBlinded && now < _cache.BlindUntilTime)
             {
                 Vector3 offset = UnityEngine.Random.insideUnitSphere;
@@ -178,7 +150,6 @@ namespace AIRefactored.AI.Movement
                 return origin + offset.normalized * BlindLookRadius;
             }
 
-            // Panic state: look in the last heard direction or hold current look.
             if (_cache?.Panic?.IsPanicking == true)
             {
                 if (_cache.HasHeardDirection)
@@ -186,7 +157,6 @@ namespace AIRefactored.AI.Movement
                 return origin + _bot.LookDirection;
             }
 
-            // Threat selector: actively track enemy if available.
             if (_cache?.ThreatSelector != null)
             {
                 string id = _cache.ThreatSelector.GetTargetProfileId();
@@ -202,13 +172,11 @@ namespace AIRefactored.AI.Movement
                 }
             }
 
-            // Sound: look toward the last heard sound direction if within memory duration.
             if (_cache != null && _cache.HasHeardDirection && now - _cache.LastHeardTime < SoundMemoryDuration)
             {
                 return origin + _cache.LastHeardDirection.normalized * HeardDirectionWeight;
             }
 
-            // Idle scanning: perform subtle head turns and scan arcs as a real player would.
             if (now > _nextIdleScanTime)
             {
                 _idleScanDirection = UnityEngine.Random.value > 0.5f ? 1 : -1;

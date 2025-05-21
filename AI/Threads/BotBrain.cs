@@ -24,12 +24,6 @@ namespace AIRefactored.AI.Threads
 	using EFT;
 	using UnityEngine;
 
-	/// <summary>
-	/// Real-time execution engine for AIRefactored bot logic.
-	/// Controls subsystem tick order, validity checks, and tick-rate segmentation.
-	/// Fully robust: never disables core logic due to subsystem failures—each subsystem logs its own errors.
-	/// No fallback to vanilla AI is ever triggered.
-	/// </summary>
 	public sealed class BotBrain : MonoBehaviour
 	{
 		private static readonly ManualLogSource Logger = Plugin.LoggerInstance;
@@ -98,6 +92,12 @@ namespace AIRefactored.AI.Threads
 					TryTick(_teamLogic, () => _teamLogic.CoordinateMovement(), "TeamLogic");
 					TryTick(_threatEscalationMonitor, () => _threatEscalationMonitor.Tick(now), "ThreatEscalation");
 					_nextCombatTick = now + CombatTickRate;
+				}
+
+				// 🔥 Fallback logic runs every frame during fallback state
+				if (_combat != null && _combat.IsInCombatState() && _cache?.Fallback != null && _cache.Fallback.IsActive())
+				{
+					TryTick(_cache.Fallback, () => _cache.Fallback.Tick(Time.time, null), "Fallback");
 				}
 
 				if (now >= _nextLogicTick)

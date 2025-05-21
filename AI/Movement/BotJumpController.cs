@@ -16,11 +16,6 @@ namespace AIRefactored.AI.Movement
     using EFT;
     using UnityEngine;
 
-    /// <summary>
-    /// Handles dynamic jump behavior for bots.
-    /// Detects jumpable obstacles and vaults forward using physics and nav mesh probes.
-    /// All failures are locally isolated; cannot break or cascade into other systems.
-    /// </summary>
     public sealed class BotJumpController
     {
         #region Constants
@@ -71,9 +66,6 @@ namespace AIRefactored.AI.Movement
 
         #region Public Methods
 
-        /// <summary>
-        /// Evaluates and triggers a jump if a valid obstacle is found and all safety checks pass.
-        /// </summary>
         public void Tick(float deltaTime)
         {
             try
@@ -90,7 +82,6 @@ namespace AIRefactored.AI.Movement
                 {
                     if (TryFindJumpTarget(out temp[0]))
                     {
-                        // Human-like random chance to "hesitate" and not jump
                         if (UnityEngine.Random.value < HumanMistakeChance)
                         {
                             _nextAllowedJumpTime = now + UnityEngine.Random.Range(0.22f, 0.39f);
@@ -123,8 +114,14 @@ namespace AIRefactored.AI.Movement
             if (_context == null || !_context.IsGrounded || _context.IsInPronePose)
                 return false;
 
-            if (_cache?.PanicHandler?.IsPanicking == true)
-                return false;
+            if (_cache != null)
+            {
+                if (_cache.IsBlinded && now < _cache.BlindUntilTime)
+                    return false;
+
+                if (_cache.PanicHandler?.IsPanicking == true)
+                    return false;
+            }
 
             if (_bot.IsDead || _bot.Memory?.GoalEnemy != null)
                 return false;
@@ -210,10 +207,8 @@ namespace AIRefactored.AI.Movement
                     TempRaycastHitPool.Return(hits);
                 }
             }
-            catch
-            {
-                // All failures are isolated, jump is skipped.
-            }
+            catch { }
+
             return false;
         }
 

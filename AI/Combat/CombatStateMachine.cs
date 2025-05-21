@@ -83,7 +83,7 @@ namespace AIRefactored.AI.Combat
                 _investigate = new InvestigateHandler(_cache);
                 _engage = new EngageHandler(_cache);
                 _attack = new AttackHandler(_cache);
-                _fallback = new FallbackHandler(_cache);
+                _fallback = _cache.Fallback;
                 _echo = new EchoCoordinator(_cache);
 
                 _initialized = true;
@@ -281,7 +281,6 @@ namespace AIRefactored.AI.Combat
                     ? -_bot.LookDirection.normalized
                     : Vector3.back;
 
-                // Use BotMovementHelper to determine fallback, always validated
                 Vector3 fallback;
                 if (!BotNavHelper.TryGetSafeTarget(_bot, out fallback) || !IsVectorValid(fallback))
                     fallback = _bot.Position + retreatDir * 5f;
@@ -289,10 +288,6 @@ namespace AIRefactored.AI.Combat
                 float cohesion = 1.0f;
                 if (_cache?.PersonalityProfile != null)
                     cohesion = Mathf.Clamp(_cache.PersonalityProfile.Cohesion, 0.7f, 1.3f);
-
-                // Route ALL fallback movement through helper
-                if (_bot.Mover != null)
-                    BotMovementHelper.SmoothMoveTo(_bot, fallback, slow: true, cohesionScale: cohesion);
 
                 var path = TempListPool.Rent<Vector3>();
                 path.Clear();
@@ -382,7 +377,7 @@ namespace AIRefactored.AI.Combat
 
         private static bool IsVectorValid(Vector3 v)
         {
-            return !float.IsNaN(v.x) && !float.IsNaN(v.y) && !float.IsNaN(v.z);
+            return !float.IsNaN(v.x) && !float.IsNaN(v.y) && !float.IsNaN(v.z) && v != Vector3.zero && v.y > -2.5f;
         }
 
         #endregion

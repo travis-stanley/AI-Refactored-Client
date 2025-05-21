@@ -12,6 +12,7 @@ namespace AIRefactored.AI.Core
     using System.Collections.Generic;
     using AIRefactored.AI;
     using AIRefactored.AI.Combat;
+    using AIRefactored.AI.Combat.States;
     using AIRefactored.AI.Groups;
     using AIRefactored.AI.Looting;
     using AIRefactored.AI.Medical;
@@ -40,6 +41,7 @@ namespace AIRefactored.AI.Core
         #region Fields
 
         private AIRefactoredBotOwner _owner;
+        private FallbackHandler _fallbackHandler;
 
         #endregion
 
@@ -104,6 +106,7 @@ namespace AIRefactored.AI.Core
 
         public BotGroupSyncCoordinator GroupSync => GroupBehavior?.GroupSync;
         public BotPanicHandler Panic => PanicHandler;
+        public FallbackHandler Fallback => _fallbackHandler;
 
         #endregion
 
@@ -141,10 +144,10 @@ namespace AIRefactored.AI.Core
             WildSpawnType role = bot.Profile?.Info?.Settings?.Role ?? WildSpawnType.assault;
             PersonalityProfile = BotRegistry.GetOrGenerate(id, PersonalityType.Balanced, role);
 
-            // Each subsystem is initialized individually with bulletproofing.
             TryInit(() => Pathing = new BotOwnerPathfindingCache(), "Pathing");
             TryInit(() => { TacticalMemory = new BotTacticalMemory(); TacticalMemory.Initialize(this); }, "TacticalMemory");
             TryInit(() => { Combat = new CombatStateMachine(); Combat.Initialize(this); }, "Combat");
+            TryInit(() => { _fallbackHandler = new FallbackHandler(this); }, "FallbackHandler");
             TryInit(() => { FlashGrenade = new FlashGrenadeComponent(); FlashGrenade.Initialize(this); }, "FlashGrenade");
             TryInit(() => { PanicHandler = new BotPanicHandler(); PanicHandler.Initialize(this); }, "PanicHandler");
             TryInit(() => { Suppression = new BotSuppressionReactionComponent(); Suppression.Initialize(this); }, "Suppression");
@@ -212,6 +215,16 @@ namespace AIRefactored.AI.Core
             LastHeardTime = Time.time;
             LastHeardDirection = source - Position;
             HasHeardDirection = true;
+        }
+
+        #endregion
+
+        #region Teardown
+
+        public void Dispose()
+        {
+            _fallbackHandler?.Dispose();
+            _fallbackHandler = null;
         }
 
         #endregion

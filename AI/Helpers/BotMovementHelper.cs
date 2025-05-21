@@ -5,6 +5,7 @@
 //   THIS FILE IS SYSTEMATICALLY MANAGED.
 //   Bulletproof: No fallback logic exists. All navigation failures are isolated and only log or skip.
 //   All movement is strictly path-based, never teleports or sets position directly.
+//   Beyond Diamond Pass: Humanlike smoothing, organic micro-variation, and multiplayer/headless robustness.
 // </auto-generated>
 
 namespace AIRefactored.AI.Helpers
@@ -16,26 +17,34 @@ namespace AIRefactored.AI.Helpers
     using UnityEngine;
 
     /// <summary>
-    /// Provides path-based, validated, smooth movement operations for bots.
-    /// Includes fallback movement, strafe, look, and exit logic. All operations are safe and null-guarded.
+    /// Provides ultra-realistic, validated, smooth movement operations for bots.
+    /// All operations use path-based, drifted targets; zero teleportation, zero position sets.
+    /// Adds micro-jitter, personality-driven bias, and full null-guarding for multiplayer/headless.
     /// </summary>
     public static class BotMovementHelper
     {
         #region Constants
 
-        private const float DefaultLookSpeed = 4f;
+        private const float DefaultLookSpeed = 4.25f; // Subtle smoothing bias
         private const float DefaultRadius = 0.8f;
         private const float DefaultStrafeDistance = 3f;
-        private const float RetreatDistance = 6f;
-        private const float MinMoveEpsilon = 0.09f;
-        private const float SlerpBias = 0.96f;
+        private const float RetreatDistance = 6.5f;
+        private const float MinMoveEpsilon = 0.07f;
+        private const float SlerpBias = 0.965f;
+        private const float MicroJitterMagnitude = 0.11f;
 
         #endregion
 
         #region Public API
 
+        /// <summary>
+        /// Hard-resets bot's navigation state (stub, reserved for future expansion).
+        /// </summary>
         public static void Reset(BotOwner bot) { }
 
+        /// <summary>
+        /// Retreats bot smoothly away from a threat direction, using profile-based cohesion and micro-drift.
+        /// </summary>
         public static void RetreatToCover(BotOwner bot, Vector3 threatDir, float distance = RetreatDistance, bool sprint = true)
         {
             if (!IsAlive(bot)) return;
@@ -52,10 +61,13 @@ namespace AIRefactored.AI.Helpers
                 if (profile.IsFrenzied || profile.IsFearful) sprint = true;
             }
 
-            bot.Mover?.GoToPoint(ApplyMicroDrift(target, bot.ProfileId, Time.frameCount), true, cohesion);
+            bot.Mover?.GoToPoint(ApplyMicroDrift(target, bot.ProfileId, Time.frameCount, profile), true, cohesion);
             if (sprint) bot.Sprint(true);
         }
 
+        /// <summary>
+        /// Smoothly rotates the bot to face a target using organic slerp and random overshoot.
+        /// </summary>
         public static void SmoothLookTo(BotOwner bot, Vector3 lookTarget, float speed = DefaultLookSpeed)
         {
             if (!IsAlive(bot) || !IsValidTarget(lookTarget)) return;
@@ -67,11 +79,16 @@ namespace AIRefactored.AI.Helpers
             direction.y = 0f;
             if (direction.sqrMagnitude < MinMoveEpsilon) return;
 
+            float humanOvershoot = 1f + ((SeededRandom(bot.ProfileId, Time.frameCount) - 0.5f) * 0.03f);
             Quaternion targetRotation = Quaternion.LookRotation(direction.normalized, Vector3.up);
-            float t = SlerpBias * Time.deltaTime * Mathf.Clamp(speed, 1.1f, 9.5f);
+            float t = SlerpBias * Time.deltaTime * Mathf.Clamp(speed, 1.1f, 9.5f) * humanOvershoot;
             transform.rotation = Quaternion.Slerp(transform.rotation, targetRotation, t);
         }
 
+        /// <summary>
+        /// Moves bot to a safe, path-validated location, with personality-driven cohesion and micro-drift.
+        /// Returns true if bot is already close enough (no move needed).
+        /// </summary>
         public static bool SmoothMoveToSafe(BotOwner bot, Vector3 target, bool slow = true, float cohesionScale = 1f)
         {
             if (!IsAlive(bot) || !IsValidTarget(target)) return false;
@@ -84,15 +101,23 @@ namespace AIRefactored.AI.Helpers
             if ((pos.x - safeTarget.x) * (pos.x - safeTarget.x) + (pos.z - safeTarget.z) * (pos.z - safeTarget.z) < radius * radius)
                 return true;
 
-            bot.Mover?.GoToPoint(ApplyMicroDrift(safeTarget, bot.ProfileId, Time.frameCount), slow, cohesionScale);
+            BotPersonalityProfile profile;
+            BotRegistry.TryGet(bot.ProfileId, out profile);
+            bot.Mover?.GoToPoint(ApplyMicroDrift(safeTarget, bot.ProfileId, Time.frameCount, profile), slow, cohesionScale);
             return true;
         }
 
+        /// <summary>
+        /// Alias for SmoothMoveToSafe, for typical movement without path fallback.
+        /// </summary>
         public static void SmoothMoveTo(BotOwner bot, Vector3 target, bool slow = true, float cohesionScale = 1f)
         {
             SmoothMoveToSafe(bot, target, slow, cohesionScale);
         }
 
+        /// <summary>
+        /// Smoothly strafes bot away from a threat direction with path validation and micro-drift.
+        /// </summary>
         public static void SmoothStrafeFrom(BotOwner bot, Vector3 threatDir, float scale = 1f)
         {
             if (!IsAlive(bot)) return;
@@ -106,9 +131,14 @@ namespace AIRefactored.AI.Helpers
             Vector3 final = BotNavHelper.TryGetSafeTarget(bot, out Vector3 safeTarget) ? safeTarget : rawTarget;
             if (!IsValidTarget(final)) final = bot.Position;
 
-            bot.Mover?.GoToPoint(ApplyMicroDrift(final, bot.ProfileId, Time.frameCount + 15), false, 1f);
+            BotPersonalityProfile profile;
+            BotRegistry.TryGet(bot.ProfileId, out profile);
+            bot.Mover?.GoToPoint(ApplyMicroDrift(final, bot.ProfileId, Time.frameCount + 15, profile), false, 1f);
         }
 
+        /// <summary>
+        /// Forces bot to fallback/retreat in current look direction using micro-drift and path validation.
+        /// </summary>
         public static void ForceFallbackMove(BotOwner bot)
         {
             if (!IsAlive(bot)) return;
@@ -119,9 +149,14 @@ namespace AIRefactored.AI.Helpers
             Vector3 final = BotNavHelper.TryGetSafeTarget(bot, out Vector3 safeTarget) ? safeTarget : rawTarget;
             if (!IsValidTarget(final)) final = bot.Position;
 
-            bot.Mover?.GoToPoint(ApplyMicroDrift(final, bot.ProfileId, Time.frameCount + 21), true, 1f);
+            BotPersonalityProfile profile;
+            BotRegistry.TryGet(bot.ProfileId, out profile);
+            bot.Mover?.GoToPoint(ApplyMicroDrift(final, bot.ProfileId, Time.frameCount + 21, profile), true, 1f);
         }
 
+        /// <summary>
+        /// Guides bot safely toward an exit, using look direction, micro-drift, and full validation.
+        /// </summary>
         public static void SmoothMoveToSafeExit(BotOwner bot)
         {
             if (!IsAlive(bot)) return;
@@ -130,34 +165,64 @@ namespace AIRefactored.AI.Helpers
             Vector3 final = BotNavHelper.TryGetSafeTarget(bot, out Vector3 safeTarget) ? safeTarget : fallback;
             if (!IsValidTarget(final)) final = bot.Position;
 
-            bot.Mover?.GoToPoint(ApplyMicroDrift(final, bot.ProfileId, Time.frameCount + 35), true, 1f);
+            BotPersonalityProfile profile;
+            BotRegistry.TryGet(bot.ProfileId, out profile);
+            bot.Mover?.GoToPoint(ApplyMicroDrift(final, bot.ProfileId, Time.frameCount + 35, profile), true, 1f);
         }
 
         #endregion
 
         #region Internal Helpers
 
+        /// <summary>
+        /// Returns true if bot is valid, alive, and AI-controlled.
+        /// </summary>
         private static bool IsAlive(BotOwner bot)
         {
             return bot != null && bot.GetPlayer != null && bot.GetPlayer.IsAI && !bot.IsDead;
         }
 
+        /// <summary>
+        /// Returns true if a vector is a valid, navigable target (not NaN/Infinity).
+        /// </summary>
         private static bool IsValidTarget(Vector3 pos)
         {
             return !float.IsNaN(pos.x) && !float.IsNaN(pos.y) && !float.IsNaN(pos.z)
                 && !float.IsInfinity(pos.x) && !float.IsInfinity(pos.y) && !float.IsInfinity(pos.z);
         }
 
-        private static Vector3 ApplyMicroDrift(Vector3 pos, string profileId, int tick)
+        /// <summary>
+        /// Applies organic micro-drift to a position using personality jitter and aggression level.
+        /// </summary>
+        private static Vector3 ApplyMicroDrift(Vector3 pos, string profileId, int tick, BotPersonalityProfile profile = null)
         {
+            float baseMag = MicroJitterMagnitude;
+            float personalityBias = 1f;
+            if (profile != null)
+            {
+                // MovementJitter: how fidgety/micro-shifty a bot is; AggressionLevel: more bold movement.
+                personalityBias = Mathf.Clamp(
+                    1f + (profile.MovementJitter * 0.15f) + (profile.AggressionLevel * 0.05f),
+                    0.93f, 1.15f);
+            }
             int hash = (profileId?.GetHashCode() ?? 0) ^ (tick * 11) ^ 0x17DF413;
             unchecked
             {
                 hash = (int)((hash ^ (hash >> 13)) * 0x7FEDCBA9);
-                float dx = ((hash & 0xFF) / 255f - 0.5f) * 0.09f;
-                float dz = (((hash >> 8) & 0xFF) / 255f - 0.5f) * 0.09f;
+                float dx = ((hash & 0xFF) / 255f - 0.5f) * baseMag * personalityBias;
+                float dz = (((hash >> 8) & 0xFF) / 255f - 0.5f) * baseMag * personalityBias;
                 return new Vector3(pos.x + dx, pos.y, pos.z + dz);
             }
+        }
+
+        /// <summary>
+        /// Returns a seeded, deterministic float in [0,1) based on profile/tick, for anti-pattern smoothing.
+        /// </summary>
+        private static float SeededRandom(string profileId, int tick)
+        {
+            int hash = (profileId?.GetHashCode() ?? 0) ^ (tick * 163) ^ 0x1A983D;
+            unchecked { hash = (hash ^ (hash >> 13)) * 0x5E2D58B9; }
+            return ((hash & 0x7FFFFFFF) % 997) / 997f;
         }
 
         #endregion

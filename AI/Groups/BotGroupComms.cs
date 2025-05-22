@@ -9,7 +9,6 @@
 namespace AIRefactored.AI.Groups
 {
     using System;
-    using System.Linq;
     using AIRefactored.AI.Core;
     using AIRefactored.AI.Helpers;
     using EFT;
@@ -71,52 +70,30 @@ namespace AIRefactored.AI.Groups
 
         #region Public Methods
 
-        /// <summary>
-        /// Attempts to say a VO line for the given phrase, if eligible.
-        /// </summary>
-        /// <param name="phrase">The VO phrase to say.</param>
         public void Say(EPhraseTrigger phrase)
         {
-            if (IsMuted)
-                return;
-
             if (!IsEligible())
-            {
-                IsMuted = true;
                 return;
-            }
 
             TryTriggerVoice(phrase, 1.0f);
         }
 
-        /// <summary>
-        /// Triggers a fallback voice line (e.g. "Get back!").
-        /// </summary>
         public void SayFallback()
         {
             TryTriggerVoice(EPhraseTrigger.GetBack, 0.53f);
         }
 
-        /// <summary>
-        /// Triggers a grenade warning if an ally is nearby.
-        /// </summary>
         public void SayFragOut()
         {
             float chance = HasNearbyAlly() ? 0.78f : 0.0f;
             TryTriggerVoice(EPhraseTrigger.OnEnemyGrenade, chance);
         }
 
-        /// <summary>
-        /// Triggers a hit reaction VO line.
-        /// </summary>
         public void SayHit()
         {
             TryTriggerVoice(EPhraseTrigger.OnBeingHurt, UnityEngine.Random.Range(0.62f, 0.84f));
         }
 
-        /// <summary>
-        /// Triggers a suppression VO line.
-        /// </summary>
         public void SaySuppression()
         {
             TryTriggerVoice(EPhraseTrigger.Suppress, 0.68f);
@@ -124,36 +101,29 @@ namespace AIRefactored.AI.Groups
 
         #endregion
 
-        #region Private Methods
+        #region Internal Methods
 
-        /// <summary>
-        /// Checks if the bot is eligible to issue VO lines (not dead, not headless, has required components).
-        /// </summary>
         private bool IsEligible()
         {
-            return _bot != null
-                   && !_bot.IsDead
-                   && _bot.GetPlayer != null
-                   && _bot.GetPlayer.IsAI
-                   && _bot.BotTalk != null
-                   && !FikaHeadlessDetector.IsHeadless;
+            return !IsMuted &&
+                   _bot != null &&
+                   _bot.BotTalk != null &&
+                   _bot.GetPlayer != null &&
+                   !_bot.IsDead &&
+                   _bot.GetPlayer.IsAI &&
+                   !FikaHeadlessDetector.IsHeadless;
         }
 
-        /// <summary>
-        /// Attempts to play a voice line with a cooldown and chance check.
-        /// </summary>
-        /// <param name="phrase">The phrase trigger.</param>
-        /// <param name="chance">Chance between 0 and 1 to play the line.</param>
         private void TryTriggerVoice(EPhraseTrigger phrase, float chance)
         {
-            if (IsMuted || _bot == null || _bot.BotTalk == null)
+            if (!IsEligible())
                 return;
 
             float now = Time.time;
             if (now < _nextVoiceTime)
                 return;
 
-            if (chance < 1.0f && UnityEngine.Random.value > chance)
+            if (chance < 1f && UnityEngine.Random.value > chance)
                 return;
 
             _nextVoiceTime = now + (VoiceCooldown * UnityEngine.Random.Range(0.85f, 1.17f));
@@ -168,12 +138,9 @@ namespace AIRefactored.AI.Groups
             }
         }
 
-        /// <summary>
-        /// Returns true if another alive ally with the same groupId is nearby.
-        /// </summary>
         private bool HasNearbyAlly()
         {
-            if (_bot == null || _bot.Profile == null || _bot.Profile.Info == null)
+            if (_bot?.Profile?.Info == null)
                 return false;
 
             string groupId = _bot.Profile.Info.GroupId;
@@ -184,14 +151,10 @@ namespace AIRefactored.AI.Groups
 
             foreach (BotComponentCache other in BotCacheUtility.AllActiveBots())
             {
-                if (ReferenceEquals(other, _cache) || other.Bot == null || other.Bot.IsDead)
+                if (ReferenceEquals(other, _cache) || other?.Bot?.Profile?.Info == null || other.Bot.IsDead)
                     continue;
 
-                Profile profile = other.Bot.Profile;
-                if (profile == null || profile.Info == null)
-                    continue;
-
-                if (!groupId.Equals(profile.Info.GroupId, StringComparison.Ordinal))
+                if (!groupId.Equals(other.Bot.Profile.Info.GroupId, StringComparison.Ordinal))
                     continue;
 
                 Vector3 delta = other.Bot.Position - myPos;

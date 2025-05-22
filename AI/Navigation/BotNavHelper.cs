@@ -15,6 +15,7 @@ namespace AIRefactored.AI.Navigation
     /// Canonical wrapper for all AIRefactored navigation queries.
     /// Strictly uses EFT's internal navigation: BotMover and PathControllerClass.
     /// No registry, cache, or spatial query logic allowed.
+    /// Bulletproof: All failures are locally isolated and never cause fallback or vanilla handoff.
     /// </summary>
     public static class BotNavHelper
     {
@@ -27,16 +28,11 @@ namespace AIRefactored.AI.Navigation
         public static bool TryGetSafeTarget(BotOwner bot, out Vector3 target)
         {
             target = Vector3.zero;
-
-            if (bot == null || bot.Mover == null)
+            if (!HasPath(bot))
                 return false;
 
-            var path = bot.Mover._pathController;
-            if (!IsPathValid(path))
-                return false;
-
-            Vector3 pt = path.LastTargetPoint(1.0f);
-            if (!IsValid(pt))
+            Vector3 pt = bot.Mover._pathController.LastTargetPoint(1.0f);
+            if (!IsValid(pt) || pt.y < -2.5f)
                 return false;
 
             target = pt;
@@ -49,20 +45,16 @@ namespace AIRefactored.AI.Navigation
         /// </summary>
         public static Vector3[] GetCurrentPathPoints(BotOwner bot, int maxPoints = 16)
         {
-            if (bot == null || bot.Mover == null)
+            if (!HasPath(bot))
                 return null;
 
-            var path = bot.Mover._pathController;
-            if (!IsPathValid(path))
-                return null;
-
-            var points = path.GetWayPoints(maxPoints);
+            var points = bot.Mover._pathController.GetWayPoints(maxPoints);
             if (points == null || points.Length == 0)
                 return null;
 
             for (int i = 0; i < points.Length; i++)
             {
-                if (!IsValid(points[i]))
+                if (!IsValid(points[i]) || points[i].y < -2.5f)
                     return null;
             }
 
@@ -76,23 +68,18 @@ namespace AIRefactored.AI.Navigation
         public static bool TryGetCurrentCorner(BotOwner bot, out Vector3 corner)
         {
             corner = Vector3.zero;
-
-            if (bot == null || bot.Mover == null)
+            if (!HasPath(bot))
                 return false;
 
-            var path = bot.Mover._pathController;
-            if (!IsPathValid(path))
+            Vector3 c = bot.Mover._pathController.CurrentCorner();
+            if (!IsValid(c) || c.y < -2.5f)
                 return false;
 
-            Vector3 c = path.CurrentCorner();
-            if (!IsValid(c))
-                return false;
-
-            float mag = 0.045f;
+            float jitter = 0.045f;
             corner = c + new Vector3(
-                UnityEngine.Random.Range(-mag, mag),
+                UnityEngine.Random.Range(-jitter, jitter),
                 0f,
-                UnityEngine.Random.Range(-mag, mag)
+                UnityEngine.Random.Range(-jitter, jitter)
             );
             return true;
         }
@@ -102,12 +89,8 @@ namespace AIRefactored.AI.Navigation
         /// </summary>
         public static float GetRemainingDistance(BotOwner bot)
         {
-            if (bot == null || bot.Mover == null)
-                return float.MaxValue;
-
-            var path = bot.Mover._pathController;
-            return IsPathValid(path)
-                ? Mathf.Clamp(path.PlayerRemainingDist, 0f, 9999f)
+            return HasPath(bot)
+                ? Mathf.Clamp(bot.Mover._pathController.PlayerRemainingDist, 0f, 9999f)
                 : float.MaxValue;
         }
 
@@ -116,18 +99,20 @@ namespace AIRefactored.AI.Navigation
         /// </summary>
         public static bool IsPointOnCurrentPath(BotOwner bot, Vector3 point, float maxDist)
         {
-            if (bot == null || bot.Mover == null)
-                return false;
+            return HasPath(bot) &&
+                   bot.Mover._pathController.IsPointOnCurrentWay(point, maxDist);
+        }
 
-            var path = bot.Mover._pathController;
-            return IsPathValid(path) && path.IsPointOnCurrentWay(point, maxDist);
+        /// <summary>
+        /// Returns true if the bot has a valid path controller with an active path.
+        /// </summary>
+        public static bool HasPath(BotOwner bot)
+        {
+            return bot?.Mover != null && IsPathValid(bot.Mover._pathController);
         }
 
         #region Internal Helpers
 
-        /// <summary>
-        /// Checks if the provided path controller is valid and has a usable path.
-        /// </summary>
         private static bool IsPathValid(PathControllerClass pathController)
         {
             return pathController != null &&
@@ -136,9 +121,6 @@ namespace AIRefactored.AI.Navigation
                    pathController.CurPath.Length > 0;
         }
 
-        /// <summary>
-        /// Checks if the provided Vector3 is a valid, finite, non-infinite coordinate.
-        /// </summary>
         private static bool IsValid(Vector3 pt)
         {
             return !float.IsNaN(pt.x) && !float.IsNaN(pt.y) && !float.IsNaN(pt.z) &&

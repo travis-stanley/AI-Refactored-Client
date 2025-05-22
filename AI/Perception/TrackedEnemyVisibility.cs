@@ -59,6 +59,9 @@ namespace AIRefactored.AI.Perception
 
         #region Public Methods
 
+        /// <summary>
+        /// Returns true if any bone is currently visible (confidence > 0).
+        /// </summary>
         public bool CanSeeAny()
         {
             try
@@ -72,6 +75,9 @@ namespace AIRefactored.AI.Perception
             }
         }
 
+        /// <summary>
+        /// Returns true if the given bone is visible and unobstructed by line of sight.
+        /// </summary>
         public bool CanShootTo(string boneName)
         {
             try
@@ -98,6 +104,9 @@ namespace AIRefactored.AI.Perception
             }
         }
 
+        /// <summary>
+        /// Updates the tracked visibility for a given bone.
+        /// </summary>
         public void UpdateBoneVisibility(string boneName, Vector3 worldPosition)
         {
             try
@@ -110,6 +119,9 @@ namespace AIRefactored.AI.Perception
             catch { }
         }
 
+        /// <summary>
+        /// Updates tracked visibility for a bone, including motion/ambient factors.
+        /// </summary>
         public void UpdateBoneVisibility(string boneName, Vector3 worldPosition, float motionBonus, float ambientOcclusionFactor)
         {
             try
@@ -127,6 +139,9 @@ namespace AIRefactored.AI.Perception
             catch { }
         }
 
+        /// <summary>
+        /// Decays all visible bone confidence values by the specified amount.
+        /// </summary>
         public void DecayConfidence(float decayAmount)
         {
             float now = Time.time;
@@ -153,6 +168,9 @@ namespace AIRefactored.AI.Perception
             }
         }
 
+        /// <summary>
+        /// Gets the overall confidence in visibility (normalized [0,1]).
+        /// </summary>
         public float GetOverallConfidence()
         {
             try
@@ -166,6 +184,9 @@ namespace AIRefactored.AI.Perception
             }
         }
 
+        /// <summary>
+        /// Returns the number of bones currently exposed.
+        /// </summary>
         public int ExposedBoneCount()
         {
             try
@@ -179,6 +200,9 @@ namespace AIRefactored.AI.Perception
             }
         }
 
+        /// <summary>
+        /// Clears all tracked visibility info.
+        /// </summary>
         public void Clear()
         {
             try
@@ -192,6 +216,9 @@ namespace AIRefactored.AI.Perception
 
         #region Internal Methods
 
+        /// <summary>
+        /// Removes all expired (invisible) bones from the set.
+        /// </summary>
         private void CleanExpired(float now)
         {
             List<string> expired = TempListPool.Rent<string>();

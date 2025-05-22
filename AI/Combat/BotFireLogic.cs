@@ -4,6 +4,7 @@
 //
 //   THIS FILE IS SYSTEMATICALLY MANAGED.
 //   All fallback logic removed: Bot fire logic is always eligible and self-recovering. No fallback mode. No terminal disables.
+//   Realism: Suppression, panic, personality, and recoil are simulated for all fire events.
 // </auto-generated>
 
 namespace AIRefactored.AI.Combat
@@ -29,8 +30,16 @@ namespace AIRefactored.AI.Combat
     public sealed class BotFireLogic
     {
         private const float MaxAimPitch = 70f;
+        private const float MaxHumanRecoilAngle = 11f;
+        private const float MaxMissAngle = 6.2f;
+        private const float AimDriftMagnitude = 0.14f;
 
         private static readonly EBodyPart[] AllBodyParts = (EBodyPart[])Enum.GetValues(typeof(EBodyPart));
+        private static readonly PlayerBoneType[] PreferredBones =
+        {
+            PlayerBoneType.Head, PlayerBoneType.Ribcage, PlayerBoneType.Spine, PlayerBoneType.LeftShoulder,
+            PlayerBoneType.RightShoulder, PlayerBoneType.Pelvis, PlayerBoneType.LeftThigh1, PlayerBoneType.RightThigh1
+        };
 
         private static readonly Dictionary<string, float> WeaponTypeRanges = new Dictionary<string, float>(StringComparer.OrdinalIgnoreCase)
         {
@@ -49,6 +58,7 @@ namespace AIRefactored.AI.Combat
         private Vector3 _idleLookDirection = Vector3.forward;
         private float _lastLookAroundTime;
         private float _nextDecisionTime;
+        private float _nextFireTime;
 
         public BotFireLogic(BotOwner bot, BotComponentCache cache)
         {
@@ -76,8 +86,8 @@ namespace AIRefactored.AI.Combat
                 if (!TryResolveEnemy(out Player target))
                     return;
 
-                Vector3 aimPosition = GetValidatedAimPosition(target, time);
-                UpdateBotAiming(aimPosition);
+                Vector3 aimPosition = GetHumanizedAimPosition(target, time, profile);
+                UpdateBotAiming(aimPosition, profile, time);
 
                 if (!EFTPlayerUtil.IsValid(target))
                     return;
@@ -86,7 +96,6 @@ namespace AIRefactored.AI.Combat
                 float weaponRange = EstimateWeaponRange(weapon);
                 float maxRange = Mathf.Min(profile.EngagementRange, weaponRange, 200f);
 
-                // All advance/close-in movement is routed via the movement helper, using personality cohesion
                 if (distance > maxRange)
                 {
                     if (profile.ChaosFactor > 0f && Random.value < profile.ChaosFactor * 0.6f)
@@ -100,7 +109,7 @@ namespace AIRefactored.AI.Combat
                     return;
                 }
 
-                if (time < _nextDecisionTime)
+                if (time < _nextDecisionTime || time < _nextFireTime)
                     return;
 
                 float composure = _cache.PanicHandler?.GetComposureLevel() ?? 1f;
@@ -108,6 +117,10 @@ namespace AIRefactored.AI.Combat
                 float microFlinch = Random.Range(-0.07f, 0.15f) * suppressionPenalty;
 
                 _nextDecisionTime = time + GetBurstCadence(profile) + microFlinch;
+
+                float fireRhythm = Mathf.Lerp(0.13f, 0.35f, Random.value) * Mathf.Lerp(1.0f, 1.4f, 1f - profile.ReactionTime);
+                fireRhythm += suppressionPenalty * 0.22f + Random.Range(0f, 0.07f);
+                _nextFireTime = time + fireRhythm;
 
                 if (weaponInfo.BulletCount <= 0 && !weaponInfo.CheckHaveAmmoForReload())
                 {
@@ -120,7 +133,11 @@ namespace AIRefactored.AI.Combat
 
                 if (weaponManager.IsWeaponReady)
                 {
-                    if (suppressionPenalty < 0.65f || Random.value > (0.16f + suppressionPenalty * 0.7f))
+                    float fireChance = suppressionPenalty < 0.55f
+                        ? 0.92f + (profile.AggressionLevel * 0.06f)
+                        : 0.65f + (profile.AggressionLevel * 0.22f);
+
+                    if (Random.value < fireChance)
                     {
                         shootData.Shoot();
                         _cache.LastShotTracker?.RegisterShot(target.ProfileId);
@@ -133,7 +150,10 @@ namespace AIRefactored.AI.Combat
             }
         }
 
-        private void UpdateBotAiming(Vector3 aimPosition)
+        /// <summary>
+        /// Aim with composure, panic, and human miss profile, including micro drift/recoil.
+        /// </summary>
+        private void UpdateBotAiming(Vector3 aimPosition, BotPersonalityProfile profile, float time)
         {
             try
             {
@@ -141,12 +161,29 @@ namespace AIRefactored.AI.Combat
                 if (dir.sqrMagnitude < 0.01f)
                     return;
 
-                Quaternion rot = Quaternion.LookRotation(dir);
+                float composure = _cache.PanicHandler?.GetComposureLevel() ?? 1f;
+                float suppression = _cache.Suppression?.IsSuppressed() == true ? (1f - composure) : 0f;
+                float panicMiss = (1f - composure) * 0.9f;
+                float aimCone = Mathf.Lerp(0.85f, 2.3f, 1f - profile.AccuracyUnderFire);
+                float suppressionCone = Mathf.Lerp(1f, 2.6f, suppression);
+                float cone = aimCone + suppressionCone + panicMiss * 2.6f;
+                cone = Mathf.Clamp(cone, 0.7f, 5.0f);
+
+                float missAngle = Random.Range(-MaxMissAngle, MaxMissAngle) * cone * Random.Range(0.76f, 1.24f);
+                float recoil = Random.Range(0f, MaxHumanRecoilAngle) * (1f - composure) * Random.Range(0.7f, 1.1f);
+
+                Quaternion offsetQ = Quaternion.AngleAxis(missAngle, Vector3.up) * Quaternion.AngleAxis(recoil, Vector3.right);
+                Vector3 adjustedDir = offsetQ * dir.normalized;
+
+                float drift = AimDriftMagnitude * (Random.value - 0.5f);
+                adjustedDir += Vector3.Cross(Vector3.up, adjustedDir) * drift;
+
+                Quaternion rot = Quaternion.LookRotation(adjustedDir);
                 float pitch = rot.eulerAngles.x > 180f ? rot.eulerAngles.x - 360f : rot.eulerAngles.x;
                 pitch = Mathf.Clamp(pitch, -MaxAimPitch, MaxAimPitch);
 
-                Vector3 forward = Quaternion.Euler(pitch, rot.eulerAngles.y, 0f) * Vector3.forward;
-                _bot.AimingManager?.CurrentAiming?.SetTarget(forward);
+                Vector3 finalFwd = Quaternion.Euler(pitch, rot.eulerAngles.y, 0f) * Vector3.forward;
+                _bot.AimingManager?.CurrentAiming?.SetTarget(finalFwd);
             }
             catch (Exception ex)
             {
@@ -154,12 +191,39 @@ namespace AIRefactored.AI.Combat
             }
         }
 
-        private Vector3 GetValidatedAimPosition(Player target, float time)
+        /// <summary>
+        /// Returns an aim position factoring in enemy location, memory fallback, and random idle drift.
+        /// Bone targeting uses PlayerBones.BifacialTransforms for robust, version-safe access.
+        /// </summary>
+        private Vector3 GetHumanizedAimPosition(Player target, float time, BotPersonalityProfile profile)
         {
             try
             {
                 if (EFTPlayerUtil.IsValid(target))
-                    return EFTPlayerUtil.GetPosition(target);
+                {
+                    Vector3 center = EFTPlayerUtil.GetPosition(target);
+
+                    float composure = _cache.PanicHandler?.GetComposureLevel() ?? 1f;
+                    float miss = UnityEngine.Random.value;
+                    if (miss > 0.9f || composure < 0.55f)
+                    {
+                        // Use PlayerBones.BifacialTransforms for robust bone targeting
+                        var bones = target.PlayerBones;
+                        Vector3 partPos = center;
+                        if (bones != null)
+                        {
+                            var boneType = PreferredBones[UnityEngine.Random.Range(0, PreferredBones.Length)];
+                            if (bones.BifacialTransforms.TryGetValue(boneType, out var bifacial))
+                            {
+                                Transform t = bifacial?.Original;
+                                if (t != null)
+                                    partPos = t.position;
+                            }
+                        }
+                        center = Vector3.Lerp(center, partPos, UnityEngine.Random.Range(0.34f, 0.94f));
+                    }
+                    return center;
+                }
 
                 Vector3 memory = _bot.Memory.LastEnemy?.CurrPosition ?? Vector3.zero;
                 if (memory != Vector3.zero)
@@ -167,8 +231,8 @@ namespace AIRefactored.AI.Combat
 
                 if (time - _lastLookAroundTime > 1.5f)
                 {
-                    float yaw = Random.Range(-75f, 75f);
-                    float pitch = Random.Range(-10f, 10f);
+                    float yaw = UnityEngine.Random.Range(-75f, 75f);
+                    float pitch = UnityEngine.Random.Range(-10f, 10f);
                     Quaternion q = Quaternion.Euler(pitch, yaw, 0f);
                     Vector3 baseDir = _bot.Transform != null ? _bot.Transform.forward : Vector3.forward;
                     _idleLookDirection = q * baseDir;
@@ -266,7 +330,6 @@ namespace AIRefactored.AI.Combat
                 float composure = _cache.PanicHandler?.GetComposureLevel() ?? 1f;
                 float scatterPenalty = underFire ? (1f - profile.AccuracyUnderFire) * (1f - composure) : 0f;
                 scatterPenalty += suppressionPenalty * 0.55f;
-
                 float scatterFactor = 1.1f + scatterPenalty;
 
                 if (suppressionPenalty > 0.2f && Random.value < 0.35f)

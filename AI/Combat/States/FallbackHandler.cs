@@ -34,6 +34,8 @@ namespace AIRefactored.AI.Combat.States
         private const float MaxHumanDelay = 0.22f;
         private const float NavMeshSampleRadius = 2.5f;
         private const float MaxFallbackDistance = 16f;
+        private const int MaxFallbackRetries = 3;
+        private const float FallbackCooldownSeconds = 1.2f;
 
         #endregion
 
@@ -44,6 +46,8 @@ namespace AIRefactored.AI.Combat.States
         private readonly List<Vector3> _currentFallbackPath;
         private Vector3 _fallbackTarget;
         private float _lastMoveTime;
+        private int _fallbackRetryCount;
+        private float _lastFallbackAssignTime;
 
         #endregion
 
@@ -56,6 +60,8 @@ namespace AIRefactored.AI.Combat.States
             _fallbackTarget = _bot != null ? _bot.Position : Vector3.zero;
             _currentFallbackPath = TempListPool.Rent<Vector3>();
             _lastMoveTime = -1000f;
+            _fallbackRetryCount = 0;
+            _lastFallbackAssignTime = -1000f;
         }
 
         #endregion
@@ -77,13 +83,20 @@ namespace AIRefactored.AI.Combat.States
         public void SetFallbackTarget(Vector3 target)
         {
             if (!IsVectorValid(target))
-            {
-                Plugin.LoggerInstance.LogWarning("[FallbackHandler] Ignored fallback target with invalid vector.");
                 return;
-            }
 
-            if (TrySampleNavMesh(target, NavMeshSampleRadius, out Vector3 navSafe))
+            if (Time.time - _lastFallbackAssignTime < FallbackCooldownSeconds)
+                return;
+
+            if (!IsBotMoveCapable(_bot))
+                return;
+
+            if (TrySampleNavMesh(target, NavMeshSampleRadius, out Vector3 navSafe) && IsVectorValid(navSafe))
+            {
                 _fallbackTarget = navSafe;
+                _fallbackRetryCount = 0;
+                _lastFallbackAssignTime = Time.time;
+            }
         }
 
         public void SetFallbackPath(List<Vector3> path)
@@ -129,9 +142,12 @@ namespace AIRefactored.AI.Combat.States
             return false;
         }
 
+        /// <summary>
+        /// Per-frame update for fallback movement. All movement is path-based and validated. Teleportation forbidden.
+        /// </summary>
         public void Tick(float time, Action<CombatState, float> forceState)
         {
-            if (_bot == null || !IsVectorValid(_fallbackTarget))
+            if (!IsBotMoveCapable(_bot) || !IsVectorValid(_fallbackTarget))
                 return;
 
             try
@@ -147,18 +163,26 @@ namespace AIRefactored.AI.Combat.States
                 _lastMoveTime = now;
                 Vector3 destination = _fallbackTarget;
 
-                if (!BotNavHelper.TryGetSafeTarget(_bot, out destination) || !IsVectorValid(destination))
+                if (!IsVectorValid(destination) || !TrySampleNavMesh(destination, NavMeshSampleRadius, out destination))
                 {
-                    destination = GetSafeRandomFallback(_bot.Position);
-                    if (!IsVectorValid(destination))
+                    // Fallback: retry up to MaxFallbackRetries, then give up this tick
+                    _fallbackRetryCount++;
+                    if (_fallbackRetryCount >= MaxFallbackRetries)
+                    {
+                        _fallbackRetryCount = 0;
+                        Cancel();
                         return;
+                    }
+                    _fallbackTarget = GetSafeRandomFallback(_bot.Position);
+                    return;
                 }
+                _fallbackRetryCount = 0;
 
                 float cohesion = 1.0f;
                 if (_cache?.PersonalityProfile != null)
                     cohesion = Mathf.Clamp(_cache.PersonalityProfile.Cohesion, 0.7f, 1.3f);
 
-                if (_bot.Mover != null && Vector3.Distance(_bot.Position, destination) < MaxFallbackDistance)
+                if (Vector3.Distance(_bot.Position, destination) < MaxFallbackDistance)
                 {
                     BotMovementHelper.SmoothMoveTo(_bot, destination, slow: true, cohesionScale: cohesion);
                     BotCoverHelper.TrySetStanceFromNearbyCover(_cache, destination);
@@ -167,15 +191,15 @@ namespace AIRefactored.AI.Combat.States
                 if (Vector3.Distance(_bot.Position, destination) < MinArrivalDistance)
                 {
                     forceState?.Invoke(CombatState.Patrol, time);
-                    if (!FikaHeadlessDetector.IsHeadless && _bot.BotTalk != null)
+                    if (!FikaHeadlessDetector.IsHeadless)
                     {
-                        try { _bot.BotTalk.TrySay(EPhraseTrigger.NeedHelp); } catch { }
+                        try { _bot.BotTalk?.TrySay(EPhraseTrigger.NeedHelp); } catch { }
                     }
                 }
             }
-            catch (Exception ex)
+            catch
             {
-                Plugin.LoggerInstance.LogError($"[FallbackHandler] Tick exception: {ex}");
+                // All errors locally contained. No log spam.
             }
         }
 
@@ -191,6 +215,7 @@ namespace AIRefactored.AI.Combat.States
         {
             _fallbackTarget = _bot != null ? _bot.Position : Vector3.zero;
             _currentFallbackPath.Clear();
+            _fallbackRetryCount = 0;
         }
 
         public void Dispose()
@@ -205,7 +230,22 @@ namespace AIRefactored.AI.Combat.States
 
         private static bool IsVectorValid(Vector3 v)
         {
-            return !float.IsNaN(v.x) && !float.IsNaN(v.y) && !float.IsNaN(v.z) && v != Vector3.zero && v.y > -2.5f;
+            return !float.IsNaN(v.x) && !float.IsNaN(v.y) && !float.IsNaN(v.z)
+                && v != Vector3.zero && v.y > -2.5f
+                && v.x < 10000f && v.z < 10000f && v.x > -10000f && v.z > -10000f;
+        }
+
+        /// <summary>
+        /// Minimal, EFT-safe movement gating (no IsActive/Stopped/CanMove).
+        /// </summary>
+        private static bool IsBotMoveCapable(BotOwner bot)
+        {
+            if (bot == null) return false;
+            if (bot.Mover == null) return false;
+            var player = bot.GetPlayer;
+            if (player == null || player.HealthController == null || !player.HealthController.IsAlive) return false;
+            if (player.MovementContext == null) return false;
+            return true;
         }
 
         private Vector3 GetSafeRandomFallback(Vector3 origin)

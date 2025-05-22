@@ -21,6 +21,7 @@ namespace AIRefactored.AI.Combat
     /// <summary>
     /// Selects and prioritizes threats based on real-time awareness, memory, and bot personality.
     /// Bulletproof: All errors are isolated; no fallback AI is ever triggered.
+    /// Fully re-enabled PMC-vs-PMC targeting with group/squad checks.
     /// </summary>
     public sealed class BotThreatSelector
     {
@@ -101,7 +102,7 @@ namespace AIRefactored.AI.Combat
                         continue;
                     if (candidate.ProfileId == _bot.ProfileId)
                         continue;
-                    if (!EFTPlayerUtil.IsEnemyOf(_bot, candidate))
+                    if (!IsProperEnemy(_bot, candidate))
                         continue;
 
                     float score = ScoreTarget(candidate, time);
@@ -113,7 +114,19 @@ namespace AIRefactored.AI.Combat
                 }
 
                 if (bestTarget == null)
+                {
+                    // Wildcard fallback: attempt most recent memory enemy
+                    string id = _cache?.TacticalMemory?.GetMostRecentEnemyId();
+                    if (!string.IsNullOrEmpty(id))
+                    {
+                        Player fallback = EFTPlayerUtil.ResolvePlayerById(id);
+                        if (EFTPlayerUtil.IsValid(fallback) && IsProperEnemy(_bot, fallback))
+                        {
+                            SetTarget(fallback, time);
+                        }
+                    }
                     return;
+                }
 
                 if (_currentTarget == null)
                 {
@@ -153,7 +166,7 @@ namespace AIRefactored.AI.Combat
                     return null;
 
                 Player fallback = EFTPlayerUtil.ResolvePlayerById(id);
-                return EFTPlayerUtil.IsValid(fallback) ? fallback : null;
+                return EFTPlayerUtil.IsValid(fallback) && IsProperEnemy(_bot, fallback) ? fallback : null;
             }
             catch (Exception ex)
             {
@@ -312,6 +325,36 @@ namespace AIRefactored.AI.Combat
         {
             return !float.IsNaN(v.x) && !float.IsNaN(v.y) && !float.IsNaN(v.z) &&
                    Mathf.Abs(v.x) < 10000f && Mathf.Abs(v.y) < 10000f && Mathf.Abs(v.z) < 10000f;
+        }
+
+        /// <summary>
+        /// PMC-vs-PMC targeting: returns true if candidate is not in the same group or squad.
+        /// </summary>
+        private static bool IsProperEnemy(BotOwner self, Player candidate)
+        {
+            if (self == null || candidate == null)
+                return false;
+            if (candidate.ProfileId == self.ProfileId)
+                return false;
+            if (!candidate.IsAI && !self.IsAI)
+                return false; // Only care about AI-vs-AI and AI-vs-player for now
+
+            EPlayerSide selfSide = self.GetPlayer != null ? self.GetPlayer.Side : EPlayerSide.Savage;
+            EPlayerSide targetSide = candidate.Side;
+
+            if (selfSide != targetSide)
+                return true; // Always enemy if sides differ (e.g., PMC vs Scav, PMC vs Rogue)
+
+            // PMC-vs-PMC: Only enemy if not in same squad/group
+            string selfGroup = self.GetPlayer?.Profile?.Info?.GroupId ?? string.Empty;
+            string targetGroup = candidate.Profile?.Info?.GroupId ?? string.Empty;
+            if (!string.IsNullOrEmpty(selfGroup) && !string.IsNullOrEmpty(targetGroup))
+            {
+                if (selfGroup == targetGroup)
+                    return false; // Same squad: do not target
+            }
+
+            return true; // Otherwise, different squad PMCs are enemies
         }
 
         #endregion

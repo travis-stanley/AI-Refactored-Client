@@ -351,5 +351,19 @@ namespace AIRefactored.AI.Perception
         }
 
         #endregion
+
+        #region API
+
+        /// <summary>
+        /// Returns true if the given player is visible right now (tracked by confidence).
+        /// </summary>
+        public bool IsTargetVisible(Player enemy)
+        {
+            if (_cache?.VisibilityTracker == null || enemy == null)
+                return false;
+            return _cache.VisibilityTracker.GetOverallConfidence() > BoneConfidenceThreshold;
+        }
+
+        #endregion
     }
 }

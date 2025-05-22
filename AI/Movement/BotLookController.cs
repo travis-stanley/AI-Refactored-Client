@@ -5,12 +5,14 @@
 //   THIS FILE IS SYSTEMATICALLY MANAGED.
 //   Bulletproof: No fallback logic. All look direction and update failures are locally logged and isolated only.
 //   Realism Pass: Human-like micro-scanning, distraction, and organic idle head/eye movement.
+//   Headless and multiplayer safe. Vision system strictly null-guarded. No direct Transform/rotation manipulation allowed outside logic.
 // </auto-generated>
 
 namespace AIRefactored.AI.Movement
 {
     using System;
     using AIRefactored.AI.Core;
+    using AIRefactored.AI.Perception;
     using AIRefactored.Core;
     using BepInEx.Logging;
     using EFT;
@@ -21,6 +23,7 @@ namespace AIRefactored.AI.Movement
         #region Constants
 
         private const float MaxTurnSpeed = 7.5f;
+        private const float MaxAnglePerFrame = 41f; // max degrees/second allowed for snap
         private const float MinLookDistanceSqr = 0.25f;
         private const float BlindLookRadius = 4f;
         private const float HeardDirectionWeight = 6f;
@@ -29,6 +32,7 @@ namespace AIRefactored.AI.Movement
         private const float IdleScanAngleMax = 65f;
         private const float IdleScanJitter = 7f;
         private const float IdleMissChance = 0.02f;
+        private const float MissAngleMax = 8f; // max angle miss on look
 
         #endregion
 
@@ -89,15 +93,20 @@ namespace AIRefactored.AI.Movement
 
                 Vector3 origin = body.position;
                 Vector3 target = ResolveLookTarget(origin, deltaTime);
+
                 Vector3 dir = target - origin;
                 dir.y = 0f;
-
                 if (dir.sqrMagnitude < MinLookDistanceSqr)
                     return;
 
                 Quaternion from = body.rotation;
                 Quaternion to = Quaternion.LookRotation(dir.normalized);
-                body.rotation = Quaternion.Slerp(from, to, Mathf.Clamp01(MaxTurnSpeed * deltaTime));
+
+                // Clamp to maximum look angle per frame (no snap, no robot)
+                float maxDegreesThisFrame = MaxAnglePerFrame * deltaTime;
+                float angleDiff = Quaternion.Angle(from, to);
+                float t = Mathf.Min(1f, maxDegreesThisFrame / (angleDiff + 0.001f));
+                body.rotation = Quaternion.Slerp(from, to, t);
             }
             catch (Exception ex)
             {
@@ -143,6 +152,7 @@ namespace AIRefactored.AI.Movement
         {
             float now = Time.time;
 
+            // Blinded bots: scan randomly
             if (_cache != null && _cache.IsBlinded && now < _cache.BlindUntilTime)
             {
                 Vector3 offset = UnityEngine.Random.insideUnitSphere;
@@ -150,6 +160,7 @@ namespace AIRefactored.AI.Movement
                 return origin + offset.normalized * BlindLookRadius;
             }
 
+            // Panic bots: look towards heard sound
             if (_cache?.Panic?.IsPanicking == true)
             {
                 if (_cache.HasHeardDirection)
@@ -157,26 +168,37 @@ namespace AIRefactored.AI.Movement
                 return origin + _bot.LookDirection;
             }
 
-            if (_cache?.ThreatSelector != null)
+            // Actively targeting an enemy? Only look if vision system says "visible"
+            if (_cache?.ThreatSelector != null && _cache.VisibilityTracker != null)
             {
                 string id = _cache.ThreatSelector.GetTargetProfileId();
                 if (!string.IsNullOrEmpty(id))
                 {
                     Player enemy = EFTPlayerUtil.ResolvePlayerById(id);
-                    if (EFTPlayerUtil.IsValid(enemy))
+                    if (EFTPlayerUtil.IsValid(enemy) && _cache.VisibilityTracker.CanSeeAny())
                     {
                         Vector3 pos = EFTPlayerUtil.GetPosition(enemy);
-                        if (pos.sqrMagnitude > 0.01f)
-                            return pos;
+
+                        // Add "look miss" variance if not perfectly locked
+                        if (UnityEngine.Random.value < 0.36f)
+                        {
+                            float miss = UnityEngine.Random.Range(-MissAngleMax, MissAngleMax);
+                            Quaternion missQ = Quaternion.AngleAxis(miss, Vector3.up);
+                            Vector3 fwd = pos - origin; fwd.y = 0f;
+                            pos = origin + (missQ * fwd.normalized) * (fwd.magnitude);
+                        }
+                        return pos;
                     }
                 }
             }
 
+            // Heard sound recently? Look in that direction
             if (_cache != null && _cache.HasHeardDirection && now - _cache.LastHeardTime < SoundMemoryDuration)
             {
                 return origin + _cache.LastHeardDirection.normalized * HeardDirectionWeight;
             }
 
+            // Idle scanning
             if (now > _nextIdleScanTime)
             {
                 _idleScanDirection = UnityEngine.Random.value > 0.5f ? 1 : -1;
@@ -190,9 +212,9 @@ namespace AIRefactored.AI.Movement
             float baseAngle = IdleScanAngleMax * _idleScanDirection * deltaTime * 0.5f;
             _currentIdleAngle = Mathf.Clamp(_currentIdleAngle + baseAngle + _idleJitterOffset * deltaTime * 0.15f, -IdleScanAngleMax, IdleScanAngleMax);
 
-            Vector3 fwd = _bot.LookDirection.sqrMagnitude > 0.5f ? _bot.LookDirection.normalized : Vector3.forward;
+            Vector3 fwdDir = _bot.LookDirection.sqrMagnitude > 0.5f ? _bot.LookDirection.normalized : Vector3.forward;
             Quaternion idleYaw = Quaternion.AngleAxis(_currentIdleAngle, Vector3.up);
-            Vector3 idleLook = idleYaw * fwd;
+            Vector3 idleLook = idleYaw * fwdDir;
 
             return origin + idleLook * BlindLookRadius;
         }

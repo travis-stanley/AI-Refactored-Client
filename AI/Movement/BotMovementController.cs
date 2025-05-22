@@ -42,6 +42,10 @@ namespace AIRefactored.AI.Movement
         private float _nextRandomPause;
         private float _leanMissChance = 0.07f;
 
+        // New: Lean lockout logic
+        private float _leanLockoutUntil = 0f;
+        private float _lastFallbackOrSprint = 0f;
+
         public void Initialize(BotComponentCache cache)
         {
             if (cache == null || cache.Bot == null)
@@ -56,6 +60,8 @@ namespace AIRefactored.AI.Movement
             _lootingMode = false;
             _lastRandomPause = Time.time;
             _nextRandomPause = Time.time + UnityEngine.Random.Range(1.5f, 3.8f);
+            _leanLockoutUntil = 0f;
+            _lastFallbackOrSprint = 0f;
         }
 
         public void Tick(float deltaTime)
@@ -68,6 +74,12 @@ namespace AIRefactored.AI.Movement
                 var player = _bot.GetPlayer;
                 if (player == null || !player.IsAI)
                     return;
+
+                if (_cache?.Fallback != null && _cache.Fallback.IsActive())
+                    _lastFallbackOrSprint = Time.time;
+
+                if (player.IsSprintEnabled || _bot.Mover.Sprinting)
+                    _lastFallbackOrSprint = Time.time;
 
                 if (!_lootingMode)
                 {
@@ -149,8 +161,19 @@ namespace AIRefactored.AI.Movement
 
         private void TryLean()
         {
-            if (_cache?.Tilt == null || _bot == null || Time.time < _nextLeanTime)
+            if (_cache?.Tilt == null || _bot == null)
                 return;
+
+            float now = Time.time;
+
+            // Lean lockout after fallback or sprint or cover transition
+            if (now < _leanLockoutUntil)
+                return;
+            if (now - _lastFallbackOrSprint < 1.25f)
+            {
+                _leanLockoutUntil = now + 0.7f;
+                return;
+            }
 
             if (_cache.IsBlinded)
                 return;
@@ -159,17 +182,29 @@ namespace AIRefactored.AI.Movement
             if (memory?.GoalEnemy == null || _bot.Transform == null)
                 return;
 
+            // Do not lean if bot is moving fast or just finished fallback/sprint
+            var player = _bot.GetPlayer;
+            if (player != null && (player.IsSprintEnabled || _bot.Mover.Sprinting || !_bot.Mover.IsMoving))
+                return;
+
+            // Human hesitation and random chance to "miss" a lean
             float missChance = (_cache.AIRefactoredBotOwner?.PersonalityProfile?.Caution ?? 0.5f) * _leanMissChance;
             if (UnityEngine.Random.value < missChance)
             {
-                _nextLeanTime = Time.time + UnityEngine.Random.Range(0.65f, 1.25f);
+                _nextLeanTime = now + UnityEngine.Random.Range(0.65f, 1.25f);
                 return;
             }
 
+            // Cooldown between leans, add human-like jitter
+            if (now < _nextLeanTime)
+                return;
+
+            // Cover and direction logic
             Vector3 head = _bot.Position + Vector3.up * 1.5f;
             bool wallLeft = Physics.Raycast(head, -_bot.Transform.right, 1.35f, AIRefactoredLayerMasks.VisionBlockers);
             bool wallRight = Physics.Raycast(head, _bot.Transform.right, 1.35f, AIRefactoredLayerMasks.VisionBlockers);
 
+            // Tactical: prefer to lean away from cover, or towards enemy if no cover
             if (wallLeft && !wallRight)
             {
                 _cache.Tilt.Set(BotTiltType.right);
@@ -182,10 +217,19 @@ namespace AIRefactored.AI.Movement
             {
                 Vector3 toEnemy = memory.GoalEnemy.CurrPosition - _bot.Position;
                 float dot = Vector3.Dot(toEnemy.normalized, _bot.Transform.right);
-                _cache.Tilt.Set(dot > 0f ? BotTiltType.right : BotTiltType.left);
+                // 80% of the time, use tactical lean, 20% invert for "peek/jitter"
+                bool tacticalLean = UnityEngine.Random.value < 0.8f;
+                if (tacticalLean)
+                    _cache.Tilt.Set(dot > 0f ? BotTiltType.right : BotTiltType.left);
+                else
+                    _cache.Tilt.Set(dot > 0f ? BotTiltType.left : BotTiltType.right);
             }
 
-            _nextLeanTime = Time.time + UnityEngine.Random.Range(0.65f, 1.15f);
+            // Lean anticipation: slightly random next lean window
+            _nextLeanTime = now + UnityEngine.Random.Range(0.72f, 1.23f);
+
+            // After leaning, set a lockout to prevent spam
+            _leanLockoutUntil = now + UnityEngine.Random.Range(0.43f, 0.68f);
         }
 
         private void TryScan()

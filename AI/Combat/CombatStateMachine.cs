@@ -22,12 +22,22 @@ namespace AIRefactored.AI.Combat
     using EFT;
     using UnityEngine;
 
+    /// <summary>
+    /// Drives bot combat state logic including fallback, engagement, patrol, and escalation.
+    /// Bulletproof: All errors are locally isolated, never disables or triggers fallback AI.
+    /// </summary>
     public sealed class CombatStateMachine
     {
+        #region Constants
+
         private const float MinTransitionDelay = 0.4f;
         private const float PatrolMinDuration = 1.25f;
         private const float PatrolCooldown = 12.0f;
         private const float ReentryCooldown = 3.0f;
+
+        #endregion
+
+        #region Fields
 
         private BotComponentCache _cache;
         private BotOwner _bot;
@@ -44,8 +54,16 @@ namespace AIRefactored.AI.Combat
         private float _lastStateChangeTime;
         private bool _initialized;
 
+        #endregion
+
+        #region Properties
+
         public Vector3 LastKnownEnemyPos => _lastKnownEnemyPos;
         public float LastStateChangeTime => _lastStateChangeTime;
+
+        #endregion
+
+        #region Initialization
 
         public void Initialize(BotComponentCache componentCache)
         {
@@ -77,13 +95,19 @@ namespace AIRefactored.AI.Combat
             }
         }
 
+        #endregion
+
+        #region Public API
+
         public bool IsInCombatState()
         {
             try
             {
                 return _initialized &&
-                    _fallback != null && _engage != null && _investigate != null &&
-                    (_fallback.IsActive() || _engage.IsEngaging() || _investigate.IsInvestigating() || _cache?.ThreatSelector?.CurrentTarget != null);
+                       _fallback?.IsActive() == true ||
+                       _engage?.IsEngaging() == true ||
+                       _investigate?.IsInvestigating() == true ||
+                       _cache?.ThreatSelector?.CurrentTarget != null;
             }
             catch (Exception ex)
             {
@@ -137,8 +161,6 @@ namespace AIRefactored.AI.Combat
 
             try
             {
-                if (_fallback == null || _engage == null || _investigate == null || _patrol == null || _attack == null || _echo == null) return;
-
                 if (time - _lastStateChangeTime < MinTransitionDelay)
                     return;
 
@@ -152,19 +174,19 @@ namespace AIRefactored.AI.Combat
                 {
                     AssignFallbackIfNeeded();
                     _bot.BotTalk?.TrySay(EPhraseTrigger.OnBeingHurt);
-                    _echo.EchoFallbackToSquad(_fallback.GetFallbackPositionOrDefault(_bot.Position));
+                    _echo?.EchoFallbackToSquad(_fallback.GetFallbackPositionOrDefault(_bot.Position));
                     _lastStateChangeTime = time;
                     return;
                 }
 
-                if (_fallback.ShallUseNow(time))
+                if (_fallback?.ShallUseNow(time) == true)
                 {
                     AssignFallbackIfNeeded();
                     _fallback.Tick(time, SetLastStateChangeTime);
                     return;
                 }
 
-                Player enemy = _cache.ThreatSelector?.CurrentTarget;
+                Player enemy = _cache?.ThreatSelector?.CurrentTarget;
                 if (EFTPlayerUtil.IsValid(enemy))
                 {
                     _lastKnownEnemyPos = EFTPlayerUtil.GetPosition(enemy);
@@ -172,18 +194,18 @@ namespace AIRefactored.AI.Combat
 
                     string id = enemy.ProfileId;
                     if (!string.IsNullOrEmpty(id))
-                        _cache.TacticalMemory?.RecordEnemyPosition(_lastKnownEnemyPos, "Combat", id);
+                        _cache?.TacticalMemory?.RecordEnemyPosition(_lastKnownEnemyPos, "Combat", id);
 
                     if (_bot.Mover != null && !_bot.Mover.Sprinting)
                         _bot.Sprint(true);
 
-                    _echo.EchoSpottedEnemyToSquad(_lastKnownEnemyPos);
+                    _echo?.EchoSpottedEnemyToSquad(_lastKnownEnemyPos);
                 }
 
-                if (_engage.ShallUseNow())
+                if (_engage?.ShallUseNow() == true)
                 {
                     if (_engage.CanAttack())
-                        _attack.Tick(time);
+                        _attack?.Tick(time);
                     else
                         _engage.Tick();
 
@@ -191,7 +213,7 @@ namespace AIRefactored.AI.Combat
                     return;
                 }
 
-                if (_investigate.ShallUseNow(time, _lastStateChangeTime))
+                if (_investigate?.ShallUseNow(time, _lastStateChangeTime) == true)
                 {
                     Vector3 target = _investigate.GetInvestigateTarget(_hasKnownEnemy ? _lastKnownEnemyPos : Vector3.zero);
                     if (target != Vector3.zero)
@@ -202,7 +224,7 @@ namespace AIRefactored.AI.Combat
                     return;
                 }
 
-                _patrol.Tick(time);
+                _patrol?.Tick(time);
             }
             catch (Exception ex)
             {
@@ -238,6 +260,10 @@ namespace AIRefactored.AI.Combat
             }
         }
 
+        #endregion
+
+        #region Internal Logic
+
         private void AssignFallbackIfNeeded()
         {
             try
@@ -252,6 +278,10 @@ namespace AIRefactored.AI.Combat
                 Vector3 fallback;
                 if (!BotNavHelper.TryGetSafeTarget(_bot, out fallback) || !IsVectorValid(fallback))
                     fallback = _bot.Position + retreatDir * 5f;
+
+                // Vector3.y guard: prevent all teleport/fallback bugs
+                if (fallback.y < -2.5f)
+                    fallback = _bot.Position;
 
                 var path = TempListPool.Rent<Vector3>();
                 path.Clear();
@@ -343,5 +373,7 @@ namespace AIRefactored.AI.Combat
         {
             return !float.IsNaN(v.x) && !float.IsNaN(v.y) && !float.IsNaN(v.z) && v != Vector3.zero && v.y > -2.5f;
         }
+
+        #endregion
     }
 }

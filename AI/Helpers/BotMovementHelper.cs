@@ -19,13 +19,11 @@ namespace AIRefactored.AI.Helpers
     /// <summary>
     /// Provides ultra-realistic, validated, smooth movement operations for bots.
     /// All operations use path-based, drifted targets; zero teleportation, zero position sets.
-    /// Adds micro-jitter, personality-driven bias, and full null-guarding for multiplayer/headless.
+    /// Adds micro-jitter, personality-driven bias, movement stutter suppression, and full null-guarding.
     /// </summary>
     public static class BotMovementHelper
     {
-        #region Constants
-
-        private const float DefaultLookSpeed = 4.25f; // Subtle smoothing bias
+        private const float DefaultLookSpeed = 4.25f;
         private const float DefaultRadius = 0.8f;
         private const float DefaultStrafeDistance = 3f;
         private const float RetreatDistance = 6.5f;
@@ -33,18 +31,18 @@ namespace AIRefactored.AI.Helpers
         private const float SlerpBias = 0.965f;
         private const float MicroJitterMagnitude = 0.11f;
 
-        #endregion
+        // Anti-stutter: cache last frame target to avoid rapid micro-move reset
+        private static string _lastMoveProfileId = string.Empty;
+        private static Vector3 _lastMoveTarget = Vector3.zero;
+        private static float _lastMoveTime = -1000f;
 
-        #region Public API
+        public static void Reset(BotOwner bot)
+        {
+            _lastMoveProfileId = string.Empty;
+            _lastMoveTarget = Vector3.zero;
+            _lastMoveTime = -1000f;
+        }
 
-        /// <summary>
-        /// Hard-resets bot's navigation state (stub, reserved for future expansion).
-        /// </summary>
-        public static void Reset(BotOwner bot) { }
-
-        /// <summary>
-        /// Retreats bot smoothly away from a threat direction, using profile-based cohesion and micro-drift.
-        /// </summary>
         public static void RetreatToCover(BotOwner bot, Vector3 threatDir, float distance = RetreatDistance, bool sprint = true)
         {
             if (!IsAlive(bot)) return;
@@ -55,19 +53,18 @@ namespace AIRefactored.AI.Helpers
             if (!IsValidTarget(target)) target = bot.Position;
 
             float cohesion = 1f;
-            if (BotRegistry.TryGet(bot.ProfileId, out BotPersonalityProfile profile))
+            BotRegistry.TryGet(bot.ProfileId, out BotPersonalityProfile profile);
+            if (profile != null)
             {
                 cohesion = Mathf.Clamp(profile.Cohesion, 0.7f, 1.3f);
                 if (profile.IsFrenzied || profile.IsFearful) sprint = true;
             }
 
-            bot.Mover?.GoToPoint(ApplyMicroDrift(target, bot.ProfileId, Time.frameCount, profile), true, cohesion);
+            Vector3 drifted = ApplyMicroDrift(target, bot.ProfileId, Time.frameCount, profile);
+            IssueMoveIfNotRedundant(bot, drifted, true, cohesion);
             if (sprint) bot.Sprint(true);
         }
 
-        /// <summary>
-        /// Smoothly rotates the bot to face a target using organic slerp and random overshoot.
-        /// </summary>
         public static void SmoothLookTo(BotOwner bot, Vector3 lookTarget, float speed = DefaultLookSpeed)
         {
             if (!IsAlive(bot) || !IsValidTarget(lookTarget)) return;
@@ -85,10 +82,6 @@ namespace AIRefactored.AI.Helpers
             transform.rotation = Quaternion.Slerp(transform.rotation, targetRotation, t);
         }
 
-        /// <summary>
-        /// Moves bot to a safe, path-validated location, with personality-driven cohesion and micro-drift.
-        /// Returns true if bot is already close enough (no move needed).
-        /// </summary>
         public static bool SmoothMoveToSafe(BotOwner bot, Vector3 target, bool slow = true, float cohesionScale = 1f)
         {
             if (!IsAlive(bot) || !IsValidTarget(target)) return false;
@@ -101,23 +94,17 @@ namespace AIRefactored.AI.Helpers
             if ((pos.x - safeTarget.x) * (pos.x - safeTarget.x) + (pos.z - safeTarget.z) * (pos.z - safeTarget.z) < radius * radius)
                 return true;
 
-            BotPersonalityProfile profile;
-            BotRegistry.TryGet(bot.ProfileId, out profile);
-            bot.Mover?.GoToPoint(ApplyMicroDrift(safeTarget, bot.ProfileId, Time.frameCount, profile), slow, cohesionScale);
+            BotRegistry.TryGet(bot.ProfileId, out BotPersonalityProfile profile);
+            Vector3 drifted = ApplyMicroDrift(safeTarget, bot.ProfileId, Time.frameCount, profile);
+            IssueMoveIfNotRedundant(bot, drifted, slow, cohesionScale);
             return true;
         }
 
-        /// <summary>
-        /// Alias for SmoothMoveToSafe, for typical movement without path fallback.
-        /// </summary>
         public static void SmoothMoveTo(BotOwner bot, Vector3 target, bool slow = true, float cohesionScale = 1f)
         {
             SmoothMoveToSafe(bot, target, slow, cohesionScale);
         }
 
-        /// <summary>
-        /// Smoothly strafes bot away from a threat direction with path validation and micro-drift.
-        /// </summary>
         public static void SmoothStrafeFrom(BotOwner bot, Vector3 threatDir, float scale = 1f)
         {
             if (!IsAlive(bot)) return;
@@ -131,14 +118,11 @@ namespace AIRefactored.AI.Helpers
             Vector3 final = BotNavHelper.TryGetSafeTarget(bot, out Vector3 safeTarget) ? safeTarget : rawTarget;
             if (!IsValidTarget(final)) final = bot.Position;
 
-            BotPersonalityProfile profile;
-            BotRegistry.TryGet(bot.ProfileId, out profile);
-            bot.Mover?.GoToPoint(ApplyMicroDrift(final, bot.ProfileId, Time.frameCount + 15, profile), false, 1f);
+            BotRegistry.TryGet(bot.ProfileId, out BotPersonalityProfile profile);
+            Vector3 drifted = ApplyMicroDrift(final, bot.ProfileId, Time.frameCount + 15, profile);
+            IssueMoveIfNotRedundant(bot, drifted, false, 1f);
         }
 
-        /// <summary>
-        /// Forces bot to fallback/retreat in current look direction using micro-drift and path validation.
-        /// </summary>
         public static void ForceFallbackMove(BotOwner bot)
         {
             if (!IsAlive(bot)) return;
@@ -149,14 +133,11 @@ namespace AIRefactored.AI.Helpers
             Vector3 final = BotNavHelper.TryGetSafeTarget(bot, out Vector3 safeTarget) ? safeTarget : rawTarget;
             if (!IsValidTarget(final)) final = bot.Position;
 
-            BotPersonalityProfile profile;
-            BotRegistry.TryGet(bot.ProfileId, out profile);
-            bot.Mover?.GoToPoint(ApplyMicroDrift(final, bot.ProfileId, Time.frameCount + 21, profile), true, 1f);
+            BotRegistry.TryGet(bot.ProfileId, out BotPersonalityProfile profile);
+            Vector3 drifted = ApplyMicroDrift(final, bot.ProfileId, Time.frameCount + 21, profile);
+            IssueMoveIfNotRedundant(bot, drifted, true, 1f);
         }
 
-        /// <summary>
-        /// Guides bot safely toward an exit, using look direction, micro-drift, and full validation.
-        /// </summary>
         public static void SmoothMoveToSafeExit(BotOwner bot)
         {
             if (!IsAlive(bot)) return;
@@ -165,46 +146,51 @@ namespace AIRefactored.AI.Helpers
             Vector3 final = BotNavHelper.TryGetSafeTarget(bot, out Vector3 safeTarget) ? safeTarget : fallback;
             if (!IsValidTarget(final)) final = bot.Position;
 
-            BotPersonalityProfile profile;
-            BotRegistry.TryGet(bot.ProfileId, out profile);
-            bot.Mover?.GoToPoint(ApplyMicroDrift(final, bot.ProfileId, Time.frameCount + 35, profile), true, 1f);
+            BotRegistry.TryGet(bot.ProfileId, out BotPersonalityProfile profile);
+            Vector3 drifted = ApplyMicroDrift(final, bot.ProfileId, Time.frameCount + 35, profile);
+            IssueMoveIfNotRedundant(bot, drifted, true, 1f);
         }
 
-        #endregion
-
-        #region Internal Helpers
-
         /// <summary>
-        /// Returns true if bot is valid, alive, and AI-controlled.
+        /// Ensures movement is only issued if the bot or command target has truly changed, reducing micro-stutter.
         /// </summary>
+        private static void IssueMoveIfNotRedundant(BotOwner bot, Vector3 drifted, bool slow, float cohesion)
+        {
+            // Only trigger move if target/profile/time is meaningfully different (frame separation or target delta)
+            bool newTarget = !string.Equals(_lastMoveProfileId, bot.ProfileId)
+                             || (drifted - _lastMoveTarget).sqrMagnitude > 0.02f
+                             || Time.time - _lastMoveTime > 0.08f;
+            if (newTarget)
+            {
+                bot.Mover?.GoToPoint(drifted, slow, cohesion);
+                _lastMoveProfileId = bot.ProfileId;
+                _lastMoveTarget = drifted;
+                _lastMoveTime = Time.time;
+            }
+        }
+
         private static bool IsAlive(BotOwner bot)
         {
             return bot != null && bot.GetPlayer != null && bot.GetPlayer.IsAI && !bot.IsDead;
         }
 
-        /// <summary>
-        /// Returns true if a vector is a valid, navigable target (not NaN/Infinity).
-        /// </summary>
         private static bool IsValidTarget(Vector3 pos)
         {
             return !float.IsNaN(pos.x) && !float.IsNaN(pos.y) && !float.IsNaN(pos.z)
                 && !float.IsInfinity(pos.x) && !float.IsInfinity(pos.y) && !float.IsInfinity(pos.z);
         }
 
-        /// <summary>
-        /// Applies organic micro-drift to a position using personality jitter and aggression level.
-        /// </summary>
         private static Vector3 ApplyMicroDrift(Vector3 pos, string profileId, int tick, BotPersonalityProfile profile = null)
         {
             float baseMag = MicroJitterMagnitude;
             float personalityBias = 1f;
             if (profile != null)
             {
-                // MovementJitter: how fidgety/micro-shifty a bot is; AggressionLevel: more bold movement.
                 personalityBias = Mathf.Clamp(
                     1f + (profile.MovementJitter * 0.15f) + (profile.AggressionLevel * 0.05f),
                     0.93f, 1.15f);
             }
+
             int hash = (profileId?.GetHashCode() ?? 0) ^ (tick * 11) ^ 0x17DF413;
             unchecked
             {
@@ -215,16 +201,11 @@ namespace AIRefactored.AI.Helpers
             }
         }
 
-        /// <summary>
-        /// Returns a seeded, deterministic float in [0,1) based on profile/tick, for anti-pattern smoothing.
-        /// </summary>
         private static float SeededRandom(string profileId, int tick)
         {
             int hash = (profileId?.GetHashCode() ?? 0) ^ (tick * 163) ^ 0x1A983D;
             unchecked { hash = (hash ^ (hash >> 13)) * 0x5E2D58B9; }
             return ((hash & 0x7FFFFFFF) % 997) / 997f;
         }
-
-        #endregion
     }
 }

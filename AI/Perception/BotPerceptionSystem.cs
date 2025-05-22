@@ -34,6 +34,7 @@ namespace AIRefactored.AI.Perception
         private const float PanicTriggerThreshold = 0.6f;
         private const float SuppressionRecoverySpeed = 0.3f;
         private const float SuppressedThreshold = 0.18f;
+        private const float PanicCooldown = 2.4f;
 
         #endregion
 
@@ -49,6 +50,8 @@ namespace AIRefactored.AI.Perception
         private BotVisionProfile _profile;
 
         private bool _failed;
+        private bool _panicTriggered;
+        private float _lastPanicTime;
 
         #endregion
 
@@ -66,6 +69,8 @@ namespace AIRefactored.AI.Perception
             _cache = null;
             _profile = null;
             _failed = false;
+            _panicTriggered = false;
+            _lastPanicTime = -1000f;
 
             try
             {
@@ -272,9 +277,16 @@ namespace AIRefactored.AI.Perception
                     return;
 
                 float elapsed = Time.time - _blindStartTime;
-                if (_flashBlindness >= PanicTriggerThreshold && elapsed < 2.5f)
+                float now = Time.time;
+                if (!_panicTriggered && _flashBlindness >= PanicTriggerThreshold && elapsed < PanicCooldown)
                 {
                     _cache.PanicHandler.TriggerPanic();
+                    _panicTriggered = true;
+                    _lastPanicTime = now;
+                }
+                else if (_panicTriggered && now - _lastPanicTime > PanicCooldown)
+                {
+                    _panicTriggered = false;
                 }
             }
             catch (Exception ex)

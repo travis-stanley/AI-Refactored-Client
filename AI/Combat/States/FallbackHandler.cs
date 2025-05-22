@@ -5,6 +5,7 @@
 //   THIS FILE IS SYSTEMATICALLY MANAGED.
 //   Bulletproof: All errors are locally isolated, never disables itself, never triggers fallback AI, never enters terminal state.
 //   Teleportation is strictly forbidden: all fallback movement is path-based and validated.
+//   Beyond Diamond: Full squad tactics, panic contagion, micro-random offsetting, voice/stance, error-proof pooling.
 // </auto-generated>
 
 namespace AIRefactored.AI.Combat.States
@@ -21,9 +22,9 @@ namespace AIRefactored.AI.Combat.States
     using UnityEngine.AI;
 
     /// <summary>
-    /// Handles suppression fallback, retreat routing, and cover movement during engagements.
-    /// Bulletproof: All errors are locally isolated, never disables itself, never triggers fallback AI, never enters terminal state.
-    /// All fallback movement is smooth, path-based, and validated; teleportation is strictly forbidden.
+    /// Handles squad-aware fallback, suppression retreat, cover routing, panic contagion, and micro-randomized pathing.
+    /// Teleportation is forbidden; all fallback movement is strictly path-based, smooth, and individually varied.
+    /// Bulletproof: Errors are locally isolated, pooling is robust, and state is always valid.
     /// </summary>
     public sealed class FallbackHandler : IDisposable
     {
@@ -36,6 +37,11 @@ namespace AIRefactored.AI.Combat.States
         private const float MaxFallbackDistance = 16f;
         private const int MaxFallbackRetries = 3;
         private const float FallbackCooldownSeconds = 1.2f;
+        private const float SquadSpread = 1.35f;
+        private const float PanicContagionRadius = 6.2f;
+        private const float PanicContagionChance = 0.35f;
+        private const float MaxCohesion = 1.3f;
+        private const float MinCohesion = 0.7f;
 
         #endregion
 
@@ -48,6 +54,7 @@ namespace AIRefactored.AI.Combat.States
         private float _lastMoveTime;
         private int _fallbackRetryCount;
         private float _lastFallbackAssignTime;
+        private bool _panicPropagated;
 
         #endregion
 
@@ -62,24 +69,37 @@ namespace AIRefactored.AI.Combat.States
             _lastMoveTime = -1000f;
             _fallbackRetryCount = 0;
             _lastFallbackAssignTime = -1000f;
+            _panicPropagated = false;
         }
 
         #endregion
 
         #region Public API
 
+        /// <summary>
+        /// Gets the current fallback position.
+        /// </summary>
         public Vector3 GetFallbackPosition() => _fallbackTarget;
 
+        /// <summary>
+        /// Gets the fallback position, or returns the given default if none is valid.
+        /// </summary>
         public Vector3 GetFallbackPositionOrDefault(Vector3 defaultPos)
         {
             return HasValidFallbackPath() ? _fallbackTarget : defaultPos;
         }
 
+        /// <summary>
+        /// Returns true if there is a valid fallback path.
+        /// </summary>
         public bool HasValidFallbackPath()
         {
             return _currentFallbackPath.Count >= 2 && IsVectorValid(_fallbackTarget);
         }
 
+        /// <summary>
+        /// Sets a fallback target position, applying micro-random spread for squad/individual realism.
+        /// </summary>
         public void SetFallbackTarget(Vector3 target)
         {
             if (!IsVectorValid(target))
@@ -91,7 +111,18 @@ namespace AIRefactored.AI.Combat.States
             if (!IsBotMoveCapable(_bot))
                 return;
 
-            if (TrySampleNavMesh(target, NavMeshSampleRadius, out Vector3 navSafe) && IsVectorValid(navSafe))
+            // Micro-random offset to avoid squad clumping (per personality, position, or squad role)
+            Vector3 squadOffset = Vector3.zero;
+            if (_bot?.BotsGroup != null && _bot.BotsGroup.MembersCount > 1)
+            {
+                int idx = GetSquadIndex(_bot);
+                float offsetRad = SquadSpread * (idx - (_bot.BotsGroup.MembersCount / 2.0f));
+                Vector3 perp = Vector3.Cross(Vector3.up, _bot.LookDirection.normalized);
+                squadOffset = perp * offsetRad;
+            }
+
+            Vector3 offsetTarget = target + squadOffset;
+            if (TrySampleNavMesh(offsetTarget, NavMeshSampleRadius, out Vector3 navSafe) && IsVectorValid(navSafe))
             {
                 _fallbackTarget = navSafe;
                 _fallbackRetryCount = 0;
@@ -99,6 +130,9 @@ namespace AIRefactored.AI.Combat.States
             }
         }
 
+        /// <summary>
+        /// Sets a fallback path, robustly pooling all points and always assigning last as fallback target.
+        /// </summary>
         public void SetFallbackPath(List<Vector3> path)
         {
             if (path == null || path.Count < 2)
@@ -116,6 +150,9 @@ namespace AIRefactored.AI.Combat.States
                 _fallbackTarget = _currentFallbackPath[_currentFallbackPath.Count - 1];
         }
 
+        /// <summary>
+        /// Returns true if bot should actively fallback (position is valid and not yet reached).
+        /// </summary>
         public bool ShallUseNow(float time)
         {
             return _bot != null &&
@@ -123,6 +160,9 @@ namespace AIRefactored.AI.Combat.States
                    Vector3.Distance(_bot.Position, _fallbackTarget) > MinArrivalDistance;
         }
 
+        /// <summary>
+        /// Determines if fallback should be triggered due to suppression, personality, or panic context.
+        /// </summary>
         public bool ShouldTriggerSuppressedFallback(float now, float lastStateChangeTime, float minStateDuration)
         {
             var suppression = _cache?.Suppression;
@@ -143,7 +183,7 @@ namespace AIRefactored.AI.Combat.States
         }
 
         /// <summary>
-        /// Per-frame update for fallback movement. All movement is path-based and validated. Teleportation forbidden.
+        /// Per-frame update for fallback movement. All movement is path-based, squad-aware, and error proof.
         /// </summary>
         public void Tick(float time, Action<CombatState, float> forceState)
         {
@@ -157,15 +197,36 @@ namespace AIRefactored.AI.Combat.States
 
                 float now = Time.time;
                 float delay = UnityEngine.Random.Range(MinHumanDelay, MaxHumanDelay);
+
+                // If in panic contagion radius, spread panic with chance
+                if (!_panicPropagated && _bot.BotsGroup != null && _bot.BotsGroup.MembersCount > 1)
+                {
+                    for (int i = 0; i < _bot.BotsGroup.MembersCount; i++)
+                    {
+                        var mate = _bot.BotsGroup.Member(i);
+                        if (mate == null || mate == _bot || mate.IsDead)
+                            continue;
+
+                        float dist = Vector3.Distance(_bot.Position, mate.Position);
+                        if (dist < PanicContagionRadius)
+                        {
+                            var mateCache = BotCacheUtility.GetCache(mate);
+                            if (mateCache?.PanicHandler != null && UnityEngine.Random.value < PanicContagionChance)
+                                mateCache.PanicHandler.TriggerPanic();
+                        }
+                    }
+                    _panicPropagated = true;
+                }
+
                 if (now - _lastMoveTime < delay)
                     return;
 
                 _lastMoveTime = now;
                 Vector3 destination = _fallbackTarget;
 
+                // Always re-sample navmesh to guarantee safe fallback, never allow off-mesh.
                 if (!IsVectorValid(destination) || !TrySampleNavMesh(destination, NavMeshSampleRadius, out destination))
                 {
-                    // Fallback: retry up to MaxFallbackRetries, then give up this tick
                     _fallbackRetryCount++;
                     if (_fallbackRetryCount >= MaxFallbackRetries)
                     {
@@ -178,22 +239,34 @@ namespace AIRefactored.AI.Combat.States
                 }
                 _fallbackRetryCount = 0;
 
+                // Personality cohesion for squad spread
                 float cohesion = 1.0f;
                 if (_cache?.PersonalityProfile != null)
-                    cohesion = Mathf.Clamp(_cache.PersonalityProfile.Cohesion, 0.7f, 1.3f);
+                    cohesion = Mathf.Clamp(_cache.PersonalityProfile.Cohesion, MinCohesion, MaxCohesion);
 
-                if (Vector3.Distance(_bot.Position, destination) < MaxFallbackDistance)
-                {
-                    BotMovementHelper.SmoothMoveTo(_bot, destination, slow: true, cohesionScale: cohesion);
-                    BotCoverHelper.TrySetStanceFromNearbyCover(_cache, destination);
-                }
+                // Personality micro-random offset
+                Vector3 humanizedTarget = BotMovementHelper.ApplyMicroDrift(
+                    destination, _bot.ProfileId, Time.frameCount, _cache.PersonalityProfile);
 
+                BotMovementHelper.SmoothMoveTo(_bot, humanizedTarget, slow: true, cohesionScale: cohesion);
+                BotCoverHelper.TrySetStanceFromNearbyCover(_cache, humanizedTarget);
+
+                // Voice: Only leader calls fallback, others may call for help when arriving
                 if (Vector3.Distance(_bot.Position, destination) < MinArrivalDistance)
                 {
                     forceState?.Invoke(CombatState.Patrol, time);
                     if (!FikaHeadlessDetector.IsHeadless)
                     {
-                        try { _bot.BotTalk?.TrySay(EPhraseTrigger.NeedHelp); } catch { }
+                        bool isLeader = IsSquadLeader(_bot);
+                        if (isLeader)
+                        {
+                            try { _bot.BotTalk?.TrySay(EPhraseTrigger.UnderFire); } catch { }
+                        }
+                        else
+                        {
+                            if (UnityEngine.Random.value < 0.5f)
+                                try { _bot.BotTalk?.TrySay(EPhraseTrigger.NeedHelp); } catch { }
+                        }
                     }
                 }
             }
@@ -203,6 +276,9 @@ namespace AIRefactored.AI.Combat.States
             }
         }
 
+        /// <summary>
+        /// Returns true if bot is actively in fallback state (valid target, not yet arrived).
+        /// </summary>
         public bool IsActive()
         {
             return _bot != null &&
@@ -211,13 +287,20 @@ namespace AIRefactored.AI.Combat.States
                    Vector3.Distance(_bot.Position, _fallbackTarget) > MinArrivalDistance;
         }
 
+        /// <summary>
+        /// Immediately cancels fallback, resets target and path, and clears panic propagation.
+        /// </summary>
         public void Cancel()
         {
             _fallbackTarget = _bot != null ? _bot.Position : Vector3.zero;
             _currentFallbackPath.Clear();
             _fallbackRetryCount = 0;
+            _panicPropagated = false;
         }
 
+        /// <summary>
+        /// Pool return/cleanup on disposal.
+        /// </summary>
         public void Dispose()
         {
             _currentFallbackPath.Clear();
@@ -228,6 +311,9 @@ namespace AIRefactored.AI.Combat.States
 
         #region Internal Helpers
 
+        /// <summary>
+        /// Validates vector is safe for fallback/position use.
+        /// </summary>
         private static bool IsVectorValid(Vector3 v)
         {
             return !float.IsNaN(v.x) && !float.IsNaN(v.y) && !float.IsNaN(v.z)
@@ -236,7 +322,7 @@ namespace AIRefactored.AI.Combat.States
         }
 
         /// <summary>
-        /// Minimal, EFT-safe movement gating (no IsActive/Stopped/CanMove).
+        /// Safe EFT gating for bot fallback movement (no AI disables).
         /// </summary>
         private static bool IsBotMoveCapable(BotOwner bot)
         {
@@ -248,6 +334,29 @@ namespace AIRefactored.AI.Combat.States
             return true;
         }
 
+        /// <summary>
+        /// Returns squad index (0 = leader) or -1 if unknown.
+        /// </summary>
+        private static int GetSquadIndex(BotOwner bot)
+        {
+            if (bot == null || bot.BotsGroup == null) return -1;
+            int count = bot.BotsGroup.MembersCount;
+            for (int i = 0; i < count; i++)
+                if (bot.BotsGroup.Member(i) == bot) return i;
+            return -1;
+        }
+
+        /// <summary>
+        /// Determines if the bot is the leader of its squad.
+        /// </summary>
+        private static bool IsSquadLeader(BotOwner bot)
+        {
+            return GetSquadIndex(bot) == 0;
+        }
+
+        /// <summary>
+        /// Picks a micro-random, always navmesh-safe fallback if primary fails.
+        /// </summary>
         private Vector3 GetSafeRandomFallback(Vector3 origin)
         {
             if (_bot?.PatrollingData != null)
@@ -265,6 +374,9 @@ namespace AIRefactored.AI.Combat.States
                 : origin + Vector3.forward * 0.25f;
         }
 
+        /// <summary>
+        /// Robust navmesh validation for fallback targets.
+        /// </summary>
         private static bool TrySampleNavMesh(Vector3 candidate, float radius, out Vector3 navSafe)
         {
             navSafe = candidate;

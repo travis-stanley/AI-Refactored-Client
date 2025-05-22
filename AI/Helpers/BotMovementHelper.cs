@@ -10,6 +10,7 @@
 
 namespace AIRefactored.AI.Helpers
 {
+    using System;
     using AIRefactored.AI.Core;
     using AIRefactored.AI.Navigation;
     using AIRefactored.Core;
@@ -23,19 +24,31 @@ namespace AIRefactored.AI.Helpers
     /// </summary>
     public static class BotMovementHelper
     {
+        #region Constants
+
         private const float DefaultLookSpeed = 4.25f;
         private const float DefaultRadius = 0.8f;
-        private const float DefaultStrafeDistance = 3f;
+        private const float DefaultStrafeDistance = 3.0f;
         private const float RetreatDistance = 6.5f;
         private const float MinMoveEpsilon = 0.07f;
         private const float SlerpBias = 0.965f;
         private const float MicroJitterMagnitude = 0.11f;
 
-        // Anti-stutter: cache last frame target to avoid rapid micro-move reset
+        #endregion
+
+        #region State (Anti-Stutter)
+
         private static string _lastMoveProfileId = string.Empty;
         private static Vector3 _lastMoveTarget = Vector3.zero;
         private static float _lastMoveTime = -1000f;
 
+        #endregion
+
+        #region Public API
+
+        /// <summary>
+        /// Resets the anti-stutter move cache for the specified bot.
+        /// </summary>
         public static void Reset(BotOwner bot)
         {
             _lastMoveProfileId = string.Empty;
@@ -43,129 +56,224 @@ namespace AIRefactored.AI.Helpers
             _lastMoveTime = -1000f;
         }
 
+        /// <summary>
+        /// Issues a smooth, safe, path-based retreat to cover, using personality for bias and micro-drift.
+        /// </summary>
         public static void RetreatToCover(BotOwner bot, Vector3 threatDir, float distance = RetreatDistance, bool sprint = true)
         {
-            if (!IsAlive(bot)) return;
-
-            Vector3 baseTarget = bot.Position - threatDir.normalized * distance;
-            if (!BotNavHelper.TryGetSafeTarget(bot, out Vector3 target))
-                target = baseTarget;
-            if (!IsValidTarget(target)) target = bot.Position;
-
-            float cohesion = 1f;
-            BotRegistry.TryGet(bot.ProfileId, out BotPersonalityProfile profile);
-            if (profile != null)
+            try
             {
-                cohesion = Mathf.Clamp(profile.Cohesion, 0.7f, 1.3f);
-                if (profile.IsFrenzied || profile.IsFearful) sprint = true;
-            }
+                if (!IsAlive(bot))
+                    return;
 
-            Vector3 drifted = ApplyMicroDrift(target, bot.ProfileId, Time.frameCount, profile);
-            IssueMoveIfNotRedundant(bot, drifted, true, cohesion);
-            if (sprint) bot.Sprint(true);
+                Vector3 baseTarget = bot.Position - threatDir.normalized * distance;
+                if (!BotNavHelper.TryGetSafeTarget(bot, out Vector3 target))
+                    target = baseTarget;
+                if (!IsValidTarget(target))
+                    target = bot.Position;
+
+                float cohesion = 1f;
+                BotPersonalityProfile profile = null;
+                BotRegistry.TryGet(bot.ProfileId, out profile);
+                if (profile != null)
+                {
+                    cohesion = Mathf.Clamp(profile.Cohesion, 0.7f, 1.3f);
+                    if (profile.IsFrenzied || profile.IsFearful)
+                        sprint = true;
+                }
+
+                Vector3 drifted = ApplyMicroDrift(target, bot.ProfileId, Time.frameCount, profile);
+                IssueMoveIfNotRedundant(bot, drifted, true, cohesion);
+                if (sprint)
+                    bot.Sprint(true);
+            }
+            catch (Exception ex)
+            {
+                Plugin.LoggerInstance.LogError("[BotMovementHelper] RetreatToCover failed: " + ex);
+            }
         }
 
+        /// <summary>
+        /// Smoothly rotates bot to look at the specified target, with human-like jitter/overshoot.
+        /// </summary>
         public static void SmoothLookTo(BotOwner bot, Vector3 lookTarget, float speed = DefaultLookSpeed)
         {
-            if (!IsAlive(bot) || !IsValidTarget(lookTarget)) return;
+            try
+            {
+                if (!IsAlive(bot) || !IsValidTarget(lookTarget))
+                    return;
 
-            Transform transform = bot.Transform?.Original;
-            if (transform == null) return;
+                Transform transform = bot.Transform?.Original;
+                if (transform == null)
+                    return;
 
-            Vector3 direction = lookTarget - bot.Position;
-            direction.y = 0f;
-            if (direction.sqrMagnitude < MinMoveEpsilon) return;
+                Vector3 direction = lookTarget - bot.Position;
+                direction.y = 0f;
+                if (direction.sqrMagnitude < MinMoveEpsilon)
+                    return;
 
-            float humanOvershoot = 1f + ((SeededRandom(bot.ProfileId, Time.frameCount) - 0.5f) * 0.03f);
-            Quaternion targetRotation = Quaternion.LookRotation(direction.normalized, Vector3.up);
-            float t = SlerpBias * Time.deltaTime * Mathf.Clamp(speed, 1.1f, 9.5f) * humanOvershoot;
-            transform.rotation = Quaternion.Slerp(transform.rotation, targetRotation, t);
+                float humanOvershoot = 1f + ((SeededRandom(bot.ProfileId, Time.frameCount) - 0.5f) * 0.03f);
+                Quaternion targetRotation = Quaternion.LookRotation(direction.normalized, Vector3.up);
+                float t = SlerpBias * Time.deltaTime * Mathf.Clamp(speed, 1.1f, 9.5f) * humanOvershoot;
+                transform.rotation = Quaternion.Slerp(transform.rotation, targetRotation, t);
+            }
+            catch (Exception ex)
+            {
+                Plugin.LoggerInstance.LogError("[BotMovementHelper] SmoothLookTo failed: " + ex);
+            }
         }
 
+        /// <summary>
+        /// Smoothly moves bot to a safe, validated point, with full micro-drift and anti-stutter logic.
+        /// </summary>
         public static bool SmoothMoveToSafe(BotOwner bot, Vector3 target, bool slow = true, float cohesionScale = 1f)
         {
-            if (!IsAlive(bot) || !IsValidTarget(target)) return false;
+            try
+            {
+                if (!IsAlive(bot) || !IsValidTarget(target))
+                    return false;
 
-            Vector3 safeTarget = BotNavHelper.TryGetSafeTarget(bot, out Vector3 fallback) ? fallback : target;
-            if (!IsValidTarget(safeTarget)) safeTarget = bot.Position;
+                Vector3 safeTarget = BotNavHelper.TryGetSafeTarget(bot, out Vector3 fallback) ? fallback : target;
+                if (!IsValidTarget(safeTarget))
+                    safeTarget = bot.Position;
 
-            Vector3 pos = bot.Position;
-            float radius = DefaultRadius * Mathf.Clamp(cohesionScale, 0.7f, 1.3f);
-            if ((pos.x - safeTarget.x) * (pos.x - safeTarget.x) + (pos.z - safeTarget.z) * (pos.z - safeTarget.z) < radius * radius)
+                Vector3 pos = bot.Position;
+                float radius = DefaultRadius * Mathf.Clamp(cohesionScale, 0.7f, 1.3f);
+                if ((pos.x - safeTarget.x) * (pos.x - safeTarget.x) + (pos.z - safeTarget.z) * (pos.z - safeTarget.z) < radius * radius)
+                    return true;
+
+                BotPersonalityProfile profile = null;
+                BotRegistry.TryGet(bot.ProfileId, out profile);
+                Vector3 drifted = ApplyMicroDrift(safeTarget, bot.ProfileId, Time.frameCount, profile);
+                IssueMoveIfNotRedundant(bot, drifted, slow, cohesionScale);
                 return true;
-
-            BotRegistry.TryGet(bot.ProfileId, out BotPersonalityProfile profile);
-            Vector3 drifted = ApplyMicroDrift(safeTarget, bot.ProfileId, Time.frameCount, profile);
-            IssueMoveIfNotRedundant(bot, drifted, slow, cohesionScale);
-            return true;
+            }
+            catch (Exception ex)
+            {
+                Plugin.LoggerInstance.LogError("[BotMovementHelper] SmoothMoveToSafe failed: " + ex);
+                return false;
+            }
         }
 
+        /// <summary>
+        /// Wrapper for SmoothMoveToSafe, always applies micro-drift, anti-stutter, path-based logic.
+        /// </summary>
         public static void SmoothMoveTo(BotOwner bot, Vector3 target, bool slow = true, float cohesionScale = 1f)
         {
             SmoothMoveToSafe(bot, target, slow, cohesionScale);
         }
 
+        /// <summary>
+        /// Issues a realistic, micro-jittered strafe away from a threat direction.
+        /// </summary>
         public static void SmoothStrafeFrom(BotOwner bot, Vector3 threatDir, float scale = 1f)
         {
-            if (!IsAlive(bot)) return;
+            try
+            {
+                if (!IsAlive(bot))
+                    return;
 
-            Vector3 right = Vector3.Cross(Vector3.up, threatDir.normalized);
-            if (right.sqrMagnitude < 0.01f) right = Vector3.right;
+                Vector3 right = Vector3.Cross(Vector3.up, threatDir.normalized);
+                if (right.sqrMagnitude < 0.01f)
+                    right = Vector3.right;
 
-            Vector3 offset = right.normalized * DefaultStrafeDistance * Mathf.Clamp(scale, 0.75f, 1.25f);
-            Vector3 rawTarget = bot.Position + offset;
+                Vector3 offset = right.normalized * DefaultStrafeDistance * Mathf.Clamp(scale, 0.75f, 1.25f);
+                Vector3 rawTarget = bot.Position + offset;
 
-            Vector3 final = BotNavHelper.TryGetSafeTarget(bot, out Vector3 safeTarget) ? safeTarget : rawTarget;
-            if (!IsValidTarget(final)) final = bot.Position;
+                Vector3 final = BotNavHelper.TryGetSafeTarget(bot, out Vector3 safeTarget) ? safeTarget : rawTarget;
+                if (!IsValidTarget(final))
+                    final = bot.Position;
 
-            BotRegistry.TryGet(bot.ProfileId, out BotPersonalityProfile profile);
-            Vector3 drifted = ApplyMicroDrift(final, bot.ProfileId, Time.frameCount + 15, profile);
-            IssueMoveIfNotRedundant(bot, drifted, false, 1f);
-        }
-
-        public static void ForceFallbackMove(BotOwner bot)
-        {
-            if (!IsAlive(bot)) return;
-
-            Vector3 dir = bot.LookDirection;
-            Vector3 rawTarget = bot.Position + dir.normalized * 5f;
-
-            Vector3 final = BotNavHelper.TryGetSafeTarget(bot, out Vector3 safeTarget) ? safeTarget : rawTarget;
-            if (!IsValidTarget(final)) final = bot.Position;
-
-            BotRegistry.TryGet(bot.ProfileId, out BotPersonalityProfile profile);
-            Vector3 drifted = ApplyMicroDrift(final, bot.ProfileId, Time.frameCount + 21, profile);
-            IssueMoveIfNotRedundant(bot, drifted, true, 1f);
-        }
-
-        public static void SmoothMoveToSafeExit(BotOwner bot)
-        {
-            if (!IsAlive(bot)) return;
-
-            Vector3 fallback = bot.Position + bot.LookDirection.normalized * 4f;
-            Vector3 final = BotNavHelper.TryGetSafeTarget(bot, out Vector3 safeTarget) ? safeTarget : fallback;
-            if (!IsValidTarget(final)) final = bot.Position;
-
-            BotRegistry.TryGet(bot.ProfileId, out BotPersonalityProfile profile);
-            Vector3 drifted = ApplyMicroDrift(final, bot.ProfileId, Time.frameCount + 35, profile);
-            IssueMoveIfNotRedundant(bot, drifted, true, 1f);
+                BotPersonalityProfile profile = null;
+                BotRegistry.TryGet(bot.ProfileId, out profile);
+                Vector3 drifted = ApplyMicroDrift(final, bot.ProfileId, Time.frameCount + 15, profile);
+                IssueMoveIfNotRedundant(bot, drifted, false, 1f);
+            }
+            catch (Exception ex)
+            {
+                Plugin.LoggerInstance.LogError("[BotMovementHelper] SmoothStrafeFrom failed: " + ex);
+            }
         }
 
         /// <summary>
-        /// Ensures movement is only issued if the bot or command target has truly changed, reducing micro-stutter.
+        /// Used only as a last resort: issues a forward move along look direction (validated, never teleports).
+        /// </summary>
+        public static void ForceFallbackMove(BotOwner bot)
+        {
+            try
+            {
+                if (!IsAlive(bot))
+                    return;
+
+                Vector3 dir = bot.LookDirection;
+                Vector3 rawTarget = bot.Position + dir.normalized * 5f;
+
+                Vector3 final = BotNavHelper.TryGetSafeTarget(bot, out Vector3 safeTarget) ? safeTarget : rawTarget;
+                if (!IsValidTarget(final))
+                    final = bot.Position;
+
+                BotPersonalityProfile profile = null;
+                BotRegistry.TryGet(bot.ProfileId, out profile);
+                Vector3 drifted = ApplyMicroDrift(final, bot.ProfileId, Time.frameCount + 21, profile);
+                IssueMoveIfNotRedundant(bot, drifted, true, 1f);
+            }
+            catch (Exception ex)
+            {
+                Plugin.LoggerInstance.LogError("[BotMovementHelper] ForceFallbackMove failed: " + ex);
+            }
+        }
+
+        /// <summary>
+        /// Moves toward a safe exit (exfil) point. Always path-based, never direct.
+        /// </summary>
+        public static void SmoothMoveToSafeExit(BotOwner bot)
+        {
+            try
+            {
+                if (!IsAlive(bot))
+                    return;
+
+                Vector3 fallback = bot.Position + bot.LookDirection.normalized * 4f;
+                Vector3 final = BotNavHelper.TryGetSafeTarget(bot, out Vector3 safeTarget) ? safeTarget : fallback;
+                if (!IsValidTarget(final))
+                    final = bot.Position;
+
+                BotPersonalityProfile profile = null;
+                BotRegistry.TryGet(bot.ProfileId, out profile);
+                Vector3 drifted = ApplyMicroDrift(final, bot.ProfileId, Time.frameCount + 35, profile);
+                IssueMoveIfNotRedundant(bot, drifted, true, 1f);
+            }
+            catch (Exception ex)
+            {
+                Plugin.LoggerInstance.LogError("[BotMovementHelper] SmoothMoveToSafeExit failed: " + ex);
+            }
+        }
+
+        #endregion
+
+        #region Internal Logic
+
+        /// <summary>
+        /// Only triggers move if bot/target/frame truly changed, suppresses micro-stutter.
         /// </summary>
         private static void IssueMoveIfNotRedundant(BotOwner bot, Vector3 drifted, bool slow, float cohesion)
         {
-            // Only trigger move if target/profile/time is meaningfully different (frame separation or target delta)
-            bool newTarget = !string.Equals(_lastMoveProfileId, bot.ProfileId)
-                             || (drifted - _lastMoveTarget).sqrMagnitude > 0.02f
-                             || Time.time - _lastMoveTime > 0.08f;
-            if (newTarget)
+            try
             {
-                bot.Mover?.GoToPoint(drifted, slow, cohesion);
-                _lastMoveProfileId = bot.ProfileId;
-                _lastMoveTarget = drifted;
-                _lastMoveTime = Time.time;
+                bool newTarget = !string.Equals(_lastMoveProfileId, bot.ProfileId)
+                                 || (drifted - _lastMoveTarget).sqrMagnitude > 0.02f
+                                 || Time.time - _lastMoveTime > 0.08f;
+                if (newTarget)
+                {
+                    bot.Mover?.GoToPoint(drifted, slow, cohesion);
+                    _lastMoveProfileId = bot.ProfileId;
+                    _lastMoveTarget = drifted;
+                    _lastMoveTime = Time.time;
+                }
+            }
+            catch (Exception ex)
+            {
+                Plugin.LoggerInstance.LogError("[BotMovementHelper] IssueMoveIfNotRedundant failed: " + ex);
             }
         }
 
@@ -180,7 +288,10 @@ namespace AIRefactored.AI.Helpers
                 && !float.IsInfinity(pos.x) && !float.IsInfinity(pos.y) && !float.IsInfinity(pos.z);
         }
 
-        private static Vector3 ApplyMicroDrift(Vector3 pos, string profileId, int tick, BotPersonalityProfile profile = null)
+        /// <summary>
+        /// Applies a deterministic micro-drift based on bot personality and time for realism.
+        /// </summary>
+        public static Vector3 ApplyMicroDrift(Vector3 pos, string profileId, int tick, BotPersonalityProfile profile = null)
         {
             float baseMag = MicroJitterMagnitude;
             float personalityBias = 1f;
@@ -201,11 +312,16 @@ namespace AIRefactored.AI.Helpers
             }
         }
 
+        /// <summary>
+        /// Fast deterministic float [0,1) using profile id and tick, no heap alloc.
+        /// </summary>
         private static float SeededRandom(string profileId, int tick)
         {
             int hash = (profileId?.GetHashCode() ?? 0) ^ (tick * 163) ^ 0x1A983D;
             unchecked { hash = (hash ^ (hash >> 13)) * 0x5E2D58B9; }
             return ((hash & 0x7FFFFFFF) % 997) / 997f;
         }
+
+        #endregion
     }
 }

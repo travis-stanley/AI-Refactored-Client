@@ -4,6 +4,7 @@
 //
 //   THIS FILE IS SYSTEMATICALLY MANAGED.
 //   All fallback logic is removed: bot panic logic is always eligible, self-recovering, and never disables the bot.
+//   Ultra-realism: panic stutter, adaptive retreat, composure decay, squad panic sync, and contextual recovery. Bulletproof.
 // </auto-generated>
 
 namespace AIRefactored.AI.Combat
@@ -21,6 +22,7 @@ namespace AIRefactored.AI.Combat
     /// <summary>
     /// Handles bot suppression, flash, injury, and squad danger panic behavior.
     /// Manages composure, retreat direction, danger zones, and voice triggers.
+    /// Ultra-realism: panic stutter, adaptive retreat, squad sync, personality recovery.
     /// All failures are isolated; panic logic never disables itself, never triggers fallback logic.
     /// </summary>
     public sealed class BotPanicHandler
@@ -29,11 +31,12 @@ namespace AIRefactored.AI.Combat
 
         private const float PanicCooldown = 5f;
         private const float PanicDuration = 3.5f;
-        private const float RecoverySpeed = 0.21f;
+        private const float RecoverySpeedBase = 0.21f;
         private const float SquadRadiusSqr = 225f;
         private const float LowHealthThreshold = 25f;
-        private const float MinHumanDelay = 0.05f;
-        private const float MaxHumanDelay = 0.12f;
+        private const float StartleChanceBase = 0.23f;
+        private const float PanicStutterBase = 0.12f;
+        private const float SquadCalmBoost = 0.26f;
 
         #endregion
 
@@ -41,13 +44,13 @@ namespace AIRefactored.AI.Combat
 
         private BotOwner _bot;
         private BotComponentCache _cache;
-
         private float _composureLevel = 1f;
         private float _panicStartTime = -1f;
         private float _lastPanicExitTime = -99f;
         private float _lastVoiceTime = -99f;
-
+        private float _panicStutterUntil = -1f;
         private bool _isPanicking;
+        private bool _panicStutterActive;
 
         #endregion
 
@@ -93,13 +96,21 @@ namespace AIRefactored.AI.Combat
 
                 if (_isPanicking)
                 {
-                    if (time - _panicStartTime > PanicDuration)
-                        EndPanic(time);
-                    else if (!FikaHeadlessDetector.IsHeadless && _bot.BotTalk != null && time - _lastVoiceTime > 1.5f && UnityEngine.Random.value < 0.38f)
+                    if (_panicStutterActive)
+                    {
+                        if (time < _panicStutterUntil)
+                            return;
+                        _panicStutterActive = false;
+                    }
+
+                    if (!FikaHeadlessDetector.IsHeadless && _bot.BotTalk != null && time - _lastVoiceTime > 1.5f && UnityEngine.Random.value < 0.38f)
                     {
                         _lastVoiceTime = time;
                         try { _bot.BotTalk.TrySay(EPhraseTrigger.OnBeingHurt); } catch { }
                     }
+
+                    if (time - _panicStartTime > PanicDuration)
+                        EndPanic(time);
 
                     return;
                 }
@@ -111,7 +122,7 @@ namespace AIRefactored.AI.Combat
 
                 if (ShouldPanicFromThreat())
                 {
-                    Vector3 retreat = -_bot.LookDirection.normalized;
+                    Vector3 retreat = ResolveRetreatDirection();
                     TryStartPanic(time, retreat);
                     return;
                 }
@@ -136,7 +147,7 @@ namespace AIRefactored.AI.Combat
                 if (profile == null || profile.IsFrenzied || profile.IsStubborn)
                     return;
 
-                Vector3 dir = -_bot.LookDirection.normalized;
+                Vector3 dir = ResolveRetreatDirection();
                 TryStartPanic(Time.time, dir);
             }
             catch (Exception ex)
@@ -159,6 +170,12 @@ namespace AIRefactored.AI.Combat
                 var profile = _cache.AIRefactoredBotOwner?.PersonalityProfile;
                 if (profile == null || profile.IsFrenzied || profile.IsStubborn || profile.AggressionLevel > 0.8f)
                     return;
+
+                if (profile.Caution > 0.7f && UnityEngine.Random.value < StartleChanceBase + profile.Caution * 0.35f)
+                {
+                    _panicStutterActive = true;
+                    _panicStutterUntil = Time.time + PanicStutterBase + UnityEngine.Random.Range(0.05f, 0.13f);
+                }
 
                 Vector3 retreat = (_bot.Position - info.HitPoint).normalized;
                 TryStartPanic(Time.time, retreat);
@@ -190,7 +207,24 @@ namespace AIRefactored.AI.Combat
                     return true;
 
                 ValueStruct health = _bot.HealthController?.GetBodyPartHealth(EBodyPart.Common) ?? default;
-                return health.Current < LowHealthThreshold;
+                if (health.Current < LowHealthThreshold)
+                    return true;
+
+                if (_bot.BotsGroup != null)
+                {
+                    for (int i = 0; i < _bot.BotsGroup.MembersCount; i++)
+                    {
+                        var squadBot = _bot.BotsGroup.Member(i);
+                        if (squadBot != _bot)
+                        {
+                            var squadCache = squadBot.GetComponent<BotComponentCache>();
+                            if (squadCache?.PanicHandler != null && squadCache.PanicHandler.IsPanicking)
+                                return true;
+                        }
+                    }
+                }
+
+                return false;
             }
             catch (Exception ex)
             {
@@ -244,12 +278,10 @@ namespace AIRefactored.AI.Combat
 
                 _cache.Escalation?.NotifyPanicTriggered();
 
-                // Use BotMovementHelper for all movement and apply micro-drift only via helper
                 float cohesion = _cache.AIRefactoredBotOwner?.PersonalityProfile?.Cohesion ?? 1f;
                 Vector3 fallback = _bot.Position + retreatDir.normalized * UnityEngine.Random.Range(7.5f, 10.5f);
                 fallback.y = _bot.Position.y;
 
-                // Always NavMesh-safe: validate and finalize via BotNavHelper
                 if (BotNavHelper.TryGetSafeTarget(_bot, out var navTarget) && IsVectorValid(navTarget))
                     fallback = navTarget;
 
@@ -285,6 +317,20 @@ namespace AIRefactored.AI.Combat
                 _isPanicking = false;
                 _lastPanicExitTime = now;
 
+                if (_bot.BotsGroup != null)
+                {
+                    for (int i = 0; i < _bot.BotsGroup.MembersCount; i++)
+                    {
+                        var squadBot = _bot.BotsGroup.Member(i);
+                        if (squadBot != _bot)
+                        {
+                            var squadCache = squadBot.GetComponent<BotComponentCache>();
+                            if (squadCache?.PanicHandler != null && !squadCache.PanicHandler.IsPanicking)
+                                _composureLevel = Mathf.Clamp01(_composureLevel + SquadCalmBoost);
+                        }
+                    }
+                }
+
                 _bot.Memory?.SetLastTimeSeeEnemy();
                 _bot.Memory?.CheckIsPeace();
             }
@@ -298,13 +344,44 @@ namespace AIRefactored.AI.Combat
         {
             try
             {
-                float mod = UnityEngine.Random.Range(0.93f, 1.11f);
-                _composureLevel = Mathf.Clamp01(_composureLevel + deltaTime * RecoverySpeed * mod);
+                float personalityMod = 1f;
+                var profile = _cache.AIRefactoredBotOwner?.PersonalityProfile;
+                if (profile != null)
+                {
+                    if (profile.Caution > 0.7f)
+                        personalityMod = 0.67f;
+                    else if (profile.AggressionLevel > 0.6f)
+                        personalityMod = 1.33f;
+                }
+                float mod = UnityEngine.Random.Range(0.93f, 1.11f) * personalityMod;
+                _composureLevel = Mathf.Clamp01(_composureLevel + deltaTime * RecoverySpeedBase * mod);
             }
             catch (Exception ex)
             {
                 Plugin.LoggerInstance?.LogError("[BotPanicHandler] RecoverComposure failed: " + ex);
             }
+        }
+
+        private Vector3 ResolveRetreatDirection()
+        {
+            try
+            {
+                // Use last damage info if available
+                if (_bot.Memory != null && _bot.Memory.IsDamaged && _bot.Memory.LastHitPos != Vector3.zero)
+                {
+                    return (_bot.Position - _bot.Memory.LastHitPos).normalized;
+                }
+                else if (_cache?.LastHeardDirection.sqrMagnitude > 0.2f)
+                {
+                    return -_cache.LastHeardDirection.normalized;
+                }
+                else if (_bot.Memory?.BotCurrentCoverInfo?.LastCover != null)
+                {
+                    return (_bot.Position - _bot.Memory.BotCurrentCoverInfo.LastCover.Position).normalized;
+                }
+                return -_bot.LookDirection.normalized;
+            }
+            catch { return -_bot.LookDirection.normalized; }
         }
 
         #endregion

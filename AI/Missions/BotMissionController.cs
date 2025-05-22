@@ -186,7 +186,10 @@ namespace AIRefactored.AI.Missions
                     _lastUpdateTime = time;
                 }
 
+                // If we're in loot mode and objective is reached, *enable looting mode* and let the scanner handle all logic.
                 if (!_inCombatPause &&
+                    _missionType == MissionType.Loot &&
+                    _cache.LootScanner != null &&
                     Vector3.Distance(_bot.Position, _objectives.CurrentObjective) < LootSyncDistance)
                 {
                     OnObjectiveReached();
@@ -209,6 +212,7 @@ namespace AIRefactored.AI.Missions
         {
             try
             {
+                // Only enable looting mode/pose and let FSM drive all loot. Never call TryLootNearby().
                 if (_missionType == MissionType.Loot &&
                     _cache.LootScanner != null &&
                     _cache.GroupBehavior != null &&
@@ -227,8 +231,10 @@ namespace AIRefactored.AI.Missions
                     _cache.Movement?.EnterLootingMode();
                     _cache.PoseController?.LockCrouchPose();
 
-                    _cache.LootScanner.TryLootNearby();
-                    _cache.DeadBodyScanner?.TryLootNearby();
+                    // DO NOT CALL _cache.LootScanner.TryLootNearby()
+                    // Let BotLootScanner.Tick() handle all looting phases autonomously.
+
+                    _cache.DeadBodyScanner?.Tick(Time.time);
 
                     _cache.Movement?.ExitLootingMode();
                     _voice.OnLoot();

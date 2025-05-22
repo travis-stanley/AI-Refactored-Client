@@ -49,7 +49,6 @@ namespace AIRefactored.AI.Movement
 
         private float _pauseUntil;
         private float _prepCrouchUntil;
-
         private bool _isLeaning;
         private bool _isCrouching;
         private bool _isInitialized;

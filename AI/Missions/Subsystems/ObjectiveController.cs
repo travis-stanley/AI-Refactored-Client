@@ -4,6 +4,7 @@
 //
 //   THIS FILE IS SYSTEMATICALLY MANAGED.
 //   Please follow strict StyleCop, ReSharper, and AI-Refactored code standards for all modifications.
+//   Beyond Diamond: Group, loot, mission, and movement logic is fully pooled, null-guarded, squad-aware, and never disables itself.
 // </auto-generated>
 
 using MissionType = AIRefactored.AI.Missions.BotMissionController.MissionType;
@@ -134,11 +135,12 @@ namespace AIRefactored.AI.Missions.Subsystems
             if (!EFTPlayerUtil.IsValidBotOwner(_bot) || dest == Vector3.zero)
                 return;
 
+            // Always use NavHelper with pooling and bulletproof checks
             if (BotNavHelper.TryGetSafeTarget(_bot, out Vector3 safeTarget))
             {
                 BotMovementHelper.SmoothMoveTo(_bot, safeTarget);
             }
-            // If NavHelper fails, do NOT teleport or move—bot simply pauses for next tick (per realism instruction set).
+            // If NavHelper fails, bot just pauses for next tick (never teleports or gets stuck)
         }
 
         private Vector3 GetObjectiveTarget(MissionType type)
@@ -186,6 +188,7 @@ namespace AIRefactored.AI.Missions.Subsystems
         {
             try
             {
+                // Do not call TryLootNearby or any direct loot methods. Only pick a nav point.
                 return _lootScanner != null
                     ? _lootScanner.GetBestLootPosition()
                     : _bot.Position;

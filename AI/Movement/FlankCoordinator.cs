@@ -4,11 +4,13 @@
 //
 //   THIS FILE IS SYSTEMATICALLY MANAGED.
 //   Realism Pass: Groupthink, anti-cluster, rare human error, and personality-driven flank bias.
+//   Bulletproof: Full null-guarding, squad-safe cooldown, multiplayer/headless parity.
 // </auto-generated>
 
 namespace AIRefactored.AI.Movement
 {
     using System;
+    using System.Collections.Generic;
     using AIRefactored.AI.Core;
     using AIRefactored.AI.Helpers;
     using AIRefactored.Core;
@@ -34,13 +36,17 @@ namespace AIRefactored.AI.Movement
 
         #region State
 
-        private static float _lastLeftUseTime = -999f;
-        private static float _lastRightUseTime = -999f;
+        // Caches per-bot cooldowns for multiplayer-safe execution
+        private static readonly Dictionary<string, float> LastLeftUse = new Dictionary<string, float>(32);
+        private static readonly Dictionary<string, float> LastRightUse = new Dictionary<string, float>(32);
 
         #endregion
 
         #region Public API
 
+        /// <summary>
+        /// Returns the optimal flank side (Left/Right) for this bot in the current tactical context.
+        /// </summary>
         public static FlankPositionPlanner.Side GetOptimalFlankSide(BotOwner bot, BotComponentCache cache)
         {
             try
@@ -49,16 +55,20 @@ namespace AIRefactored.AI.Movement
                     return FlankPositionPlanner.Side.Left;
 
                 float now = Time.time;
+                string botId = bot.ProfileId ?? bot.GetHashCode().ToString();
 
-                // Rare indecision: follow last used flank side
+                float lastLeft = LastLeftUse.TryGetValue(botId, out float l) ? l : -999f;
+                float lastRight = LastRightUse.TryGetValue(botId, out float r) ? r : -999f;
+
+                // Rare indecision: follow whichever flank was used last
                 if (UnityEngine.Random.value < IndecisionChance)
                 {
-                    if (_lastLeftUseTime > _lastRightUseTime)
+                    if (lastLeft > lastRight)
                     {
-                        _lastLeftUseTime = now;
+                        LastLeftUse[botId] = now;
                         return FlankPositionPlanner.Side.Left;
                     }
-                    _lastRightUseTime = now;
+                    LastRightUse[botId] = now;
                     return FlankPositionPlanner.Side.Right;
                 }
 
@@ -78,8 +88,8 @@ namespace AIRefactored.AI.Movement
                 float squadBias = GetSquadBias(bot, enemyPos, aggression);
                 float suppressionBias = GetSuppressionBias(cache, caution);
 
-                float leftCooldown = now - _lastLeftUseTime;
-                float rightCooldown = now - _lastRightUseTime;
+                float leftCooldown = now - lastLeft;
+                float rightCooldown = now - lastRight;
 
                 float leftScore = 0f;
                 float rightScore = 0f;
@@ -100,11 +110,10 @@ namespace AIRefactored.AI.Movement
 
                 if (leftScore >= rightScore)
                 {
-                    _lastLeftUseTime = now;
+                    LastLeftUse[botId] = now;
                     return FlankPositionPlanner.Side.Left;
                 }
-
-                _lastRightUseTime = now;
+                LastRightUse[botId] = now;
                 return FlankPositionPlanner.Side.Right;
             }
             catch

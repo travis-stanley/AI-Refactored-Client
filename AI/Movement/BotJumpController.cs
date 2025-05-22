@@ -16,6 +16,10 @@ namespace AIRefactored.AI.Movement
     using EFT;
     using UnityEngine;
 
+    /// <summary>
+    /// Handles bot jumping, vaulting, and micro-failure on obstacles. 100% null-safe, pooled, and multiplayer/headless safe.
+    /// Only ticked by BotBrain; never direct-acts outside tick flow.
+    /// </summary>
     public sealed class BotJumpController
     {
         #region Constants
@@ -82,6 +86,7 @@ namespace AIRefactored.AI.Movement
                 {
                     if (TryFindJumpTarget(out temp[0]))
                     {
+                        // Simulate human error—sometimes "hesitate" and skip this jump
                         if (UnityEngine.Random.value < HumanMistakeChance)
                         {
                             _nextAllowedJumpTime = now + UnityEngine.Random.Range(0.22f, 0.39f);
@@ -98,7 +103,7 @@ namespace AIRefactored.AI.Movement
                     TempVector3Pool.Return(temp);
                 }
             }
-            catch { }
+            catch { /* All failures isolated */ }
         }
 
         #endregion
@@ -148,7 +153,7 @@ namespace AIRefactored.AI.Movement
                 Vector3 velocity = direction * JumpVelocityMultiplier;
                 _context.ApplyMotion(velocity, deltaTime);
             }
-            catch { }
+            catch { /* Locally isolated */ }
         }
 
         private bool TryFindJumpTarget(out Vector3 target)

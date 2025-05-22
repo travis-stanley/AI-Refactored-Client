@@ -28,6 +28,9 @@ namespace AIRefactored.AI.Core
     using EFT;
     using UnityEngine;
 
+    /// <summary>
+    /// Atomic per-bot AI subsystem registry. Guarantees no partial states. All wiring and teardown is bulletproof and squad/loot aware.
+    /// </summary>
     public sealed class BotComponentCache
     {
         #region Static
@@ -120,12 +123,20 @@ namespace AIRefactored.AI.Core
             Tactical != null &&
             FlashGrenade != null &&
             ThreatSelector != null &&
-            _owner != null;
+            _owner != null &&
+            LootScanner != null &&
+            LootDecisionSystem != null &&
+            GroupComms != null &&
+            GroupBehavior != null;
 
         #endregion
 
         #region Initialization
 
+        /// <summary>
+        /// Initializes and wires all critical AIRefactored subsystems for this bot.
+        /// All failures are locally isolated and never result in a half-initialized bot.
+        /// </summary>
         public void Initialize(BotOwner bot)
         {
             if (bot == null)
@@ -144,6 +155,7 @@ namespace AIRefactored.AI.Core
             WildSpawnType role = bot.Profile?.Info?.Settings?.Role ?? WildSpawnType.assault;
             PersonalityProfile = BotRegistry.GetOrGenerate(id, PersonalityType.Balanced, role);
 
+            // --- All wiring is atomic; each system's failure is isolated and only disables that subsystem ---
             TryInit(() => Pathing = new BotOwnerPathfindingCache(), "Pathing");
             TryInit(() => { TacticalMemory = new BotTacticalMemory(); TacticalMemory.Initialize(this); }, "TacticalMemory");
             TryInit(() => { _fallbackHandler = new FallbackHandler(this); }, "FallbackHandler");

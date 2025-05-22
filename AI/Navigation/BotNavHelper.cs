@@ -14,8 +14,7 @@ namespace AIRefactored.AI.Navigation
     /// <summary>
     /// Canonical wrapper for all AIRefactored navigation queries.
     /// Strictly uses EFT's internal navigation: BotMover and PathControllerClass.
-    /// No registry, cache, or spatial query logic allowed.
-    /// Bulletproof: All failures are locally isolated and never cause fallback or vanilla handoff.
+    /// All failures are locally isolated; never triggers fallback or vanilla handoff.
     /// </summary>
     public static class BotNavHelper
     {
@@ -31,6 +30,7 @@ namespace AIRefactored.AI.Navigation
             if (!HasPath(bot))
                 return false;
 
+            // Use LastTargetPoint with defensive checks
             Vector3 pt = bot.Mover._pathController.LastTargetPoint(1.0f);
             if (!IsValid(pt) || pt.y < -2.5f)
                 return false;
@@ -71,7 +71,8 @@ namespace AIRefactored.AI.Navigation
             if (!HasPath(bot))
                 return false;
 
-            Vector3 c = bot.Mover._pathController.CurrentCorner();
+            // PathControllerClass.CurrentCornerPoint is preferred
+            Vector3 c = bot.Mover.CurrentCornerPoint;
             if (!IsValid(c) || c.y < -2.5f)
                 return false;
 
@@ -90,7 +91,7 @@ namespace AIRefactored.AI.Navigation
         public static float GetRemainingDistance(BotOwner bot)
         {
             return HasPath(bot)
-                ? Mathf.Clamp(bot.Mover._pathController.PlayerRemainingDist, 0f, 9999f)
+                ? Mathf.Clamp(bot.Mover.DistDestination, 0f, 9999f)
                 : float.MaxValue;
         }
 
@@ -99,8 +100,7 @@ namespace AIRefactored.AI.Navigation
         /// </summary>
         public static bool IsPointOnCurrentPath(BotOwner bot, Vector3 point, float maxDist)
         {
-            return HasPath(bot) &&
-                   bot.Mover._pathController.IsPointOnCurrentWay(point, maxDist);
+            return HasPath(bot) && bot.Mover.IsPointOnCurrentWay(point, maxDist);
         }
 
         /// <summary>
@@ -109,6 +109,51 @@ namespace AIRefactored.AI.Navigation
         public static bool HasPath(BotOwner bot)
         {
             return bot?.Mover != null && IsPathValid(bot.Mover._pathController);
+        }
+
+        /// <summary>
+        /// Returns the currently requested destination if available and valid, else Vector3.zero.
+        /// Handles nullable TargetPoint.
+        /// </summary>
+        public static Vector3 GetCurrentDestination(BotOwner bot)
+        {
+            if (!HasPath(bot))
+                return Vector3.zero;
+
+            var tp = bot.Mover.TargetPoint;
+            Vector3 dest = tp.HasValue ? tp.Value : Vector3.zero;
+            if (!IsValid(dest) || dest.y < -2.5f)
+                return Vector3.zero;
+            return dest;
+        }
+
+        /// <summary>
+        /// Gets the current navigation state (path valid, at goal, path blocked).
+        /// Blocked state is taken from BotMover.Blocked property.
+        /// </summary>
+        public static BotNavState GetNavState(BotOwner bot)
+        {
+            if (bot == null || bot.Mover == null)
+                return BotNavState.Invalid;
+            var pc = bot.Mover._pathController;
+            if (!IsPathValid(pc))
+                return BotNavState.NoPath;
+            if (IsAtDestination(bot))
+                return BotNavState.AtGoal;
+            if (bot.Mover.Blocked)
+                return BotNavState.Blocked;
+            return BotNavState.Active;
+        }
+
+        /// <summary>
+        /// Returns true if the bot is very close to the path end/destination.
+        /// </summary>
+        public static bool IsAtDestination(BotOwner bot)
+        {
+            if (!HasPath(bot))
+                return false;
+            Vector3 dest = GetCurrentDestination(bot);
+            return dest != Vector3.zero && Vector3.Distance(bot.Position, dest) < 1.05f;
         }
 
         #region Internal Helpers
@@ -126,6 +171,19 @@ namespace AIRefactored.AI.Navigation
             return !float.IsNaN(pt.x) && !float.IsNaN(pt.y) && !float.IsNaN(pt.z) &&
                    !float.IsInfinity(pt.x) && !float.IsInfinity(pt.y) && !float.IsInfinity(pt.z) &&
                    Mathf.Abs(pt.x) < 10000f && Mathf.Abs(pt.y) < 10000f && Mathf.Abs(pt.z) < 10000f;
+        }
+
+        #endregion
+
+        #region Nav State Enum
+
+        public enum BotNavState
+        {
+            Invalid,
+            NoPath,
+            Active,
+            Blocked,
+            AtGoal
         }
 
         #endregion

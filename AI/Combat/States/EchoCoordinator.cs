@@ -5,6 +5,7 @@
 //   THIS FILE IS SYSTEMATICALLY MANAGED.
 //   Bulletproof: All errors are locally isolated, never disables handler, never disables squadmates, never triggers fallback AI.
 //   All fallback/echo points are hints only—never direct teleportation. All movement is path-based, never direct assignment.
+//   Beyond Diamond: Layered role-based echoing, realistic squad chatter, urgency spread, and anti-hivemind logic.
 // </auto-generated>
 
 namespace AIRefactored.AI.Combat.States
@@ -19,17 +20,21 @@ namespace AIRefactored.AI.Combat.States
     using UnityEngine;
 
     /// <summary>
-    /// Coordinates echo behavior for fallback, investigation, and enemy sightings.
-    /// Ensures realistic squad cohesion and tactical communication.
-    /// Bulletproof: All failures are isolated and never cascade. Never disables itself or squadmates.
-    /// All movement positions are resolved via internal EFT movement/pathfinding logic only. Teleportation is forbidden.
+    /// Fully realistic squad echo/communication coordinator:
+    /// - Fallback, investigation, and enemy-sighting logic propagated via squad roles.
+    /// - Realistic chatter (voice, suppressed, nervous).
+    /// - Bulletproof: errors are locally isolated and cannot cascade.
+    /// - All positions are path-based only (never direct teleportation).
     /// </summary>
     public sealed class EchoCoordinator
     {
         #region Constants
 
         private const float EchoCooldown = 4.0f;
+        private const float MinSquadReverbDelay = 0.13f;
+        private const float MaxSquadReverbDelay = 0.34f;
         private const float MaxEchoRangeSqr = 1600.0f; // 40m
+        private const float IsolatedMateDistanceSqr = 81.0f; // 9m
 
         #endregion
 
@@ -39,6 +44,8 @@ namespace AIRefactored.AI.Combat.States
         private readonly BotOwner _bot;
         private float _lastEchoFallbackTime = float.NegativeInfinity;
         private float _lastEchoInvestigateTime = float.NegativeInfinity;
+        private float _lastEnemySightingTime = float.NegativeInfinity;
+        private int _lastEchoedEnemyCount = 0;
 
         #endregion
 
@@ -55,74 +62,95 @@ namespace AIRefactored.AI.Combat.States
         #region Echo Fallback
 
         /// <summary>
-        /// Suggests a fallback position to all squadmates, using only path-based fallback—never direct teleport.
+        /// Suggests a fallback position to all squadmates, humanized with role-awareness and urgency spread.
         /// </summary>
         public void EchoFallbackToSquad(Vector3 retreatPosition)
         {
-            if (_bot == null || _cache == null || _bot.BotsGroup == null)
-                return;
-
-            float now = Time.time;
-            if (now - _lastEchoFallbackTime < EchoCooldown)
-                return;
-
-            Vector3 selfPosition = _bot.Position;
-            int count = _bot.BotsGroup.MembersCount;
-
-            for (int i = 0; i < count; i++)
+            try
             {
-                try
+                if (_bot == null || _cache == null || _bot.BotsGroup == null)
+                    return;
+
+                float now = Time.time;
+                if (now - _lastEchoFallbackTime < EchoCooldown)
+                    return;
+
+                bool isLeader = IsSquadLeader(_bot);
+                Vector3 selfPosition = _bot.Position;
+                int count = _bot.BotsGroup.MembersCount;
+
+                for (int i = 0; i < count; i++)
                 {
-                    BotOwner mate = _bot.BotsGroup.Member(i);
-                    if (!IsValidSquadmate(mate, selfPosition))
-                        continue;
-
-                    BotComponentCache mateCache = BotCacheUtility.GetCache(mate);
-                    if (!CanEchoHumanly(mateCache))
-                        continue;
-
-                    Vector3 fallbackPoint = GetFallbackPoint(mate);
-
-                    if (IsValidVector(fallbackPoint))
+                    try
                     {
+                        BotOwner mate = _bot.BotsGroup.Member(i);
+                        if (!IsValidSquadmate(mate, selfPosition))
+                            continue;
+
+                        BotComponentCache mateCache = BotCacheUtility.GetCache(mate);
+                        if (!CanEchoHumanly(mateCache))
+                            continue;
+
+                        Vector3 fallbackPoint = GetFallbackPoint(mate, retreatPosition, selfPosition, mateCache);
+
                         float cohesion = 1.0f;
                         if (mateCache?.PersonalityProfile != null)
                             cohesion = Mathf.Clamp(mateCache.PersonalityProfile.Cohesion, 0.7f, 1.3f);
 
-                        BotMovementHelper.SmoothMoveTo(mate, fallbackPoint, slow: true, cohesionScale: cohesion);
-
-                        if (!FikaHeadlessDetector.IsHeadless && mate.BotTalk != null)
+                        if (isLeader || UnityEngine.Random.value > 0.22f + (mateCache?.PersonalityProfile?.Caution ?? 0.07f))
                         {
-                            try { mate.BotTalk.TrySay(EPhraseTrigger.CoverMe); } catch { }
+                            BotMovementHelper.SmoothMoveTo(mate, fallbackPoint, slow: true, cohesionScale: cohesion);
+
+                            // Voice call for cover, only in non-headless
+                            if (!FikaHeadlessDetector.IsHeadless && mate.BotTalk != null && UnityEngine.Random.value < 0.7f)
+                            {
+                                try { mate.BotTalk.TrySay(EPhraseTrigger.CoverMe); } catch { }
+                            }
                         }
                     }
+                    catch (Exception ex)
+                    {
+                        Plugin.LoggerInstance.LogError($"[EchoCoordinator] Fallback echo failed: {ex}");
+                    }
                 }
-                catch (Exception ex)
-                {
-                    Plugin.LoggerInstance.LogError($"[EchoCoordinator] Fallback echo failed: {ex}");
-                }
-            }
 
-            _lastEchoFallbackTime = now;
+                _lastEchoFallbackTime = now;
+            }
+            catch (Exception ex)
+            {
+                Plugin.LoggerInstance.LogError($"[EchoCoordinator] EchoFallbackToSquad failed: {ex}");
+            }
         }
 
         /// <summary>
-        /// Returns a human-like fallback point for a squadmate—never used to teleport.
+        /// Returns a human-like fallback point for a squadmate, accounting for squad formation and isolation.
         /// </summary>
-        private static Vector3 GetFallbackPoint(BotOwner mate)
+        private static Vector3 GetFallbackPoint(BotOwner mate, Vector3 originRetreat, Vector3 leaderPos, BotComponentCache mateCache)
         {
-            Vector3 dir = -mate.LookDirection.normalized;
-            if (dir.sqrMagnitude < 0.01f)
-                dir = Vector3.back;
+            try
+            {
+                Vector3 dir = -mate.LookDirection.normalized;
+                if (dir.sqrMagnitude < 0.01f)
+                    dir = Vector3.back;
 
-            Vector3 offset = dir * UnityEngine.Random.Range(2.0f, 4.0f);
-            Vector3 candidate = mate.Position + offset;
-            candidate.y = mate.Position.y;
+                bool isIsolated = (mate.Position - leaderPos).sqrMagnitude > IsolatedMateDistanceSqr;
+                float baseDist = isIsolated ? 2.2f : UnityEngine.Random.Range(2.0f, 4.2f);
+                bool isFearful = mateCache?.PersonalityProfile != null && mateCache.PersonalityProfile.IsFearful;
+                Vector3 offset = dir * baseDist;
+                offset += UnityEngine.Random.insideUnitSphere * (isFearful ? 0.7f : 0.45f);
 
-            UnityEngine.AI.NavMeshHit navHit;
-            if (UnityEngine.AI.NavMesh.SamplePosition(candidate, out navHit, 1.1f, UnityEngine.AI.NavMesh.AllAreas))
-                return navHit.position;
-            return mate.Position;
+                Vector3 candidate = mate.Position + offset;
+                candidate.y = mate.Position.y;
+
+                UnityEngine.AI.NavMeshHit navHit;
+                if (UnityEngine.AI.NavMesh.SamplePosition(candidate, out navHit, 1.2f, UnityEngine.AI.NavMesh.AllAreas))
+                    return navHit.position;
+                return mate.Position;
+            }
+            catch
+            {
+                return mate != null ? mate.Position : Vector3.zero;
+            }
         }
 
         #endregion
@@ -130,46 +158,55 @@ namespace AIRefactored.AI.Combat.States
         #region Echo Investigate
 
         /// <summary>
-        /// Informs squad to investigate; never moves anyone directly, only notifies.
+        /// Informs squad to investigate; echo is layered (leader, regulars, lagging mates) and anti-hivemind.
         /// </summary>
         public void EchoInvestigateToSquad()
         {
-            if (_bot == null || _cache == null || _bot.BotsGroup == null)
-                return;
-
-            float now = Time.time;
-            if (now - _lastEchoInvestigateTime < EchoCooldown)
-                return;
-
-            Vector3 selfPosition = _bot.Position;
-            int count = _bot.BotsGroup.MembersCount;
-
-            for (int i = 0; i < count; i++)
+            try
             {
-                try
+                if (_bot == null || _cache == null || _bot.BotsGroup == null)
+                    return;
+
+                float now = Time.time;
+                if (now - _lastEchoInvestigateTime < EchoCooldown)
+                    return;
+
+                bool isLeader = IsSquadLeader(_bot);
+                Vector3 selfPosition = _bot.Position;
+                int count = _bot.BotsGroup.MembersCount;
+
+                for (int i = 0; i < count; i++)
                 {
-                    BotOwner mate = _bot.BotsGroup.Member(i);
-                    if (!IsValidSquadmate(mate, selfPosition))
-                        continue;
-
-                    BotComponentCache mateCache = BotCacheUtility.GetCache(mate);
-                    if (!CanEchoHumanly(mateCache))
-                        continue;
-
-                    mateCache.Combat.NotifyEchoInvestigate();
-
-                    if (!FikaHeadlessDetector.IsHeadless && mate.BotTalk != null)
+                    try
                     {
-                        try { mate.BotTalk.TrySay(EPhraseTrigger.CheckHim); } catch { }
+                        BotOwner mate = _bot.BotsGroup.Member(i);
+                        if (!IsValidSquadmate(mate, selfPosition))
+                            continue;
+
+                        BotComponentCache mateCache = BotCacheUtility.GetCache(mate);
+                        if (!CanEchoHumanly(mateCache))
+                            continue;
+
+                        mateCache.Combat?.NotifyEchoInvestigate();
+
+                        if (!FikaHeadlessDetector.IsHeadless && mate.BotTalk != null)
+                        {
+                            if (UnityEngine.Random.value < 0.75f)
+                                try { mate.BotTalk.TrySay(EPhraseTrigger.CheckHim); } catch { }
+                        }
+                    }
+                    catch (Exception ex)
+                    {
+                        Plugin.LoggerInstance.LogError($"[EchoCoordinator] Investigate echo failed: {ex}");
                     }
                 }
-                catch (Exception ex)
-                {
-                    Plugin.LoggerInstance.LogError($"[EchoCoordinator] Investigate echo failed: {ex}");
-                }
-            }
 
-            _lastEchoInvestigateTime = now;
+                _lastEchoInvestigateTime = now;
+            }
+            catch (Exception ex)
+            {
+                Plugin.LoggerInstance.LogError($"[EchoCoordinator] EchoInvestigateToSquad failed: {ex}");
+            }
         }
 
         #endregion
@@ -177,35 +214,55 @@ namespace AIRefactored.AI.Combat.States
         #region Echo Enemy Spotted
 
         /// <summary>
-        /// Shares an enemy sighting with all squadmates for tactical memory (never causes instant path/move).
+        /// Shares an enemy sighting with all squadmates, with urgency/fear/role effects.
         /// </summary>
         public void EchoSpottedEnemyToSquad(Vector3 enemyPosition)
         {
-            if (_bot == null || _cache == null || _bot.BotsGroup == null)
-                return;
-
-            string enemyId = _cache.ThreatSelector?.CurrentTarget?.ProfileId ?? string.Empty;
-            int count = _bot.BotsGroup.MembersCount;
-            Vector3 origin = _bot.Position;
-
-            for (int i = 0; i < count; i++)
+            try
             {
-                try
-                {
-                    BotOwner mate = _bot.BotsGroup.Member(i);
-                    if (!IsValidSquadmate(mate, origin))
-                        continue;
+                if (_bot == null || _cache == null || _bot.BotsGroup == null)
+                    return;
 
-                    BotComponentCache mateCache = BotCacheUtility.GetCache(mate);
-                    if (mateCache?.TacticalMemory == null)
-                        continue;
+                string enemyId = _cache.ThreatSelector?.CurrentTarget?.ProfileId ?? string.Empty;
+                int count = _bot.BotsGroup.MembersCount;
+                Vector3 origin = _bot.Position;
+                float now = Time.time;
 
-                    mateCache.TacticalMemory.RecordEnemyPosition(enemyPosition, "SquadEcho", enemyId);
-                }
-                catch (Exception ex)
+                if (now - _lastEnemySightingTime < EchoCooldown && _lastEchoedEnemyCount == count)
+                    return;
+
+                for (int i = 0; i < count; i++)
                 {
-                    Plugin.LoggerInstance.LogError($"[EchoCoordinator] Enemy sighting echo failed: {ex}");
+                    try
+                    {
+                        BotOwner mate = _bot.BotsGroup.Member(i);
+                        if (!IsValidSquadmate(mate, origin))
+                            continue;
+
+                        BotComponentCache mateCache = BotCacheUtility.GetCache(mate);
+                        if (mateCache?.TacticalMemory == null)
+                            continue;
+
+                        mateCache.TacticalMemory.RecordEnemyPosition(enemyPosition, "SquadEcho", enemyId);
+
+                        bool isFearful = mateCache?.PersonalityProfile != null && mateCache.PersonalityProfile.IsFearful;
+                        if (!FikaHeadlessDetector.IsHeadless && mate.BotTalk != null &&
+                            UnityEngine.Random.value < (isFearful ? 0.44f : 0.22f))
+                        {
+                            try { mate.BotTalk.TrySay(EPhraseTrigger.OnFirstContact); } catch { }
+                        }
+                    }
+                    catch (Exception ex)
+                    {
+                        Plugin.LoggerInstance.LogError($"[EchoCoordinator] Enemy sighting echo failed: {ex}");
+                    }
                 }
+                _lastEnemySightingTime = now;
+                _lastEchoedEnemyCount = count;
+            }
+            catch (Exception ex)
+            {
+                Plugin.LoggerInstance.LogError($"[EchoCoordinator] EchoSpottedEnemyToSquad failed: {ex}");
             }
         }
 
@@ -213,22 +270,41 @@ namespace AIRefactored.AI.Combat.States
 
         #region Helpers
 
+        private static bool IsSquadLeader(BotOwner bot)
+        {
+            try
+            {
+                return bot != null && bot.BotsGroup != null && bot.BotsGroup.MembersCount > 0 && bot.BotsGroup.Member(0) == bot;
+            }
+            catch
+            {
+                return false;
+            }
+        }
+
         private static bool CanEchoHumanly(BotComponentCache cache)
         {
-            if (cache == null)
-                return false;
-            if (cache.IsBlinded)
-                return false;
-            if (cache.PanicHandler?.IsPanicking == true)
-                return false;
-            if (cache.Perception != null && cache.Perception.IsSuppressed && UnityEngine.Random.value < 0.6f)
-                return false;
+            try
+            {
+                if (cache == null)
+                    return false;
+                if (cache.IsBlinded)
+                    return false;
+                if (cache.PanicHandler?.IsPanicking == true)
+                    return false;
+                if (cache.Perception != null && cache.Perception.IsSuppressed && UnityEngine.Random.value < 0.6f)
+                    return false;
 
-            float caution = cache.AIRefactoredBotOwner?.PersonalityProfile?.Caution ?? 0.4f;
-            if (caution < 0.1f && UnityEngine.Random.value < 0.5f)
-                return false;
+                float caution = cache.AIRefactoredBotOwner?.PersonalityProfile?.Caution ?? 0.4f;
+                if (caution < 0.1f && UnityEngine.Random.value < 0.5f)
+                    return false;
 
-            return true;
+                return true;
+            }
+            catch
+            {
+                return false;
+            }
         }
 
         private bool IsValidSquadmate(BotOwner mate, Vector3 origin)

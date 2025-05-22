@@ -5,6 +5,8 @@
 //   THIS FILE IS SYSTEMATICALLY MANAGED.
 //   Bulletproof: All errors are locally isolated, never disables itself, never triggers fallback AI.
 //   Teleportation forbidden: All investigation movement is path-based, NavMesh-validated, and smooth.
+//   Beyond Diamond: Squad-aware, personality-driven, memory-based, anticipation-rich investigation logic,
+//                   plus idle scan, give-up, voice comms, and dynamic squad formation.
 // </auto-generated>
 
 namespace AIRefactored.AI.Combat.States
@@ -20,10 +22,9 @@ namespace AIRefactored.AI.Combat.States
     using UnityEngine.AI;
 
     /// <summary>
-    /// Manages bot investigation behavior when sound or memory suggest enemy presence.
-    /// Guides cautious, reactive movement toward enemy vicinity with adaptive stance.
-    /// Bulletproof: All errors are locally isolated, never disables itself, never triggers fallback AI.
-    /// All investigation moves are NavMesh validated and never cause instant relocation.
+    /// Handles deeply realistic bot investigation: squad-aware, anticipation-rich, memory/context-driven, and dynamic.
+    /// All moves are path-based, smooth, anticipation/hesitation layered, and squad formation is enforced during advance and at destination.
+    /// Bulletproof: All errors are isolated; never disables itself or triggers fallback AI.
     /// </summary>
     public sealed class InvestigateHandler
     {
@@ -40,6 +41,12 @@ namespace AIRefactored.AI.Combat.States
         private const float MaxHumanDelay = 0.18f;
         private const float RandomSweepDistance = 0.65f;
         private const float NavMeshSampleRadius = 1.2f;
+        private const float SquadSpread = 0.9f;
+        private const float LookScanVariance = 0.28f;
+        private const float IdleLookIntervalMin = 0.65f;
+        private const float IdleLookIntervalMax = 1.15f;
+        private const float GiveUpChanceBase = 0.13f;
+        private const float AllClearVoiceChance = 0.25f;
 
         #endregion
 
@@ -49,6 +56,8 @@ namespace AIRefactored.AI.Combat.States
         private readonly BotComponentCache _cache;
         private readonly BotTacticalMemory _memory;
         private float _lastInvestigateTime = -1000f;
+        private float _nextIdleScanTime = -1000f;
+        private bool _hasGivenUp = false;
 
         #endregion
 
@@ -66,19 +75,41 @@ namespace AIRefactored.AI.Combat.States
         #region Main API
 
         /// <summary>
-        /// Picks an investigation target, always NavMesh safe and human-randomized.
+        /// Picks an investigation target, always NavMesh safe, squad-aware, and human-randomized.
         /// </summary>
         public Vector3 GetInvestigateTarget(Vector3 visualLastKnown)
         {
             try
             {
+                Vector3 result = Vector3.zero;
+                // Priority: visual last known > memory > squad memory > safe local position
                 if (IsVectorValid(visualLastKnown))
-                    return GetNavMeshSafeTarget(visualLastKnown);
+                    result = GetNavMeshSafeTarget(visualLastKnown);
+                else if (TryGetMemoryEnemyPosition(out Vector3 memory))
+                    result = GetNavMeshSafeTarget(memory);
+                else if (TryGetSquadMemory(out Vector3 squadMemory))
+                    result = GetNavMeshSafeTarget(squadMemory);
+                else
+                    result = GetSafeNearbyPosition();
 
-                if (TryGetMemoryEnemyPosition(out Vector3 memory))
-                    return GetNavMeshSafeTarget(memory);
+                // Squad anti-cluster (dynamic during advance and at destination)
+                if (_cache?.SquadPath != null)
+                {
+                    try { result = _cache.SquadPath.ApplyOffsetTo(result); }
+                    catch { }
+                }
+                else if (_bot?.BotsGroup != null && _bot.BotsGroup.MembersCount > 1)
+                {
+                    int idx = GetSquadIndex(_bot);
+                    Vector3 perp = Vector3.Cross(Vector3.up, _bot.LookDirection.normalized);
+                    result += perp * (SquadSpread * (idx - (_bot.BotsGroup.MembersCount / 2f)));
+                }
 
-                return GetSafeNearbyPosition();
+                // Micro-move/jitter for final realism
+                result = BotMovementHelper.ApplyMicroDrift(
+                    result, _bot.ProfileId, Time.frameCount, _cache?.PersonalityProfile);
+
+                return result;
             }
             catch (Exception ex)
             {
@@ -88,7 +119,7 @@ namespace AIRefactored.AI.Combat.States
         }
 
         /// <summary>
-        /// Orders a move to an investigation target. Only issues path-based move commands.
+        /// Orders a move to an investigation target with full squad, anticipation, stance, and comms logic.
         /// </summary>
         public void Investigate(Vector3 target)
         {
@@ -98,31 +129,65 @@ namespace AIRefactored.AI.Combat.States
             try
             {
                 float now = Time.time;
-                float hesitation = UnityEngine.Random.Range(MinHumanDelay, MaxHumanDelay);
-                if (now - _lastInvestigateTime < hesitation)
+                float anticipation = UnityEngine.Random.Range(MinHumanDelay, MaxHumanDelay) * (1f + ((_cache.PersonalityProfile?.Caution ?? 0.1f) * 0.55f));
+                if (now - _lastInvestigateTime < anticipation)
                     return;
 
                 _lastInvestigateTime = now;
+                Vector3 destination = GetNavMeshSafeTarget(target);
 
-                Vector3 destination = target;
+                // Squad anti-cluster (advance and arrival)
                 if (_cache.SquadPath != null)
                 {
-                    try { destination = _cache.SquadPath.ApplyOffsetTo(target); }
-                    catch { destination = target; }
+                    try { destination = _cache.SquadPath.ApplyOffsetTo(destination); }
+                    catch { }
+                }
+                else if (_bot?.BotsGroup != null && _bot.BotsGroup.MembersCount > 1)
+                {
+                    int idx = GetSquadIndex(_bot);
+                    Vector3 perp = Vector3.Cross(Vector3.up, _bot.LookDirection.normalized);
+                    destination += perp * (SquadSpread * (idx - (_bot.BotsGroup.MembersCount / 2f)));
                 }
 
-                destination = GetNavMeshSafeTarget(destination);
+                // Apply micro-drift and personality bias
+                destination = BotMovementHelper.ApplyMicroDrift(
+                    destination, _bot.ProfileId, Time.frameCount, _cache.PersonalityProfile);
 
-                // Use cohesion for realistic group spacing and personality-driven caution
                 float cohesion = 1.0f;
-                if (_cache?.PersonalityProfile != null)
+                if (_cache.PersonalityProfile != null)
                     cohesion = Mathf.Clamp(_cache.PersonalityProfile.Cohesion, 0.7f, 1.3f);
 
                 if (_bot.Mover != null)
                 {
                     BotMovementHelper.SmoothMoveTo(_bot, destination, slow: true, cohesionScale: cohesion);
+
+                    // Mark cleared in tactical memory
                     _memory?.MarkCleared(destination);
-                    _cache.Combat?.TrySetStanceFromNearbyCover(destination);
+
+                    // Adaptive stance (scan/crouch if close to point or cautious personality)
+                    if (_cache.PoseController != null)
+                    {
+                        float close = (_bot.Position - destination).magnitude;
+                        float crouchChance = 0.35f + ((_cache.PersonalityProfile?.Caution ?? 0.0f) * 0.45f);
+                        if (close < 2.4f && UnityEngine.Random.value < crouchChance)
+                            _cache.PoseController.Crouch();
+                        else
+                            _cache.PoseController.TrySetStanceFromNearbyCover(destination);
+                    }
+
+                    // Idle scan/look-around when at target
+                    if (Vector3.Distance(_bot.Position, destination) < 1.3f)
+                        PerformIdleLookScan();
+
+                    // Optional: voice comms at investigation arrival (all-clear)
+                    if (Vector3.Distance(_bot.Position, destination) < 1.1f && !_hasGivenUp)
+                    {
+                        _hasGivenUp = UnityEngine.Random.value < (GiveUpChanceBase + (_cache.PersonalityProfile?.Caution ?? 0.0f));
+                        if (_hasGivenUp && _bot.BotTalk != null && !FikaHeadlessDetector.IsHeadless && UnityEngine.Random.value < AllClearVoiceChance)
+                        {
+                            try { _bot.BotTalk.TrySay(EPhraseTrigger.Clear); } catch { }
+                        }
+                    }
                 }
                 else
                 {
@@ -144,12 +209,11 @@ namespace AIRefactored.AI.Combat.States
             {
                 if (_cache?.AIRefactoredBotOwner?.PersonalityProfile == null)
                     return false;
-
                 if (_cache.AIRefactoredBotOwner.PersonalityProfile.Caution < MinCaution)
                     return false;
 
                 return (_cache.LastHeardTime + SoundReactTime) > now &&
-                       (now - lastTransition) > ExitDelayBuffer;
+                       (now - lastTransition) > ExitDelayBuffer && !_hasGivenUp;
             }
             catch (Exception ex)
             {
@@ -158,12 +222,15 @@ namespace AIRefactored.AI.Combat.States
             }
         }
 
+        /// <summary>
+        /// Returns true if investigation should be exited (timeout, memory cleared, or give-up).
+        /// </summary>
         public bool ShouldExit(float now, float lastHitTime, float cooldown)
         {
             try
             {
                 float elapsed = now - lastHitTime;
-                return elapsed > cooldown || elapsed > MaxInvestigateTime;
+                return _hasGivenUp || elapsed > cooldown || elapsed > MaxInvestigateTime;
             }
             catch (Exception ex)
             {
@@ -172,11 +239,14 @@ namespace AIRefactored.AI.Combat.States
             }
         }
 
+        /// <summary>
+        /// Returns true if currently in investigation mode.
+        /// </summary>
         public bool IsInvestigating()
         {
             try
             {
-                return (Time.time - _cache.LastHeardTime) <= ActiveWindow;
+                return (Time.time - _cache.LastHeardTime) <= ActiveWindow && !_hasGivenUp;
             }
             catch (Exception ex)
             {
@@ -189,6 +259,9 @@ namespace AIRefactored.AI.Combat.States
 
         #region Internals
 
+        /// <summary>
+        /// Gets most recent memory enemy position, or false if none.
+        /// </summary>
         private bool TryGetMemoryEnemyPosition(out Vector3 result)
         {
             result = Vector3.zero;
@@ -208,12 +281,45 @@ namespace AIRefactored.AI.Combat.States
             {
                 Plugin.LoggerInstance.LogError($"[InvestigateHandler] Memory lookup failed: {ex}");
             }
-
             return false;
         }
 
         /// <summary>
-        /// Returns a random, NavMesh-safe local position as a last resort.
+        /// Gets most recent squad-shared enemy memory.
+        /// </summary>
+        private bool TryGetSquadMemory(out Vector3 result)
+        {
+            result = Vector3.zero;
+            if (_bot?.BotsGroup == null || _bot.BotsGroup.MembersCount < 2)
+                return false;
+
+            try
+            {
+                for (int i = 0; i < _bot.BotsGroup.MembersCount; i++)
+                {
+                    var mate = _bot.BotsGroup.Member(i);
+                    if (mate == null || mate == _bot || mate.IsDead) continue;
+                    var mateCache = BotCacheUtility.GetCache(mate);
+                    if (mateCache?.TacticalMemory != null)
+                    {
+                        Vector3? squadMemory = mateCache.TacticalMemory.GetRecentEnemyMemory();
+                        if (squadMemory.HasValue && IsVectorValid(squadMemory.Value))
+                        {
+                            result = squadMemory.Value;
+                            return true;
+                        }
+                    }
+                }
+            }
+            catch (Exception ex)
+            {
+                Plugin.LoggerInstance.LogError($"[InvestigateHandler] Squad memory lookup failed: {ex}");
+            }
+            return false;
+        }
+
+        /// <summary>
+        /// Returns a random, NavMesh-safe local position as last resort.
         /// </summary>
         private Vector3 GetSafeNearbyPosition()
         {
@@ -240,9 +346,49 @@ namespace AIRefactored.AI.Combat.States
             return pos;
         }
 
+        /// <summary>
+        /// Returns this bot's squad index (0 = leader).
+        /// </summary>
+        private static int GetSquadIndex(BotOwner bot)
+        {
+            if (bot == null || bot.BotsGroup == null) return -1;
+            int count = bot.BotsGroup.MembersCount;
+            for (int i = 0; i < count; i++)
+                if (bot.BotsGroup.Member(i) == bot) return i;
+            return -1;
+        }
+
+        /// <summary>
+        /// Checks vector validity for nav/simulation.
+        /// </summary>
         private static bool IsVectorValid(Vector3 v)
         {
             return !float.IsNaN(v.x) && !float.IsNaN(v.y) && !float.IsNaN(v.z) && v != Vector3.zero;
+        }
+
+        /// <summary>
+        /// Performs a humanized idle head-look scan while at investigate target.
+        /// </summary>
+        private void PerformIdleLookScan()
+        {
+            try
+            {
+                float now = Time.time;
+                if (now < _nextIdleScanTime) return;
+                _nextIdleScanTime = now + UnityEngine.Random.Range(IdleLookIntervalMin, IdleLookIntervalMax);
+
+                if (_bot == null || _bot.Transform == null || _bot.IsDead)
+                    return;
+
+                Vector3 scanOffset = UnityEngine.Random.insideUnitSphere * 1.6f;
+                scanOffset.y = 0f;
+                Vector3 lookTarget = _bot.Position + _bot.LookDirection.normalized * 2.4f + scanOffset;
+                BotMovementHelper.SmoothLookTo(_bot, lookTarget, 2.2f + UnityEngine.Random.value * 1.4f);
+            }
+            catch
+            {
+                // Always silent; never spam errors on scan.
+            }
         }
 
         #endregion

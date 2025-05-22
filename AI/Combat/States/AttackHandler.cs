@@ -2,10 +2,10 @@
 //   This file is part of AI-Refactored, an open-source project focused on realistic AI behavior in Escape from Tarkov.
 //   Licensed under the MIT License. See LICENSE in the repository root for more information.
 //
-//   THIS FILE IS SYSTEMATICALLY MANAGED.
-//   Realism-hardened: Combat movement, micro-adjustments, and stance logic are fully humanized.
-//   Teleportation is 100% forbidden; all movement is path-based and smooth. No instant relocation is possible.
-//   All errors are locally isolated; never disables handler, never disables bot, never falls back.
+//   SYSTEMATICALLY MANAGED.
+//   Realism-hardened: Combat movement, anticipation, stance logic, and micro-adjustments are fully humanized.
+//   Teleportation is 100% forbidden; all movement is path-based, smoothed, and validated.
+//   All errors are locally isolated; never disables bot, never disables handler, never disables squad.
 // </auto-generated>
 
 namespace AIRefactored.AI.Combat.States
@@ -21,21 +21,24 @@ namespace AIRefactored.AI.Combat.States
     using UnityEngine;
 
     /// <summary>
-    /// Controls direct combat engagement logic.
-    /// Pushes toward the enemy, recalculates stance and movement based on distance, visibility, micro-adjustment, and cover presence.
-    /// All movement is smooth, adaptive, and indistinguishable from human player combat maneuvering.
-    /// Teleportation is strictly forbidden. All relocation is through pathing, never direct setting of position.
+    /// Controls direct combat engagement: pushes toward the enemy, adapts movement/stance based on distance,
+    /// visibility, micro-adjustments, and cover. Movement is always smooth, path-based, and indistinguishable from human.
+    /// Teleportation is forbidden; all relocation uses NavMesh.
     /// </summary>
     public sealed class AttackHandler
     {
         #region Constants
 
-        private const float PositionUpdateThresholdSqr = 0.49f; // 0.7m squared, for more responsive re-adjustment
-        private const float MicroAdjustRadius = 0.55f;
-        private const float MinAdvanceDistance = 1.2f;
-        private const float MaxAggroDistance = 52f;
-        private const float AdvanceIntervalMin = 0.18f;
-        private const float AdvanceIntervalMax = 0.33f;
+        private const float PositionUpdateThresholdSqr = 0.29f;      // ~0.54m^2 - highly responsive
+        private const float MicroAdjustRadius = 0.47f;               // human foot shuffle radius
+        private const float MinAdvanceDistance = 1.25f;              // if closer, micro-move only
+        private const float MaxAggroDistance = 54.5f;                // max chase/engage
+        private const float AdvanceIntervalMin = 0.17f;              // minimum advance re-tick (seconds)
+        private const float AdvanceIntervalMax = 0.32f;              // maximum advance re-tick (seconds)
+        private const float MoveBlendSpeed = 4.6f;                   // blend-in/out lerp multiplier
+        private const float SafeMoveMax = 8.4f;                      // never micro-move further than this
+        private const float SafeMoveMin = 0.07f;                     // ignore if within this
+        private const float MaxNavmeshDeltaY = 2.18f;                // never jump levels
 
         #endregion
 
@@ -46,6 +49,7 @@ namespace AIRefactored.AI.Combat.States
         private Vector3 _lastTargetPosition;
         private bool _hasLastTarget;
         private float _nextAdvanceTime;
+        private Vector3 _lastMoveDir;
 
         #endregion
 
@@ -54,6 +58,7 @@ namespace AIRefactored.AI.Combat.States
         /// <summary>
         /// Instantiates a new attack handler for the given bot.
         /// </summary>
+        /// <param name="cache">Component cache for this bot (must not be null).</param>
         public AttackHandler(BotComponentCache cache)
         {
             _cache = cache;
@@ -61,6 +66,7 @@ namespace AIRefactored.AI.Combat.States
             _lastTargetPosition = Vector3.zero;
             _hasLastTarget = false;
             _nextAdvanceTime = 0f;
+            _lastMoveDir = Vector3.zero;
         }
 
         #endregion
@@ -75,6 +81,7 @@ namespace AIRefactored.AI.Combat.States
             _hasLastTarget = false;
             _lastTargetPosition = Vector3.zero;
             _nextAdvanceTime = 0f;
+            _lastMoveDir = Vector3.zero;
         }
 
         /// <summary>
@@ -89,6 +96,7 @@ namespace AIRefactored.AI.Combat.States
         /// <summary>
         /// Tick the attack handler: move, adjust stance, and humanize bot behavior.
         /// </summary>
+        /// <param name="deltaTime">Elapsed time since last frame.</param>
         public void Tick(float deltaTime)
         {
             try
@@ -106,6 +114,7 @@ namespace AIRefactored.AI.Combat.States
                 Vector3 targetPos = enemyTransform.position;
                 float distToTarget = (_bot.Position - targetPos).magnitude;
 
+                // If out of aggro range, clear and bail
                 if (distToTarget > MaxAggroDistance)
                 {
                     ClearTarget();
@@ -114,6 +123,7 @@ namespace AIRefactored.AI.Combat.States
 
                 float now = Time.time;
                 float deltaSqr = (targetPos - _lastTargetPosition).sqrMagnitude;
+
                 bool needsAdvance =
                     (!_hasLastTarget) ||
                     (deltaSqr > PositionUpdateThresholdSqr) ||
@@ -125,24 +135,52 @@ namespace AIRefactored.AI.Combat.States
                     _hasLastTarget = true;
                     _nextAdvanceTime = now + UnityEngine.Random.Range(AdvanceIntervalMin, AdvanceIntervalMax);
 
-                    Vector3 advancePoint = GetRealisticAdvancePoint(_bot, _cache, targetPos, distToTarget, MicroAdjustRadius);
+                    // Anticipate: if target just moved a lot, add a short anticipation delay (overshoot/follow-through)
+                    if (deltaSqr > 9.0f) // >3m, significant snap, simulate decision delay
+                        _nextAdvanceTime += UnityEngine.Random.Range(0.08f, 0.19f);
 
-                    // Always get cohesion scale from personality for natural formation/human movement
+                    Vector3 advancePoint = GetRealisticAdvancePoint(_bot, _cache, targetPos, distToTarget, MicroAdjustRadius, out bool usedCover);
+
+                    // Pull cohesion for realistic group spacing
                     float cohesion = 1.0f;
                     if (_cache?.PersonalityProfile != null)
                         cohesion = Mathf.Clamp(_cache.PersonalityProfile.Cohesion, 0.7f, 1.3f);
 
-                    // All movement routed through BotMovementHelper (never direct assignment, no jitter outside helper)
                     if (_bot.Mover != null && IsAdvancePointSafe(_bot.Position, advancePoint))
                     {
                         try
                         {
-                            BotMovementHelper.SmoothMoveTo(_bot, advancePoint, slow: false, cohesionScale: cohesion);
-                            SetStanceFromCombatContext(distToTarget, advancePoint);
+                            // Micro-movement anticipation: sometimes over- or under-shoot to feel "alive"
+                            float overshoot = UnityEngine.Random.Range(-0.13f, 0.17f);
+                            Vector3 moveDir = advancePoint - _bot.Position;
+                            moveDir.y = 0f;
+
+                            if (moveDir.sqrMagnitude > 0.01f)
+                            {
+                                if (_lastMoveDir == Vector3.zero)
+                                    _lastMoveDir = moveDir.normalized;
+
+                                float blendT = Mathf.Clamp01(deltaTime * MoveBlendSpeed);
+                                Vector3 blended = Vector3.Lerp(_lastMoveDir, moveDir.normalized, blendT).normalized;
+                                _lastMoveDir = blended;
+
+                                Vector3 humanizedTarget = _bot.Position + blended * (moveDir.magnitude + overshoot);
+
+                                // Centralized human-like micro-jitter (deterministic, pooled)
+                                humanizedTarget = BotMovementHelper.ApplyMicroDrift(
+                                    humanizedTarget,
+                                    _bot.ProfileId,
+                                    Time.frameCount,
+                                    _cache.PersonalityProfile);
+
+                                BotMovementHelper.SmoothMoveTo(_bot, humanizedTarget, false, cohesion);
+                            }
+
+                            SetStanceFromCombatContext(distToTarget, advancePoint, usedCover);
                         }
                         catch (Exception moveEx)
                         {
-                            Plugin.LoggerInstance.LogError("[AttackHandler] SmoothMoveTo or stance adjustment failed: " + moveEx);
+                            Plugin.LoggerInstance.LogError("[AttackHandler] SmoothMoveTo/stance failed: " + moveEx);
                         }
                     }
                 }
@@ -158,7 +196,7 @@ namespace AIRefactored.AI.Combat.States
         #region Internal Logic
 
         /// <summary>
-        /// Resolves a valid enemy target for attack logic.
+        /// Resolves a valid enemy target for attack logic (current, fallback, or group context).
         /// </summary>
         private bool TryResolveEnemy(out Player result)
         {
@@ -183,9 +221,9 @@ namespace AIRefactored.AI.Combat.States
         }
 
         /// <summary>
-        /// Sets a realistic stance based on current combat and suppression.
+        /// Sets a realistic stance based on combat, distance, cover, and suppression context.
         /// </summary>
-        private void SetStanceFromCombatContext(float distance, Vector3 advancePos)
+        private void SetStanceFromCombatContext(float distance, Vector3 advancePos, bool usedCover)
         {
             try
             {
@@ -193,11 +231,17 @@ namespace AIRefactored.AI.Combat.States
                 if (pose == null)
                     return;
 
-                if (distance < 8f)
+                // Always prefer cover if available
+                if (usedCover)
                 {
                     pose.TrySetStanceFromNearbyCover(advancePos);
                 }
-                else if (distance < 16f)
+                else if (distance < 7.4f)
+                {
+                    // Short range: crouch or hug cover if not already
+                    pose.TrySetStanceFromNearbyCover(advancePos);
+                }
+                else if (distance < 17.4f)
                 {
                     pose.Stand();
                 }
@@ -214,50 +258,52 @@ namespace AIRefactored.AI.Combat.States
         }
 
         /// <summary>
-        /// Calculates a safe and human-like point to move toward the enemy.
-        /// Ensures no teleport, only pathable moves.
+        /// Calculates a safe and human-like advance point toward the enemy (cover-aware, micro-jittered).
         /// </summary>
-        private static Vector3 GetRealisticAdvancePoint(BotOwner bot, BotComponentCache cache, Vector3 target, float dist, float adjustRadius)
+        private static Vector3 GetRealisticAdvancePoint(BotOwner bot, BotComponentCache cache, Vector3 target, float dist, float adjustRadius, out bool usedCover)
         {
-            // If close, do a micro-jittered sidestep
+            usedCover = false;
+
+            // If close, only micro-jittered sidestep (no advance)
             if (dist < MinAdvanceDistance)
             {
                 Vector3 sidestep = Vector3.Cross(Vector3.up, bot.LookDirection.normalized);
                 float shuffle = UnityEngine.Random.Range(-1.0f, 1.0f) * adjustRadius;
                 Vector3 candidate = target + sidestep * shuffle;
-                return BotNavHelper.TryGetSafeTarget(bot, out Vector3 safe) ? safe : NavMeshSafe(candidate, target, 1.25f) ?? bot.Position;
+                return BotNavHelper.TryGetSafeTarget(bot, out Vector3 safe) ? safe : NavMeshSafe(candidate, target, 1.2f) ?? bot.Position;
             }
 
-            // Prefer cover if possible
+            // Use cover if possible
             Vector3 cover;
             if (cache.CoverPlanner != null && cache.CoverPlanner.TryGetBestCoverNear(target, bot.Position, out cover))
             {
+                usedCover = true;
                 Vector3 lateral = Vector3.Cross(Vector3.up, (target - cover).normalized);
                 float offset = UnityEngine.Random.Range(-0.5f, 0.5f);
                 Vector3 candidate = cover + lateral * offset;
-                return BotNavHelper.TryGetSafeTarget(bot, out Vector3 safe) ? safe : NavMeshSafe(candidate, cover, 1.25f) ?? bot.Position;
+                return BotNavHelper.TryGetSafeTarget(bot, out Vector3 safe) ? safe : NavMeshSafe(candidate, cover, 1.0f) ?? bot.Position;
             }
 
-            // Otherwise, micro-jitter forward (with micro-drift)
-            Vector3 fallback = target + UnityEngine.Random.insideUnitSphere * 1.5f;
+            // Otherwise, micro-jitter forward (with drift)
+            Vector3 fallback = target + UnityEngine.Random.insideUnitSphere * 1.1f;
             fallback.y = target.y;
-            return BotNavHelper.TryGetSafeTarget(bot, out Vector3 safe2) ? safe2 : NavMeshSafe(fallback, target, 2.2f) ?? bot.Position;
+            return BotNavHelper.TryGetSafeTarget(bot, out Vector3 safe2) ? safe2 : NavMeshSafe(fallback, target, 1.5f) ?? bot.Position;
         }
 
         /// <summary>
-        /// Validates that a move never results in teleporting or unwalkable positions.
+        /// Validates that a move never results in teleportation or unwalkable positions.
         /// </summary>
         private static bool IsAdvancePointSafe(Vector3 current, Vector3 target)
         {
             float dist = (target - current).magnitude;
-            if (dist < 0.09f || dist > 8f)
+            if (dist < SafeMoveMin || dist > SafeMoveMax)
                 return false;
 
             UnityEngine.AI.NavMeshHit navHit;
             if (!UnityEngine.AI.NavMesh.SamplePosition(target, out navHit, 0.6f, UnityEngine.AI.NavMesh.AllAreas))
                 return false;
 
-            if (Mathf.Abs(navHit.position.y - current.y) > 2.2f)
+            if (Mathf.Abs(navHit.position.y - current.y) > MaxNavmeshDeltaY)
                 return false;
 
             return true;
@@ -271,7 +317,7 @@ namespace AIRefactored.AI.Combat.States
             UnityEngine.AI.NavMeshHit navHit;
             if (UnityEngine.AI.NavMesh.SamplePosition(candidate, out navHit, radius, UnityEngine.AI.NavMesh.AllAreas))
                 return navHit.position;
-            if (UnityEngine.AI.NavMesh.SamplePosition(refPoint, out navHit, 0.9f, UnityEngine.AI.NavMesh.AllAreas))
+            if (UnityEngine.AI.NavMesh.SamplePosition(refPoint, out navHit, 0.7f, UnityEngine.AI.NavMesh.AllAreas))
                 return navHit.position;
             return null;
         }

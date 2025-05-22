@@ -28,7 +28,8 @@ namespace AIRefactored.AI.Movement
 
         private const float AvoidanceRadius = 2.0f;
         private const float AvoidanceScale = 1.25f;
-        private const float ChaosInterval = 0.4f;
+        private const float ChaosIntervalMin = 0.38f;
+        private const float ChaosIntervalMax = 0.52f;
         private const float ChaosRadius = 0.65f;
         private const float SquadOffsetScale = 0.75f;
         private const float VelocityFactor = 1.5f;
@@ -51,9 +52,6 @@ namespace AIRefactored.AI.Movement
 
         #region Constructor
 
-        /// <summary>
-        /// Initializes a new instance with bulletproof validation.
-        /// </summary>
         public BotMovementTrajectoryPlanner(BotOwner bot, BotComponentCache cache)
         {
             if (!EFTPlayerUtil.IsValidBotOwner(bot))
@@ -88,6 +86,7 @@ namespace AIRefactored.AI.Movement
                     UpdateTargetChaosOffset(now);
 
                 _chaosOffset = Vector3.Lerp(_chaosOffset, _targetChaosOffset, deltaTime * ChaosLerpSpeed);
+                _chaosOffset.y = 0f;
 
                 Vector3 baseDir = (targetDir.sqrMagnitude > MinMagnitude) ? targetDir.normalized : Vector3.forward;
                 Vector3 adjusted = baseDir;
@@ -99,24 +98,31 @@ namespace AIRefactored.AI.Movement
                 {
                     Vector3 squadOffset = _cache.SquadPath.GetCurrentOffset();
                     if (squadOffset.sqrMagnitude > MinMagnitude)
+                    {
+                        squadOffset.y = 0f;
                         adjusted += squadOffset.normalized * SquadOffsetScale;
+                    }
                 }
 
                 Vector3 avoidVector = ComputeAvoidance();
                 if (avoidVector.sqrMagnitude > MinMagnitude)
+                {
+                    avoidVector.y = 0f;
                     adjusted += avoidVector.normalized * AvoidanceScale;
+                }
 
                 Vector3 velocity = Vector3.zero;
-                try
-                {
-                    velocity = _bot.GetPlayer != null ? _bot.GetPlayer.Velocity : Vector3.zero;
-                }
-                catch { }
-
+                try { velocity = _bot.GetPlayer != null ? _bot.GetPlayer.Velocity : Vector3.zero; } catch { }
                 if (velocity.sqrMagnitude > MinMagnitude)
+                {
+                    velocity.y = 0f;
                     adjusted += velocity.normalized * VelocityFactor;
+                }
 
+                // Add tiny variance to break sync artifacts
+                adjusted += UnityEngine.Random.insideUnitSphere * 0.01f;
                 adjusted.y = 0f;
+
                 return adjusted.sqrMagnitude > MinMagnitude ? adjusted.normalized : baseDir;
             }
             catch
@@ -152,6 +158,7 @@ namespace AIRefactored.AI.Movement
                     float dist = offset.magnitude;
                     if (dist < AvoidanceRadius && dist > 0.01f)
                     {
+                        offset.y = 0f;
                         repulsion += offset.normalized / dist;
                         count++;
                     }
@@ -173,7 +180,7 @@ namespace AIRefactored.AI.Movement
                 if (owner == null || owner.PersonalityProfile == null)
                 {
                     _targetChaosOffset = Vector3.zero;
-                    _nextChaosUpdate = now + ChaosInterval;
+                    _nextChaosUpdate = now + UnityEngine.Random.Range(ChaosIntervalMin, ChaosIntervalMax);
                     return;
                 }
 
@@ -184,12 +191,12 @@ namespace AIRefactored.AI.Movement
                 float z = UnityEngine.Random.Range(0.1f, chaosRange);
 
                 _targetChaosOffset = new Vector3(x, 0f, z);
-                _nextChaosUpdate = now + ChaosInterval;
+                _nextChaosUpdate = now + UnityEngine.Random.Range(ChaosIntervalMin, ChaosIntervalMax);
             }
             catch
             {
                 _targetChaosOffset = Vector3.zero;
-                _nextChaosUpdate = now + ChaosInterval;
+                _nextChaosUpdate = now + UnityEngine.Random.Range(ChaosIntervalMin, ChaosIntervalMax);
             }
         }
 

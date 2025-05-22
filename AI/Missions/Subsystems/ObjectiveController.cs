@@ -4,7 +4,7 @@
 //
 //   THIS FILE IS SYSTEMATICALLY MANAGED.
 //   Please follow strict StyleCop, ReSharper, and AI-Refactored code standards for all modifications.
-//   Beyond Diamond: Group, loot, mission, and movement logic is fully pooled, null-guarded, squad-aware, and never disables itself.
+//   Polish: Group, loot, mission, and movement logic is fully pooled, null-guarded, squad-aware, and never disables itself.
 // </auto-generated>
 
 using MissionType = AIRefactored.AI.Missions.BotMissionController.MissionType;

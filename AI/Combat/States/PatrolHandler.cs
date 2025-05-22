@@ -6,7 +6,7 @@
 //   Bulletproof: All failures are locally isolated, never disables itself, never triggers fallback AI.
 //   Realism Pass: Patrol, fallback, and voice logic is deeply humanized, squad-aware, and anticipation-rich.
 //   Teleportation forbidden: All movement is NavMesh/path-based, never instant.
-//   Beyond Diamond: Patrol flow, group cohesion, scan/hesitation, voice, anti-cluster, wounded/alert behaviors.
+//   Polish: Patrol flow, group cohesion, scan/hesitation, voice, anti-cluster, wounded/alert behaviors.
 // </auto-generated>
 
 namespace AIRefactored.AI.Combat.States

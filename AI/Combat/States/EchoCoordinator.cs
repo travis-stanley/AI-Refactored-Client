@@ -5,7 +5,7 @@
 //   THIS FILE IS SYSTEMATICALLY MANAGED.
 //   Bulletproof: All errors are locally isolated, never disables handler, never disables squadmates, never triggers fallback AI.
 //   All fallback/echo points are hints only—never direct teleportation. All movement is path-based, never direct assignment.
-//   Beyond Diamond: Layered role-based echoing, realistic squad chatter, urgency spread, and anti-hivemind logic.
+//   Polish: Layered role-based echoing, realistic squad chatter, urgency spread, and anti-hivemind logic.
 // </auto-generated>
 
 namespace AIRefactored.AI.Combat.States

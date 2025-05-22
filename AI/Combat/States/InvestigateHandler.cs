@@ -5,7 +5,7 @@
 //   THIS FILE IS SYSTEMATICALLY MANAGED.
 //   Bulletproof: All errors are locally isolated, never disables itself, never triggers fallback AI.
 //   Teleportation forbidden: All investigation movement is path-based, NavMesh-validated, and smooth.
-//   Beyond Diamond: Squad-aware, personality-driven, memory-based, anticipation-rich investigation logic,
+//   Polish: Squad-aware, personality-driven, memory-based, anticipation-rich investigation logic,
 //                   plus idle scan, give-up, voice comms, and dynamic squad formation.
 // </auto-generated>
 

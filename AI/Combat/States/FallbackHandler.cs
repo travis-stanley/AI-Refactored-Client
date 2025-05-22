@@ -5,7 +5,7 @@
 //   THIS FILE IS SYSTEMATICALLY MANAGED.
 //   Bulletproof: All errors are locally isolated, never disables itself, never triggers fallback AI, never enters terminal state.
 //   Teleportation is strictly forbidden: all fallback movement is path-based and validated.
-//   Beyond Diamond: Full squad tactics, panic contagion, micro-random offsetting, voice/stance, error-proof pooling.
+//   Polish: Full squad tactics, panic contagion, micro-random offsetting, voice/stance, error-proof pooling.
 // </auto-generated>
 
 namespace AIRefactored.AI.Combat.States

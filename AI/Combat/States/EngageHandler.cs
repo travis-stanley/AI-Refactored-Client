@@ -5,7 +5,7 @@
 //   THIS FILE IS SYSTEMATICALLY MANAGED.
 //   Bulletproof: All errors are locally isolated, never disables itself, never triggers fallback AI.
 //   Anti-teleport: All movement is smooth, validated, and strictly path-based.
-//   Beyond Diamond: Cautious advance, micro-pauses, anti-cluster squad pathing, and human-like “give up” logic.
+//   Polish: Cautious advance, micro-pauses, anti-cluster squad pathing, and human-like “give up” logic.
 // </auto-generated>
 
 namespace AIRefactored.AI.Combat.States

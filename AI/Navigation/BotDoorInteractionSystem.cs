@@ -3,7 +3,8 @@
 //   Licensed under the MIT License. See LICENSE in the repository root for more information.
 //
 //   THIS FILE IS SYSTEMATICALLY MANAGED.
-//   Failures in AIRefactored logic must always trigger safe fallback to EFT base AI.
+//   All logic is bulletproof and strictly contained—never fallback to vanilla AI, never cascade errors.
+//   Realism Pass: Human-like hesitation, micro-randomization, and organic error handling.
 // </auto-generated>
 
 namespace AIRefactored.AI.Navigation
@@ -16,7 +17,7 @@ namespace AIRefactored.AI.Navigation
     using UnityEngine;
 
     /// <summary>
-    /// Handles door interactions for bots using fallback-agnostic, deadlock-free logic.
+    /// Handles door interactions for bots using bulletproof, fallback-agnostic, deadlock-free logic.
     /// Replaces EFT.BotDoorInteraction with fully AIRefactored logic.
     /// All failures are locally isolated; cannot break or cascade into other systems.
     /// </summary>
@@ -28,6 +29,9 @@ namespace AIRefactored.AI.Navigation
         private const float DoorCheckInterval = 0.4f;
         private const float DoorCastRange = 1.75f;
         private const float DoorCastRadius = 0.4f;
+        private const float HesitateChance = 0.11f; // 11% chance to hesitate before interacting
+        private const float HesitateMinDelay = 0.17f;
+        private const float HesitateMaxDelay = 0.52f;
 
         #endregion
 
@@ -39,6 +43,7 @@ namespace AIRefactored.AI.Navigation
         private float _lastDoorCheckTime;
         private float _nextRetryTime;
         private Door _currentDoor;
+        private float _hesitateUntil;
 
         #endregion
 
@@ -63,6 +68,7 @@ namespace AIRefactored.AI.Navigation
 
             _bot = bot;
             _log = Plugin.LoggerInstance;
+            _hesitateUntil = 0f;
         }
 
         #endregion
@@ -85,7 +91,6 @@ namespace AIRefactored.AI.Navigation
 
                 if (time < _lastDoorCheckTime + DoorCheckInterval)
                     return;
-
                 _lastDoorCheckTime = time;
 
                 Vector3 origin = _bot.Position + Vector3.up * 1.2f;
@@ -131,13 +136,25 @@ namespace AIRefactored.AI.Navigation
                     return;
                 }
 
+                // Human-like hesitation: bots sometimes pause before interacting with a door, like a real player double-checking the risk.
+                if (_hesitateUntil > time)
+                {
+                    MarkBlocked(door);
+                    return;
+                }
+                if (UnityEngine.Random.value < HesitateChance)
+                {
+                    _hesitateUntil = time + UnityEngine.Random.Range(HesitateMinDelay, HesitateMaxDelay);
+                    MarkBlocked(door);
+                    return;
+                }
+
                 try
                 {
                     EInteractionType interactionType = GetBestInteractionType(state);
                     InteractionResult result = new InteractionResult(interactionType);
                     player.CurrentManagedState.StartDoorInteraction(door, result, null);
 
-                    // Log at Debug only; can be filtered at runtime
                     _log.LogDebug("[BotDoorInteraction] " + _bot.name + " → " + interactionType + " door " + door.name);
                 }
                 catch (Exception ex)
@@ -149,7 +166,7 @@ namespace AIRefactored.AI.Navigation
                 _currentDoor = door;
                 IsBlockedByDoor = true;
             }
-            catch (Exception)
+            catch
             {
                 // Locally isolated; cannot break or cascade.
                 ClearDoorState();
@@ -184,33 +201,26 @@ namespace AIRefactored.AI.Navigation
             IsBlockedByDoor = false;
             _nextRetryTime = 0f;
             _lastDoorCheckTime = 0f;
+            _hesitateUntil = 0f;
         }
 
         #endregion
 
         #region Private Helpers
 
-        /// <summary>
-        /// Clears all door state and resets blocking.
-        /// </summary>
         private void ClearDoorState()
         {
             _currentDoor = null;
             IsBlockedByDoor = false;
+            _hesitateUntil = 0f;
         }
 
-        /// <summary>
-        /// Marks the given door as currently blocking the bot.
-        /// </summary>
         private void MarkBlocked(Door door)
         {
             _currentDoor = door;
             IsBlockedByDoor = true;
         }
 
-        /// <summary>
-        /// Determines the best interaction type for the given door state.
-        /// </summary>
         private static EInteractionType GetBestInteractionType(EDoorState state)
         {
             if ((state & EDoorState.Shut) != 0 || state == EDoorState.None)

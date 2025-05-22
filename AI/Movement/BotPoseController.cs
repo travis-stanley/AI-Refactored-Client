@@ -3,8 +3,9 @@
 //   Licensed under the MIT License. See LICENSE in the repository root for more information.
 //
 //   THIS FILE IS SYSTEMATICALLY MANAGED.
-//   Failures in AIRefactored logic must always trigger safe fallback to EFT base AI.
-//   All navigation and cover checks use only EFT vanilla logic. No custom navpoint registry is used.
+//   Failures in AIRefactored logic never break the stack. All navigation and cover checks use only EFT vanilla logic.
+//   All pose controls are realism-tuned: instant stance, smooth transitions, and human-like animation logic.
+//   Headless and multiplayer safe. Bulletproof error isolation.
 // </auto-generated>
 
 namespace AIRefactored.AI.Movement
@@ -13,13 +14,15 @@ namespace AIRefactored.AI.Movement
     using AIRefactored.AI.Core;
     using AIRefactored.AI.Helpers;
     using AIRefactored.AI.Memory;
+    using AIRefactored.AI.Groups;
     using AIRefactored.Core;
     using EFT;
     using UnityEngine;
 
     /// <summary>
-    /// Controls bot stance transitions (standing, crouching, prone) based on combat, panic, suppression, and cover logic.
-    /// Smoothly blends transitions for realistic animation flow. All failures are locally isolated; never propagate.
+    /// Handles all stance and pose transitions for bots: standing, crouch, prone.
+    /// All logic 100% BotBrain driven. Bulletproof: failures locally contained, never break other subsystems.
+    /// No vanilla fallback. Never disables or locks a bot.
     /// </summary>
     public sealed class BotPoseController
     {
@@ -33,6 +36,7 @@ namespace AIRefactored.AI.Movement
         private const float CrouchPose = 50f;
         private const float PronePose = 0f;
         private const float StandPose = 100f;
+        private const float SquadCrouchRadius = 2.6f; // If squad is stacked, crouch more.
 
         #endregion
 
@@ -55,14 +59,17 @@ namespace AIRefactored.AI.Movement
         #region Constructor
 
         /// <summary>
-        /// Creates a new BotPoseController with strict null-safety and correct references.
+        /// Initializes the pose controller for the given bot and cache.
         /// </summary>
         public BotPoseController(BotOwner bot, BotComponentCache cache)
         {
-            if (!EFTPlayerUtil.IsValidBotOwner(bot)) throw new ArgumentException("[BotPoseController] Invalid bot.");
-            if (cache == null || cache.PersonalityProfile == null) throw new ArgumentException("[BotPoseController] Cache/personality is null.");
+            if (!EFTPlayerUtil.IsValidBotOwner(bot))
+                throw new ArgumentException("[BotPoseController] Invalid bot.");
+            if (cache == null || cache.PersonalityProfile == null)
+                throw new ArgumentException("[BotPoseController] Cache/personality is null.");
             MovementContext movement = bot.GetPlayer?.MovementContext;
-            if (movement == null) throw new ArgumentException("[BotPoseController] Missing MovementContext.");
+            if (movement == null)
+                throw new ArgumentException("[BotPoseController] Missing MovementContext.");
 
             _bot = bot;
             _cache = cache;
@@ -78,64 +85,41 @@ namespace AIRefactored.AI.Movement
 
         #region Public API
 
-        /// <summary>
-        /// Gets the bot's current pose level (0=prone, 50=crouch, 100=stand).
-        /// </summary>
         public float GetPoseLevel()
         {
-            try
-            {
-                return _movement.PoseLevel;
-            }
-            catch
-            {
-                return StandPose;
-            }
+            try { return _movement.PoseLevel; }
+            catch { return StandPose; }
         }
 
-        /// <summary>
-        /// Locks the bot into a crouch pose until unlocked.
-        /// </summary>
         public void LockCrouchPose()
         {
             _targetPoseLevel = CrouchPose;
             _isLocked = true;
         }
 
-        /// <summary>
-        /// Unlocks pose (returns to normal AI-driven logic).
-        /// </summary>
-        public void UnlockPose()
-        {
-            _isLocked = false;
-        }
+        public void UnlockPose() => _isLocked = false;
 
-        /// <summary>
-        /// Explicitly sets pose to crouch, optionally using anticipation value.
-        /// </summary>
+        public void Crouch() => SetCrouch(false);
+
+        public void Stand() => SetStand();
+
         public void SetCrouch(bool anticipate = false)
         {
             _targetPoseLevel = anticipate ? 60f : CrouchPose;
         }
 
-        /// <summary>
-        /// Explicitly sets pose to prone, optionally using anticipation value.
-        /// </summary>
         public void SetProne(bool anticipate = false)
         {
             _targetPoseLevel = anticipate ? 20f : PronePose;
         }
 
-        /// <summary>
-        /// Explicitly sets pose to full standing.
-        /// </summary>
         public void SetStand()
         {
             _targetPoseLevel = StandPose;
         }
 
         /// <summary>
-        /// Main tick entry. Blends pose toward target, updates pose intent on interval.
+        /// Main per-frame update. Blends pose, handles all transition and intent.
         /// </summary>
         public void Tick(float currentTime)
         {
@@ -144,7 +128,7 @@ namespace AIRefactored.AI.Movement
                 if (_bot == null || _bot.IsDead || _movement == null)
                     return;
 
-                float deltaTime = currentTime - _lastTickTime;
+                float deltaTime = Mathf.Max(0.001f, currentTime - _lastTickTime);
                 _lastTickTime = currentTime;
 
                 if (_isLocked)
@@ -155,26 +139,22 @@ namespace AIRefactored.AI.Movement
 
                 if (currentTime >= _nextPoseCheckTime)
                 {
-                    _nextPoseCheckTime = currentTime + PoseCheckInterval;
+                    _nextPoseCheckTime = currentTime + PoseCheckInterval + UnityEngine.Random.Range(-0.09f, 0.13f);
                     EvaluatePoseIntent(currentTime);
                 }
 
                 BlendPose(deltaTime);
             }
-            catch
-            {
-                // Bulletproof: failures are isolated
-            }
+            catch { /* All failures locally contained, never break other logic. */ }
         }
 
         /// <summary>
-        /// Examines cover near the given position and anticipates best pose, using only CustomNavigationPoint.
+        /// Attempts to set stance contextually based on proximity and type of last cover.
         /// </summary>
         public void TrySetStanceFromNearbyCover(Vector3 position)
         {
             try
             {
-                // No registry or custom nav queries. Use only BotMemory/cover info if available.
                 if (_bot?.Memory?.BotCurrentCoverInfo?.LastCover is CustomNavigationPoint lastCover)
                 {
                     float dist = Vector3.Distance(position, lastCover.Position);
@@ -192,21 +172,14 @@ namespace AIRefactored.AI.Movement
                         }
                     }
                 }
-                // If no valid cover found, do nothing. (Do not call fallback, since stance logic is not critical.)
             }
-            catch
-            {
-                // Isolated: never propagates
-            }
+            catch { }
         }
 
         #endregion
 
         #region Internal Logic
 
-        /// <summary>
-        /// Blends pose smoothly towards the target, using panic/combat speed factors.
-        /// </summary>
         private void BlendPose(float deltaTime)
         {
             try
@@ -214,32 +187,39 @@ namespace AIRefactored.AI.Movement
                 if (Mathf.Abs(_currentPoseLevel - _targetPoseLevel) < MinPoseThreshold)
                     return;
 
-                float panicFactor = _cache.PanicHandler != null && _cache.PanicHandler.IsPanicking ? 0.6f : 1f;
-                float combatFactor = _cache.Combat != null && _cache.Combat.IsInCombatState() ? 1f : 0.4f;
-                float speed = PoseBlendSpeedBase * panicFactor * combatFactor;
+                float panicFactor = _cache.PanicHandler != null && _cache.PanicHandler.IsPanicking ? 0.45f : 1f;
+                float combatFactor = _cache.Combat != null && _cache.Combat.IsInCombatState() ? 1f : 0.32f;
+                float squadPenalty = IsSquadStacked() ? 0.66f : 1f;
+                float speed = PoseBlendSpeedBase * panicFactor * combatFactor * squadPenalty;
 
                 _currentPoseLevel = Mathf.MoveTowards(_currentPoseLevel, _targetPoseLevel, speed * deltaTime);
                 _movement.SetPoseLevel(_currentPoseLevel);
             }
-            catch
-            {
-                // Isolated: never cascades or breaks system
-            }
+            catch { }
         }
 
         /// <summary>
-        /// Evaluates current threat/cover/suppression and sets pose intent.
+        /// Evaluate the pose intent using current state, personality, cover, squad, and memory.
         /// </summary>
         private void EvaluatePoseIntent(float currentTime)
         {
             try
             {
+                // Blind or flashbanged: crouch for protection
+                if (_cache.IsBlinded && currentTime < _cache.BlindUntilTime)
+                {
+                    _targetPoseLevel = CrouchPose;
+                    return;
+                }
+
+                // Panic triggers prone
                 if (_cache.PanicHandler != null && _cache.PanicHandler.IsPanicking)
                 {
                     _targetPoseLevel = PronePose;
                     return;
                 }
 
+                // Suppressed: crouch for suppression duration
                 if (_cache.Suppression != null && _cache.Suppression.IsSuppressed())
                 {
                     _suppressedUntil = currentTime + SuppressionCrouchDuration;
@@ -251,6 +231,14 @@ namespace AIRefactored.AI.Movement
                     return;
                 }
 
+                // If squad is stacked (too close), force crouch so everyone fits and avoid "head pop"
+                if (IsSquadStacked())
+                {
+                    _targetPoseLevel = CrouchPose;
+                    return;
+                }
+
+                // Frenzied/fearful/sniper bots prone on big flanks
                 if (_personality.IsFrenzied || _personality.IsFearful || _personality.Personality == PersonalityType.Sniper)
                 {
                     bool flankFound;
@@ -266,40 +254,57 @@ namespace AIRefactored.AI.Movement
                     }
                 }
 
-                // Use only last cover from memory if available
-                if (_bot.Memory != null && _bot.Memory.BotCurrentCoverInfo != null)
+                // Use cover to influence stance
+                if (_bot.Memory?.BotCurrentCoverInfo?.LastCover is CustomNavigationPoint lastCover)
                 {
-                    CustomNavigationPoint lastCover = _bot.Memory.BotCurrentCoverInfo.LastCover;
-                    if (lastCover != null)
+                    float dist = Vector3.Distance(_bot.Position, lastCover.Position);
+                    if (dist < 2.5f)
                     {
-                        float dist = Vector3.Distance(_bot.Position, lastCover.Position);
-
-                        if (dist < 2.5f)
+                        if (lastCover.CoverLevel == CoverLevel.Lay)
                         {
-                            if (lastCover.CoverLevel == CoverLevel.Lay)
-                            {
-                                _targetPoseLevel = PronePose;
-                                return;
-                            }
-
-                            if (lastCover.CoverLevel == CoverLevel.Sit)
-                            {
-                                _targetPoseLevel = CrouchPose;
-                                return;
-                            }
+                            _targetPoseLevel = PronePose;
+                            return;
+                        }
+                        if (lastCover.CoverLevel == CoverLevel.Sit)
+                        {
+                            _targetPoseLevel = CrouchPose;
+                            return;
                         }
                     }
                 }
 
+                // Human-like logic: cautious/camper bots crouch in combat, others stand
                 bool inCombat = _cache.Combat != null && _cache.Combat.IsInCombatState();
                 bool prefersCrouch = _personality.Caution > 0.6f || _personality.IsCamper;
 
                 _targetPoseLevel = inCombat && prefersCrouch ? CrouchPose : StandPose;
             }
-            catch
+            catch { }
+        }
+
+        /// <summary>
+        /// Returns true if squad is tightly stacked 
+        /// </summary>
+        private bool IsSquadStacked()
+        {
+            try
             {
-                // Isolated: never propagates
+                if (_bot?.BotsGroup == null || _bot.BotsGroup.MembersCount <= 1)
+                    return false;
+
+                Vector3 myPos = _bot.Position;
+                for (int i = 0; i < _bot.BotsGroup.MembersCount; i++)
+                {
+                    var mate = _bot.BotsGroup.Member(i);
+                    if (mate == null || mate == _bot || mate.IsDead)
+                        continue;
+                    float dist = Vector3.Distance(myPos, mate.Position);
+                    if (dist < SquadCrouchRadius)
+                        return true;
+                }
+                return false;
             }
+            catch { return false; }
         }
 
         #endregion

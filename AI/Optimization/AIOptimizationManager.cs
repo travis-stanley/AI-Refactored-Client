@@ -5,12 +5,14 @@
 //   THIS FILE IS SYSTEMATICALLY MANAGED.
 //   Please follow strict StyleCop, ReSharper, and AI-Refactored code standards for all modifications.
 //   Failures in optimization routines must never break other AI systems or the bot itself.
+//   Realism Pass: Micro-randomized escalation, personality-driven adjustment (from AIRefactoredBotOwner/BotRegistry), and strict safety.
 // </auto-generated>
 
 namespace AIRefactored.AI.Optimization
 {
     using System;
     using System.Collections.Generic;
+    using AIRefactored.AI.Core;
     using AIRefactored.Core;
     using AIRefactored.Runtime;
     using BepInEx.Logging;
@@ -29,6 +31,7 @@ namespace AIRefactored.AI.Optimization
         #region Constants
 
         private const float EscalationCooldownTime = 10f;
+        private const float EscalationRandomVariance = 0.09f; // ~9% micro-variance for realism
 
         #endregion
 
@@ -61,7 +64,6 @@ namespace AIRefactored.AI.Optimization
                 int id = bot.GetInstanceID();
                 if (BotOptimizationState.TryGetValue(id, out bool alreadyOptimized) && alreadyOptimized)
                 {
-                    // Only log once, not spam.
                     return;
                 }
 
@@ -74,8 +76,6 @@ namespace AIRefactored.AI.Optimization
                 {
                     BotOptimizationState[id] = false;
                     Logger.LogError("[AIOptimizationManager] Optimization failed for bot " + GetName(bot) + ": " + ex);
-                    // Do not propagate failure; continue for all other bots.
-                    return;
                 }
             }
             catch (Exception outer)
@@ -101,7 +101,6 @@ namespace AIRefactored.AI.Optimization
                 int id = bot.GetInstanceID();
                 if (!BotOptimizationState.TryGetValue(id, out bool wasOptimized) || !wasOptimized)
                 {
-                    // No reset needed, do not log repeatedly.
                     return;
                 }
 
@@ -114,7 +113,6 @@ namespace AIRefactored.AI.Optimization
                 {
                     Logger.LogError("[AIOptimizationManager] Reset failed for bot " + GetName(bot) + ": " + ex);
                     BotOptimizationState[id] = false;
-                    return;
                 }
             }
             catch (Exception outer)
@@ -164,15 +162,46 @@ namespace AIRefactored.AI.Optimization
 
                 try
                 {
-                    mind.DIST_TO_FOUND_SQRT = Mathf.Clamp(mind.DIST_TO_FOUND_SQRT * 1.25f, 200f, 800f);
-                    mind.ENEMY_LOOK_AT_ME_ANG = Mathf.Clamp(mind.ENEMY_LOOK_AT_ME_ANG * 0.7f, 5f, 60f);
-                    mind.CHANCE_TO_RUN_CAUSE_DAMAGE_0_100 = Mathf.Clamp(mind.CHANCE_TO_RUN_CAUSE_DAMAGE_0_100 + 25f, 0f, 100f);
+                    // Personality profile: cache then registry fallback (using string Profile.Id)
+                    float aggression = 0.5f;
+                    float caution = 0.5f;
+                    BotComponentCache cache = null;
+
+                    string profileId = (bot != null && bot.Profile != null) ? bot.Profile.Id : null;
+                    if (!string.IsNullOrEmpty(profileId))
+                    {
+                        BotComponentCacheRegistry.TryGet(profileId, out cache);
+                    }
+
+                    var profile = cache?.AIRefactoredBotOwner?.PersonalityProfile;
+                    if (profile == null && !string.IsNullOrEmpty(profileId))
+                    {
+                        profile = BotRegistry.Get(profileId);
+                    }
+                    if (profile != null)
+                    {
+                        aggression = Mathf.Clamp01(profile.AggressionLevel);
+                        caution = Mathf.Clamp01(profile.Caution);
+                    }
+
+                    float variance = 1f + UnityEngine.Random.Range(-EscalationRandomVariance, EscalationRandomVariance);
+
+                    // Threat perception (distance)
+                    mind.DIST_TO_FOUND_SQRT = Mathf.Clamp(mind.DIST_TO_FOUND_SQRT * (1.25f + aggression * 0.1f) * variance, 180f, 800f);
+
+                    // Responsiveness (angle)
+                    mind.ENEMY_LOOK_AT_ME_ANG = Mathf.Clamp(mind.ENEMY_LOOK_AT_ME_ANG * (0.7f - caution * 0.07f) * variance, 5f, 60f);
+
+                    // Chance to run on damage
+                    mind.CHANCE_TO_RUN_CAUSE_DAMAGE_0_100 = Mathf.Clamp(
+                        mind.CHANCE_TO_RUN_CAUSE_DAMAGE_0_100 + 20f + aggression * 10f - caution * 5f,
+                        0f, 100f);
+
                     LastEscalationTimes[id] = now;
                 }
                 catch (Exception ex)
                 {
                     Logger.LogError("[AIOptimizationManager] Escalation adjustment failed for bot " + GetName(bot) + ": " + ex);
-                    return;
                 }
             }
             catch (Exception outer)

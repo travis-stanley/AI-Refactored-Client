@@ -4,7 +4,7 @@
 //
 //   THIS FILE IS SYSTEMATICALLY MANAGED.
 //   Please follow strict StyleCop, ReSharper, and AI-Refactored code standards for all modifications.
-//   All squad optimization logic is bulletproof and fully isolated.
+//   All squad optimization logic is bulletproof, personality-synchronized, and simulates authentic human group dynamics.
 // </auto-generated>
 
 namespace AIRefactored.AI.Optimization
@@ -18,8 +18,8 @@ namespace AIRefactored.AI.Optimization
     using UnityEngine;
 
     /// <summary>
-    /// Applies synchronized personality-based tuning across an AI squad.
-    /// Enhances cohesion, alert propagation, and retaliatory behavior.
+    /// Applies synchronized, personality-based tuning across an AI squad.
+    /// Enhances cohesion, alert propagation, and retaliatory behavior with realistic group psychology scaling.
     /// </summary>
     public sealed class BotOwnerGroupOptimization
     {
@@ -33,61 +33,73 @@ namespace AIRefactored.AI.Optimization
 
         /// <summary>
         /// Applies group cohesion and perception modifiers to all valid AI bots in a squad.
+        /// Modifiers use realistic group scaling and ensure unique but synergistic personalities.
         /// All failures are isolated—no exception can break squad or system.
         /// </summary>
         /// <param name="botOwners">List of bots in the same squad or group context.</param>
         public void OptimizeGroupAI(List<BotOwner> botOwners)
         {
             if (botOwners == null || botOwners.Count == 0)
-            {
                 return;
-            }
 
+            // Compute group-level statistics for realism (e.g. group average cohesion)
+            float avgCohesion = 0f, avgAggression = 0f;
+            int aliveCount = 0;
+            for (int i = 0; i < botOwners.Count; i++)
+            {
+                try
+                {
+                    var bot = botOwners[i];
+                    if (bot == null || bot.IsDead)
+                        continue;
+
+                    Profile profile = bot.Profile;
+                    if (profile == null || string.IsNullOrEmpty(profile.Id))
+                        continue;
+
+                    var personality = BotRegistry.Get(profile.Id);
+                    if (personality == null)
+                        continue;
+
+                    avgCohesion += Mathf.Clamp01(personality.Cohesion);
+                    avgAggression += Mathf.Clamp01(personality.AggressionLevel);
+                    aliveCount++;
+                }
+                catch { /* continue, don't break stat gathering */ }
+            }
+            if (aliveCount == 0) return;
+            avgCohesion /= aliveCount;
+            avgAggression /= aliveCount;
+
+            // Apply tuning per bot using group-level averages for realism
             for (int i = 0; i < botOwners.Count; i++)
             {
                 try
                 {
                     BotOwner bot = botOwners[i];
                     if (bot == null || bot.IsDead)
-                    {
                         continue;
-                    }
 
                     Player player = bot.GetPlayer;
                     if (player == null || !player.IsAI || player.IsYourPlayer)
-                    {
                         continue;
-                    }
 
                     Profile profile = bot.Profile;
                     if (profile == null || string.IsNullOrEmpty(profile.Id))
-                    {
                         continue;
-                    }
 
                     BotSettingsComponents settings = null;
                     try { settings = bot.Settings != null ? bot.Settings.FileSettings : null; } catch { }
                     if (settings == null || settings.Mind == null)
-                    {
                         continue;
-                    }
 
                     BotGlobalsMindSettings mind = settings.Mind;
                     BotPersonalityProfile personality = null;
                     try { personality = BotRegistry.Get(profile.Id); } catch { }
                     if (personality == null)
-                    {
                         continue;
-                    }
 
-                    try
-                    {
-                        ApplyModifiers(bot, personality, mind);
-                    }
-                    catch (Exception ex)
-                    {
-                        Logger.LogWarning("[GroupOpt] ApplyModifiers failed for bot: " + (bot.Profile?.Info?.Nickname ?? "Unknown") + " Exception: " + ex);
-                    }
+                    ApplyModifiers(bot, personality, mind, avgCohesion, avgAggression, aliveCount, botOwners.Count);
                 }
                 catch (Exception ex)
                 {
@@ -100,21 +112,49 @@ namespace AIRefactored.AI.Optimization
 
         #region Private Methods
 
-        private static void ApplyModifiers(BotOwner bot, BotPersonalityProfile profile, BotGlobalsMindSettings mind)
+        private static void ApplyModifiers(
+            BotOwner bot,
+            BotPersonalityProfile profile,
+            BotGlobalsMindSettings mind,
+            float groupCohesion,
+            float groupAggression,
+            int groupAlive,
+            int groupTotal)
         {
             try
             {
-                // Adjust perception distance based on squad cohesion
-                mind.DIST_TO_FOUND_SQRT = Mathf.Lerp(300f, 600f, 1f - profile.Cohesion);
+                // Personality blending: the individual's values get partially averaged toward group mean
+                float pCohesion = Mathf.Lerp(profile.Cohesion, groupCohesion, 0.35f);
+                float pAggression = Mathf.Lerp(profile.AggressionLevel, groupAggression, 0.35f);
 
-                // Add aggression weight for retaliatory behavior
-                mind.FRIEND_AGR_KILL = Mathf.Clamp(mind.FRIEND_AGR_KILL + (profile.AggressionLevel * 0.15f), 0f, 1f);
+                // Larger squads tend to be more cautious as a group, but aggressive squads react faster when one falls
+                float squadFactor = Mathf.Clamp01(groupTotal / 4.0f);
+                float cohesionBonus = 1f - pCohesion * 0.6f * squadFactor;
+                float aggressionBonus = pAggression * 0.2f + groupAggression * 0.15f;
 
-                // Narrow vision cone slightly for higher cohesion squads
-                mind.ENEMY_LOOK_AT_ME_ANG = Mathf.Clamp(mind.ENEMY_LOOK_AT_ME_ANG - (profile.Cohesion * 5f), 5f, 30f);
+                // Vision range increases when alone, decreases with tight cohesion
+                mind.DIST_TO_FOUND_SQRT = Mathf.Lerp(400f, 700f, cohesionBonus);
+
+                // Retaliation: higher if squad is aggressive, and more so if recent casualties
+                float casualtyPenalty = groupTotal > 1 ? (1f - (float)groupAlive / groupTotal) : 0f;
+                mind.FRIEND_AGR_KILL = Mathf.Clamp(mind.FRIEND_AGR_KILL + aggressionBonus + casualtyPenalty * 0.45f, 0f, 1f);
+
+                // Vision cone narrows for tight squads, widens if squad is spread out
+                mind.ENEMY_LOOK_AT_ME_ANG = Mathf.Clamp(30f - (pCohesion * 12.5f) + (1f - groupCohesion) * 7f, 5f, 40f);
+
+                // Alertness: more jitter when low cohesion or when only 1-2 alive
+                mind.MIN_DAMAGE_SCARE = Mathf.Lerp(20f, 6f, (1f - groupCohesion) + (groupAlive <= 2 ? 0.25f : 0f));
 
                 string name = bot.Profile?.Info?.Nickname ?? "Unknown";
-                Logger.LogDebug($"[GroupOpt] {name} → Cohesion={profile.Cohesion:F2}, FRIEND_AGR_KILL={mind.FRIEND_AGR_KILL:F2}, ENEMY_ANG={mind.ENEMY_LOOK_AT_ME_ANG:F1}°");
+                Logger.LogDebug(
+                    $"[GroupOpt] {name} → " +
+                    $"Cohesion={pCohesion:F2}, " +
+                    $"Agg={pAggression:F2}, " +
+                    $"Alive={groupAlive}/{groupTotal}, " +
+                    $"Vision={mind.DIST_TO_FOUND_SQRT:F0}, " +
+                    $"RETAL={mind.FRIEND_AGR_KILL:F2}, " +
+                    $"CONE={mind.ENEMY_LOOK_AT_ME_ANG:F1}°, " +
+                    $"SCARE={mind.MIN_DAMAGE_SCARE:F1}");
             }
             catch (Exception ex)
             {

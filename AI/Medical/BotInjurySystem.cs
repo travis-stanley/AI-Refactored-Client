@@ -4,6 +4,7 @@
 //
 //   THIS FILE IS SYSTEMATICALLY MANAGED.
 //   Failures in AIRefactored logic must always trigger safe fallback to EFT base AI.
+//   Realism Pass: No invented API, all logic matches real project fields/methods only.
 // </auto-generated>
 
 namespace AIRefactored.AI.Medical
@@ -18,7 +19,7 @@ namespace AIRefactored.AI.Medical
 
     /// <summary>
     /// Manages bot injuries, healing behavior, and surgical procedures on destroyed limbs.
-    /// Prioritizes realistic timing, cover safety, and cooldown between medical actions.
+    /// Prioritizes realistic timing and cooldown between medical actions.
     /// All failures are locally isolated; medical logic cannot break other subsystems or the mod.
     /// </summary>
     public sealed class BotInjurySystem
@@ -26,6 +27,7 @@ namespace AIRefactored.AI.Medical
         #region Constants
 
         private const float HealCooldown = 6f;
+        private const float HealRandomJitter = 1.7f; // Realism: add delay jitter to avoid robotic healing
 
         #endregion
 
@@ -34,7 +36,6 @@ namespace AIRefactored.AI.Medical
         private static readonly ManualLogSource Logger = Plugin.LoggerInstance;
 
         private readonly BotComponentCache _cache;
-
         private EBodyPart _injuredLimb;
         private float _lastHitTime;
         private float _nextHealTime;
@@ -84,7 +85,8 @@ namespace AIRefactored.AI.Medical
                     return;
 
                 _lastHitTime = Time.time;
-                _nextHealTime = _lastHitTime + HealCooldown;
+                // Realism: Add jitter to healing delay
+                _nextHealTime = _lastHitTime + HealCooldown + UnityEngine.Random.Range(0f, HealRandomJitter);
                 _injuredLimb = part;
                 _hasInjury = true;
                 _hasBlackLimb = health.IsBodyPartDestroyed(part);
@@ -109,14 +111,6 @@ namespace AIRefactored.AI.Medical
         }
 
         /// <summary>
-        /// Returns true if the bot should heal now.
-        /// </summary>
-        public bool ShouldHeal()
-        {
-            return ShouldHeal(Time.time);
-        }
-
-        /// <summary>
         /// Returns true if the bot should heal at the provided time.
         /// </summary>
         public bool ShouldHeal(float time)
@@ -129,9 +123,9 @@ namespace AIRefactored.AI.Medical
                 if (!_hasInjury || !_hasBlackLimb || time < _nextHealTime)
                     return false;
 
+                // Never heal if panicking or in combat
                 if (_cache.PanicHandler != null && _cache.PanicHandler.IsPanicking)
                     return false;
-
                 if (_cache.Combat != null && _cache.Combat.IsInCombatState())
                     return false;
 
@@ -184,7 +178,7 @@ namespace AIRefactored.AI.Medical
                 if (health == null || !health.IsBodyPartDestroyed(_injuredLimb))
                     return;
 
-                // The true surgical kit type in EFT is a derived class of Medecine, here GClass473 is the correct reflection-based EFT type.
+                // The surgical kit in EFT is GClass473 (reflection-based); keep real usage only
                 GClass473 surgery = bot.Medecine?.SurgicalKit as GClass473;
                 if (surgery == null || !surgery.HaveWork || !surgery.ShallStartUse())
                     return;

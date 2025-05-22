@@ -3,8 +3,8 @@
 //   Licensed under the MIT License. See LICENSE in the repository root for more information.
 //
 //   THIS FILE IS SYSTEMATICALLY MANAGED.
-//   Failures in AIRefactored logic must always trigger safe fallback to EFT base AI, never break the stack.
-//   Please follow strict StyleCop, ReSharper, and AI-Refactored code standards for all modifications.
+//   Realism: All perception effects, panic triggers, and suppression responses match human-like sensory overloads.
+//   Bulletproof: Never disables bot, all errors locally isolated, multiplayer/headless parity.
 // </auto-generated>
 
 namespace AIRefactored.AI.Perception
@@ -19,7 +19,8 @@ namespace AIRefactored.AI.Perception
 
     /// <summary>
     /// Controls visual impairment from flashbangs, flares, and suppression.
-    /// Adjusts vision range, triggers panic and speech, and propagates enemy awareness.
+    /// Adjusts vision, triggers panic, humanizes bot behavior, and propagates enemy awareness.
+    /// Bulletproof: All logic is null-guarded, error-isolated, and headless/multiplayer safe.
     /// </summary>
     public sealed class BotPerceptionSystem : IFlashReactiveBot
     {
@@ -32,6 +33,8 @@ namespace AIRefactored.AI.Perception
         private const float MinSightDistance = 15f;
         private const float PanicTriggerThreshold = 0.6f;
         private const float SuppressionRecoverySpeed = 0.3f;
+        private const float SuppressedThreshold = 0.18f;
+        private const float PanicCooldown = 2.4f;
 
         #endregion
 
@@ -46,7 +49,15 @@ namespace AIRefactored.AI.Perception
         private BotComponentCache _cache;
         private BotVisionProfile _profile;
 
-        private bool _failed; // disables all further logic if set
+        private bool _failed;
+        private bool _panicTriggered;
+        private float _lastPanicTime;
+
+        #endregion
+
+        #region Public Properties
+
+        public bool IsSuppressed => _suppressionFactor > SuppressedThreshold;
 
         #endregion
 
@@ -54,13 +65,15 @@ namespace AIRefactored.AI.Perception
 
         public void Initialize(BotComponentCache cache)
         {
+            _bot = null;
+            _cache = null;
+            _profile = null;
+            _failed = false;
+            _panicTriggered = false;
+            _lastPanicTime = -1000f;
+
             try
             {
-                _bot = null;
-                _cache = null;
-                _profile = null;
-                _failed = false;
-
                 if (cache == null || cache.Bot == null)
                     return;
 
@@ -101,11 +114,10 @@ namespace AIRefactored.AI.Perception
                 float visibleDist = adjustedSight * (_profile != null ? _profile.AdaptationSpeed : 1f);
 
                 if (_bot.LookSensor != null)
-                {
                     _bot.LookSensor.ClearVisibleDist = visibleDist;
-                }
 
                 float blindDuration = Mathf.Clamp01(_flashBlindness) * 3f;
+
                 if (_cache != null)
                 {
                     _cache.IsBlinded = _flashBlindness > BlindSpeechThreshold;
@@ -154,7 +166,7 @@ namespace AIRefactored.AI.Perception
                 _flashBlindness = Mathf.Clamp01(_flashBlindness + added);
                 _blindStartTime = Time.time;
 
-                if (_flashBlindness > BlindSpeechThreshold && _bot != null && _bot.BotTalk != null && !FikaHeadlessDetector.IsHeadless)
+                if (_flashBlindness > BlindSpeechThreshold && _bot?.BotTalk != null && !FikaHeadlessDetector.IsHeadless)
                 {
                     _bot.BotTalk.TrySay(EPhraseTrigger.OnBeingHurt);
                 }
@@ -200,7 +212,7 @@ namespace AIRefactored.AI.Perception
 
         #endregion
 
-        #region Internals
+        #region Internal Logic
 
         private bool IsActive()
         {
@@ -245,6 +257,7 @@ namespace AIRefactored.AI.Perception
             try
             {
                 float recovery = _profile != null ? _profile.ClarityRecoverySpeed : 1f;
+
                 _flashBlindness = Mathf.MoveTowards(_flashBlindness, 0f, FlashRecoverySpeed * recovery * deltaTime);
                 _flareIntensity = Mathf.MoveTowards(_flareIntensity, 0f, FlareRecoverySpeed * recovery * deltaTime);
                 _suppressionFactor = Mathf.MoveTowards(_suppressionFactor, 0f, SuppressionRecoverySpeed * recovery * deltaTime);
@@ -264,9 +277,16 @@ namespace AIRefactored.AI.Perception
                     return;
 
                 float elapsed = Time.time - _blindStartTime;
-                if (_flashBlindness >= PanicTriggerThreshold && elapsed < 2.5f)
+                float now = Time.time;
+                if (!_panicTriggered && _flashBlindness >= PanicTriggerThreshold && elapsed < PanicCooldown)
                 {
                     _cache.PanicHandler.TriggerPanic();
+                    _panicTriggered = true;
+                    _lastPanicTime = now;
+                }
+                else if (_panicTriggered && now - _lastPanicTime > PanicCooldown)
+                {
+                    _panicTriggered = false;
                 }
             }
             catch (Exception ex)
@@ -280,7 +300,7 @@ namespace AIRefactored.AI.Perception
         {
             try
             {
-                if (_cache == null || _cache.IsBlinded || _bot == null || _bot.Memory == null)
+                if (_cache == null || _cache.IsBlinded || _bot?.Memory == null)
                     return;
 
                 IPlayer raw = _bot.Memory.GoalEnemy?.Person;
@@ -290,10 +310,7 @@ namespace AIRefactored.AI.Perception
                 Player target = EFTPlayerUtil.AsEFTPlayer(raw);
                 Player self = EFTPlayerUtil.ResolvePlayer(_bot);
 
-                if (!EFTPlayerUtil.IsValid(target) || !EFTPlayerUtil.IsValid(self))
-                    return;
-
-                if (EFTPlayerUtil.IsEnemyOf(_bot, target))
+                if (EFTPlayerUtil.IsValid(target) && EFTPlayerUtil.IsValid(self) && EFTPlayerUtil.IsEnemyOf(_bot, target))
                 {
                     BotTeamLogic.AddEnemy(_bot, raw);
                 }

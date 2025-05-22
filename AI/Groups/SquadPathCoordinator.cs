@@ -3,7 +3,7 @@
 //   Licensed under the MIT License. See LICENSE in the repository root for more information.
 //
 //   THIS FILE IS SYSTEMATICALLY MANAGED.
-//   Failures in AIRefactored logic must always trigger safe fallback to EFT base AI.
+//   All squad offset logic is bulletproof and isolated; squad formations remain human-like and resilient.
 // </auto-generated>
 
 namespace AIRefactored.AI.Groups
@@ -15,7 +15,7 @@ namespace AIRefactored.AI.Groups
     /// <summary>
     /// Controls squad-based movement offsets to prevent clumping and collisions.
     /// Dynamically spaces bots based on squad size and formation pattern.
-    /// Bulletproof: all offsets are safe; errors affect only this feature, never cascade.
+    /// Ensures organic, realistic formation drift, with minor personal error and natural squad behavior.
     /// </summary>
     public sealed class SquadPathCoordinator
     {
@@ -24,6 +24,9 @@ namespace AIRefactored.AI.Groups
         private const float BaseSpacing = 2.25f;
         private const float MaxSpacing = 6.5f;
         private const float MinSpacing = 1.25f;
+        private const float FormationJitterRadius = 0.28f;
+        private const float DriftChangeInterval = 5.7f;
+        private const float MaxDriftDistance = 0.41f;
 
         #endregion
 
@@ -34,6 +37,9 @@ namespace AIRefactored.AI.Groups
         private Vector3 _cachedOffset;
         private int _lastGroupSize;
         private bool _offsetInitialized;
+
+        private float _nextDriftUpdate;
+        private Vector2 _driftOffset;
 
         #endregion
 
@@ -46,11 +52,7 @@ namespace AIRefactored.AI.Groups
         {
             if (cache == null || cache.Bot == null || cache.Bot.IsDead)
             {
-                _bot = null;
-                _group = null;
-                _offsetInitialized = false;
-                _lastGroupSize = -1;
-                _cachedOffset = Vector3.zero;
+                Reset();
                 return;
             }
 
@@ -59,16 +61,26 @@ namespace AIRefactored.AI.Groups
 
             if (_group == null)
             {
-                _bot = null;
-                _offsetInitialized = false;
-                _lastGroupSize = -1;
-                _cachedOffset = Vector3.zero;
+                Reset();
                 return;
             }
 
-            _cachedOffset = Vector3.zero;
             _offsetInitialized = false;
             _lastGroupSize = -1;
+            _cachedOffset = Vector3.zero;
+            _driftOffset = Vector2.zero;
+            _nextDriftUpdate = Time.realtimeSinceStartup + GetInitialDriftInterval();
+        }
+
+        private void Reset()
+        {
+            _bot = null;
+            _group = null;
+            _offsetInitialized = false;
+            _lastGroupSize = -1;
+            _cachedOffset = Vector3.zero;
+            _driftOffset = Vector2.zero;
+            _nextDriftUpdate = 0f;
         }
 
         #endregion
@@ -76,7 +88,7 @@ namespace AIRefactored.AI.Groups
         #region Public Methods
 
         /// <summary>
-        /// Returns an offset-adjusted destination to reduce clumping.
+        /// Returns an offset-adjusted destination to reduce clumping, including minor human error drift.
         /// </summary>
         public Vector3 ApplyOffsetTo(Vector3 sharedDestination)
         {
@@ -84,7 +96,7 @@ namespace AIRefactored.AI.Groups
         }
 
         /// <summary>
-        /// Gets the current assigned formation offset.
+        /// Gets the current assigned formation offset, including organic drift.
         /// </summary>
         public Vector3 GetCurrentOffset()
         {
@@ -99,17 +111,15 @@ namespace AIRefactored.AI.Groups
                 _lastGroupSize = currentSize;
             }
 
-            return _cachedOffset;
+            UpdateDrift();
+
+            return _cachedOffset + new Vector3(_driftOffset.x, 0f, _driftOffset.y);
         }
 
         #endregion
 
         #region Private Methods
 
-        /// <summary>
-        /// Computes a unique squad offset for this bot using a deterministic per-bot random seed.
-        /// Never mutates UnityEngine.Random global state.
-        /// </summary>
         private Vector3 ComputeOffset()
         {
             try
@@ -129,24 +139,68 @@ namespace AIRefactored.AI.Groups
                 int seed = unchecked(profileId.GetHashCode() ^ (squadSize * 397));
                 var localRand = new System.Random(seed);
 
-                float baseNoise = (float)(localRand.NextDouble() * 0.8 - 0.4); // [-0.4, 0.4]
+                float baseNoise = (float)(localRand.NextDouble() * 0.9 - 0.45f);
                 float spacing = Mathf.Clamp(BaseSpacing + baseNoise, MinSpacing, MaxSpacing);
 
-                float angleStep = 360f / squadSize;
-                float angleJitter = (float)(localRand.NextDouble() * 16.0 - 8.0); // [-8, 8]
-                float angle = (index * angleStep) + angleJitter;
-                float radians = angle * Mathf.Deg2Rad;
+                float formationTypeRand = (float)localRand.NextDouble();
+                float angleStep, formationAngle;
+                if (formationTypeRand < 0.43f)
+                {
+                    angleStep = 70f / (squadSize - 1);
+                    formationAngle = -35f + (index * angleStep);
+                }
+                else if (formationTypeRand < 0.76f)
+                {
+                    angleStep = 60f / (squadSize - 1);
+                    formationAngle = -30f + (index * angleStep);
+                }
+                else
+                {
+                    angleStep = 360f / squadSize;
+                    formationAngle = index * angleStep + (float)(localRand.NextDouble() * 16.0 - 8.0);
+                }
 
+                float radians = formationAngle * Mathf.Deg2Rad;
                 float x = Mathf.Cos(radians) * spacing;
                 float z = Mathf.Sin(radians) * spacing;
 
-                return new Vector3(x, 0f, z);
+                float biasX = (float)(localRand.NextDouble() * 0.16 - 0.08f);
+                float biasZ = (float)(localRand.NextDouble() * 0.16 - 0.08f);
+
+                return new Vector3(x + biasX, 0f, z + biasZ);
             }
             catch
             {
-                // If anything fails, disable offset for this bot only (zero offset)
                 return Vector3.zero;
             }
+        }
+
+        private void UpdateDrift()
+        {
+            float now = Time.realtimeSinceStartup;
+            if (now < _nextDriftUpdate)
+                return;
+
+            int tick = Mathf.FloorToInt(now / DriftChangeInterval);
+            int driftSeed = unchecked((_bot?.ProfileId?.GetHashCode() ?? 0) ^ tick ^ 0x1F4B6C3);
+            var rand = new System.Random(driftSeed);
+
+            float angle = (float)(rand.NextDouble() * Mathf.PI * 2.0);
+            float radius = (float)(rand.NextDouble() * MaxDriftDistance);
+
+            _driftOffset = new Vector2(
+                Mathf.Cos(angle) * radius,
+                Mathf.Sin(angle) * radius
+            );
+
+            _nextDriftUpdate = now + DriftChangeInterval + (float)(rand.NextDouble() * 2.2f - 1.1f);
+        }
+
+        private float GetInitialDriftInterval()
+        {
+            int seed = unchecked((_bot?.ProfileId?.GetHashCode() ?? 0) ^ 0xBADC0DE);
+            var rand = new System.Random(seed);
+            return DriftChangeInterval * 0.66f + (float)(rand.NextDouble() * 0.66f);
         }
 
         private static int GetBotIndexInGroup(BotOwner bot, BotsGroup group)
@@ -159,9 +213,7 @@ namespace AIRefactored.AI.Groups
             {
                 BotOwner member = group.Member(i);
                 if (member != null && !member.IsDead && member.ProfileId == bot.ProfileId)
-                {
                     return i;
-                }
             }
 
             return -1;

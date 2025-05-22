@@ -3,8 +3,7 @@
 //   Licensed under the MIT License. See LICENSE in the repository root for more information.
 //
 //   THIS FILE IS SYSTEMATICALLY MANAGED.
-//   Please follow strict StyleCop, ReSharper, and AI-Refactored code standards for all modifications.
-//   All threading and background logic is bulletproof and fully isolated.
+//   All threading and background logic is bulletproof and fully isolated. Realism Pass: thread-batch micro-variance, job isolation, domain reload safety.
 // </auto-generated>
 
 namespace AIRefactored.AI.Optimization
@@ -12,6 +11,7 @@ namespace AIRefactored.AI.Optimization
 	using System;
 	using System.Collections.Generic;
 	using System.Threading.Tasks;
+	using AIRefactored.AI.Core;
 	using AIRefactored.Core;
 	using AIRefactored.Pools;
 	using AIRefactored.Runtime;
@@ -29,6 +29,7 @@ namespace AIRefactored.AI.Optimization
 
 		private const int MaxWorkPerTick = 256;
 		private const int MaxThreads = 16;
+		private const float ThreadVariance = 0.08f; // 8% micro-randomization for realism
 
 		#endregion
 
@@ -37,7 +38,7 @@ namespace AIRefactored.AI.Optimization
 		private static readonly object Sync = new object();
 		private static readonly ManualLogSource Log = Plugin.LoggerInstance;
 		private static readonly List<IBotWorkload> WorkQueue = new List<IBotWorkload>(MaxWorkPerTick);
-		private static readonly int ThreadCount = Mathf.Clamp(Environment.ProcessorCount, 1, MaxThreads);
+		private static int ThreadCount => Mathf.Clamp((int)(Environment.ProcessorCount * (1f + UnityEngine.Random.Range(-ThreadVariance, ThreadVariance))), 1, MaxThreads);
 
 		#endregion
 
@@ -53,15 +54,13 @@ namespace AIRefactored.AI.Optimization
 			try
 			{
 				if (workload == null)
-				{
 					return;
-				}
 
 				lock (Sync)
 				{
 					if (WorkQueue.Count >= MaxWorkPerTick)
 					{
-						Log.LogWarning("[BotWorkGroupDispatcher] Max queue capacity reached. Dropping workload.");
+						LogIfNotHeadless("[BotWorkGroupDispatcher] Max queue capacity reached. Dropping workload.");
 						return;
 					}
 
@@ -70,7 +69,7 @@ namespace AIRefactored.AI.Optimization
 			}
 			catch (Exception ex)
 			{
-				Log.LogError("[BotWorkGroupDispatcher] Schedule() error: " + ex);
+				LogIfNotHeadless("[BotWorkGroupDispatcher] Schedule() error: " + ex, true);
 			}
 		}
 
@@ -83,27 +82,19 @@ namespace AIRefactored.AI.Optimization
 			try
 			{
 				if (!GameWorldHandler.IsLocalHost())
-				{
 					return;
-				}
 
 				List<IBotWorkload> batch = null;
 
 				lock (Sync)
 				{
 					if (WorkQueue.Count == 0)
-					{
 						return;
-					}
 
 					int count = Mathf.Min(WorkQueue.Count, MaxWorkPerTick);
 					batch = TempListPool.Rent<IBotWorkload>();
-
 					for (int i = 0; i < count; i++)
-					{
 						batch.Add(WorkQueue[i]);
-					}
-
 					WorkQueue.RemoveRange(0, count);
 				}
 
@@ -113,7 +104,7 @@ namespace AIRefactored.AI.Optimization
 				}
 				catch (Exception ex)
 				{
-					Log.LogError("[BotWorkGroupDispatcher] Dispatch() error: " + ex);
+					LogIfNotHeadless("[BotWorkGroupDispatcher] Dispatch() error: " + ex, true);
 				}
 				finally
 				{
@@ -122,7 +113,18 @@ namespace AIRefactored.AI.Optimization
 			}
 			catch (Exception ex)
 			{
-				Log.LogError("[BotWorkGroupDispatcher] Tick() error: " + ex);
+				LogIfNotHeadless("[BotWorkGroupDispatcher] Tick() error: " + ex, true);
+			}
+		}
+
+		/// <summary>
+		/// Call on domain reload/hot-reload to clear all static state.
+		/// </summary>
+		public static void ClearAll()
+		{
+			lock (Sync)
+			{
+				WorkQueue.Clear();
 			}
 		}
 
@@ -133,9 +135,7 @@ namespace AIRefactored.AI.Optimization
 		private static void Dispatch(List<IBotWorkload> batch)
 		{
 			if (batch == null || batch.Count == 0)
-			{
 				return;
-			}
 
 			try
 			{
@@ -147,9 +147,7 @@ namespace AIRefactored.AI.Optimization
 				{
 					int start = t * blockSize;
 					if (start >= total)
-					{
 						break;
-					}
 
 					int end = Mathf.Min(start + blockSize, total);
 
@@ -166,12 +164,14 @@ namespace AIRefactored.AI.Optimization
 							{
 								job = batch[i];
 							}
-							catch { /* Defensive: batch access error, skip */ }
-
-							if (job == null)
+							catch
 							{
+								// Defensive: batch access error, skip
 								continue;
 							}
+
+							if (job == null)
+								continue;
 
 							try
 							{
@@ -179,7 +179,7 @@ namespace AIRefactored.AI.Optimization
 							}
 							catch (Exception ex)
 							{
-								Log.LogWarning("[BotWorkGroupDispatcher] Background workload exception:\n" + ex);
+								LogIfNotHeadless("[BotWorkGroupDispatcher] Background workload exception:\n" + ex, false);
 							}
 						}
 					});
@@ -187,8 +187,23 @@ namespace AIRefactored.AI.Optimization
 			}
 			catch (Exception ex)
 			{
-				Log.LogError("[BotWorkGroupDispatcher] Dispatch() error: " + ex);
+				LogIfNotHeadless("[BotWorkGroupDispatcher] Dispatch() error: " + ex, true);
 			}
+		}
+
+		#endregion
+
+		#region Logging
+
+		private static void LogIfNotHeadless(string msg, bool error = false)
+		{
+			if (FikaHeadlessDetector.IsHeadless)
+				return;
+
+			if (error)
+				Log.LogError(msg);
+			else
+				Log.LogWarning(msg);
 		}
 
 		#endregion

@@ -10,15 +10,23 @@ namespace AIRefactored.AI.Combat
 {
     using System;
     using AIRefactored.AI.Core;
+    using AIRefactored.AI.Helpers;
     using AIRefactored.AI.Memory;
     using AIRefactored.AI.Navigation;
     using AIRefactored.Core;
+    using BepInEx.Logging;
     using EFT;
     using UnityEngine;
-    using BepInEx.Logging;
 
+    /// <summary>
+    /// Selects and prioritizes threats based on real-time awareness, memory, and bot personality.
+    /// Bulletproof: All errors are isolated; no fallback AI is ever triggered.
+    /// Fully re-enabled PMC-vs-PMC targeting with group/squad checks.
+    /// </summary>
     public sealed class BotThreatSelector
     {
+        #region Constants
+
         private const float EvaluationCooldown = 0.35f;
         private const float MaxScanDistance = 120f;
         private const float SwitchCooldown = 2.0f;
@@ -33,6 +41,12 @@ namespace AIRefactored.AI.Combat
         private const float AggressionMaxBonus = 15f;
         private const float TargetSwitchThreshold = 10f;
 
+        #endregion
+
+        #region Fields
+
+        private static readonly ManualLogSource Logger = Plugin.LoggerInstance;
+
         private readonly BotOwner _bot;
         private readonly BotComponentCache _cache;
         private readonly BotPersonalityProfile _profile;
@@ -41,27 +55,29 @@ namespace AIRefactored.AI.Combat
         private float _nextEvaluateTime;
         private Player _currentTarget;
 
-        private static readonly ManualLogSource Logger = Plugin.LoggerInstance;
-        private static bool _hasLoggedConstructorError;
+        #endregion
+
+        #region Properties
 
         public Player CurrentTarget => _currentTarget;
+
+        #endregion
+
+        #region Constructor
 
         public BotThreatSelector(BotComponentCache cache)
         {
             if (cache == null || cache.Bot == null || cache.AIRefactoredBotOwner == null)
-            {
-                if (!_hasLoggedConstructorError)
-                {
-                    Logger.LogWarning("[BotThreatSelector] Null cache, bot, or AIRefactoredBotOwner in constructor.");
-                    _hasLoggedConstructorError = true;
-                }
                 return;
-            }
 
             _cache = cache;
             _bot = cache.Bot;
             _profile = cache.AIRefactoredBotOwner.PersonalityProfile ?? BotPersonalityPresets.GenerateProfile(PersonalityType.Balanced);
         }
+
+        #endregion
+
+        #region Public Methods
 
         public void Tick(float time)
         {
@@ -84,11 +100,9 @@ namespace AIRefactored.AI.Combat
                     Player candidate = players[i];
                     if (!EFTPlayerUtil.IsValid(candidate))
                         continue;
-
-                    if (string.IsNullOrEmpty(candidate.ProfileId) || candidate.ProfileId == _bot.ProfileId)
+                    if (candidate.ProfileId == _bot.ProfileId)
                         continue;
-
-                    if (!EFTPlayerUtil.IsEnemyOf(_bot, candidate))
+                    if (!IsProperEnemy(_bot, candidate))
                         continue;
 
                     float score = ScoreTarget(candidate, time);
@@ -100,7 +114,19 @@ namespace AIRefactored.AI.Combat
                 }
 
                 if (bestTarget == null)
+                {
+                    // Wildcard fallback: attempt most recent memory enemy
+                    string id = _cache?.TacticalMemory?.GetMostRecentEnemyId();
+                    if (!string.IsNullOrEmpty(id))
+                    {
+                        Player fallback = EFTPlayerUtil.ResolvePlayerById(id);
+                        if (EFTPlayerUtil.IsValid(fallback) && IsProperEnemy(_bot, fallback))
+                        {
+                            SetTarget(fallback, time);
+                        }
+                    }
                     return;
+                }
 
                 if (_currentTarget == null)
                 {
@@ -140,7 +166,7 @@ namespace AIRefactored.AI.Combat
                     return null;
 
                 Player fallback = EFTPlayerUtil.ResolvePlayerById(id);
-                return EFTPlayerUtil.IsValid(fallback) ? fallback : null;
+                return EFTPlayerUtil.IsValid(fallback) && IsProperEnemy(_bot, fallback) ? fallback : null;
             }
             catch (Exception ex)
             {
@@ -153,6 +179,10 @@ namespace AIRefactored.AI.Combat
         {
             return _currentTarget?.ProfileId ?? string.Empty;
         }
+
+        #endregion
+
+        #region Internal Scoring
 
         private float ScoreTarget(Player candidate, float time)
         {
@@ -176,6 +206,7 @@ namespace AIRefactored.AI.Combat
                     if (info.IsVisible)
                     {
                         score += VisibilityBonus;
+
                         if (info.PersonalLastSeenTime + 2f > time)
                             score += RecentSeenBonus;
 
@@ -204,6 +235,9 @@ namespace AIRefactored.AI.Combat
                 {
                     score -= UnknownPenalty;
                 }
+
+                if (_cache.PanicHandler != null && _cache.PanicHandler.IsPanicking)
+                    score -= 8f;
 
                 return score;
             }
@@ -247,6 +281,10 @@ namespace AIRefactored.AI.Combat
             }
         }
 
+        #endregion
+
+        #region Target Setter
+
         private void SetTarget(Player target, float time)
         {
             try
@@ -264,14 +302,16 @@ namespace AIRefactored.AI.Combat
                     _cache?.LastShotTracker?.RegisterHit(id);
                 }
 
+                // All movement logic strictly through BotMovementHelper (never direct GoToPoint)
                 if (_cache?.Movement != null &&
-                    !_cache.Bot.IsDead &&
-                    _cache.Bot.Mover != null &&
-                    !_cache.Bot.Mover.IsMoving)
+                    !_bot.IsDead &&
+                    _bot.Mover != null &&
+                    !_bot.Mover.IsMoving)
                 {
-                    if (BotNavHelper.TryGetSafeTarget(_cache.Bot, out var fallback) && IsVectorValid(fallback))
+                    if (BotNavHelper.TryGetSafeTarget(_bot, out Vector3 fallback) && IsVectorValid(fallback))
                     {
-                        _cache.Bot.Mover.GoToPoint(fallback, true, 1.0f);
+                        float cohesion = _profile?.Cohesion ?? 1.0f;
+                        BotMovementHelper.SmoothMoveTo(_bot, fallback, false, cohesion);
                     }
                 }
             }
@@ -286,5 +326,37 @@ namespace AIRefactored.AI.Combat
             return !float.IsNaN(v.x) && !float.IsNaN(v.y) && !float.IsNaN(v.z) &&
                    Mathf.Abs(v.x) < 10000f && Mathf.Abs(v.y) < 10000f && Mathf.Abs(v.z) < 10000f;
         }
+
+        /// <summary>
+        /// PMC-vs-PMC targeting: returns true if candidate is not in the same group or squad.
+        /// </summary>
+        private static bool IsProperEnemy(BotOwner self, Player candidate)
+        {
+            if (self == null || candidate == null)
+                return false;
+            if (candidate.ProfileId == self.ProfileId)
+                return false;
+            if (!candidate.IsAI && !self.IsAI)
+                return false; // Only care about AI-vs-AI and AI-vs-player for now
+
+            EPlayerSide selfSide = self.GetPlayer != null ? self.GetPlayer.Side : EPlayerSide.Savage;
+            EPlayerSide targetSide = candidate.Side;
+
+            if (selfSide != targetSide)
+                return true; // Always enemy if sides differ (e.g., PMC vs Scav, PMC vs Rogue)
+
+            // PMC-vs-PMC: Only enemy if not in same squad/group
+            string selfGroup = self.GetPlayer?.Profile?.Info?.GroupId ?? string.Empty;
+            string targetGroup = candidate.Profile?.Info?.GroupId ?? string.Empty;
+            if (!string.IsNullOrEmpty(selfGroup) && !string.IsNullOrEmpty(targetGroup))
+            {
+                if (selfGroup == targetGroup)
+                    return false; // Same squad: do not target
+            }
+
+            return true; // Otherwise, different squad PMCs are enemies
+        }
+
+        #endregion
     }
 }

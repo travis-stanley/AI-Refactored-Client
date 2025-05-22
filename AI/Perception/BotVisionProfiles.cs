@@ -36,47 +36,33 @@ namespace AIRefactored.AI.Perception
         /// Retrieves the bot vision profile, applying role-based defaults and optional personality blending.
         /// Always returns a non-null, fully valid profile.
         /// </summary>
-        /// <param name="bot">EFT.Player instance representing the bot.</param>
-        /// <returns>Profile for this bot, with blending if possible.</returns>
         public static BotVisionProfile Get(Player bot)
         {
             if (!EFTPlayerUtil.IsValid(bot))
-            {
                 return DefaultProfile;
-            }
 
             WildSpawnType role = WildSpawnType.assault;
-            var profileRef = bot.Profile;
-            if (profileRef != null && profileRef.Info != null && profileRef.Info.Settings != null)
-            {
-                role = profileRef.Info.Settings.Role;
-            }
+            Profile profile = bot.Profile;
 
-            BotVisionProfile baseProfile;
-            if (!Profiles.TryGetValue(role, out baseProfile) || baseProfile == null)
-            {
+            if (profile?.Info?.Settings != null)
+                role = profile.Info.Settings.Role;
+
+            if (!Profiles.TryGetValue(role, out BotVisionProfile baseProfile) || baseProfile == null)
                 baseProfile = DefaultProfile;
-            }
 
             BotComponentCache cache = BotCacheUtility.GetCache(bot);
             if (cache == null)
-            {
                 return baseProfile;
-            }
 
             var aiOwner = cache.AIRefactoredBotOwner;
             if (aiOwner == null)
-            {
                 return baseProfile;
-            }
 
             BotPersonalityProfile personality = aiOwner.PersonalityProfile;
             if (personality == null)
-            {
                 return baseProfile;
-            }
 
-            // Blending: never returns null, always clamps to safe range
+            // Final blended profile — non-null, clamped, and scaled per role + personality
             return new BotVisionProfile
             {
                 AdaptationSpeed = Mathf.Clamp(baseProfile.AdaptationSpeed + (1f - personality.Caution) * 0.5f, 0.5f, 3f),
@@ -89,47 +75,50 @@ namespace AIRefactored.AI.Perception
 
         #endregion
 
-        #region Static Initialization
+        #region Profile Setup
 
-        /// <summary>
-        /// Safely initializes the dictionary of WildSpawnType-to-Profile.
-        /// Uses pooling for temp dict, always disposes.
-        /// </summary>
-        /// <returns>Dictionary with all static bot vision profiles.</returns>
         private static Dictionary<WildSpawnType, BotVisionProfile> InitializeProfiles()
         {
-            Dictionary<WildSpawnType, BotVisionProfile> temp = TempDictionaryPool.Rent<WildSpawnType, BotVisionProfile>();
-            Dictionary<WildSpawnType, BotVisionProfile> result = new Dictionary<WildSpawnType, BotVisionProfile>(32);
+            var temp = TempDictionaryPool.Rent<WildSpawnType, BotVisionProfile>();
+            var result = new Dictionary<WildSpawnType, BotVisionProfile>(32);
 
-            temp[WildSpawnType.assault] = new BotVisionProfile { AdaptationSpeed = 0.75f, LightSensitivity = 1.2f, AggressionResponse = 0.9f, MaxBlindness = 1.1f, ClarityRecoverySpeed = 0.35f };
-            temp[WildSpawnType.cursedAssault] = new BotVisionProfile { AdaptationSpeed = 0.7f, LightSensitivity = 1.4f, AggressionResponse = 1.0f, MaxBlindness = 1.2f, ClarityRecoverySpeed = 0.3f };
-            temp[WildSpawnType.marksman] = new BotVisionProfile { AdaptationSpeed = 1f, LightSensitivity = 1f, AggressionResponse = 1.1f, MaxBlindness = 1.1f, ClarityRecoverySpeed = 0.4f };
-            temp[WildSpawnType.sectantPriest] = new BotVisionProfile { AdaptationSpeed = 0.5f, LightSensitivity = 1.5f, AggressionResponse = 0.5f, MaxBlindness = 1.3f, ClarityRecoverySpeed = 0.25f };
-            temp[WildSpawnType.sectantWarrior] = new BotVisionProfile { AdaptationSpeed = 0.6f, LightSensitivity = 1.5f, AggressionResponse = 0.8f, MaxBlindness = 1.3f, ClarityRecoverySpeed = 0.3f };
-            temp[WildSpawnType.pmcBot] = new BotVisionProfile { AdaptationSpeed = 2f, LightSensitivity = 0.85f, AggressionResponse = 1.4f, MaxBlindness = 0.8f, ClarityRecoverySpeed = 0.5f };
-            temp[WildSpawnType.exUsec] = new BotVisionProfile { AdaptationSpeed = 1.9f, LightSensitivity = 0.85f, AggressionResponse = 1.4f, MaxBlindness = 0.85f, ClarityRecoverySpeed = 0.45f };
-            temp[WildSpawnType.bossBully] = new BotVisionProfile { AdaptationSpeed = 1.3f, LightSensitivity = 1f, AggressionResponse = 2f, MaxBlindness = 1f, ClarityRecoverySpeed = 0.55f };
-            temp[WildSpawnType.followerBully] = new BotVisionProfile { AdaptationSpeed = 1.1f, LightSensitivity = 1f, AggressionResponse = 1.7f, MaxBlindness = 1f, ClarityRecoverySpeed = 0.45f };
-            temp[WildSpawnType.bossKilla] = new BotVisionProfile { AdaptationSpeed = 1.6f, LightSensitivity = 0.7f, AggressionResponse = 2.5f, MaxBlindness = 0.9f, ClarityRecoverySpeed = 0.5f };
-            temp[WildSpawnType.bossTagilla] = new BotVisionProfile { AdaptationSpeed = 1.5f, LightSensitivity = 0.9f, AggressionResponse = 2.2f, MaxBlindness = 0.95f, ClarityRecoverySpeed = 0.4f };
-            temp[WildSpawnType.followerTagilla] = new BotVisionProfile { AdaptationSpeed = 1.2f, LightSensitivity = 1f, AggressionResponse = 1.6f, MaxBlindness = 1f, ClarityRecoverySpeed = 0.45f };
-            temp[WildSpawnType.bossSanitar] = new BotVisionProfile { AdaptationSpeed = 1.4f, LightSensitivity = 0.95f, AggressionResponse = 2f, MaxBlindness = 0.95f, ClarityRecoverySpeed = 0.5f };
-            temp[WildSpawnType.followerSanitar] = new BotVisionProfile { AdaptationSpeed = 1.3f, LightSensitivity = 1f, AggressionResponse = 1.7f, MaxBlindness = 1f, ClarityRecoverySpeed = 0.45f };
-            temp[WildSpawnType.bossGluhar] = new BotVisionProfile { AdaptationSpeed = 1.4f, LightSensitivity = 1f, AggressionResponse = 2.2f, MaxBlindness = 1f, ClarityRecoverySpeed = 0.55f };
-            temp[WildSpawnType.followerGluharAssault] = new BotVisionProfile { AdaptationSpeed = 1.2f, LightSensitivity = 1f, AggressionResponse = 1.5f, MaxBlindness = 1f, ClarityRecoverySpeed = 0.5f };
-            temp[WildSpawnType.followerGluharScout] = new BotVisionProfile { AdaptationSpeed = 1.3f, LightSensitivity = 1f, AggressionResponse = 1.7f, MaxBlindness = 1f, ClarityRecoverySpeed = 0.5f };
-            temp[WildSpawnType.followerGluharSecurity] = new BotVisionProfile { AdaptationSpeed = 1.1f, LightSensitivity = 1.1f, AggressionResponse = 1.6f, MaxBlindness = 1f, ClarityRecoverySpeed = 0.45f };
-            temp[WildSpawnType.followerGluharSnipe] = new BotVisionProfile { AdaptationSpeed = 1f, LightSensitivity = 1.1f, AggressionResponse = 1.4f, MaxBlindness = 1f, ClarityRecoverySpeed = 0.4f };
-            temp[WildSpawnType.bossKnight] = new BotVisionProfile { AdaptationSpeed = 1.5f, LightSensitivity = 1f, AggressionResponse = 2f, MaxBlindness = 0.9f, ClarityRecoverySpeed = 0.5f };
-            temp[WildSpawnType.followerBigPipe] = new BotVisionProfile { AdaptationSpeed = 1.2f, LightSensitivity = 1f, AggressionResponse = 1.8f, MaxBlindness = 0.95f, ClarityRecoverySpeed = 0.45f };
-            temp[WildSpawnType.followerBirdEye] = new BotVisionProfile { AdaptationSpeed = 1.2f, LightSensitivity = 1.1f, AggressionResponse = 1.6f, MaxBlindness = 1f, ClarityRecoverySpeed = 0.5f };
-            temp[WildSpawnType.gifter] = new BotVisionProfile { AdaptationSpeed = 1f, LightSensitivity = 0.8f, AggressionResponse = 0.5f, MaxBlindness = 1.1f, ClarityRecoverySpeed = 0.3f };
-            temp[WildSpawnType.arenaFighter] = new BotVisionProfile { AdaptationSpeed = 1.3f, LightSensitivity = 1f, AggressionResponse = 1.5f, MaxBlindness = 0.95f, ClarityRecoverySpeed = 0.45f };
+            void Add(WildSpawnType type, float a, float l, float ar, float mb, float cr) =>
+                temp[type] = new BotVisionProfile
+                {
+                    AdaptationSpeed = a,
+                    LightSensitivity = l,
+                    AggressionResponse = ar,
+                    MaxBlindness = mb,
+                    ClarityRecoverySpeed = cr
+                };
 
-            foreach (KeyValuePair<WildSpawnType, BotVisionProfile> kvp in temp)
-            {
+            Add(WildSpawnType.assault, 0.75f, 1.2f, 0.9f, 1.1f, 0.35f);
+            Add(WildSpawnType.cursedAssault, 0.7f, 1.4f, 1.0f, 1.2f, 0.3f);
+            Add(WildSpawnType.marksman, 1.0f, 1.0f, 1.1f, 1.1f, 0.4f);
+            Add(WildSpawnType.sectantPriest, 0.5f, 1.5f, 0.5f, 1.3f, 0.25f);
+            Add(WildSpawnType.sectantWarrior, 0.6f, 1.5f, 0.8f, 1.3f, 0.3f);
+            Add(WildSpawnType.pmcBot, 2.0f, 0.85f, 1.4f, 0.8f, 0.5f);
+            Add(WildSpawnType.exUsec, 1.9f, 0.85f, 1.4f, 0.85f, 0.45f);
+            Add(WildSpawnType.bossBully, 1.3f, 1.0f, 2.0f, 1.0f, 0.55f);
+            Add(WildSpawnType.followerBully, 1.1f, 1.0f, 1.7f, 1.0f, 0.45f);
+            Add(WildSpawnType.bossKilla, 1.6f, 0.7f, 2.5f, 0.9f, 0.5f);
+            Add(WildSpawnType.bossTagilla, 1.5f, 0.9f, 2.2f, 0.95f, 0.4f);
+            Add(WildSpawnType.followerTagilla, 1.2f, 1.0f, 1.6f, 1.0f, 0.45f);
+            Add(WildSpawnType.bossSanitar, 1.4f, 0.95f, 2.0f, 0.95f, 0.5f);
+            Add(WildSpawnType.followerSanitar, 1.3f, 1.0f, 1.7f, 1.0f, 0.45f);
+            Add(WildSpawnType.bossGluhar, 1.4f, 1.0f, 2.2f, 1.0f, 0.55f);
+            Add(WildSpawnType.followerGluharAssault, 1.2f, 1.0f, 1.5f, 1.0f, 0.5f);
+            Add(WildSpawnType.followerGluharScout, 1.3f, 1.0f, 1.7f, 1.0f, 0.5f);
+            Add(WildSpawnType.followerGluharSecurity, 1.1f, 1.1f, 1.6f, 1.0f, 0.45f);
+            Add(WildSpawnType.followerGluharSnipe, 1.0f, 1.1f, 1.4f, 1.0f, 0.4f);
+            Add(WildSpawnType.bossKnight, 1.5f, 1.0f, 2.0f, 0.9f, 0.5f);
+            Add(WildSpawnType.followerBigPipe, 1.2f, 1.0f, 1.8f, 0.95f, 0.45f);
+            Add(WildSpawnType.followerBirdEye, 1.2f, 1.1f, 1.6f, 1.0f, 0.5f);
+            Add(WildSpawnType.gifter, 1.0f, 0.8f, 0.5f, 1.1f, 0.3f);
+            Add(WildSpawnType.arenaFighter, 1.3f, 1.0f, 1.5f, 0.95f, 0.45f);
+
+            foreach (var kvp in temp)
                 result[kvp.Key] = kvp.Value;
-            }
 
             TempDictionaryPool.Return(temp);
             return result;

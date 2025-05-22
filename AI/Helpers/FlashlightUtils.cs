@@ -34,11 +34,17 @@ namespace AIRefactored.AI.Helpers
                 if (distance < 0.01f || distance > maxDistance || float.IsNaN(distance))
                     return 0f;
 
+                // Frontal alignment (1=directly in front, 0=behind)
                 float alignmentFactor = Mathf.Clamp01(Vector3.Dot(botHeadTransform.forward, toLight.normalized));
+                // Closer lights are more intense
                 float distanceFactor = 1f - Mathf.Clamp01(distance / maxDistance);
 
                 if (float.IsNaN(alignmentFactor) || float.IsNaN(distanceFactor))
                     return 0f;
+
+                // Boost for extreme frontal hits to model how sudden flash can shock
+                if (alignmentFactor > 0.93f && distance < maxDistance * 0.7f)
+                    return Mathf.Clamp01(alignmentFactor * 1.18f * distanceFactor);
 
                 return alignmentFactor * distanceFactor;
             }

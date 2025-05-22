@@ -23,13 +23,27 @@ namespace AIRefactored.AI.Combat
     /// </summary>
     public sealed class BotSuppressionReactionComponent
     {
+        #region Constants
+
         private const float MinSuppressionRetreatDistance = 6.0f;
-        private const float SuppressionDuration = 2.0f;
+        private const float SuppressionDuration = 2.2f;
+        private const float SquadSuppressionRadiusSqr = 144f;
+        private const float SuppressionVoiceCooldown = 1.5f;
+
+        #endregion
+
+        #region Fields
 
         private BotOwner _bot;
         private BotComponentCache _cache;
+
         private bool _isSuppressed;
         private float _suppressionStartTime = float.NegativeInfinity;
+        private float _lastVoiceTime = float.NegativeInfinity;
+
+        #endregion
+
+        #region Initialization
 
         public void Initialize(BotComponentCache componentCache)
         {
@@ -43,12 +57,14 @@ namespace AIRefactored.AI.Combat
             _bot = componentCache.Bot;
             _isSuppressed = false;
             _suppressionStartTime = float.NegativeInfinity;
+            _lastVoiceTime = float.NegativeInfinity;
         }
 
-        public bool IsSuppressed()
-        {
-            return _isSuppressed;
-        }
+        #endregion
+
+        #region Public API
+
+        public bool IsSuppressed() => _isSuppressed;
 
         public void Tick(float time)
         {
@@ -63,6 +79,17 @@ namespace AIRefactored.AI.Combat
                     return;
                 }
 
+                // Human-like panic voice (client only)
+                if (!FikaHeadlessDetector.IsHeadless &&
+                    _bot.BotTalk != null &&
+                    time - _lastVoiceTime > SuppressionVoiceCooldown &&
+                    UnityEngine.Random.value < 0.28f)
+                {
+                    _lastVoiceTime = time;
+                    try { _bot.BotTalk.TrySay(EPhraseTrigger.NeedHelp); } catch { }
+                }
+
+                // Recover after suppression duration
                 if (time - _suppressionStartTime >= SuppressionDuration)
                 {
                     _isSuppressed = false;
@@ -70,7 +97,7 @@ namespace AIRefactored.AI.Combat
             }
             catch (Exception ex)
             {
-                Plugin.LoggerInstance?.LogError("[BotSuppression] Exception in Tick: " + ex);
+                Plugin.LoggerInstance?.LogError("[BotSuppression] Tick exception: " + ex);
                 _isSuppressed = false;
             }
         }
@@ -89,16 +116,29 @@ namespace AIRefactored.AI.Combat
                 _isSuppressed = true;
                 _suppressionStartTime = Time.time;
 
-                Vector3 retreatDir = source.HasValue
+                // Directly reduce composure via internal field (reflection is required)
+                if (panic != null)
+                {
+                    float loss = UnityEngine.Random.Range(0.12f, 0.25f);
+                    float current = panic.GetComposureLevel();
+
+                    typeof(BotPanicHandler).GetField("_composureLevel",
+                        System.Reflection.BindingFlags.NonPublic | System.Reflection.BindingFlags.Instance)
+                        ?.SetValue(panic, Mathf.Clamp01(current - loss));
+                }
+
+                // Always validate movement via BotMovementHelper and BotNavHelper only
+                Vector3 retreat = source.HasValue
                     ? (_bot.Position - source.Value).normalized
                     : GetDefaultRetreatDirection();
 
-                Vector3 fallback = _bot.Position + retreatDir.normalized * MinSuppressionRetreatDistance;
+                // Generate and validate retreat target
+                Vector3 fallback = _bot.Position + retreat * MinSuppressionRetreatDistance;
+                fallback.y = _bot.Position.y;
 
+                // NavMesh-safe fallback position
                 if (BotNavHelper.TryGetSafeTarget(_bot, out var navTarget) && IsVectorValid(navTarget))
-                {
                     fallback = navTarget;
-                }
 
                 float cohesion = _cache.AIRefactoredBotOwner?.PersonalityProfile?.Cohesion ?? 1f;
 
@@ -106,27 +146,71 @@ namespace AIRefactored.AI.Combat
                 {
                     BotMovementHelper.SmoothMoveTo(_bot, fallback, false, cohesion);
                     _bot.Sprint(true);
+                    BotCoverHelper.TrySetStanceFromNearbyCover(_cache, fallback);
                 }
 
-                panic?.TriggerPanic();
-                _cache.Escalation?.NotifyPanicTriggered();
+                // Escalate to panic if composure too low
+                if (panic != null && panic.GetComposureLevel() < 0.18f)
+                    panic.TriggerPanic();
 
-                if (!FikaHeadlessDetector.IsHeadless && _bot.BotTalk != null)
+                _cache.Escalation?.NotifyPanicTriggered();
+                TryPropagateSuppression();
+
+                if (!FikaHeadlessDetector.IsHeadless &&
+                    _bot.BotTalk != null &&
+                    Time.time - _lastVoiceTime > SuppressionVoiceCooldown)
                 {
-                    try { _bot.BotTalk.TrySay(EPhraseTrigger.OnLostVisual); }
-                    catch { }
+                    try { _bot.BotTalk.TrySay(EPhraseTrigger.NeedHelp); } catch { }
+                    _lastVoiceTime = Time.time;
                 }
             }
             catch (Exception ex)
             {
-                Plugin.LoggerInstance?.LogError("[BotSuppression] Exception in TriggerSuppression: " + ex);
+                Plugin.LoggerInstance?.LogError("[BotSuppression] TriggerSuppression failed: " + ex);
             }
         }
 
-        private static Vector3 GetDefaultRetreatDirection()
+        #endregion
+
+        #region Squad Propagation
+
+        private void TryPropagateSuppression()
         {
-            return Vector3.back;
+            try
+            {
+                if (_bot?.BotsGroup == null)
+                    return;
+
+                Vector3 self = _bot.Position;
+                int count = _bot.BotsGroup.MembersCount;
+
+                for (int i = 0; i < count; i++)
+                {
+                    BotOwner mate = _bot.BotsGroup.Member(i);
+                    if (mate == null || mate == _bot || mate.IsDead)
+                        continue;
+
+                    if ((mate.Position - self).sqrMagnitude > SquadSuppressionRadiusSqr)
+                        continue;
+
+                    BotComponentCache mateCache = BotCacheUtility.GetCache(mate);
+                    if (mateCache?.Suppression != null && !mateCache.Suppression.IsSuppressed())
+                    {
+                        mateCache.Suppression.TriggerSuppression(self);
+                    }
+                }
+            }
+            catch (Exception ex)
+            {
+                Plugin.LoggerInstance?.LogError("[BotSuppression] Propagation error: " + ex);
+            }
         }
+
+        #endregion
+
+        #region Helpers
+
+        private static Vector3 GetDefaultRetreatDirection() => Vector3.back;
 
         private bool IsValid()
         {
@@ -138,15 +222,14 @@ namespace AIRefactored.AI.Combat
                        _bot.GetPlayer is Player player &&
                        player.IsAI;
             }
-            catch
-            {
-                return false;
-            }
+            catch { return false; }
         }
 
         private static bool IsVectorValid(Vector3 v)
         {
             return !float.IsNaN(v.x) && !float.IsNaN(v.y) && !float.IsNaN(v.z);
         }
+
+        #endregion
     }
 }

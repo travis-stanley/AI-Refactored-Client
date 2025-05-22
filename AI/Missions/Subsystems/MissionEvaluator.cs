@@ -14,7 +14,6 @@ namespace AIRefactored.AI.Missions.Subsystems
     using AIRefactored.AI.Groups;
     using AIRefactored.AI.Helpers;
     using AIRefactored.AI.Navigation;
-    using AIRefactored.AI.Optimization;
     using AIRefactored.Core;
     using AIRefactored.Pools;
     using AIRefactored.Runtime;
@@ -79,6 +78,9 @@ namespace AIRefactored.AI.Missions.Subsystems
 
         #region Mission Checks
 
+        /// <summary>
+        /// Returns true if enough squadmates are nearby for the bot to consider group actions.
+        /// </summary>
         public bool IsGroupAligned()
         {
             try
@@ -111,11 +113,14 @@ namespace AIRefactored.AI.Missions.Subsystems
             }
         }
 
+        /// <summary>
+        /// Returns true if the bot's loot threshold and profile suggest early extraction is best.
+        /// </summary>
         public bool ShouldExtractEarly()
         {
             try
             {
-                if (_profile.IsFrenzied || _profile.Caution <= 0.6f)
+                if (_profile == null || _profile.IsFrenzied || _profile.Caution <= 0.6f)
                     return false;
 
                 Player player = _bot.GetPlayer;
@@ -145,6 +150,10 @@ namespace AIRefactored.AI.Missions.Subsystems
             }
         }
 
+        /// <summary>
+        /// Attempts to extract the bot by sending it to the nearest valid extraction point, using validated, path-based helpers only.
+        /// Never directly sets position; all navigation uses movement helpers.
+        /// </summary>
         public void TryExtract()
         {
             try
@@ -173,8 +182,12 @@ namespace AIRefactored.AI.Missions.Subsystems
 
                 if (closest != null && _bot.Mover != null)
                 {
-                    BotMovementHelper.SmoothMoveTo(_bot, closest.transform.position);
-                    Say(EPhraseTrigger.ExitLocated);
+                    // Always validate and move via helper—never direct position set or teleport!
+                    if (BotNavHelper.TryGetSafeTarget(_bot, out Vector3 safeTarget))
+                    {
+                        BotMovementHelper.SmoothMoveTo(_bot, safeTarget);
+                        Say(EPhraseTrigger.ExitLocated);
+                    }
                 }
             }
             catch (Exception ex)
@@ -187,6 +200,10 @@ namespace AIRefactored.AI.Missions.Subsystems
 
         #region Stuck Detection
 
+        /// <summary>
+        /// Detects if the bot is stuck and triggers a short, human-like fallback movement if so.
+        /// Never teleports or forces invalid positions; always uses path-based movement helpers.
+        /// </summary>
         public void UpdateStuckCheck(float time)
         {
             try
@@ -211,18 +228,13 @@ namespace AIRefactored.AI.Missions.Subsystems
                     _lastStuckFallbackTime = time;
                     _fallbackAttempts++;
 
-                    Vector3 dir = _bot.LookDirection;
-                    Vector3 target = _bot.Position - dir.normalized * 4f;
-                    if (!BotNavHelper.TryGetSafeTarget(_bot, out target))
-                        target = _bot.Position - dir.normalized * 4f;
-                    if (!IsValidTarget(target))
-                        target = _bot.Position;
-
-                    if (_bot.Mover != null)
+                    // Validate fallback via BotNavHelper—never use raw or invalid vectors.
+                    if (BotNavHelper.TryGetSafeTarget(_bot, out Vector3 safeTarget))
                     {
-                        Logger.LogDebug("[MissionEvaluator] " + (_bot.Profile?.Info?.Nickname ?? "Unknown") +
-                                        " fallback #" + _fallbackAttempts + " → " + target);
-                        BotMovementHelper.SmoothMoveTo(_bot, target);
+                        if (_bot.Mover != null)
+                        {
+                            BotMovementHelper.SmoothMoveTo(_bot, safeTarget);
+                        }
                     }
                 }
             }
@@ -236,27 +248,22 @@ namespace AIRefactored.AI.Missions.Subsystems
 
         #region Utilities
 
+        /// <summary>
+        /// Plays an in-character phrase if not in headless mode and bot is valid.
+        /// </summary>
         private void Say(EPhraseTrigger phrase)
         {
             try
             {
-                if (!FikaHeadlessDetector.IsHeadless && _bot?.GetPlayer != null)
+                if (!FikaHeadlessDetector.IsHeadless && _bot?.BotTalk != null)
                 {
-                    _bot.GetPlayer.Say(phrase);
+                    _bot.BotTalk.TrySay(phrase);
                 }
             }
             catch (Exception ex)
             {
                 Logger.LogWarning("[MissionEvaluator] VO failed: " + ex.Message);
             }
-        }
-
-        private static bool IsValidTarget(Vector3 pos)
-        {
-            return pos != Vector3.zero &&
-                   !float.IsNaN(pos.x) &&
-                   !float.IsNaN(pos.y) &&
-                   !float.IsNaN(pos.z);
         }
 
         #endregion

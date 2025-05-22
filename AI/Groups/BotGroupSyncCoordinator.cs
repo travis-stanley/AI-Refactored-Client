@@ -3,7 +3,8 @@
 //   Licensed under the MIT License. See LICENSE in the repository root for more information.
 //
 //   THIS FILE IS SYSTEMATICALLY MANAGED.
-//   Failures in AIRefactored logic must always trigger safe fallback to EFT base AI.
+//   Realism: All squad sync and signal logic uses natural, staggered intervals and context-aware event sharing.
+//   Bulletproof: All failures are strictly isolated to this bot; no error can break squad or parent logic.
 // </auto-generated>
 
 namespace AIRefactored.AI.Groups
@@ -19,7 +20,7 @@ namespace AIRefactored.AI.Groups
 
     /// <summary>
     /// Coordinates squad-level signal sharing (loot targets, fallback points, danger events).
-    /// Syncs between group members using staggered, randomized intervals.
+    /// Syncs between group members using staggered, deterministic intervals.
     /// Bulletproof: all failures are strictly isolated to this bot; no error can break squad or parent logic.
     /// </summary>
     public sealed class BotGroupSyncCoordinator
@@ -62,6 +63,9 @@ namespace AIRefactored.AI.Groups
 
         #region Initialization
 
+        /// <summary>
+        /// Initializes the group sync coordinator for a bot.
+        /// </summary>
         public void Initialize(BotOwner botOwner)
         {
             try
@@ -79,6 +83,7 @@ namespace AIRefactored.AI.Groups
                 _group.OnMemberRemove += OnMemberRemoved;
 
                 LastDangerBroadcastTime = -999f;
+                _nextSyncTime = Time.time + GetDeterministicSyncJitter(_bot.ProfileId, Time.frameCount);
             }
             catch
             {
@@ -87,17 +92,22 @@ namespace AIRefactored.AI.Groups
             }
         }
 
+        /// <summary>
+        /// Injects the local bot's component cache for use in group sync logic.
+        /// </summary>
         public void InjectLocalCache(BotComponentCache localCache)
         {
-            if (localCache == null)
-                return;
-            _cache = localCache;
+            if (localCache != null)
+                _cache = localCache;
         }
 
         #endregion
 
         #region Broadcasts
 
+        /// <summary>
+        /// Broadcasts a fallback point to all living teammates.
+        /// </summary>
         public void BroadcastFallbackPoint(Vector3 point)
         {
             try
@@ -114,9 +124,7 @@ namespace AIRefactored.AI.Groups
                         {
                             mate.Combat?.TriggerFallback(point);
                             if (mate.PanicHandler != null && !mate.PanicHandler.IsPanicking)
-                            {
                                 mate.PanicHandler.TriggerPanic();
-                            }
                         }
                         catch { }
                     }
@@ -125,19 +133,25 @@ namespace AIRefactored.AI.Groups
             catch { }
         }
 
+        /// <summary>
+        /// Broadcasts a danger position to all teammates.
+        /// </summary>
         public void BroadcastDanger(Vector3 position)
         {
             try
             {
                 LastDangerPosition = position;
                 LastDangerBroadcastTime = Time.time;
+                int botIdx = GetSquadIndex(_bot, _group);
 
                 foreach (var kv in _teammateCaches)
                 {
                     var mate = kv.Value;
                     if (mate?.Bot != null && !mate.Bot.IsDead && mate.PanicHandler != null && !mate.PanicHandler.IsPanicking)
                     {
-                        float delay = UnityEngine.Random.Range(0.1f, 0.35f);
+                        float baseDelay = 0.10f + 0.05f * botIdx;
+                        float personalJitter = GetDeterministicPanicJitter(mate.Bot.ProfileId);
+                        float delay = Mathf.Clamp(baseDelay + personalJitter, 0.07f, 0.55f);
                         TriggerDelayedPanic(mate, delay);
                     }
                 }
@@ -145,12 +159,18 @@ namespace AIRefactored.AI.Groups
             catch { }
         }
 
+        /// <summary>
+        /// Broadcasts a loot point to the squad.
+        /// </summary>
         public void BroadcastLootPoint(Vector3 point)
         {
             _lootPoint = point;
             _hasLoot = true;
         }
 
+        /// <summary>
+        /// Broadcasts an extract point to the squad.
+        /// </summary>
         public void BroadcastExtractPoint(Vector3 point)
         {
             _extractPoint = point;
@@ -161,12 +181,29 @@ namespace AIRefactored.AI.Groups
 
         #region Queries
 
+        /// <summary>
+        /// Gets the fallback target point shared by the squad, if any.
+        /// </summary>
         public Vector3? GetSharedFallbackTarget() => _hasFallback ? (Vector3?)_fallbackPoint : null;
+
+        /// <summary>
+        /// Gets the loot target point shared by the squad, if any.
+        /// </summary>
         public Vector3? GetSharedLootTarget() => _hasLoot ? (Vector3?)_lootPoint : null;
+
+        /// <summary>
+        /// Gets the extract target point shared by the squad, if any.
+        /// </summary>
         public Vector3? GetSharedExtractTarget() => _hasExtract ? (Vector3?)_extractPoint : null;
 
+        /// <summary>
+        /// Returns true if the squad has at least one living teammate.
+        /// </summary>
         public bool IsSquadReady() => _teammateCaches.Count > 0;
 
+        /// <summary>
+        /// Gets a pooled, read-only list of living AI teammates in the group.
+        /// </summary>
         public IReadOnlyList<BotOwner> GetTeammates()
         {
             var result = TempListPool.Rent<BotOwner>();
@@ -174,11 +211,9 @@ namespace AIRefactored.AI.Groups
             {
                 foreach (var kv in _teammateCaches)
                 {
-                    var bot = kv.Key;
-                    if (bot != null && !bot.IsDead && bot.GetPlayer?.IsAI == true)
-                    {
+                    BotOwner bot = kv.Key;
+                    if (bot != null && !bot.IsDead && bot.GetPlayer != null && bot.GetPlayer.IsAI)
                         result.Add(bot);
-                    }
                 }
                 return result;
             }
@@ -189,11 +224,13 @@ namespace AIRefactored.AI.Groups
             }
         }
 
+        /// <summary>
+        /// Gets the BotComponentCache for a teammate, or BotComponentCache.Empty if not found.
+        /// </summary>
         public BotComponentCache GetCache(BotOwner teammate)
         {
             if (teammate == null || !_teammateCaches.TryGetValue(teammate, out BotComponentCache cache) || cache == null)
                 return BotComponentCache.Empty;
-
             return cache;
         }
 
@@ -201,6 +238,9 @@ namespace AIRefactored.AI.Groups
 
         #region Tick
 
+        /// <summary>
+        /// Ticks the group sync logic; may broadcast fallback or danger to squad on interval.
+        /// </summary>
         public void Tick(float time)
         {
             try
@@ -208,7 +248,8 @@ namespace AIRefactored.AI.Groups
                 if (!IsActive || _teammateCaches.Count == 0 || time < _nextSyncTime)
                     return;
 
-                _nextSyncTime = time + BaseSyncInterval * UnityEngine.Random.Range(0.85f, 1.15f);
+                float interval = BaseSyncInterval * (0.86f + GetDeterministicSyncJitter(_bot.ProfileId, Time.frameCount));
+                _nextSyncTime = time + Mathf.Clamp(interval, 0.41f, 0.68f);
 
                 if (_cache?.PanicHandler == null || !_cache.PanicHandler.IsPanicking)
                     return;
@@ -216,14 +257,10 @@ namespace AIRefactored.AI.Groups
                 Vector3 myPos = _bot.Position;
 
                 if (!_hasFallback || (myPos - _fallbackPoint).sqrMagnitude > PositionEpsilonSqr)
-                {
                     BroadcastFallbackPoint(myPos);
-                }
 
                 if ((myPos - LastDangerPosition).sqrMagnitude > PositionEpsilonSqr)
-                {
                     BroadcastDanger(myPos);
-                }
             }
             catch { }
         }
@@ -236,18 +273,23 @@ namespace AIRefactored.AI.Groups
         {
             try
             {
-                if (teammate == null || teammate == _bot || _teammateCaches.ContainsKey(teammate))
+                if (teammate == null || ReferenceEquals(teammate, _bot) || _teammateCaches.ContainsKey(teammate))
                     return;
-                if (teammate.IsDead || teammate.GetPlayer?.IsAI != true)
+
+                if (teammate.IsDead || teammate.GetPlayer == null || !teammate.GetPlayer.IsAI)
                     return;
+
                 string profileId = teammate.ProfileId;
                 if (string.IsNullOrEmpty(profileId))
                     return;
+
                 if (!BotRegistry.TryGetRefactoredOwner(profileId, out AIRefactoredBotOwner owner))
                     return;
-                BotComponentCache cache = new BotComponentCache();
+
+                var cache = new BotComponentCache();
                 cache.Initialize(teammate);
                 cache.SetOwner(owner);
+
                 _teammateCaches[teammate] = cache;
             }
             catch { }
@@ -263,18 +305,55 @@ namespace AIRefactored.AI.Groups
         {
             if (cache == null)
                 return;
+
             Task.Run(async () =>
             {
                 try
                 {
                     await Task.Delay((int)(delay * 1000f));
                     if (cache.Bot != null && !cache.Bot.IsDead && cache.PanicHandler != null && !cache.PanicHandler.IsPanicking)
-                    {
                         cache.PanicHandler.TriggerPanic();
-                    }
                 }
                 catch { }
             });
+        }
+
+        private static int GetSquadIndex(BotOwner bot, BotsGroup group)
+        {
+            if (bot == null || group == null)
+                return 0;
+
+            int count = group.MembersCount;
+            for (int i = 0; i < count; i++)
+            {
+                BotOwner member = group.Member(i);
+                if (member != null && member.ProfileId == bot.ProfileId)
+                    return i;
+            }
+
+            return 0;
+        }
+
+        private static float GetDeterministicSyncJitter(string profileId, int tick)
+        {
+            int hash = (profileId?.GetHashCode() ?? 0) ^ (tick * 17) ^ 0x6B1F29;
+            unchecked
+            {
+                hash = (int)((uint)(hash ^ (hash >> 13)) * 0x85ebca6bU);
+                float frac = ((int)(hash & 0xFFFF)) / 65536f;
+                return 0.11f + frac * 0.18f;
+            }
+        }
+
+        private static float GetDeterministicPanicJitter(string profileId)
+        {
+            int hash = (profileId?.GetHashCode() ?? 0) ^ unchecked((int)0xBA5EBA11);
+            unchecked
+            {
+                hash = (int)((uint)(hash ^ (hash >> 11)) * 0xC2B2AE35U);
+                float frac = ((int)(hash & 0xFFF)) / 4096f;
+                return frac * 0.16f;
+            }
         }
 
         #endregion

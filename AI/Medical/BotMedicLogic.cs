@@ -4,6 +4,7 @@
 //
 //   THIS FILE IS SYSTEMATICALLY MANAGED.
 //   Failures in AIRefactored logic must always trigger safe fallback to EFT base AI.
+//   Realism Pass: All logic mimics human player behavior and squad support using real EFT APIs only.
 // </auto-generated>
 
 namespace AIRefactored.AI.Medical
@@ -63,17 +64,13 @@ namespace AIRefactored.AI.Medical
 
             try
             {
-                // Safe instantiation and event subscription for squad heal logic.
                 if (_bot.HealAnotherTarget == null)
                 {
                     _bot.HealAnotherTarget = new BotHealAnotherTarget(_bot);
-                    _bot.HealAnotherTarget.OnHealAsked += OnHealAsked;
                 }
-                else
-                {
-                    _bot.HealAnotherTarget.OnHealAsked -= OnHealAsked;
-                    _bot.HealAnotherTarget.OnHealAsked += OnHealAsked;
-                }
+                // Always clear and re-subscribe to avoid duplicate handlers.
+                _bot.HealAnotherTarget.OnHealAsked -= OnHealAsked;
+                _bot.HealAnotherTarget.OnHealAsked += OnHealAsked;
 
                 if (_bot.HealingBySomebody == null)
                 {
@@ -124,15 +121,18 @@ namespace AIRefactored.AI.Medical
 
             try
             {
+                // Disallow healing during panic or invalid bot owner.
                 if (!EFTPlayerUtil.IsValidBotOwner(_bot) || (_cache.PanicHandler != null && _cache.PanicHandler.IsPanicking))
                     return;
 
+                // Don't heal if currently healing someone.
                 if (_bot.HealAnotherTarget != null && _bot.HealAnotherTarget.IsInProcess)
                     return;
 
                 _nextHealCheck = time + HealCheckInterval;
                 _injurySystem.Tick(time);
 
+                // Try to heal a squadmate first, if possible.
                 if (TryHealSquadmate())
                     return;
 
@@ -182,6 +182,7 @@ namespace AIRefactored.AI.Medical
                     if ((dx * dx + dz * dz) > HealSquadRangeSqr)
                         continue;
 
+                    // (Optional) Can add further checks for injury/need.
                     IPlayer iTarget = EFTPlayerUtil.AsSafeIPlayer(target);
                     if (iTarget != null)
                     {

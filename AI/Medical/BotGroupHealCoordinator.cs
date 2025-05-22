@@ -66,6 +66,7 @@ namespace AIRefactored.AI.Medical
 
         /// <summary>
         /// Ticks healing coordination logic and checks squadmates for aid triggers.
+        /// Only triggers aid when not in combat and squadmate is genuinely in need.
         /// </summary>
         /// <param name="time">Current game time.</param>
         public void Tick(float time)
@@ -88,8 +89,18 @@ namespace AIRefactored.AI.Medical
                     if (!EFTPlayerUtil.IsValidGroupPlayer(matePlayer))
                         continue;
 
+                    // Never attempt heal if mate is fighting
+                    if (mate.Memory != null && mate.Memory.GoalEnemy != null)
+                        continue;
+
                     IHealthController health = matePlayer.HealthController;
                     if (health == null || !health.IsAlive || !NeedsHealing(health))
+                        continue;
+
+                    // Only heal if we are not panicking or fighting
+                    if (_cache.PanicHandler != null && _cache.PanicHandler.IsPanicking)
+                        continue;
+                    if (_bot.Memory != null && _bot.Memory.GoalEnemy != null)
                         continue;
 
                     if (_cache.SquadHealer != null && !_cache.SquadHealer.IsInProcess)
@@ -114,6 +125,9 @@ namespace AIRefactored.AI.Medical
 
         #region Private Methods
 
+        /// <summary>
+        /// Returns true if mate is nearby, alive, and not self.
+        /// </summary>
         private bool IsValidMate(BotOwner mate)
         {
             if (mate == null || mate.IsDead || ReferenceEquals(mate, _bot))
@@ -141,6 +155,9 @@ namespace AIRefactored.AI.Medical
             }
         }
 
+        /// <summary>
+        /// Returns true if any body part is below threshold health.
+        /// </summary>
         private static bool NeedsHealing(IHealthController health)
         {
             try
@@ -160,6 +177,9 @@ namespace AIRefactored.AI.Medical
             return false;
         }
 
+        /// <summary>
+        /// Tries to voice support or healing phrase for realism, unless in headless mode.
+        /// </summary>
         private void TrySaySupport(EPhraseTrigger phrase)
         {
             try

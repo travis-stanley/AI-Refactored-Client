@@ -25,18 +25,49 @@ namespace AIRefactored.AI.Perception
 
         #endregion
 
+        #region Static
+
+        /// <summary>
+        /// Gets a singleton default profile for safe reuse.
+        /// </summary>
+        public static readonly BotVisionProfile Default = new BotVisionProfile();
+
+        #endregion
+
         #region Properties
 
+        /// <summary>
+        /// How quickly the bot recovers from vision impairment.
+        /// </summary>
         public float AdaptationSpeed { get; set; } = DefaultAdaptationSpeed;
+
+        /// <summary>
+        /// How aggressively the bot responds to vision impairment or sudden light changes.
+        /// </summary>
         public float AggressionResponse { get; set; } = DefaultAggressionResponse;
+
+        /// <summary>
+        /// How sensitive the bot is to light sources, flashlights, and flares.
+        /// </summary>
         public float LightSensitivity { get; set; } = DefaultLightSensitivity;
+
+        /// <summary>
+        /// Maximum level of temporary blindness the bot can experience.
+        /// </summary>
         public float MaxBlindness { get; set; } = DefaultMaxBlindness;
+
+        /// <summary>
+        /// Speed at which clarity returns after blindness (e.g. flashbang, suppression).
+        /// </summary>
         public float ClarityRecoverySpeed { get; set; } = DefaultClarityRecoverySpeed;
 
         #endregion
 
         #region Factory
 
+        /// <summary>
+        /// Creates a new vision profile with default values.
+        /// </summary>
         public static BotVisionProfile CreateDefault()
         {
             return new BotVisionProfile();
@@ -46,12 +77,16 @@ namespace AIRefactored.AI.Perception
 
         #region Reset
 
+        /// <summary>
+        /// Resets this profile to default values. Optionally resets aggression response.
+        /// </summary>
         public void Reset(bool resetAggression = true)
         {
             AdaptationSpeed = DefaultAdaptationSpeed;
             LightSensitivity = DefaultLightSensitivity;
             MaxBlindness = DefaultMaxBlindness;
             ClarityRecoverySpeed = DefaultClarityRecoverySpeed;
+
             if (resetAggression)
             {
                 AggressionResponse = DefaultAggressionResponse;
@@ -62,12 +97,15 @@ namespace AIRefactored.AI.Perception
 
         #region Copy
 
+        /// <summary>
+        /// Copies all values from another profile instance.
+        /// </summary>
+        /// <param name="source">The profile to copy from.</param>
         public void SetFrom(BotVisionProfile source)
         {
             if (ReferenceEquals(this, source) || source == null)
-            {
                 return;
-            }
+
             AdaptationSpeed = source.AdaptationSpeed;
             AggressionResponse = source.AggressionResponse;
             LightSensitivity = source.LightSensitivity;

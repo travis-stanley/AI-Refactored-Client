@@ -12,6 +12,7 @@ namespace AIRefactored.AI.Core
     using System.Collections.Generic;
     using AIRefactored.AI;
     using AIRefactored.AI.Combat;
+    using AIRefactored.AI.Combat.States;
     using AIRefactored.AI.Groups;
     using AIRefactored.AI.Looting;
     using AIRefactored.AI.Medical;
@@ -27,6 +28,9 @@ namespace AIRefactored.AI.Core
     using EFT;
     using UnityEngine;
 
+    /// <summary>
+    /// Atomic per-bot AI subsystem registry. Guarantees no partial states. All wiring and teardown is bulletproof and squad/loot aware.
+    /// </summary>
     public sealed class BotComponentCache
     {
         #region Static
@@ -40,6 +44,7 @@ namespace AIRefactored.AI.Core
         #region Fields
 
         private AIRefactoredBotOwner _owner;
+        private FallbackHandler _fallbackHandler;
 
         #endregion
 
@@ -99,8 +104,12 @@ namespace AIRefactored.AI.Core
         public HearingDamageComponent HearingDamage { get; private set; }
         public TrackedEnemyVisibility VisibilityTracker { get; set; }
 
+        public BotPerceptionSystem Perception { get; private set; }
+        public BotCoverRetreatPlanner CoverPlanner { get; private set; }
+
         public BotGroupSyncCoordinator GroupSync => GroupBehavior?.GroupSync;
         public BotPanicHandler Panic => PanicHandler;
+        public FallbackHandler Fallback => _fallbackHandler;
 
         #endregion
 
@@ -114,12 +123,20 @@ namespace AIRefactored.AI.Core
             Tactical != null &&
             FlashGrenade != null &&
             ThreatSelector != null &&
-            _owner != null;
+            _owner != null &&
+            LootScanner != null &&
+            LootDecisionSystem != null &&
+            GroupComms != null &&
+            GroupBehavior != null;
 
         #endregion
 
         #region Initialization
 
+        /// <summary>
+        /// Initializes and wires all critical AIRefactored subsystems for this bot.
+        /// All failures are locally isolated and never result in a half-initialized bot.
+        /// </summary>
         public void Initialize(BotOwner bot)
         {
             if (bot == null)
@@ -138,9 +155,10 @@ namespace AIRefactored.AI.Core
             WildSpawnType role = bot.Profile?.Info?.Settings?.Role ?? WildSpawnType.assault;
             PersonalityProfile = BotRegistry.GetOrGenerate(id, PersonalityType.Balanced, role);
 
-            // Each subsystem is initialized individually with bulletproofing.
+            // --- All wiring is atomic; each system's failure is isolated and only disables that subsystem ---
             TryInit(() => Pathing = new BotOwnerPathfindingCache(), "Pathing");
             TryInit(() => { TacticalMemory = new BotTacticalMemory(); TacticalMemory.Initialize(this); }, "TacticalMemory");
+            TryInit(() => { _fallbackHandler = new FallbackHandler(this); }, "FallbackHandler");
             TryInit(() => { Combat = new CombatStateMachine(); Combat.Initialize(this); }, "Combat");
             TryInit(() => { FlashGrenade = new FlashGrenadeComponent(); FlashGrenade.Initialize(this); }, "FlashGrenade");
             TryInit(() => { PanicHandler = new BotPanicHandler(); PanicHandler.Initialize(this); }, "PanicHandler");
@@ -164,6 +182,8 @@ namespace AIRefactored.AI.Core
             TryInit(() => SquadHealer = bot.HealAnotherTarget ?? new BotHealAnotherTarget(bot), "SquadHealer");
             TryInit(() => HealReceiver = bot.HealingBySomebody ?? new BotHealingBySomebody(bot), "HealReceiver");
             TryInit(() => ThreatSelector = new BotThreatSelector(this), "ThreatSelector");
+            TryInit(() => { Perception = new BotPerceptionSystem(); Perception.Initialize(this); }, "Perception");
+            TryInit(() => { CoverPlanner = new BotCoverRetreatPlanner(bot, Pathing); }, "CoverPlanner");
         }
 
         private void TryInit(Action action, string name)
@@ -187,12 +207,9 @@ namespace AIRefactored.AI.Core
                 return;
             }
 
-            if (_owner != null)
+            if (_owner != null && !ReferenceEquals(_owner, owner))
             {
-                if (!ReferenceEquals(_owner, owner))
-                {
-                    Logger.LogWarning("[BotComponentCache] SetOwner() attempted to overwrite existing owner.");
-                }
+                Logger.LogWarning("[BotComponentCache] SetOwner() attempted to overwrite existing owner.");
                 return;
             }
 
@@ -207,6 +224,24 @@ namespace AIRefactored.AI.Core
             LastHeardTime = Time.time;
             LastHeardDirection = source - Position;
             HasHeardDirection = true;
+        }
+
+        #endregion
+
+        #region Teardown
+
+        public void Dispose()
+        {
+            try
+            {
+                _fallbackHandler?.Dispose();
+            }
+            catch (Exception ex)
+            {
+                Logger.LogWarning("[BotComponentCache] Dispose failed: " + ex);
+            }
+
+            _fallbackHandler = null;
         }
 
         #endregion

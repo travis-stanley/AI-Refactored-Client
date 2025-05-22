@@ -102,6 +102,9 @@ namespace AIRefactored.AI.Reactions
                 }
 
                 var lights = FlashlightRegistry.GetLastKnownFlashlightPositions();
+                if (lights == null || lights.Count == 0)
+                    return;
+
                 for (int i = 0, count = lights.Count; i < count; i++)
                 {
                     if (FlashlightRegistry.IsExposingBot(head, out Light light) && light != null)
@@ -158,7 +161,8 @@ namespace AIRefactored.AI.Reactions
                 float composure = 1f;
                 if (_cache.PanicHandler != null)
                 {
-                    composure = _cache.PanicHandler.GetComposureLevel();
+                    try { composure = Mathf.Clamp01(_cache.PanicHandler.GetComposureLevel()); }
+                    catch { composure = 1f; }
                 }
 
                 float scaled = Mathf.Clamp01(strength) * composure;
@@ -210,7 +214,7 @@ namespace AIRefactored.AI.Reactions
         {
             try
             {
-                if (BotPanicUtility.TryGetPanicComponent(cache, out BotPanicHandler panic))
+                if (BotPanicUtility.TryGetPanicComponent(cache, out BotPanicHandler panic) && panic != null)
                 {
                     panic.TriggerPanic();
                 }

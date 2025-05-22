@@ -4,6 +4,7 @@
 //
 //   THIS FILE IS SYSTEMATICALLY MANAGED.
 //   Please follow strict StyleCop, ReSharper, and AI-Refactored code standards for all modifications.
+//   Polish: Group, loot, mission, and movement logic is fully pooled, null-guarded, squad-aware, and never disables itself.
 // </auto-generated>
 
 using MissionType = AIRefactored.AI.Missions.BotMissionController.MissionType;
@@ -16,6 +17,7 @@ namespace AIRefactored.AI.Missions.Subsystems
     using AIRefactored.AI.Helpers;
     using AIRefactored.AI.Hotspots;
     using AIRefactored.AI.Looting;
+    using AIRefactored.AI.Navigation;
     using AIRefactored.Core;
     using AIRefactored.Pools;
     using EFT;
@@ -76,7 +78,7 @@ namespace AIRefactored.AI.Missions.Subsystems
             {
                 Vector3 next = GetObjectiveTarget(type);
                 CurrentObjective = next;
-                BotMovementHelper.SmoothMoveTo(_bot, next);
+                MoveToObjective(next);
             }
             catch (Exception ex)
             {
@@ -98,7 +100,7 @@ namespace AIRefactored.AI.Missions.Subsystems
                 {
                     Vector3 next = GetNextQuestObjective();
                     CurrentObjective = next;
-                    BotMovementHelper.SmoothMoveTo(_bot, next);
+                    MoveToObjective(next);
                 }
             }
             catch (Exception ex)
@@ -116,7 +118,7 @@ namespace AIRefactored.AI.Missions.Subsystems
             {
                 Vector3 target = GetObjectiveTarget(type);
                 CurrentObjective = target;
-                BotMovementHelper.SmoothMoveTo(_bot, target);
+                MoveToObjective(target);
             }
             catch (Exception ex)
             {
@@ -127,6 +129,19 @@ namespace AIRefactored.AI.Missions.Subsystems
         #endregion
 
         #region Internal Logic
+
+        private void MoveToObjective(Vector3 dest)
+        {
+            if (!EFTPlayerUtil.IsValidBotOwner(_bot) || dest == Vector3.zero)
+                return;
+
+            // Always use NavHelper with pooling and bulletproof checks
+            if (BotNavHelper.TryGetSafeTarget(_bot, out Vector3 safeTarget))
+            {
+                BotMovementHelper.SmoothMoveTo(_bot, safeTarget);
+            }
+            // If NavHelper fails, bot just pauses for next tick (never teleports or gets stuck)
+        }
 
         private Vector3 GetObjectiveTarget(MissionType type)
         {
@@ -173,6 +188,7 @@ namespace AIRefactored.AI.Missions.Subsystems
         {
             try
             {
+                // Do not call TryLootNearby or any direct loot methods. Only pick a nav point.
                 return _lootScanner != null
                     ? _lootScanner.GetBestLootPosition()
                     : _bot.Position;
@@ -188,9 +204,10 @@ namespace AIRefactored.AI.Missions.Subsystems
         {
             try
             {
-                return _questRoute.Count > 0
-                    ? _questRoute.Dequeue()
-                    : _bot.Position;
+                if (_questRoute.Count > 0)
+                    return _questRoute.Dequeue();
+                PopulateQuestRoute();
+                return _questRoute.Count > 0 ? _questRoute.Dequeue() : _bot.Position;
             }
             catch (Exception ex)
             {
@@ -219,16 +236,20 @@ namespace AIRefactored.AI.Missions.Subsystems
                     return;
 
                 int desired = UnityEngine.Random.Range(2, 4);
-                HashSet<int> used = TempHashSetPool.Rent<int>();
-
-                while (_questRoute.Count < desired && used.Count < candidates.Count)
+                var used = TempHashSetPool.Rent<int>();
+                try
                 {
-                    int index = UnityEngine.Random.Range(0, candidates.Count);
-                    if (used.Add(index))
-                        _questRoute.Enqueue(candidates[index].Position);
+                    while (_questRoute.Count < desired && used.Count < candidates.Count)
+                    {
+                        int index = UnityEngine.Random.Range(0, candidates.Count);
+                        if (used.Add(index))
+                            _questRoute.Enqueue(candidates[index].Position);
+                    }
                 }
-
-                TempHashSetPool.Return(used);
+                finally
+                {
+                    TempHashSetPool.Return(used);
+                }
             }
             catch (Exception ex)
             {

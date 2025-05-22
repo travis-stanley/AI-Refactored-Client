@@ -3,12 +3,13 @@
 //   Licensed under the MIT License. See LICENSE in the repository root for more information.
 //
 //   THIS FILE IS SYSTEMATICALLY MANAGED.
-//   Failures in AIRefactored logic must always trigger safe fallback to EFT base AI.
+//   Bulletproof: All logic is strictly null-guarded, errors never propagate.
 // </auto-generated>
 
 namespace AIRefactored.AI.Combat
 {
     using System;
+    using EFT;
     using UnityEngine;
 
     /// <summary>
@@ -18,16 +19,31 @@ namespace AIRefactored.AI.Combat
     /// </summary>
     public sealed class BotLastShotTracker
     {
-        private static readonly float DefaultMemoryWindow = 10f;
+        #region Constants
+
+        private const float DefaultMemoryWindow = 10f;
+
+        #endregion
+
+        #region State
 
         private string _lastAttackerId = string.Empty;
         private float _lastHitTime = float.NegativeInfinity;
+        private EBodyPart _lastHitPart = EBodyPart.Common;
+        private float _lastHitDistance = -1f;
+        private Vector3 _lastHitDirection = Vector3.zero;
 
         private string _lastTargetId = string.Empty;
         private float _lastShotTime = float.NegativeInfinity;
+        private float _lastShotDistance = -1f;
+        private Vector3 _lastShotDirection = Vector3.zero;
+
+        #endregion
+
+        #region Public API
 
         /// <summary>
-        /// Returns true if the specified profile was shot at recently by this bot.
+        /// Checks if the bot has recently shot at the provided profile.
         /// </summary>
         public bool DidRecentlyShoot(string profileId, float now = -1f, float memoryWindow = -1f)
         {
@@ -35,20 +51,17 @@ namespace AIRefactored.AI.Combat
             {
                 if (string.IsNullOrEmpty(profileId) || string.IsNullOrEmpty(_lastTargetId))
                     return false;
-
                 if (!string.Equals(_lastTargetId, profileId, StringComparison.Ordinal))
                     return false;
-
-                float window = memoryWindow > 0f ? memoryWindow : DefaultMemoryWindow;
                 float time = now >= 0f ? now : Time.time;
-
+                float window = memoryWindow > 0f ? memoryWindow : DefaultMemoryWindow;
                 return (time - _lastShotTime) <= window;
             }
             catch { return false; }
         }
 
         /// <summary>
-        /// Returns true if this bot was recently hit by the specified profile.
+        /// Checks if the bot was recently hit by the provided profile.
         /// </summary>
         public bool WasRecentlyShotBy(string profileId, float now = -1f, float memoryWindow = -1f)
         {
@@ -56,44 +69,70 @@ namespace AIRefactored.AI.Combat
             {
                 if (string.IsNullOrEmpty(profileId) || string.IsNullOrEmpty(_lastAttackerId))
                     return false;
-
                 if (!string.Equals(_lastAttackerId, profileId, StringComparison.Ordinal))
                     return false;
-
-                float window = memoryWindow > 0f ? memoryWindow : DefaultMemoryWindow;
                 float time = now >= 0f ? now : Time.time;
-
+                float window = memoryWindow > 0f ? memoryWindow : DefaultMemoryWindow;
                 return (time - _lastHitTime) <= window;
             }
             catch { return false; }
         }
 
         /// <summary>
-        /// Registers that this bot was hit by the specified profile ID.
+        /// Registers a hit received by this bot.
         /// </summary>
-        public void RegisterHit(string profileId)
+        public void RegisterHit(string profileId, EBodyPart hitPart = EBodyPart.Common, float distance = -1f, Vector3 direction = default(Vector3))
         {
             if (string.IsNullOrEmpty(profileId))
                 return;
 
             _lastAttackerId = profileId;
             _lastHitTime = Time.time;
+            _lastHitPart = hitPart;
+            _lastHitDistance = distance;
+            _lastHitDirection = direction;
         }
 
         /// <summary>
-        /// Registers a shot fired by this bot at the specified profile ID.
+        /// Registers a shot fired by this bot.
         /// </summary>
-        public void RegisterShot(string profileId)
+        public void RegisterShot(string profileId, float distance = -1f, Vector3 direction = default(Vector3))
         {
             if (string.IsNullOrEmpty(profileId))
                 return;
 
             _lastTargetId = profileId;
             _lastShotTime = Time.time;
+            _lastShotDistance = distance;
+            _lastShotDirection = direction;
         }
 
         /// <summary>
-        /// Clears all recent shot and hit memory.
+        /// Returns a "heat" factor (0..1) for how recently the bot was hit.
+        /// </summary>
+        public float GetRecentHitHeat(float now = -1f)
+        {
+            float time = now >= 0f ? now : Time.time;
+            float delta = time - _lastHitTime;
+            if (delta > DefaultMemoryWindow)
+                return 0f;
+            return 1f - Mathf.Clamp01(delta / DefaultMemoryWindow);
+        }
+
+        /// <summary>
+        /// Returns a "heat" factor (0..1) for how recently the bot fired a shot.
+        /// </summary>
+        public float GetRecentShotHeat(float now = -1f)
+        {
+            float time = now >= 0f ? now : Time.time;
+            float delta = time - _lastShotTime;
+            if (delta > DefaultMemoryWindow)
+                return 0f;
+            return 1f - Mathf.Clamp01(delta / DefaultMemoryWindow);
+        }
+
+        /// <summary>
+        /// Resets all tracking data for this bot.
         /// </summary>
         public void Reset()
         {
@@ -101,6 +140,62 @@ namespace AIRefactored.AI.Combat
             _lastTargetId = string.Empty;
             _lastHitTime = float.NegativeInfinity;
             _lastShotTime = float.NegativeInfinity;
+            _lastHitPart = EBodyPart.Common;
+            _lastHitDistance = -1f;
+            _lastHitDirection = Vector3.zero;
+            _lastShotDistance = -1f;
+            _lastShotDirection = Vector3.zero;
         }
+
+        #endregion
+
+        #region Exposed Properties
+
+        /// <summary>
+        /// Gets the last attacker's profile ID.
+        /// </summary>
+        public string LastAttackerId => _lastAttackerId;
+
+        /// <summary>
+        /// Gets the time when the bot was last hit.
+        /// </summary>
+        public float LastHitTime => _lastHitTime;
+
+        /// <summary>
+        /// Gets the last body part hit.
+        /// </summary>
+        public EBodyPart LastHitPart => _lastHitPart;
+
+        /// <summary>
+        /// Gets the distance from which the bot was last hit.
+        /// </summary>
+        public float LastHitDistance => _lastHitDistance;
+
+        /// <summary>
+        /// Gets the direction of the last hit.
+        /// </summary>
+        public Vector3 LastHitDirection => _lastHitDirection;
+
+        /// <summary>
+        /// Gets the last target's profile ID.
+        /// </summary>
+        public string LastTargetId => _lastTargetId;
+
+        /// <summary>
+        /// Gets the time when the bot last fired a shot.
+        /// </summary>
+        public float LastShotTime => _lastShotTime;
+
+        /// <summary>
+        /// Gets the distance to the last target shot at.
+        /// </summary>
+        public float LastShotDistance => _lastShotDistance;
+
+        /// <summary>
+        /// Gets the direction of the last shot fired.
+        /// </summary>
+        public Vector3 LastShotDirection => _lastShotDirection;
+
+        #endregion
     }
 }

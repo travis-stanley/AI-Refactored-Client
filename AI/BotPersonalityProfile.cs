@@ -4,6 +4,7 @@
 //
 //   THIS FILE IS SYSTEMATICALLY MANAGED.
 //   Please follow strict StyleCop, ReSharper, and AI-Refactored code standards for all modifications.
+//   Realism Pass: Adds Awareness, HearingBias, StanceBias, and a null-safe Default profile.
 // </auto-generated>
 
 namespace AIRefactored.AI
@@ -13,6 +14,7 @@ namespace AIRefactored.AI
     /// <summary>
     /// Defines a full personality configuration for AI bots, including behavior flags,
     /// tactical parameters, suppression response, and mission preferences.
+    /// Fully compatible with all AIRefactored systems. Null object pattern supported.
     /// </summary>
     public sealed class BotPersonalityProfile
     {
@@ -41,6 +43,23 @@ namespace AIRefactored.AI
         public float SuppressiveFireBias;
         public float Greed;
         public float StuckTolerance;
+
+        /// <summary>
+        /// Perception awareness (0-1). Higher is more alert, faster to hear/see.
+        /// Used by hearing and vision subsystems.
+        /// </summary>
+        public float Awareness;
+
+        /// <summary>
+        /// Auditory sensitivity (0-1). Bots with low HearingBias are "deaf".
+        /// </summary>
+        public float HearingBias;
+
+        /// <summary>
+        /// Standing (0), crouching (1), proning (2) tendency.
+        /// Used to bias pose selection logic.
+        /// </summary>
+        public float StanceBias;
 
         #endregion
 
@@ -82,6 +101,59 @@ namespace AIRefactored.AI
         /// </summary>
         public bool CanSuppress => this.SuppressiveFireBias > 0.05f;
 
+        /// <summary>
+        /// Gets a value indicating whether this personality is highly alert (awareness over 0.8).
+        /// </summary>
+        public bool IsHighAwareness => this.Awareness > 0.8f;
+
+        #endregion
+
+        #region Null Profile
+
+        /// <summary>
+        /// Default personality (safe null object for fallback).
+        /// </summary>
+        public static readonly BotPersonalityProfile Default = new BotPersonalityProfile
+        {
+            Accuracy = 0.5f,
+            AccuracyUnderFire = 0.45f,
+            AggressionLevel = 0.5f,
+            Caution = 0.5f,
+            ChaosFactor = 0.33f,
+            Cohesion = 0.5f,
+            CommunicationLevel = 0.5f,
+            CornerCheckPauseTime = 0.6f,
+            EngagementRange = 48f,
+            FlankBias = 0.3f,
+            FlinchThreshold = 0.5f,
+            LeanPeekFrequency = 0.5f,
+            MovementJitter = 0.35f,
+            ReactionSpeed = 0.52f,
+            ReactionTime = 0.65f,
+            RepositionPriority = 0.4f,
+            RetreatThreshold = 0.25f,
+            RiskTolerance = 0.5f,
+            SideStepBias = 0.3f,
+            SuppressionSensitivity = 0.5f,
+            SuppressiveFireBias = 0.3f,
+            Greed = 0.4f,
+            StuckTolerance = 0.45f,
+            Awareness = 0.5f,
+            HearingBias = 0.5f,
+            StanceBias = 0.0f,
+            IsCamper = false,
+            IsDumb = false,
+            IsFearful = false,
+            IsFrenzied = false,
+            IsSadistic = false,
+            IsSilentHunter = false,
+            IsStubborn = false,
+            IsTeamPlayer = true,
+            Personality = PersonalityType.Balanced,
+            PreferredMission = MissionBias.Random,
+            LeaningStyle = LeanPreference.Conservative
+        };
+
         #endregion
 
         #region Public Methods
@@ -89,7 +161,6 @@ namespace AIRefactored.AI
         /// <summary>
         /// Returns a shallow copy of this profile for runtime modification.
         /// </summary>
-        /// <returns>Shallow clone of <see cref="BotPersonalityProfile"/>.</returns>
         public BotPersonalityProfile Clone()
         {
             return (BotPersonalityProfile)this.MemberwiseClone();
@@ -98,10 +169,11 @@ namespace AIRefactored.AI
         /// <summary>
         /// Debug-friendly representation for profile introspection.
         /// </summary>
-        /// <returns>Profile debug string.</returns>
         public override string ToString()
         {
-            return "[" + this.Personality + "] Aggro=" + this.AggressionLevel + ", Acc=" + this.Accuracy + ", Chaos=" + this.ChaosFactor + ", Cohesion=" + this.Cohesion;
+            return "[" + this.Personality + "] Aggro=" + this.AggressionLevel +
+                ", Acc=" + this.Accuracy + ", Chaos=" + this.ChaosFactor + ", Cohesion=" + this.Cohesion +
+                ", Awareness=" + this.Awareness + ", Hearing=" + this.HearingBias + ", StanceBias=" + this.StanceBias;
         }
 
         #endregion
@@ -114,49 +186,11 @@ namespace AIRefactored.AI
     /// </summary>
     public enum PersonalityType
     {
-        Adaptive,
-        Aggressive,
-        Balanced,
-        Camper,
-        Cautious,
-        ColdBlooded,
-        Defensive,
-        Dumb,
-        Explorer,
-        Fearful,
-        Frenzied,
-        Greedy,
-        Heroic,
-        Loner,
-        Methodical,
-        Paranoid,
-        Patient,
-        Reckless,
-        RiskTaker,
-        SilentHunter,
-        Sniper,
-        Strategic,
-        Stubborn,
-        Tactical,
-        TeamPlayer,
-        Unpredictable,
-        Vengeful,
-        Vigilant,
-        Calculating,
-        Panicked,
-        Stoic,
-        Bulldozer,
-        Covert,
-        Cowardly,
-        Disruptor,
-        Supportive,
-        Hunter,
-        Stalker,
-        Vigilante,
-        Sentinel,
-        Erratic,
-        Cowboy,
-        Saboteur
+        Adaptive, Aggressive, Balanced, Camper, Cautious, ColdBlooded, Defensive, Dumb,
+        Explorer, Fearful, Frenzied, Greedy, Heroic, Loner, Methodical, Paranoid, Patient,
+        Reckless, RiskTaker, SilentHunter, Sniper, Strategic, Stubborn, Tactical, TeamPlayer,
+        Unpredictable, Vengeful, Vigilant, Calculating, Panicked, Stoic, Bulldozer, Covert,
+        Cowardly, Disruptor, Supportive, Hunter, Stalker, Vigilante, Sentinel, Erratic, Cowboy, Saboteur
     }
 
     /// <summary>
@@ -164,10 +198,7 @@ namespace AIRefactored.AI
     /// </summary>
     public enum MissionBias
     {
-        Random,
-        Loot,
-        Fight,
-        Quest
+        Random, Loot, Fight, Quest
     }
 
     /// <summary>
@@ -175,9 +206,7 @@ namespace AIRefactored.AI
     /// </summary>
     public enum LeanPreference
     {
-        Never,
-        Conservative,
-        Aggressive
+        Never, Conservative, Aggressive
     }
 
     #endregion

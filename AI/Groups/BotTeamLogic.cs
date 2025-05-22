@@ -3,7 +3,8 @@
 //   Licensed under the MIT License. See LICENSE in the repository root for more information.
 //
 //   THIS FILE IS SYSTEMATICALLY MANAGED.
-//   Failures in AIRefactored logic must always trigger safe fallback to EFT base AI.
+//   Realism: Squad logic is human-like, staggered, never instant, and never disables itself or others.
+//   Bulletproof: All errors are locally isolated, squad logic never breaks parent AI or the mod.
 // </auto-generated>
 
 namespace AIRefactored.AI.Groups
@@ -15,14 +16,15 @@ namespace AIRefactored.AI.Groups
     using AIRefactored.AI.Core;
     using AIRefactored.AI.Helpers;
     using AIRefactored.Core;
+    using AIRefactored.Pools;
     using EFT;
     using UnityEngine;
     using static AIRefactored.AI.Missions.BotMissionController;
     using Random = UnityEngine.Random;
 
     /// <summary>
-    /// Coordinates squad-level tactical behavior including fallback broadcast, enemy sharing, and regrouping.
-    /// Bulletproof: All errors are isolated, and squad logic never breaks parent AI or mod.
+    /// Coordinates squad-level tactical behavior: fallback, enemy sharing, organic regrouping.
+    /// Bulletproof: All errors are locally isolated, squad logic never breaks parent AI or the mod.
     /// </summary>
     public sealed class BotTeamLogic
     {
@@ -43,6 +45,10 @@ namespace AIRefactored.AI.Groups
 
         #region Constructor
 
+        /// <summary>
+        /// Constructs a BotTeamLogic instance for the given bot owner.
+        /// </summary>
+        /// <param name="bot">BotOwner to coordinate squad logic for.</param>
         public BotTeamLogic(BotOwner bot)
         {
             if (!EFTPlayerUtil.IsValidBotOwner(bot))
@@ -54,6 +60,9 @@ namespace AIRefactored.AI.Groups
 
         #region Public Methods
 
+        /// <summary>
+        /// Registers an enemy with all squadmates except the caller, with organic delay.
+        /// </summary>
         public static void AddEnemy(BotOwner bot, IPlayer target)
         {
             try
@@ -73,13 +82,17 @@ namespace AIRefactored.AI.Groups
                     BotOwner mate = bot.BotsGroup.Member(i);
                     if (EFTPlayerUtil.IsValidBotOwner(mate) && mate != bot)
                     {
-                        ForceRegisterEnemy(mate, safe);
+                        float delay = Random.Range(0.07f, 0.27f);
+                        TriggerDelayedRegisterEnemy(mate, safe, delay);
                     }
                 }
             }
             catch { }
         }
 
+        /// <summary>
+        /// Broadcasts a mission type change to all squadmates except the caller, with VO and organic delay.
+        /// </summary>
         public static void BroadcastMissionType(BotOwner bot, MissionType mission)
         {
             try
@@ -93,13 +106,26 @@ namespace AIRefactored.AI.Groups
                     BotOwner mate = bot.BotsGroup.Member(i);
                     if (EFTPlayerUtil.IsValidBotOwner(mate) && mate != bot && mate.BotTalk != null)
                     {
-                        mate.BotTalk.TrySay(EPhraseTrigger.Cooperation);
+                        float delay = Random.Range(0.15f, 0.45f);
+                        Task.Run(async () =>
+                        {
+                            try
+                            {
+                                await Task.Delay((int)(delay * 1000f));
+                                if (Random.value < 0.7f)
+                                    mate.BotTalk.TrySay(EPhraseTrigger.Cooperation);
+                            }
+                            catch { }
+                        });
                     }
                 }
             }
             catch { }
         }
 
+        /// <summary>
+        /// Orders all valid squadmates to fallback to the given point, with organic delay.
+        /// </summary>
         public void BroadcastFallback(Vector3 retreatPoint)
         {
             foreach (var pair in _combatMap)
@@ -109,11 +135,15 @@ namespace AIRefactored.AI.Groups
 
                 if (EFTPlayerUtil.IsValidBotOwner(mate) && mate != _bot && fsm != null)
                 {
-                    TriggerDelayedFallback(fsm, retreatPoint);
+                    float delay = Random.Range(0.10f, 0.28f);
+                    TriggerDelayedFallback(fsm, retreatPoint, delay);
                 }
             }
         }
 
+        /// <summary>
+        /// Organically coordinates movement to keep squad grouped, using jitter and repulsion.
+        /// </summary>
         public void CoordinateMovement()
         {
             try
@@ -150,6 +180,9 @@ namespace AIRefactored.AI.Groups
             catch { }
         }
 
+        /// <summary>
+        /// Registers a CombatStateMachine for a given squadmate (never for self).
+        /// </summary>
         public void InjectCombatState(BotOwner mate, CombatStateMachine fsm)
         {
             try
@@ -162,6 +195,9 @@ namespace AIRefactored.AI.Groups
             catch { }
         }
 
+        /// <summary>
+        /// Sets squadmates using pooling, based on groupId (excludes self).
+        /// </summary>
         public void SetTeammates(List<BotOwner> allBots)
         {
             _teammates.Clear();
@@ -189,6 +225,9 @@ namespace AIRefactored.AI.Groups
             catch { }
         }
 
+        /// <summary>
+        /// Shares an enemy target with all valid squadmates, using organic delay.
+        /// </summary>
         public void ShareTarget(IPlayer enemy)
         {
             try
@@ -206,7 +245,8 @@ namespace AIRefactored.AI.Groups
                     BotOwner mate = _teammates[i];
                     if (EFTPlayerUtil.IsValidBotOwner(mate))
                     {
-                        ForceRegisterEnemy(mate, safe);
+                        float delay = Random.Range(0.07f, 0.25f);
+                        TriggerDelayedRegisterEnemy(mate, safe, delay);
                     }
                 }
             }
@@ -235,7 +275,23 @@ namespace AIRefactored.AI.Groups
             catch { }
         }
 
-        private static void TriggerDelayedFallback(CombatStateMachine fsm, Vector3 point)
+        private static void TriggerDelayedRegisterEnemy(BotOwner receiver, IPlayer enemy, float delay)
+        {
+            if (!EFTPlayerUtil.IsValidBotOwner(receiver) || enemy == null)
+                return;
+
+            Task.Run(async () =>
+            {
+                try
+                {
+                    await Task.Delay((int)(delay * 1000f));
+                    ForceRegisterEnemy(receiver, enemy);
+                }
+                catch { }
+            });
+        }
+
+        private static void TriggerDelayedFallback(CombatStateMachine fsm, Vector3 point, float delay)
         {
             if (fsm == null)
                 return;
@@ -244,7 +300,7 @@ namespace AIRefactored.AI.Groups
             {
                 try
                 {
-                    await Task.Delay(Random.Range(150, 400));
+                    await Task.Delay((int)(delay * 1000f));
                     fsm.TriggerFallback(point);
                 }
                 catch { }

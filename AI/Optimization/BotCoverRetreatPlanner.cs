@@ -23,10 +23,10 @@ namespace AIRefactored.AI.Optimization
 	/// <summary>
 	/// Provides fallback path planning and squad-aware retreat evaluation for AI bots.
 	/// All path/cover/fallback logic is routed through Unity NavMesh, BotNavHelper, and squad-safe helpers.
-	/// Only runs on the authoritative host (headless, local-host, or client-host).
+	/// Exposed as instance class for per-bot use (attach to BotComponentCache).
 	/// All failures are strictly isolated to the affected bot and do not break parent or system logic.
 	/// </summary>
-	public static class BotCoverRetreatPlanner
+	public sealed class BotCoverRetreatPlanner
 	{
 		private const float RetreatDistance = 12f;
 		private const float SquadSpacingThreshold = 4.25f;
@@ -34,11 +34,25 @@ namespace AIRefactored.AI.Optimization
 		private const int MaxSamples = 10;
 		private const float MemoryClearInterval = 60f;
 		private const float ChaosOffsetRadius = 2.5f;
+		private const float CoverProbeRadius = 4.0f; // Radius for probing cover
+		private const int CoverProbeRays = 8; // Number of radial probes
 
 		private static readonly Dictionary<string, Dictionary<string, List<Vector3>>> _squadRetreatCache = new Dictionary<string, Dictionary<string, List<Vector3>>>();
 		private static float _lastClearTime = -999f;
 
-		public static void Initialize()
+		private readonly BotOwner _bot;
+		private readonly BotOwnerPathfindingCache _pathCache;
+
+		public BotCoverRetreatPlanner(BotOwner bot, BotOwnerPathfindingCache pathCache)
+		{
+			_bot = bot ?? throw new ArgumentNullException(nameof(bot));
+			_pathCache = pathCache ?? throw new ArgumentNullException(nameof(pathCache));
+		}
+
+		/// <summary>
+		/// Called at system/raid init for global cache clear.
+		/// </summary>
+		public static void InitializeStatic()
 		{
 			try
 			{
@@ -53,14 +67,13 @@ namespace AIRefactored.AI.Optimization
 
 		/// <summary>
 		/// Picks a retreat destination using Unity NavMesh and EFT-native squad-safe helpers.
-		/// No custom nav registry or generated points are used.
 		/// </summary>
-		public static List<Vector3> GetCoverRetreatPath(BotOwner bot, Vector3 threatDir, BotOwnerPathfindingCache pathCache)
+		public List<Vector3> GetCoverRetreatPath(Vector3 threatDir)
 		{
 			List<Vector3> result = TempListPool.Rent<Vector3>();
 			try
 			{
-				if (!GameWorldHandler.IsLocalHost() || bot == null || bot.Transform == null)
+				if (!GameWorldHandler.IsLocalHost() || _bot == null || _bot.Transform == null)
 					return result;
 
 				string map = GameWorldHandler.TryGetValidMapName();
@@ -69,7 +82,7 @@ namespace AIRefactored.AI.Optimization
 
 				ClearExpiredCache();
 
-				string squadId = bot.Profile?.Info?.GroupId ?? bot.ProfileId;
+				string squadId = _bot.Profile?.Info?.GroupId ?? _bot.ProfileId;
 				if (!_squadRetreatCache.TryGetValue(map, out Dictionary<string, List<Vector3>> squadCache))
 				{
 					squadCache = new Dictionary<string, List<Vector3>>();
@@ -88,8 +101,8 @@ namespace AIRefactored.AI.Optimization
 				squadCache.Remove(squadId);
 
 				// 2. Try EFT native retreat path (uses BotNavHelper squad-safe points)
-				List<Vector3> squadSafe = BotNavHelper.GetCurrentPathPoints(bot, 6) != null
-					? GetSquadSafeRetreat(bot, 6, SquadSpacingThreshold)
+				List<Vector3> squadSafe = BotNavHelper.GetCurrentPathPoints(_bot, 6) != null
+					? GetSquadSafeRetreat(_bot, 6, SquadSpacingThreshold)
 					: null;
 
 				if (squadSafe != null && squadSafe.Count >= 2)
@@ -100,7 +113,7 @@ namespace AIRefactored.AI.Optimization
 				}
 
 				// 3. Try fallback via Unity NavMesh straight line
-				if (TryNavMeshFallback(bot, threatDir, out List<Vector3> nativePath))
+				if (TryNavMeshFallback(_bot, threatDir, out List<Vector3> nativePath))
 				{
 					squadCache[squadId] = nativePath;
 					result.AddRange(nativePath);
@@ -108,7 +121,7 @@ namespace AIRefactored.AI.Optimization
 				}
 
 				// 4. Final fallback: move directly away, add chaos offset, sample position on navmesh
-				Vector3 origin = bot.Position;
+				Vector3 origin = _bot.Position;
 				Vector3 away = -threatDir.normalized;
 				Vector3 fallback = origin + away * RetreatDistance + UnityEngine.Random.insideUnitSphere * ChaosOffsetRadius;
 				fallback.y = origin.y; // Keep same height for stability
@@ -126,6 +139,73 @@ namespace AIRefactored.AI.Optimization
 			{
 				Plugin.LoggerInstance.LogError("[BotCoverRetreatPlanner] GetCoverRetreatPath failed: " + ex);
 				return result;
+			}
+		}
+
+		/// <summary>
+		/// Attempts to find the best nearby cover point for this bot, away from a threat or toward a target.
+		/// Returns true if a cover point is found.
+		/// </summary>
+		public bool TryGetBestCoverNear(Vector3 target, Vector3 current, out Vector3 coverPoint)
+		{
+			coverPoint = Vector3.zero;
+			try
+			{
+				float bestScore = float.MinValue;
+				Vector3 best = Vector3.zero;
+				Vector3 directionToTarget = (target - current).normalized;
+
+				// Probe around the bot in a circle, checking NavMesh and occlusion
+				for (int i = 0; i < CoverProbeRays; i++)
+				{
+					float angle = (360f / CoverProbeRays) * i;
+					Vector3 dir = Quaternion.Euler(0f, angle, 0f) * -directionToTarget; // Prefer behind cover from threat
+					Vector3 probe = current + dir * CoverProbeRadius;
+
+					NavMeshHit navHit;
+					if (NavMesh.SamplePosition(probe, out navHit, 2.0f, NavMesh.AllAreas))
+					{
+						// Score higher for further from the threat line, closer to bot, and less exposed
+						float score = Vector3.Dot(dir, -directionToTarget) * 1.5f - Vector3.Distance(current, navHit.position) * 0.3f;
+
+						// Raycast for line-of-sight to the threat; higher score for blocked shots
+						Vector3 eye = navHit.position + Vector3.up * 1.4f;
+						Vector3 toThreat = (target - navHit.position).normalized;
+						if (Physics.Raycast(eye, toThreat, out RaycastHit hit, Vector3.Distance(navHit.position, target), AIRefactoredLayerMasks.CoverColliderMask))
+						{
+							score += 2.5f;
+						}
+
+						if (score > bestScore)
+						{
+							bestScore = score;
+							best = navHit.position;
+						}
+					}
+				}
+
+				if (bestScore > float.MinValue + 0.5f)
+				{
+					coverPoint = best;
+					return true;
+				}
+
+				// Fallback: pick a random safe NavMesh point behind the bot
+				Vector3 fallback = current - directionToTarget * 3.0f + UnityEngine.Random.insideUnitSphere * 1.0f;
+				fallback.y = current.y;
+				NavMeshHit fallbackHit;
+				if (NavMesh.SamplePosition(fallback, out fallbackHit, 2.0f, NavMesh.AllAreas))
+				{
+					coverPoint = fallbackHit.position;
+					return true;
+				}
+				return false;
+			}
+			catch (Exception ex)
+			{
+				Plugin.LoggerInstance.LogError("[BotCoverRetreatPlanner] TryGetBestCoverNear failed: " + ex);
+				coverPoint = Vector3.zero;
+				return false;
 			}
 		}
 
@@ -199,20 +279,35 @@ namespace AIRefactored.AI.Optimization
 		{
 			try
 			{
-				if (path.Count < 2)
+				if (path == null || path.Count < 2)
 					return false;
 
-				Vector3 origin = path[0] + Vector3.up * 1.2f;
-				Vector3 target = path[1];
-				Vector3 dir = (target - path[0]).normalized;
-				float dist = Vector3.Distance(path[0], target) + 0.5f;
+				Vector3 p0 = path[0];
+				Vector3 p1 = path[1];
 
-				if (Physics.Raycast(origin, dir, out RaycastHit hit, dist, AIRefactoredLayerMasks.DoorColliderMask))
-					return AIRefactoredLayerMasks.IsDoorLayer(hit.collider.gameObject.layer);
+				if (float.IsNaN(p0.x) || float.IsNaN(p1.x))
+					return false;
+
+				Vector3 origin = p0 + Vector3.up * 1.2f;
+				Vector3 direction = (p1 - p0).normalized;
+
+				if (direction.sqrMagnitude < 0.01f)
+					return false;
+
+				float distance = Vector3.Distance(p0, p1) + 0.5f;
+
+				if (Physics.Raycast(origin, direction, out RaycastHit hit, distance, AIRefactoredLayerMasks.MovementBlockerMask))
+				{
+					int layer = hit.collider.gameObject.layer;
+					return AIRefactoredLayerMasks.IsDoorLayer(layer);
+				}
 
 				return false;
 			}
-			catch { return false; }
+			catch
+			{
+				return false;
+			}
 		}
 
 		#endregion

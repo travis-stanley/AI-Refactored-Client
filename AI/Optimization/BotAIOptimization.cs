@@ -3,8 +3,8 @@
 //   Licensed under the MIT License. See LICENSE in the repository root for more information.
 //
 //   THIS FILE IS SYSTEMATICALLY MANAGED.
-//   Please follow strict StyleCop, ReSharper, and AI-Refactored code standards for all modifications.
 //   All diagnostics and optimization routines are bulletproof and fully isolated.
+//   Realism Pass: Fully null-guarded, robust, cooldown-aware, and strictly side-effect-free for live bots.
 // </auto-generated>
 
 namespace AIRefactored.AI.Optimization
@@ -33,7 +33,7 @@ namespace AIRefactored.AI.Optimization
 
         #region Fields
 
-        private readonly Dictionary<string, bool> _optimizationApplied = new Dictionary<string, bool>(64);
+        private readonly Dictionary<string, bool> _optimizationApplied = new Dictionary<string, bool>(64, StringComparer.OrdinalIgnoreCase);
         private static readonly Dictionary<int, float> LastOptimizationLogs = new Dictionary<int, float>(64);
         private static readonly ManualLogSource Logger = Plugin.LoggerInstance;
 
@@ -51,19 +51,15 @@ namespace AIRefactored.AI.Optimization
             try
             {
                 if (!GameWorldHandler.IsLocalHost() || !IsValid(botOwner))
-                {
                     return;
-                }
 
                 string profileId = "Unknown";
-                try { profileId = botOwner.Profile?.Id ?? "Unknown"; } catch { }
+                try { profileId = botOwner?.Profile?.Id ?? "Unknown"; } catch { }
 
                 if (_optimizationApplied.TryGetValue(profileId, out bool alreadyApplied) && alreadyApplied)
                 {
                     if (!ShouldLogOptimization(botOwner))
-                    {
                         return;
-                    }
                     Logger.LogDebug("[BotAIOptimization] Optimization already applied for bot: " + profileId);
                     return;
                 }
@@ -78,7 +74,6 @@ namespace AIRefactored.AI.Optimization
             catch (Exception ex)
             {
                 Logger.LogError("[BotAIOptimization] Optimize() fatal error: " + ex);
-                // Never let diagnostics/logging break the bot or mod.
             }
         }
 
@@ -92,11 +87,11 @@ namespace AIRefactored.AI.Optimization
             try
             {
                 if (!GameWorldHandler.IsLocalHost() || !IsValid(botOwner))
-                {
                     return;
-                }
+
                 string profileId = "Unknown";
-                try { profileId = botOwner.Profile?.Id ?? "Unknown"; } catch { }
+                try { profileId = botOwner?.Profile?.Id ?? "Unknown"; } catch { }
+
                 _optimizationApplied[profileId] = false;
                 Logger.LogDebug("[BotAIOptimization] Reset optimization for bot: " + profileId);
             }
@@ -136,16 +131,13 @@ namespace AIRefactored.AI.Optimization
                 float now = Time.time;
 
                 if (LastOptimizationLogs.TryGetValue(id, out float last) && now - last < OptimizationLogCooldown)
-                {
                     return false;
-                }
 
                 LastOptimizationLogs[id] = now;
                 return true;
             }
             catch
             {
-                // Fail safe: always log if in doubt (never spam due to exception).
                 return true;
             }
         }

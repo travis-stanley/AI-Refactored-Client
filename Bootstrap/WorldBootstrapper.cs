@@ -25,10 +25,6 @@ namespace AIRefactored.Bootstrap
     using EFT;
     using UnityEngine;
 
-    /// <summary>
-    /// Main coordinator for AIRefactored world systems. Handles initialization, tick/update, and teardown.
-    /// Fully bulletproof: all errors are locally contained and never break the AIRefactored stack. No fallback logic is ever triggered.
-    /// </summary>
     public static class WorldBootstrapper
     {
         private static readonly List<IAIWorldSystemBootstrapper> Systems = new List<IAIWorldSystemBootstrapper>(16);
@@ -48,6 +44,13 @@ namespace AIRefactored.Bootstrap
             if (_hasInitialized)
             {
                 Logger.LogDebug("[WorldBootstrapper] Already initialized — skipping.");
+                return;
+            }
+
+            // ✅ Prevent premature initialization in headless mode
+            if (FikaHeadlessDetector.IsHeadless && !FikaHeadlessDetector.HasRaidStarted())
+            {
+                Logger.LogWarning("[WorldBootstrapper] ⏳ Delaying initialization — headless raid not yet started.");
                 return;
             }
 

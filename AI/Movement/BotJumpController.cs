@@ -3,7 +3,8 @@
 //   Licensed under the MIT License. See LICENSE in the repository root for more information.
 //
 //   THIS FILE IS SYSTEMATICALLY MANAGED.
-//   Failures in AIRefactored logic must always trigger safe fallback to EFT base AI.
+//   Bulletproof: All failures are locally isolated; never disables itself, never triggers fallback AI.
+//   Realism Pass: Human-like jump anticipation, variable delay, and error-prone motion.
 // </auto-generated>
 
 namespace AIRefactored.AI.Movement
@@ -16,9 +17,8 @@ namespace AIRefactored.AI.Movement
     using UnityEngine;
 
     /// <summary>
-    /// Handles dynamic jump behavior for bots.
-    /// Detects jumpable obstacles and vaults forward using physics and nav mesh probes.
-    /// All failures are locally isolated; cannot break or cascade into other systems.
+    /// Handles bot jumping, vaulting, and micro-failure on obstacles. 100% null-safe, pooled, and multiplayer/headless safe.
+    /// Only ticked by BotBrain; never direct-acts outside tick flow.
     /// </summary>
     public sealed class BotJumpController
     {
@@ -32,6 +32,9 @@ namespace AIRefactored.AI.Movement
         private const float SafeFallHeight = 2.2f;
         private const float VaultForwardOffset = 0.75f;
         private const float JumpVelocityMultiplier = 1.5f;
+        private const float HumanJumpDelayMin = 0.09f;
+        private const float HumanJumpDelayMax = 0.22f;
+        private const float HumanMistakeChance = 0.075f;
 
         #endregion
 
@@ -42,15 +45,13 @@ namespace AIRefactored.AI.Movement
         private readonly MovementContext _context;
 
         private float _lastJumpTime;
+        private float _nextAllowedJumpTime;
         private bool _hasRecentlyJumped;
 
         #endregion
 
         #region Constructor
 
-        /// <summary>
-        /// Creates a new jump controller for a bot.
-        /// </summary>
         public BotJumpController(BotOwner bot, BotComponentCache cache)
         {
             if (!EFTPlayerUtil.IsValidBotOwner(bot) || cache == null)
@@ -69,9 +70,6 @@ namespace AIRefactored.AI.Movement
 
         #region Public Methods
 
-        /// <summary>
-        /// Called every tick to evaluate and trigger jump logic.
-        /// </summary>
         public void Tick(float deltaTime)
         {
             try
@@ -79,11 +77,24 @@ namespace AIRefactored.AI.Movement
                 if (!IsJumpAllowed())
                     return;
 
+                float now = Time.time;
+                if (now < _nextAllowedJumpTime)
+                    return;
+
                 Vector3[] temp = TempVector3Pool.Rent(1);
                 try
                 {
                     if (TryFindJumpTarget(out temp[0]))
                     {
+                        // Simulate human error—sometimes "hesitate" and skip this jump
+                        if (UnityEngine.Random.value < HumanMistakeChance)
+                        {
+                            _nextAllowedJumpTime = now + UnityEngine.Random.Range(0.22f, 0.39f);
+                            return;
+                        }
+
+                        float anticipation = UnityEngine.Random.Range(HumanJumpDelayMin, HumanJumpDelayMax);
+                        _nextAllowedJumpTime = now + JumpCooldown + anticipation;
                         ExecuteJump(temp[0], deltaTime);
                     }
                 }
@@ -92,47 +103,38 @@ namespace AIRefactored.AI.Movement
                     TempVector3Pool.Return(temp);
                 }
             }
-            catch (Exception ex)
-            {
-                Plugin.LoggerInstance.LogError($"[BotJumpController] Tick failed: {ex}");
-            }
+            catch { /* All failures isolated */ }
         }
 
         #endregion
 
         #region Internal Logic
 
-        /// <summary>
-        /// Returns true if a jump is currently allowed.
-        /// </summary>
         private bool IsJumpAllowed()
         {
-            try
-            {
-                float now = Time.time;
-
-                if (_hasRecentlyJumped && now - _lastJumpTime < JumpCooldown)
-                    return false;
-
-                if (_context == null || !_context.IsGrounded || _context.IsInPronePose)
-                    return false;
-
-                if (_cache != null && _cache.PanicHandler != null && _cache.PanicHandler.IsPanicking)
-                    return false;
-
-                _hasRecentlyJumped = false;
-                return true;
-            }
-            catch (Exception ex)
-            {
-                Plugin.LoggerInstance.LogError($"[BotJumpController] IsJumpAllowed failed: {ex}");
+            float now = Time.time;
+            if (_hasRecentlyJumped && now - _lastJumpTime < JumpCooldown)
                 return false;
+
+            if (_context == null || !_context.IsGrounded || _context.IsInPronePose)
+                return false;
+
+            if (_cache != null)
+            {
+                if (_cache.IsBlinded && now < _cache.BlindUntilTime)
+                    return false;
+
+                if (_cache.PanicHandler?.IsPanicking == true)
+                    return false;
             }
+
+            if (_bot.IsDead || _bot.Memory?.GoalEnemy != null)
+                return false;
+
+            _hasRecentlyJumped = false;
+            return true;
         }
 
-        /// <summary>
-        /// Applies jump force and sets jump state.
-        /// </summary>
         private void ExecuteJump(Vector3 target, float deltaTime)
         {
             try
@@ -151,23 +153,17 @@ namespace AIRefactored.AI.Movement
                 Vector3 velocity = direction * JumpVelocityMultiplier;
                 _context.ApplyMotion(velocity, deltaTime);
             }
-            catch (Exception ex)
-            {
-                Plugin.LoggerInstance.LogError($"[BotJumpController] ExecuteJump failed: {ex}");
-            }
+            catch { /* Locally isolated */ }
         }
 
-        /// <summary>
-        /// Finds a valid jump/vault target in front of the bot.
-        /// </summary>
         private bool TryFindJumpTarget(out Vector3 target)
         {
             target = Vector3.zero;
+            if (_context == null)
+                return false;
+
             try
             {
-                if (_context == null)
-                    return false;
-
                 Vector3 origin = _context.PlayerColliderCenter + Vector3.up * 0.25f;
                 Vector3 forward = _context.TransformForwardVector;
 
@@ -216,10 +212,7 @@ namespace AIRefactored.AI.Movement
                     TempRaycastHitPool.Return(hits);
                 }
             }
-            catch (Exception ex)
-            {
-                Plugin.LoggerInstance.LogError($"[BotJumpController] TryFindJumpTarget failed: {ex}");
-            }
+            catch { }
 
             return false;
         }

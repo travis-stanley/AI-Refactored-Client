@@ -3,7 +3,7 @@
 //   Licensed under the MIT License. See LICENSE in the repository root for more information.
 //
 //   THIS FILE IS SYSTEMATICALLY MANAGED.
-//   Failures in AIRefactored logic must always trigger safe fallback to EFT base AI.
+//   All hearing logic is bulletproof, fully self-healing, and designed for realistic, human-like recovery from deafness effects.
 // </auto-generated>
 
 namespace AIRefactored.AI.Combat
@@ -12,9 +12,9 @@ namespace AIRefactored.AI.Combat
     using UnityEngine;
 
     /// <summary>
-    /// Simulates hearing damage effects such as deafness after loud sounds.
-    /// Fades gradually over time to mimic realistic ear recovery.
-    /// Bulletproof: all logic is local and cannot break parent systems.
+    /// Simulates hearing damage effects such as deafness after loud sounds (e.g., grenades, gunfire).
+    /// Deafness fades in a nonlinear, human-like way, matching real recovery curves and ear fatigue.
+    /// Bulletproof: all logic is local and cannot break parent systems; all errors are isolated and self-healed.
     /// </summary>
     public sealed class HearingDamageComponent
     {
@@ -24,6 +24,7 @@ namespace AIRefactored.AI.Combat
         private float _deafnessLevel;
         private float _deafDuration;
         private float _elapsedTime;
+        private float _recoverySlope;
 
         #endregion
 
@@ -37,7 +38,7 @@ namespace AIRefactored.AI.Combat
         /// <summary>
         /// Gets a value indicating whether the bot is currently affected by deafness.
         /// </summary>
-        public bool IsDeafened => _deafnessLevel > 0.1f;
+        public bool IsDeafened => _deafnessLevel > 0.08f;
 
         /// <summary>
         /// Gets the remaining deafness duration in seconds.
@@ -60,6 +61,7 @@ namespace AIRefactored.AI.Combat
             {
                 float newIntensity = Mathf.Clamp01(intensity);
                 float newDuration = Mathf.Max(duration, 0.1f);
+                float slope = 1.5f + 2.5f * newIntensity;
 
                 if (newIntensity > _targetDeafness ||
                     (Mathf.Approximately(newIntensity, _targetDeafness) && newDuration > RemainingTime))
@@ -68,6 +70,7 @@ namespace AIRefactored.AI.Combat
                     _deafDuration = newDuration;
                     _elapsedTime = 0f;
                     _deafnessLevel = newIntensity;
+                    _recoverySlope = slope;
                 }
             }
             catch
@@ -85,10 +88,12 @@ namespace AIRefactored.AI.Combat
             _deafnessLevel = 0f;
             _deafDuration = 0f;
             _elapsedTime = 0f;
+            _recoverySlope = 2f;
         }
 
         /// <summary>
         /// Updates the deafness level over time. Call every frame.
+        /// Nonlinear fade: fades slow at first, then accelerates—mimicking real ear ringing.
         /// </summary>
         /// <param name="deltaTime">Delta time in seconds.</param>
         public void Tick(float deltaTime)
@@ -101,7 +106,7 @@ namespace AIRefactored.AI.Combat
                     return;
                 }
 
-                _elapsedTime += Mathf.Max(deltaTime, 0f);
+                _elapsedTime += Mathf.Max(0f, deltaTime);
 
                 if (_elapsedTime >= _deafDuration)
                 {
@@ -109,8 +114,9 @@ namespace AIRefactored.AI.Combat
                     return;
                 }
 
-                float ratio = Mathf.Clamp01(1f - (_elapsedTime / _deafDuration));
-                _deafnessLevel = _targetDeafness * ratio;
+                float t = Mathf.Clamp01(_elapsedTime / _deafDuration);
+                float recovery = 1f - Mathf.Pow(1f - t, _recoverySlope);
+                _deafnessLevel = Mathf.Lerp(_targetDeafness, 0f, recovery);
             }
             catch
             {

@@ -9,10 +9,10 @@
 namespace AIRefactored.AI.Combat
 {
     using System;
-    using System.Collections.Generic;
     using AIRefactored.AI.Combat.States;
     using AIRefactored.AI.Core;
     using AIRefactored.AI.Groups;
+    using AIRefactored.AI.Helpers;
     using AIRefactored.AI.Memory;
     using AIRefactored.AI.Navigation;
     using AIRefactored.Core;
@@ -24,14 +24,20 @@ namespace AIRefactored.AI.Combat
 
     /// <summary>
     /// Drives bot combat state logic including fallback, engagement, patrol, and escalation.
-    /// All errors are locally contained; never disables or falls back to vanilla AI.
+    /// Bulletproof: All errors are locally isolated, never disables or triggers fallback AI.
     /// </summary>
     public sealed class CombatStateMachine
     {
+        #region Constants
+
         private const float MinTransitionDelay = 0.4f;
         private const float PatrolMinDuration = 1.25f;
         private const float PatrolCooldown = 12.0f;
         private const float ReentryCooldown = 3.0f;
+
+        #endregion
+
+        #region Fields
 
         private BotComponentCache _cache;
         private BotOwner _bot;
@@ -48,12 +54,20 @@ namespace AIRefactored.AI.Combat
         private float _lastStateChangeTime;
         private bool _initialized;
 
+        #endregion
+
+        #region Properties
+
         public Vector3 LastKnownEnemyPos => _lastKnownEnemyPos;
         public float LastStateChangeTime => _lastStateChangeTime;
 
+        #endregion
+
+        #region Initialization
+
         public void Initialize(BotComponentCache componentCache)
         {
-            if (componentCache == null || componentCache.Bot == null)
+            if (componentCache?.Bot == null)
             {
                 Plugin.LoggerInstance.LogError("[CombatStateMachine] Initialization failed: null references.");
                 _initialized = false;
@@ -65,12 +79,12 @@ namespace AIRefactored.AI.Combat
                 _cache = componentCache;
                 _bot = componentCache.Bot;
 
-                _patrol = new PatrolHandler(_cache, PatrolMinDuration, PatrolCooldown);
-                _investigate = new InvestigateHandler(_cache);
-                _engage = new EngageHandler(_cache);
-                _attack = new AttackHandler(_cache);
-                _fallback = new FallbackHandler(_cache);
-                _echo = new EchoCoordinator(_cache);
+                _fallback = componentCache.Fallback ?? new FallbackHandler(componentCache);
+                _patrol = new PatrolHandler(componentCache, PatrolMinDuration, PatrolCooldown);
+                _investigate = new InvestigateHandler(componentCache);
+                _engage = new EngageHandler(componentCache);
+                _attack = new AttackHandler(componentCache);
+                _echo = new EchoCoordinator(componentCache);
 
                 _initialized = true;
             }
@@ -81,17 +95,19 @@ namespace AIRefactored.AI.Combat
             }
         }
 
+        #endregion
+
+        #region Public API
+
         public bool IsInCombatState()
         {
-            if (!_initialized)
-                return false;
-
             try
             {
-                return _fallback.IsActive()
-                    || _engage.IsEngaging()
-                    || _investigate.IsInvestigating()
-                    || _cache.ThreatSelector?.CurrentTarget != null;
+                return _initialized &&
+                       _fallback?.IsActive() == true ||
+                       _engage?.IsEngaging() == true ||
+                       _investigate?.IsInvestigating() == true ||
+                       _cache?.ThreatSelector?.CurrentTarget != null;
             }
             catch (Exception ex)
             {
@@ -102,7 +118,7 @@ namespace AIRefactored.AI.Combat
 
         public void NotifyDamaged()
         {
-            if (!_initialized) return;
+            if (!_initialized || _fallback == null) return;
 
             try
             {
@@ -122,7 +138,7 @@ namespace AIRefactored.AI.Combat
 
         public void NotifyEchoInvestigate()
         {
-            if (!_initialized) return;
+            if (!_initialized || _investigate == null) return;
 
             try
             {
@@ -141,8 +157,7 @@ namespace AIRefactored.AI.Combat
 
         public void Tick(float time)
         {
-            if (!_initialized || _bot == null || _bot.IsDead || !EFTPlayerUtil.IsValid(_bot.GetPlayer))
-                return;
+            if (!_initialized || _bot == null || _bot.IsDead || !EFTPlayerUtil.IsValid(_bot.GetPlayer)) return;
 
             try
             {
@@ -159,19 +174,19 @@ namespace AIRefactored.AI.Combat
                 {
                     AssignFallbackIfNeeded();
                     _bot.BotTalk?.TrySay(EPhraseTrigger.OnBeingHurt);
-                    _echo.EchoFallbackToSquad(_fallback.GetFallbackPositionOrDefault(_bot.Position));
+                    _echo?.EchoFallbackToSquad(_fallback.GetFallbackPositionOrDefault(_bot.Position));
                     _lastStateChangeTime = time;
                     return;
                 }
 
-                if (_fallback.ShallUseNow(time))
+                if (_fallback?.ShallUseNow(time) == true)
                 {
                     AssignFallbackIfNeeded();
                     _fallback.Tick(time, SetLastStateChangeTime);
                     return;
                 }
 
-                Player enemy = _cache.ThreatSelector?.CurrentTarget;
+                Player enemy = _cache?.ThreatSelector?.CurrentTarget;
                 if (EFTPlayerUtil.IsValid(enemy))
                 {
                     _lastKnownEnemyPos = EFTPlayerUtil.GetPosition(enemy);
@@ -179,18 +194,18 @@ namespace AIRefactored.AI.Combat
 
                     string id = enemy.ProfileId;
                     if (!string.IsNullOrEmpty(id))
-                        _cache.TacticalMemory?.RecordEnemyPosition(_lastKnownEnemyPos, "Combat", id);
+                        _cache?.TacticalMemory?.RecordEnemyPosition(_lastKnownEnemyPos, "Combat", id);
 
                     if (_bot.Mover != null && !_bot.Mover.Sprinting)
                         _bot.Sprint(true);
 
-                    _echo.EchoSpottedEnemyToSquad(_lastKnownEnemyPos);
+                    _echo?.EchoSpottedEnemyToSquad(_lastKnownEnemyPos);
                 }
 
-                if (_engage.ShallUseNow())
+                if (_engage?.ShallUseNow() == true)
                 {
                     if (_engage.CanAttack())
-                        _attack.Tick(time);
+                        _attack?.Tick(time);
                     else
                         _engage.Tick();
 
@@ -198,7 +213,7 @@ namespace AIRefactored.AI.Combat
                     return;
                 }
 
-                if (_investigate.ShallUseNow(time, _lastStateChangeTime))
+                if (_investigate?.ShallUseNow(time, _lastStateChangeTime) == true)
                 {
                     Vector3 target = _investigate.GetInvestigateTarget(_hasKnownEnemy ? _lastKnownEnemyPos : Vector3.zero);
                     if (target != Vector3.zero)
@@ -209,7 +224,7 @@ namespace AIRefactored.AI.Combat
                     return;
                 }
 
-                _patrol.Tick(time);
+                _patrol?.Tick(time);
             }
             catch (Exception ex)
             {
@@ -219,7 +234,7 @@ namespace AIRefactored.AI.Combat
 
         public void TriggerFallback(Vector3 fallbackPos)
         {
-            if (!_initialized) return;
+            if (!_initialized || _fallback == null) return;
 
             try
             {
@@ -245,15 +260,15 @@ namespace AIRefactored.AI.Combat
             }
         }
 
-        /// <summary>
-        /// Always builds a fallback path with at least two points (current position and fallback target),
-        /// eliminating invalid fallback warnings and ensuring correct fallback handler logic.
-        /// </summary>
+        #endregion
+
+        #region Internal Logic
+
         private void AssignFallbackIfNeeded()
         {
             try
             {
-                if (_fallback.HasValidFallbackPath())
+                if (_fallback == null || _fallback.HasValidFallbackPath())
                     return;
 
                 Vector3 retreatDir = _bot.LookDirection.sqrMagnitude > 0.01f
@@ -264,10 +279,14 @@ namespace AIRefactored.AI.Combat
                 if (!BotNavHelper.TryGetSafeTarget(_bot, out fallback) || !IsVectorValid(fallback))
                     fallback = _bot.Position + retreatDir * 5f;
 
+                // Vector3.y guard: prevent all teleport/fallback bugs
+                if (fallback.y < -2.5f)
+                    fallback = _bot.Position;
+
                 var path = TempListPool.Rent<Vector3>();
                 path.Clear();
-                path.Add(_bot.Position); // Start position (must be included!)
-                path.Add(fallback);      // Fallback target
+                path.Add(_bot.Position);
+                path.Add(fallback);
 
                 _fallback.SetFallbackPath(path);
                 _fallback.SetFallbackTarget(fallback);
@@ -285,6 +304,9 @@ namespace AIRefactored.AI.Combat
         {
             try
             {
+                if (_cache?.PanicHandler == null || _fallback == null)
+                    return false;
+
                 float composure = _cache.PanicHandler.GetComposureLevel();
                 float delay = Mathf.Lerp(0.75f, 1.5f, 1f - composure);
                 return _fallback.ShouldTriggerSuppressedFallback(time, _lastStateChangeTime, delay);
@@ -300,31 +322,28 @@ namespace AIRefactored.AI.Combat
         {
             try
             {
-                if (!_fallback.IsActive())
+                if (_fallback == null || !_fallback.IsActive())
                     return false;
 
-                if (_cache.ThreatSelector?.CurrentTarget != null)
+                if (_cache?.ThreatSelector?.CurrentTarget != null)
                 {
                     _fallback.Cancel();
                     _bot.BotTalk?.TrySay(EPhraseTrigger.OnEnemyConversation);
                     return true;
                 }
 
-                if (_cache.GroupSync?.IsSquadReady() == true)
+                if (_cache?.GroupSync?.IsSquadReady() == true)
                 {
                     Vector3 self = _bot.Position;
                     var squad = _cache.GroupSync.GetTeammates();
                     for (int i = 0; i < squad.Count; i++)
                     {
                         BotOwner mate = squad[i];
-                        if (mate != null && !mate.IsDead && mate != _bot)
+                        if (mate != null && !mate.IsDead && mate != _bot && Vector3.Distance(mate.Position, self) < 12f)
                         {
-                            if (Vector3.Distance(mate.Position, self) < 12f)
-                            {
-                                _fallback.Cancel();
-                                _bot.BotTalk?.TrySay(EPhraseTrigger.Cooperation);
-                                return true;
-                            }
+                            _fallback.Cancel();
+                            _bot.BotTalk?.TrySay(EPhraseTrigger.Cooperation);
+                            return true;
                         }
                     }
                 }
@@ -352,7 +371,9 @@ namespace AIRefactored.AI.Combat
 
         private static bool IsVectorValid(Vector3 v)
         {
-            return !float.IsNaN(v.x) && !float.IsNaN(v.y) && !float.IsNaN(v.z);
+            return !float.IsNaN(v.x) && !float.IsNaN(v.y) && !float.IsNaN(v.z) && v != Vector3.zero && v.y > -2.5f;
         }
+
+        #endregion
     }
 }

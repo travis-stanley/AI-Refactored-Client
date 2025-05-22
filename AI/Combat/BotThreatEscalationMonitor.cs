@@ -9,8 +9,8 @@
 namespace AIRefactored.AI.Combat
 {
     using System;
-    using System.Collections.Generic;
     using AIRefactored.AI.Core;
+    using AIRefactored.AI.Helpers;
     using AIRefactored.AI.Navigation;
     using AIRefactored.AI.Optimization;
     using AIRefactored.Core;
@@ -19,6 +19,11 @@ namespace AIRefactored.AI.Combat
     using EFT;
     using UnityEngine;
 
+    /// <summary>
+    /// Monitors panic duration, enemy presence, and squad casualties.
+    /// Escalates bot aggression and perception settings for realism under extreme threat.
+    /// All logic is bulletproof, headless-safe, and never disables itself or any bot.
+    /// </summary>
     public sealed class BotThreatEscalationMonitor
     {
         private const float CheckInterval = 1.0f;
@@ -30,6 +35,7 @@ namespace AIRefactored.AI.Combat
         private BotOwner _bot;
         private float _panicStartTime = -1f;
         private float _nextCheckTime = -1f;
+        private float _lastVoiceTime = -1f;
         private bool _hasEscalated;
 
         public void Initialize(BotOwner botOwner)
@@ -43,6 +49,7 @@ namespace AIRefactored.AI.Combat
             _bot = botOwner;
             _panicStartTime = -1f;
             _nextCheckTime = -1f;
+            _lastVoiceTime = -1f;
             _hasEscalated = false;
         }
 
@@ -65,26 +72,26 @@ namespace AIRefactored.AI.Combat
 
                 if (ShouldEscalate(time))
                 {
-                    EscalateBot();
+                    EscalateBot(time);
                 }
             }
             catch (Exception ex)
             {
-                Logger.LogError("[BotThreatEscalationMonitor] Exception in Tick: " + ex);
+                Logger.LogError("[BotThreatEscalationMonitor] Tick exception: " + ex);
             }
         }
 
-        private bool IsValid()
+        #region Escalation Conditions
+
+        private bool ShouldEscalate(float time)
         {
             try
             {
-                return _bot != null &&
-                       !_bot.IsDead &&
-                       _bot.GetPlayer is Player player &&
-                       player.IsAI;
+                return PanicDurationExceeded(time) || MultipleEnemiesVisible() || SquadHasLostTeammates();
             }
-            catch
+            catch (Exception ex)
             {
+                Logger.LogError("[BotThreatEscalationMonitor] ShouldEscalate exception: " + ex);
                 return false;
             }
         }
@@ -108,11 +115,12 @@ namespace AIRefactored.AI.Combat
                     if (kv.Value?.IsVisible == true && ++visible >= 2)
                         return true;
                 }
+
                 return false;
             }
             catch (Exception ex)
             {
-                Logger.LogError("[BotThreatEscalationMonitor] Exception in MultipleEnemiesVisible: " + ex);
+                Logger.LogError("[BotThreatEscalationMonitor] MultipleEnemiesVisible exception: " + ex);
                 return false;
             }
         }
@@ -136,34 +144,23 @@ namespace AIRefactored.AI.Combat
             }
             catch (Exception ex)
             {
-                Logger.LogError("[BotThreatEscalationMonitor] Exception in SquadHasLostTeammates: " + ex);
+                Logger.LogError("[BotThreatEscalationMonitor] SquadHasLostTeammates exception: " + ex);
                 return false;
             }
         }
 
-        private bool ShouldEscalate(float time)
-        {
-            try
-            {
-                return PanicDurationExceeded(time)
-                    || MultipleEnemiesVisible()
-                    || SquadHasLostTeammates();
-            }
-            catch (Exception ex)
-            {
-                Logger.LogError("[BotThreatEscalationMonitor] Exception in ShouldEscalate: " + ex);
-                return false;
-            }
-        }
+        #endregion
 
-        private void EscalateBot()
+        #region Escalation Logic
+
+        private void EscalateBot(float time)
         {
             try
             {
                 _hasEscalated = true;
 
-                string nickname = _bot.Profile?.Info?.Nickname ?? "Unknown";
-                Logger.LogDebug($"[AIRefactored-Escalation] Escalating behavior for bot '{nickname}'.");
+                string name = _bot.Profile?.Info?.Nickname ?? "Unknown";
+                Logger.LogDebug($"[AIRefactored-Escalation] Escalating bot '{name}'");
 
                 AIOptimizationManager.Reset(_bot);
                 AIOptimizationManager.Apply(_bot);
@@ -171,25 +168,30 @@ namespace AIRefactored.AI.Combat
                 ApplyEscalationTuning(_bot);
                 ApplyPersonalityTuning(_bot);
 
-                if (!FikaHeadlessDetector.IsHeadless && _bot.BotTalk != null)
+                // Squad-aware repositioning (via helpers only, never GoToPoint direct)
+                if (BotNavHelper.TryGetSafeTarget(_bot, out var navTarget) && IsVectorValid(navTarget))
+                {
+                    if (_bot.Mover != null && !_bot.Mover.IsMoving)
+                    {
+                        float cohesion = BotRegistry.Get(_bot.ProfileId)?.Cohesion ?? 1.0f;
+                        BotMovementHelper.SmoothMoveTo(_bot, navTarget, false, cohesion);
+                        Logger.LogDebug($"[AIRefactored-Escalation] '{name}' repositioned to cover (helper).");
+                    }
+                }
+
+                if (!FikaHeadlessDetector.IsHeadless &&
+                    _bot.BotTalk != null &&
+                    time - _lastVoiceTime > 2.5f)
                 {
                     try { _bot.BotTalk.TrySay(EPhraseTrigger.OnFight); }
                     catch { }
-                }
 
-                Vector3 fallback = _bot.Position;
-                if (BotNavHelper.TryGetSafeTarget(_bot, out var navTarget) && IsVectorValid(navTarget))
-                    fallback = navTarget;
-
-                if (_bot.Mover != null && !_bot.Mover.IsMoving)
-                {
-                    _bot.Mover.GoToPoint(fallback, true, 1.0f);
-                    Logger.LogDebug($"[AIRefactored-Escalation] Bot '{nickname}' moved to fallback after escalation.");
+                    _lastVoiceTime = time;
                 }
             }
             catch (Exception ex)
             {
-                Logger.LogError("[BotThreatEscalationMonitor] Exception in EscalateBot: " + ex);
+                Logger.LogError("[BotThreatEscalationMonitor] EscalateBot exception: " + ex);
             }
         }
 
@@ -200,28 +202,17 @@ namespace AIRefactored.AI.Combat
                 var file = bot?.Settings?.FileSettings;
                 if (file == null) return;
 
-                if (file.Shoot != null)
-                {
-                    file.Shoot.RECOIL_PER_METER = Mathf.Clamp(file.Shoot.RECOIL_PER_METER * 0.85f, 0.1f, 2.0f);
-                }
+                file.Shoot.RECOIL_PER_METER = Mathf.Clamp(file.Shoot.RECOIL_PER_METER * 0.82f, 0.1f, 2.0f);
+                file.Mind.DIST_TO_FOUND_SQRT = Mathf.Clamp(file.Mind.DIST_TO_FOUND_SQRT * 1.23f, 200f, 900f);
+                file.Mind.ENEMY_LOOK_AT_ME_ANG = Mathf.Clamp(file.Mind.ENEMY_LOOK_AT_ME_ANG * 0.7f, 4f, 45f);
+                file.Mind.CHANCE_TO_RUN_CAUSE_DAMAGE_0_100 = Mathf.Clamp(file.Mind.CHANCE_TO_RUN_CAUSE_DAMAGE_0_100 + 28f, 0f, 100f);
+                file.Look.MAX_VISION_GRASS_METERS = Mathf.Clamp(file.Look.MAX_VISION_GRASS_METERS + 7f, 5f, 42f);
 
-                if (file.Mind != null)
-                {
-                    file.Mind.DIST_TO_FOUND_SQRT = Mathf.Clamp(file.Mind.DIST_TO_FOUND_SQRT * 1.2f, 200f, 800f);
-                    file.Mind.ENEMY_LOOK_AT_ME_ANG = Mathf.Clamp(file.Mind.ENEMY_LOOK_AT_ME_ANG * 0.75f, 5f, 45f);
-                    file.Mind.CHANCE_TO_RUN_CAUSE_DAMAGE_0_100 = Mathf.Clamp(file.Mind.CHANCE_TO_RUN_CAUSE_DAMAGE_0_100 + 20f, 0f, 100f);
-                }
-
-                if (file.Look != null)
-                {
-                    file.Look.MAX_VISION_GRASS_METERS = Mathf.Clamp(file.Look.MAX_VISION_GRASS_METERS + 5f, 5f, 40f);
-                }
-
-                Logger.LogDebug($"[AIRefactored-Tuning] Escalation tuning applied to '{bot.Profile?.Info?.Nickname ?? "Unknown"}'.");
+                Logger.LogDebug($"[AIRefactored-Tuning] Escalation tuning applied to '{bot.Profile?.Info?.Nickname ?? "Unknown"}'");
             }
             catch (Exception ex)
             {
-                Logger.LogError("[BotThreatEscalationMonitor] Exception in ApplyEscalationTuning: " + ex);
+                Logger.LogError("[BotThreatEscalationMonitor] Escalation tuning failed: " + ex);
             }
         }
 
@@ -229,19 +220,15 @@ namespace AIRefactored.AI.Combat
         {
             try
             {
-                string profileId = bot.ProfileId;
-                if (string.IsNullOrEmpty(profileId))
-                    return;
-
-                var profile = BotRegistry.Get(profileId);
+                var profile = BotRegistry.Get(bot.ProfileId);
                 if (profile == null)
                     return;
 
                 profile.AggressionLevel = Mathf.Clamp01(profile.AggressionLevel + 0.25f);
-                profile.Caution = Mathf.Clamp01(profile.Caution - 0.25f);
-                profile.SuppressionSensitivity = Mathf.Clamp01(profile.SuppressionSensitivity * 0.75f);
-                profile.AccuracyUnderFire = Mathf.Clamp01(profile.AccuracyUnderFire + 0.2f);
-                profile.CommunicationLevel = Mathf.Clamp01(profile.CommunicationLevel + 0.2f);
+                profile.Caution = Mathf.Clamp01(profile.Caution - 0.23f);
+                profile.SuppressionSensitivity = Mathf.Clamp01(profile.SuppressionSensitivity * 0.7f);
+                profile.AccuracyUnderFire = Mathf.Clamp01(profile.AccuracyUnderFire + 0.22f);
+                profile.CommunicationLevel = Mathf.Clamp01(profile.CommunicationLevel + 0.22f);
 
                 Logger.LogDebug(
                     $"[AIRefactored-Tuning] Personality tuned for '{bot.Profile?.Info?.Nickname ?? "Unknown"}': " +
@@ -252,7 +239,26 @@ namespace AIRefactored.AI.Combat
             }
             catch (Exception ex)
             {
-                Logger.LogError("[BotThreatEscalationMonitor] Exception in ApplyPersonalityTuning: " + ex);
+                Logger.LogError("[BotThreatEscalationMonitor] Personality tuning failed: " + ex);
+            }
+        }
+
+        #endregion
+
+        #region Validation
+
+        private bool IsValid()
+        {
+            try
+            {
+                return _bot != null &&
+                       !_bot.IsDead &&
+                       _bot.GetPlayer is Player player &&
+                       player.IsAI;
+            }
+            catch
+            {
+                return false;
             }
         }
 
@@ -260,5 +266,7 @@ namespace AIRefactored.AI.Combat
         {
             return !float.IsNaN(v.x) && !float.IsNaN(v.y) && !float.IsNaN(v.z);
         }
+
+        #endregion
     }
 }

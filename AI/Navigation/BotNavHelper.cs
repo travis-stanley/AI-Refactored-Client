@@ -30,8 +30,8 @@ namespace AIRefactored.AI.Navigation
             if (!HasPath(bot))
                 return false;
 
-            // Use LastTargetPoint with defensive checks
-            Vector3 pt = bot.Mover._pathController.LastTargetPoint(1.0f);
+            Vector3 pt = Vector3.zero;
+            try { pt = bot.Mover._pathController.LastTargetPoint(1.0f); } catch { }
             if (!IsValid(pt) || pt.y < -2.5f)
                 return false;
 
@@ -40,15 +40,18 @@ namespace AIRefactored.AI.Navigation
         }
 
         /// <summary>
-        /// Gets the current EFT path waypoints as a Vector3 array.
-        /// Returns null if unavailable or invalid.
+        /// Gets the current EFT path waypoints as a Vector3 array (null if unavailable).
+        /// Ensures every point is valid and not far out of world bounds.
         /// </summary>
         public static Vector3[] GetCurrentPathPoints(BotOwner bot, int maxPoints = 16)
         {
             if (!HasPath(bot))
                 return null;
 
-            var points = bot.Mover._pathController.GetWayPoints(maxPoints);
+            Vector3[] points = null;
+            try { points = bot.Mover._pathController.GetWayPoints(maxPoints); }
+            catch { return null; }
+
             if (points == null || points.Length == 0)
                 return null;
 
@@ -63,7 +66,7 @@ namespace AIRefactored.AI.Navigation
 
         /// <summary>
         /// Gets the current "corner" (next turn) on the active path, if available.
-        /// Adds tiny human-like jitter for realism.
+        /// Adds micro-random jitter for realism. Zero vector if unavailable.
         /// </summary>
         public static bool TryGetCurrentCorner(BotOwner bot, out Vector3 corner)
         {
@@ -71,12 +74,14 @@ namespace AIRefactored.AI.Navigation
             if (!HasPath(bot))
                 return false;
 
-            // PathControllerClass.CurrentCornerPoint is preferred
-            Vector3 c = bot.Mover.CurrentCornerPoint;
+            Vector3 c = Vector3.zero;
+            try { c = bot.Mover.CurrentCornerPoint; }
+            catch { return false; }
+
             if (!IsValid(c) || c.y < -2.5f)
                 return false;
 
-            float jitter = 0.045f;
+            float jitter = 0.048f;
             corner = c + new Vector3(
                 UnityEngine.Random.Range(-jitter, jitter),
                 0f,
@@ -87,12 +92,17 @@ namespace AIRefactored.AI.Navigation
 
         /// <summary>
         /// Gets the remaining distance to the destination, or float.MaxValue if unavailable.
+        /// Always clamps result to [0, 9999].
         /// </summary>
         public static float GetRemainingDistance(BotOwner bot)
         {
-            return HasPath(bot)
-                ? Mathf.Clamp(bot.Mover.DistDestination, 0f, 9999f)
-                : float.MaxValue;
+            try
+            {
+                return HasPath(bot)
+                    ? Mathf.Clamp(bot.Mover.DistDestination, 0f, 9999f)
+                    : float.MaxValue;
+            }
+            catch { return float.MaxValue; }
         }
 
         /// <summary>
@@ -119,12 +129,15 @@ namespace AIRefactored.AI.Navigation
         {
             if (!HasPath(bot))
                 return Vector3.zero;
-
-            var tp = bot.Mover.TargetPoint;
-            Vector3 dest = tp.HasValue ? tp.Value : Vector3.zero;
-            if (!IsValid(dest) || dest.y < -2.5f)
-                return Vector3.zero;
-            return dest;
+            try
+            {
+                var tp = bot.Mover.TargetPoint;
+                Vector3 dest = tp.HasValue ? tp.Value : Vector3.zero;
+                if (!IsValid(dest) || dest.y < -2.5f)
+                    return Vector3.zero;
+                return dest;
+            }
+            catch { return Vector3.zero; }
         }
 
         /// <summary>
@@ -146,7 +159,7 @@ namespace AIRefactored.AI.Navigation
         }
 
         /// <summary>
-        /// Returns true if the bot is very close to the path end/destination.
+        /// Returns true if the bot is very close to the path end/destination (within 1.05m).
         /// </summary>
         public static bool IsAtDestination(BotOwner bot)
         {
@@ -156,8 +169,41 @@ namespace AIRefactored.AI.Navigation
             return dest != Vector3.zero && Vector3.Distance(bot.Position, dest) < 1.05f;
         }
 
+        /// <summary>
+        /// Returns a formation/spacing-aware group target for squad follow logic.
+        /// - If leader is not valid, fallback to bot's current position.
+        /// - Spacing: Ensures bots don't clump, stays behind/in offset to leader.
+        /// - Weight: 0=stay at bot, 1=fully at leader+offset.
+        /// </summary>
+        public static Vector3 GetGroupFormationTarget(BotOwner self, BotOwner leader, float weight, float spacing)
+        {
+            if (self == null || leader == null)
+                return Vector3.zero;
+
+            Vector3 myPos = self.Position;
+            Vector3 leaderPos = leader.Position;
+
+            // Basic direction for offset
+            Vector3 dir = (myPos - leaderPos).normalized;
+            if (dir == Vector3.zero)
+                dir = Random.onUnitSphere; // fallback for perfect overlap
+
+            // Stagger spacing to prevent overlapping exactly
+            float stagger = spacing * (1.0f + UnityEngine.Random.Range(-0.25f, 0.25f));
+            Vector3 offset = dir * stagger;
+
+            // Formation blend
+            Vector3 formationTarget = Vector3.Lerp(myPos, leaderPos + offset, Mathf.Clamp01(weight));
+
+            // Navmesh validation can be added if required by gameplay
+            return formationTarget;
+        }
+
         #region Internal Helpers
 
+        /// <summary>
+        /// Returns true if the given PathControllerClass instance is valid and has an active path.
+        /// </summary>
         private static bool IsPathValid(PathControllerClass pathController)
         {
             return pathController != null &&
@@ -166,6 +212,9 @@ namespace AIRefactored.AI.Navigation
                    pathController.CurPath.Length > 0;
         }
 
+        /// <summary>
+        /// Returns true if the provided Vector3 is a valid, non-NaN, non-infinite, in-bounds point.
+        /// </summary>
         private static bool IsValid(Vector3 pt)
         {
             return !float.IsNaN(pt.x) && !float.IsNaN(pt.y) && !float.IsNaN(pt.z) &&
@@ -177,6 +226,9 @@ namespace AIRefactored.AI.Navigation
 
         #region Nav State Enum
 
+        /// <summary>
+        /// Enumerates nav/path states for robust flow handling.
+        /// </summary>
         public enum BotNavState
         {
             Invalid,

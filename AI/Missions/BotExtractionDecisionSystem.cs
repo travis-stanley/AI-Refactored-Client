@@ -19,11 +19,6 @@ namespace AIRefactored.AI.Missions
     using BepInEx.Logging;
     using AIRefactored.AI.Navigation;
 
-    /// <summary>
-    /// Drives human-realistic extraction decisions for AI bots.
-    /// All logic is path-based, pooled, error-isolated, and project-valid.
-    /// Extraction is squad-aware, panic/loot/health-driven, and never disables parent AI.
-    /// </summary>
     public sealed class BotExtractionDecisionSystem
     {
         #region Constants
@@ -49,9 +44,6 @@ namespace AIRefactored.AI.Missions
 
         #region Constructor
 
-        /// <summary>
-        /// Initializes a new extraction decision system for a given bot.
-        /// </summary>
         public BotExtractionDecisionSystem(BotOwner bot, BotComponentCache cache, BotPersonalityProfile profile)
         {
             if (!EFTPlayerUtil.IsValidBotOwner(bot))
@@ -61,7 +53,7 @@ namespace AIRefactored.AI.Missions
             _profile = profile ?? throw new ArgumentNullException(nameof(profile));
             _log = Plugin.LoggerInstance;
 
-            _lastPosition = _bot.Position;
+            _lastPosition = EFTPlayerUtil.GetPosition(_bot);
             _lastMoveUpdateTime = Time.time;
             _stuckRetryCount = 0;
             _hasExtracted = false;
@@ -71,9 +63,6 @@ namespace AIRefactored.AI.Missions
 
         #region Public Methods
 
-        /// <summary>
-        /// Main per-frame extraction logic. Called by BotBrain tick.
-        /// </summary>
         public void Tick(float time)
         {
             try
@@ -93,9 +82,6 @@ namespace AIRefactored.AI.Missions
             }
         }
 
-        /// <summary>
-        /// Decides whether the bot should attempt extraction, based on health, loot, squad, and panic.
-        /// </summary>
         public bool ShouldExtract(float now)
         {
             try
@@ -103,7 +89,6 @@ namespace AIRefactored.AI.Missions
                 if (_bot.IsDead || _bot.GetPlayer == null || !_bot.GetPlayer.IsAI) return false;
                 if (_bot.GetPlayer.HealthController == null || !_bot.GetPlayer.HealthController.IsAlive) return false;
 
-                // 1. Panic/composure check
                 float composure = _cache?.PanicHandler?.GetComposureLevel() ?? 1f;
                 float panicThreshold = Mathf.Lerp(0.35f, 0.15f, _profile.Caution);
                 if (composure < panicThreshold)
@@ -112,7 +97,6 @@ namespace AIRefactored.AI.Missions
                     return true;
                 }
 
-                // 2. Loot value threshold (personality-based greed)
                 float lootValue = _cache?.LootScanner?.TotalLootValue ?? 0f;
                 float lootThreshold = Mathf.Lerp(85000f, 50000f, _profile.Greed);
                 if (lootValue >= lootThreshold)
@@ -121,14 +105,12 @@ namespace AIRefactored.AI.Missions
                     return true;
                 }
 
-                // 3. Squad wiped out
                 if (HasSquadWiped())
                 {
                     _log.LogDebug("[ExtractDecision] Squad wiped → " + (_bot.Profile?.Info?.Nickname ?? _bot.name));
                     return true;
                 }
 
-                // 4. Isolated beyond cohesion
                 float cohesionRadius = Mathf.Lerp(35f, 60f, 1f - _profile.Cohesion);
                 if (IsBotIsolated(cohesionRadius))
                 {
@@ -136,7 +118,6 @@ namespace AIRefactored.AI.Missions
                     return true;
                 }
 
-                // 5. Stuck movement (multiple retries)
                 float stuckTimeout = Mathf.Lerp(8f, 18f, 1f - _profile.Caution);
                 if (IsBotStuck(now, stuckTimeout))
                 {
@@ -158,9 +139,6 @@ namespace AIRefactored.AI.Missions
             }
         }
 
-        /// <summary>
-        /// Attempts to extract the bot using realistic, path-based movement.
-        /// </summary>
         public void TriggerExtraction()
         {
             try
@@ -172,13 +150,11 @@ namespace AIRefactored.AI.Missions
                     return;
                 }
 
-                // Mark tactical memory for squad awareness.
                 _cache?.TacticalMemory?.MarkExtractionStarted();
 
                 Vector3 exfilTarget;
                 if (TryFindNearbyExfil(out exfilTarget))
                 {
-                    // Move toward the nearest valid extraction point (path-based only).
                     _bot.Mover?.GoToPoint(exfilTarget, true, 1f);
                     if (BotNavHelper.TryGetSafeTarget(_bot, out Vector3 safeTarget))
                     {
@@ -189,8 +165,7 @@ namespace AIRefactored.AI.Missions
                 }
                 else
                 {
-                    // Fallback: move forward (never teleport).
-                    Vector3 forwardTarget = _bot.Position + _bot.LookDirection.normalized * 6f;
+                    Vector3 forwardTarget = EFTPlayerUtil.GetPosition(_bot) + _bot.LookDirection.normalized * 6f;
                     _bot.Mover?.GoToPoint(forwardTarget, true, 1f);
 
                     if (BotNavHelper.TryGetSafeTarget(_bot, out Vector3 safeFallback))
@@ -210,15 +185,13 @@ namespace AIRefactored.AI.Missions
 
         #region Private Helpers
 
-        /// <summary>
-        /// Returns true if the bot is stuck for longer than threshold seconds.
-        /// </summary>
         private bool IsBotStuck(float now, float threshold)
         {
-            float moved = (_bot.Position - _lastPosition).sqrMagnitude;
+            Vector3 currentPos = EFTPlayerUtil.GetPosition(_bot);
+            float moved = (currentPos - _lastPosition).sqrMagnitude;
             if (moved > 0.35f)
             {
-                _lastPosition = _bot.Position;
+                _lastPosition = currentPos;
                 _lastMoveUpdateTime = now;
                 _stuckRetryCount = 0;
                 return false;
@@ -226,9 +199,6 @@ namespace AIRefactored.AI.Missions
             return now - _lastMoveUpdateTime >= threshold;
         }
 
-        /// <summary>
-        /// Returns true if all other squad members are dead or absent.
-        /// </summary>
         private bool HasSquadWiped()
         {
             BotsGroup group = _bot.BotsGroup;
@@ -243,15 +213,12 @@ namespace AIRefactored.AI.Missions
             return true;
         }
 
-        /// <summary>
-        /// Returns true if bot is too far from all living squadmates.
-        /// </summary>
         private bool IsBotIsolated(float radius)
         {
             BotsGroup group = _bot.BotsGroup;
             if (group == null || group.MembersCount <= 1) return true;
 
-            Vector3 pos = _bot.Position;
+            Vector3 pos = EFTPlayerUtil.GetPosition(_bot);
             float radiusSqr = radius * radius;
 
             for (int i = 0; i < group.MembersCount; i++)
@@ -259,21 +226,19 @@ namespace AIRefactored.AI.Missions
                 BotOwner mate = group.Member(i);
                 if (mate != null && mate != _bot && !mate.IsDead)
                 {
-                    if ((mate.Position - pos).sqrMagnitude < radiusSqr)
+                    Vector3 matePos = EFTPlayerUtil.GetPosition(mate);
+                    if ((matePos - pos).sqrMagnitude < radiusSqr)
                         return false;
                 }
             }
             return true;
         }
 
-        /// <summary>
-        /// Finds the nearest valid extraction point.
-        /// </summary>
         private bool TryFindNearbyExfil(out Vector3 exfil)
         {
             exfil = Vector3.zero;
             ExfiltrationPoint[] points = UnityEngine.Object.FindObjectsOfType<ExfiltrationPoint>();
-            Vector3 pos = _bot.Position;
+            Vector3 pos = EFTPlayerUtil.GetPosition(_bot);
             float bestDist = MaxSearchDistance * MaxSearchDistance + 1f;
             bool found = false;
 

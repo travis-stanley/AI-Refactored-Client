@@ -10,17 +10,13 @@ namespace AIRefactored.AI.Looting
     using System;
     using System.Collections.Generic;
     using AIRefactored.AI.Core;
+    using AIRefactored.Core;
     using AIRefactored.Pools;
     using EFT;
     using EFT.Interactive;
     using EFT.InventoryLogic;
     using UnityEngine;
 
-    /// <summary>
-    /// Scans, caches, and prioritizes nearby loot containers and items.
-    /// Fully squad-aware: supports squad-claimed loot arbitration, dynamic priorities, and pooled zero-allocation queries.
-    /// All errors locally isolated; no method ever disables parent/bot. Only ticked by BotBrain.
-    /// </summary>
     public sealed class BotLootScanner
     {
         #region Fields
@@ -41,9 +37,6 @@ namespace AIRefactored.AI.Looting
 
         #region Initialization
 
-        /// <summary>
-        /// Called on bot init; wires up cache and bot references.
-        /// </summary>
         public void Initialize(BotComponentCache cache)
         {
             _cache = cache;
@@ -58,9 +51,6 @@ namespace AIRefactored.AI.Looting
 
         #region BotBrain Tick Only
 
-        /// <summary>
-        /// Ticked by BotBrain at the logic tick rate. Scans and evaluates loot every tick.
-        /// </summary>
         public void Tick(float deltaTime)
         {
             try
@@ -71,19 +61,15 @@ namespace AIRefactored.AI.Looting
                 ScanNearbyContainers();
                 EvaluateBestLoot();
             }
-            catch { /* Always locally isolated. */ }
+            catch { }
         }
 
         #endregion
 
         #region Squad Arbitration
 
-        /// <summary>
-        /// Registers a squad-coordinated loot target claim.
-        /// </summary>
         public void RegisterSquadLootTarget(Vector3 worldPos)
         {
-            // Find closest container to this position and claim for arbitration.
             float bestDist = 99f;
             string bestId = null;
             LootableContainer best = null;
@@ -112,7 +98,6 @@ namespace AIRefactored.AI.Looting
 
         public string GetSquadClaimedLootId()
         {
-            // Returns the current squad-claimed loot id if valid (within 12s).
             if (_squadLootClaimId != null && (Time.time - _squadLootClaimTime) < 12f)
                 return _squadLootClaimId;
             return null;
@@ -137,13 +122,13 @@ namespace AIRefactored.AI.Looting
             List<LootableContainer> all = LootRegistry.GetAllContainers();
             if (all == null) return;
 
-            Vector3 myPos = _bot.Position;
+            Vector3 myPos = EFTPlayerUtil.GetPosition(_bot);
             for (int i = 0; i < all.Count; i++)
             {
                 LootableContainer c = all[i];
                 if (c == null || !c.enabled || c.transform == null) continue;
                 float dist = Vector3.Distance(myPos, c.transform.position);
-                if (dist < 22f) // Max loot distance
+                if (dist < 22f)
                 {
                     _nearbyContainers.Add(c);
                 }
@@ -160,17 +145,17 @@ namespace AIRefactored.AI.Looting
             var profile = _cache?.PersonalityProfile ?? BotPersonalityProfile.Default;
             float greedBias = Mathf.Lerp(0.75f, 1.15f, profile.Greed);
 
+            Vector3 botPos = EFTPlayerUtil.GetPosition(_bot);
             for (int i = 0; i < _nearbyContainers.Count; i++)
             {
                 LootableContainer c = _nearbyContainers[i];
                 if (c == null || !c.enabled || c.transform == null)
                     continue;
-                // Skip if squad claim exists and this isn't it.
                 if (!string.IsNullOrEmpty(squadClaim) && c.Id != squadClaim)
                     continue;
-                // Estimate value
+
                 float value = EstimateValue(c) * greedBias;
-                float dist = Vector3.Distance(_bot.Position, c.transform.position);
+                float dist = Vector3.Distance(botPos, c.transform.position);
                 if (value > bestValue || (Mathf.Approximately(value, bestValue) && dist < bestDist))
                 {
                     bestValue = value;
@@ -203,16 +188,11 @@ namespace AIRefactored.AI.Looting
             return total;
         }
 
-        /// <summary>
-        /// Returns the best available loot point for this bot (or Vector3.zero if none found).
-        /// Always returns the center position of the most desirable container, squad arbitration aware.
-        /// </summary>
         public Vector3 GetBestLootPoint()
         {
-            // Ensure we use the latest scan/evaluation.
             if (CurrentTargetContainer != null && CurrentTargetContainer.transform != null)
                 return CurrentTargetContainer.transform.position;
-            return _bot != null ? _bot.Position : Vector3.zero;
+            return EFTPlayerUtil.GetPosition(_bot);
         }
 
         #endregion

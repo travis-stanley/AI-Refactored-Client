@@ -2,6 +2,7 @@
 //   AI-Refactored: BotMovementHelper.cs (Beyond Diamond Ultra-Realism Edition)
 //   Patched for per-bot movement cache, smooth micro-drift, and stutter-proofed issue logic.
 //   All navigation is path-based, never teleports or sets position directly.
+//   All position reads are via GetPosition() only — never use bot.Position or transform.position directly.
 //   MIT License.
 // </auto-generated>
 
@@ -18,6 +19,7 @@ namespace AIRefactored.AI.Helpers
     /// Provides ultra-realistic, validated, smooth movement operations for bots.
     /// All operations use path-based, drifted targets; zero teleportation, zero position sets.
     /// Adds micro-jitter, personality-driven bias, movement stutter suppression, and full null-guarding.
+    /// All position reads use GetPosition(BotOwner).
     /// </summary>
     public static class BotMovementHelper
     {
@@ -37,7 +39,6 @@ namespace AIRefactored.AI.Helpers
 
         #region Movement Cache Struct
 
-        // Should be referenced from BotComponentCache.MoveCache
         public class BotMoveCache
         {
             public Vector3 LastMoveTarget = Vector3.zero;
@@ -53,11 +54,48 @@ namespace AIRefactored.AI.Helpers
 
         #endregion
 
-        #region Public API
+        #region Position API (MANDATORY)
 
         /// <summary>
-        /// Resets the anti-stutter move cache for the specified bot.
+        /// Returns the bot's authoritative, navmesh/AI-driven position.
+        /// Always uses BotOwner.Position. Never calls BotMover.Position (does not exist).
+        /// All fallback paths are null/NaN/infinity guarded.
         /// </summary>
+        public static Vector3 GetPosition(BotOwner bot)
+        {
+            if (bot == null)
+                return Vector3.zero;
+
+            try
+            {
+                // 1. Authoritative position from BotOwner.
+                var pos = bot.Position;
+                if (!float.IsNaN(pos.x) && !float.IsInfinity(pos.x))
+                    return pos;
+
+                // 2. Try the player's transform if available.
+                var p = bot.GetPlayer;
+                if (p != null && p.gameObject != null)
+                {
+                    var t = p.gameObject.transform;
+                    if (t != null && !float.IsNaN(t.position.x) && !float.IsInfinity(t.position.x))
+                        return t.position;
+                }
+
+                // 3. Fallback: try BotOwner's Transform.Original
+                var orig = bot.Transform?.Original;
+                if (orig != null && !float.IsNaN(orig.position.x) && !float.IsInfinity(orig.position.x))
+                    return orig.position;
+            }
+            catch { }
+
+            return Vector3.zero;
+        }
+
+        #endregion
+
+        #region Public API
+
         public static void Reset(BotOwner bot)
         {
             var cache = GetCache(bot);
@@ -70,9 +108,6 @@ namespace AIRefactored.AI.Helpers
             }
         }
 
-        /// <summary>
-        /// Issues a smooth, safe, path-based retreat to cover, using personality for bias and micro-drift.
-        /// </summary>
         public static void RetreatToCover(BotOwner bot, Vector3 threatDir, float distance = RetreatDistance, bool sprint = true)
         {
             try
@@ -80,11 +115,12 @@ namespace AIRefactored.AI.Helpers
                 if (!IsAlive(bot))
                     return;
 
-                Vector3 baseTarget = bot.Position - threatDir.normalized * distance;
+                Vector3 origin = GetPosition(bot);
+                Vector3 baseTarget = origin - threatDir.normalized * distance;
                 if (!BotNavHelper.TryGetSafeTarget(bot, out Vector3 target))
                     target = baseTarget;
                 if (!IsValidTarget(target))
-                    target = bot.Position;
+                    target = origin;
 
                 float cohesion = 1f;
                 BotPersonalityProfile profile = null;
@@ -107,9 +143,6 @@ namespace AIRefactored.AI.Helpers
             }
         }
 
-        /// <summary>
-        /// Smoothly rotates bot to look at the specified target, with human-like jitter/overshoot.
-        /// </summary>
         public static void SmoothLookTo(BotOwner bot, Vector3 lookTarget, float speed = DefaultLookSpeed)
         {
             try
@@ -121,7 +154,8 @@ namespace AIRefactored.AI.Helpers
                 if (transform == null)
                     return;
 
-                Vector3 direction = lookTarget - bot.Position;
+                Vector3 origin = GetPosition(bot);
+                Vector3 direction = lookTarget - origin;
                 direction.y = 0f;
                 if (direction.sqrMagnitude < MinMoveEpsilon)
                     return;
@@ -137,9 +171,6 @@ namespace AIRefactored.AI.Helpers
             }
         }
 
-        /// <summary>
-        /// Smoothly moves bot to a safe, validated point, with full micro-drift and anti-stutter logic.
-        /// </summary>
         public static bool SmoothMoveToSafe(BotOwner bot, Vector3 target, bool slow = true, float cohesionScale = 1f)
         {
             try
@@ -148,12 +179,12 @@ namespace AIRefactored.AI.Helpers
                     return false;
 
                 Vector3 safeTarget = BotNavHelper.TryGetSafeTarget(bot, out Vector3 fallback) ? fallback : target;
+                Vector3 origin = GetPosition(bot);
                 if (!IsValidTarget(safeTarget))
-                    safeTarget = bot.Position;
+                    safeTarget = origin;
 
-                Vector3 pos = bot.Position;
                 float radius = DefaultRadius * Mathf.Clamp(cohesionScale, 0.7f, 1.3f);
-                if ((pos.x - safeTarget.x) * (pos.x - safeTarget.x) + (pos.z - safeTarget.z) * (pos.z - safeTarget.z) < radius * radius)
+                if ((origin.x - safeTarget.x) * (origin.x - safeTarget.x) + (origin.z - safeTarget.z) * (origin.z - safeTarget.z) < radius * radius)
                     return true;
 
                 BotPersonalityProfile profile = null;
@@ -169,17 +200,11 @@ namespace AIRefactored.AI.Helpers
             }
         }
 
-        /// <summary>
-        /// Wrapper for SmoothMoveToSafe, always applies micro-drift, anti-stutter, path-based logic.
-        /// </summary>
         public static void SmoothMoveTo(BotOwner bot, Vector3 target, bool slow = true, float cohesionScale = 1f)
         {
             SmoothMoveToSafe(bot, target, slow, cohesionScale);
         }
 
-        /// <summary>
-        /// Issues a realistic, micro-jittered strafe away from a threat direction.
-        /// </summary>
         public static void SmoothStrafeFrom(BotOwner bot, Vector3 threatDir, float scale = 1f)
         {
             try
@@ -187,16 +212,17 @@ namespace AIRefactored.AI.Helpers
                 if (!IsAlive(bot))
                     return;
 
+                Vector3 origin = GetPosition(bot);
                 Vector3 right = Vector3.Cross(Vector3.up, threatDir.normalized);
                 if (right.sqrMagnitude < 0.01f)
                     right = Vector3.right;
 
                 Vector3 offset = right.normalized * DefaultStrafeDistance * Mathf.Clamp(scale, 0.75f, 1.25f);
-                Vector3 rawTarget = bot.Position + offset;
+                Vector3 rawTarget = origin + offset;
 
                 Vector3 final = BotNavHelper.TryGetSafeTarget(bot, out Vector3 safeTarget) ? safeTarget : rawTarget;
                 if (!IsValidTarget(final))
-                    final = bot.Position;
+                    final = origin;
 
                 BotPersonalityProfile profile = null;
                 BotRegistry.TryGet(bot.ProfileId, out profile);
@@ -209,9 +235,6 @@ namespace AIRefactored.AI.Helpers
             }
         }
 
-        /// <summary>
-        /// Used only as a last resort: issues a forward move along look direction (validated, never teleports).
-        /// </summary>
         public static void ForceFallbackMove(BotOwner bot)
         {
             try
@@ -219,12 +242,13 @@ namespace AIRefactored.AI.Helpers
                 if (!IsAlive(bot))
                     return;
 
+                Vector3 origin = GetPosition(bot);
                 Vector3 dir = bot.LookDirection;
-                Vector3 rawTarget = bot.Position + dir.normalized * 5f;
+                Vector3 rawTarget = origin + dir.normalized * 5f;
 
                 Vector3 final = BotNavHelper.TryGetSafeTarget(bot, out Vector3 safeTarget) ? safeTarget : rawTarget;
                 if (!IsValidTarget(final))
-                    final = bot.Position;
+                    final = origin;
 
                 BotPersonalityProfile profile = null;
                 BotRegistry.TryGet(bot.ProfileId, out profile);
@@ -237,9 +261,6 @@ namespace AIRefactored.AI.Helpers
             }
         }
 
-        /// <summary>
-        /// Moves toward a safe exit (exfil) point. Always path-based, never direct.
-        /// </summary>
         public static void SmoothMoveToSafeExit(BotOwner bot)
         {
             try
@@ -247,10 +268,11 @@ namespace AIRefactored.AI.Helpers
                 if (!IsAlive(bot))
                     return;
 
-                Vector3 fallback = bot.Position + bot.LookDirection.normalized * 4f;
+                Vector3 origin = GetPosition(bot);
+                Vector3 fallback = origin + bot.LookDirection.normalized * 4f;
                 Vector3 final = BotNavHelper.TryGetSafeTarget(bot, out Vector3 safeTarget) ? safeTarget : fallback;
                 if (!IsValidTarget(final))
-                    final = bot.Position;
+                    final = origin;
 
                 BotPersonalityProfile profile = null;
                 BotRegistry.TryGet(bot.ProfileId, out profile);
@@ -267,9 +289,6 @@ namespace AIRefactored.AI.Helpers
 
         #region Internal Logic
 
-        /// <summary>
-        /// Only triggers move if bot/target changed significantly and interval passed, suppresses micro-stutter.
-        /// </summary>
         private static void IssueMoveIfNotRedundant(BotOwner bot, Vector3 drifted, bool slow, float cohesion)
         {
             try
@@ -278,7 +297,6 @@ namespace AIRefactored.AI.Helpers
                 if (cache == null) return;
 
                 float time = Time.time;
-                // Only send move if target changed significantly or enough time has elapsed.
                 if ((drifted - cache.LastMoveTarget).sqrMagnitude > MinMoveDelta || time - cache.LastMoveTime > MinMoveInterval)
                 {
                     bot.Mover?.GoToPoint(drifted, slow, cohesion);
@@ -303,9 +321,6 @@ namespace AIRefactored.AI.Helpers
                 && !float.IsInfinity(pos.x) && !float.IsInfinity(pos.y) && !float.IsInfinity(pos.z);
         }
 
-        /// <summary>
-        /// Applies a stable, smooth, human-like micro-drift per bot. Drift is only updated every 0.7–1.2s, and lerped for fluidity.
-        /// </summary>
         public static Vector3 ApplyMicroDrift(Vector3 pos, string profileId, int tick, BotPersonalityProfile profile = null, BotOwner bot = null)
         {
             var cache = GetCache(bot);
@@ -333,13 +348,9 @@ namespace AIRefactored.AI.Helpers
                 }
                 cache.NextDriftUpdate = now + UnityEngine.Random.Range(0.7f, 1.22f);
             }
-            // Smoothly lerp drift target so drift doesn't "jump"
             return Vector3.Lerp(pos, cache.CurrentDriftTarget, 0.2f);
         }
 
-        /// <summary>
-        /// Fast deterministic float [0,1) using profile id and tick, no heap alloc.
-        /// </summary>
         private static float SeededRandom(string profileId, int tick)
         {
             int hash = (profileId?.GetHashCode() ?? 0) ^ (tick * 163) ^ 0x1A983D;

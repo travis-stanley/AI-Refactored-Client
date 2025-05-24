@@ -94,16 +94,31 @@ namespace AIRefactored.AI.Reactions
                 if (lights == null || lights.Count == 0)
                     return;
 
-                for (int i = 0, count = lights.Count; i < count; i++)
+                // Use per-frame known flashlights, but isolate exposure calculation
+                foreach (Vector3 lightPos in lights)
                 {
-                    if (FlashlightRegistry.IsExposingBot(head, out Light light) && light != null)
+                    Vector3 eyePos = head.position + Vector3.up * 0.22f;
+                    Vector3 toBot = eyePos - lightPos;
+
+                    if (toBot.sqrMagnitude > 784f) // >28m^2
+                        continue;
+
+                    float angle = Vector3.Angle(-head.forward, toBot);
+                    if (angle > 35f)
+                        continue;
+
+                    if (Physics.Raycast(lightPos, toBot.normalized, out RaycastHit hit, toBot.magnitude + 0.1f, AIRefactoredLayerMasks.LineOfSightMask))
                     {
-                        float score = FlashLightUtils.CalculateFlashScore(light.transform, head, 20f);
-                        if (score >= TriggerIntensityThreshold)
+                        if (ReferenceEquals(hit.transform, head) || ReferenceEquals(hit.collider.transform, head))
                         {
-                            TriggerSuppression(score, time);
+                            TriggerSuppression(1f, time); // hardcoded intensity since angle + hit check already filtered
                             return;
                         }
+                    }
+                    else if (toBot.magnitude < 4.5f && angle < 17f)
+                    {
+                        TriggerSuppression(0.85f, time); // fallback exposure, no ray hit but plausible proximity
+                        return;
                     }
                 }
             }

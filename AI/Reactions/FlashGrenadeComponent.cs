@@ -161,34 +161,42 @@ namespace AIRefactored.AI.Reactions
         {
             try
             {
+                if (_cache == null || _bot == null)
+                    return;
+
                 Transform head = BotCacheUtility.Head(_cache);
                 if (head == null)
-                {
                     return;
-                }
 
+                Vector3 eyePos = head.position + Vector3.up * 0.22f;
                 IReadOnlyList<Vector3> sources = FlashlightRegistry.GetLastKnownFlashlightPositions();
                 if (sources == null || sources.Count == 0)
                     return;
 
                 for (int i = 0, count = sources.Count; i < count; i++)
                 {
-                    if (FlashlightRegistry.IsExposingBot(head, out Light light) && light != null)
+                    Vector3 lightPos = sources[i];
+                    Vector3 toEye = eyePos - lightPos;
+
+                    if (toEye.sqrMagnitude > 784f) // >28m^2
+                        continue;
+
+                    float angle = Vector3.Angle(toEye.normalized, head.forward);
+                    if (angle > 35f)
+                        continue;
+
+                    if (Physics.Raycast(lightPos, toEye.normalized, out RaycastHit hit, toEye.magnitude + 0.1f, AIRefactoredLayerMasks.LineOfSightMask))
                     {
-                        float score = FlashLightUtils.CalculateFlashScore(light.transform, head, 20f);
-                        if (score >= TriggerScoreThreshold)
+                        if (ReferenceEquals(hit.transform, head) || ReferenceEquals(hit.collider.transform, head))
                         {
-                            _lastFlashTime = Time.time;
-                            _isBlinded = true;
-
-                            Player player = EFTPlayerUtil.ResolvePlayer(_bot);
-                            if (player != null)
-                            {
-                                BotSuppressionHelper.TrySuppressBot(player, light.transform.position);
-                            }
-
+                            TriggerBlind(lightPos);
                             return;
                         }
+                    }
+                    else if (angle < 15f && toEye.magnitude < 4.5f)
+                    {
+                        TriggerBlind(lightPos);
+                        return;
                     }
                 }
             }
@@ -197,6 +205,16 @@ namespace AIRefactored.AI.Reactions
                 _failed = true;
                 Plugin.LoggerInstance.LogError($"[FlashGrenadeComponent] CheckFlashlightExposure exception: {ex}");
             }
+        }
+
+        private void TriggerBlind(Vector3 source)
+        {
+            _lastFlashTime = Time.time;
+            _isBlinded = true;
+
+            Player player = EFTPlayerUtil.ResolvePlayer(_bot);
+            if (player != null)
+                BotSuppressionHelper.TrySuppressBot(player, source);
         }
 
         /// <summary>

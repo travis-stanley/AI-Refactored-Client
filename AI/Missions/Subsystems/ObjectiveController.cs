@@ -22,11 +22,6 @@ namespace AIRefactored.AI.Missions.Subsystems
     using EFT;
     using UnityEngine;
 
-    /// <summary>
-    /// Handles routing, objective assignment, and mission-based movement logic.
-    /// All logic is pooled, squad- and mission-aware, and bulletproof to all null/edge cases.
-    /// Movement and fallback are path-based (never teleports), and failures are always locally isolated.
-    /// </summary>
     public sealed class ObjectiveController
     {
         #region Fields
@@ -37,7 +32,6 @@ namespace AIRefactored.AI.Missions.Subsystems
         private readonly Queue<Vector3> _questRoute;
         private readonly System.Random _rng;
 
-        // Track last squad broadcasted route for minimal group cohesion
         private Vector3 _lastBroadcastedObjective;
         private float _lastBroadcastTime;
 
@@ -45,13 +39,6 @@ namespace AIRefactored.AI.Missions.Subsystems
 
         #region Constructor
 
-        /// <summary>
-        /// Initializes a new instance of the <see cref="ObjectiveController"/> class.
-        /// </summary>
-        /// <param name="bot">BotOwner reference (must be valid AI).</param>
-        /// <param name="cache">BotComponentCache (non-null).</param>
-        /// <exception cref="ArgumentException">Thrown if bot is invalid.</exception>
-        /// <exception cref="ArgumentNullException">Thrown if cache is null.</exception>
         public ObjectiveController(BotOwner bot, BotComponentCache cache)
         {
             if (!EFTPlayerUtil.IsValidBotOwner(bot))
@@ -72,20 +59,12 @@ namespace AIRefactored.AI.Missions.Subsystems
 
         #region Properties
 
-        /// <summary>
-        /// Gets the current movement target/objective.
-        /// </summary>
         public Vector3 CurrentObjective { get; private set; }
 
         #endregion
 
         #region Public Methods
 
-        /// <summary>
-        /// Called by BotBrain when a bot reaches its current objective.
-        /// Advances or re-rolls mission objective.
-        /// </summary>
-        /// <param name="type">Current mission type.</param>
         public void OnObjectiveReached(MissionType type)
         {
             try
@@ -101,9 +80,6 @@ namespace AIRefactored.AI.Missions.Subsystems
             }
         }
 
-        /// <summary>
-        /// Resumes movement along the quest path. Populates new route if needed.
-        /// </summary>
         public void ResumeQuesting()
         {
             try
@@ -125,10 +101,6 @@ namespace AIRefactored.AI.Missions.Subsystems
             }
         }
 
-        /// <summary>
-        /// Sets the initial movement objective based on mission type.
-        /// </summary>
-        /// <param name="type">The mission type (Quest, Fight, Loot, etc).</param>
         public void SetInitialObjective(MissionType type)
         {
             try
@@ -148,27 +120,17 @@ namespace AIRefactored.AI.Missions.Subsystems
 
         #region Internal Logic
 
-        /// <summary>
-        /// Issues a smooth path-based move to the target objective.
-        /// </summary>
-        /// <param name="dest">Target position (must be NavMesh-safe).</param>
         private void MoveToObjective(Vector3 dest)
         {
             if (!EFTPlayerUtil.IsValidBotOwner(_bot) || dest == Vector3.zero)
                 return;
 
-            // Use NavHelper with pooling and bulletproof checks.
             if (BotNavHelper.TryGetSafeTarget(_bot, out Vector3 safeTarget))
             {
-                // If your movement helper takes more params (run, cohesion, etc.), pass defaults.
                 BotMovementHelper.SmoothMoveTo(_bot, safeTarget);
             }
-            // If NavHelper fails, bot pauses and will retry; never teleports or disables self.
         }
 
-        /// <summary>
-        /// Returns a mission-appropriate objective target.
-        /// </summary>
         private Vector3 GetObjectiveTarget(MissionType type)
         {
             try
@@ -182,60 +144,50 @@ namespace AIRefactored.AI.Missions.Subsystems
                     case MissionType.Loot:
                         return GetLootObjective();
                     default:
-                        return _bot.Position;
+                        return EFTPlayerUtil.GetPosition(_bot);
                 }
             }
             catch (Exception ex)
             {
                 Plugin.LoggerInstance.LogError($"[ObjectiveController] GetObjectiveTarget failed: {ex}");
-                return _bot.Position;
+                return EFTPlayerUtil.GetPosition(_bot);
             }
         }
 
-        /// <summary>
-        /// Picks a fight zone based on BotZone and tactical memory.
-        /// </summary>
         private Vector3 GetFightZone()
         {
             try
             {
                 BotZone[] zones = GameObject.FindObjectsOfType<BotZone>();
                 if (zones == null || zones.Length == 0)
-                    return _bot.Position;
+                    return EFTPlayerUtil.GetPosition(_bot);
 
                 int index = _rng.Next(0, zones.Length);
                 BotZone zone = zones[index];
-                return zone != null ? zone.transform.position : _bot.Position;
+                return zone != null ? zone.transform.position : EFTPlayerUtil.GetPosition(_bot);
             }
             catch (Exception ex)
             {
                 Plugin.LoggerInstance.LogError($"[ObjectiveController] GetFightZone failed: {ex}");
-                return _bot.Position;
+                return EFTPlayerUtil.GetPosition(_bot);
             }
         }
 
-        /// <summary>
-        /// Returns the best loot position using the pooled LootScanner, or fallback to bot's position.
-        /// </summary>
         private Vector3 GetLootObjective()
         {
             try
             {
-                // Use correct method for your version of BotLootScanner.
                 return _lootScanner != null
                     ? _lootScanner.GetBestLootPoint()
-                    : _bot.Position;
+                    : EFTPlayerUtil.GetPosition(_bot);
             }
             catch (Exception ex)
             {
                 Plugin.LoggerInstance.LogError($"[ObjectiveController] GetLootObjective failed: {ex}");
-                return _bot.Position;
+                return EFTPlayerUtil.GetPosition(_bot);
             }
         }
 
-        /// <summary>
-        /// Gets the next quest objective from the pooled route.
-        /// </summary>
         private Vector3 GetNextQuestObjective()
         {
             try
@@ -244,24 +196,21 @@ namespace AIRefactored.AI.Missions.Subsystems
                     return _questRoute.Dequeue();
 
                 PopulateQuestRoute();
-                return _questRoute.Count > 0 ? _questRoute.Dequeue() : _bot.Position;
+                return _questRoute.Count > 0 ? _questRoute.Dequeue() : EFTPlayerUtil.GetPosition(_bot);
             }
             catch (Exception ex)
             {
                 Plugin.LoggerInstance.LogError($"[ObjectiveController] GetNextQuestObjective failed: {ex}");
-                return _bot.Position;
+                return EFTPlayerUtil.GetPosition(_bot);
             }
         }
 
-        /// <summary>
-        /// Populates the quest route using nearby HotspotRegistry points, directionally filtered and pooled.
-        /// </summary>
         private void PopulateQuestRoute()
         {
             try
             {
                 _questRoute.Clear();
-                Vector3 origin = _bot.Position;
+                Vector3 origin = EFTPlayerUtil.GetPosition(_bot);
                 Vector3 forward = _bot.LookDirection.normalized;
 
                 Predicate<HotspotRegistry.Hotspot> directionFilter = h =>
@@ -296,13 +245,8 @@ namespace AIRefactored.AI.Missions.Subsystems
             }
         }
 
-        /// <summary>
-        /// Optionally notifies squad of objective update. (No direct squad broadcast; objectives are squad-synced via group logic)
-        /// </summary>
         private void MaybeNotifySquadObjective(Vector3 obj, bool force = false)
         {
-            // Only notify if in a squad and group logic is valid. 
-            // No direct broadcast; squads sync via mission controller logic.
             var group = _cache.GroupBehavior;
             if (group == null || !group.IsInSquad)
                 return;
@@ -310,8 +254,6 @@ namespace AIRefactored.AI.Missions.Subsystems
             float now = Time.time;
             if (force || (obj != _lastBroadcastedObjective && now - _lastBroadcastTime > 3f))
             {
-                // If you wish, you can set up a group mission sync here.
-                // Otherwise, just update last known broadcast to suppress excess notifications.
                 _lastBroadcastedObjective = obj;
                 _lastBroadcastTime = now;
             }

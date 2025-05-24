@@ -107,7 +107,9 @@ namespace AIRefactored.AI.Core
         public FallbackHandler Fallback => _fallbackHandler;
         public BotPanicHandler Panic => PanicHandler;
 
-        // --- Movement Smoothness/Stutter-Proof Cache ---
+        /// <summary>
+        /// Per-bot cache for movement anti-stutter (used by BotMovementHelper).
+        /// </summary>
         public BotMovementHelper.BotMoveCache MoveCache { get; private set; }
 
         #endregion
@@ -241,6 +243,14 @@ namespace AIRefactored.AI.Core
                 Logger.LogWarning("[BotComponentCache] Dispose failed: " + ex);
             }
             _fallbackHandler = null;
+        }
+
+        /// <summary>
+        /// Optional callback for atomic owner wiring (called from AIRefactoredBotOwner.Initialize).
+        /// </summary>
+        public void OnOwnerAttached()
+        {
+            // No-op but required for atomic wiring, extend as needed.
         }
 
         #endregion

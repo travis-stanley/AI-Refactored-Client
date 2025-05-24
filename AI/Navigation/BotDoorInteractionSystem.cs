@@ -73,16 +73,13 @@ namespace AIRefactored.AI.Navigation
 
         #region Public API
 
-        /// <summary>
-        /// Central BotBrain-driven update for door logic.
-        /// Bulletproof: all failures are locally contained, zero disables, never blocks squad or AI.
-        /// </summary>
         public void Tick(float time)
         {
             try
             {
                 if (_bot == null || _bot.IsDead)
                     return;
+
                 Player player = EFTPlayerUtil.ResolvePlayer(_bot);
                 if (!EFTPlayerUtil.IsValid(player) || !player.IsAI || player.CurrentManagedState == null)
                     return;
@@ -102,23 +99,16 @@ namespace AIRefactored.AI.Navigation
                     _giveUpUntil = 0f;
                 }
 
-                Vector3 origin = _bot.Position + Vector3.up * 1.18f;
+                Vector3 origin = EFTPlayerUtil.GetPosition(_bot) + Vector3.up * 1.18f;
                 Vector3 forward = _bot.LookDirection;
-                RaycastHit hit;
-                if (!Physics.SphereCast(origin, DoorCastRadius, forward, out hit, DoorCastRange, AIRefactoredLayerMasks.Interactive))
+
+                if (!Physics.SphereCast(origin, DoorCastRadius, forward, out RaycastHit hit, DoorCastRange, AIRefactoredLayerMasks.Interactive))
                 {
                     ClearDoorState();
                     return;
                 }
 
-                Collider col = hit.collider;
-                if (col == null)
-                {
-                    ClearDoorState();
-                    return;
-                }
-
-                Door door = col.GetComponentInParent<Door>();
+                Door door = hit.collider?.GetComponentInParent<Door>();
                 if (door == null || !door.enabled || !door.Operatable)
                 {
                     ClearDoorState();
@@ -131,18 +121,8 @@ namespace AIRefactored.AI.Navigation
                     ClearDoorState();
                     return;
                 }
-                if (state == EDoorState.Interacting)
-                {
-                    MarkBlocked(door);
-                    return;
-                }
-                if (time < _nextRetryTime)
-                {
-                    MarkBlocked(door);
-                    return;
-                }
 
-                if (ShouldWaitForSquad(door))
+                if (state == EDoorState.Interacting || time < _nextRetryTime || ShouldWaitForSquad(door))
                 {
                     MarkBlocked(door);
                     return;
@@ -151,7 +131,8 @@ namespace AIRefactored.AI.Navigation
                 float hesitation = 0f;
                 var cache = _bot.GetComponent<BotComponentCache>();
                 var profile = cache?.PersonalityProfile;
-                if (cache != null && cache.PanicHandler != null && cache.PanicHandler.IsPanicking)
+
+                if (cache?.PanicHandler?.IsPanicking == true)
                 {
                     hesitation = PanicFastDelay;
                 }
@@ -167,6 +148,7 @@ namespace AIRefactored.AI.Navigation
 
                 if (_hesitateUntil < time)
                     _hesitateUntil = time + hesitation;
+
                 if (_hesitateUntil > time)
                 {
                     MarkBlocked(door);
@@ -181,8 +163,8 @@ namespace AIRefactored.AI.Navigation
                     return;
                 }
 
-                float pose = _bot.GetPlayer?.MovementContext?.PoseLevel ?? 100f;
-                if (pose < 40f) // crouch/prone threshold
+                float pose = player.MovementContext?.PoseLevel ?? 100f;
+                if (pose < 40f)
                 {
                     MarkBlocked(door);
                     return;
@@ -217,6 +199,7 @@ namespace AIRefactored.AI.Navigation
             {
                 if (_currentDoor == null || !_currentDoor.enabled)
                     return false;
+
                 float dist = Vector3.Distance(_currentDoor.transform.position, position);
                 return dist < DoorCastRange && (_currentDoor.DoorState & EDoorState.Open) == 0;
             }
@@ -262,22 +245,27 @@ namespace AIRefactored.AI.Navigation
             {
                 if (_bot?.BotsGroup == null || _bot.BotsGroup.MembersCount <= 1)
                     return false;
+
                 int waiting = 0;
+                Vector3 doorPos = door.transform.position;
+
                 for (int i = 0; i < _bot.BotsGroup.MembersCount; i++)
                 {
                     BotOwner mate = _bot.BotsGroup.Member(i);
                     if (mate == null || mate.IsDead || mate == _bot)
                         continue;
-                    Vector3 matePos = mate.Position;
-                    float dist = Vector3.Distance(door.transform.position, matePos);
-                    if (dist < SquadWaitRadius)
+
+                    Vector3 matePos = EFTPlayerUtil.GetPosition(mate);
+                    if ((matePos - doorPos).sqrMagnitude < SquadWaitRadius * SquadWaitRadius)
                         waiting++;
+
                     if (waiting > 2)
                         return true;
                 }
-                return false;
             }
-            catch { return false; }
+            catch { }
+
+            return false;
         }
 
         private static EInteractionType GetBestInteractionType(EDoorState state)

@@ -153,14 +153,15 @@ namespace AIRefactored.Core
             return t != null ? t.position : Vector3.zero;
         }
 
+        public static Vector3 GetPosition(BotOwner bot)
+        {
+            return GetPosition(ResolvePlayer(bot));
+        }
+
         #endregion
 
         #region Combat Logic
 
-        /// <summary>
-        /// Determines if 'self' considers 'target' an enemy (PMC vs PMC, Scav vs PMC, etc).
-        /// PMC bots engage all PMCs not in the same squad (via Profile.Info.GroupId).
-        /// </summary>
         public static bool IsEnemyOf(BotOwner self, Player target)
         {
             if (self == null || target == null)
@@ -173,7 +174,6 @@ namespace AIRefactored.Core
             if (selfPlayer.ProfileId == target.ProfileId)
                 return false;
 
-            // PMC-vs-PMC: Engage if not in same group
             if (selfPlayer.Side == EPlayerSide.Usec || selfPlayer.Side == EPlayerSide.Bear)
             {
                 if (target.Side == EPlayerSide.Usec || target.Side == EPlayerSide.Bear)
@@ -182,21 +182,17 @@ namespace AIRefactored.Core
                     var targetInfo = target.Profile?.Info;
                     if (selfInfo != null && targetInfo != null)
                     {
-                        // Same squad/group: do NOT engage
                         if (!string.IsNullOrEmpty(selfInfo.GroupId) &&
                             selfInfo.GroupId == targetInfo.GroupId)
                             return false;
                     }
-                    // Not in same squad: treat as enemy
                     return true;
                 }
             }
 
-            // PMC vs Scav, Scav vs PMC, Scav vs Scav (from different squads): default EFT
             if (selfPlayer.Side != target.Side)
                 return true;
 
-            // If both Scav, check group/squad
             if (selfPlayer.Side == EPlayerSide.Savage && target.Side == EPlayerSide.Savage)
             {
                 var selfInfo = selfPlayer.Profile?.Info;
@@ -207,10 +203,9 @@ namespace AIRefactored.Core
                         selfInfo.GroupId == targetInfo.GroupId)
                         return false;
                 }
-                return true; // Not in same squad: enemies
+                return true;
             }
 
-            // Final fallback: ask BotsGroup (for AI-only)
             if (self.BotsGroup != null)
             {
                 IPlayer cast = AsSafeIPlayer(target);
@@ -232,7 +227,6 @@ namespace AIRefactored.Core
             if (a.Side != b.Side)
                 return true;
 
-            // PMC-vs-PMC group check
             if ((a.Side == EPlayerSide.Usec || a.Side == EPlayerSide.Bear) &&
                 (b.Side == EPlayerSide.Usec || b.Side == EPlayerSide.Bear))
             {
@@ -247,7 +241,6 @@ namespace AIRefactored.Core
                 return true;
             }
 
-            // Scav-vs-Scav group check
             if (a.Side == EPlayerSide.Savage && b.Side == EPlayerSide.Savage)
             {
                 var aInfo = a.Profile?.Info;

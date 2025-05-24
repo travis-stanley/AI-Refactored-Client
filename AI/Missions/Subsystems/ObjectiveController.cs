@@ -24,8 +24,6 @@ namespace AIRefactored.AI.Missions.Subsystems
 
     public sealed class ObjectiveController
     {
-        #region Fields
-
         private readonly BotOwner _bot;
         private readonly BotComponentCache _cache;
         private readonly BotLootScanner _lootScanner;
@@ -35,9 +33,7 @@ namespace AIRefactored.AI.Missions.Subsystems
         private Vector3 _lastBroadcastedObjective;
         private float _lastBroadcastTime;
 
-        #endregion
-
-        #region Constructor
+        public Vector3 CurrentObjective { get; private set; }
 
         public ObjectiveController(BotOwner bot, BotComponentCache cache)
         {
@@ -51,19 +47,7 @@ namespace AIRefactored.AI.Missions.Subsystems
             _lootScanner = cache.LootScanner;
             _questRoute = new Queue<Vector3>(4);
             _rng = new System.Random();
-            _lastBroadcastedObjective = Vector3.zero;
-            _lastBroadcastTime = 0f;
         }
-
-        #endregion
-
-        #region Properties
-
-        public Vector3 CurrentObjective { get; private set; }
-
-        #endregion
-
-        #region Public Methods
 
         public void OnObjectiveReached(MissionType type)
         {
@@ -116,41 +100,27 @@ namespace AIRefactored.AI.Missions.Subsystems
             }
         }
 
-        #endregion
-
-        #region Internal Logic
-
         private void MoveToObjective(Vector3 dest)
         {
             if (!EFTPlayerUtil.IsValidBotOwner(_bot) || dest == Vector3.zero)
                 return;
 
             if (BotNavHelper.TryGetSafeTarget(_bot, out Vector3 safeTarget))
-            {
                 BotMovementHelper.SmoothMoveTo(_bot, safeTarget);
-            }
         }
 
         private Vector3 GetObjectiveTarget(MissionType type)
         {
-            try
+            switch (type)
             {
-                switch (type)
-                {
-                    case MissionType.Quest:
-                        return GetNextQuestObjective();
-                    case MissionType.Fight:
-                        return GetFightZone();
-                    case MissionType.Loot:
-                        return GetLootObjective();
-                    default:
-                        return EFTPlayerUtil.GetPosition(_bot);
-                }
-            }
-            catch (Exception ex)
-            {
-                Plugin.LoggerInstance.LogError($"[ObjectiveController] GetObjectiveTarget failed: {ex}");
-                return EFTPlayerUtil.GetPosition(_bot);
+                case MissionType.Quest:
+                    return GetNextQuestObjective();
+                case MissionType.Fight:
+                    return GetFightZone();
+                case MissionType.Loot:
+                    return GetLootObjective();
+                default:
+                    return EFTPlayerUtil.GetPosition(_bot);
             }
         }
 
@@ -163,8 +133,7 @@ namespace AIRefactored.AI.Missions.Subsystems
                     return EFTPlayerUtil.GetPosition(_bot);
 
                 int index = _rng.Next(0, zones.Length);
-                BotZone zone = zones[index];
-                return zone != null ? zone.transform.position : EFTPlayerUtil.GetPosition(_bot);
+                return zones[index]?.transform.position ?? EFTPlayerUtil.GetPosition(_bot);
             }
             catch (Exception ex)
             {
@@ -190,19 +159,11 @@ namespace AIRefactored.AI.Missions.Subsystems
 
         private Vector3 GetNextQuestObjective()
         {
-            try
-            {
-                if (_questRoute.Count > 0)
-                    return _questRoute.Dequeue();
+            if (_questRoute.Count > 0)
+                return _questRoute.Dequeue();
 
-                PopulateQuestRoute();
-                return _questRoute.Count > 0 ? _questRoute.Dequeue() : EFTPlayerUtil.GetPosition(_bot);
-            }
-            catch (Exception ex)
-            {
-                Plugin.LoggerInstance.LogError($"[ObjectiveController] GetNextQuestObjective failed: {ex}");
-                return EFTPlayerUtil.GetPosition(_bot);
-            }
+            PopulateQuestRoute();
+            return _questRoute.Count > 0 ? _questRoute.Dequeue() : EFTPlayerUtil.GetPosition(_bot);
         }
 
         private void PopulateQuestRoute()
@@ -256,9 +217,8 @@ namespace AIRefactored.AI.Missions.Subsystems
             {
                 _lastBroadcastedObjective = obj;
                 _lastBroadcastTime = now;
+                // Extend here if you want to broadcast via GroupComms
             }
         }
-
-        #endregion
     }
 }

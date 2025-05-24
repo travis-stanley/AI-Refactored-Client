@@ -26,54 +26,41 @@ namespace AIRefactored.AI.Combat
     {
         #region Constants
 
-        private const float EvaluationCooldown = 0.29f;
-        private const float MaxScanDistance = 120f;
-        private const float SwitchCooldown = 2.0f;
-        private const float MinFriendDistance = 2.7f;
-        private const float TargetSwitchThreshold = 9.5f;
+        private const float EvaluateCooldown = 0.31f;
+        private const float MaxDistance = 120f;
+        private const float SwitchCooldown = 2.2f;
+        private const float SwitchThreshold = 10.2f;
 
-        // Dynamic scoring bonuses/penalties
-        private const float VisibilityBonus = 28f;
-        private const float RecentSeenBonus = 14f;
-        private const float SquadEnemyBonus = 11f;
-        private const float BlindPenalty = 24f;
-        private const float HiddenPenalty = 7f;
-        private const float UnknownPenalty = 11f;
-
-        private const float AggressionPersistenceWindow = 6.8f;
-        private const float AggressionMaxBonus = 18f;
+        private const float SquadAssistBonus = 12.5f;
+        private const float CloseDistanceBonus = 14f;
+        private const float LineOfSightBonus = 19.7f;
+        private const float VisibleRecentBonus = 8.6f;
+        private const float SuppressionPenalty = 12.9f;
+        private const float PanicPenalty = 20f;
 
         #endregion
 
         #region Fields
 
-        private static readonly ManualLogSource Logger = Plugin.LoggerInstance;
-
-        private readonly BotOwner _bot;
         private readonly BotComponentCache _cache;
+        private readonly BotOwner _bot;
         private readonly BotPersonalityProfile _profile;
+        private readonly ManualLogSource _logger;
 
-        private float _lastTargetSwitchTime = -999f;
-        private float _nextEvaluateTime;
-        private Player _currentTarget;
-
-        // For advanced: remember last few threats for fallback/multi-threat logic
-        private readonly Queue<string> _recentTargetIds = new Queue<string>(3);
+        private float _nextEvalTime;
+        private float _lastSwitchTime;
+        private Player _target;
 
         #endregion
 
         #region Properties
 
-        /// <summary>Current high-priority target for the bot.</summary>
-        public Player CurrentTarget => _currentTarget;
+        public Player CurrentTarget => _target;
 
         #endregion
 
         #region Constructor
 
-        /// <summary>
-        /// Creates a new threat selector for the provided bot component cache.
-        /// </summary>
         public BotThreatSelector(BotComponentCache cache)
         {
             if (cache == null || cache.Bot == null || cache.AIRefactoredBotOwner == null)
@@ -81,333 +68,175 @@ namespace AIRefactored.AI.Combat
 
             _cache = cache;
             _bot = cache.Bot;
-            _profile = cache.AIRefactoredBotOwner.PersonalityProfile ?? BotPersonalityPresets.GenerateProfile(PersonalityType.Balanced);
+            _profile = cache.AIRefactoredBotOwner.PersonalityProfile;
+            _logger = Plugin.LoggerInstance;
         }
 
         #endregion
 
-        #region Main Evaluation
+        #region Tick
 
-        /// <summary>
-        /// Evaluate and update threat selection. Called every tick from BotBrain.
-        /// </summary>
         public void Tick(float time)
         {
-            if (time < _nextEvaluateTime || _bot == null || _bot.IsDead || !_bot.IsAI)
+            if (time < _nextEvalTime || _bot == null || _bot.IsDead)
                 return;
 
-            try
+            _nextEvalTime = time + EvaluateCooldown;
+
+            List<Player> players = GameWorldHandler.GetAllAlivePlayers();
+            if (players == null || players.Count == 0)
+                return;
+
+            Player best = null;
+            float bestScore = float.MinValue;
+
+            for (int i = 0; i < players.Count; i++)
             {
-                _nextEvaluateTime = time + EvaluationCooldown;
+                var p = players[i];
+                if (!EFTPlayerUtil.IsValid(p) || !IsProperEnemy(_bot, p))
+                    continue;
 
-                List<Player> players = GameWorldHandler.GetAllAlivePlayers();
-                if (players == null || players.Count == 0)
-                    return;
-
-                Player bestTarget = null;
-                float bestScore = float.MinValue;
-
-                for (int i = 0; i < players.Count; i++)
+                float score = ScoreTarget(p, time);
+                if (score > bestScore)
                 {
-                    Player candidate = players[i];
-                    if (!EFTPlayerUtil.IsValid(candidate) || candidate.ProfileId == _bot.ProfileId)
-                        continue;
-                    if (!IsProperEnemy(_bot, candidate))
-                        continue;
-
-                    float score = ScoreTarget(candidate, time);
-                    if (score > bestScore)
-                    {
-                        bestScore = score;
-                        bestTarget = candidate;
-                    }
-                }
-
-                if (bestTarget == null)
-                {
-                    // Fallback: recent memory enemy, if any, even if out of sight
-                    string lastEnemyId = _cache?.TacticalMemory?.GetMostRecentEnemyId();
-                    if (!string.IsNullOrEmpty(lastEnemyId))
-                    {
-                        Player fallback = EFTPlayerUtil.ResolvePlayerById(lastEnemyId);
-                        if (EFTPlayerUtil.IsValid(fallback) && IsProperEnemy(_bot, fallback))
-                        {
-                            SetTarget(fallback, time);
-                        }
-                    }
-                    return;
-                }
-
-                // New target assignment logic: switching only on significant delta and after cooldown
-                if (_currentTarget == null)
-                {
-                    SetTarget(bestTarget, time);
-                    return;
-                }
-
-                float currentScore = ScoreTarget(_currentTarget, time);
-                float cooldown = SwitchCooldown * (1f - (_profile.AggressionLevel * 0.5f));
-                if (bestScore > currentScore + TargetSwitchThreshold && time > _lastTargetSwitchTime + cooldown)
-                {
-                    SetTarget(bestTarget, time);
+                    bestScore = score;
+                    best = p;
                 }
             }
-            catch (Exception ex)
+
+            if (best == null)
             {
-                Logger.LogWarning($"[BotThreatSelector] Exception in Tick(): {ex}");
+                TryFallbackFromMemory(time);
+                return;
+            }
+
+            if (_target == null)
+            {
+                SetTarget(best, time);
+                return;
+            }
+
+            float currentScore = ScoreTarget(_target, time);
+            float cooldown = SwitchCooldown * (1f - _profile.AggressionLevel);
+            if (bestScore > currentScore + SwitchThreshold && time > _lastSwitchTime + cooldown)
+            {
+                SetTarget(best, time);
             }
         }
 
         #endregion
 
-        #region Target Scoring
+        #region Scoring
 
-        /// <summary>
-        /// Scores a candidate target for prioritization based on proximity, visibility, squad, and memory.
-        /// </summary>
         private float ScoreTarget(Player candidate, float time)
         {
-            try
+            Vector3 pos = EFTPlayerUtil.GetPosition(candidate);
+            float dist = Vector3.Distance(_bot.Position, pos);
+            if (dist > MaxDistance) return float.MinValue;
+
+            float score = MaxDistance - dist;
+
+            if (dist < 12f)
+                score += CloseDistanceBonus;
+
+            if (_bot.BotsGroup != null)
             {
-                if (_bot == null || candidate == null)
-                    return float.MinValue;
-
-                Vector3 botPos = _bot.Position;
-                Vector3 targetPos = EFTPlayerUtil.GetPosition(candidate);
-                float distance = Vector3.Distance(botPos, targetPos);
-
-                if (distance > MaxScanDistance)
-                    return float.MinValue;
-
-                float score = MaxScanDistance - distance;
-
-                // Squad-based prioritization: if any squadmate is fighting this target, add bonus
-                if (_bot.BotsGroup != null && _bot.BotsGroup.MembersCount > 1)
+                int n = _bot.BotsGroup.MembersCount;
+                for (int i = 0; i < n; i++)
                 {
-                    for (int i = 0; i < _bot.BotsGroup.MembersCount; i++)
-                    {
-                        var mate = _bot.BotsGroup.Member(i);
-                        if (mate == null || mate == _bot) continue;
-                        if (mate.Memory?.GoalEnemy?.Person is Player p && p.ProfileId == candidate.ProfileId)
-                        {
-                            score += SquadEnemyBonus;
-                        }
-                    }
+                    var mate = _bot.BotsGroup.Member(i);
+                    if (mate == null || mate == _bot || mate.IsDead) continue;
+                    if (mate.Memory?.GoalEnemy?.Person?.ProfileId == candidate.ProfileId)
+                        score += SquadAssistBonus;
                 }
-
-                // Avoid targeting friends by proximity
-                if (_bot.BotsGroup != null && _bot.BotsGroup.MembersCount > 1)
-                {
-                    for (int i = 0; i < _bot.BotsGroup.MembersCount; i++)
-                    {
-                        var mate = _bot.BotsGroup.Member(i);
-                        if (mate == null || mate == _bot) continue;
-                        if (Vector3.Distance(targetPos, mate.Position) < MinFriendDistance)
-                        {
-                            score -= HiddenPenalty;
-                        }
-                    }
-                }
-
-                EnemyInfo info = GetEnemyInfo(candidate);
-                if (info != null)
-                {
-                    if (info.IsVisible)
-                    {
-                        score += VisibilityBonus;
-
-                        if (info.PersonalLastSeenTime + 2.2f > time)
-                            score += RecentSeenBonus;
-
-                        if (_profile.Caution > 0.6f)
-                            score += 5f;
-
-                        if (_cache.IsBlinded && _cache.BlindUntilTime > time)
-                            score -= BlindPenalty;
-                    }
-                    else
-                    {
-                        score -= HiddenPenalty;
-
-                        if (_profile.AggressionLevel > 0.7f)
-                        {
-                            float unseen = time - info.PersonalLastSeenTime;
-                            if (unseen < AggressionPersistenceWindow)
-                            {
-                                float bonus = Mathf.Lerp(0f, AggressionMaxBonus, 1f - (unseen / AggressionPersistenceWindow));
-                                score += bonus;
-                            }
-                        }
-                    }
-                }
-                else
-                {
-                    score -= UnknownPenalty;
-                }
-
-                // Panic heavily reduces confidence/priority in targets
-                if (_cache.PanicHandler != null && _cache.PanicHandler.IsPanicking)
-                    score -= 10f;
-
-                return score;
             }
-            catch (Exception ex)
+
+            EnemyInfo info = GetEnemyInfo(candidate);
+            if (info != null)
             {
-                Logger.LogWarning($"[BotThreatSelector] Exception in ScoreTarget(): {ex}");
-                return float.MinValue;
+                if (info.IsVisible)
+                {
+                    score += LineOfSightBonus;
+                    if (time - info.PersonalLastSeenTime < 2.4f)
+                        score += VisibleRecentBonus;
+                }
             }
+
+            if (_cache.Suppression != null && _cache.Suppression.IsSuppressed())
+                score -= SuppressionPenalty;
+            if (_cache.PanicHandler != null && _cache.PanicHandler.IsPanicking)
+                score -= PanicPenalty;
+
+            return score;
         }
 
-        /// <summary>
-        /// Finds EnemyInfo for a candidate, based on all known sources (EFT memory, goal enemy, etc).
-        /// </summary>
-        private EnemyInfo GetEnemyInfo(Player candidate)
+        private EnemyInfo GetEnemyInfo(Player p)
         {
-            try
-            {
-                if (candidate == null || _bot?.EnemiesController == null)
-                    return null;
-
-                string id = candidate.ProfileId;
-                if (string.IsNullOrEmpty(id))
-                    return null;
-
-                var enemyInfos = _bot.EnemiesController.EnemyInfos;
-                if (enemyInfos != null)
-                {
-                    foreach (var kv in enemyInfos)
-                    {
-                        if (kv.Key is Player known && known.ProfileId == id)
-                            return kv.Value;
-                    }
-                }
-
-                if (_bot.Memory?.GoalEnemy?.Person?.ProfileId == id)
-                    return _bot.Memory.GoalEnemy;
-
+            if (_bot?.EnemiesController?.EnemyInfos == null || p == null || string.IsNullOrEmpty(p.ProfileId))
                 return null;
-            }
-            catch (Exception ex)
+
+            foreach (var kv in _bot.EnemiesController.EnemyInfos)
             {
-                Logger.LogWarning($"[BotThreatSelector] Exception in GetEnemyInfo(): {ex}");
-                return null;
+                if (kv.Key is Player other && other.ProfileId == p.ProfileId)
+                    return kv.Value;
             }
+
+            return _bot.Memory?.GoalEnemy?.Person?.ProfileId == p.ProfileId
+                ? _bot.Memory.GoalEnemy
+                : null;
         }
 
         #endregion
 
-        #region Target Set & Fallback
+        #region Fallback / Target Set
 
-        /// <summary>
-        /// Assigns the provided Player as the current threat target.
-        /// </summary>
-        private void SetTarget(Player target, float time)
+        private void TryFallbackFromMemory(float time)
         {
-            try
+            string id = _cache?.TacticalMemory?.GetMostRecentEnemyId();
+            if (string.IsNullOrEmpty(id))
+                return;
+
+            var fallback = EFTPlayerUtil.ResolvePlayerById(id);
+            if (EFTPlayerUtil.IsValid(fallback) && IsProperEnemy(_bot, fallback))
+                SetTarget(fallback, time);
+        }
+
+        private void SetTarget(Player p, float time)
+        {
+            _target = p;
+            _lastSwitchTime = time;
+
+            if (_cache?.TacticalMemory != null && p != null)
+                _cache.TacticalMemory.RecordEnemyPosition(EFTPlayerUtil.GetPosition(p), "Threat", p.ProfileId);
+
+            if (_cache?.Movement != null && !_bot.Mover.IsMoving)
             {
-                if (target == null)
-                    return;
-
-                _currentTarget = target;
-                _lastTargetSwitchTime = time;
-
-                string id = target.ProfileId;
-                if (!string.IsNullOrEmpty(id))
-                {
-                    if (_recentTargetIds.Count == 3) _recentTargetIds.Dequeue();
-                    _recentTargetIds.Enqueue(id);
-
-                    _cache?.TacticalMemory?.RecordEnemyPosition(EFTPlayerUtil.GetPosition(target), "Target", id);
-                    _cache?.LastShotTracker?.RegisterHit(id);
-                }
-
-                // Movement logic: suggest fallback cover position if not currently moving (not direct GoToPoint)
-                if (_cache?.Movement != null &&
-                    !_bot.IsDead &&
-                    _bot.Mover != null &&
-                    !_bot.Mover.IsMoving)
-                {
-                    if (BotNavHelper.TryGetSafeTarget(_bot, out Vector3 fallback) && IsVectorValid(fallback))
-                    {
-                        float cohesion = _profile?.Cohesion ?? 1.0f;
-                        BotMovementHelper.SmoothMoveTo(_bot, fallback, false, cohesion);
-                    }
-                }
-            }
-            catch (Exception ex)
-            {
-                Logger.LogWarning($"[BotThreatSelector] Exception in SetTarget(): {ex}");
+                if (BotNavHelper.TryGetSafeTarget(_bot, out Vector3 safePos) && IsVectorValid(safePos))
+                    BotMovementHelper.SmoothMoveTo(_bot, safePos, false, _profile.Cohesion);
             }
         }
 
-        /// <summary>
-        /// Returns the current priority target, falling back to recent memory.
-        /// </summary>
-        public Player GetPriorityTarget()
-        {
-            try
-            {
-                if (EFTPlayerUtil.IsValid(_currentTarget))
-                    return _currentTarget;
+        public string GetTargetProfileId() => _target?.ProfileId ?? string.Empty;
 
-                string id = _cache?.TacticalMemory?.GetMostRecentEnemyId();
-                if (string.IsNullOrEmpty(id))
-                    return null;
-
-                Player fallback = EFTPlayerUtil.ResolvePlayerById(id);
-                return EFTPlayerUtil.IsValid(fallback) && IsProperEnemy(_bot, fallback) ? fallback : null;
-            }
-            catch (Exception ex)
-            {
-                Logger.LogWarning($"[BotThreatSelector] Exception in GetPriorityTarget(): {ex}");
-                return null;
-            }
-        }
-
-        public string GetTargetProfileId()
-        {
-            return _currentTarget?.ProfileId ?? string.Empty;
-        }
-
-        public void ResetTarget()
-        {
-            _currentTarget = null;
-        }
+        public void ResetTarget() => _target = null;
 
         #endregion
 
-        #region Enemy Eligibility
+        #region Helper
 
-        /// <summary>
-        /// Determines if candidate is a valid enemy for the bot (PMC-vs-PMC, squad checks, etc).
-        /// </summary>
         private static bool IsProperEnemy(BotOwner self, Player candidate)
         {
-            if (self == null || candidate == null)
+            if (self == null || candidate == null || candidate.ProfileId == self.ProfileId)
                 return false;
-            if (candidate.ProfileId == self.ProfileId)
-                return false;
-            if (!candidate.IsAI && !self.IsAI)
-                return false; // Only care about AI-vs-AI and AI-vs-player
 
-            EPlayerSide selfSide = self.GetPlayer != null ? self.GetPlayer.Side : EPlayerSide.Savage;
-            EPlayerSide targetSide = candidate.Side;
+            var selfSide = self.GetPlayer?.Side ?? EPlayerSide.Savage;
+            var otherSide = candidate.Side;
+            if (selfSide != otherSide) return true;
 
-            if (selfSide != targetSide)
-                return true; // Always enemy if sides differ
-
-            // PMC-vs-PMC: Only enemy if not in same squad/group
-            string selfGroup = self.GetPlayer?.Profile?.Info?.GroupId ?? string.Empty;
-            string targetGroup = candidate.Profile?.Info?.GroupId ?? string.Empty;
-            if (!string.IsNullOrEmpty(selfGroup) && !string.IsNullOrEmpty(targetGroup) && selfGroup == targetGroup)
-                return false; // Same squad: do not target
-
-            return true; // Otherwise, different squad PMCs are enemies
+            string sg = self.GetPlayer?.Profile?.Info?.GroupId ?? "";
+            string tg = candidate.Profile?.Info?.GroupId ?? "";
+            return sg != tg;
         }
-
-        #endregion
-
-        #region Helpers
 
         private static bool IsVectorValid(Vector3 v)
         {

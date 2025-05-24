@@ -142,15 +142,26 @@ namespace AIRefactored.AI.Core
 
             InitializedBots.Add(id);
             Bot = bot;
-
             MoveCache = new BotMovementHelper.BotMoveCache();
 
-            WildSpawnType role = bot.Profile?.Info?.Settings?.Role ?? WildSpawnType.assault;
-            PersonalityProfile = BotRegistry.GetOrGenerate(id, PersonalityType.Balanced, role);
-
+            // Load profile now only if not already injected via AIRefactoredBotOwner
             _owner = bot.GetComponent<AIRefactoredBotOwner>();
             if (_owner == null)
+            {
                 Logger.LogWarning($"[BotComponentCache] AIRefactoredBotOwner missing for bot {id}");
+                _owner = new AIRefactoredBotOwner(); // fallback
+                _owner.Initialize(bot);
+            }
+
+            if (_owner != null && _owner.HasPersonality())
+            {
+                PersonalityProfile = _owner.PersonalityProfile;
+            }
+            else
+            {
+                WildSpawnType role = bot.Profile?.Info?.Settings?.Role ?? WildSpawnType.assault;
+                PersonalityProfile = BotRegistry.GetOrGenerate(id, PersonalityType.Balanced, role);
+            }
 
             TryInit(() => Pathing = new BotOwnerPathfindingCache(), "Pathing");
             TryInit(() => { TacticalMemory = new BotTacticalMemory(); TacticalMemory.Initialize(this); }, "TacticalMemory");
@@ -177,7 +188,6 @@ namespace AIRefactored.AI.Core
             TryInit(() => GroupComms = new BotGroupComms(this), "GroupComms");
             TryInit(() => SquadHealer = bot.HealAnotherTarget ?? new BotHealAnotherTarget(bot), "SquadHealer");
             TryInit(() => HealReceiver = bot.HealingBySomebody ?? new BotHealingBySomebody(bot), "HealReceiver");
-
             TryInit(() => ThreatSelector = new BotThreatSelector(this), "ThreatSelector");
             TryInit(() => { Perception = new BotPerceptionSystem(); Perception.Initialize(this); }, "Perception");
             TryInit(() => { CoverPlanner = new BotCoverRetreatPlanner(bot, Pathing); }, "CoverPlanner");

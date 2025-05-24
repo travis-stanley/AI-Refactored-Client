@@ -2,6 +2,7 @@
 //   AI-Refactored: BotMovementHelper.cs (Beyond Diamond Ultra-Realism Edition)
 //   Includes: ForceFallbackMove, SmoothMoveTo, SmoothStrafeFrom, SmoothLookTo, RetreatToCover, Reset
 //   Bulletproof: No teleportation, all movement path-based, stutter-proofed.
+//   All movement always reissued per frame. Zero gating. Fully BotBrain-ticked.
 //   MIT License.
 // </auto-generated>
 
@@ -25,7 +26,6 @@ namespace AIRefactored.AI.Helpers
         private const float MinMoveEpsilon = 0.07f;
         private const float SlerpBias = 0.965f;
         private const float MicroJitterMagnitude = 0.11f;
-        private const float MinMoveDelta = 0.25f;
 
         #endregion
 
@@ -132,7 +132,7 @@ namespace AIRefactored.AI.Helpers
 
                 BotRegistry.TryGet(bot.ProfileId, out BotPersonalityProfile profile);
                 Vector3 drifted = ApplyMicroDrift(final, bot.ProfileId, Time.frameCount + 21, profile, bot);
-                IssueMoveIfNotRedundant(bot, drifted, true, 1f);
+                IssueMove(bot, drifted, true, 1f);
             }
             catch (Exception ex)
             {
@@ -156,13 +156,9 @@ namespace AIRefactored.AI.Helpers
                 Vector3 origin = GetPosition(bot);
                 if (!IsValidTarget(safeTarget)) safeTarget = origin;
 
-                float radius = DefaultRadius * Mathf.Clamp(cohesionScale, 0.7f, 1.3f);
-                if ((origin - safeTarget).sqrMagnitude < radius * radius)
-                    return true;
-
                 BotRegistry.TryGet(bot.ProfileId, out BotPersonalityProfile profile);
                 Vector3 drifted = ApplyMicroDrift(safeTarget, bot.ProfileId, Time.frameCount, profile, bot);
-                IssueMoveIfNotRedundant(bot, drifted, slow, cohesionScale);
+                IssueMove(bot, drifted, slow, cohesionScale);
                 return true;
             }
             catch (Exception ex)
@@ -192,7 +188,7 @@ namespace AIRefactored.AI.Helpers
                 }
 
                 Vector3 drifted = ApplyMicroDrift(target, bot.ProfileId, Time.frameCount, profile, bot);
-                IssueMoveIfNotRedundant(bot, drifted, true, cohesion);
+                IssueMove(bot, drifted, true, cohesion);
                 if (sprint) bot.Sprint(true);
             }
             catch (Exception ex)
@@ -219,7 +215,7 @@ namespace AIRefactored.AI.Helpers
 
                 BotRegistry.TryGet(bot.ProfileId, out BotPersonalityProfile profile);
                 Vector3 drifted = ApplyMicroDrift(final, bot.ProfileId, Time.frameCount + 15, profile, bot);
-                IssueMoveIfNotRedundant(bot, drifted, false, 1f);
+                IssueMove(bot, drifted, false, 1f);
             }
             catch (Exception ex)
             {
@@ -231,14 +227,17 @@ namespace AIRefactored.AI.Helpers
 
         #region Internal Helpers
 
-        private static void IssueMoveIfNotRedundant(BotOwner bot, Vector3 drifted, bool slow, float cohesion)
+        private static void IssueMove(BotOwner bot, Vector3 drifted, bool slow, float cohesion)
         {
-            var cache = GetCache(bot);
-            if (cache == null) return;
+            if (bot == null || bot.Mover == null) return;
 
-            bot.Mover?.GoToPoint(drifted, slow, cohesion);
-            cache.LastMoveTarget = drifted;
-            cache.LastMoveTime = Time.time;
+            bot.Mover.GoToPoint(drifted, slow, cohesion); // Always issue
+            var cache = GetCache(bot);
+            if (cache != null)
+            {
+                cache.LastMoveTarget = drifted;
+                cache.LastMoveTime = Time.time;
+            }
         }
 
         private static bool IsAlive(BotOwner bot) =>

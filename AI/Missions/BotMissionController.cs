@@ -18,24 +18,13 @@ namespace AIRefactored.AI.Missions
     using UnityEngine;
     using Random = UnityEngine.Random;
 
-    /// <summary>
-    /// Central bot mission state controller.
-    /// 100% BotBrain-ticked; manages all mission, objective, fallback, extraction, and squad logic.
-    /// Bulletproof: all errors are locally isolated, no self-disable, never disables AIRefactored or parent bot.
-    /// </summary>
     public sealed class BotMissionController
     {
-        #region Constants
-
         private const float GroupRejoinTimeout = 20f;
         private const float LootSyncDistance = 7f;
         private const float MaxMissionCooldown = 16f;
         private const float MinMissionCooldown = 7f;
         private const float CombatPauseDuration = 4.5f;
-
-        #endregion
-
-        #region Fields
 
         private static readonly ManualLogSource Logger = Plugin.LoggerInstance;
 
@@ -55,13 +44,6 @@ namespace AIRefactored.AI.Missions
         private float _lastUpdateTime;
         private float _missionCooldown;
 
-        #endregion
-
-        #region Enums
-
-        /// <summary>
-        /// Defines major mission modes the bot can follow.
-        /// </summary>
         public enum MissionType
         {
             Loot,
@@ -69,13 +51,6 @@ namespace AIRefactored.AI.Missions
             Quest
         }
 
-        #endregion
-
-        #region Constructor
-
-        /// <summary>
-        /// Create a new mission controller for the specified bot.
-        /// </summary>
         public BotMissionController(BotOwner bot, BotComponentCache cache)
         {
             try
@@ -97,7 +72,6 @@ namespace AIRefactored.AI.Missions
 
                 _extraction = new BotExtractionDecisionSystem(bot, cache, profile);
 
-                // Squad mission registration and initial assignment
                 GroupMissionCoordinator.RegisterFromBot(bot);
                 _missionType = GroupMissionCoordinator.GetMissionForGroup(bot);
                 _objectives.SetInitialObjective(_missionType);
@@ -114,13 +88,6 @@ namespace AIRefactored.AI.Missions
             }
         }
 
-        #endregion
-
-        #region BotBrain-Driven Tick
-
-        /// <summary>
-        /// Main per-frame tick for all mission, squad, and extraction logic. Only ticked by BotBrain.
-        /// </summary>
         public void Tick(float time)
         {
             try
@@ -136,7 +103,6 @@ namespace AIRefactored.AI.Missions
 
                 _evaluator.UpdateStuckCheck(time);
 
-                // Dynamic mission switching unless a forced mission is set (e.g. forced extraction, forced loot).
                 if (!_forcedMission)
                 {
                     _switcher.Evaluate(
@@ -148,7 +114,6 @@ namespace AIRefactored.AI.Missions
                     );
                 }
 
-                // Track if currently in active combat state, and handle quest/combat pause transitions.
                 if (_cache.Combat != null && _cache.Combat.IsInCombatState())
                 {
                     _lastCombatTime = time;
@@ -164,7 +129,6 @@ namespace AIRefactored.AI.Missions
 
                 _extraction.Tick(time);
 
-                // Wait for group rejoin if out of sync, unless actively fighting
                 if (!_evaluator.IsGroupAligned() && _missionType != MissionType.Fight)
                 {
                     if (_groupWaitStart < 0f)
@@ -187,7 +151,6 @@ namespace AIRefactored.AI.Missions
                     _missionCooldown = GetNextCooldown();
                 }
 
-                // If we're in loot mode and at objective, enter looting mode (let LootScanner drive looting)
                 if (!_inCombatPause &&
                     _missionType == MissionType.Loot &&
                     _cache.LootScanner != null &&
@@ -202,13 +165,6 @@ namespace AIRefactored.AI.Missions
             }
         }
 
-        #endregion
-
-        #region Public Methods
-
-        /// <summary>
-        /// Forces the bot to follow a given mission, overriding dynamic switching.
-        /// </summary>
         public void SetForcedMission(MissionType mission)
         {
             try
@@ -222,26 +178,17 @@ namespace AIRefactored.AI.Missions
             }
         }
 
-        #endregion
-
-        #region Private Methods
-
-        /// <summary>
-        /// Handles logic for when a bot reaches its current objective, e.g. at loot point or group alignment.
-        /// All looting is squad-aligned, pose/lean/voice-coordinated, and bulletproofed.
-        /// </summary>
         private void OnObjectiveReached(float now)
         {
             try
             {
-                // Only enable looting mode/pose and let FSM/loot scanner handle all looting.
                 if (_missionType == MissionType.Loot &&
                     _cache.LootScanner != null &&
                     _cache.GroupBehavior != null &&
                     _cache.GroupBehavior.GroupSync != null)
                 {
                     Vector3 myPos = _bot.Position;
-                    // Share loot interest point with squad for squad-aware looting separation (if feature enabled)
+
                     if (_cache.GroupBehavior.GroupSync.SupportsLootPoint)
                         _cache.GroupBehavior.GroupSync.ShareLootToSquad(myPos);
 
@@ -252,14 +199,9 @@ namespace AIRefactored.AI.Missions
                         return;
                     }
 
-                    // Enter looting pose and mode
                     _cache.Movement?.EnterLootingMode();
                     _cache.PoseController?.LockCrouchPose();
-
-                    // Run DeadBodyScanner for dead body loot targeting if enabled
                     _cache.DeadBodyScanner?.Tick(now);
-
-                    // Complete/exit looting
                     _cache.Movement?.ExitLootingMode();
                     _voice.OnLoot();
                 }
@@ -272,9 +214,6 @@ namespace AIRefactored.AI.Missions
             }
         }
 
-        /// <summary>
-        /// Switches mission to Fight state and updates squad.
-        /// </summary>
         private void SwitchToFight()
         {
             try
@@ -295,9 +234,6 @@ namespace AIRefactored.AI.Missions
             }
         }
 
-        /// <summary>
-        /// Returns a randomized cooldown value for objective reassignment.
-        /// </summary>
         private float GetNextCooldown()
         {
             try
@@ -309,7 +245,5 @@ namespace AIRefactored.AI.Missions
                 return 11f;
             }
         }
-
-        #endregion
     }
 }

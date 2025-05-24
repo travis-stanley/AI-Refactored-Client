@@ -49,6 +49,11 @@ namespace AIRefactored.AI.Core
         public string PersonalityName { get; private set; }
         public string AssignedZone { get; private set; }
 
+        /// <summary>
+        /// True if this owner has been initialized and is safe to use.
+        /// </summary>
+        public bool IsInitialized => _isInitialized;
+
         public AIRefactoredBotOwner()
         {
             PersonalityProfile = new BotPersonalityProfile();
@@ -63,9 +68,15 @@ namespace AIRefactored.AI.Core
         /// </summary>
         public void Initialize(BotOwner bot)
         {
-            if (_isInitialized || bot == null)
+            if (_isInitialized)
             {
-                Logger.LogError("[AIRefactoredBotOwner] Initialization skipped or bot null.");
+                Logger.LogWarning($"[AIRefactoredBotOwner] Already initialized for bot {bot?.Profile?.Id ?? "unknown"} — skipping.");
+                return;
+            }
+
+            if (bot == null)
+            {
+                Logger.LogError("[AIRefactoredBotOwner] Initialization failed: bot was null.");
                 return;
             }
 

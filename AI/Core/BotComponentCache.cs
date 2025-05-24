@@ -29,11 +29,6 @@ namespace AIRefactored.AI.Core
     using EFT;
     using UnityEngine;
 
-    /// <summary>
-    /// Central, atomic, and bulletproof per-bot AI subsystem registry.
-    /// No partial states, no fallback disables, always full teardown.
-    /// All subsystem failures are logged only, never cascade or break bot.
-    /// </summary>
     public sealed class BotComponentCache : IDisposable
     {
         #region Static
@@ -107,9 +102,6 @@ namespace AIRefactored.AI.Core
         public FallbackHandler Fallback => _fallbackHandler;
         public BotPanicHandler Panic => PanicHandler;
 
-        /// <summary>
-        /// Per-bot cache for movement anti-stutter (used by BotMovementHelper).
-        /// </summary>
         public BotMovementHelper.BotMoveCache MoveCache { get; private set; }
 
         #endregion
@@ -151,7 +143,6 @@ namespace AIRefactored.AI.Core
             InitializedBots.Add(id);
             Bot = bot;
 
-            // --- Movement anti-stutter: always create MoveCache for each bot ---
             MoveCache = new BotMovementHelper.BotMoveCache();
 
             WildSpawnType role = bot.Profile?.Info?.Settings?.Role ?? WildSpawnType.assault;
@@ -187,9 +178,7 @@ namespace AIRefactored.AI.Core
             TryInit(() => SquadHealer = bot.HealAnotherTarget ?? new BotHealAnotherTarget(bot), "SquadHealer");
             TryInit(() => HealReceiver = bot.HealingBySomebody ?? new BotHealingBySomebody(bot), "HealReceiver");
 
-            // ✅ Safe to create after _owner is guaranteed
             TryInit(() => ThreatSelector = new BotThreatSelector(this), "ThreatSelector");
-
             TryInit(() => { Perception = new BotPerceptionSystem(); Perception.Initialize(this); }, "Perception");
             TryInit(() => { CoverPlanner = new BotCoverRetreatPlanner(bot, Pathing); }, "CoverPlanner");
         }
@@ -245,13 +234,7 @@ namespace AIRefactored.AI.Core
             _fallbackHandler = null;
         }
 
-        /// <summary>
-        /// Optional callback for atomic owner wiring (called from AIRefactoredBotOwner.Initialize).
-        /// </summary>
-        public void OnOwnerAttached()
-        {
-            // No-op but required for atomic wiring, extend as needed.
-        }
+        public void OnOwnerAttached() { }
 
         #endregion
     }

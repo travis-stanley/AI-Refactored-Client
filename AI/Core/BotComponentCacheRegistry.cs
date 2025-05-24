@@ -20,11 +20,9 @@ namespace AIRefactored.AI.Core
     {
         #region Fields
 
-        // Cache by ProfileId
         private static readonly Dictionary<string, BotComponentCache> CacheMap =
             new Dictionary<string, BotComponentCache>(128, StringComparer.OrdinalIgnoreCase);
 
-        // (Optional) Cache by Player instance for even faster runtime access
         private static readonly Dictionary<Player, BotComponentCache> PlayerMap =
             new Dictionary<Player, BotComponentCache>(128);
 
@@ -46,7 +44,7 @@ namespace AIRefactored.AI.Core
 
             string id = bot.Profile.Id;
             var player = bot.GetPlayer;
-            if (string.IsNullOrEmpty(id) || player == null)
+            if (string.IsNullOrEmpty(id) || player == null || bot.AIData == null)
                 return null;
 
             lock (Lock)
@@ -62,8 +60,9 @@ namespace AIRefactored.AI.Core
                     cache.Initialize(bot);
                     cache.SetOwner(owner);
 
-                    // DO NOT call owner.Initialize(bot) here — caller (BotSpawnWatcher) must do it after SetOwner()
+                    // DO NOT call owner.Initialize(bot) here — caller (BotSpawnWatcherService) will handle this
                     CacheMap[id] = cache;
+
                     if (!PlayerMap.ContainsKey(player))
                         PlayerMap[player] = cache;
 
@@ -78,10 +77,6 @@ namespace AIRefactored.AI.Core
             }
         }
 
-        /// <summary>
-        /// TryGetExisting returns cache only if it's already registered.
-        /// Does NOT create anything. Safe for AIRefactoredBotOwner to use.
-        /// </summary>
         public static BotComponentCache TryGetExisting(BotOwner bot)
         {
             if (!IsFullyValidBot(bot))
@@ -94,9 +89,6 @@ namespace AIRefactored.AI.Core
             }
         }
 
-        /// <summary>
-        /// Try get cache by ProfileId, Player, or BotOwner.
-        /// </summary>
         public static bool TryGet(string profileId, out BotComponentCache cache)
         {
             if (string.IsNullOrEmpty(profileId))
@@ -121,13 +113,14 @@ namespace AIRefactored.AI.Core
             {
                 if (PlayerMap.TryGetValue(player, out cache))
                     return true;
-                // Fallback: search by profileId if needed (e.g., on reload)
+
                 string id = player.Profile?.Id;
                 if (!string.IsNullOrEmpty(id) && CacheMap.TryGetValue(id, out cache))
                 {
                     PlayerMap[player] = cache;
                     return true;
                 }
+
                 return false;
             }
         }
@@ -140,9 +133,6 @@ namespace AIRefactored.AI.Core
             return TryGet(bot.Profile.Id, out cache);
         }
 
-        /// <summary>
-        /// Remove a cache from all registries by BotOwner.
-        /// </summary>
         public static void Remove(BotOwner bot)
         {
             if (bot?.Profile?.Id == null)
@@ -176,7 +166,12 @@ namespace AIRefactored.AI.Core
 
         private static bool IsFullyValidBot(BotOwner bot)
         {
-            return bot?.Profile?.Info != null && !string.IsNullOrEmpty(bot.Profile.Id) && bot.GetPlayer != null;
+            return bot != null
+                   && bot.Profile != null
+                   && bot.Profile.Info != null
+                   && !string.IsNullOrEmpty(bot.Profile.Id)
+                   && bot.GetPlayer != null
+                   && bot.AIData != null;
         }
 
         #endregion

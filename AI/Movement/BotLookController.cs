@@ -16,11 +16,6 @@ namespace AIRefactored.AI.Movement
     using EFT;
     using UnityEngine;
 
-    /// <summary>
-    /// Fully human, multi-layer look/aim controller: inertia, fidget, squad/group mimicry, fatigue, micro-saccades, visual “target-check,” 
-    /// dynamic attention memory, frustration, panic, cover-peeking, leadership echo, and contextual scan/looting.
-    /// Bulletproof: all errors isolated, zero fallback disables, multiplayer/headless safe.
-    /// </summary>
     public sealed class BotLookController
     {
         #region Constants
@@ -28,40 +23,11 @@ namespace AIRefactored.AI.Movement
         private const float MaxTurnSpeed = 8.9f;
         private const float MaxAnglePerFrame = 40.5f;
         private const float MinLookDistanceSqr = 0.14f;
-        private const float BlindLookRadius = 4.25f;
-        private const float HeardDirectionWeight = 7.29f;
-        private const float SoundMemoryDuration = 4.28f;
-        private const float IdleScanInterval = 2.79f;
-        private const float IdleScanAngleMax = 68.6f;
-        private const float IdleScanJitter = 7.9f;
-        private const float IdleMissChance = 0.032f;
-        private const float MissAngleMax = 10.1f;
-        private const float InertiaAcceleration = 0.178f;
-        private const float AnticipationFactor = 0.24f;
-        private const float HesitationDuration = 0.15f;
-        private const float FidgetPauseChance = 0.087f;
-        private const float FidgetDurationMin = 0.08f, FidgetDurationMax = 0.25f;
-        private const float OvershootDecay = 0.77f;
-        private const float ScanResetChance = 0.23f;
-        private const float LootingHeadSweepMax = 22.7f;
-        private const float SquadFidgetEchoRadius = 13.7f;
-        private const float SquadFidgetEchoChance = 0.31f;
-        private const float IdleRestChance = 0.15f;
-        private const float FatigueChance = 0.10f;
-        private const float FatigueDownAngle = -15.2f;
-        private const float AggroStareChance = 0.093f;
-        private const float FrustrationChance = 0.062f;
-        private const float FrustrationAngleMax = 17.0f;
-        private const float CoverPeekJitter = 5.6f;
-        private const float OcclusionCheckInterval = 1.39f;
-        private const float OcclusionLookLerp = 0.24f;
         private const float SaccadeIntervalMin = 0.12f, SaccadeIntervalMax = 0.36f;
         private const float SaccadeAngleMax = 3.7f;
-        private const float TargetCheckDuration = 0.16f;
-        private const float TargetCheckAngle = 13.4f;
-        private const float SquadLeaderEchoChance = 0.16f;
-        private const float SquadLeaderRadius = 15.5f;
-        private const float AttentionMemoryDuration = 2.25f;
+        private const float TargetSwitchJitterClamp = 4.0f;
+        private const float TargetSwitchDampenTime = 0.2f;
+        private const float InertiaAcceleration = 0.178f;
 
         #endregion
 
@@ -71,59 +37,19 @@ namespace AIRefactored.AI.Movement
 
         private readonly BotOwner _bot;
         private readonly BotComponentCache _cache;
-        private readonly BotGroupComms _groupComms;
-
-        private Vector3 _fallbackLookTarget;
-        private bool _frozen;
 
         private float _currentYaw;
         private float _lookVelocity;
         private float _lastYawSign;
-        private float _nextHesitateTime;
 
-        private float _nextIdleScanTime;
-        private float _currentIdleAngle;
-        private int _idleScanDirection;
-        private float _idleJitterOffset;
-
-        private bool _inFidgetPause;
-        private float _fidgetPauseUntil;
-        private bool _inFatigueRest;
-        private float _fatigueRestUntil;
-        private bool _inAggroStare;
-        private float _aggroStareUntil;
-        private bool _inFrustration;
-        private float _frustrationUntil;
-        private float _frustrationAngle;
-
-        private float _overshootAngle;
-        private float _overshootDecayRate;
-
-        private float _nextLootSweepTime;
-        private float _lootingSweepAngle;
-
-        private float _lastSquadFidgetTime;
-
-        private float _nextOcclusionCheckTime;
-        private Vector3 _lastUnoccludedLook;
-
-        // Saccade: rapid micro “eye” movement like humans do (tiny, frequent look jitter)
         private float _nextSaccadeTime;
         private float _saccadeOffset;
 
-        // Target-check: deliberate "player-like" scan right/left of enemy before re-committing aim
-        private bool _targetCheckActive;
-        private float _targetCheckUntil;
-        private float _targetCheckYaw;
+        private Vector3 _fallbackLookTarget;
+        private Vector3 _lastResolvedTarget;
+        private float _lastLookSwitchTime;
 
-        // Attention memory: last seen/checked target info, for natural “attention snap back”
-        private Vector3 _lastAttentionTarget;
-        private float _lastAttentionTime;
-
-        // Squad leader-follow
-        private bool _followingLeader;
-        private float _followLeaderUntil;
-        private float _leaderIdleAngle;
+        private bool _frozen;
 
         #endregion
 
@@ -139,54 +65,21 @@ namespace AIRefactored.AI.Movement
 
             _bot = bot;
             _cache = cache;
-            _groupComms = cache.GroupComms;
-
-            _fallbackLookTarget = bot.Position + bot.LookDirection;
 
             var player = EFTPlayerUtil.ResolvePlayer(bot);
             var body = EFTPlayerUtil.GetTransform(player);
             _currentYaw = (body != null) ? body.rotation.eulerAngles.y : 0f;
             _lookVelocity = 0f;
             _lastYawSign = 0f;
-            _nextHesitateTime = 0f;
-            _nextIdleScanTime = Time.time + UnityEngine.Random.Range(0.8f, 2.5f);
-            _currentIdleAngle = 0f;
-            _idleScanDirection = UnityEngine.Random.value > 0.5f ? 1 : -1;
-            _idleJitterOffset = UnityEngine.Random.Range(-IdleScanJitter, IdleScanJitter);
-            _inFidgetPause = false;
-            _fidgetPauseUntil = 0f;
-            _overshootAngle = 0f;
-            _overshootDecayRate = 0f;
-            _nextLootSweepTime = 0f;
-            _lootingSweepAngle = 0f;
-            _lastSquadFidgetTime = 0f;
-            _inFatigueRest = false;
-            _fatigueRestUntil = 0f;
-            _inAggroStare = false;
-            _aggroStareUntil = 0f;
-            _nextOcclusionCheckTime = 0f;
-            _lastUnoccludedLook = Vector3.zero;
-            _nextSaccadeTime = 0f;
-            _saccadeOffset = 0f;
-            _inFrustration = false;
-            _frustrationUntil = 0f;
-            _targetCheckActive = false;
-            _targetCheckUntil = 0f;
-            _targetCheckYaw = 0f;
-            _lastAttentionTarget = Vector3.zero;
-            _lastAttentionTime = 0f;
-            _followingLeader = false;
-            _followLeaderUntil = 0f;
-            _leaderIdleAngle = 0f;
+            _fallbackLookTarget = bot.Position + bot.LookDirection;
+            _lastResolvedTarget = _fallbackLookTarget;
+            _lastLookSwitchTime = Time.time;
         }
 
         #endregion
 
         #region Public Methods
 
-        /// <summary>
-        /// Central update: inertia, anticipation, fidget, idle/looting, squad echo, fatigue, cover, target-check, saccades, frustration.
-        /// </summary>
         public void Tick(float deltaTime)
         {
             try
@@ -203,27 +96,7 @@ namespace AIRefactored.AI.Movement
                     return;
 
                 Vector3 origin = body.position;
-
-                // Fatigue, Aggro Stare, Frustration
-                HandleFatigueAndAggro();
-                HandleFrustration();
-
                 Vector3 lookTarget = ResolveLookTarget(origin, deltaTime);
-
-                // Vision Occlusion Correction (peek head around cover)
-                if (Time.time > _nextOcclusionCheckTime)
-                {
-                    if (IsViewOccluded(origin, lookTarget))
-                        lookTarget = Vector3.Lerp(lookTarget, origin + RandomCoverPeek(), OcclusionLookLerp);
-                    else
-                        _lastUnoccludedLook = lookTarget;
-                    _nextOcclusionCheckTime = Time.time + OcclusionCheckInterval + UnityEngine.Random.Range(-0.5f, 0.7f);
-                }
-
-                // Saccade (micro rapid eye movement)
-                HandleSaccade();
-
-                lookTarget = ApplySaccadeToTarget(lookTarget, origin);
 
                 Vector3 lookDir = lookTarget - origin;
                 lookDir.y = 0f;
@@ -237,46 +110,11 @@ namespace AIRefactored.AI.Movement
                 float yawDiff = Mathf.DeltaAngle(_currentYaw, targetYaw);
                 float desiredSign = Mathf.Sign(yawDiff);
 
-                // Anticipation/overshoot when changing directions
                 if (_lastYawSign != 0f && Mathf.Sign(_lastYawSign) != desiredSign && Mathf.Abs(yawDiff) > 17f)
-                {
-                    if (Time.time < _nextHesitateTime)
-                        return;
-                    _nextHesitateTime = Time.time + HesitationDuration + UnityEngine.Random.Range(0.04f, 0.11f);
-                    _overshootAngle = AnticipationFactor * desiredSign * Mathf.Min(Mathf.Abs(yawDiff), 32f);
-                    _overshootDecayRate = OvershootDecay;
-                }
+                    _lookVelocity = 0f;
+
                 _lastYawSign = desiredSign;
 
-                // Fidget/squad echo
-                if (!_inFidgetPause && UnityEngine.Random.value < FidgetPauseChance)
-                {
-                    float fidgetDuration = UnityEngine.Random.Range(FidgetDurationMin, FidgetDurationMax);
-                    _fidgetPauseUntil = Time.time + fidgetDuration;
-                    _inFidgetPause = true;
-                    if (UnityEngine.Random.value < 0.11f)
-                        _groupComms?.Say(EPhraseTrigger.Look);
-                    TrySquadFidgetEcho(fidgetDuration);
-                }
-                if (_inFidgetPause)
-                {
-                    if (Time.time < _fidgetPauseUntil) return;
-                    _inFidgetPause = false;
-                }
-
-                // Squad Leader Echo: some bots mimic leader's idle scan
-                TrySquadLeaderEcho();
-
-                // Overshoot
-                if (_overshootAngle != 0f)
-                {
-                    yawDiff += _overshootAngle;
-                    _overshootAngle *= _overshootDecayRate;
-                    if (Mathf.Abs(_overshootAngle) < 1.2f)
-                        _overshootAngle = 0f;
-                }
-
-                // Multi-frame inertia (angular acceleration)
                 _lookVelocity += yawDiff * InertiaAcceleration * deltaTime;
                 _lookVelocity = Mathf.Clamp(_lookVelocity, -MaxTurnSpeed, MaxTurnSpeed);
 
@@ -285,8 +123,7 @@ namespace AIRefactored.AI.Movement
                 float newYaw = Mathf.Repeat(_currentYaw + clampedDeltaYaw, 360f);
                 _currentYaw = newYaw;
 
-                Quaternion targetRotation = Quaternion.Euler(0f, _currentYaw, 0f);
-                body.rotation = targetRotation;
+                body.rotation = Quaternion.Euler(0f, _currentYaw, 0f);
             }
             catch (Exception ex)
             {
@@ -296,21 +133,12 @@ namespace AIRefactored.AI.Movement
 
         public void SetLookTarget(Vector3 worldPos)
         {
-            try { if (IsValid(worldPos)) _fallbackLookTarget = worldPos; }
-            catch (Exception ex) { Logger.LogError("[BotLookController] SetLookTarget failed: " + ex); }
+            if (IsValid(worldPos))
+                _fallbackLookTarget = worldPos;
         }
-        public void FreezeLook() { _frozen = true; }
-        public void ResumeLook() { _frozen = false; }
 
-        /// <summary>
-        /// For squad echo: mimic idle fidget.
-        /// </summary>
-        public void SetIdleFidget(float angle, float duration)
-        {
-            _currentIdleAngle = angle;
-            _fidgetPauseUntil = Time.time + duration;
-            _inFidgetPause = true;
-        }
+        public void FreezeLook() => _frozen = true;
+        public void ResumeLook() => _frozen = false;
 
         public Vector3 GetLookDirection()
         {
@@ -320,54 +148,37 @@ namespace AIRefactored.AI.Movement
 
         #endregion
 
-        #region Private Methods
+        #region Internal Look Target Logic
 
-        private void HandleFatigueAndAggro()
+        private Vector3 ResolveLookTarget(Vector3 origin, float deltaTime)
         {
-            if (!_inFidgetPause && !_inFatigueRest && UnityEngine.Random.value < FatigueChance)
+            float now = Time.time;
+            Vector3 target = _fallbackLookTarget;
+
+            if (_cache?.ThreatSelector != null)
             {
-                _inFatigueRest = true;
-                _fatigueRestUntil = Time.time + UnityEngine.Random.Range(0.31f, 0.85f);
-                _currentIdleAngle = FatigueDownAngle + UnityEngine.Random.Range(-3.1f, 2.9f);
+                string id = _cache.ThreatSelector.GetTargetProfileId();
+                Player enemy = EFTPlayerUtil.ResolvePlayerById(id);
+                if (EFTPlayerUtil.IsValid(enemy))
+                    target = EFTPlayerUtil.GetPosition(enemy);
             }
-            if (_inFatigueRest)
+
+            bool validTarget = (target - _lastResolvedTarget).sqrMagnitude > TargetSwitchJitterClamp;
+
+            if (validTarget)
             {
-                if (Time.time < _fatigueRestUntil) return;
-                _inFatigueRest = false;
+                if (now - _lastLookSwitchTime < TargetSwitchDampenTime)
+                    _lookVelocity *= 0.25f;
+
+                _lastLookSwitchTime = now;
+                _lastResolvedTarget = target;
             }
-            if (!_inAggroStare && UnityEngine.Random.value < AggroStareChance && _cache.PersonalityProfile != null && _cache.PersonalityProfile.AggressionLevel > 0.64f)
-            {
-                _inAggroStare = true;
-                _aggroStareUntil = Time.time + UnityEngine.Random.Range(0.47f, 1.11f);
-                _currentIdleAngle = UnityEngine.Random.Range(-3.2f, 3.1f);
-            }
-            if (_inAggroStare)
-            {
-                if (Time.time < _aggroStareUntil) return;
-                _inAggroStare = false;
-            }
+
+            HandleSaccade();
+
+            return ApplySaccadeToTarget(target, origin);
         }
 
-        private void HandleFrustration()
-        {
-            if (!_inFrustration && UnityEngine.Random.value < FrustrationChance)
-            {
-                _inFrustration = true;
-                _frustrationUntil = Time.time + UnityEngine.Random.Range(0.14f, 0.27f);
-                _frustrationAngle = UnityEngine.Random.Range(-FrustrationAngleMax, FrustrationAngleMax);
-                _currentIdleAngle += _frustrationAngle;
-            }
-            if (_inFrustration)
-            {
-                if (Time.time < _frustrationUntil) return;
-                _currentIdleAngle -= _frustrationAngle;
-                _inFrustration = false;
-            }
-        }
-
-        /// <summary>
-        /// Saccade: rapid, tiny, naturalistic “eye” movements layered on top of all look logic.
-        /// </summary>
         private void HandleSaccade()
         {
             if (Time.time > _nextSaccadeTime)
@@ -379,9 +190,13 @@ namespace AIRefactored.AI.Movement
 
         private Vector3 ApplySaccadeToTarget(Vector3 lookTarget, Vector3 origin)
         {
-            if (Mathf.Abs(_saccadeOffset) > 0.01f)
+            if (!_cache?.Combat?.IsInCombatState() == true &&
+                !_cache.PanicHandler?.IsPanicking == true &&
+                !_cache.IsBlinded &&
+                Mathf.Abs(_saccadeOffset) > 0.01f)
             {
-                Vector3 dir = lookTarget - origin; dir.y = 0f;
+                Vector3 dir = lookTarget - origin;
+                dir.y = 0f;
                 if (dir.sqrMagnitude > 0.01f)
                 {
                     Quaternion q = Quaternion.AngleAxis(_saccadeOffset, Vector3.up);
@@ -389,205 +204,8 @@ namespace AIRefactored.AI.Movement
                     return origin + dir;
                 }
             }
+
             return lookTarget;
-        }
-
-        /// <summary>
-        /// Complex, fully layered look logic.
-        /// </summary>
-        private Vector3 ResolveLookTarget(Vector3 origin, float deltaTime)
-        {
-            float now = Time.time;
-
-            // 1. Blinded: random scan
-            if (_cache != null && _cache.IsBlinded && now < _cache.BlindUntilTime)
-                return origin + UnityEngine.Random.insideUnitSphere.normalized * BlindLookRadius;
-
-            // 2. Panic
-            if (_cache?.Panic != null && _cache.Panic.IsPanicking)
-            {
-                if (_cache.HasHeardDirection)
-                    return origin + _cache.LastHeardDirection.normalized * HeardDirectionWeight;
-                return origin + _bot.LookDirection;
-            }
-
-            // 3. Combat: target enemy with micro-miss + target-check "player-like scan"
-            if (_cache?.ThreatSelector != null && _cache.VisibilityTracker != null)
-            {
-                string id = _cache.ThreatSelector.GetTargetProfileId();
-                if (!string.IsNullOrEmpty(id))
-                {
-                    Player enemy = EFTPlayerUtil.ResolvePlayerById(id);
-                    if (EFTPlayerUtil.IsValid(enemy) && _cache.VisibilityTracker.CanSeeAny())
-                    {
-                        Vector3 pos = EFTPlayerUtil.GetPosition(enemy);
-                        float aimErr = 1.0f - (_cache.PersonalityProfile?.Accuracy ?? 0.6f);
-                        // Sometimes do a deliberate "scan" just to the right/left of the target
-                        if (!_targetCheckActive && UnityEngine.Random.value < 0.14f)
-                        {
-                            _targetCheckActive = true;
-                            _targetCheckYaw = UnityEngine.Random.value > 0.5f ? TargetCheckAngle : -TargetCheckAngle;
-                            _targetCheckUntil = now + TargetCheckDuration + UnityEngine.Random.Range(0.03f, 0.08f);
-                        }
-                        if (_targetCheckActive)
-                        {
-                            if (now < _targetCheckUntil)
-                            {
-                                Quaternion checkQ = Quaternion.AngleAxis(_targetCheckYaw, Vector3.up);
-                                Vector3 checkDir = checkQ * (pos - origin).normalized;
-                                pos = origin + checkDir * (pos - origin).magnitude;
-                            }
-                            else
-                            {
-                                _targetCheckActive = false;
-                            }
-                        }
-                        // Standard micro-miss and attention memory
-                        if (UnityEngine.Random.value < (0.25f + aimErr * 0.24f))
-                        {
-                            float miss = UnityEngine.Random.Range(-MissAngleMax, MissAngleMax) * (1.0f - (_cache.PersonalityProfile?.AggressionLevel ?? 0.7f));
-                            Quaternion missQ = Quaternion.AngleAxis(miss, Vector3.up);
-                            Vector3 fwd = pos - origin; fwd.y = 0f;
-                            pos = origin + (missQ * fwd.normalized) * (fwd.magnitude);
-                        }
-                        _lastAttentionTarget = pos;
-                        _lastAttentionTime = now;
-                        return pos;
-                    }
-                }
-            }
-
-            // 4. Return to last known “attention” location if recently snapped away
-            if (_lastAttentionTime > 0f && now - _lastAttentionTime < AttentionMemoryDuration)
-                return _lastAttentionTarget;
-
-            // 5. Heard sound
-            if (_cache != null && _cache.HasHeardDirection && now - _cache.LastHeardTime < SoundMemoryDuration)
-                return origin + _cache.LastHeardDirection.normalized * HeardDirectionWeight;
-
-            // 6. Looting: sweep at loot, micro-miss
-            if (_cache.LootScanner != null && _cache.Movement != null && _cache.Movement.IsInLootingMode())
-            {
-                if (now > _nextLootSweepTime)
-                {
-                    float sweep = UnityEngine.Random.Range(-LootingHeadSweepMax, LootingHeadSweepMax);
-                    _lootingSweepAngle = sweep;
-                    _nextLootSweepTime = now + UnityEngine.Random.Range(0.55f, 1.18f);
-                }
-                Quaternion lootYaw = Quaternion.AngleAxis(_lootingSweepAngle, Vector3.up);
-                Vector3 lootLook = lootYaw * _bot.LookDirection.normalized;
-                return origin + lootLook * 2.19f;
-            }
-
-            // 7. Squad leader-follow echo: mimic leader’s idle scan/head sweep
-            if (_followingLeader && Time.time < _followLeaderUntil)
-            {
-                Quaternion leaderYaw = Quaternion.AngleAxis(_leaderIdleAngle, Vector3.up);
-                Vector3 leaderLook = leaderYaw * (_bot.LookDirection.sqrMagnitude > 0.1f ? _bot.LookDirection.normalized : Vector3.forward);
-                return origin + leaderLook * BlindLookRadius;
-            }
-
-            // 8. Idle/scan: smooth, jittery, human scan, periodic reset
-            if (now > _nextIdleScanTime || UnityEngine.Random.value < ScanResetChance)
-            {
-                _idleScanDirection = UnityEngine.Random.value > 0.5f ? 1 : -1;
-                _nextIdleScanTime = now + IdleScanInterval + UnityEngine.Random.Range(-0.75f, 1.0f);
-                _idleJitterOffset = UnityEngine.Random.Range(-IdleScanJitter, IdleScanJitter);
-                if (UnityEngine.Random.value < 0.18f)
-                    _currentIdleAngle = 0f;
-            }
-            if (UnityEngine.Random.value < IdleMissChance)
-                _currentIdleAngle += UnityEngine.Random.Range(-5.7f, 6.2f);
-
-            float baseAngle = IdleScanAngleMax * _idleScanDirection * deltaTime * 0.45f;
-            _currentIdleAngle = Mathf.Clamp(_currentIdleAngle + baseAngle + _idleJitterOffset * deltaTime * 0.14f, -IdleScanAngleMax, IdleScanAngleMax);
-
-            Vector3 fwdDir = _bot.LookDirection.sqrMagnitude > 0.5f ? _bot.LookDirection.normalized : Vector3.forward;
-            Quaternion idleYaw = Quaternion.AngleAxis(_currentIdleAngle, Vector3.up);
-            Vector3 idleLook = idleYaw * fwdDir;
-
-            return origin + idleLook * BlindLookRadius;
-        }
-
-        private void TrySquadFidgetEcho(float fidgetDuration)
-        {
-            try
-            {
-                if (_bot.BotsGroup == null || _bot.BotsGroup.MembersCount <= 1)
-                    return;
-
-                float now = Time.time;
-                if (now - _lastSquadFidgetTime < fidgetDuration * 1.3f)
-                    return;
-                _lastSquadFidgetTime = now;
-
-                Vector3 pos = _bot.Position;
-                int count = _bot.BotsGroup.MembersCount;
-                for (int i = 0; i < count; i++)
-                {
-                    BotOwner mate = _bot.BotsGroup.Member(i);
-                    if (mate == null || mate == _bot || mate.IsDead)
-                        continue;
-                    if ((mate.Position - pos).sqrMagnitude > SquadFidgetEchoRadius * SquadFidgetEchoRadius)
-                        continue;
-
-                    BotComponentCache mateCache = mate.GetComponent<BotComponentCache>();
-                    if (mateCache?.Look != null && UnityEngine.Random.value < SquadFidgetEchoChance)
-                    {
-                        mateCache.Look.SetIdleFidget(_currentIdleAngle, fidgetDuration * UnityEngine.Random.Range(0.8f, 1.26f));
-                    }
-                }
-            }
-            catch (Exception ex)
-            {
-                Logger.LogError("[BotLookController] SquadFidgetEcho failed: " + ex);
-            }
-        }
-
-        private void TrySquadLeaderEcho()
-        {
-            if (_followingLeader && Time.time < _followLeaderUntil)
-                return;
-
-            if (_bot.BotsGroup != null && _bot.BotsGroup.MembersCount > 1 && UnityEngine.Random.value < SquadLeaderEchoChance)
-            {
-                BotOwner leader = _bot.BotsGroup.Member(0); // Leader is always Member(0)
-                if (leader != null && leader != _bot && (leader.Position - _bot.Position).sqrMagnitude < SquadLeaderRadius * SquadLeaderRadius)
-                {
-                    BotComponentCache leaderCache = leader.GetComponent<BotComponentCache>();
-                    if (leaderCache?.Look != null)
-                    {
-                        _followingLeader = true;
-                        _followLeaderUntil = Time.time + UnityEngine.Random.Range(0.55f, 2.1f);
-                        _leaderIdleAngle = leaderCache.Look._currentIdleAngle;
-                    }
-                }
-            }
-            else
-            {
-                _followingLeader = false;
-            }
-        }
-
-        /// <summary>
-        /// Returns true if there is an obstacle between the bot and lookTarget.
-        /// </summary>
-        private bool IsViewOccluded(Vector3 origin, Vector3 lookTarget)
-        {
-            try
-            {
-                Vector3 toTarget = lookTarget - origin;
-                if (toTarget.sqrMagnitude < 1.6f) return false;
-                Ray ray = new Ray(origin + Vector3.up * 1.5f, toTarget.normalized);
-                return Physics.Raycast(ray, toTarget.magnitude, AIRefactoredLayerMasks.CoverRayMask);
-            }
-            catch { return false; }
-        }
-
-        private Vector3 RandomCoverPeek()
-        {
-            Vector3 peekDir = Quaternion.AngleAxis(UnityEngine.Random.Range(-CoverPeekJitter, CoverPeekJitter), Vector3.up) * _bot.LookDirection.normalized;
-            return _bot.Position + peekDir * (BlindLookRadius * UnityEngine.Random.Range(0.85f, 1.13f));
         }
 
         private static bool IsValid(Vector3 pos)

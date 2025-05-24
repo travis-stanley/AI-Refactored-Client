@@ -56,37 +56,6 @@ namespace AIRefactored.AI.Helpers
 
         #endregion
 
-        #region Position
-
-        public static Vector3 GetPosition(BotOwner bot)
-        {
-            if (bot == null)
-                return Vector3.zero;
-
-            Vector3 pos = bot.Position;
-            if (IsValidTarget(pos))
-                return pos;
-
-            Player player = bot.GetPlayer;
-            if (player != null)
-            {
-                Vector3 playerPos = EFTPlayerUtil.GetPosition(player);
-                if (IsValidTarget(playerPos))
-                    return playerPos;
-            }
-
-            if (bot.Transform?.Original != null)
-            {
-                Vector3 fallback = bot.Transform.Original.position;
-                if (IsValidTarget(fallback))
-                    return fallback;
-            }
-
-            return Vector3.zero;
-        }
-
-        #endregion
-
         #region Movement APIs
 
         public static void SmoothLookTo(BotOwner bot, Vector3 lookTarget, float speed = DefaultLookSpeed)
@@ -231,7 +200,7 @@ namespace AIRefactored.AI.Helpers
         {
             if (bot == null || bot.Mover == null) return;
 
-            bot.Mover.GoToPoint(drifted, slow, cohesion); // Always issue
+            bot.Mover.GoToPoint(drifted, slow, cohesion);
             var cache = GetCache(bot);
             if (cache != null)
             {
@@ -246,6 +215,33 @@ namespace AIRefactored.AI.Helpers
         private static bool IsValidTarget(Vector3 pos) =>
             !float.IsNaN(pos.x) && !float.IsNaN(pos.y) && !float.IsNaN(pos.z) &&
             !float.IsInfinity(pos.x) && !float.IsInfinity(pos.y) && !float.IsInfinity(pos.z);
+
+        public static Vector3 GetPosition(BotOwner bot)
+        {
+            if (bot == null)
+                return Vector3.zero;
+
+            Vector3 pos = bot.Position;
+            if (IsValidTarget(pos))
+                return pos;
+
+            Player player = bot.GetPlayer;
+            if (player != null)
+            {
+                Vector3 playerPos = EFTPlayerUtil.GetPosition(player);
+                if (IsValidTarget(playerPos))
+                    return playerPos;
+            }
+
+            if (bot.Transform?.Original != null)
+            {
+                Vector3 fallback = bot.Transform.Original.position;
+                if (IsValidTarget(fallback))
+                    return fallback;
+            }
+
+            return Vector3.zero;
+        }
 
         public static Vector3 ApplyMicroDrift(Vector3 pos, string profileId, int tick, BotPersonalityProfile profile = null, BotOwner bot = null)
         {

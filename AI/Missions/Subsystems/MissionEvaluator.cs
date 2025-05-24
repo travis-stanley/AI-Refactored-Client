@@ -19,6 +19,7 @@ namespace AIRefactored.AI.Missions.Subsystems
     using EFT.Interactive;
     using EFT.InventoryLogic;
     using UnityEngine;
+    using UnityEngine.AI;
 
     public sealed class MissionEvaluator
     {
@@ -165,9 +166,9 @@ namespace AIRefactored.AI.Missions.Subsystems
 
                 if (closest != null && _bot.Mover != null)
                 {
-                    if (BotNavHelper.TryGetSafeTarget(_bot, out Vector3 safeTarget))
+                    if (NavMesh.SamplePosition(closest.transform.position, out NavMeshHit hit, 1.0f, AIRefactoredLayerMasks.NavMeshAll))
                     {
-                        BotMovementHelper.SmoothMoveTo(_bot, safeTarget);
+                        BotMovementHelper.SmoothMoveTo(_bot, hit.position);
                         Say(EPhraseTrigger.ExitLocated);
                     }
                 }
@@ -207,9 +208,12 @@ namespace AIRefactored.AI.Missions.Subsystems
                     _lastStuckFallbackTime = time;
                     _fallbackAttempts++;
 
-                    if (BotNavHelper.TryGetSafeTarget(_bot, out Vector3 safeTarget) && _bot.Mover != null)
+                    if (BotNavHelper.TryGetSafeTarget(_bot, out Vector3 candidate) && _bot.Mover != null)
                     {
-                        BotMovementHelper.SmoothMoveTo(_bot, safeTarget);
+                        if (NavMesh.SamplePosition(candidate, out NavMeshHit hit, 1.0f, AIRefactoredLayerMasks.NavMeshAll))
+                        {
+                            BotMovementHelper.SmoothMoveTo(_bot, hit.position);
+                        }
                     }
                 }
             }

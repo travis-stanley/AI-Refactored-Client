@@ -109,7 +109,8 @@ namespace AIRefactored.AI.Movement
                 Vector3 adjusted = baseDir;
 
                 // -- Chaos/Jitter Layer (personality, panic, cover adaptive) --
-                UpdateTargetChaosOffset(now, profile, _cache.PanicHandler, _cache.Suppression, _cache.CoverPlanner);
+                if (now > _nextChaosUpdate)
+                    UpdateTargetChaosOffset(now, profile, _cache.PanicHandler, _cache.Suppression, _cache.CoverPlanner);
 
                 _chaosOffset = Vector3.Lerp(_chaosOffset, _targetChaosOffset, deltaTime * ChaosLerpSpeed);
                 _chaosOffset.y = 0f;
@@ -163,16 +164,14 @@ namespace AIRefactored.AI.Movement
 
                 // -- Cover/Obstacle Adaptive Layer --
                 if (_cache.CoverPlanner != null && _cache.CoverPlanner.IsInCover)
-                    if (_cache.CoverPlanner != null && _cache.CoverPlanner.IsInCover)
-                    {
-                        Vector3 coverNormal = _cache.CoverPlanner.CoverNormal;
-                        // Fallback to bot's right if not valid
-                        if (coverNormal == Vector3.zero)
-                            coverNormal = _bot.Transform != null ? _bot.Transform.right : Vector3.right;
-                        Vector3 coverAlign = Vector3.ProjectOnPlane(coverNormal.normalized, Vector3.up) * CoverAlignmentWeight;
-                        adjusted += coverAlign;
-                    }
-
+                {
+                    Vector3 coverNormal = _cache.CoverPlanner.CoverNormal;
+                    // Fallback to bot's right if not valid
+                    if (coverNormal == Vector3.zero)
+                        coverNormal = _bot.Transform != null ? _bot.Transform.right : Vector3.right;
+                    Vector3 coverAlign = Vector3.ProjectOnPlane(coverNormal.normalized, Vector3.up) * CoverAlignmentWeight;
+                    adjusted += coverAlign;
+                }
 
                 // -- Inertia/Momentum Layer: blend actual velocity --
                 Vector3 velocity = Vector3.zero;
@@ -205,7 +204,10 @@ namespace AIRefactored.AI.Movement
                 if (_bot.Mover != null && _bot.Mover.Blocked)
                     adjusted += UnityEngine.Random.insideUnitSphere * StuckWobbleMagnitude;
 
-                return adjusted.sqrMagnitude > MinMagnitude ? adjusted.normalized : baseDir;
+                // Final clamp and sanitize (no NaN/zero)
+                if (float.IsNaN(adjusted.x) || float.IsNaN(adjusted.y) || float.IsNaN(adjusted.z) || adjusted.sqrMagnitude < MinMagnitude)
+                    return baseDir;
+                return adjusted.normalized;
             }
             catch
             {

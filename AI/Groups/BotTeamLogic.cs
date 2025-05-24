@@ -124,10 +124,11 @@ namespace AIRefactored.AI.Groups
         }
 
         /// <summary>
-        /// Orders all valid squadmates to fallback to the given point, with organic delay.
+        /// Orders all valid squadmates to fallback to the given point, with organic delay and time-stamp.
         /// </summary>
         public void BroadcastFallback(Vector3 retreatPoint)
         {
+            float now = Time.time;
             foreach (var pair in _combatMap)
             {
                 BotOwner mate = pair.Key;
@@ -136,7 +137,7 @@ namespace AIRefactored.AI.Groups
                 if (EFTPlayerUtil.IsValidBotOwner(mate) && mate != _bot && fsm != null)
                 {
                     float delay = Random.Range(0.10f, 0.28f);
-                    TriggerDelayedFallback(fsm, retreatPoint, delay);
+                    TriggerDelayedFallback(fsm, retreatPoint, now, delay);
                 }
             }
         }
@@ -291,7 +292,7 @@ namespace AIRefactored.AI.Groups
             });
         }
 
-        private static void TriggerDelayedFallback(CombatStateMachine fsm, Vector3 point, float delay)
+        private static void TriggerDelayedFallback(CombatStateMachine fsm, Vector3 point, float now, float delay)
         {
             if (fsm == null)
                 return;
@@ -301,7 +302,7 @@ namespace AIRefactored.AI.Groups
                 try
                 {
                     await Task.Delay((int)(delay * 1000f));
-                    fsm.TriggerFallback(point);
+                    fsm.TriggerFallback(point, now);
                 }
                 catch { }
             });

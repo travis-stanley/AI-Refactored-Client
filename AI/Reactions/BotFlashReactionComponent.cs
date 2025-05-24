@@ -49,7 +49,6 @@ namespace AIRefactored.AI.Reactions
         /// <summary>
         /// Links this flash reaction handler to the active bot's shared component cache.
         /// </summary>
-        /// <param name="cache">Bot component cache for this bot (never null).</param>
         public void Initialize(BotComponentCache cache)
         {
             try
@@ -69,9 +68,6 @@ namespace AIRefactored.AI.Reactions
 
         #region Runtime
 
-        /// <summary>
-        /// Returns true if the bot is still suppressed from a flash reaction.
-        /// </summary>
         public bool IsSuppressed()
         {
             return !_failed && Time.time < _suppressedUntil;
@@ -80,7 +76,6 @@ namespace AIRefactored.AI.Reactions
         /// <summary>
         /// Called every frame from BotBrain. Updates suppression state and performs exposure checks.
         /// </summary>
-        /// <param name="time">Current time value from caller.</param>
         public void Tick(float time)
         {
             if (_failed || _cache == null || _cache.Bot == null)
@@ -122,8 +117,6 @@ namespace AIRefactored.AI.Reactions
         /// <summary>
         /// Triggers suppression, fallback, and panic based on light strength and composure.
         /// </summary>
-        /// <param name="strength">Intensity of the flash, [0,1] range is normal.</param>
-        /// <param name="now">Current time.</param>
         public void TriggerSuppression(float strength = 0.6f, float now = -1f)
         {
             if (_failed || _cache == null || _cache.Bot == null)
@@ -156,7 +149,7 @@ namespace AIRefactored.AI.Reactions
                 float duration = Mathf.Lerp(MinSuppressionDuration, MaxSuppressionDuration, scaled);
                 _suppressedUntil = time + duration;
 
-                // Fully squad-aware fallback and comm
+                // Squad-aware fallback and comm (2-parameter version)
                 TriggerFallback(bot, time);
                 TriggerPanic(_cache, time);
             }
@@ -171,10 +164,6 @@ namespace AIRefactored.AI.Reactions
 
         #region Helpers
 
-        /// <summary>
-        /// Calculates and executes bot fallback movement due to flash suppression.
-        /// Uses only EFT-native navigation. Never triggers fallback to vanilla AI.
-        /// </summary>
         private void TriggerFallback(BotOwner bot, float now)
         {
             try
@@ -203,16 +192,15 @@ namespace AIRefactored.AI.Reactions
                     }
                     if (squadCount > 0)
                         squadCenter /= squadCount;
-                    // Nudge fallback further from squad centroid
                     fallback += (fallback - squadCenter).normalized * 1.7f;
                 }
 
                 BotMovementHelper.SmoothMoveToSafe(bot, fallback);
 
-                // Squad echo comm: trigger fallback echo if enough time has passed
+                // Squad echo comm: trigger fallback echo if enough time has passed (2-parameter version)
                 if (_cache?.GroupBehavior?.GroupSync != null && now - _lastSquadEchoTime > SquadEchoCooldown)
                 {
-                    _cache.GroupBehavior.GroupSync.ShareFallbackToSquad(fallback);
+                    _cache.GroupBehavior.GroupSync.ShareFallbackToSquad(fallback, now);
                     _lastSquadEchoTime = now;
                 }
             }
@@ -222,9 +210,6 @@ namespace AIRefactored.AI.Reactions
             }
         }
 
-        /// <summary>
-        /// Triggers bot panic event if a valid panic handler is present, and squad-aware panic echo.
-        /// </summary>
         private void TriggerPanic(BotComponentCache cache, float now)
         {
             try
@@ -236,7 +221,7 @@ namespace AIRefactored.AI.Reactions
                     // Optional: squad panic echo (emotional contagion)
                     if (cache.GroupBehavior?.GroupSync != null && now - _lastSquadEchoTime > SquadEchoCooldown)
                     {
-                        cache.GroupBehavior.GroupSync.ShareDangerToSquad(cache.Position);
+                        cache.GroupBehavior.GroupSync.ShareDangerToSquad(cache.Position, now);
                         _lastSquadEchoTime = now;
                     }
                 }

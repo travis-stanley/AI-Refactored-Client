@@ -8,7 +8,6 @@
 namespace AIRefactored.AI.Movement
 {
     using System;
-    using System.Collections.Generic;
     using AIRefactored.AI.Core;
     using AIRefactored.AI.Groups;
     using AIRefactored.AI.Perception;
@@ -18,7 +17,7 @@ namespace AIRefactored.AI.Movement
     using UnityEngine;
 
     /// <summary>
-    /// Fully human, multi-layer look/aim controller: inertia, fidget, group mimicry, fatigue, micro-saccades, visual “target-check,” 
+    /// Fully human, multi-layer look/aim controller: inertia, fidget, squad/group mimicry, fatigue, micro-saccades, visual “target-check,” 
     /// dynamic attention memory, frustration, panic, cover-peeking, leadership echo, and contextual scan/looting.
     /// Bulletproof: all errors isolated, zero fallback disables, multiplayer/headless safe.
     /// </summary>
@@ -62,6 +61,7 @@ namespace AIRefactored.AI.Movement
         private const float TargetCheckAngle = 13.4f;
         private const float SquadLeaderEchoChance = 0.16f;
         private const float SquadLeaderRadius = 15.5f;
+        private const float AttentionMemoryDuration = 2.25f;
 
         #endregion
 
@@ -119,7 +119,6 @@ namespace AIRefactored.AI.Movement
         // Attention memory: last seen/checked target info, for natural “attention snap back”
         private Vector3 _lastAttentionTarget;
         private float _lastAttentionTime;
-        private const float AttentionMemoryDuration = 2.25f;
 
         // Squad leader-follow
         private bool _followingLeader;
@@ -205,13 +204,13 @@ namespace AIRefactored.AI.Movement
 
                 Vector3 origin = body.position;
 
-                // --- Fatigue, Aggro Stare, Frustration ---
+                // Fatigue, Aggro Stare, Frustration
                 HandleFatigueAndAggro();
                 HandleFrustration();
 
                 Vector3 lookTarget = ResolveLookTarget(origin, deltaTime);
 
-                // --- Vision Occlusion Correction (peek head around cover) ---
+                // Vision Occlusion Correction (peek head around cover)
                 if (Time.time > _nextOcclusionCheckTime)
                 {
                     if (IsViewOccluded(origin, lookTarget))
@@ -221,7 +220,7 @@ namespace AIRefactored.AI.Movement
                     _nextOcclusionCheckTime = Time.time + OcclusionCheckInterval + UnityEngine.Random.Range(-0.5f, 0.7f);
                 }
 
-                // --- Saccade (micro rapid eye movement) ---
+                // Saccade (micro rapid eye movement)
                 HandleSaccade();
 
                 lookTarget = ApplySaccadeToTarget(lookTarget, origin);
@@ -265,7 +264,7 @@ namespace AIRefactored.AI.Movement
                     _inFidgetPause = false;
                 }
 
-                // --- Squad Leader Echo: some bots mimic leader's idle scan ---
+                // Squad Leader Echo: some bots mimic leader's idle scan
                 TrySquadLeaderEcho();
 
                 // Overshoot
@@ -533,7 +532,7 @@ namespace AIRefactored.AI.Movement
                         continue;
 
                     BotComponentCache mateCache = mate.GetComponent<BotComponentCache>();
-                    if (mateCache?.Look!= null && UnityEngine.Random.value < SquadFidgetEchoChance)
+                    if (mateCache?.Look != null && UnityEngine.Random.value < SquadFidgetEchoChance)
                     {
                         mateCache.Look.SetIdleFidget(_currentIdleAngle, fidgetDuration * UnityEngine.Random.Range(0.8f, 1.26f));
                     }
@@ -556,11 +555,11 @@ namespace AIRefactored.AI.Movement
                 if (leader != null && leader != _bot && (leader.Position - _bot.Position).sqrMagnitude < SquadLeaderRadius * SquadLeaderRadius)
                 {
                     BotComponentCache leaderCache = leader.GetComponent<BotComponentCache>();
-                    if (leaderCache?.Look != null) // Use the actual property name from your cache
+                    if (leaderCache?.Look != null)
                     {
                         _followingLeader = true;
                         _followLeaderUntil = Time.time + UnityEngine.Random.Range(0.55f, 2.1f);
-                        _leaderIdleAngle = leaderCache.Look._currentIdleAngle; // Expose this safely if needed
+                        _leaderIdleAngle = leaderCache.Look._currentIdleAngle;
                     }
                 }
             }
@@ -569,7 +568,6 @@ namespace AIRefactored.AI.Movement
                 _followingLeader = false;
             }
         }
-
 
         /// <summary>
         /// Returns true if there is an obstacle between the bot and lookTarget.

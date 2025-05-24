@@ -36,9 +36,6 @@ namespace AIRefactored.AI.Core
     {
         #region Static
 
-        /// <summary>
-        /// Empty, inert singleton cache for error isolation or null fallback.
-        /// </summary>
         public static readonly BotComponentCache Empty = new BotComponentCache();
         private static readonly ManualLogSource Logger = Plugin.LoggerInstance;
         private static readonly HashSet<string> InitializedBots = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
@@ -54,9 +51,6 @@ namespace AIRefactored.AI.Core
 
         #region Core & Personality
 
-        /// <summary>
-        /// Backing BotOwner for this cache.
-        /// </summary>
         public BotOwner Bot { get; internal set; }
         public AIRefactoredBotOwner AIRefactoredBotOwner => _owner;
         public BotMemoryClass Memory => Bot?.Memory;
@@ -82,9 +76,6 @@ namespace AIRefactored.AI.Core
         public CombatStateMachine Combat { get; private set; }
         public BotMovementController Movement { get; private set; }
         public BotPoseController PoseController { get; private set; }
-        /// <summary>
-        /// Primary look/aim/scan controller for this bot. Use for all squad and group look behaviors.
-        /// </summary>
         public BotLookController Look { get; private set; }
         public BotTilt Tilt { get; private set; }
         public BotTacticalDeviceController Tactical { get; private set; }
@@ -118,9 +109,6 @@ namespace AIRefactored.AI.Core
 
         #region Status
 
-        /// <summary>
-        /// Returns true if all critical AI subsystems are fully initialized and safe for runtime use.
-        /// </summary>
         public bool IsReady =>
             Bot != null &&
             Movement != null &&
@@ -140,11 +128,6 @@ namespace AIRefactored.AI.Core
 
         #region Initialization
 
-        /// <summary>
-        /// Initializes all AIRefactored subsystems for this bot, fully atomic, never partial.
-        /// No subsystem error can break others. All failures logged, never fallback disables.
-        /// </summary>
-        /// <param name="bot">BotOwner to initialize for.</param>
         public void Initialize(BotOwner bot)
         {
             if (bot == null)
@@ -163,7 +146,10 @@ namespace AIRefactored.AI.Core
             WildSpawnType role = bot.Profile?.Info?.Settings?.Role ?? WildSpawnType.assault;
             PersonalityProfile = BotRegistry.GetOrGenerate(id, PersonalityType.Balanced, role);
 
-            // All subsystem wiring atomic: each error is isolated, never disables others.
+            _owner = bot.GetComponent<AIRefactoredBotOwner>();
+            if (_owner == null)
+                Logger.LogWarning($"[BotComponentCache] AIRefactoredBotOwner missing for bot {id}");
+
             TryInit(() => Pathing = new BotOwnerPathfindingCache(), "Pathing");
             TryInit(() => { TacticalMemory = new BotTacticalMemory(); TacticalMemory.Initialize(this); }, "TacticalMemory");
             TryInit(() => { _fallbackHandler = new FallbackHandler(this); }, "FallbackHandler");
@@ -189,14 +175,14 @@ namespace AIRefactored.AI.Core
             TryInit(() => GroupComms = new BotGroupComms(this), "GroupComms");
             TryInit(() => SquadHealer = bot.HealAnotherTarget ?? new BotHealAnotherTarget(bot), "SquadHealer");
             TryInit(() => HealReceiver = bot.HealingBySomebody ?? new BotHealingBySomebody(bot), "HealReceiver");
+
+            // ✅ Safe to create after _owner is guaranteed
             TryInit(() => ThreatSelector = new BotThreatSelector(this), "ThreatSelector");
+
             TryInit(() => { Perception = new BotPerceptionSystem(); Perception.Initialize(this); }, "Perception");
             TryInit(() => { CoverPlanner = new BotCoverRetreatPlanner(bot, Pathing); }, "CoverPlanner");
         }
 
-        /// <summary>
-        /// Helper: Runs the given action, logs if it fails, always continues.
-        /// </summary>
         private void TryInit(Action action, string name)
         {
             try { action(); }
@@ -210,9 +196,6 @@ namespace AIRefactored.AI.Core
 
         #region Owner / Sound / Teardown
 
-        /// <summary>
-        /// Sets the owning AIRefactoredBotOwner. Bulletproof: never overwrites an existing owner.
-        /// </summary>
         public void SetOwner(AIRefactoredBotOwner owner)
         {
             if (owner == null)
@@ -228,9 +211,6 @@ namespace AIRefactored.AI.Core
             _owner = owner;
         }
 
-        /// <summary>
-        /// Registers a heard sound, including position and direction.
-        /// </summary>
         public void RegisterHeardSound(Vector3 source)
         {
             if (Bot == null)
@@ -241,9 +221,6 @@ namespace AIRefactored.AI.Core
             HasHeardDirection = true;
         }
 
-        /// <summary>
-        /// Disposes of fallback and all teardown-relevant logic.
-        /// </summary>
         public void Dispose()
         {
             try

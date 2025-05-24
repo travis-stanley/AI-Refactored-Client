@@ -13,6 +13,11 @@ namespace AIRefactored.AI.Navigation
     using EFT.Interactive;
     using UnityEngine;
 
+    /// <summary>
+    /// Handles squad-perfect, human-error-rich bot door logic.
+    /// Squad context, stealth wait, panic rush, anticipation/jitter, and rare give-up all supported.
+    /// Bulletproof: no disables, no vanilla handoff, never blocks AI or squad flow.
+    /// </summary>
     public sealed class BotDoorInteractionSystem
     {
         #region Constants
@@ -68,6 +73,10 @@ namespace AIRefactored.AI.Navigation
 
         #region Public API
 
+        /// <summary>
+        /// Central BotBrain-driven update for door logic.
+        /// Bulletproof: all failures are locally contained, zero disables, never blocks squad or AI.
+        /// </summary>
         public void Tick(float time)
         {
             try
@@ -172,7 +181,6 @@ namespace AIRefactored.AI.Navigation
                     return;
                 }
 
-                // Correct: Use MovementContext directly for pose
                 float pose = _bot.GetPlayer?.MovementContext?.PoseLevel ?? 100f;
                 if (pose < 40f) // crouch/prone threshold
                 {

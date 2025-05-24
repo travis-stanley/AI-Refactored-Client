@@ -46,8 +46,6 @@ namespace AIRefactored.AI.Movement
         private const float SquadCoverSpacing = 1.22f;
         private const float CoverCheckDist = 1.85f;
         private const float ObstaclePauseChance = 0.15f;
-        private const float PanicRandomPathChance = 0.17f;
-        private const float GroupPriorityRoleBias = 0.19f;
         private const float MinSprintDistance = 11.7f, MaxSprintDistance = 24.5f;
         private const float SprintMinDuration = 1.35f, SprintMaxDuration = 2.87f;
 
@@ -77,9 +75,6 @@ namespace AIRefactored.AI.Movement
 
         #region Properties
 
-        /// <summary>
-        /// True if the bot is currently holding formation (waiting for leader/squad to resume).
-        /// </summary>
         public bool IsHoldingFormation => _formationHold && Time.time < _formationHoldUntil;
 
         #endregion
@@ -123,6 +118,7 @@ namespace AIRefactored.AI.Movement
             _shouldSprint = false;
             _sprintUntil = 0f;
             _lastLeaderPos = Vector3.zero;
+            BotMovementHelper.Reset(_bot); // stutter cache reset
         }
 
         #endregion
@@ -184,7 +180,6 @@ namespace AIRefactored.AI.Movement
 
             int count = _bot.BotsGroup.MembersCount;
             BotOwner leader = null;
-            // Group leader: first living member or role-priority
             for (int i = 0; i < count; i++)
             {
                 BotOwner candidate = _bot.BotsGroup.Member(i);
@@ -204,17 +199,14 @@ namespace AIRefactored.AI.Movement
             {
                 float distToLeader = (leader.Position - _bot.Position).sqrMagnitude;
 
-                // Trigger formation hold if too far or random chance (simulate wait, catchup, etc)
                 if (!_formationHold && distToLeader > 2.25f && UnityEngine.Random.value < GroupTacticalPauseChance)
                 {
                     _formationHold = true;
                     _formationHoldUntil = Time.time + UnityEngine.Random.Range(FormationHoldMin, FormationHoldMax);
                     _lastLeaderPos = leader.Position;
-                    // Optionally: trigger comms, head turn, idle pose, etc.
                     return;
                 }
 
-                // Remain holding if timer not up and leader hasn't moved far
                 if (_formationHold)
                 {
                     if (Time.time >= _formationHoldUntil ||
@@ -225,12 +217,10 @@ namespace AIRefactored.AI.Movement
                     }
                     else
                     {
-                        // While holding: stand idle, scan, but don't follow
                         return;
                     }
                 }
 
-                // Normal formation follow
                 if (distToLeader > 2.25f)
                 {
                     Vector3 formationTarget = BotNavHelper.GetGroupFormationTarget(_bot, leader, _formationTargetWeight, SquadCoverSpacing);

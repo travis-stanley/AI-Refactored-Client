@@ -36,7 +36,7 @@ namespace AIRefactored.AI.Core
         #region Public API
 
         /// <summary>
-        /// Returns or creates the cache for a bot. 
+        /// Returns or creates the cache for a bot.
         /// Always wires cache and owner; idempotent and never disables on error.
         /// </summary>
         public static BotComponentCache GetOrCreate(BotOwner bot)
@@ -46,7 +46,7 @@ namespace AIRefactored.AI.Core
 
             string id = bot.Profile.Id;
             Player player = bot.GetPlayer;
-            if (string.IsNullOrEmpty(id) || player == null || bot.AIData == null)
+            if (string.IsNullOrEmpty(id) || player == null)
                 return null;
 
             lock (Lock)
@@ -55,6 +55,15 @@ namespace AIRefactored.AI.Core
                 {
                     if (!PlayerMap.ContainsKey(player))
                         PlayerMap[player] = existing;
+
+                    // Ensure owner is set once even on existing caches
+                    if (existing.AIRefactoredBotOwner == null)
+                    {
+                        var owner = new AIRefactoredBotOwner();
+                        existing.SetOwner(owner);
+                        owner.Initialize(bot);
+                    }
+
                     return existing;
                 }
 
@@ -96,9 +105,6 @@ namespace AIRefactored.AI.Core
             }
         }
 
-        /// <summary>
-        /// Tries to get a cache by ProfileId.
-        /// </summary>
         public static bool TryGet(string profileId, out BotComponentCache cache)
         {
             cache = null;
@@ -111,9 +117,6 @@ namespace AIRefactored.AI.Core
             }
         }
 
-        /// <summary>
-        /// Tries to get a cache by Player.
-        /// </summary>
         public static bool TryGetByPlayer(Player player, out BotComponentCache cache)
         {
             cache = null;
@@ -136,9 +139,6 @@ namespace AIRefactored.AI.Core
             }
         }
 
-        /// <summary>
-        /// Tries to get a cache by BotOwner.
-        /// </summary>
         public static bool TryGetByBotOwner(BotOwner bot, out BotComponentCache cache)
         {
             cache = null;
@@ -148,10 +148,6 @@ namespace AIRefactored.AI.Core
             return TryGet(bot.Profile.Id, out cache);
         }
 
-        /// <summary>
-        /// Removes a bot's cache from both ProfileId and Player maps.
-        /// Idempotent and never throws.
-        /// </summary>
         public static void Remove(BotOwner bot)
         {
             if (bot?.Profile?.Id == null)
@@ -170,10 +166,6 @@ namespace AIRefactored.AI.Core
             }
         }
 
-        /// <summary>
-        /// Removes all bot caches (used during full raid shutdown).
-        /// Safe for multi-raid, always zeroes both maps.
-        /// </summary>
         public static void ClearAll()
         {
             lock (Lock)
@@ -188,9 +180,6 @@ namespace AIRefactored.AI.Core
 
         #region Utility
 
-        /// <summary>
-        /// Checks if a BotOwner is fully valid for registry use.
-        /// </summary>
         private static bool IsFullyValidBot(BotOwner bot)
         {
             return bot != null &&

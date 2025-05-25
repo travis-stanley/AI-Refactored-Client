@@ -69,10 +69,10 @@ namespace AIRefactored.Runtime
 						continue;
 
 					GameObject go = player.gameObject;
-					int id = go.GetInstanceID();
+					int instanceId = go.GetInstanceID();
 					string profileId = player.ProfileId ?? player.Profile?.Id;
 
-					if (!SeenBotIds.Contains(id)) SeenBotIds.Add(id);
+					if (!SeenBotIds.Contains(instanceId)) SeenBotIds.Add(instanceId);
 					if (!string.IsNullOrEmpty(profileId) && !SeenProfileIds.Contains(profileId)) SeenProfileIds.Add(profileId);
 					if (RetryCounts.TryGetValue(profileId, out int retries) && retries >= MaxRetriesPerBot)
 						continue;
@@ -96,18 +96,16 @@ namespace AIRefactored.Runtime
 
 					cache.Initialize(botOwner);
 
-					if (cache.AIRefactoredBotOwner == null)
+					var owner = cache.AIRefactoredBotOwner;
+					if (owner == null)
 					{
 						IncrementRetry(profileId);
 						continue;
 					}
 
-					if (!cache.AIRefactoredBotOwner.HasPersonality())
-					{
-						cache.AIRefactoredBotOwner.InitProfile(cache.AIRefactoredBotOwner.PersonalityProfile, cache.AIRefactoredBotOwner.PersonalityName);
-					}
+					if (!owner.HasPersonality())
+						owner.InitProfile(owner.PersonalityProfile, owner.PersonalityName);
 
-					// Final step: enforce and attach brain
 					BotBrainGuardian.Enforce(go);
 					GameWorldHandler.TryAttachBotBrain(botOwner);
 				}
@@ -123,8 +121,10 @@ namespace AIRefactored.Runtime
 
 		private static void IncrementRetry(string profileId)
 		{
-			if (string.IsNullOrEmpty(profileId)) return;
-			if (!RetryCounts.ContainsKey(profileId)) RetryCounts[profileId] = 0;
+			if (string.IsNullOrEmpty(profileId))
+				return;
+			if (!RetryCounts.ContainsKey(profileId))
+				RetryCounts[profileId] = 0;
 			RetryCounts[profileId]++;
 		}
 	}

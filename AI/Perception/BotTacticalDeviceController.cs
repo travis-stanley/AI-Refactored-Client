@@ -15,12 +15,6 @@ namespace AIRefactored.AI.Perception
     using EFT.InventoryLogic;
     using UnityEngine;
 
-    /// <summary>
-    /// Controls and manages tactical device toggling for bot AI:
-    /// Flashlights, lasers, NVGs, and thermals.
-    /// Handles ambient/fog-based logic and chaos-driven baiting.
-    /// Fully null-safe, pooling-optimized, and headless/multiplayer compatible.
-    /// </summary>
     public sealed class BotTacticalDeviceController
     {
         #region Fields

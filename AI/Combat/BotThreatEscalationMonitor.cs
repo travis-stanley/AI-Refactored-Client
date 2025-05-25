@@ -18,6 +18,9 @@ namespace AIRefactored.AI.Combat
     using EFT;
     using UnityEngine;
 
+    /// <summary>
+    /// Monitors, escalates, and communicates bot and squad threat level. All logic error-guarded and multiplayer-safe.
+    /// </summary>
     public sealed class BotThreatEscalationMonitor
     {
         #region Constants

@@ -167,7 +167,6 @@ namespace AIRefactored.AI.Movement
                 TrySmoothLook(_bot.Mover, deltaTime);
                 TryCoverPause();
                 TryScan();
-                // No per-frame drift/jitter movement
                 TryPanicPathWobble(deltaTime);
                 TryTacticalSprint(deltaTime);
             }
@@ -181,9 +180,6 @@ namespace AIRefactored.AI.Movement
 
         #region Move Issuer (Throttled)
 
-        /// <summary>
-        /// Issues a move command only if changed or cooldown expired.
-        /// </summary>
         private void IssueMove(Vector3 target, bool slow = true, float cohesion = 1f)
         {
             if (_bot == null || _bot.Mover == null) return;
@@ -282,11 +278,6 @@ namespace AIRefactored.AI.Movement
                     IssueMove(_bot.Position + away, false, 0.6f);
                 }
             }
-        }
-
-        private void TryMicroDrift(float deltaTime)
-        {
-            // Disabled: drift is only added when issuing a new move, not per-tick.
         }
 
         private void TrySmoothLook(BotMover mover, float deltaTime)

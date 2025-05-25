@@ -74,7 +74,7 @@ namespace AIRefactored.AI.Perception
                 try
                 {
                     players = BotMemoryStore.GetNearbyPlayers(origin, hearingRange);
-                    int count = players != null ? players.Count : 0;
+                    int count = players?.Count ?? 0;
 
                     for (int i = 0; i < count; i++)
                     {

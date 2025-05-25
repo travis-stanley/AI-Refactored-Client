@@ -18,6 +18,10 @@ namespace AIRefactored.AI.Combat
     using EFT;
     using UnityEngine;
 
+    /// <summary>
+    /// Selects and prioritizes enemy threats for a bot, factoring in memory, squad, and real-time data.
+    /// All logic is null-guarded and headless/client safe. No disables, no fallback AI, no allocs on hot path.
+    /// </summary>
     public sealed class BotThreatSelector
     {
         #region Constants

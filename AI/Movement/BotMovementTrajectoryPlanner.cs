@@ -84,6 +84,9 @@ namespace AIRefactored.AI.Movement
 
         #region Public API
 
+        /// <summary>
+        /// Returns a squad/personality/context-modified trajectory, never NaN, never unsafe.
+        /// </summary>
         public Vector3 ModifyTrajectory(Vector3 targetDir, float deltaTime)
         {
             try
@@ -96,6 +99,7 @@ namespace AIRefactored.AI.Movement
                 Vector3 baseDir = (targetDir.sqrMagnitude > MinMagnitude) ? targetDir.normalized : Vector3.forward;
                 Vector3 adjusted = baseDir;
 
+                // Micro-chaos update
                 if (now > _nextChaosUpdate)
                     UpdateTargetChaosOffset(now, profile);
 
@@ -105,6 +109,7 @@ namespace AIRefactored.AI.Movement
 
                 TryAnticipation(baseDir, now, ref adjusted);
 
+                // Squad/formation logic
                 if (_cache.SquadPath != null)
                 {
                     Vector3 squadOffset = _cache.SquadPath.GetCurrentOffset();
@@ -120,7 +125,6 @@ namespace AIRefactored.AI.Movement
                         _squadFormationBias.y = 0f;
                         _lastSquadBiasTime = now;
                     }
-
                     adjusted += _squadFormationBias;
                 }
 
@@ -131,12 +135,12 @@ namespace AIRefactored.AI.Movement
                     adjusted += avoidVector.normalized * AvoidanceScale;
                 }
 
+                // Role-based group bias
                 if (_bot.BotsGroup != null && _bot.BotsGroup.MembersCount > 1)
                 {
                     int idx = -1;
                     for (int i = 0; i < _bot.BotsGroup.MembersCount; i++)
                         if (_bot.BotsGroup.Member(i) == _bot) { idx = i; break; }
-
                     if (idx >= 0)
                     {
                         float posBias = ((idx % 2 == 0) ? -1f : 1f) * RoleOffsetMul;
@@ -145,16 +149,17 @@ namespace AIRefactored.AI.Movement
                     }
                 }
 
+                // Cover alignment
                 if (_cache.CoverPlanner != null && _cache.CoverPlanner.IsInCover)
                 {
                     Vector3 coverNormal = _cache.CoverPlanner.CoverNormal;
                     if (coverNormal == Vector3.zero)
                         coverNormal = _bot.Transform != null ? _bot.Transform.right : Vector3.right;
-
                     Vector3 coverAlign = Vector3.ProjectOnPlane(coverNormal.normalized, Vector3.up) * CoverAlignmentWeight;
                     adjusted += coverAlign;
                 }
 
+                // Player velocity inertia
                 Vector3 velocity = _bot.GetPlayer != null ? _bot.GetPlayer.Velocity : Vector3.zero;
                 if (velocity.sqrMagnitude > MinMagnitude)
                 {
@@ -162,21 +167,26 @@ namespace AIRefactored.AI.Movement
                     adjusted += velocity.normalized * VelocityFactor;
                 }
 
+                // Panic/Suppressed chaos
                 if ((_cache.PanicHandler?.IsPanicking ?? false) || (_cache.Suppression?.IsSuppressed() ?? false))
                 {
                     adjusted += UnityEngine.Random.insideUnitSphere * SuppressedChaosBonus;
                     adjusted.y = 0f;
                 }
 
+                // Aggressive sprints
                 if (personalityAggro > 0.65f && UnityEngine.Random.value < AggressionSprintBias)
                     adjusted += baseDir * 0.13f * personalityAggro;
 
+                // Micro-jitter
                 adjusted += UnityEngine.Random.insideUnitSphere * JitterMicro;
                 adjusted.y = 0f;
 
+                // Unstuck wobble
                 if (_bot.Mover?.Blocked ?? false)
                     adjusted += UnityEngine.Random.insideUnitSphere * StuckWobbleMagnitude;
 
+                // Final sanitize and normalize
                 return float.IsNaN(adjusted.x) || float.IsNaN(adjusted.y) || float.IsNaN(adjusted.z) || adjusted.sqrMagnitude < MinMagnitude
                     ? baseDir
                     : adjusted.normalized;

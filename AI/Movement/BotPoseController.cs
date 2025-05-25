@@ -86,8 +86,14 @@ namespace AIRefactored.AI.Movement
 
         #region Public API
 
+        /// <summary>
+        /// Gets current pose level.
+        /// </summary>
         public float GetPoseLevel() => _movement?.PoseLevel ?? StandPose;
 
+        /// <summary>
+        /// Locks bot in crouch pose.
+        /// </summary>
         public void LockCrouchPose()
         {
             _targetPoseLevel = CrouchPose;
@@ -96,6 +102,9 @@ namespace AIRefactored.AI.Movement
             _anticipateOffset = 0f;
         }
 
+        /// <summary>
+        /// Unlocks pose/stance.
+        /// </summary>
         public void UnlockPose()
         {
             _isLocked = false;
@@ -103,22 +112,37 @@ namespace AIRefactored.AI.Movement
             _anticipateOffset = 0f;
         }
 
+        /// <summary>
+        /// Sets pose to crouch.
+        /// </summary>
         public void Crouch() => SetCrouch(false);
 
+        /// <summary>
+        /// Sets pose to standing.
+        /// </summary>
         public void Stand() => SetStand();
 
+        /// <summary>
+        /// Sets pose to crouch, optionally with anticipation (random micro jitter).
+        /// </summary>
         public void SetCrouch(bool anticipate = false)
         {
             _targetPoseLevel = anticipate ? CrouchPose + UnityEngine.Random.Range(-AnticipatePoseJitter, AnticipatePoseJitter) : CrouchPose;
             if (anticipate) StartAnticipation();
         }
 
+        /// <summary>
+        /// Sets pose to prone, optionally with anticipation (random micro jitter).
+        /// </summary>
         public void SetProne(bool anticipate = false)
         {
             _targetPoseLevel = anticipate ? PronePose + UnityEngine.Random.Range(-AnticipatePoseJitter, AnticipatePoseJitter) : PronePose;
             if (anticipate) StartAnticipation();
         }
 
+        /// <summary>
+        /// Sets pose to stand.
+        /// </summary>
         public void SetStand()
         {
             _targetPoseLevel = StandPose;
@@ -126,6 +150,9 @@ namespace AIRefactored.AI.Movement
             _anticipateOffset = 0f;
         }
 
+        /// <summary>
+        /// BotBrain tick. Handles full atomic pose blending, squad logic, suppression/panic, and anticipation.
+        /// </summary>
         public void Tick(float currentTime)
         {
             try
@@ -163,6 +190,9 @@ namespace AIRefactored.AI.Movement
             catch { }
         }
 
+        /// <summary>
+        /// Attempts to set stance from nearby cover information.
+        /// </summary>
         public void TrySetStanceFromNearbyCover(Vector3 position)
         {
             try

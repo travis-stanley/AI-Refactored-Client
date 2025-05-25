@@ -98,6 +98,7 @@ namespace AIRefactored.AI.Movement
                 if (time < _pauseUntil || time < _prepCrouchUntil)
                     return;
 
+                // Squad anti-collision
                 if (_bot.BotsGroup != null && _bot.BotsGroup.MembersCount > 1)
                 {
                     if (time - _lastSquadScan < SquadScanDelay)
@@ -120,6 +121,7 @@ namespace AIRefactored.AI.Movement
                     }
                 }
 
+                // Micro-hesitation (real human indecision)
                 if (UnityEngine.Random.value < _profile.Caution * 0.045f)
                 {
                     ResetLean(time);
@@ -127,15 +129,18 @@ namespace AIRefactored.AI.Movement
                     return;
                 }
 
+                // Edge anticipation
                 if (IsApproachingEdge())
                 {
                     AnticipationPause(time);
                     return;
                 }
 
+                // Try lean/crouch corner peek
                 if (TryCornerPeekWithCrouch(time))
                     return;
 
+                // Idle scan logic
                 if (!_scanInProgress)
                 {
                     StartIdleScan(time);

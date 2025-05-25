@@ -68,6 +68,9 @@ namespace AIRefactored.AI.Reactions
 
         #region Runtime
 
+        /// <summary>
+        /// Returns true if bot is currently suppressed by flash exposure.
+        /// </summary>
         public bool IsSuppressed()
         {
             return !_failed && Time.time < _suppressedUntil;
@@ -94,13 +97,12 @@ namespace AIRefactored.AI.Reactions
                 if (lights == null || lights.Count == 0)
                     return;
 
-                // Use per-frame known flashlights, but isolate exposure calculation
                 foreach (Vector3 lightPos in lights)
                 {
                     Vector3 eyePos = head.position + Vector3.up * 0.22f;
                     Vector3 toBot = eyePos - lightPos;
 
-                    if (toBot.sqrMagnitude > 784f) // >28m^2
+                    if (toBot.sqrMagnitude > 784f) // 28m squared
                         continue;
 
                     float angle = Vector3.Angle(-head.forward, toBot);
@@ -111,13 +113,13 @@ namespace AIRefactored.AI.Reactions
                     {
                         if (ReferenceEquals(hit.transform, head) || ReferenceEquals(hit.collider.transform, head))
                         {
-                            TriggerSuppression(1f, time); // hardcoded intensity since angle + hit check already filtered
+                            TriggerSuppression(1f, time);
                             return;
                         }
                     }
                     else if (toBot.magnitude < 4.5f && angle < 17f)
                     {
-                        TriggerSuppression(0.85f, time); // fallback exposure, no ray hit but plausible proximity
+                        TriggerSuppression(0.85f, time);
                         return;
                     }
                 }
@@ -164,7 +166,6 @@ namespace AIRefactored.AI.Reactions
                 float duration = Mathf.Lerp(MinSuppressionDuration, MaxSuppressionDuration, scaled);
                 _suppressedUntil = time + duration;
 
-                // Squad-aware fallback and comm (2-parameter version)
                 TriggerFallback(bot, time);
                 TriggerPanic(_cache, time);
             }
@@ -190,7 +191,6 @@ namespace AIRefactored.AI.Reactions
                 Vector3 fallback = bot.Position - dir * FallbackDistance + UnityEngine.Random.insideUnitSphere * FallbackJitter;
                 fallback.y = bot.Position.y;
 
-                // Dynamic squad-aware fallback: attempt to avoid squad overlap, use NavMesh sampling
                 var group = bot.BotsGroup;
                 if (group != null && group.MembersCount > 1)
                 {
@@ -212,7 +212,6 @@ namespace AIRefactored.AI.Reactions
 
                 BotMovementHelper.SmoothMoveToSafe(bot, fallback);
 
-                // Squad echo comm: trigger fallback echo if enough time has passed (2-parameter version)
                 if (_cache?.GroupBehavior?.GroupSync != null && now - _lastSquadEchoTime > SquadEchoCooldown)
                 {
                     _cache.GroupBehavior.GroupSync.ShareFallbackToSquad(fallback, now);
@@ -233,7 +232,6 @@ namespace AIRefactored.AI.Reactions
                 {
                     panic.TriggerPanic();
 
-                    // Optional: squad panic echo (emotional contagion)
                     if (cache.GroupBehavior?.GroupSync != null && now - _lastSquadEchoTime > SquadEchoCooldown)
                     {
                         cache.GroupBehavior.GroupSync.ShareDangerToSquad(cache.Position, now);
@@ -241,7 +239,6 @@ namespace AIRefactored.AI.Reactions
                     }
                 }
 
-                // Optional: squad voice comm (simulate panic/alert chatter)
                 cache.GroupComms?.SaySuppression();
             }
             catch (Exception ex)

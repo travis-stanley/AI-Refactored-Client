@@ -91,6 +91,9 @@ namespace AIRefactored.AI.Movement
 
         #region Public Methods
 
+        /// <summary>
+        /// Tick-owned by BotBrain. Humanizes, clamps, and bulletproofs look logic.
+        /// </summary>
         public void Tick(float deltaTime)
         {
             try

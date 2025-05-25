@@ -330,10 +330,13 @@ namespace AIRefactored.AI.Memory
             }
         }
 
-        public void MarkExtractionStarted()
+        /// <summary>
+        /// Marks that extraction has been started (for bot extraction logic).
+        /// </summary>
+        public void MarkForcedExtract()
         {
             try { _extractionStarted = true; }
-            catch (Exception ex) { Logger.LogError($"[BotTacticalMemory] MarkExtractionStarted failed: {ex}"); }
+            catch (Exception ex) { Logger.LogError($"[BotTacticalMemory] MarkForcedExtract failed: {ex}"); }
         }
 
         public bool IsExtracting()

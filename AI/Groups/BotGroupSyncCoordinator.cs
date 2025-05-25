@@ -163,7 +163,7 @@ namespace AIRefactored.AI.Groups
 
             foreach (var mate in _teammateCaches.Values)
             {
-                try { mate.TacticalMemory?.MarkExtractionStarted(); } catch { }
+                try { mate.TacticalMemory?.MarkForcedExtract(); } catch { }
             }
         }
 

@@ -22,8 +22,14 @@ namespace AIRefactored.AI.Missions.Subsystems
     using EFT;
     using UnityEngine;
 
+    /// <summary>
+    /// Controls movement and tactical routing for bot missions.
+    /// Never teleports, always uses path-based logic. Squad broadcast-safe.
+    /// </summary>
     public sealed class ObjectiveController
     {
+        #region Fields
+
         private readonly BotOwner _bot;
         private readonly BotComponentCache _cache;
         private readonly BotLootScanner _lootScanner;
@@ -34,6 +40,10 @@ namespace AIRefactored.AI.Missions.Subsystems
         private float _lastBroadcastTime;
 
         public Vector3 CurrentObjective { get; private set; }
+
+        #endregion
+
+        #region Constructor
 
         public ObjectiveController(BotOwner bot, BotComponentCache cache)
         {
@@ -47,6 +57,25 @@ namespace AIRefactored.AI.Missions.Subsystems
             _lootScanner = cache.LootScanner;
             _questRoute = new Queue<Vector3>(4);
             _rng = new System.Random();
+        }
+
+        #endregion
+
+        #region Public API
+
+        public void SetInitialObjective(MissionType type)
+        {
+            try
+            {
+                Vector3 target = GetObjectiveTarget(type);
+                CurrentObjective = target;
+                MoveToObjective(target);
+                MaybeNotifySquadObjective(target, true);
+            }
+            catch (Exception ex)
+            {
+                Plugin.LoggerInstance.LogError($"[ObjectiveController] SetInitialObjective failed: {ex}");
+            }
         }
 
         public void OnObjectiveReached(MissionType type)
@@ -85,20 +114,9 @@ namespace AIRefactored.AI.Missions.Subsystems
             }
         }
 
-        public void SetInitialObjective(MissionType type)
-        {
-            try
-            {
-                Vector3 target = GetObjectiveTarget(type);
-                CurrentObjective = target;
-                MoveToObjective(target);
-                MaybeNotifySquadObjective(target, true);
-            }
-            catch (Exception ex)
-            {
-                Plugin.LoggerInstance.LogError($"[ObjectiveController] SetInitialObjective failed: {ex}");
-            }
-        }
+        #endregion
+
+        #region Routing Logic
 
         private void MoveToObjective(Vector3 dest)
         {
@@ -217,8 +235,10 @@ namespace AIRefactored.AI.Missions.Subsystems
             {
                 _lastBroadcastedObjective = obj;
                 _lastBroadcastTime = now;
-                // Extend here if you want to broadcast via GroupComms
+                // Optionally broadcast to GroupComms here
             }
         }
+
+        #endregion
     }
 }

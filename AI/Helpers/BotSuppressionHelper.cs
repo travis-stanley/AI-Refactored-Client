@@ -28,7 +28,7 @@ namespace AIRefactored.AI.Helpers
         private const float SuppressionDurationVariance = 1.5f;
         private const float SuppressionChainRadius = 12f;
         private const float SuppressionChainRadiusSqr = SuppressionChainRadius * SuppressionChainRadius;
-        private const float MinSuppressionThreshold = 0.18f; // 0-1, to avoid spam
+        private const float MinSuppressionThreshold = 0.18f;
         private const float SquadPropagationChance = 0.6f;
         private const float DangerZoneRadius = 7f;
         private const float SuppressionMinDamage = 0.06f;
@@ -43,9 +43,6 @@ namespace AIRefactored.AI.Helpers
 
         #region Main API
 
-        /// <summary>
-        /// Decides if bot should be suppressed (visibility, ambient, proximity, NOT panicking).
-        /// </summary>
         public static bool ShouldTriggerSuppression(Player player, Vector3? threat = null, float visibleDistThreshold = 12f, float ambientThreshold = 0.25f)
         {
             try
@@ -78,10 +75,6 @@ namespace AIRefactored.AI.Helpers
             }
         }
 
-        /// <summary>
-        /// Main suppression trigger: triggers panic, marks danger zone, squad propagation, and voice.
-        /// All logic strictly uses real, safe fields/methods only.
-        /// </summary>
         public static void TrySuppressBot(Player player, Vector3 threatPos, IPlayer source = null, float rawDamage = 0f)
         {
             try
@@ -97,29 +90,20 @@ namespace AIRefactored.AI.Helpers
                 if (cache == null)
                     return;
 
-                // If already panicking, do nothing (no "refresh suppression" logic).
                 if (cache.PanicHandler != null && cache.PanicHandler.IsPanicking)
                     return;
 
                 float suppressionScore = CalculateSuppressionScore(cache, player, threatPos, rawDamage);
-
                 if (suppressionScore < MinSuppressionThreshold)
                     return;
 
-                // PanicHandler: Only method is TriggerPanic
                 cache.PanicHandler?.TriggerPanic();
-
-                // Mark danger zone for fallback and squad logic
                 MarkDangerZone(owner, threatPos);
-
-                // Squad propagation
                 PropagateSuppressionToSquad(owner, cache, threatPos);
 
-                // Voice: Only if available and not headless
                 if (!FikaHeadlessDetector.IsHeadless && owner.BotTalk != null)
                     owner.BotTalk.TrySay(EPhraseTrigger.Suppress);
 
-                // Tactical memory: Set under fire (real EFT field)
                 owner.Memory?.SetUnderFire(source);
             }
             catch (Exception ex)
@@ -132,9 +116,6 @@ namespace AIRefactored.AI.Helpers
 
         #region Calculation/Helper Logic
 
-        /// <summary>
-        /// Calculates suppression score using only fields that actually exist.
-        /// </summary>
         private static float CalculateSuppressionScore(BotComponentCache cache, Player player, Vector3 threatPos, float rawDamage)
         {
             float caution = cache?.PersonalityProfile?.Caution ?? 0.5f;
@@ -223,9 +204,6 @@ namespace AIRefactored.AI.Helpers
 
         #region Diagnostics
 
-        /// <summary>
-        /// Returns true if a bot is panicking due to suppression.
-        /// </summary>
         public static bool IsSuppressed(Player player)
         {
             try

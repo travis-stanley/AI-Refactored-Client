@@ -16,15 +16,8 @@ namespace AIRefactored.AI.Combat
     using EFT;
     using UnityEngine;
 
-    /// <summary>
-    /// Handles bot suppression, including composure decay, retreat, squad contagion,
-    /// escalation to panic, and fully dynamic phrase/voice logic for squad comms.
-    /// Bulletproof: All failures are isolated, logic is self-recovering, never disables the bot.
-    /// </summary>
     public sealed class BotSuppressionReactionComponent
     {
-        #region Constants
-
         private const float MinSuppressionRetreatDistance = 6.0f;
         private const float SuppressionDuration = 2.2f;
         private const float SquadSuppressionRadiusSqr = 144f;
@@ -34,7 +27,6 @@ namespace AIRefactored.AI.Combat
         private const float ComposureLossMax = 0.25f;
         private const float PanicComposureThreshold = 0.18f;
 
-        // Voice triggers for suppression, panic, squad comms
         private static readonly EPhraseTrigger[] SuppressionTriggers = new[]
         {
             EPhraseTrigger.NeedHelp, EPhraseTrigger.UnderFire, EPhraseTrigger.GetBack,
@@ -49,25 +41,13 @@ namespace AIRefactored.AI.Combat
             EPhraseTrigger.FollowMe, EPhraseTrigger.HoldPosition, EPhraseTrigger.Spreadout
         };
 
-        #endregion
-
-        #region Fields
-
         private BotOwner _bot;
         private BotComponentCache _cache;
-
         private bool _isSuppressed;
         private float _suppressionStartTime = float.NegativeInfinity;
         private float _lastVoiceTime = float.NegativeInfinity;
         private static FieldInfo _composureField;
 
-        #endregion
-
-        #region Initialization
-
-        /// <summary>
-        /// Initialize this suppression handler for a bot.
-        /// </summary>
         public void Initialize(BotComponentCache componentCache)
         {
             if (componentCache == null || componentCache.Bot == null)
@@ -83,23 +63,11 @@ namespace AIRefactored.AI.Combat
             _lastVoiceTime = float.NegativeInfinity;
 
             if (_composureField == null)
-            {
                 _composureField = typeof(BotPanicHandler).GetField("_composureLevel", BindingFlags.NonPublic | BindingFlags.Instance);
-            }
         }
 
-        #endregion
-
-        #region Public API
-
-        /// <summary>
-        /// Returns true if bot is currently suppressed.
-        /// </summary>
         public bool IsSuppressed() => _isSuppressed;
 
-        /// <summary>
-        /// Called every tick to update suppression, voice, and recovery.
-        /// </summary>
         public void Tick(float time)
         {
             if (!_isSuppressed)
@@ -113,7 +81,6 @@ namespace AIRefactored.AI.Combat
                     return;
                 }
 
-                // Fully dynamic, context-aware suppression voice (client only)
                 if (!FikaHeadlessDetector.IsHeadless &&
                     _bot.BotTalk != null &&
                     time - _lastVoiceTime > SuppressionVoiceCooldown)
@@ -126,7 +93,6 @@ namespace AIRefactored.AI.Combat
                     }
                 }
 
-                // Recover after suppression duration
                 if (time - _suppressionStartTime >= SuppressionDuration)
                 {
                     _isSuppressed = false;
@@ -139,9 +105,6 @@ namespace AIRefactored.AI.Combat
             }
         }
 
-        /// <summary>
-        /// Triggers suppression from a given source (bullet/explosion/etc).
-        /// </summary>
         public void TriggerSuppression(Vector3? source)
         {
             if (_isSuppressed || !IsValid())
@@ -156,7 +119,6 @@ namespace AIRefactored.AI.Combat
                 _isSuppressed = true;
                 _suppressionStartTime = Time.time;
 
-                // Composure decay via direct field access (EFT accurate)
                 if (panic != null && _composureField != null)
                 {
                     float loss = UnityEngine.Random.Range(ComposureLossMin, ComposureLossMax);
@@ -164,7 +126,6 @@ namespace AIRefactored.AI.Combat
                     _composureField.SetValue(panic, Mathf.Clamp01(current - loss));
                 }
 
-                // Movement via BotMovementHelper and nav validation only
                 Vector3 retreat = source.HasValue
                     ? (_bot.Position - source.Value).normalized
                     : GetDefaultRetreatDirection();
@@ -184,14 +145,12 @@ namespace AIRefactored.AI.Combat
                     BotCoverHelper.TrySetStanceFromNearbyCover(_cache, fallback);
                 }
 
-                // Panic escalation if composure is too low
                 if (panic != null && panic.GetComposureLevel() < PanicComposureThreshold)
                     panic.TriggerPanic();
 
                 _cache.Escalation?.NotifyPanicTriggered();
                 TryPropagateSuppression();
 
-                // Additional dynamic voice for strong suppression (panic, escalation, "help!" etc)
                 if (!FikaHeadlessDetector.IsHeadless &&
                     _bot.BotTalk != null &&
                     Time.time - _lastVoiceTime > SuppressionVoiceCooldown)
@@ -208,13 +167,6 @@ namespace AIRefactored.AI.Combat
             }
         }
 
-        #endregion
-
-        #region Squad Propagation
-
-        /// <summary>
-        /// Propagate suppression to squadmates with emotional contagion and propagation delay.
-        /// </summary>
         private void TryPropagateSuppression()
         {
             try
@@ -234,17 +186,14 @@ namespace AIRefactored.AI.Combat
                     if ((mate.Position - self).sqrMagnitude > SquadSuppressionRadiusSqr)
                         continue;
 
-                    // Chance to skip propagation (not always perfect panic contagion)
                     if (UnityEngine.Random.value > SquadSuppressionSyncChance)
                         continue;
 
-                    // In a real async/task system, we'd delay this
                     BotComponentCache mateCache = BotCacheUtility.GetCache(mate);
                     if (mateCache?.Suppression != null && !mateCache.Suppression.IsSuppressed())
                     {
                         mateCache.Suppression.TriggerSuppression(self);
 
-                        // Squad voice contagion, voice not always, never spam, varied
                         if (!FikaHeadlessDetector.IsHeadless &&
                             mate.BotTalk != null &&
                             UnityEngine.Random.value < 0.22f)
@@ -260,10 +209,6 @@ namespace AIRefactored.AI.Combat
                 Plugin.LoggerInstance?.LogError("[BotSuppression] Propagation error: " + ex);
             }
         }
-
-        #endregion
-
-        #region Helpers
 
         private static Vector3 GetDefaultRetreatDirection() => Vector3.back;
 
@@ -284,7 +229,5 @@ namespace AIRefactored.AI.Combat
         {
             return !float.IsNaN(v.x) && !float.IsNaN(v.y) && !float.IsNaN(v.z);
         }
-
-        #endregion
     }
 }

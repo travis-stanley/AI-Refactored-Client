@@ -27,14 +27,17 @@ namespace AIRefactored.AI.Core
         private BotMissionController _missionController;
         private bool _isInitialized;
 
+        /// <summary>Returns the backing BotOwner, or logs if not initialized.</summary>
         public BotOwner Bot => !_isInitialized || _bot == null
             ? LogAndReturnNull("[AIRefactoredBotOwner] Bot accessed before initialization.")
             : _bot;
 
+        /// <summary>Returns the backing cache, or logs if not initialized.</summary>
         public BotComponentCache Cache => !_isInitialized || _cache == null
             ? LogAndReturnEmptyCache()
             : _cache;
 
+        /// <summary>Controller managing this bot's mission state.</summary>
         public BotMissionController MissionController
         {
             get
@@ -45,13 +48,16 @@ namespace AIRefactored.AI.Core
             }
         }
 
+        /// <summary>Bot's currently assigned personality profile.</summary>
         public BotPersonalityProfile PersonalityProfile { get; private set; }
+
+        /// <summary>Human-readable name of the assigned personality.</summary>
         public string PersonalityName { get; private set; }
+
+        /// <summary>Zone tag assigned to this bot.</summary>
         public string AssignedZone { get; private set; }
 
-        /// <summary>
-        /// True if this owner has been initialized and is safe to use.
-        /// </summary>
+        /// <summary>True if this owner has been initialized and is safe to use.</summary>
         public bool IsInitialized => _isInitialized;
 
         public AIRefactoredBotOwner()
@@ -63,8 +69,7 @@ namespace AIRefactored.AI.Core
         }
 
         /// <summary>
-        /// Initializes the owner. Must only be called once, by BotSpawnListener/BotSpawnWatcherService.
-        /// Atomic and bulletproof: owner and cache are guaranteed to be wired or will retry until available.
+        /// Initializes the AIRefactored owner and wires it to the provided bot and cache.
         /// </summary>
         public void Initialize(BotOwner bot)
         {
@@ -92,7 +97,6 @@ namespace AIRefactored.AI.Core
                     return;
                 }
 
-                // Atomic wiring: always notify cache of owner, and vice versa
                 if (_cache.AIRefactoredBotOwner != this)
                 {
                     _cache.SetOwner(this);
@@ -111,7 +115,6 @@ namespace AIRefactored.AI.Core
                     Logger.LogDebug($"[AIRefactoredBotOwner] Initialized for bot: {nickname}");
                 }
 
-                // Callback for cache to notify wiring complete, if needed
                 _cache.OnOwnerAttached();
             }
             catch (Exception ex)
@@ -121,7 +124,7 @@ namespace AIRefactored.AI.Core
         }
 
         /// <summary>
-        /// Re-initializes personality using type.
+        /// Initializes the bot's personality from a PersonalityType enum.
         /// </summary>
         public void InitProfile(PersonalityType type)
         {
@@ -145,14 +148,14 @@ namespace AIRefactored.AI.Core
             }
             catch (Exception ex)
             {
-                Logger.LogError($"[AIRefactoredBotOwner] InitProfile failed: {ex}");
+                Logger.LogError($"[AIRefactoredBotOwner] InitProfile(type) failed: {ex}");
                 PersonalityProfile = new BotPersonalityProfile();
                 PersonalityName = "Default";
             }
         }
 
         /// <summary>
-        /// Re-initializes personality using a specific profile.
+        /// Initializes the bot's personality with a provided profile and optional name.
         /// </summary>
         public void InitProfile(BotPersonalityProfile profile, string name)
         {
@@ -174,12 +177,15 @@ namespace AIRefactored.AI.Core
             }
             catch (Exception ex)
             {
-                Logger.LogError($"[AIRefactoredBotOwner] Exception in InitProfile(profile, name): {ex}");
+                Logger.LogError($"[AIRefactoredBotOwner] InitProfile(profile, name) failed: {ex}");
                 PersonalityProfile = new BotPersonalityProfile();
                 PersonalityName = "Default";
             }
         }
 
+        /// <summary>
+        /// Clears the current personality and assigns a neutral fallback.
+        /// </summary>
         public void ClearPersonality()
         {
             try
@@ -193,8 +199,14 @@ namespace AIRefactored.AI.Core
             catch { }
         }
 
+        /// <summary>
+        /// Whether the bot currently has an assigned personality profile.
+        /// </summary>
         public bool HasPersonality() => PersonalityProfile != null;
 
+        /// <summary>
+        /// Assigns a zone tag (used by NavPointRegistry and mission planners).
+        /// </summary>
         public void SetZone(string zoneName)
         {
             try
@@ -208,10 +220,13 @@ namespace AIRefactored.AI.Core
             }
             catch (Exception ex)
             {
-                Logger.LogError($"[AIRefactoredBotOwner] Exception in SetZone: {ex}");
+                Logger.LogError($"[AIRefactoredBotOwner] SetZone failed: {ex}");
             }
         }
 
+        /// <summary>
+        /// Sets the bot's mission controller (controls top-level objective logic).
+        /// </summary>
         public void SetMissionController(BotMissionController controller)
         {
             try
@@ -221,11 +236,12 @@ namespace AIRefactored.AI.Core
                     Logger.LogError("[AIRefactoredBotOwner] SetMissionController failed: controller is null.");
                     return;
                 }
+
                 _missionController = controller;
             }
             catch (Exception ex)
             {
-                Logger.LogError($"[AIRefactoredBotOwner] Exception in SetMissionController: {ex}");
+                Logger.LogError($"[AIRefactoredBotOwner] SetMissionController failed: {ex}");
             }
         }
 

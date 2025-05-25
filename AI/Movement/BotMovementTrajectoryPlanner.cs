@@ -17,14 +17,7 @@ namespace AIRefactored.AI.Movement
     using UnityEngine;
 
     /// <summary>
-    /// Produces ultra-realistic, organic, context-aware bot movement vectors:
-    /// - Squad staggering and flocking (no lockstep)
-    /// - Team collision avoidance
-    /// - Chaos/jitter by personality, state, cover, panic
-    /// - Inertia and anticipation (predictive adjustment)
-    /// - Cover/role/formation contextual offsets
-    /// - Panic & suppression path chaos amplification
-    /// - Zero allocations, bulletproof local failure isolation
+    /// Produces ultra-realistic, organic, context-aware bot movement vectors.
     /// All output is a safe, normalized, non-NaN vector. Never sets position directly.
     /// </summary>
     public sealed class BotMovementTrajectoryPlanner
@@ -33,14 +26,19 @@ namespace AIRefactored.AI.Movement
 
         private const float AvoidanceRadius = 2.18f;
         private const float AvoidanceScale = 1.33f;
-        private const float ChaosIntervalMin = 0.32f, ChaosIntervalMax = 0.59f;
-        private const float ChaosRadius = 0.58f, PanicChaosRadius = 0.92f, CoverChaosScale = 0.5f;
-        private const float SquadOffsetScale = 0.84f, RoleOffsetMul = 0.45f, FormationBias = 0.25f;
+        private const float ChaosIntervalMin = 0.32f;
+        private const float ChaosIntervalMax = 0.59f;
+        private const float ChaosRadius = 0.58f;
+        private const float PanicChaosRadius = 0.92f;
+        private const float CoverChaosScale = 0.5f;
+        private const float SquadOffsetScale = 0.84f;
+        private const float RoleOffsetMul = 0.45f;
         private const float VelocityFactor = 1.38f;
         private const float MinMagnitude = 0.0001f;
         private const float ChaosLerpSpeed = 4.3f;
         private const float AvoidanceMissChance = 0.065f;
-        private const float AnticipationInterval = 0.44f, AnticipationMagnitude = 0.15f;
+        private const float AnticipationInterval = 0.44f;
+        private const float AnticipationMagnitude = 0.15f;
         private const float JitterMicro = 0.014f;
         private const float FormationEdgeBias = 0.19f;
         private const float SuppressedChaosBonus = 0.44f;
@@ -71,30 +69,21 @@ namespace AIRefactored.AI.Movement
 
         public BotMovementTrajectoryPlanner(BotOwner bot, BotComponentCache cache)
         {
-            if (!EFTPlayerUtil.IsValidBotOwner(bot))
-                throw new ArgumentException("[BotMovementTrajectoryPlanner] bot is invalid.");
-            if (cache == null || bot.GetPlayer == null)
-                throw new ArgumentException("[BotMovementTrajectoryPlanner] cache or player is null.");
+            if (!EFTPlayerUtil.IsValidBotOwner(bot) || cache == null || bot.GetPlayer == null)
+                throw new ArgumentException("[BotMovementTrajectoryPlanner] invalid arguments.");
 
             _bot = bot;
             _cache = cache;
             _chaosOffset = Vector3.zero;
             _targetChaosOffset = Vector3.zero;
-            _nextChaosUpdate = 0f;
             _anticipationDir = Vector3.zero;
-            _nextAnticipationTime = 0f;
             _squadFormationBias = Vector3.zero;
-            _lastSquadBiasTime = 0f;
         }
 
         #endregion
 
         #region Public API
 
-        /// <summary>
-        /// Produces the ultimate human-realistic movement direction for this bot.
-        /// Considers squad/role, inertia, panic, cover, avoidance, and context chaos.
-        /// </summary>
         public Vector3 ModifyTrajectory(Vector3 targetDir, float deltaTime)
         {
             try
@@ -104,24 +93,18 @@ namespace AIRefactored.AI.Movement
                 float personalityCaution = Mathf.Clamp01(profile.Caution);
                 float personalityAggro = Mathf.Clamp01(profile.AggressionLevel);
 
-                // -- Core direction always normalized, default to forward
                 Vector3 baseDir = (targetDir.sqrMagnitude > MinMagnitude) ? targetDir.normalized : Vector3.forward;
                 Vector3 adjusted = baseDir;
 
-                // -- Chaos/Jitter Layer (personality, panic, cover adaptive) --
                 if (now > _nextChaosUpdate)
-                    UpdateTargetChaosOffset(now, profile, _cache.PanicHandler, _cache.Suppression, _cache.CoverPlanner);
+                    UpdateTargetChaosOffset(now, profile);
 
                 _chaosOffset = Vector3.Lerp(_chaosOffset, _targetChaosOffset, deltaTime * ChaosLerpSpeed);
                 _chaosOffset.y = 0f;
+                adjusted += _chaosOffset;
 
-                if (_chaosOffset.sqrMagnitude > MinMagnitude)
-                    adjusted += _chaosOffset;
-
-                // -- Anticipation Layer (on direction switch/turns) --
                 TryAnticipation(baseDir, now, ref adjusted);
 
-                // -- Squad Formation/Flocking Layer (w/ role/edge bias) --
                 if (_cache.SquadPath != null)
                 {
                     Vector3 squadOffset = _cache.SquadPath.GetCurrentOffset();
@@ -130,17 +113,17 @@ namespace AIRefactored.AI.Movement
                         squadOffset.y = 0f;
                         adjusted += squadOffset.normalized * SquadOffsetScale;
                     }
-                    // Stagger formation bias for edge bots
+
                     if (now - _lastSquadBiasTime > 1.45f)
                     {
                         _squadFormationBias = UnityEngine.Random.insideUnitSphere * FormationEdgeBias;
                         _squadFormationBias.y = 0f;
                         _lastSquadBiasTime = now;
                     }
+
                     adjusted += _squadFormationBias;
                 }
 
-                // -- Team Collision Avoidance Layer --
                 Vector3 avoidVector = ComputeAvoidance();
                 if (avoidVector.sqrMagnitude > MinMagnitude)
                 {
@@ -148,12 +131,12 @@ namespace AIRefactored.AI.Movement
                     adjusted += avoidVector.normalized * AvoidanceScale;
                 }
 
-                // -- Role Offset (simulate “pointman,” “anchor,” and squad leader/lag) --
                 if (_bot.BotsGroup != null && _bot.BotsGroup.MembersCount > 1)
                 {
                     int idx = -1;
                     for (int i = 0; i < _bot.BotsGroup.MembersCount; i++)
                         if (_bot.BotsGroup.Member(i) == _bot) { idx = i; break; }
+
                     if (idx >= 0)
                     {
                         float posBias = ((idx % 2 == 0) ? -1f : 1f) * RoleOffsetMul;
@@ -162,56 +145,44 @@ namespace AIRefactored.AI.Movement
                     }
                 }
 
-                // -- Cover/Obstacle Adaptive Layer --
                 if (_cache.CoverPlanner != null && _cache.CoverPlanner.IsInCover)
                 {
                     Vector3 coverNormal = _cache.CoverPlanner.CoverNormal;
-                    // Fallback to bot's right if not valid
                     if (coverNormal == Vector3.zero)
                         coverNormal = _bot.Transform != null ? _bot.Transform.right : Vector3.right;
+
                     Vector3 coverAlign = Vector3.ProjectOnPlane(coverNormal.normalized, Vector3.up) * CoverAlignmentWeight;
                     adjusted += coverAlign;
                 }
 
-                // -- Inertia/Momentum Layer: blend actual velocity --
-                Vector3 velocity = Vector3.zero;
-                try { velocity = _bot.GetPlayer != null ? _bot.GetPlayer.Velocity : Vector3.zero; } catch { }
+                Vector3 velocity = _bot.GetPlayer != null ? _bot.GetPlayer.Velocity : Vector3.zero;
                 if (velocity.sqrMagnitude > MinMagnitude)
                 {
                     velocity.y = 0f;
                     adjusted += velocity.normalized * VelocityFactor;
                 }
 
-                // -- Panic/Suppression Amplifies Path Chaos --
-                if ((_cache.PanicHandler != null && _cache.PanicHandler.IsPanicking) ||
-                    (_cache.Suppression != null && _cache.Suppression.IsSuppressed()))
+                if ((_cache.PanicHandler?.IsPanicking ?? false) || (_cache.Suppression?.IsSuppressed() ?? false))
                 {
                     adjusted += UnityEngine.Random.insideUnitSphere * SuppressedChaosBonus;
                     adjusted.y = 0f;
                 }
 
-                // -- Aggression bias: PMCs/bold personalities sprint/lead more
                 if (personalityAggro > 0.65f && UnityEngine.Random.value < AggressionSprintBias)
-                {
                     adjusted += baseDir * 0.13f * personalityAggro;
-                }
 
-                // -- Micro-Jitter for full organic desync --
                 adjusted += UnityEngine.Random.insideUnitSphere * JitterMicro;
                 adjusted.y = 0f;
 
-                // -- Stuck Recovery: if truly stuck, wobble forcibly
-                if (_bot.Mover != null && _bot.Mover.Blocked)
+                if (_bot.Mover?.Blocked ?? false)
                     adjusted += UnityEngine.Random.insideUnitSphere * StuckWobbleMagnitude;
 
-                // Final clamp and sanitize (no NaN/zero)
-                if (float.IsNaN(adjusted.x) || float.IsNaN(adjusted.y) || float.IsNaN(adjusted.z) || adjusted.sqrMagnitude < MinMagnitude)
-                    return baseDir;
-                return adjusted.normalized;
+                return float.IsNaN(adjusted.x) || float.IsNaN(adjusted.y) || float.IsNaN(adjusted.z) || adjusted.sqrMagnitude < MinMagnitude
+                    ? baseDir
+                    : adjusted.normalized;
             }
             catch
             {
-                // Never break caller—return straight-ahead on error.
                 return Vector3.forward;
             }
         }
@@ -220,9 +191,6 @@ namespace AIRefactored.AI.Movement
 
         #region Internal Helpers
 
-        /// <summary>
-        /// Squad/team avoidance; repels bots from overlapping, zero allocations.
-        /// </summary>
         private Vector3 ComputeAvoidance()
         {
             try
@@ -237,11 +205,13 @@ namespace AIRefactored.AI.Movement
                 Vector3 self = _bot.Position;
                 Vector3 repulsion = Vector3.zero;
                 int count = 0;
+
                 for (int i = 0; i < group.MembersCount; i++)
                 {
                     BotOwner other = group.Member(i);
                     if (other == null || other == _bot || other.IsDead)
                         continue;
+
                     Vector3 offset = self - other.Position;
                     float dist = offset.magnitude;
                     if (dist < AvoidanceRadius && dist > 0.01f)
@@ -251,6 +221,7 @@ namespace AIRefactored.AI.Movement
                         count++;
                     }
                 }
+
                 return count > 0 ? repulsion / count : Vector3.zero;
             }
             catch
@@ -259,18 +230,22 @@ namespace AIRefactored.AI.Movement
             }
         }
 
-        /// <summary>
-        /// Updates chaos offset for next step; panic/suppression/cover increase chaos, personality-driven.
-        /// </summary>
-        private void UpdateTargetChaosOffset(float now, BotPersonalityProfile profile, BotPanicHandler panic, BotSuppressionReactionComponent suppress, BotCoverRetreatPlanner cover)
+        private void UpdateTargetChaosOffset(float now, BotPersonalityProfile profile)
         {
             try
             {
                 float chaosBase = ChaosRadius * (1f - Mathf.Clamp01(profile.Caution));
                 float chaos = chaosBase;
-                if (panic != null && panic.IsPanicking) chaos += PanicChaosRadius;
-                if (suppress != null && suppress.IsSuppressed()) chaos += SuppressedChaosBonus;
-                if (cover != null && cover.IsInCover) chaos *= CoverChaosScale;
+
+                if (_cache.PanicHandler?.IsPanicking == true)
+                    chaos += PanicChaosRadius;
+
+                if (_cache.Suppression?.IsSuppressed() == true)
+                    chaos += SuppressedChaosBonus;
+
+                if (_cache.CoverPlanner?.IsInCover == true)
+                    chaos *= CoverChaosScale;
+
                 chaos = Mathf.Clamp(chaos, 0.01f, 1.22f);
 
                 float x = UnityEngine.Random.Range(-chaos * 0.5f, chaos * 0.5f);
@@ -286,9 +261,6 @@ namespace AIRefactored.AI.Movement
             }
         }
 
-        /// <summary>
-        /// Adds anticipation/follow-through on sharp turn for realism.
-        /// </summary>
         private void TryAnticipation(Vector3 baseDir, float now, ref Vector3 adjusted)
         {
             if (now < _nextAnticipationTime)
@@ -296,6 +268,7 @@ namespace AIRefactored.AI.Movement
                 adjusted += _anticipationDir * AnticipationMagnitude;
                 return;
             }
+
             float angle = Vector3.Angle(adjusted, baseDir);
             if (angle > 29f && UnityEngine.Random.value < 0.21f)
             {

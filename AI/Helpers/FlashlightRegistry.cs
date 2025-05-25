@@ -38,9 +38,6 @@ namespace AIRefactored.AI.Helpers
 
         #region Public API
 
-        /// <summary>
-        /// Scans the scene for active tactical flashlights.
-        /// </summary>
         public static IEnumerable<Light> GetActiveFlashlights()
         {
             ActiveLights.Clear();
@@ -63,27 +60,17 @@ namespace AIRefactored.AI.Helpers
                     }
                 }
             }
-            catch
-            {
-                // Never break scene scan; just return current (possibly empty) ActiveLights
-            }
+            catch { }
 
             return ActiveLights;
         }
 
-        /// <summary>
-        /// Returns the last-known positions of visible flashlights.
-        /// </summary>
         public static IReadOnlyList<Vector3> GetLastKnownFlashlightPositions()
         {
             return LastKnownFlashPositions;
         }
 
-        /// <summary>
-        /// Determines if any flashlight is currently hitting this bot in the eyes.
-        /// Uses EFTPlayerUtil.GetPosition for eye location with upward bias.
-        /// </summary>
-        public static bool IsExposingBot(EFT.Player player, out Light blindingLight, float customMaxDist = MaxExposureDistance)
+        public static bool IsExposingBot(Player player, out Light blindingLight, float customMaxDist = MaxExposureDistance)
         {
             blindingLight = null;
             if (!EFTPlayerUtil.IsValid(player))
@@ -100,59 +87,48 @@ namespace AIRefactored.AI.Helpers
                     if (!IsValidTacticalLight(light))
                         continue;
 
-                    Transform lightTransform = light.transform;
-                    if (lightTransform == null)
+                    Transform lightTf = light.transform;
+                    if (lightTf == null)
                         continue;
 
-                    Vector3 toBot = eyePos - lightTransform.position;
-                    float distance = toBot.magnitude;
-
-                    if (distance > customMaxDist)
+                    Vector3 toBot = eyePos - lightTf.position;
+                    float dist = toBot.magnitude;
+                    if (dist > customMaxDist)
                         continue;
 
-                    float angle = Vector3.Angle(lightTransform.forward, toBot);
+                    float angle = Vector3.Angle(lightTf.forward, toBot);
                     if (angle > ExposureConeAngle)
                         continue;
 
-                    Vector3 origin = lightTransform.position;
+                    Vector3 origin = lightTf.position;
                     Vector3 dir = toBot.normalized;
-                    float rayLen = distance + 0.1f;
 
                     try
                     {
-                        if (Physics.Raycast(origin, dir, out RaycastHit hit, rayLen, LayerMaskClass.HighPolyWithTerrainMaskAI))
+                        if (Physics.Raycast(origin, dir, out RaycastHit hit, dist + 0.1f, LayerMaskClass.HighPolyWithTerrainMaskAI))
                         {
-                            // If hit this player's GameObject (safe check)
-                            if (hit.transform == player.gameObject.transform ||
-                                (hit.collider != null && hit.collider.gameObject == player.gameObject))
+                            Transform pTransform = player.Transform?.Original;
+                            if (pTransform != null &&
+                                (hit.transform == pTransform || (hit.collider != null && hit.collider.gameObject == pTransform.gameObject)))
                             {
                                 blindingLight = light;
                                 return true;
                             }
                         }
-                        else if (angle < (ExposureConeAngle * 0.5f) && distance < 4.5f)
+                        else if (angle < (ExposureConeAngle * 0.5f) && dist < 4.5f)
                         {
                             blindingLight = light;
                             return true;
                         }
                     }
-                    catch
-                    {
-                        // Raycast failure is isolated
-                    }
+                    catch { }
                 }
             }
-            catch
-            {
-                // Any loop or data error is isolated
-            }
+            catch { }
 
             return false;
         }
 
-        /// <summary>
-        /// Indicates whether any flashlight is flickering (reserved for future upgrades).
-        /// </summary>
         public static bool IsFlickeringFlashlightActive()
         {
             return false;

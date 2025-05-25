@@ -88,9 +88,7 @@ namespace AIRefactored.AI.Optimization
 			get
 			{
 				float now = Time.time;
-				if (_isInCover && now - _coverLastFoundTime < CoverPersistTime)
-					return true;
-				return false;
+				return _isInCover && now - _coverLastFoundTime < CoverPersistTime;
 			}
 		}
 
@@ -207,7 +205,6 @@ namespace AIRefactored.AI.Optimization
 
 			if (now - _lastCoverCheckTime < CoverCheckInterval)
 			{
-				// Use last state (cached/hysteresis)
 				if (_isInCover)
 				{
 					coverPoint = current + _coverNormal * 1.25f;
@@ -321,14 +318,12 @@ namespace AIRefactored.AI.Optimization
 			if (path == null || path.Count == 0 || bot == null)
 				return;
 
-			// Get the per-bot AIRefactored cache (never use bot.AIData!)
 			var cache = bot.GetComponent<BotComponentCache>();
 			if (cache == null)
 				return;
 
 			var profile = cache.PersonalityProfile ?? BotRegistry.GetOrGenerate(bot.ProfileId, PersonalityType.Balanced, bot.Profile?.Info?.Settings?.Role ?? WildSpawnType.assault);
 
-			// Use only local panic/suppression state!
 			float chaosMul = 1f;
 			if (cache.PanicHandler != null && cache.PanicHandler.IsPanicking)
 				chaosMul += 0.8f;

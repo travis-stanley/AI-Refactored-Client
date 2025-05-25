@@ -75,6 +75,9 @@ namespace AIRefactored.AI.Navigation
 
         #region Public API
 
+        /// <summary>
+        /// Main tick entry point for door logic, called by BotBrain.
+        /// </summary>
         public void Tick(float time)
         {
             try
@@ -94,7 +97,6 @@ namespace AIRefactored.AI.Navigation
                     MarkBlocked(_currentDoor, time);
                     return;
                 }
-
                 if (_hasGivenUp && time >= _giveUpUntil)
                 {
                     _hasGivenUp = false;
@@ -211,6 +213,9 @@ namespace AIRefactored.AI.Navigation
             }
         }
 
+        /// <summary>
+        /// Returns true if the door is currently blocking a specific world position.
+        /// </summary>
         public bool IsDoorBlocking(Vector3 position)
         {
             try
@@ -223,6 +228,9 @@ namespace AIRefactored.AI.Navigation
             catch { return false; }
         }
 
+        /// <summary>
+        /// Resets all internal door state (for retry, world reload, etc).
+        /// </summary>
         public void Reset()
         {
             _currentDoor = null;
@@ -239,6 +247,9 @@ namespace AIRefactored.AI.Navigation
 
         #region Private Helpers
 
+        /// <summary>
+        /// Clears internal door tracking state.
+        /// </summary>
         private void ClearDoorState()
         {
             _currentDoor = null;
@@ -249,6 +260,9 @@ namespace AIRefactored.AI.Navigation
             _doorStateSinceTime = 0f;
         }
 
+        /// <summary>
+        /// Marks current door as blocking.
+        /// </summary>
         private void MarkBlocked(Door door, float now)
         {
             if (door == null || Vector3.Distance(EFTPlayerUtil.GetPosition(_bot), door.transform.position) > DoorCastRange)
@@ -259,6 +273,9 @@ namespace AIRefactored.AI.Navigation
             _doorStateSinceTime = now;
         }
 
+        /// <summary>
+        /// Returns true if the bot should wait for other squadmates to clear a door.
+        /// </summary>
         private bool ShouldWaitForSquad(Door door)
         {
             try
@@ -282,6 +299,9 @@ namespace AIRefactored.AI.Navigation
             catch { return false; }
         }
 
+        /// <summary>
+        /// Returns best interaction type for a door state.
+        /// </summary>
         private static EInteractionType GetBestInteractionType(EDoorState state)
         {
             if ((state & EDoorState.Shut) != 0 || state == EDoorState.None)

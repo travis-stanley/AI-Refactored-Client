@@ -3,7 +3,6 @@
 //   Licensed under the MIT License. See LICENSE in the repository root for more information.
 //
 //   THIS FILE IS SYSTEMATICALLY MANAGED.
-//   Please follow strict StyleCop, ReSharper, and AI-Refactored code standards for all modifications.
 //   All perception logic is bulletproof and strictly null-guarded.
 // </auto-generated>
 

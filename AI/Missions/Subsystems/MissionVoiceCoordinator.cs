@@ -17,9 +17,8 @@ namespace AIRefactored.AI.Missions.Subsystems
     using EFT.HealthSystem;
 
     /// <summary>
-    /// Handles voice lines for looting, extraction, and coordination.
-    /// VO routing is multiplayer-safe and avoids triggering on headless hosts.
-    /// All errors are locally isolated; cannot break or cascade into other systems.
+    /// Handles voice line coordination for mission actions (loot, extract, switch).
+    /// Bulletproof: All logic is headless-safe, multiplayer-safe, and locally isolated.
     /// </summary>
     public sealed class MissionVoiceCoordinator
     {
@@ -35,14 +34,15 @@ namespace AIRefactored.AI.Missions.Subsystems
         /// <summary>
         /// Initializes a new instance of the <see cref="MissionVoiceCoordinator"/> class.
         /// </summary>
-        /// <param name="bot">The owning bot.</param>
+        /// <param name="bot">Bot owner reference (must be valid).</param>
         public MissionVoiceCoordinator(BotOwner bot)
         {
             if (!EFTPlayerUtil.IsValidBotOwner(bot))
             {
-                Logger.LogError("[MissionVoiceCoordinator] Invalid bot reference. Disabling voice coordination for this bot.");
-                throw new ArgumentException("[MissionVoiceCoordinator] Invalid bot reference.");
+                Logger.LogError("[MissionVoiceCoordinator] Invalid bot reference. Voice system disabled.");
+                throw new ArgumentException("[MissionVoiceCoordinator] Invalid bot.");
             }
+
             _bot = bot;
         }
 
@@ -51,7 +51,7 @@ namespace AIRefactored.AI.Missions.Subsystems
         #region Public Methods
 
         /// <summary>
-        /// Triggers voice line when exit is located.
+        /// Triggers exit-located voice line.
         /// </summary>
         public void OnExitLocated()
         {
@@ -59,7 +59,7 @@ namespace AIRefactored.AI.Missions.Subsystems
         }
 
         /// <summary>
-        /// Triggers voice line on looting.
+        /// Triggers loot voice line.
         /// </summary>
         public void OnLoot()
         {
@@ -67,7 +67,7 @@ namespace AIRefactored.AI.Missions.Subsystems
         }
 
         /// <summary>
-        /// Triggers voice line on mission switch.
+        /// Triggers squad coordination voice line on mission switch.
         /// </summary>
         public void OnMissionSwitch()
         {
@@ -80,13 +80,13 @@ namespace AIRefactored.AI.Missions.Subsystems
 
         private void TrySay(EPhraseTrigger trigger)
         {
-            if (_bot == null || FikaHeadlessDetector.IsHeadless)
+            if (FikaHeadlessDetector.IsHeadless || _bot == null)
                 return;
 
             try
             {
                 Player player = _bot.GetPlayer;
-                if (player != null && player.HealthController != null && player.HealthController.IsAlive)
+                if (player?.HealthController?.IsAlive == true)
                 {
                     player.Say(trigger);
                 }
@@ -96,11 +96,11 @@ namespace AIRefactored.AI.Missions.Subsystems
                 try
                 {
                     string name = _bot.Profile?.Info?.Nickname ?? "Unknown";
-                    Logger.LogWarning("[MissionVoiceCoordinator] VO failed for '" + name + "': " + ex.Message);
+                    Logger.LogWarning($"[MissionVoiceCoordinator] VO failed for '{name}': {ex.Message}");
                 }
                 catch
                 {
-                    // Defensive: don't allow even this logging to break
+                    // Never cascade
                 }
             }
         }

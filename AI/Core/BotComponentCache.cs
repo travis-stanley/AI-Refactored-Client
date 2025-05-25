@@ -29,6 +29,9 @@ namespace AIRefactored.AI.Core
     using EFT;
     using UnityEngine;
 
+    /// <summary>
+    /// Centralized registry of all AI subsystems for a single bot. Fully atomic and bulletproof.
+    /// </summary>
     public sealed class BotComponentCache : IDisposable
     {
         #region Static
@@ -39,29 +42,30 @@ namespace AIRefactored.AI.Core
 
         #endregion
 
-        #region Fields
+        #region Core Fields
 
         private AIRefactoredBotOwner _owner;
         private FallbackHandler _fallbackHandler;
 
         #endregion
 
-        #region Core & Personality
+        #region Identity & Personality
 
         public BotOwner Bot { get; internal set; }
         public AIRefactoredBotOwner AIRefactoredBotOwner => _owner;
-        public BotMemoryClass Memory => Bot?.Memory;
-        public string Nickname => Bot?.Profile?.Info?.Nickname ?? "Unknown";
-        public Vector3 Position => Bot != null ? Bot.Position : Vector3.zero;
         public BotPersonalityProfile PersonalityProfile { get; private set; } = new BotPersonalityProfile();
+        public string Nickname => Bot?.Profile?.Info?.Nickname ?? "Unknown";
+        public BotMemoryClass Memory => Bot?.Memory;
+        public Vector3 Position => Bot != null ? Bot.Position : Vector3.zero;
 
         #endregion
 
-        #region Runtime Flags
+        #region Runtime State
 
         public bool IsBlinded { get; set; }
         public float BlindUntilTime { get; set; }
         public float LastFlashTime { get; set; }
+
         public float LastHeardTime { get; private set; } = -999f;
         public Vector3 LastHeardDirection { get; private set; }
         public bool HasHeardDirection { get; private set; }
@@ -98,6 +102,7 @@ namespace AIRefactored.AI.Core
         public TrackedEnemyVisibility VisibilityTracker { get; set; }
         public BotPerceptionSystem Perception { get; private set; }
         public BotCoverRetreatPlanner CoverPlanner { get; private set; }
+
         public BotGroupSyncCoordinator GroupSync => GroupBehavior?.GroupSync;
         public FallbackHandler Fallback => _fallbackHandler;
         public BotPanicHandler Panic => PanicHandler;
@@ -106,7 +111,7 @@ namespace AIRefactored.AI.Core
 
         #endregion
 
-        #region Status
+        #region Status Checks
 
         public bool IsReady =>
             Bot != null &&
@@ -128,6 +133,9 @@ namespace AIRefactored.AI.Core
 
         #region Initialization
 
+        /// <summary>
+        /// Fully wires up all AIRefactored subsystems for a bot. Bulletproof and idempotent.
+        /// </summary>
         public void Initialize(BotOwner bot)
         {
             if (bot == null)
@@ -144,24 +152,17 @@ namespace AIRefactored.AI.Core
             Bot = bot;
             MoveCache = new BotMovementHelper.BotMoveCache();
 
-            // Load profile now only if not already injected via AIRefactoredBotOwner
             _owner = bot.GetComponent<AIRefactoredBotOwner>();
             if (_owner == null)
             {
                 Logger.LogWarning($"[BotComponentCache] AIRefactoredBotOwner missing for bot {id}");
-                _owner = new AIRefactoredBotOwner(); // fallback
+                _owner = new AIRefactoredBotOwner();
                 _owner.Initialize(bot);
             }
 
-            if (_owner != null && _owner.HasPersonality())
-            {
-                PersonalityProfile = _owner.PersonalityProfile;
-            }
-            else
-            {
-                WildSpawnType role = bot.Profile?.Info?.Settings?.Role ?? WildSpawnType.assault;
-                PersonalityProfile = BotRegistry.GetOrGenerate(id, PersonalityType.Balanced, role);
-            }
+            PersonalityProfile = _owner?.HasPersonality() == true
+                ? _owner.PersonalityProfile
+                : BotRegistry.GetOrGenerate(id, PersonalityType.Balanced, bot.Profile?.Info?.Settings?.Role ?? WildSpawnType.assault);
 
             TryInit(() => Pathing = new BotOwnerPathfindingCache(), "Pathing");
             TryInit(() => { TacticalMemory = new BotTacticalMemory(); TacticalMemory.Initialize(this); }, "TacticalMemory");
@@ -204,7 +205,7 @@ namespace AIRefactored.AI.Core
 
         #endregion
 
-        #region Owner / Sound / Teardown
+        #region Owner/Comms/Teardown
 
         public void SetOwner(AIRefactoredBotOwner owner)
         {
@@ -223,8 +224,7 @@ namespace AIRefactored.AI.Core
 
         public void RegisterHeardSound(Vector3 source)
         {
-            if (Bot == null)
-                return;
+            if (Bot == null) return;
 
             LastHeardTime = Time.time;
             LastHeardDirection = source - Position;

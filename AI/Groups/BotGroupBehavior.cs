@@ -25,8 +25,6 @@ namespace AIRefactored.AI.Groups
     /// </summary>
     public sealed class BotGroupBehavior
     {
-        #region Constants
-
         private const float MaxSpacing = 7.5f;
         private const float MinSpacing = 2.35f;
         private const float SpacingTolerance = 0.24f;
@@ -42,10 +40,6 @@ namespace AIRefactored.AI.Groups
         private static readonly float MaxSpacingSqr = MaxSpacing * MaxSpacing;
         private static readonly float MaxSquadRadiusSqr = MaxSquadRadius * MaxSquadRadius;
 
-        #endregion
-
-        #region Fields
-
         private BotOwner _bot;
         private BotComponentCache _cache;
         private BotsGroup _group;
@@ -57,15 +51,10 @@ namespace AIRefactored.AI.Groups
         private float _nervousnessLevel;
         private float _lastChatterTime;
 
-        // Leadership and role tracking
         private int _squadLeaderIndex;
         private List<BotOwner> _squadMembers;
         private float _lastLeadershipRotationTime;
         private float _lastRoleReassignTime;
-
-        #endregion
-
-        #region Properties
 
         public BotGroupSyncCoordinator GroupSync { get; private set; }
         public bool IsFollowingLeader { get; private set; }
@@ -75,147 +64,107 @@ namespace AIRefactored.AI.Groups
         public bool IsFlanker { get; private set; }
         public bool IsSupport { get; private set; }
 
-        #endregion
-
-        #region Initialization
-
         public void Initialize(BotComponentCache componentCache)
         {
-            try
-            {
-                if (componentCache == null || componentCache.Bot == null)
-                    throw new ArgumentException("[BotGroupBehavior] Invalid component cache.");
+            _cache = componentCache;
+            _bot = componentCache?.Bot;
+            _group = _bot?.BotsGroup;
 
-                _cache = componentCache;
-                _bot = componentCache.Bot;
-                _group = _bot.BotsGroup;
+            GroupSync = new BotGroupSyncCoordinator();
+            GroupSync.Initialize(_bot);
+            GroupSync.InjectLocalCache(_cache);
 
-                GroupSync = new BotGroupSyncCoordinator();
-                GroupSync.Initialize(_bot);
-                GroupSync.InjectLocalCache(_cache);
-
-                _personalDrift = ComputePersonalDrift(_bot.ProfileId);
-                _hasLastTarget = false;
-                _nervousnessLevel = UnityEngine.Random.Range(0.19f, 0.53f);
-                _lastChatterTime = 0f;
-
-                _squadLeaderIndex = 0;
-                _lastLeadershipRotationTime = Time.time;
-                _lastRoleReassignTime = Time.time;
-                RefreshSquadMembers();
-                AssignSquadRoles();
-            }
-            catch (Exception ex)
-            {
-                Plugin.LoggerInstance.LogError("[BotGroupBehavior] Initialization failed: " + ex);
-                FallbackMoveHelper();
-            }
+            _personalDrift = ComputePersonalDrift(_bot.ProfileId);
+            _nervousnessLevel = UnityEngine.Random.Range(0.19f, 0.53f);
+            _squadLeaderIndex = 0;
+            _lastLeadershipRotationTime = Time.time;
+            _lastRoleReassignTime = Time.time;
+            RefreshSquadMembers();
+            AssignSquadRoles();
         }
 
-        #endregion
-
-        #region Main Tick
-
-        /// <summary>
-        /// All squad formation and role logic, driven only by BotBrain. Never self-ticks.
-        /// </summary>
         public void Tick(float deltaTime)
         {
-            try
+            if (_bot == null || _cache == null || _group == null || _bot.IsDead || _bot.Memory == null || _bot.Memory.GoalEnemy != null || _group.MembersCount <= 1)
+                return;
+
+            RefreshSquadMembers();
+            DynamicLeadershipRotation();
+            DynamicRoleReassignment();
+
+            Vector3 myPos = _bot.Position;
+            Vector3 repulsion = Vector3.zero;
+            Vector3 furthest = Vector3.zero;
+            float maxDistSqr = MinSpacingSqr;
+            bool hasFurthest = false;
+            int memberCount = _group.MembersCount;
+            int closestIdx = -1;
+            float closestDist = float.MaxValue;
+
+            float roleBias = _cache.AIRefactoredBotOwner?.PersonalityProfile?.Cohesion ?? 1.0f;
+            float nervousBias = 1.0f + _nervousnessLevel * 0.4f;
+            float effectiveMinSpacingSqr = MinSpacingSqr * nervousBias * roleBias;
+
+            for (int i = 0; i < memberCount; i++)
             {
-                if (!IsEligible() || _bot.Memory == null || _bot.Memory.GoalEnemy != null)
-                    return;
+                BotOwner mate = _group.Member(i);
+                if (mate == null || ReferenceEquals(mate, _bot) || mate.IsDead || mate.Memory == null)
+                    continue;
 
-                RefreshSquadMembers();
-                DynamicLeadershipRotation();
-                DynamicRoleReassignment();
+                Vector3 offset = mate.Position - myPos;
+                float distSqr = offset.sqrMagnitude;
 
-                Vector3 myPos = _bot.Position;
-                Vector3 repulsion = Vector3.zero;
-                Vector3 furthest = Vector3.zero;
-                float maxDistSqr = MinSpacingSqr;
-                bool hasFurthest = false;
-                int memberCount = _group.MembersCount;
-                int closestIdx = -1;
-                float closestDist = float.MaxValue;
-
-                bool isBoss = _bot.IsRole(WildSpawnType.bossKnight) || _bot.IsRole(WildSpawnType.bossTagilla) ||
-                              _bot.IsRole(WildSpawnType.bossZryachiy) || _bot.IsRole(WildSpawnType.bossSanitar) ||
-                              _bot.IsRole(WildSpawnType.bossGluhar);
-                float roleBias = isBoss ? 1.23f : (_cache?.AIRefactoredBotOwner?.PersonalityProfile?.Cohesion ?? 1.0f);
-                float nervousBias = 1.0f + _nervousnessLevel * 0.4f;
-                float effectiveMinSpacingSqr = MinSpacingSqr * nervousBias * roleBias;
-
-                for (int i = 0; i < memberCount; i++)
+                if (distSqr < closestDist)
                 {
-                    BotOwner mate = _group.Member(i);
-                    if (mate == null || ReferenceEquals(mate, _bot) || mate.IsDead || mate.Memory == null)
-                        continue;
-
-                    Vector3 offset = mate.Position - myPos;
-                    float distSqr = offset.sqrMagnitude;
-
-                    if (distSqr < closestDist)
-                    {
-                        closestDist = distSqr;
-                        closestIdx = i;
-                    }
-
-                    if (distSqr < effectiveMinSpacingSqr)
-                    {
-                        float push = MinSpacing - Mathf.Sqrt(distSqr);
-                        repulsion += -offset.normalized * push * 0.74f;
-                    }
-                    else if (distSqr > MaxSpacingSqr && distSqr > maxDistSqr && distSqr < MaxSquadRadiusSqr && mate.Memory.GoalEnemy == null)
-                    {
-                        maxDistSqr = distSqr;
-                        furthest = mate.Position;
-                        hasFurthest = true;
-                    }
+                    closestDist = distSqr;
+                    closestIdx = i;
                 }
 
-                UpdateSquadNervousness(deltaTime, memberCount);
-                HandleSquadChatter(memberCount);
-
-                if (repulsion.sqrMagnitude > 0.013f)
+                if (distSqr < effectiveMinSpacingSqr)
                 {
-                    IssueMove(SmoothDriftMove(myPos, repulsion.normalized * RepulseStrength, deltaTime, true));
+                    float push = MinSpacing - Mathf.Sqrt(distSqr);
+                    repulsion += -offset.normalized * push * 0.74f;
+                }
+                else if (distSqr > MaxSpacingSqr && distSqr > maxDistSqr && distSqr < MaxSquadRadiusSqr && mate.Memory.GoalEnemy == null)
+                {
+                    maxDistSqr = distSqr;
+                    furthest = mate.Position;
+                    hasFurthest = true;
+                }
+            }
+
+            UpdateSquadNervousness(deltaTime, memberCount);
+            HandleSquadChatter(memberCount);
+
+            if (repulsion.sqrMagnitude > 0.013f)
+            {
+                IssueMove(SmoothDriftMove(myPos, repulsion.normalized * RepulseStrength, deltaTime, true));
+                IsFollowingLeader = false;
+                return;
+            }
+
+            if (hasFurthest)
+            {
+                Vector3 dir = furthest - myPos;
+                if (dir.sqrMagnitude > 0.0008f)
+                {
+                    IssueMove(SmoothDriftMove(myPos, dir.normalized * MaxSpacing * 0.69f, deltaTime, false));
                     IsFollowingLeader = false;
                     return;
                 }
-
-                if (hasFurthest)
-                {
-                    Vector3 dir = furthest - myPos;
-                    if (dir.sqrMagnitude > 0.0008f)
-                    {
-                        IssueMove(SmoothDriftMove(myPos, dir.normalized * MaxSpacing * 0.69f, deltaTime, false));
-                        IsFollowingLeader = false;
-                        return;
-                    }
-                }
-
-                if (closestIdx >= 0 && closestDist > 0.65f && closestDist < MaxSquadRadiusSqr)
-                {
-                    Vector3 anchorTarget = _group.Member(closestIdx).Position;
-                    Vector3 leaderDir = anchorTarget - myPos;
-                    if (leaderDir.sqrMagnitude > 0.00023f)
-                    {
-                        IssueMove(SmoothDriftMove(myPos, leaderDir.normalized * (MinSpacing * 0.8f), deltaTime, false));
-                        IsFollowingLeader = true;
-                    }
-                }
             }
-            catch (Exception ex)
+
+            if (closestIdx >= 0 && closestDist > 0.65f && closestDist < MaxSquadRadiusSqr)
             {
-                Plugin.LoggerInstance.LogError("[BotGroupBehavior] Tick failed: " + ex);
-                FallbackMoveHelper();
+                Vector3 anchorTarget = _group.Member(closestIdx).Position;
+                Vector3 leaderDir = anchorTarget - myPos;
+                if (leaderDir.sqrMagnitude > 0.00023f)
+                {
+                    IssueMove(SmoothDriftMove(myPos, leaderDir.normalized * (MinSpacing * 0.8f), deltaTime, false));
+                    IsFollowingLeader = true;
+                }
             }
         }
-
-        #endregion
-
-        #region Leadership/Role Assignment
 
         private void RefreshSquadMembers()
         {
@@ -230,8 +179,7 @@ namespace AIRefactored.AI.Groups
                 _squadMembers = new List<BotOwner>(_group.MembersCount);
                 for (int i = 0; i < _group.MembersCount; i++)
                     _squadMembers.Add(_group.Member(i));
-                if (_squadLeaderIndex >= _squadMembers.Count || _squadMembers[_squadLeaderIndex] == null || _squadMembers[_squadLeaderIndex].IsDead)
-                    _squadLeaderIndex = ElectLeaderIndex();
+                _squadLeaderIndex = ElectLeaderIndex();
             }
         }
 
@@ -242,19 +190,15 @@ namespace AIRefactored.AI.Groups
             for (int i = 0; i < _squadMembers.Count; i++)
             {
                 var mate = _squadMembers[i];
-                if (mate == null || mate.IsDead || mate.Memory == null)
-                    continue;
-                float composure = 0.5f;
-                BotComponentCache mateCache;
-                if (BotComponentCacheRegistry.TryGetByPlayer(mate.GetPlayer, out mateCache))
+                if (mate == null || mate.IsDead) continue;
+                if (BotComponentCacheRegistry.TryGetByPlayer(mate.GetPlayer, out var mateCache))
                 {
-                    if (mateCache != null && mateCache.PanicHandler != null)
-                        composure = mateCache.PanicHandler.GetComposureLevel();
-                }
-                if (composure > bestComposure)
-                {
-                    bestComposure = composure;
-                    leaderIdx = i;
+                    float composure = mateCache?.PanicHandler?.GetComposureLevel() ?? 0.5f;
+                    if (composure > bestComposure)
+                    {
+                        bestComposure = composure;
+                        leaderIdx = i;
+                    }
                 }
             }
             return leaderIdx;
@@ -272,8 +216,6 @@ namespace AIRefactored.AI.Groups
                 {
                     _squadLeaderIndex = ElectLeaderIndex();
                     _lastLeadershipRotationTime = now;
-                    if (IsLeader && _bot.BotTalk != null)
-                        _bot.BotTalk.TrySay(EPhraseTrigger.GoForward);
                 }
             }
         }
@@ -291,30 +233,20 @@ namespace AIRefactored.AI.Groups
             for (int i = 0; i < _squadMembers.Count; i++)
             {
                 var mate = _squadMembers[i];
-                if (mate == null || mate.IsDead || mate.Memory == null)
-                    continue;
-
-                float healingTrait = UnityEngine.Random.value;
-                float flankTrait = UnityEngine.Random.value;
-                float supportTrait = UnityEngine.Random.value;
-                BotComponentCache mateCache;
-                if (BotComponentCacheRegistry.TryGetByPlayer(mate.GetPlayer, out mateCache))
+                if (mate == null || mate.IsDead) continue;
+                if (BotComponentCacheRegistry.TryGetByPlayer(mate.GetPlayer, out var mateCache))
                 {
-                    if (mateCache != null && mateCache.AIRefactoredBotOwner != null && mateCache.AIRefactoredBotOwner.PersonalityProfile != null)
-                    {
-                        healingTrait = mateCache.AIRefactoredBotOwner.PersonalityProfile.Caution;
-                        flankTrait = mateCache.AIRefactoredBotOwner.PersonalityProfile.AggressionLevel;
-                        supportTrait = mateCache.AIRefactoredBotOwner.PersonalityProfile.Cohesion;
-                    }
+                    var p = mateCache?.AIRefactoredBotOwner?.PersonalityProfile;
+                    if (p == null) continue;
+                    if (p.Caution > bestHealing) { medicIdx = i; bestHealing = p.Caution; }
+                    if (p.AggressionLevel > bestFlank) { flankerIdx = i; bestFlank = p.AggressionLevel; }
+                    if (p.Cohesion > bestSupport) { supportIdx = i; bestSupport = p.Cohesion; }
                 }
-
-                if (healingTrait > bestHealing) { medicIdx = i; bestHealing = healingTrait; }
-                if (flankTrait > bestFlank) { flankerIdx = i; bestFlank = flankTrait; }
-                if (supportTrait > bestSupport) { supportIdx = i; bestSupport = supportTrait; }
             }
-            IsMedic = (medicIdx >= 0 && _squadMembers[medicIdx] == _bot);
-            IsFlanker = (flankerIdx >= 0 && _squadMembers[flankerIdx] == _bot);
-            IsSupport = (supportIdx >= 0 && _squadMembers[supportIdx] == _bot);
+
+            IsMedic = medicIdx >= 0 && _squadMembers[medicIdx] == _bot;
+            IsFlanker = flankerIdx >= 0 && _squadMembers[flankerIdx] == _bot;
+            IsSupport = supportIdx >= 0 && _squadMembers[supportIdx] == _bot;
             _lastRoleReassignTime = now;
         }
 
@@ -324,10 +256,56 @@ namespace AIRefactored.AI.Groups
             DynamicRoleReassignment();
         }
 
-        #endregion
+        private void IssueMove(Vector3 target)
+        {
+            float now = Time.time;
+            float cohesion = _cache.AIRefactoredBotOwner?.PersonalityProfile?.Cohesion ?? 1f;
 
-        #region Fire Echo Integration
+            if (!_hasLastTarget || Vector3.Distance(_lastMoveTarget, target) > SpacingTolerance || now - _lastMoveTime > MinTickMoveInterval)
+            {
+                _lastMoveTarget = target;
+                _hasLastTarget = true;
+                _lastMoveTime = now;
+                BotMovementHelper.SmoothMoveTo(_bot, target, false, cohesion);
+            }
+        }
 
+        private Vector3 SmoothDriftMove(Vector3 basePos, Vector3 direction, float deltaTime, bool strongNervous)
+        {
+            Vector3 jitter = UnityEngine.Random.insideUnitSphere * (JitterAmount + _nervousnessLevel * 0.09f);
+            jitter.y = 0f;
+            Vector3 drift = direction.normalized * DriftSpeed * Mathf.Clamp(deltaTime * 2.08f, 0.11f, 0.34f);
+            Vector3 personalBias = new Vector3(_personalDrift.x, 0f, _personalDrift.y);
+
+            if (strongNervous)
+            {
+                float hesitation = Mathf.Sin(Time.time * (1.17f + _nervousnessLevel)) * 0.13f * _nervousnessLevel;
+                personalBias += new Vector3(-_personalDrift.y, 0f, _personalDrift.x) * hesitation;
+            }
+
+            return basePos + drift + jitter + personalBias;
+        }
+
+        private Vector2 ComputePersonalDrift(string profileId)
+        {
+            int seed = profileId.GetHashCode() ^ 0x191A81C;
+            var rand = new System.Random(seed);
+            float angle = (float)(rand.NextDouble() * Mathf.PI * 2.0);
+            float radius = 0.17f + (float)(rand.NextDouble() * 0.18f);
+            return new Vector2(Mathf.Cos(angle) * radius, Mathf.Sin(angle) * radius);
+        }
+
+        private void UpdateSquadNervousness(float deltaTime, int memberCount)
+        {
+            bool recentCombat = _group != null && _group.DangerAreasCount > 0;
+            if (recentCombat)
+                _nervousnessLevel = Mathf.Clamp01(_nervousnessLevel + (0.21f + (memberCount * 0.04f)) * deltaTime);
+            else
+                _nervousnessLevel = Mathf.Clamp01(_nervousnessLevel - (0.16f + (memberCount * 0.03f)) * deltaTime);
+        }
+        /// <summary>
+        /// Broadcasts a danger point to all squadmates based on fire echo position.
+        /// </summary>
         public void TriggerSquadFireEcho(BotOwner source, Vector3 position)
         {
             try
@@ -347,88 +325,9 @@ namespace AIRefactored.AI.Groups
             }
             catch (Exception ex)
             {
-                Plugin.LoggerInstance.LogError("[BotGroupBehavior] FireEcho failed: " + ex);
+                Plugin.LoggerInstance.LogError("[BotGroupBehavior] TriggerSquadFireEcho failed: " + ex);
             }
         }
-
-        #endregion
-
-        #region Movement Helpers
-
-        private bool IsEligible()
-        {
-            return _bot != null && _group != null && !_bot.IsDead && EFTPlayerUtil.IsValidBotOwner(_bot) && _group.MembersCount > 1;
-        }
-
-        private Vector3 SmoothDriftMove(Vector3 basePos, Vector3 direction, float deltaTime, bool strongNervous)
-        {
-            Vector3 jitter = DeterministicJitter(_bot.ProfileId, Time.frameCount) * (JitterAmount + (_nervousnessLevel * 0.09f));
-            Vector3 drift = direction.normalized * DriftSpeed * Mathf.Clamp(deltaTime * 2.08f, 0.11f, 0.34f);
-            float bias = (_cache?.AIRefactoredBotOwner?.PersonalityProfile?.AggressionLevel ?? 0.5f) - 0.5f;
-            Vector3 personalBias = new Vector3(_personalDrift.x, 0f, _personalDrift.y) * (0.61f + bias * 0.29f);
-
-            if (strongNervous)
-            {
-                float hesitation = Mathf.Sin(Time.time * (1.17f + _nervousnessLevel)) * 0.13f * _nervousnessLevel;
-                personalBias += new Vector3(-_personalDrift.y, 0f, _personalDrift.x) * hesitation;
-            }
-
-            return basePos + drift + jitter + personalBias;
-        }
-
-        private void IssueMove(Vector3 target)
-        {
-            try
-            {
-                float now = Time.time;
-                Vector3 jitteredTarget = target + DeterministicJitter(_bot.ProfileId, Time.frameCount * 2) * (JitterAmount * 0.93f);
-                float cohesion = _cache?.AIRefactoredBotOwner?.PersonalityProfile?.Cohesion ?? 1.0f;
-
-                if (!_hasLastTarget || Vector3.Distance(_lastMoveTarget, jitteredTarget) > SpacingTolerance || now - _lastMoveTime > MinTickMoveInterval)
-                {
-                    _lastMoveTarget = jitteredTarget;
-                    _hasLastTarget = true;
-                    _lastMoveTime = now;
-                    BotMovementHelper.SmoothMoveTo(_bot, jitteredTarget, false, cohesion);
-                }
-            }
-            catch (Exception ex)
-            {
-                Plugin.LoggerInstance.LogError("[BotGroupBehavior] IssueMove failed: " + ex);
-                FallbackMoveHelper();
-            }
-        }
-
-        private static Vector3 DeterministicJitter(string profileId, int tick)
-        {
-            int hash = profileId.GetHashCode() ^ (tick * 31) ^ 0x6F8A123;
-            unchecked
-            {
-                hash = (hash ^ (hash >> 13)) * 0x5bd1e995;
-                float x = ((hash & 0xFFFF) / 32768f) - 1.0f;
-                float z = (((hash >> 16) & 0xFFFF) / 32768f) - 1.0f;
-                return new Vector3(x, 0f, z);
-            }
-        }
-
-        private static Vector2 ComputePersonalDrift(string profileId)
-        {
-            int seed = profileId.GetHashCode() ^ 0x191A81C;
-            var rand = new System.Random(seed);
-            float angle = (float)(rand.NextDouble() * Mathf.PI * 2.0);
-            float radius = 0.17f + (float)(rand.NextDouble() * 0.18f);
-            return new Vector2(Mathf.Cos(angle) * radius, Mathf.Sin(angle) * radius);
-        }
-
-        private void UpdateSquadNervousness(float deltaTime, int memberCount)
-        {
-            bool recentCombat = _group != null && _group.DangerAreasCount > 0;
-            if (recentCombat)
-                _nervousnessLevel = Mathf.Clamp01(_nervousnessLevel + (0.21f + (memberCount * 0.04f)) * deltaTime);
-            else
-                _nervousnessLevel = Mathf.Clamp01(_nervousnessLevel - (0.16f + (memberCount * 0.03f)) * deltaTime);
-        }
-
         private void HandleSquadChatter(int memberCount)
         {
             float now = Time.time;
@@ -448,23 +347,5 @@ namespace AIRefactored.AI.Groups
                 _lastChatterTime = now;
             }
         }
-
-        private void FallbackMoveHelper()
-        {
-            try
-            {
-                if (_bot != null && !_bot.IsDead && _bot.Mover != null)
-                {
-                    float cohesion = _cache?.AIRefactoredBotOwner?.PersonalityProfile?.Cohesion ?? 1.0f;
-                    BotMovementHelper.SmoothMoveTo(_bot, _bot.Position, false, cohesion);
-                }
-            }
-            catch
-            {
-                // Final fail-safe: silent error containment.
-            }
-        }
-
-        #endregion
     }
 }

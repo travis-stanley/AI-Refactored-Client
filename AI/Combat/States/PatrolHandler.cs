@@ -12,16 +12,10 @@ namespace AIRefactored.AI.Combat.States
     using AIRefactored.AI.Hotspots;
     using AIRefactored.AI.Navigation;
     using AIRefactored.Core;
-    using AIRefactored.Pools;
-    using AIRefactored.Runtime;
     using EFT;
     using UnityEngine;
     using UnityEngine.AI;
 
-    /// <summary>
-    /// Handles bot patrol state: squad anti-cluster, anticipation, wounded panic, see-dead-ally fallback, comms.
-    /// Bulletproof: All failures locally isolated. No fallback AI triggers. NavMesh/path-based only.
-    /// </summary>
     public sealed class PatrolHandler
     {
         #region Constants
@@ -100,10 +94,6 @@ namespace AIRefactored.AI.Combat.States
             }
         }
 
-        /// <summary>
-        /// Full patrol logic: humanized flow, squad role simulation, fallback, comms, micro-scanning.
-        /// All fallback triggers are externalized (handled by BotBrain/CombatStateMachine).
-        /// </summary>
         public void Tick(float time)
         {
             if (_bot == null || _cache == null)
@@ -120,13 +110,9 @@ namespace AIRefactored.AI.Combat.States
 
                 _lastPatrolTime = time;
 
-                // Externalized: BotBrain/CombatStateMachine triggers fallback and owns fallback logic.
                 if (ShouldTriggerFallback(time))
                 {
-                    // Signal fallback trigger to the combat system; NEVER process direct fallback here.
                     _cache.Combat?.TriggerFallback(TryGetFallbackPosition(), time);
-
-                    // Panic voice comms
                     if (!FikaHeadlessDetector.IsHeadless && _bot.BotTalk != null && UnityEngine.Random.value < FallbackVoiceChance)
                     {
                         try { _bot.BotTalk.TrySay(EPhraseTrigger.NeedHelp); } catch { }
@@ -136,7 +122,6 @@ namespace AIRefactored.AI.Combat.States
                     return;
                 }
 
-                // Wait during cooldown; perform head-look scanning while stationary
                 if (time < _nextSwitchTime)
                 {
                     PerformPatrolIdleLook();
@@ -145,78 +130,48 @@ namespace AIRefactored.AI.Combat.States
                     return;
                 }
 
-                // Get random patrol hotspot, error-guarded
-                HotspotRegistry.Hotspot hotspot = null;
-                try { hotspot = HotspotRegistry.GetRandomHotspot(); }
-                catch (Exception ex)
-                {
-                    Plugin.LoggerInstance.LogError($"[PatrolHandler] Hotspot lookup failed: {ex}");
-                    return;
-                }
-
+                var hotspot = HotspotRegistry.GetRandomHotspot();
                 if (hotspot == null || !IsVectorValid(hotspot.Position))
-                {
-                    Plugin.LoggerInstance.LogWarning("[PatrolHandler] Hotspot was null or invalid.");
                     return;
-                }
 
                 Vector3 offset = UnityEngine.Random.insideUnitSphere * UnityEngine.Random.Range(MinHotspotRandomOffset, MaxHotspotRandomOffset);
                 offset.y = 0f;
                 Vector3 target = hotspot.Position + offset;
 
-                // Squad anti-cluster, group aggro, and leader/follower micro-offset
                 if (_cache.SquadPath != null)
                 {
-                    try { target = _cache.SquadPath.ApplyOffsetTo(target); }
-                    catch { }
+                    try { target = _cache.SquadPath.ApplyOffsetTo(target); } catch { }
                 }
                 else if (_bot?.BotsGroup != null && _bot.BotsGroup.MembersCount > 1)
                 {
                     int idx = GetSquadIndex(_bot);
                     Vector3 perp = Vector3.Cross(Vector3.up, _bot.LookDirection.normalized);
                     target += perp * (SquadSpread * (idx - (_bot.BotsGroup.MembersCount / 2f)));
-                    if (_cache.PersonalityProfile != null)
-                    {
-                        float aggro = Mathf.Clamp(_cache.PersonalityProfile.AggressionLevel, 0.0f, 1.0f);
-                        float caution = Mathf.Clamp(_cache.PersonalityProfile.Caution, 0.0f, 1.0f);
-                        target += perp * (GroupAggroSpread * (aggro - caution));
-                    }
+
+                    float aggro = Mathf.Clamp(_cache.PersonalityProfile?.AggressionLevel ?? 0f, 0f, 1f);
+                    float caution = Mathf.Clamp(_cache.PersonalityProfile?.Caution ?? 0f, 0f, 1f);
+                    target += perp * (GroupAggroSpread * (aggro - caution));
                 }
 
                 target = GetNavMeshSafe(target, _bot.Position);
                 if (!IsVectorValid(target) || (target - _bot.Position).sqrMagnitude > MaxPatrolDistance * MaxPatrolDistance)
                     target = _bot.Position;
 
-                float patrolCohesion = GetCohesion();
+                float patrolCohesion = Mathf.Clamp(_cache?.PersonalityProfile?.Cohesion ?? 1f, 0.7f, 1.3f);
 
-                // Simulate "leading" and "lagging" by role and random chance
                 if (_isLeader && UnityEngine.Random.value < LeaderFastTrackChance)
-                {
                     patrolCohesion *= 0.93f + UnityEngine.Random.value * 0.13f;
-                }
                 if (_isFollower && UnityEngine.Random.value < 0.15f)
-                {
                     _followerLagUntil = time + UnityEngine.Random.Range(FollowerLagSeconds, FollowerLagSeconds * 2.4f);
-                }
 
-                if (_bot.Mover != null)
-                {
-                    BotMovementHelper.SmoothMoveTo(_bot, target, slow: true, cohesionScale: patrolCohesion);
-                    BotCoverHelper.TrySetStanceFromNearbyCover(_cache, target);
+                BotMovementHelper.SmoothMoveTo(_bot, target, slow: true, cohesionScale: patrolCohesion);
+                BotCoverHelper.TrySetStanceFromNearbyCover(_cache, target);
 
-                    // Idle look scan after some patrol moves
-                    if (UnityEngine.Random.value < 0.17f + (_cache.PersonalityProfile?.Caution ?? 0f) * 0.11f)
-                        PerformPatrolIdleLook();
-                }
-                else
-                {
-                    Plugin.LoggerInstance.LogWarning("[PatrolHandler] BotMover missing.");
-                    return;
-                }
+                if (UnityEngine.Random.value < 0.17f + (_cache.PersonalityProfile?.Caution ?? 0f) * 0.11f)
+                    PerformPatrolIdleLook();
 
                 _nextSwitchTime = time + UnityEngine.Random.Range(_switchCooldownBase, _switchCooldownBase + 18f);
 
-                // Squad role-specific comms/voice
                 if (!FikaHeadlessDetector.IsHeadless && _bot.BotTalk != null && UnityEngine.Random.value < 0.26f)
                 {
                     try
@@ -239,43 +194,26 @@ namespace AIRefactored.AI.Combat.States
 
         #endregion
 
-        #region Danger Detection & Fallback
+        #region Fallback Logic
 
-        /// <summary>
-        /// Triggers a fallback if panic/wounds/suppression/dead-ally conditions are met. 
-        /// Returns true if fallback should be externally triggered by BotBrain/CombatStateMachine.
-        /// </summary>
         private bool ShouldTriggerFallback(float time)
         {
-            if (_bot == null || _cache == null)
-                return false;
-
             try
             {
-                if (_cache.PanicHandler?.GetComposureLevel() < PanicThreshold)
-                    return true;
+                if (_cache.PanicHandler?.GetComposureLevel() < PanicThreshold) return true;
+                if (_cache.InjurySystem?.ShouldHeal(time) == true) return true;
+                if (_cache.Suppression?.IsSuppressed() == true) return true;
 
-                if (_cache.InjurySystem?.ShouldHeal(time) == true)
-                    return true;
+                var group = _bot?.BotsGroup;
+                if (group == null) return false;
 
-                if (_cache.Suppression?.IsSuppressed() == true)
-                    return true;
-
-                var group = _bot.BotsGroup;
-                if (group == null)
-                    return false;
-
-                Vector3 self = _bot.Position;
                 for (int i = 0; i < group.MembersCount; i++)
                 {
-                    var member = group.Member(i);
-                    if (member != null && member != _bot && member.IsDead)
-                    {
-                        if (Vector3.Distance(self, member.Position) < DeadAllyRadius)
+                    var mate = group.Member(i);
+                    if (mate != null && mate != _bot && mate.IsDead)
+                        if (Vector3.Distance(_bot.Position, mate.Position) < DeadAllyRadius)
                             return true;
-                    }
                 }
-
                 return false;
             }
             catch (Exception ex)
@@ -285,60 +223,36 @@ namespace AIRefactored.AI.Combat.States
             }
         }
 
-        /// <summary>
-        /// Returns a safe fallback retreat vector, NavMesh-validated.
-        /// </summary>
         private Vector3 TryGetFallbackPosition()
         {
-            if (_bot == null)
-                return Vector3.zero;
-
             try
             {
                 Vector3 retreat = _bot.Position - _bot.LookDirection.normalized * 7.5f;
                 retreat.y = _bot.Position.y;
                 return GetNavMeshSafe(retreat, _bot.Position);
             }
-            catch (Exception ex)
+            catch
             {
-                Plugin.LoggerInstance.LogError($"[PatrolHandler] TryGetFallbackPosition failed: {ex}");
                 return _bot.Position;
             }
         }
 
         #endregion
 
-        #region Idle/Anticipation/Scanning
+        #region Idle Look
 
         private void PerformPatrolIdleLook()
         {
-            try
-            {
-                float now = Time.time;
-                if (now < _nextPatrolLookTime)
-                    return;
-                _nextPatrolLookTime = now + UnityEngine.Random.Range(PatrolLookPauseMin, PatrolLookPauseMax);
+            float now = Time.time;
+            if (now < _nextPatrolLookTime)
+                return;
 
-                if (_bot == null || _bot.Transform == null || _bot.IsDead)
-                    return;
+            _nextPatrolLookTime = now + UnityEngine.Random.Range(PatrolLookPauseMin, PatrolLookPauseMax);
 
-                Vector3 lookOffset = UnityEngine.Random.insideUnitSphere * IdleLookVariance;
-                lookOffset.y = 0f;
-                Vector3 lookTarget = _bot.Position + _bot.LookDirection.normalized * 2.5f + lookOffset;
-                BotMovementHelper.SmoothLookTo(_bot, lookTarget, 2.1f + UnityEngine.Random.value * 1.2f);
-
-                // Subtle micro-move on scan if bot is cautious (simulates nervous players)
-                if (_cache.PersonalityProfile != null && UnityEngine.Random.value < 0.05f + _cache.PersonalityProfile.Caution * 0.09f)
-                {
-                    Vector3 microMove = lookTarget + UnityEngine.Random.insideUnitSphere * 0.05f;
-                    microMove.y = _bot.Position.y;
-                    BotMovementHelper.SmoothMoveTo(_bot, microMove, slow: true, cohesionScale: GetCohesion());
-                }
-            }
-            catch
-            {
-                // No error spam.
-            }
+            Vector3 offset = UnityEngine.Random.insideUnitSphere * IdleLookVariance;
+            offset.y = 0f;
+            Vector3 lookTarget = _bot.Position + _bot.LookDirection.normalized * 2.5f + offset;
+            BotMovementHelper.SmoothLookTo(_bot, lookTarget, 2.1f + UnityEngine.Random.value * 1.2f);
         }
 
         #endregion
@@ -347,17 +261,14 @@ namespace AIRefactored.AI.Combat.States
 
         private static Vector3 GetNavMeshSafe(Vector3 candidate, Vector3 fallback)
         {
-            UnityEngine.AI.NavMeshHit navHit;
-            if (UnityEngine.AI.NavMesh.SamplePosition(candidate, out navHit, NavMeshSampleRadius, NavMesh.AllAreas))
-                return navHit.position;
-            return fallback;
+            return NavMesh.SamplePosition(candidate, out var hit, NavMeshSampleRadius, NavMesh.AllAreas)
+                ? hit.position : fallback;
         }
 
         private static int GetSquadIndex(BotOwner bot)
         {
-            if (bot == null || bot.BotsGroup == null) return -1;
-            int count = bot.BotsGroup.MembersCount;
-            for (int i = 0; i < count; i++)
+            if (bot?.BotsGroup == null) return -1;
+            for (int i = 0; i < bot.BotsGroup.MembersCount; i++)
                 if (bot.BotsGroup.Member(i) == bot) return i;
             return -1;
         }
@@ -365,13 +276,6 @@ namespace AIRefactored.AI.Combat.States
         private static bool IsSquadLeader(BotOwner bot)
         {
             return GetSquadIndex(bot) == 0;
-        }
-
-        private float GetCohesion()
-        {
-            if (_cache?.PersonalityProfile != null)
-                return Mathf.Clamp(_cache.PersonalityProfile.Cohesion, 0.7f, 1.3f);
-            return 1.0f;
         }
 
         private static bool IsVectorValid(Vector3 v)

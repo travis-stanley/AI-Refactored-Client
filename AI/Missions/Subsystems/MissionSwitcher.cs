@@ -20,9 +20,19 @@ namespace AIRefactored.AI.Missions.Subsystems
     using EFT;
     using UnityEngine;
 
+    /// <summary>
+    /// Dynamically selects bot mission types using realistic state-based logic.
+    /// Never issues direct movement or transitions outside of localized mission change.
+    /// </summary>
     public sealed class MissionSwitcher
     {
+        #region Constants
+
         private const float SwitchCooldown = 10f;
+
+        #endregion
+
+        #region Fields
 
         private readonly BotOwner _bot;
         private readonly BotComponentCache _cache;
@@ -32,6 +42,10 @@ namespace AIRefactored.AI.Missions.Subsystems
         private readonly ManualLogSource _log;
 
         private float _lastSwitchTime;
+
+        #endregion
+
+        #region Constructor
 
         public MissionSwitcher(BotOwner bot, BotComponentCache cache)
         {
@@ -46,9 +60,13 @@ namespace AIRefactored.AI.Missions.Subsystems
             _log = Plugin.LoggerInstance;
         }
 
+        #endregion
+
+        #region Evaluation Logic
+
         /// <summary>
-        /// Evaluates bot state to decide whether to switch mission type.
-        /// Never triggers direct movement. All logic is strictly localized.
+        /// Evaluates bot state and decides whether to switch mission type.
+        /// Strictly isolated. Does not issue movement or side effects directly.
         /// </summary>
         public void Evaluate(
             ref MissionType currentMission,
@@ -59,10 +77,7 @@ namespace AIRefactored.AI.Missions.Subsystems
         {
             try
             {
-                if (_bot == null || _cache == null || _profile == null)
-                    return;
-
-                if (_bot.IsDead || _bot.GetPlayer == null || !_bot.GetPlayer.IsAI)
+                if (_bot == null || _cache == null || _profile == null || _bot.IsDead || _bot.GetPlayer == null || !_bot.GetPlayer.IsAI)
                     return;
 
                 if (time - _lastSwitchTime < SwitchCooldown)
@@ -71,30 +86,28 @@ namespace AIRefactored.AI.Missions.Subsystems
                 string name = _bot.Profile?.Info?.Nickname ?? "Unknown";
 
                 // 1. Escalate to Fight if under fire and aggressive
-                if (_bot.Memory != null &&
-                    _bot.Memory.IsUnderFire &&
+                if (_bot.Memory?.IsUnderFire == true &&
                     _profile.AggressionLevel > 0.6f &&
                     currentMission != MissionType.Fight)
                 {
                     currentMission = MissionType.Fight;
                     _lastSwitchTime = time;
                     switchToFight?.Invoke();
-                    _log.LogDebug("[MissionSwitcher] " + name + " escalating → Fight (under fire + aggressive)");
+                    _log.LogDebug($"[MissionSwitcher] {name} escalating → Fight (under fire + aggressive)");
                     return;
                 }
 
                 // 2. Switch to Loot if loot-driven and opportunity exists
                 if (currentMission == MissionType.Quest &&
                     _profile.PreferredMission == MissionBias.Loot &&
-                    _lootDecision != null &&
-                    _lootDecision.ShouldLootNow())
+                    _lootDecision?.ShouldLootNow() == true)
                 {
                     Vector3 lootPos = _lootDecision.GetLootDestination();
                     if (lootPos != Vector3.zero)
                     {
                         currentMission = MissionType.Loot;
                         _lastSwitchTime = time;
-                        _log.LogDebug("[MissionSwitcher] " + name + " switching → Loot (loot opportunity nearby)");
+                        _log.LogDebug($"[MissionSwitcher] {name} switching → Loot (loot opportunity nearby)");
                         return;
                     }
                 }
@@ -107,7 +120,7 @@ namespace AIRefactored.AI.Missions.Subsystems
                     currentMission = MissionType.Quest;
                     _lastSwitchTime = time;
                     resumeQuesting?.Invoke();
-                    _log.LogDebug("[MissionSwitcher] " + name + " falling back → Quest (squad separation)");
+                    _log.LogDebug($"[MissionSwitcher] {name} falling back → Quest (squad separation)");
                 }
             }
             catch (Exception ex)
@@ -115,5 +128,7 @@ namespace AIRefactored.AI.Missions.Subsystems
                 _log.LogError($"[MissionSwitcher] Evaluate failed: {ex}");
             }
         }
+
+        #endregion
     }
 }

@@ -75,22 +75,14 @@ namespace AIRefactored.AI.Movement
 
         #region Public Methods
 
-        /// <summary>
-        /// Main tick, called only by BotBrain. 
-        /// Handles anticipation, suppression, error-prone micro-delay, and performs jump or vault if valid.
-        /// </summary>
         public void Tick(float deltaTime)
         {
             try
             {
                 float now = Time.time;
-                if (!IsJumpAllowed(now))
+                if (!IsJumpAllowed(now) || now < _nextAllowedJumpTime || now < _preJumpAnticipationUntil)
                     return;
 
-                if (now < _nextAllowedJumpTime || now < _preJumpAnticipationUntil)
-                    return;
-
-                // Blinded or suppression block
                 if (_cache != null && _cache.IsBlinded && now < _cache.BlindUntilTime)
                     return;
                 if (_isSuppressed && now < _nextSuppressedCooldown)
@@ -101,7 +93,6 @@ namespace AIRefactored.AI.Movement
                 {
                     if (TryFindJumpTarget(out temp[0]))
                     {
-                        // Human error: abort/hesitate sometimes
                         if (UnityEngine.Random.value < HumanMistakeChance)
                         {
                             _nextAllowedJumpTime = now + UnityEngine.Random.Range(0.18f, 0.37f);
@@ -109,16 +100,12 @@ namespace AIRefactored.AI.Movement
                             return;
                         }
 
-                        // Add anticipation (simulates "thinking about it" before the jump)
                         float anticipation = UnityEngine.Random.Range(PreJumpAnticipationMin, PreJumpAnticipationMax);
                         _preJumpAnticipationUntil = now + anticipation;
-
-                        // Schedule actual jump for next tick after anticipation
                         _nextAllowedJumpTime = now + JumpCooldown + anticipation;
+
                         if (now >= _preJumpAnticipationUntil)
-                        {
                             ExecuteJump(temp[0], deltaTime);
-                        }
                     }
                 }
                 finally
@@ -126,19 +113,13 @@ namespace AIRefactored.AI.Movement
                     TempVector3Pool.Return(temp);
                 }
             }
-            catch
-            {
-                // All failures locally isolated
-            }
+            catch { }
         }
 
         #endregion
 
         #region Internal Logic
 
-        /// <summary>
-        /// Determines if a jump is currently permitted, based on pose, panic, group, suppression, cooldowns, etc.
-        /// </summary>
         private bool IsJumpAllowed(float now)
         {
             if (_hasRecentlyJumped && now - _lastJumpTime < JumpCooldown)
@@ -150,10 +131,9 @@ namespace AIRefactored.AI.Movement
             if (_bot.IsDead || _bot.Memory?.GoalEnemy != null)
                 return false;
 
-            // Panic/suppression: bots cannot jump while panicking, or for a cooldown after
             if (_cache != null)
             {
-                if (_cache.PanicHandler != null && _cache.PanicHandler.IsPanicking)
+                if (_cache.PanicHandler?.IsPanicking == true)
                 {
                     _isSuppressed = true;
                     _nextSuppressedCooldown = now + PanicCautionCooldown;
@@ -164,7 +144,6 @@ namespace AIRefactored.AI.Movement
                     _isSuppressed = false;
             }
 
-            // Never jump if blocked by squadmate directly ahead (human-like queueing)
             if (_bot.BotsGroup != null && _bot.BotsGroup.MembersCount > 1)
             {
                 Vector3 myPos = _bot.Position;
@@ -186,9 +165,6 @@ namespace AIRefactored.AI.Movement
             return true;
         }
 
-        /// <summary>
-        /// Attempts to execute a human-like jump or vault towards the calculated target.
-        /// </summary>
         private void ExecuteJump(Vector3 target, float deltaTime)
         {
             try
@@ -207,15 +183,9 @@ namespace AIRefactored.AI.Movement
                 Vector3 velocity = direction * JumpVelocityMultiplier;
                 _context.ApplyMotion(velocity, deltaTime);
             }
-            catch
-            {
-                // Locally isolated
-            }
+            catch { }
         }
 
-        /// <summary>
-        /// Finds a valid jump/vault target ahead, using spherecast for obstacle and raycast for landing.
-        /// </summary>
         private bool TryFindJumpTarget(out Vector3 target)
         {
             target = Vector3.zero;
@@ -272,10 +242,7 @@ namespace AIRefactored.AI.Movement
                     TempRaycastHitPool.Return(hits);
                 }
             }
-            catch
-            {
-                // Failure always locally isolated
-            }
+            catch { }
 
             return false;
         }

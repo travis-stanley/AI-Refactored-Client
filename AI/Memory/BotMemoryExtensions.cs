@@ -26,26 +26,15 @@ namespace AIRefactored.AI.Memory
     /// </summary>
     public static class BotMemoryExtensions
     {
-        #region Constants
-
         private const float MinMoveThreshold = 0.5f;
         private const float FlankDotThreshold = 0.25f;
         private const float EnemyTooCloseSqr = 1.0f;
         private const float InvestigateRangeSqr = 625f;
 
-        #endregion
-
-        #region Logging
-
         private static readonly ManualLogSource Logger = Plugin.LoggerInstance;
 
-        #endregion
+        #region Movement Extensions
 
-        #region Fallback + Movement
-
-        /// <summary>
-        /// Clears last heard sound for the given bot.
-        /// </summary>
         public static void ClearLastHeardSound(this BotOwner bot)
         {
             try
@@ -59,9 +48,6 @@ namespace AIRefactored.AI.Memory
             }
         }
 
-        /// <summary>
-        /// Attempts to fallback to the given position, NavMesh safe, only if not panicking.
-        /// </summary>
         public static void FallbackTo(this BotOwner bot, Vector3 fallbackPosition)
         {
             try
@@ -69,16 +55,12 @@ namespace AIRefactored.AI.Memory
                 if (!EFTPlayerUtil.IsValidBotOwner(bot) || fallbackPosition.sqrMagnitude < MinMoveThreshold)
                     return;
 
-                BotComponentCache cache = BotCacheUtility.GetCache(bot);
+                var cache = BotCacheUtility.GetCache(bot);
                 if (cache?.PanicHandler?.IsPanicking == true)
                     return;
 
-                Vector3 safeTarget;
-                if (BotNavHelper.TryGetSafeTarget(bot, out safeTarget))
-                {
+                if (BotNavHelper.TryGetSafeTarget(bot, out Vector3 safeTarget))
                     BotMovementHelper.SmoothMoveTo(bot, safeTarget);
-                }
-                // If no safe target found, bot pauses and waits for retry. No teleport.
             }
             catch (Exception ex)
             {
@@ -86,21 +68,15 @@ namespace AIRefactored.AI.Memory
             }
         }
 
-        /// <summary>
-        /// Forces immediate move to the given position, NavMesh safe.
-        /// </summary>
         public static void ForceMoveTo(this BotOwner bot, Vector3 position)
         {
             try
             {
-                if (EFTPlayerUtil.IsValidBotOwner(bot) && position.sqrMagnitude >= MinMoveThreshold)
-                {
-                    Vector3 safeTarget;
-                    if (BotNavHelper.TryGetSafeTarget(bot, out safeTarget))
-                    {
-                        BotMovementHelper.SmoothMoveTo(bot, safeTarget);
-                    }
-                }
+                if (!EFTPlayerUtil.IsValidBotOwner(bot) || position.sqrMagnitude < MinMoveThreshold)
+                    return;
+
+                if (BotNavHelper.TryGetSafeTarget(bot, out Vector3 safeTarget))
+                    BotMovementHelper.SmoothMoveTo(bot, safeTarget);
             }
             catch (Exception ex)
             {
@@ -108,13 +84,6 @@ namespace AIRefactored.AI.Memory
             }
         }
 
-        #endregion
-
-        #region Cover Reevaluation
-
-        /// <summary>
-        /// Reevaluate current cover or fallback position if enemy is visible but too close or at poor angle.
-        /// </summary>
         public static void ReevaluateCurrentCover(this BotOwner bot)
         {
             try
@@ -122,7 +91,7 @@ namespace AIRefactored.AI.Memory
                 if (!EFTPlayerUtil.IsValidBotOwner(bot))
                     return;
 
-                EnemyInfo goal = bot.Memory?.GoalEnemy;
+                var goal = bot.Memory?.GoalEnemy;
                 if (goal == null || !goal.IsVisible)
                     return;
 
@@ -132,14 +101,14 @@ namespace AIRefactored.AI.Memory
                 if (sqrDist < EnemyTooCloseSqr)
                     return;
 
-                float angle = Vector3.Angle(bot.LookDirection, toEnemy.normalized);
+                float angle = Vector3.Angle(bot.LookDirection, toEnemy);
                 if (angle >= 20f || sqrDist >= InvestigateRangeSqr)
                     return;
 
                 Vector3 fallback = bot.Position - (toEnemy.normalized * 5f);
                 Vector3 destination = new Vector3(fallback.x, bot.Position.y, fallback.z);
 
-                BotComponentCache cache = BotCacheUtility.GetCache(bot);
+                var cache = BotCacheUtility.GetCache(bot);
                 if (cache?.CoverPlanner != null)
                 {
                     List<Vector3> path = cache.CoverPlanner.GetCoverRetreatPath(toEnemy);
@@ -150,11 +119,8 @@ namespace AIRefactored.AI.Memory
                     }
                 }
 
-                Vector3 safeTarget;
-                if (BotNavHelper.TryGetSafeTarget(bot, out safeTarget))
-                {
+                if (BotNavHelper.TryGetSafeTarget(bot, out Vector3 safeTarget))
                     BotMovementHelper.SmoothMoveTo(bot, safeTarget);
-                }
 
                 if (!FikaHeadlessDetector.IsHeadless && bot.BotTalk != null)
                     bot.BotTalk.TrySay(EPhraseTrigger.OnLostVisual);
@@ -169,9 +135,6 @@ namespace AIRefactored.AI.Memory
 
         #region Mode Transitions
 
-        /// <summary>
-        /// Set cautious search mode (non-aggressive, non-peace).
-        /// </summary>
         public static void SetCautiousSearchMode(this BotOwner bot)
         {
             try
@@ -188,9 +151,6 @@ namespace AIRefactored.AI.Memory
             }
         }
 
-        /// <summary>
-        /// Set full combat aggression mode (attack immediately, not peaceful).
-        /// </summary>
         public static void SetCombatAggressionMode(this BotOwner bot)
         {
             try
@@ -207,9 +167,6 @@ namespace AIRefactored.AI.Memory
             }
         }
 
-        /// <summary>
-        /// Set peace mode and check peace status.
-        /// </summary>
         public static void SetPeaceMode(this BotOwner bot)
         {
             try
@@ -231,32 +188,25 @@ namespace AIRefactored.AI.Memory
 
         #region Audio Detection
 
-        /// <summary>
-        /// Set last heard sound to a player source and advance towards it.
-        /// </summary>
         public static void SetLastHeardSound(this BotOwner bot, Player source)
         {
             try
             {
                 if (!EFTPlayerUtil.IsValidBotOwner(bot) || !EFTPlayerUtil.IsValid(source))
                     return;
-
                 if (bot.ProfileId == source.ProfileId)
                     return;
 
-                Vector3 sourcePos = EFTPlayerUtil.GetPosition(source);
-                if (sourcePos.sqrMagnitude < 0.01f)
+                Vector3 pos = EFTPlayerUtil.GetPosition(source);
+                if (pos.sqrMagnitude < 0.01f)
                     return;
 
-                BotMemoryStore.AddHeardSound(bot.ProfileId, sourcePos, Time.time);
+                BotMemoryStore.AddHeardSound(bot.ProfileId, pos, Time.time);
 
-                // Advance toward sound, but validate.
-                Vector3 cautiousAdvance = sourcePos + ((bot.Position - sourcePos).normalized * 3f);
-                Vector3 safeTarget;
-                if (BotNavHelper.TryGetSafeTarget(bot, out safeTarget))
-                {
+                Vector3 cautiousAdvance = pos + (bot.Position - pos).normalized * 3f;
+
+                if (BotNavHelper.TryGetSafeTarget(bot, out Vector3 safeTarget))
                     BotMovementHelper.SmoothMoveTo(bot, safeTarget);
-                }
 
                 if (!FikaHeadlessDetector.IsHeadless && bot.BotTalk != null)
                     bot.BotTalk.TrySay(EPhraseTrigger.OnEnemyShot);
@@ -269,11 +219,8 @@ namespace AIRefactored.AI.Memory
 
         #endregion
 
-        #region Flanking Logic
+        #region Flanking
 
-        /// <summary>
-        /// Attempts to get a flank direction; only returns success if a valid flank is found.
-        /// </summary>
         public static Vector3 TryGetFlankDirection(this BotOwner bot, out bool success)
         {
             success = false;
@@ -282,7 +229,7 @@ namespace AIRefactored.AI.Memory
                 if (!EFTPlayerUtil.IsValidBotOwner(bot))
                     return Vector3.zero;
 
-                EnemyInfo goal = bot.Memory?.GoalEnemy;
+                var goal = bot.Memory?.GoalEnemy;
                 if (goal == null)
                     return Vector3.zero;
 
@@ -297,9 +244,7 @@ namespace AIRefactored.AI.Memory
                     return Vector3.zero;
 
                 success = true;
-                // Always return a normalized, right-flank direction.
-                Vector3 flank = Vector3.Cross(enemyDir, Vector3.up).normalized * 1.2f;
-                return flank;
+                return Vector3.Cross(enemyDir, Vector3.up).normalized * 1.2f;
             }
             catch (Exception ex)
             {

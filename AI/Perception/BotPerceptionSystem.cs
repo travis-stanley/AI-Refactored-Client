@@ -2,6 +2,7 @@
 //   AI-Refactored: BotPerceptionSystem.cs (Ultimate Realism, Fully Safe & Headless-Compatible)
 //   Realism: Flashblindness, flare, suppression, panic triggers.
 //   Bulletproof: Null-safe, error isolated, uses only approved helper methods for player/bot data.
+//   MIT License.
 // </auto-generated>
 
 namespace AIRefactored.AI.Perception
@@ -14,6 +15,11 @@ namespace AIRefactored.AI.Perception
     using EFT;
     using UnityEngine;
 
+    /// <summary>
+    /// Handles all visual impairment, suppression, and panic state logic for bots. 
+    /// Fully null-guarded, multiplayer/headless safe, error-isolated, and never disables outside logic. 
+    /// Integrates with BotBrain tick. No allocations in hot path.
+    /// </summary>
     public sealed class BotPerceptionSystem : IFlashReactiveBot
     {
         #region Constants
@@ -224,7 +230,6 @@ namespace AIRefactored.AI.Perception
 
             try
             {
-                // Get head transform safely from cache helper.
                 Transform head = BotCacheUtility.Head(_cache);
                 if (head == null)
                     return;

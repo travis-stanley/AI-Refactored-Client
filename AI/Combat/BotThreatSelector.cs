@@ -18,10 +18,6 @@ namespace AIRefactored.AI.Combat
     using EFT;
     using UnityEngine;
 
-    /// <summary>
-    /// Selects and prioritizes threats based on live awareness, memory, squad, and bot personality.
-    /// Handles PMC-vs-PMC, squad/squad, and fallback-to-memory selection. No fallback disables, no AI disables.
-    /// </summary>
     public sealed class BotThreatSelector
     {
         #region Constants
@@ -92,15 +88,15 @@ namespace AIRefactored.AI.Combat
 
             for (int i = 0; i < players.Count; i++)
             {
-                var p = players[i];
-                if (!EFTPlayerUtil.IsValid(p) || !IsProperEnemy(_bot, p))
+                Player candidate = players[i];
+                if (!EFTPlayerUtil.IsValid(candidate) || !IsProperEnemy(_bot, candidate))
                     continue;
 
-                float score = ScoreTarget(p, time);
+                float score = ScoreTarget(candidate, time);
                 if (score > bestScore)
                 {
+                    best = candidate;
                     bestScore = score;
-                    best = p;
                 }
             }
 
@@ -141,54 +137,54 @@ namespace AIRefactored.AI.Combat
 
             if (_bot.BotsGroup != null)
             {
-                int n = _bot.BotsGroup.MembersCount;
-                for (int i = 0; i < n; i++)
+                int count = _bot.BotsGroup.MembersCount;
+                for (int i = 0; i < count; i++)
                 {
-                    var mate = _bot.BotsGroup.Member(i);
-                    if (mate == null || mate == _bot || mate.IsDead) continue;
-                    if (mate.Memory?.GoalEnemy?.Person?.ProfileId == candidate.ProfileId)
+                    BotOwner mate = _bot.BotsGroup.Member(i);
+                    if (mate != null && mate != _bot && !mate.IsDead &&
+                        mate.Memory?.GoalEnemy?.Person?.ProfileId == candidate.ProfileId)
+                    {
                         score += SquadAssistBonus;
+                    }
                 }
             }
 
             EnemyInfo info = GetEnemyInfo(candidate);
-            if (info != null)
+            if (info != null && info.IsVisible)
             {
-                if (info.IsVisible)
-                {
-                    score += LineOfSightBonus;
-                    if (time - info.PersonalLastSeenTime < 2.4f)
-                        score += VisibleRecentBonus;
-                }
+                score += LineOfSightBonus;
+                if (time - info.PersonalLastSeenTime < 2.4f)
+                    score += VisibleRecentBonus;
             }
 
-            if (_cache.Suppression != null && _cache.Suppression.IsSuppressed())
+            if (_cache.Suppression?.IsSuppressed() == true)
                 score -= SuppressionPenalty;
-            if (_cache.PanicHandler != null && _cache.PanicHandler.IsPanicking)
+            if (_cache.PanicHandler?.IsPanicking == true)
                 score -= PanicPenalty;
 
             return score;
         }
 
-        private EnemyInfo GetEnemyInfo(Player p)
+        private EnemyInfo GetEnemyInfo(Player player)
         {
-            if (_bot?.EnemiesController?.EnemyInfos == null || p == null || string.IsNullOrEmpty(p.ProfileId))
+            if (_bot?.EnemiesController?.EnemyInfos == null || player == null)
                 return null;
 
             foreach (var kv in _bot.EnemiesController.EnemyInfos)
             {
-                if (kv.Key is Player other && other.ProfileId == p.ProfileId)
+                if (kv.Key is Player enemy && enemy.ProfileId == player.ProfileId)
                     return kv.Value;
             }
 
-            return _bot.Memory?.GoalEnemy?.Person?.ProfileId == p.ProfileId
-                ? _bot.Memory.GoalEnemy
-                : null;
+            if (_bot.Memory?.GoalEnemy?.Person?.ProfileId == player.ProfileId)
+                return _bot.Memory.GoalEnemy;
+
+            return null;
         }
 
         #endregion
 
-        #region Fallback / Target Set
+        #region Fallback Logic
 
         private void TryFallbackFromMemory(float time)
         {
@@ -196,20 +192,20 @@ namespace AIRefactored.AI.Combat
             if (string.IsNullOrEmpty(id))
                 return;
 
-            var fallback = EFTPlayerUtil.ResolvePlayerById(id);
+            Player fallback = EFTPlayerUtil.ResolvePlayerById(id);
             if (EFTPlayerUtil.IsValid(fallback) && IsProperEnemy(_bot, fallback))
                 SetTarget(fallback, time);
         }
 
-        private void SetTarget(Player p, float time)
+        private void SetTarget(Player player, float time)
         {
-            _target = p;
+            _target = player;
             _lastSwitchTime = time;
 
-            if (_cache?.TacticalMemory != null && p != null)
-                _cache.TacticalMemory.RecordEnemyPosition(EFTPlayerUtil.GetPosition(p), "Threat", p.ProfileId);
+            if (_cache.TacticalMemory != null)
+                _cache.TacticalMemory.RecordEnemyPosition(EFTPlayerUtil.GetPosition(player), "Threat", player.ProfileId);
 
-            if (_cache?.Movement != null && !_bot.Mover.IsMoving)
+            if (_cache.Movement != null && !_bot.Mover.IsMoving)
             {
                 if (BotNavHelper.TryGetSafeTarget(_bot, out Vector3 safePos) && IsVectorValid(safePos))
                     BotMovementHelper.SmoothMoveTo(_bot, safePos, false, _profile.Cohesion);
@@ -222,20 +218,23 @@ namespace AIRefactored.AI.Combat
 
         #endregion
 
-        #region Helper
+        #region Helpers
 
         private static bool IsProperEnemy(BotOwner self, Player candidate)
         {
             if (self == null || candidate == null || candidate.ProfileId == self.ProfileId)
                 return false;
 
-            var selfSide = self.GetPlayer?.Side ?? EPlayerSide.Savage;
-            var otherSide = candidate.Side;
-            if (selfSide != otherSide) return true;
+            EPlayerSide selfSide = self.GetPlayer?.Side ?? EPlayerSide.Savage;
+            EPlayerSide otherSide = candidate.Side;
 
-            string sg = self.GetPlayer?.Profile?.Info?.GroupId ?? "";
-            string tg = candidate.Profile?.Info?.GroupId ?? "";
-            return sg != tg;
+            if (selfSide != otherSide)
+                return true;
+
+            string selfGroup = self.GetPlayer?.Profile?.Info?.GroupId ?? "";
+            string otherGroup = candidate.Profile?.Info?.GroupId ?? "";
+
+            return selfGroup != otherGroup;
         }
 
         private static bool IsVectorValid(Vector3 v)

@@ -21,23 +21,12 @@ namespace AIRefactored.AI.Memory
     /// </summary>
     public static class BotMemoryStore
     {
-        #region Constants
-
         private const float DangerZoneTTL = 45f;
         private const float HitMemoryDuration = 10f;
         private const int MaxZones = 256;
 
-        #endregion
-
-        #region Logging
-
         private static readonly ManualLogSource Logger = Plugin.LoggerInstance;
 
-        #endregion
-
-        #region Static Memory Pools
-
-        // All collections are strictly pooled and non-leaking.
         private static readonly Dictionary<string, HeardSound> HeardSounds = new Dictionary<string, HeardSound>(64);
         private static readonly Dictionary<string, LastHitInfo> LastHitSources = new Dictionary<string, LastHitInfo>(64);
         private static readonly List<DangerZone> Zones = new List<DangerZone>(64);
@@ -45,22 +34,16 @@ namespace AIRefactored.AI.Memory
         private static readonly Dictionary<string, List<HeardSound>> ShortTermHeardSounds = new Dictionary<string, List<HeardSound>>(64);
         private static readonly Dictionary<string, float> LastFlankTimes = new Dictionary<string, float>(64);
 
-        #endregion
-
         #region Danger Zones
 
-        /// <summary>
-        /// Adds a danger zone event at the specified position for the given map.
-        /// </summary>
         public static void AddDangerZone(string mapId, Vector3 position, DangerTriggerType type, float radius)
         {
             try
             {
                 if (!TryGetSafeKey(mapId, out string key)) key = "unknown";
                 if (Zones.Count >= MaxZones)
-                {
                     Zones.RemoveAt(0);
-                }
+
                 Zones.Add(new DangerZone(key, position, type, radius, Time.time));
             }
             catch (Exception ex)
@@ -69,35 +52,28 @@ namespace AIRefactored.AI.Memory
             }
         }
 
-        /// <summary>
-        /// Returns a pooled list of danger zones for the given map, expiring old entries.
-        /// </summary>
         public static List<DangerZone> GetZonesForMap(string mapId)
         {
-            List<DangerZone> result = TempListPool.Rent<DangerZone>();
+            var result = TempListPool.Rent<DangerZone>();
             try
             {
                 if (!TryGetSafeKey(mapId, out string key)) return result;
 
-                if (!ZoneCaches.TryGetValue(key, out List<DangerZone> cache))
+                if (!ZoneCaches.TryGetValue(key, out var cache))
                 {
                     cache = TempListPool.Rent<DangerZone>();
                     ZoneCaches[key] = cache;
                 }
-                else
-                {
-                    cache.Clear();
-                }
+                else cache.Clear();
 
                 float now = Time.time;
                 for (int i = 0; i < Zones.Count; i++)
                 {
                     DangerZone zone = Zones[i];
                     if (zone.Map == key && (now - zone.Timestamp) <= DangerZoneTTL)
-                    {
                         cache.Add(zone);
-                    }
                 }
+
                 result.AddRange(cache);
             }
             catch (Exception ex)
@@ -107,22 +83,20 @@ namespace AIRefactored.AI.Memory
             return result;
         }
 
-        /// <summary>
-        /// Returns true if the given position is in any current danger zone for this map.
-        /// </summary>
         public static bool IsPositionInDangerZone(string mapId, Vector3 position)
         {
             try
             {
                 if (!TryGetSafeKey(mapId, out string key)) return false;
                 float now = Time.time;
+
                 for (int i = 0; i < Zones.Count; i++)
                 {
                     DangerZone zone = Zones[i];
-                    if (zone.Map != key || now - zone.Timestamp > DangerZoneTTL) continue;
-                    if ((zone.Position - position).sqrMagnitude <= zone.Radius * zone.Radius)
+                    if (zone.Map == key && (now - zone.Timestamp <= DangerZoneTTL))
                     {
-                        return true;
+                        if ((zone.Position - position).sqrMagnitude <= zone.Radius * zone.Radius)
+                            return true;
                     }
                 }
             }
@@ -133,16 +107,13 @@ namespace AIRefactored.AI.Memory
             return false;
         }
 
-        /// <summary>
-        /// Clears all zones and caches. Used on world load/teardown.
-        /// </summary>
         public static void ClearZones()
         {
             try
             {
                 Zones.Clear();
-                foreach (var kvp in ZoneCaches)
-                    kvp.Value.Clear();
+                foreach (var kv in ZoneCaches)
+                    kv.Value.Clear();
                 ZoneCaches.Clear();
             }
             catch (Exception ex)
@@ -155,16 +126,13 @@ namespace AIRefactored.AI.Memory
 
         #region Audio Memory
 
-        /// <summary>
-        /// Adds a heard sound event for a bot profile.
-        /// </summary>
         public static void AddHeardSound(string profileId, Vector3 position, float time)
         {
             try
             {
                 if (!TryGetSafeKey(profileId, out string key)) return;
 
-                if (!ShortTermHeardSounds.TryGetValue(key, out List<HeardSound> list))
+                if (!ShortTermHeardSounds.TryGetValue(key, out var list))
                 {
                     list = TempListPool.Rent<HeardSound>();
                     ShortTermHeardSounds[key] = list;
@@ -177,12 +145,9 @@ namespace AIRefactored.AI.Memory
             }
         }
 
-        /// <summary>
-        /// Tries to get the last heard sound event for a bot profile.
-        /// </summary>
         public static bool TryGetHeardSound(string profileId, out HeardSound sound)
         {
-            sound = default(HeardSound);
+            sound = default;
             try
             {
                 return TryGetSafeKey(profileId, out string key) && HeardSounds.TryGetValue(key, out sound);
@@ -194,19 +159,15 @@ namespace AIRefactored.AI.Memory
             }
         }
 
-        /// <summary>
-        /// Clears all heard sound events for a bot profile.
-        /// </summary>
         public static void ClearHeardSound(string profileId)
         {
             try
             {
                 if (!TryGetSafeKey(profileId, out string key)) return;
+
                 HeardSounds.Remove(key);
-                if (ShortTermHeardSounds.TryGetValue(key, out List<HeardSound> list))
-                {
+                if (ShortTermHeardSounds.TryGetValue(key, out var list))
                     list.Clear();
-                }
             }
             catch (Exception ex)
             {
@@ -214,18 +175,13 @@ namespace AIRefactored.AI.Memory
             }
         }
 
-        /// <summary>
-        /// Clears all heard sound events for all profiles.
-        /// </summary>
         public static void ClearAllHeardSounds()
         {
             try
             {
                 HeardSounds.Clear();
-                foreach (var entry in ShortTermHeardSounds)
-                {
-                    entry.Value.Clear();
-                }
+                foreach (var kv in ShortTermHeardSounds)
+                    kv.Value.Clear();
             }
             catch (Exception ex)
             {
@@ -237,18 +193,13 @@ namespace AIRefactored.AI.Memory
 
         #region Hit Tracking
 
-        /// <summary>
-        /// Registers that victim was last hit by attacker.
-        /// </summary>
         public static void RegisterLastHitSource(string victimProfileId, string attackerProfileId)
         {
             try
             {
-                if (!TryGetSafeKey(victimProfileId, out string victim) ||
-                    !TryGetSafeKey(attackerProfileId, out string attacker))
-                {
+                if (!TryGetSafeKey(victimProfileId, out string victim) || !TryGetSafeKey(attackerProfileId, out string attacker))
                     return;
-                }
+
                 LastHitSources[victim] = new LastHitInfo(attacker, Time.time);
             }
             catch (Exception ex)
@@ -257,19 +208,14 @@ namespace AIRefactored.AI.Memory
             }
         }
 
-        /// <summary>
-        /// Returns true if the victim was hit by attacker recently.
-        /// </summary>
         public static bool WasRecentlyHitBy(string victimProfileId, string attackerProfileId)
         {
             try
             {
-                if (!TryGetSafeKey(victimProfileId, out string victim) ||
-                    !TryGetSafeKey(attackerProfileId, out string attacker))
-                {
+                if (!TryGetSafeKey(victimProfileId, out string victim) || !TryGetSafeKey(attackerProfileId, out string attacker))
                     return false;
-                }
-                return LastHitSources.TryGetValue(victim, out LastHitInfo hit) &&
+
+                return LastHitSources.TryGetValue(victim, out var hit) &&
                        hit.AttackerId == attacker &&
                        Time.time - hit.Time <= HitMemoryDuration;
             }
@@ -280,9 +226,6 @@ namespace AIRefactored.AI.Memory
             }
         }
 
-        /// <summary>
-        /// Clears all hit sources.
-        /// </summary>
         public static void ClearHitSources()
         {
             try
@@ -299,17 +242,12 @@ namespace AIRefactored.AI.Memory
 
         #region Flank Cooldown
 
-        /// <summary>
-        /// Sets the time this profile last flanked.
-        /// </summary>
         public static void SetLastFlankTime(string profileId)
         {
             try
             {
                 if (TryGetSafeKey(profileId, out string key))
-                {
                     LastFlankTimes[key] = Time.time;
-                }
             }
             catch (Exception ex)
             {
@@ -317,15 +255,12 @@ namespace AIRefactored.AI.Memory
             }
         }
 
-        /// <summary>
-        /// Returns true if this profile can flank again (not on cooldown).
-        /// </summary>
         public static bool CanFlankNow(string profileId, float cooldown)
         {
             try
             {
-                if (!TryGetSafeKey(profileId, out string key)) return false;
-                return !LastFlankTimes.TryGetValue(key, out float last) || (Time.time - last >= cooldown);
+                return TryGetSafeKey(profileId, out string key) &&
+                       (!LastFlankTimes.TryGetValue(key, out float last) || Time.time - last >= cooldown);
             }
             catch (Exception ex)
             {
@@ -334,9 +269,6 @@ namespace AIRefactored.AI.Memory
             }
         }
 
-        /// <summary>
-        /// Clears all flank cooldowns.
-        /// </summary>
         public static void ClearFlankCooldowns()
         {
             try
@@ -351,30 +283,25 @@ namespace AIRefactored.AI.Memory
 
         #endregion
 
-        #region Nearby Player Query
+        #region Player Awareness
 
-        /// <summary>
-        /// Returns a pooled list of real players within range.
-        /// </summary>
         public static List<Player> GetNearbyPlayers(Vector3 origin, float radius)
         {
             List<Player> result = TempListPool.Rent<Player>();
             try
             {
                 List<Player> players = GameWorldHandler.GetAllAlivePlayers();
-                float rangeSqr = radius * radius;
+                float radiusSqr = radius * radius;
                 for (int i = 0; i < players.Count; i++)
                 {
-                    Player p = players[i];
+                    var p = players[i];
                     if (p != null && IsRealPlayer(p))
                     {
                         Vector3 pos = EFTPlayerUtil.GetPosition(p);
                         float dx = pos.x - origin.x;
                         float dz = pos.z - origin.z;
-                        if ((dx * dx + dz * dz) <= rangeSqr)
-                        {
+                        if ((dx * dx + dz * dz) <= radiusSqr)
                             result.Add(p);
-                        }
                     }
                 }
             }
@@ -406,9 +333,6 @@ namespace AIRefactored.AI.Memory
 
         #region Structs
 
-        /// <summary>
-        /// Danger zone memory record.
-        /// </summary>
         public struct DangerZone
         {
             public string Map;
@@ -427,9 +351,6 @@ namespace AIRefactored.AI.Memory
             }
         }
 
-        /// <summary>
-        /// Heard sound event.
-        /// </summary>
         public struct HeardSound
         {
             public Vector3 Position;
@@ -442,9 +363,6 @@ namespace AIRefactored.AI.Memory
             }
         }
 
-        /// <summary>
-        /// Last hit info memory record.
-        /// </summary>
         public struct LastHitInfo
         {
             public string AttackerId;
@@ -460,9 +378,6 @@ namespace AIRefactored.AI.Memory
         #endregion
     }
 
-    /// <summary>
-    /// Classifies the cause of danger zone memory.
-    /// </summary>
     public enum DangerTriggerType
     {
         Panic,

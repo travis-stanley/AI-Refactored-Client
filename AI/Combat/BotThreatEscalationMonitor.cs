@@ -18,11 +18,6 @@ namespace AIRefactored.AI.Combat
     using EFT;
     using UnityEngine;
 
-    /// <summary>
-    /// Monitors panic duration, enemy presence, and squad casualties.
-    /// Escalates bot aggression, perception, and voice comms for realism under extreme threat.
-    /// Bulletproof: headless-safe, all logic is robust, never disables itself or any bot.
-    /// </summary>
     public sealed class BotThreatEscalationMonitor
     {
         #region Constants
@@ -34,28 +29,17 @@ namespace AIRefactored.AI.Combat
         private const float VoiceIntervalMin = 2.5f;
         private const float VoiceIntervalMax = 5.3f;
 
-        // Only valid phrases per provided EPhraseTrigger reference
         private static readonly EPhraseTrigger[] EscalationPhrases = new[]
         {
-            EPhraseTrigger.OnFight,
-            EPhraseTrigger.NeedHelp,
-            EPhraseTrigger.UnderFire,
-            EPhraseTrigger.Regroup,
-            EPhraseTrigger.Cooperation,
-            EPhraseTrigger.CoverMe,
-            EPhraseTrigger.GoForward,
-            EPhraseTrigger.HoldPosition,
-            EPhraseTrigger.FollowMe
+            EPhraseTrigger.OnFight, EPhraseTrigger.NeedHelp, EPhraseTrigger.UnderFire,
+            EPhraseTrigger.Regroup, EPhraseTrigger.Cooperation, EPhraseTrigger.CoverMe,
+            EPhraseTrigger.GoForward, EPhraseTrigger.HoldPosition, EPhraseTrigger.FollowMe
         };
 
         private static readonly EPhraseTrigger[] SquadCollapsePhrases = new[]
         {
-            EPhraseTrigger.Regroup,
-            EPhraseTrigger.OnBeingHurt,
-            EPhraseTrigger.NeedHelp,
-            EPhraseTrigger.CoverMe,
-            EPhraseTrigger.HoldPosition,
-            EPhraseTrigger.FollowMe,
+            EPhraseTrigger.Regroup, EPhraseTrigger.OnBeingHurt, EPhraseTrigger.NeedHelp,
+            EPhraseTrigger.CoverMe, EPhraseTrigger.HoldPosition, EPhraseTrigger.FollowMe,
             EPhraseTrigger.OnFight
         };
 
@@ -94,18 +78,6 @@ namespace AIRefactored.AI.Combat
 
         #endregion
 
-        #region Panic/Escalation Triggers
-
-        public void NotifyPanicTriggered()
-        {
-            if (_panicStartTime < 0f)
-            {
-                _panicStartTime = Time.time;
-            }
-        }
-
-        #endregion
-
         #region Main Tick
 
         public void Tick(float time)
@@ -118,13 +90,10 @@ namespace AIRefactored.AI.Combat
             try
             {
                 if (!_hasEscalated && ShouldEscalate(time))
-                {
                     EscalateBot(time);
-                }
+
                 if (SquadMoraleCollapsed())
-                {
                     TrySquadCollapseComms(time);
-                }
             }
             catch (Exception ex)
             {
@@ -134,189 +103,146 @@ namespace AIRefactored.AI.Combat
 
         #endregion
 
-        #region Escalation/Collapse Conditions
+        #region Public API
 
-        private bool ShouldEscalate(float time)
+        public void NotifyPanicTriggered()
         {
-            try
-            {
-                return PanicDurationExceeded(time) || MultipleEnemiesVisible() || SquadHasLostTeammates();
-            }
-            catch (Exception ex)
-            {
-                Logger.LogError("[BotThreatEscalationMonitor] ShouldEscalate exception: " + ex);
-                return false;
-            }
-        }
-
-        private bool PanicDurationExceeded(float time)
-        {
-            return _panicStartTime >= 0f && (time - _panicStartTime) > PanicDurationThreshold;
-        }
-
-        private bool MultipleEnemiesVisible()
-        {
-            try
-            {
-                var controller = _bot?.EnemiesController;
-                if (controller?.EnemyInfos == null)
-                    return false;
-
-                int visible = 0;
-                foreach (var kv in controller.EnemyInfos)
-                {
-                    if (kv.Value?.IsVisible == true && ++visible >= 2)
-                        return true;
-                }
-                return false;
-            }
-            catch (Exception ex)
-            {
-                Logger.LogError("[BotThreatEscalationMonitor] MultipleEnemiesVisible exception: " + ex);
-                return false;
-            }
-        }
-
-        private bool SquadHasLostTeammates()
-        {
-            try
-            {
-                var group = _bot?.BotsGroup;
-                if (group == null || group.MembersCount <= 1)
-                    return false;
-
-                int dead = 0;
-                for (int i = 0; i < group.MembersCount; i++)
-                {
-                    if (group.Member(i)?.IsDead == true)
-                        dead++;
-                }
-                return dead >= Mathf.CeilToInt(group.MembersCount * SquadCasualtyThreshold);
-            }
-            catch (Exception ex)
-            {
-                Logger.LogError("[BotThreatEscalationMonitor] SquadHasLostTeammates exception: " + ex);
-                return false;
-            }
-        }
-
-        private bool SquadMoraleCollapsed()
-        {
-            try
-            {
-                var group = _bot?.BotsGroup;
-                if (group == null || group.MembersCount <= 1)
-                    return false;
-
-                int dead = 0;
-                for (int i = 0; i < group.MembersCount; i++)
-                {
-                    if (group.Member(i)?.IsDead == true)
-                        dead++;
-                }
-                return dead >= Mathf.CeilToInt(group.MembersCount * SquadMoraleCollapseThreshold);
-            }
-            catch (Exception ex)
-            {
-                Logger.LogError("[BotThreatEscalationMonitor] SquadMoraleCollapsed exception: " + ex);
-                return false;
-            }
+            if (_panicStartTime < 0f)
+                _panicStartTime = Time.time;
         }
 
         #endregion
 
         #region Escalation Logic
 
+        private bool ShouldEscalate(float time)
+        {
+            return PanicDurationExceeded(time) || MultipleEnemiesVisible() || SquadHasLostTeammates();
+        }
+
+        private bool PanicDurationExceeded(float time) =>
+            _panicStartTime >= 0f && (time - _panicStartTime) > PanicDurationThreshold;
+
+        private bool MultipleEnemiesVisible()
+        {
+            var controller = _bot?.EnemiesController;
+            if (controller?.EnemyInfos == null)
+                return false;
+
+            int visible = 0;
+            foreach (var kv in controller.EnemyInfos)
+            {
+                if (kv.Value?.IsVisible == true && ++visible >= 2)
+                    return true;
+            }
+            return false;
+        }
+
+        private bool SquadHasLostTeammates()
+        {
+            var group = _bot?.BotsGroup;
+            if (group == null || group.MembersCount <= 1)
+                return false;
+
+            int dead = 0;
+            for (int i = 0; i < group.MembersCount; i++)
+                if (group.Member(i)?.IsDead == true)
+                    dead++;
+
+            return dead >= Mathf.CeilToInt(group.MembersCount * SquadCasualtyThreshold);
+        }
+
+        private bool SquadMoraleCollapsed()
+        {
+            var group = _bot?.BotsGroup;
+            if (group == null || group.MembersCount <= 1)
+                return false;
+
+            int dead = 0;
+            for (int i = 0; i < group.MembersCount; i++)
+                if (group.Member(i)?.IsDead == true)
+                    dead++;
+
+            return dead >= Mathf.CeilToInt(group.MembersCount * SquadMoraleCollapseThreshold);
+        }
+
         private void EscalateBot(float time)
         {
-            try
+            _hasEscalated = true;
+
+            string name = _bot.Profile?.Info?.Nickname ?? "Unknown";
+            Logger.LogDebug($"[AIRefactored-Escalation] Escalating bot '{name}'");
+
+            AIOptimizationManager.Reset(_bot);
+            AIOptimizationManager.Apply(_bot);
+
+            ApplyEscalationTuning(_bot);
+            ApplyPersonalityTuning(_bot);
+
+            if (BotNavHelper.TryGetSafeTarget(_bot, out var navTarget) && IsVectorValid(navTarget))
             {
-                _hasEscalated = true;
-
-                string name = _bot.Profile?.Info?.Nickname ?? "Unknown";
-                Logger.LogDebug($"[AIRefactored-Escalation] Escalating bot '{name}'");
-
-                AIOptimizationManager.Reset(_bot);
-                AIOptimizationManager.Apply(_bot);
-
-                ApplyEscalationTuning(_bot);
-                ApplyPersonalityTuning(_bot);
-
-                if (BotNavHelper.TryGetSafeTarget(_bot, out var navTarget) && IsVectorValid(navTarget))
+                if (_bot.Mover != null && !_bot.Mover.IsMoving)
                 {
-                    if (_bot.Mover != null && !_bot.Mover.IsMoving)
-                    {
-                        float cohesion = BotRegistry.Get(_bot.ProfileId)?.Cohesion ?? 1.0f;
-                        BotMovementHelper.SmoothMoveTo(_bot, navTarget, false, cohesion);
-                        Logger.LogDebug($"[AIRefactored-Escalation] '{name}' repositioned to cover (helper).");
-                    }
-                }
-
-                if (!FikaHeadlessDetector.IsHeadless &&
-                    _bot.BotTalk != null &&
-                    time - _lastVoiceTime > VoiceIntervalMin)
-                {
-                    TrySayEscalationPhrase(_bot, time);
+                    float cohesion = BotRegistry.Get(_bot.ProfileId)?.Cohesion ?? 1f;
+                    BotMovementHelper.SmoothMoveTo(_bot, navTarget, false, cohesion);
                 }
             }
-            catch (Exception ex)
+
+            if (!FikaHeadlessDetector.IsHeadless && _bot.BotTalk != null && time - _lastVoiceTime > VoiceIntervalMin)
             {
-                Logger.LogError("[BotThreatEscalationMonitor] EscalateBot exception: " + ex);
+                TrySayEscalationPhrase(time);
             }
         }
 
         private void TrySquadCollapseComms(float time)
         {
-            try
+            if (!FikaHeadlessDetector.IsHeadless &&
+                _bot.BotTalk != null &&
+                time - _nextSquadVoiceTime > VoiceIntervalMax)
             {
-                if (!FikaHeadlessDetector.IsHeadless &&
-                    _bot.BotTalk != null &&
-                    time - _nextSquadVoiceTime > VoiceIntervalMax)
+                try
                 {
-                    EPhraseTrigger phrase = SquadCollapsePhrases[UnityEngine.Random.Range(0, SquadCollapsePhrases.Length)];
-                    try { _bot.BotTalk.TrySay(phrase); }
-                    catch { }
+                    var phrase = SquadCollapsePhrases[UnityEngine.Random.Range(0, SquadCollapsePhrases.Length)];
+                    _bot.BotTalk.TrySay(phrase);
                     _nextSquadVoiceTime = time;
                 }
-            }
-            catch (Exception ex)
-            {
-                Logger.LogError("[BotThreatEscalationMonitor] TrySquadCollapseComms exception: " + ex);
+                catch (Exception ex)
+                {
+                    Logger.LogError("[BotThreatEscalationMonitor] Squad collapse comms failed: " + ex);
+                }
             }
         }
 
-        private void TrySayEscalationPhrase(BotOwner bot, float time)
+        private void TrySayEscalationPhrase(float time)
         {
             try
             {
-                EPhraseTrigger phrase = EscalationPhrases[UnityEngine.Random.Range(0, EscalationPhrases.Length)];
-                bot.BotTalk.TrySay(phrase);
+                var phrase = EscalationPhrases[UnityEngine.Random.Range(0, EscalationPhrases.Length)];
+                _bot.BotTalk.TrySay(phrase);
                 _lastVoiceTime = time;
             }
             catch (Exception ex)
             {
-                Logger.LogError("[BotThreatEscalationMonitor] Voice/phrase error: " + ex);
+                Logger.LogError("[BotThreatEscalationMonitor] Escalation voice failed: " + ex);
             }
         }
 
         private void ApplyEscalationTuning(BotOwner bot)
         {
+            var file = bot?.Settings?.FileSettings;
+            if (file == null) return;
+
             try
             {
-                var file = bot?.Settings?.FileSettings;
-                if (file == null) return;
-
-                file.Shoot.RECOIL_PER_METER = Mathf.Clamp(file.Shoot.RECOIL_PER_METER * 0.82f, 0.1f, 2.0f);
-                file.Mind.DIST_TO_FOUND_SQRT = Mathf.Clamp(file.Mind.DIST_TO_FOUND_SQRT * 1.23f, 200f, 900f);
-                file.Mind.ENEMY_LOOK_AT_ME_ANG = Mathf.Clamp(file.Mind.ENEMY_LOOK_AT_ME_ANG * 0.7f, 4f, 45f);
+                file.Shoot.RECOIL_PER_METER *= 0.82f;
+                file.Mind.DIST_TO_FOUND_SQRT *= 1.23f;
+                file.Mind.ENEMY_LOOK_AT_ME_ANG *= 0.7f;
                 file.Mind.CHANCE_TO_RUN_CAUSE_DAMAGE_0_100 = Mathf.Clamp(file.Mind.CHANCE_TO_RUN_CAUSE_DAMAGE_0_100 + 28f, 0f, 100f);
-                file.Look.MAX_VISION_GRASS_METERS = Mathf.Clamp(file.Look.MAX_VISION_GRASS_METERS + 7f, 5f, 42f);
-
-                Logger.LogDebug($"[AIRefactored-Tuning] Escalation tuning applied to '{bot.Profile?.Info?.Nickname ?? "Unknown"}'");
+                file.Look.MAX_VISION_GRASS_METERS += 7f;
             }
             catch (Exception ex)
             {
-                Logger.LogError("[BotThreatEscalationMonitor] Escalation tuning failed: " + ex);
+                Logger.LogError("[BotThreatEscalationMonitor] Tuning failed: " + ex);
             }
         }
 
@@ -325,21 +251,13 @@ namespace AIRefactored.AI.Combat
             try
             {
                 var profile = BotRegistry.Get(bot.ProfileId);
-                if (profile == null)
-                    return;
+                if (profile == null) return;
 
                 profile.AggressionLevel = Mathf.Clamp01(profile.AggressionLevel + 0.25f);
                 profile.Caution = Mathf.Clamp01(profile.Caution - 0.23f);
                 profile.SuppressionSensitivity = Mathf.Clamp01(profile.SuppressionSensitivity * 0.7f);
                 profile.AccuracyUnderFire = Mathf.Clamp01(profile.AccuracyUnderFire + 0.22f);
                 profile.CommunicationLevel = Mathf.Clamp01(profile.CommunicationLevel + 0.22f);
-
-                Logger.LogDebug(
-                    $"[AIRefactored-Tuning] Personality tuned for '{bot.Profile?.Info?.Nickname ?? "Unknown"}': " +
-                    $"Agg={profile.AggressionLevel:F2}, " +
-                    $"Caution={profile.Caution:F2}, " +
-                    $"Supp={profile.SuppressionSensitivity:F2}, " +
-                    $"AccUF={profile.AccuracyUnderFire:F2}");
             }
             catch (Exception ex)
             {
@@ -360,10 +278,7 @@ namespace AIRefactored.AI.Combat
                        _bot.GetPlayer is Player player &&
                        player.IsAI;
             }
-            catch
-            {
-                return false;
-            }
+            catch { return false; }
         }
 
         private static bool IsVectorValid(Vector3 v)

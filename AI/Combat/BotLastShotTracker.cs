@@ -38,7 +38,6 @@ namespace AIRefactored.AI.Combat
         private float _lastShotDistance = -1f;
         private Vector3 _lastShotDirection = Vector3.zero;
 
-        // Squad-aware suppression expansion
         private string _lastSquadSuppressorId = string.Empty;
         private float _lastSquadSuppressedTime = float.NegativeInfinity;
 
@@ -46,9 +45,6 @@ namespace AIRefactored.AI.Combat
 
         #region Public API
 
-        /// <summary>
-        /// Checks if the bot has recently shot at the provided profile.
-        /// </summary>
         public bool DidRecentlyShoot(string profileId, float now = -1f, float memoryWindow = -1f)
         {
             try
@@ -64,9 +60,6 @@ namespace AIRefactored.AI.Combat
             catch { return false; }
         }
 
-        /// <summary>
-        /// Checks if the bot was recently hit by the provided profile.
-        /// </summary>
         public bool WasRecentlyShotBy(string profileId, float now = -1f, float memoryWindow = -1f)
         {
             try
@@ -82,9 +75,6 @@ namespace AIRefactored.AI.Combat
             catch { return false; }
         }
 
-        /// <summary>
-        /// Checks if the bot was recently suppressed by squad fire.
-        /// </summary>
         public bool WasRecentlySquadSuppressed(string profileId, float now = -1f, float memoryWindow = -1f)
         {
             try
@@ -100,16 +90,11 @@ namespace AIRefactored.AI.Combat
             catch { return false; }
         }
 
-        /// <summary>
-        /// Registers a hit received by this bot.
-        /// </summary>
-        public void RegisterHit(string profileId, EBodyPart hitPart = EBodyPart.Common, float distance = -1f, Vector3 direction = default(Vector3))
+        public void RegisterHit(string profileId, EBodyPart hitPart = EBodyPart.Common, float distance = -1f, Vector3 direction = default)
         {
             try
             {
-                if (string.IsNullOrEmpty(profileId))
-                    return;
-
+                if (string.IsNullOrEmpty(profileId)) return;
                 _lastAttackerId = profileId;
                 _lastHitTime = Time.time;
                 _lastHitPart = hitPart;
@@ -119,16 +104,11 @@ namespace AIRefactored.AI.Combat
             catch { }
         }
 
-        /// <summary>
-        /// Registers a shot fired by this bot.
-        /// </summary>
-        public void RegisterShot(string profileId, float distance = -1f, Vector3 direction = default(Vector3))
+        public void RegisterShot(string profileId, float distance = -1f, Vector3 direction = default)
         {
             try
             {
-                if (string.IsNullOrEmpty(profileId))
-                    return;
-
+                if (string.IsNullOrEmpty(profileId)) return;
                 _lastTargetId = profileId;
                 _lastShotTime = Time.time;
                 _lastShotDistance = distance;
@@ -137,24 +117,17 @@ namespace AIRefactored.AI.Combat
             catch { }
         }
 
-        /// <summary>
-        /// Registers that the bot was suppressed by squad fire.
-        /// </summary>
         public void RegisterSquadSuppressed(string profileId)
         {
             try
             {
-                if (string.IsNullOrEmpty(profileId))
-                    return;
+                if (string.IsNullOrEmpty(profileId)) return;
                 _lastSquadSuppressorId = profileId;
                 _lastSquadSuppressedTime = Time.time;
             }
             catch { }
         }
 
-        /// <summary>
-        /// Returns a "heat" factor (0..1) for how recently the bot was hit.
-        /// </summary>
         public float GetRecentHitHeat(float now = -1f, float memoryWindow = -1f)
         {
             try
@@ -162,16 +135,12 @@ namespace AIRefactored.AI.Combat
                 float time = now >= 0f ? now : Time.time;
                 float delta = time - _lastHitTime;
                 float window = GetMemoryWindow(memoryWindow);
-                if (delta > window || delta < 0f)
-                    return 0f;
+                if (delta > window || delta < 0f) return 0f;
                 return 1f - Mathf.Clamp01(delta / window);
             }
             catch { return 0f; }
         }
 
-        /// <summary>
-        /// Returns a "heat" factor (0..1) for how recently the bot fired a shot.
-        /// </summary>
         public float GetRecentShotHeat(float now = -1f, float memoryWindow = -1f)
         {
             try
@@ -179,16 +148,12 @@ namespace AIRefactored.AI.Combat
                 float time = now >= 0f ? now : Time.time;
                 float delta = time - _lastShotTime;
                 float window = GetMemoryWindow(memoryWindow);
-                if (delta > window || delta < 0f)
-                    return 0f;
+                if (delta > window || delta < 0f) return 0f;
                 return 1f - Mathf.Clamp01(delta / window);
             }
             catch { return 0f; }
         }
 
-        /// <summary>
-        /// Returns a "heat" factor (0..1) for recent squad suppression event.
-        /// </summary>
         public float GetRecentSquadSuppressionHeat(float now = -1f, float memoryWindow = -1f)
         {
             try
@@ -196,16 +161,12 @@ namespace AIRefactored.AI.Combat
                 float time = now >= 0f ? now : Time.time;
                 float delta = time - _lastSquadSuppressedTime;
                 float window = GetMemoryWindow(memoryWindow);
-                if (delta > window || delta < 0f)
-                    return 0f;
+                if (delta > window || delta < 0f) return 0f;
                 return 1f - Mathf.Clamp01(delta / window);
             }
             catch { return 0f; }
         }
 
-        /// <summary>
-        /// Resets all tracking data for this bot.
-        /// </summary>
         public void Reset()
         {
             _lastAttackerId = string.Empty;
@@ -225,37 +186,16 @@ namespace AIRefactored.AI.Combat
 
         #region Exposed Properties
 
-        /// <summary>Gets the last attacker's profile ID.</summary>
         public string LastAttackerId => _lastAttackerId;
-
-        /// <summary>Gets the time when the bot was last hit.</summary>
         public float LastHitTime => _lastHitTime;
-
-        /// <summary>Gets the last body part hit.</summary>
         public EBodyPart LastHitPart => _lastHitPart;
-
-        /// <summary>Gets the distance from which the bot was last hit.</summary>
         public float LastHitDistance => _lastHitDistance;
-
-        /// <summary>Gets the direction of the last hit.</summary>
         public Vector3 LastHitDirection => _lastHitDirection;
-
-        /// <summary>Gets the last target's profile ID.</summary>
         public string LastTargetId => _lastTargetId;
-
-        /// <summary>Gets the time when the bot last fired a shot.</summary>
         public float LastShotTime => _lastShotTime;
-
-        /// <summary>Gets the distance to the last target shot at.</summary>
         public float LastShotDistance => _lastShotDistance;
-
-        /// <summary>Gets the direction of the last shot fired.</summary>
         public Vector3 LastShotDirection => _lastShotDirection;
-
-        /// <summary>Gets the last squad suppressor's profile ID.</summary>
         public string LastSquadSuppressorId => _lastSquadSuppressorId;
-
-        /// <summary>Gets the time when the bot was last suppressed by a squadmate.</summary>
         public float LastSquadSuppressedTime => _lastSquadSuppressedTime;
 
         #endregion

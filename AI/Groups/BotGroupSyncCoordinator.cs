@@ -57,7 +57,6 @@ namespace AIRefactored.AI.Groups
         public float LastDangerBroadcastTime => _lastDangerBroadcastTime;
         public Vector3 LastDangerPosition => _lastDangerPosition;
         public bool IsActive => _bot != null && !_bot.IsDead && _group != null && _cache != null;
-
         public bool SupportsLootPoint => true;
 
         #endregion
@@ -70,7 +69,9 @@ namespace AIRefactored.AI.Groups
             {
                 _bot = botOwner;
                 _group = botOwner?.BotsGroup;
-                if (_group == null) throw new ArgumentException("[BotGroupSyncCoordinator] BotsGroup is null.");
+                if (_group == null)
+                    throw new ArgumentException("[BotGroupSyncCoordinator] BotsGroup is null.");
+
                 _group.OnMemberAdd += OnMemberAdded;
                 _group.OnMemberRemove += OnMemberRemoved;
                 ResetSync();
@@ -103,28 +104,14 @@ namespace AIRefactored.AI.Groups
 
         #endregion
 
-        #region Public API (BotBrain Driven)
+        #region Public API (BotBrain-Driven)
 
-        /// <summary>
-        /// Should be called every tick by BotBrain.
-        /// All comms (fallback, danger, loot, extract) must be externally scheduled from BotBrain logic.
-        /// </summary>
         public void Tick(float time)
         {
-            try
-            {
-                if (!IsActive)
-                    return;
-
-                RefreshTeammateCaches();
-            }
-            catch { /* Strictly isolated; never breaks parent. */ }
+            if (!IsActive) return;
+            try { RefreshTeammateCaches(); } catch { }
         }
 
-        /// <summary>
-        /// Shares a fallback retreat point with all valid squadmates.
-        /// Bulletproof: Errors are isolated, never break squad, never propagate or log spam.
-        /// </summary>
         public void ShareFallbackToSquad(Vector3 fallback, float now)
         {
             _fallbackPoint = fallback;
@@ -134,61 +121,46 @@ namespace AIRefactored.AI.Groups
             {
                 try
                 {
-                    if (mate == null) continue;
-                    var bot = mate.Bot;
-                    if (bot == null || bot.IsDead) continue;
-
-                    var combat = mate.Combat;
-                    if (combat != null)
-                        combat.TriggerFallback(fallback, now); // <-- two parameters
-                }
-                catch
-                {
-                    // Strictly local isolation, never propagate/log.
-                }
-            }
-        }
-
-        /// <summary>
-        /// Share danger (panic/alert) signal with squad.
-        /// </summary>
-        public void ShareDangerToSquad(Vector3 dangerPos, float now)
-        {
-            _lastDangerPosition = dangerPos;
-            _lastDangerBroadcastTime = now;
-            foreach (var mate in _teammateCaches.Values)
-            {
-                try
-                {
-                    if (mate?.Bot == null || mate.Bot.IsDead)
-                        continue;
-                    if (mate.PanicHandler != null && !mate.PanicHandler.IsPanicking)
-                        mate.PanicHandler.TriggerPanic();
+                    if (mate?.Bot == null || mate.Bot.IsDead) continue;
+                    mate.Combat?.TriggerFallback(fallback, now);
                 }
                 catch { }
             }
         }
 
-        /// <summary>
-        /// Share loot target point with squad for distributed looting.
-        /// </summary>
+        public void ShareDangerToSquad(Vector3 dangerPos, float now)
+        {
+            _lastDangerPosition = dangerPos;
+            _lastDangerBroadcastTime = now;
+
+            foreach (var mate in _teammateCaches.Values)
+            {
+                try
+                {
+                    if (mate?.Bot == null || mate.Bot.IsDead) continue;
+                    if (!mate.PanicHandler?.IsPanicking ?? false)
+                        mate.PanicHandler?.TriggerPanic();
+                }
+                catch { }
+            }
+        }
+
         public void ShareLootToSquad(Vector3 loot)
         {
             _lootPoint = loot;
             _hasLoot = true;
+
             foreach (var mate in _teammateCaches.Values)
             {
                 try { mate.LootScanner?.RegisterSquadLootTarget(loot); } catch { }
             }
         }
 
-        /// <summary>
-        /// Share extraction/exit target point with squad.
-        /// </summary>
         public void ShareExtractToSquad(Vector3 extract)
         {
             _extractPoint = extract;
             _hasExtract = true;
+
             foreach (var mate in _teammateCaches.Values)
             {
                 try { mate.TacticalMemory?.MarkExtractionStarted(); } catch { }
@@ -208,26 +180,18 @@ namespace AIRefactored.AI.Groups
         public IReadOnlyList<BotOwner> GetTeammates()
         {
             var result = TempListPool.Rent<BotOwner>();
-            try
+            foreach (var kv in _teammateCaches)
             {
-                foreach (var kv in _teammateCaches)
-                {
-                    BotOwner bot = kv.Key;
-                    if (bot != null && !bot.IsDead && bot.GetPlayer != null && bot.GetPlayer.IsAI)
-                        result.Add(bot);
-                }
-                return result;
+                var b = kv.Key;
+                if (b != null && !b.IsDead && b.GetPlayer != null && b.GetPlayer.IsAI)
+                    result.Add(b);
             }
-            catch
-            {
-                result.Clear();
-                return result;
-            }
+            return result;
         }
 
         public BotComponentCache GetCache(BotOwner teammate)
         {
-            if (teammate == null || !_teammateCaches.TryGetValue(teammate, out BotComponentCache cache) || cache == null)
+            if (teammate == null || !_teammateCaches.TryGetValue(teammate, out var cache) || cache == null)
                 return BotComponentCache.Empty;
             return cache;
         }
@@ -238,18 +202,17 @@ namespace AIRefactored.AI.Groups
 
         private void RefreshTeammateCaches()
         {
-            if (_group == null)
-                return;
+            if (_group == null) return;
 
             for (int i = 0; i < _group.MembersCount; i++)
             {
                 BotOwner member = _group.Member(i);
-                if (member == null || ReferenceEquals(member, _bot) || member.IsDead)
-                    continue;
+                if (member == null || ReferenceEquals(member, _bot) || member.IsDead) continue;
                 if (!_teammateCaches.ContainsKey(member))
                 {
-                    if (!BotRegistry.TryGetRefactoredOwner(member.ProfileId, out AIRefactoredBotOwner owner))
+                    if (!BotRegistry.TryGetRefactoredOwner(member.ProfileId, out var owner))
                         continue;
+
                     var cache = new BotComponentCache();
                     cache.Initialize(member);
                     cache.SetOwner(owner);
@@ -257,26 +220,27 @@ namespace AIRefactored.AI.Groups
                 }
             }
 
-            // Remove dead or departed
             var toRemove = TempListPool.Rent<BotOwner>();
             foreach (var kv in _teammateCaches)
             {
                 if (kv.Key == null || kv.Key.IsDead)
                     toRemove.Add(kv.Key);
             }
+
             foreach (var bot in toRemove)
                 _teammateCaches.Remove(bot);
+
             TempListPool.Return(toRemove);
         }
 
         private void OnMemberAdded(BotOwner teammate)
         {
-            if (teammate == null || ReferenceEquals(teammate, _bot) || _teammateCaches.ContainsKey(teammate))
+            if (teammate == null || ReferenceEquals(teammate, _bot) || _teammateCaches.ContainsKey(teammate)) return;
+            if (teammate.IsDead || teammate.GetPlayer == null || !teammate.GetPlayer.IsAI) return;
+
+            if (!BotRegistry.TryGetRefactoredOwner(teammate.ProfileId, out var owner))
                 return;
-            if (teammate.IsDead || teammate.GetPlayer == null || !teammate.GetPlayer.IsAI)
-                return;
-            if (!BotRegistry.TryGetRefactoredOwner(teammate.ProfileId, out AIRefactoredBotOwner owner))
-                return;
+
             var cache = new BotComponentCache();
             cache.Initialize(teammate);
             cache.SetOwner(owner);

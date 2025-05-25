@@ -75,15 +75,13 @@ namespace AIRefactored.AI.Navigation
 
         #region Public API
 
-        /// <summary>
-        /// Main tick entry point for door logic, called by BotBrain.
-        /// </summary>
         public void Tick(float time)
         {
             try
             {
                 if (_bot == null || _bot.IsDead)
                     return;
+
                 Player player = EFTPlayerUtil.ResolvePlayer(_bot);
                 if (!EFTPlayerUtil.IsValid(player) || !player.IsAI || player.CurrentManagedState == null)
                     return;
@@ -110,21 +108,13 @@ namespace AIRefactored.AI.Navigation
 
                 Vector3 origin = _bot.Position + Vector3.up * 1.18f;
                 Vector3 forward = _bot.LookDirection;
-                RaycastHit hit;
-                if (!Physics.SphereCast(origin, DoorCastRadius, forward, out hit, DoorCastRange, AIRefactoredLayerMasks.Interactive))
+                if (!Physics.SphereCast(origin, DoorCastRadius, forward, out RaycastHit hit, DoorCastRange, AIRefactoredLayerMasks.Interactive))
                 {
                     ClearDoorState();
                     return;
                 }
 
-                Collider col = hit.collider;
-                if (col == null)
-                {
-                    ClearDoorState();
-                    return;
-                }
-
-                Door door = col.GetComponentInParent<Door>();
+                Door door = hit.collider?.GetComponentInParent<Door>();
                 if (door == null || !door.enabled || !door.Operatable)
                 {
                     ClearDoorState();
@@ -151,10 +141,11 @@ namespace AIRefactored.AI.Navigation
                     return;
                 }
 
-                float hesitation = 0f;
                 var cache = _bot.GetComponent<BotComponentCache>();
                 var profile = cache?.PersonalityProfile;
-                if (cache != null && cache.PanicHandler != null && cache.PanicHandler.IsPanicking)
+                float hesitation = 0f;
+
+                if (cache?.PanicHandler?.IsPanicking == true)
                 {
                     hesitation = PanicFastDelay;
                 }
@@ -193,8 +184,7 @@ namespace AIRefactored.AI.Navigation
                 try
                 {
                     EInteractionType interactionType = GetBestInteractionType(state);
-                    InteractionResult result = new InteractionResult(interactionType);
-                    player.CurrentManagedState.StartDoorInteraction(door, result, null);
+                    player.CurrentManagedState.StartDoorInteraction(door, new InteractionResult(interactionType), null);
                     _log.LogDebug($"[BotDoorInteraction] {player.ProfileId} → {interactionType} door {door.name}");
                 }
                 catch (Exception ex)
@@ -213,24 +203,18 @@ namespace AIRefactored.AI.Navigation
             }
         }
 
-        /// <summary>
-        /// Returns true if the door is currently blocking a specific world position.
-        /// </summary>
         public bool IsDoorBlocking(Vector3 position)
         {
             try
             {
                 if (_currentDoor == null || !_currentDoor.enabled)
                     return false;
-                float dist = Vector3.Distance(_currentDoor.transform.position, position);
-                return dist < DoorCastRange && (_currentDoor.DoorState & EDoorState.Open) == 0;
+                return Vector3.Distance(_currentDoor.transform.position, position) < DoorCastRange &&
+                       (_currentDoor.DoorState & EDoorState.Open) == 0;
             }
             catch { return false; }
         }
 
-        /// <summary>
-        /// Resets all internal door state (for retry, world reload, etc).
-        /// </summary>
         public void Reset()
         {
             _currentDoor = null;
@@ -245,11 +229,8 @@ namespace AIRefactored.AI.Navigation
 
         #endregion
 
-        #region Private Helpers
+        #region Internal Helpers
 
-        /// <summary>
-        /// Clears internal door tracking state.
-        /// </summary>
         private void ClearDoorState()
         {
             _currentDoor = null;
@@ -260,38 +241,30 @@ namespace AIRefactored.AI.Navigation
             _doorStateSinceTime = 0f;
         }
 
-        /// <summary>
-        /// Marks current door as blocking.
-        /// </summary>
         private void MarkBlocked(Door door, float now)
         {
             if (door == null || Vector3.Distance(EFTPlayerUtil.GetPosition(_bot), door.transform.position) > DoorCastRange)
                 return;
-
             _currentDoor = door;
             IsBlockedByDoor = true;
             _doorStateSinceTime = now;
         }
 
-        /// <summary>
-        /// Returns true if the bot should wait for other squadmates to clear a door.
-        /// </summary>
         private bool ShouldWaitForSquad(Door door)
         {
             try
             {
                 if (_bot?.BotsGroup == null || _bot.BotsGroup.MembersCount <= 1)
                     return false;
-                int waiting = 0;
+                int nearby = 0;
                 for (int i = 0; i < _bot.BotsGroup.MembersCount; i++)
                 {
-                    BotOwner mate = _bot.BotsGroup.Member(i);
+                    var mate = _bot.BotsGroup.Member(i);
                     if (mate == null || mate.IsDead || mate == _bot)
                         continue;
-                    float dist = Vector3.Distance(door.transform.position, mate.Position);
-                    if (dist < SquadWaitRadius)
-                        waiting++;
-                    if (waiting > 2)
+                    if (Vector3.Distance(door.transform.position, mate.Position) < SquadWaitRadius)
+                        nearby++;
+                    if (nearby > 2)
                         return true;
                 }
                 return false;
@@ -299,9 +272,6 @@ namespace AIRefactored.AI.Navigation
             catch { return false; }
         }
 
-        /// <summary>
-        /// Returns best interaction type for a door state.
-        /// </summary>
         private static EInteractionType GetBestInteractionType(EDoorState state)
         {
             if ((state & EDoorState.Shut) != 0 || state == EDoorState.None)

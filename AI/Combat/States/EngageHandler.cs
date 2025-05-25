@@ -23,8 +23,6 @@ namespace AIRefactored.AI.Combat.States
     /// </summary>
     public sealed class EngageHandler
     {
-        #region Constants
-
         private const float DefaultEngagementRange = 25f;
         private const float MinAdvanceDelay = 0.06f;
         private const float MaxAdvanceDelay = 0.17f;
@@ -36,10 +34,6 @@ namespace AIRefactored.AI.Combat.States
         private const float GiveUpDistance = 1.25f;
         private const float LookScanVariance = 0.38f;
 
-        #endregion
-
-        #region Fields
-
         private readonly BotOwner _bot;
         private readonly BotComponentCache _cache;
         private readonly float _fallbackRange;
@@ -50,13 +44,6 @@ namespace AIRefactored.AI.Combat.States
         private bool _hasGivenUp;
         private bool _hasArrived;
 
-        #endregion
-
-        #region Constructor
-
-        /// <summary>
-        /// Instantiates a new EngageHandler for the provided bot cache.
-        /// </summary>
         public EngageHandler(BotComponentCache cache)
         {
             _cache = cache;
@@ -66,13 +53,6 @@ namespace AIRefactored.AI.Combat.States
             Clear();
         }
 
-        #endregion
-
-        #region Public API
-
-        /// <summary>
-        /// Resets all engagement memory/state.
-        /// </summary>
         public void Clear()
         {
             _lastAdvanceTime = -1000f;
@@ -83,33 +63,21 @@ namespace AIRefactored.AI.Combat.States
             _hasArrived = false;
         }
 
-        /// <summary>
-        /// Returns true if EngageHandler should run (enemy out of range, not given up, combat ready).
-        /// </summary>
         public bool ShallUseNow()
         {
             return IsCombatCapable() && TryGetLastKnownEnemy(out Vector3 pos) && !IsWithinRange(pos) && !_hasGivenUp;
         }
 
-        /// <summary>
-        /// Returns true if bot can attack (in range, not given up, enemy valid).
-        /// </summary>
         public bool CanAttack()
         {
             return IsCombatCapable() && TryGetLastKnownEnemy(out Vector3 pos) && IsWithinRange(pos) && !_hasGivenUp;
         }
 
-        /// <summary>
-        /// Returns true if bot is actively engaging (not yet at attack range).
-        /// </summary>
         public bool IsEngaging()
         {
             return IsCombatCapable() && TryGetLastKnownEnemy(out Vector3 pos) && !IsWithinRange(pos) && !_hasGivenUp;
         }
 
-        /// <summary>
-        /// Main tick—called only from BotBrain. Handles cautious, squad/stance-aware advance to last known enemy.
-        /// </summary>
         public void Tick()
         {
             if (!IsCombatCapable() || _hasGivenUp)
@@ -131,7 +99,6 @@ namespace AIRefactored.AI.Combat.States
 
                 float distToTarget = (_bot.Position - enemyPos).magnitude;
 
-                // Arrived at enemy's last known position: simulate indecision, idle scan, possible give-up
                 if (distToTarget < GiveUpDistance)
                 {
                     if (!_hasArrived)
@@ -185,11 +152,8 @@ namespace AIRefactored.AI.Combat.States
                 float cohesion = Mathf.Clamp(_cache.PersonalityProfile?.Cohesion ?? 1f, 0.7f, 1.3f);
                 Vector3 humanizedTarget = _bot.Position + blended * moveDir.magnitude;
 
-                // Only apply microdrift if not suppressed, in future allow dynamic suppression checks
                 humanizedTarget = BotMovementHelper.ApplyMicroDrift(humanizedTarget, _bot.ProfileId, Time.frameCount, _cache.PersonalityProfile);
-
                 BotMovementHelper.SmoothMoveTo(_bot, humanizedTarget, false, cohesion);
-
                 ApplyEngagementStance(advanceSqr, safeDest);
 
                 if (_bot.BotTalk != null && UnityEngine.Random.value < 0.08f)
@@ -202,10 +166,6 @@ namespace AIRefactored.AI.Combat.States
                 Plugin.LoggerInstance.LogError($"[EngageHandler] Tick error: {ex}");
             }
         }
-
-        #endregion
-
-        #region Internal Helpers
 
         private bool IsCombatCapable()
         {
@@ -273,7 +233,5 @@ namespace AIRefactored.AI.Combat.States
 
             BotMovementHelper.SmoothLookTo(_bot, lookTarget, 2.9f + UnityEngine.Random.value * 1.6f);
         }
-
-        #endregion
     }
 }

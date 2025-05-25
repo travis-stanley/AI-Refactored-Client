@@ -43,7 +43,6 @@ namespace AIRefactored.AI.Threads
 		private Player _player;
 		private BotComponentCache _cache;
 
-		// AI Subsystems (always wired from cache, bulletproof)
 		private CombatStateMachine _combat;
 		private BotMovementController _movement;
 		private BotPoseController _pose;
@@ -79,13 +78,11 @@ namespace AIRefactored.AI.Threads
 		private BotTacticalMemory _tacticalMemory;
 		private TrackedEnemyVisibility _trackedVisibility;
 
-		// Tick timers and rates
 		private float _nextPerceptionTick;
 		private float _nextCombatTick;
 		private float _nextLogicTick;
 		private float _now;
 
-		// Tick rates: *no environment-dependent gating*, hard parity always
 		private const float DefaultPerceptionHz = 30f;
 		private const float DefaultCombatHz = 30f;
 		private const float DefaultLogicHz = 10f;
@@ -98,9 +95,6 @@ namespace AIRefactored.AI.Threads
 
 		#region Initialization
 
-		/// <summary>
-		/// Must be called once per bot on spawn. Bulletproof: never disables bot, retries until ready.
-		/// </summary>
 		public void Initialize(BotOwner bot)
 		{
 			if (bot == null)
@@ -139,21 +133,25 @@ namespace AIRefactored.AI.Threads
 				}
 				_cache.SetOwner(owner);
 
-				// --- Atomic resolve: All subsystems from the cache (never left in partial state) ---
 				_combat = _cache.Combat;
 				_movement = _cache.Movement;
 				_pose = _cache.PoseController;
 				_look = _cache.Look;
 				_tilt = _cache.Tilt;
 				_groupBehavior = _cache.GroupBehavior;
-				_corner = new BotCornerScanner(bot, _cache);
+
+				_corner = new BotCornerScanner();
+				_corner.Initialize(bot, _cache);
+
 				_jump = new BotJumpController(bot, _cache);
+
 				_vision = new BotVisionSystem(); _vision.Initialize(_cache);
 				_hearing = new BotHearingSystem(); _hearing.Initialize(_cache);
 				_perception = new BotPerceptionSystem(); _perception.Initialize(_cache);
 				_flashReaction = new BotFlashReactionComponent(); _flashReaction.Initialize(_cache);
 				_flashDetector = new FlashGrenadeComponent(); _flashDetector.Initialize(_cache);
 				_hearingDamage = new HearingDamageComponent();
+
 				_tactical = _cache.Tactical;
 				_mission = new BotMissionController(bot, _cache);
 				_groupSync = new BotGroupSyncCoordinator(); _groupSync.Initialize(bot); _groupSync.InjectLocalCache(_cache);
@@ -176,7 +174,6 @@ namespace AIRefactored.AI.Threads
 				_tacticalMemory = _cache.TacticalMemory;
 				_trackedVisibility = _cache.VisibilityTracker;
 
-				// Timers set to now for frame-perfect startup
 				_now = Time.time;
 				_nextPerceptionTick = _now;
 				_nextCombatTick = _now;
@@ -189,7 +186,7 @@ namespace AIRefactored.AI.Threads
 			catch (Exception ex)
 			{
 				Logger.LogError("[BotBrain] Initialization failed: " + ex);
-				enabled = true; // Never disables bot permanently, must always retry until ready.
+				enabled = true;
 			}
 		}
 
@@ -197,9 +194,6 @@ namespace AIRefactored.AI.Threads
 
 		#region Main Tick
 
-		/// <summary>
-		/// Centralized update loop for all AI logic. Ticks all per-bot systems at correct rates.
-		/// </summary>
 		public void Tick(float deltaTime)
 		{
 			try
@@ -211,7 +205,6 @@ namespace AIRefactored.AI.Threads
 
 				_now = Time.time;
 
-				// --- Real-time, frame-perfect systems: tick every frame for human realism ---
 				SafeTick(_movement, m => m.Tick(deltaTime), "Movement", warn: true);
 				SafeTick(_pose, p => p.Tick(_now), "Pose");
 				SafeTick(_look, l => l.Tick(deltaTime), "Look");
@@ -220,7 +213,6 @@ namespace AIRefactored.AI.Threads
 				SafeTick(_tilt, t => t.ManualUpdate(), "Tilt");
 				SafeTick(_groupBehavior, g => g.Tick(deltaTime), "GroupBehavior");
 
-				// --- Perception/Combat/Logic, tick at realistic rates ---
 				if (_now >= _nextPerceptionTick)
 				{
 					SafeTick(_vision, v => v.Tick(_now), "Vision");
@@ -254,7 +246,6 @@ namespace AIRefactored.AI.Threads
 					SafeTick(_tacticalMemory, t => t.Tick(_now), "TacticalMemory");
 					_nextLogicTick = _now + LogicTickRate;
 				}
-				// --- Fallback handler ticked only during combat fallback ---
 				if (_combat != null && _combat.IsInCombatState() && _fallbackHandler != null && _fallbackHandler.IsActive())
 				{
 					SafeTick(_fallbackHandler, f => f.Tick(deltaTime, _now, null), "FallbackHandler");
@@ -270,9 +261,6 @@ namespace AIRefactored.AI.Threads
 
 		#region Safe Tick Helper
 
-		/// <summary>
-		/// Ticks a subsystem and swallows/logs all errors. Optionally warns if missing.
-		/// </summary>
 		private static void SafeTick<T>(T obj, Action<T> tick, string label, bool warn = false)
 			where T : class
 		{

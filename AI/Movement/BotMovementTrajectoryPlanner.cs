@@ -84,9 +84,6 @@ namespace AIRefactored.AI.Movement
 
         #region Public API
 
-        /// <summary>
-        /// Returns a squad/personality/context-modified trajectory, never NaN, never unsafe.
-        /// </summary>
         public Vector3 ModifyTrajectory(Vector3 targetDir, float deltaTime)
         {
             try
@@ -99,7 +96,6 @@ namespace AIRefactored.AI.Movement
                 Vector3 baseDir = (targetDir.sqrMagnitude > MinMagnitude) ? targetDir.normalized : Vector3.forward;
                 Vector3 adjusted = baseDir;
 
-                // Micro-chaos update
                 if (now > _nextChaosUpdate)
                     UpdateTargetChaosOffset(now, profile);
 
@@ -109,7 +105,6 @@ namespace AIRefactored.AI.Movement
 
                 TryAnticipation(baseDir, now, ref adjusted);
 
-                // Squad/formation logic
                 if (_cache.SquadPath != null)
                 {
                     Vector3 squadOffset = _cache.SquadPath.GetCurrentOffset();
@@ -125,6 +120,7 @@ namespace AIRefactored.AI.Movement
                         _squadFormationBias.y = 0f;
                         _lastSquadBiasTime = now;
                     }
+
                     adjusted += _squadFormationBias;
                 }
 
@@ -135,12 +131,12 @@ namespace AIRefactored.AI.Movement
                     adjusted += avoidVector.normalized * AvoidanceScale;
                 }
 
-                // Role-based group bias
                 if (_bot.BotsGroup != null && _bot.BotsGroup.MembersCount > 1)
                 {
                     int idx = -1;
                     for (int i = 0; i < _bot.BotsGroup.MembersCount; i++)
                         if (_bot.BotsGroup.Member(i) == _bot) { idx = i; break; }
+
                     if (idx >= 0)
                     {
                         float posBias = ((idx % 2 == 0) ? -1f : 1f) * RoleOffsetMul;
@@ -149,17 +145,16 @@ namespace AIRefactored.AI.Movement
                     }
                 }
 
-                // Cover alignment
                 if (_cache.CoverPlanner != null && _cache.CoverPlanner.IsInCover)
                 {
                     Vector3 coverNormal = _cache.CoverPlanner.CoverNormal;
                     if (coverNormal == Vector3.zero)
                         coverNormal = _bot.Transform != null ? _bot.Transform.right : Vector3.right;
+
                     Vector3 coverAlign = Vector3.ProjectOnPlane(coverNormal.normalized, Vector3.up) * CoverAlignmentWeight;
                     adjusted += coverAlign;
                 }
 
-                // Player velocity inertia
                 Vector3 velocity = _bot.GetPlayer != null ? _bot.GetPlayer.Velocity : Vector3.zero;
                 if (velocity.sqrMagnitude > MinMagnitude)
                 {
@@ -167,26 +162,21 @@ namespace AIRefactored.AI.Movement
                     adjusted += velocity.normalized * VelocityFactor;
                 }
 
-                // Panic/Suppressed chaos
                 if ((_cache.PanicHandler?.IsPanicking ?? false) || (_cache.Suppression?.IsSuppressed() ?? false))
                 {
                     adjusted += UnityEngine.Random.insideUnitSphere * SuppressedChaosBonus;
                     adjusted.y = 0f;
                 }
 
-                // Aggressive sprints
                 if (personalityAggro > 0.65f && UnityEngine.Random.value < AggressionSprintBias)
                     adjusted += baseDir * 0.13f * personalityAggro;
 
-                // Micro-jitter
                 adjusted += UnityEngine.Random.insideUnitSphere * JitterMicro;
                 adjusted.y = 0f;
 
-                // Unstuck wobble
                 if (_bot.Mover?.Blocked ?? false)
                     adjusted += UnityEngine.Random.insideUnitSphere * StuckWobbleMagnitude;
 
-                // Final sanitize and normalize
                 return float.IsNaN(adjusted.x) || float.IsNaN(adjusted.y) || float.IsNaN(adjusted.z) || adjusted.sqrMagnitude < MinMagnitude
                     ? baseDir
                     : adjusted.normalized;
@@ -200,6 +190,52 @@ namespace AIRefactored.AI.Movement
         #endregion
 
         #region Internal Helpers
+
+        private void UpdateTargetChaosOffset(float now, BotPersonalityProfile profile)
+        {
+            try
+            {
+                float chaosBase = ChaosRadius * (1f - Mathf.Clamp01(profile.Caution));
+                float chaos = chaosBase;
+
+                if (_cache.PanicHandler?.IsPanicking == true)
+                    chaos += PanicChaosRadius;
+                if (_cache.Suppression?.IsSuppressed() == true)
+                    chaos += SuppressedChaosBonus;
+                if (_cache.CoverPlanner?.IsInCover == true)
+                    chaos *= CoverChaosScale;
+
+                chaos = Mathf.Clamp(chaos, 0.01f, 1.22f);
+
+                float x = UnityEngine.Random.Range(-chaos * 0.5f, chaos * 0.5f);
+                float z = UnityEngine.Random.Range(0.1f, chaos);
+                _targetChaosOffset = new Vector3(x, 0f, z);
+
+                _nextChaosUpdate = now + UnityEngine.Random.Range(ChaosIntervalMin, ChaosIntervalMax);
+            }
+            catch
+            {
+                _targetChaosOffset = Vector3.zero;
+                _nextChaosUpdate = now + UnityEngine.Random.Range(ChaosIntervalMin, ChaosIntervalMax);
+            }
+        }
+
+        private void TryAnticipation(Vector3 baseDir, float now, ref Vector3 adjusted)
+        {
+            if (now < _nextAnticipationTime)
+            {
+                adjusted += _anticipationDir * AnticipationMagnitude;
+                return;
+            }
+
+            float angle = Vector3.Angle(adjusted, baseDir);
+            if (angle > 29f && UnityEngine.Random.value < 0.21f)
+            {
+                _anticipationDir = Quaternion.AngleAxis(UnityEngine.Random.Range(-13f, 13f), Vector3.up) * baseDir;
+                _nextAnticipationTime = now + AnticipationInterval;
+                adjusted += _anticipationDir * AnticipationMagnitude;
+            }
+        }
 
         private Vector3 ComputeAvoidance()
         {
@@ -237,54 +273,6 @@ namespace AIRefactored.AI.Movement
             catch
             {
                 return Vector3.zero;
-            }
-        }
-
-        private void UpdateTargetChaosOffset(float now, BotPersonalityProfile profile)
-        {
-            try
-            {
-                float chaosBase = ChaosRadius * (1f - Mathf.Clamp01(profile.Caution));
-                float chaos = chaosBase;
-
-                if (_cache.PanicHandler?.IsPanicking == true)
-                    chaos += PanicChaosRadius;
-
-                if (_cache.Suppression?.IsSuppressed() == true)
-                    chaos += SuppressedChaosBonus;
-
-                if (_cache.CoverPlanner?.IsInCover == true)
-                    chaos *= CoverChaosScale;
-
-                chaos = Mathf.Clamp(chaos, 0.01f, 1.22f);
-
-                float x = UnityEngine.Random.Range(-chaos * 0.5f, chaos * 0.5f);
-                float z = UnityEngine.Random.Range(0.1f, chaos);
-                _targetChaosOffset = new Vector3(x, 0f, z);
-
-                _nextChaosUpdate = now + UnityEngine.Random.Range(ChaosIntervalMin, ChaosIntervalMax);
-            }
-            catch
-            {
-                _targetChaosOffset = Vector3.zero;
-                _nextChaosUpdate = now + UnityEngine.Random.Range(ChaosIntervalMin, ChaosIntervalMax);
-            }
-        }
-
-        private void TryAnticipation(Vector3 baseDir, float now, ref Vector3 adjusted)
-        {
-            if (now < _nextAnticipationTime)
-            {
-                adjusted += _anticipationDir * AnticipationMagnitude;
-                return;
-            }
-
-            float angle = Vector3.Angle(adjusted, baseDir);
-            if (angle > 29f && UnityEngine.Random.value < 0.21f)
-            {
-                _anticipationDir = Quaternion.AngleAxis(UnityEngine.Random.Range(-13f, 13f), Vector3.up) * baseDir;
-                _nextAnticipationTime = now + AnticipationInterval;
-                adjusted += _anticipationDir * AnticipationMagnitude;
             }
         }
 

@@ -17,15 +17,8 @@ namespace AIRefactored.AI.Combat.States
     using UnityEngine;
     using UnityEngine.AI;
 
-    /// <summary>
-    /// Handles human-realism, path-based attack advances.
-    /// - All advances use micro-jitter, anticipation, cover, inertia, and are validated against NavMesh/doors.
-    /// - Centralized tick only; headless/client are identical; never teleports or disables on error.
-    /// </summary>
     public sealed class AttackHandler
     {
-        #region Constants
-
         private const float PositionUpdateThresholdSqr = 0.31f;
         private const float MicroAdjustRadius = 0.43f;
         private const float MinAdvanceDistance = 1.14f;
@@ -38,11 +31,6 @@ namespace AIRefactored.AI.Combat.States
         private const float MaxNavmeshDeltaY = 1.98f;
         private const float AnticipatePauseMin = 0.09f;
         private const float AnticipatePauseMax = 0.16f;
-        private const float MinCoverDistance = 3.4f;
-
-        #endregion
-
-        #region Fields
 
         private readonly BotOwner _bot;
         private readonly BotComponentCache _cache;
@@ -54,13 +42,6 @@ namespace AIRefactored.AI.Combat.States
         private Vector3 _lastIssuedMove;
         private float _lastMoveTime;
 
-        #endregion
-
-        #region Constructor
-
-        /// <summary>
-        /// Instantiates an AttackHandler for the provided bot cache.
-        /// </summary>
         public AttackHandler(BotComponentCache cache)
         {
             _cache = cache;
@@ -74,13 +55,6 @@ namespace AIRefactored.AI.Combat.States
             _lastMoveTime = -10f;
         }
 
-        #endregion
-
-        #region Public API
-
-        /// <summary>
-        /// Clears all target and movement memory, resetting advance logic.
-        /// </summary>
         public void ClearTarget()
         {
             _hasLastTarget = false;
@@ -92,17 +66,11 @@ namespace AIRefactored.AI.Combat.States
             _lastMoveTime = -10f;
         }
 
-        /// <summary>
-        /// Returns true if an attack enemy can currently be resolved.
-        /// </summary>
         public bool ShallUseNow()
         {
             return TryResolveEnemy(out _);
         }
 
-        /// <summary>
-        /// Tick called by BotBrain – drives attack advances, micro-jitter, anticipation, and stance/cover logic.
-        /// </summary>
         public void Tick(float deltaTime)
         {
             try
@@ -127,7 +95,6 @@ namespace AIRefactored.AI.Combat.States
                 float deltaSqr = (targetPos - _lastTargetPosition).sqrMagnitude;
                 bool needsAdvance = !_hasLastTarget || deltaSqr > PositionUpdateThresholdSqr || now >= _nextAdvanceTime;
 
-                // Anticipate big reposition: pause before charging
                 if (needsAdvance && _anticipateUntil < now && _hasLastTarget && deltaSqr > 6.25f)
                 {
                     _anticipateUntil = now + UnityEngine.Random.Range(AnticipatePauseMin, AnticipatePauseMax);
@@ -152,7 +119,6 @@ namespace AIRefactored.AI.Combat.States
                     Vector3 moveDir = advancePoint - botPos;
                     moveDir.y = 0f;
 
-                    // Human movement inertia and micro-jitter
                     if (moveDir.sqrMagnitude > 0.01f &&
                         (_lastIssuedMove - advancePoint).sqrMagnitude > 0.03f || now - _lastMoveTime > 0.66f)
                     {
@@ -164,7 +130,6 @@ namespace AIRefactored.AI.Combat.States
 
                         Vector3 moveTarget = botPos + blended * Mathf.Clamp(moveDir.magnitude + overshoot, SafeMoveMin, SafeMoveMax);
 
-                        // No micro-drift if suppressed or in cover
                         if (!(_cache.Perception?.IsSuppressed ?? false))
                         {
                             moveTarget = BotMovementHelper.ApplyMicroDrift(
@@ -176,7 +141,6 @@ namespace AIRefactored.AI.Combat.States
                             );
                         }
 
-                        // NavMesh validation
                         if (NavMesh.SamplePosition(moveTarget, out NavMeshHit hit, 0.65f, NavMesh.AllAreas))
                         {
                             BotMovementHelper.SmoothMoveTo(_bot, hit.position, false, cohesion);
@@ -194,13 +158,6 @@ namespace AIRefactored.AI.Combat.States
             }
         }
 
-        #endregion
-
-        #region Helpers
-
-        /// <summary>
-        /// Returns the current target enemy, resolving from ThreatSelector or fallback to Memory.
-        /// </summary>
         private bool TryResolveEnemy(out Player result)
         {
             result = null;
@@ -219,14 +176,10 @@ namespace AIRefactored.AI.Combat.States
             return false;
         }
 
-        /// <summary>
-        /// Returns next advance point (cover, fallback, or sidestep) with all safety checks and squad support.
-        /// </summary>
         private Vector3 GetAdvancePoint(Vector3 botPos, Vector3 target, float dist, out bool usedCover)
         {
             usedCover = false;
 
-            // Micro-jitter/sidestep if already close
             if (dist < MinAdvanceDistance)
             {
                 Vector3 sidestep = Vector3.Cross(Vector3.up, _bot.LookDirection.normalized);
@@ -234,7 +187,6 @@ namespace AIRefactored.AI.Combat.States
                 return target + sidestep * shuffle;
             }
 
-            // Prefer cover if available near target
             if (_cache.CoverPlanner != null && _cache.CoverPlanner.TryGetBestCoverNear(target, botPos, out Vector3 cover))
             {
                 usedCover = true;
@@ -243,13 +195,9 @@ namespace AIRefactored.AI.Combat.States
                 return BotNavHelper.TryGetSafeTarget(_bot, out Vector3 safeCover) ? safeCover : candidate;
             }
 
-            // Last resort: try safe fallback
             return BotNavHelper.TryGetSafeTarget(_bot, out Vector3 fallback) ? fallback : botPos;
         }
 
-        /// <summary>
-        /// Sets the bot stance/pose based on cover, distance, and suppression.
-        /// </summary>
         private void SetStance(float distance, Vector3 advancePos, bool usedCover, bool isSuppressed)
         {
             try
@@ -271,9 +219,6 @@ namespace AIRefactored.AI.Combat.States
             }
         }
 
-        /// <summary>
-        /// Validates a NavMesh advance point for distance/y-delta/door block.
-        /// </summary>
         private static bool IsAdvancePointSafe(Vector3 current, Vector3 target)
         {
             float dist = Vector3.Distance(current, target);
@@ -288,7 +233,5 @@ namespace AIRefactored.AI.Combat.States
 
             return !BotNavHelper.IsBlockedByClosedDoor(current, target);
         }
-
-        #endregion
     }
 }

@@ -38,9 +38,6 @@ namespace AIRefactored.AI.Movement
 
         #region Public Types
 
-        /// <summary>
-        /// Represents a preferred side to flank from relative to the enemy.
-        /// </summary>
         public enum Side
         {
             Left,
@@ -51,10 +48,6 @@ namespace AIRefactored.AI.Movement
 
         #region Public API
 
-        /// <summary>
-        /// Attempts to find a valid flank point on a preferred side of the enemy, squad-aware.
-        /// Falls back to the opposite side if preferred side fails. Bulletproof: always locally isolated.
-        /// </summary>
         public static bool TryFindFlankPosition(Vector3 botPos, Vector3 enemyPos, out Vector3 flankPoint, Side preferred, BotsGroup squad = null)
         {
             flankPoint = Vector3.zero;
@@ -71,9 +64,6 @@ namespace AIRefactored.AI.Movement
             return TrySide(botPos, toEnemy, fallback, out flankPoint, squad);
         }
 
-        /// <summary>
-        /// Smartly picks a flank side using enemy forward and squad context. 
-        /// </summary>
         public static bool TrySmartFlank(Vector3 botPos, Vector3 enemyPos, Vector3 enemyForward, out Vector3 flankPoint, BotsGroup squad = null)
         {
             flankPoint = Vector3.zero;
@@ -81,14 +71,12 @@ namespace AIRefactored.AI.Movement
             if (toBot.sqrMagnitude < 0.0001f)
                 return false;
             toBot.Normalize();
+
             float sideDot = Vector3.Dot(Vector3.Cross(enemyForward, Vector3.up), toBot);
             Side side = sideDot >= 0f ? Side.Right : Side.Left;
             return TryFindFlankPosition(botPos, enemyPos, out flankPoint, side, squad);
         }
 
-        /// <summary>
-        /// Simple fallback: finds a random nav-safe position away from threat, with squad anti-cluster.
-        /// </summary>
         public static Vector3 GetRandomSafeFlank(Vector3 botPos, Vector3 enemyPos, BotsGroup squad = null)
         {
             for (int i = 0; i < 6; i++)
@@ -98,13 +86,13 @@ namespace AIRefactored.AI.Movement
                 Quaternion rot = Quaternion.AngleAxis(angle, Vector3.up);
                 float dist = UnityEngine.Random.Range(4f, FallbackRadius);
                 Vector3 candidate = botPos + rot * dir * dist;
+
                 if (NavMesh.SamplePosition(candidate, out NavMeshHit navHit, NavSampleRadius, NavMesh.AllAreas))
                 {
                     if (!IsClustered(navHit.position, squad, botPos))
                         return navHit.position;
                 }
             }
-            // As a last resort, return original pos (never breaks).
             return botPos;
         }
 
@@ -126,7 +114,6 @@ namespace AIRefactored.AI.Movement
                 Quaternion jitter = Quaternion.AngleAxis(jitterAngle, Vector3.up);
                 Vector3 candidate = origin + jitter * ((perpendicular * lateralOffset) + (toEnemy * forwardOffset));
 
-                // Extra squad repel offset to reduce cluster in group play
                 if (squad != null && squad.MembersCount > 1)
                     candidate += UnityEngine.Random.insideUnitSphere * GroupOffsetJitter;
 
@@ -134,6 +121,7 @@ namespace AIRefactored.AI.Movement
                 {
                     if (UnityEngine.Random.value < MissChance && i < MaxAttemptsPerSide - 1)
                         continue;
+
                     result = valid;
                     return true;
                 }
@@ -150,33 +138,35 @@ namespace AIRefactored.AI.Movement
 
             float verticalDelta = Mathf.Abs(origin.y - hit.position.y);
             float distSqr = (origin - hit.position).sqrMagnitude;
+
             if (distSqr < MinDistance * MinDistance || distSqr > MaxDistance * MaxDistance)
                 return false;
             if (verticalDelta > VerticalTolerance)
                 return false;
             if (squad != null && IsClustered(hit.position, squad, origin))
                 return false;
+
             final = hit.position;
             return true;
         }
 
-        /// <summary>
-        /// Returns true if the candidate point is too close to other squadmates (prevents "bot stacking").
-        /// </summary>
         private static bool IsClustered(Vector3 point, BotsGroup squad, Vector3 self)
         {
             try
             {
                 if (squad == null || squad.MembersCount <= 1)
                     return false;
+
                 for (int i = 0; i < squad.MembersCount; i++)
                 {
                     BotOwner mate = squad.Member(i);
                     if (mate == null || mate.IsDead || mate.Position == self)
                         continue;
+
                     if ((mate.Position - point).sqrMagnitude < SquadRepelRadius * SquadRepelRadius)
                         return true;
                 }
+
                 return false;
             }
             catch { return false; }

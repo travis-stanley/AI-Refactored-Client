@@ -20,8 +20,8 @@ namespace AIRefactored.Runtime
 	using UnityEngine;
 
 	/// <summary>
-	/// Enforces safe and robust AIRefactored BotBrain/Owner injection for all bots.
-	/// Bulletproof: Defers injection until owner and cache are fully valid, retries strictly, never double-assigns.
+	/// Bulletproof, headless-safe wiring system for BotBrain, BotComponentCache, and AIRefactoredBotOwner.
+	/// Runs only in WorldReady phase and retries up to N times for late bots.
 	/// </summary>
 	public sealed class BotSpawnWatcherService : IAIWorldSystemBootstrapper
 	{
@@ -35,15 +35,8 @@ namespace AIRefactored.Runtime
 
 		private static float _nextPollTime = -1f;
 
-		public void Initialize()
-		{
-			Reset();
-		}
-
-		public void OnRaidEnd()
-		{
-			Reset();
-		}
+		public void Initialize() => Reset();
+		public void OnRaidEnd() => Reset();
 
 		public static void Reset()
 		{
@@ -57,14 +50,12 @@ namespace AIRefactored.Runtime
 		{
 			try
 			{
-				// Strict gating: never tick if world/host/phase not ready, no log spam.
 				if (!GameWorldHandler.IsHost || !GameWorldHandler.IsInitialized || !GameWorldHandler.IsReady() || !WorldInitState.IsInPhase(WorldPhase.WorldReady))
 					return;
 
 				float now = Time.time;
 				if (now < _nextPollTime)
 					return;
-
 				_nextPollTime = now + PollInterval;
 
 				List<Player> players = GameWorldHandler.GetAllAlivePlayers();
@@ -83,20 +74,19 @@ namespace AIRefactored.Runtime
 
 					if (!SeenBotIds.Contains(id)) SeenBotIds.Add(id);
 					if (!string.IsNullOrEmpty(profileId) && !SeenProfileIds.Contains(profileId)) SeenProfileIds.Add(profileId);
-
 					if (RetryCounts.TryGetValue(profileId, out int retries) && retries >= MaxRetriesPerBot)
 						continue;
 
 					if (go.GetComponent<BotBrain>() != null)
 						continue;
 
-					if (player.AIData?.BotOwner == null)
+					BotOwner botOwner = player.AIData?.BotOwner;
+					if (botOwner == null)
 					{
 						IncrementRetry(profileId);
 						continue;
 					}
 
-					BotOwner botOwner = player.AIData.BotOwner;
 					BotComponentCache cache = BotComponentCacheRegistry.GetOrCreate(botOwner);
 					if (cache == null)
 					{
@@ -113,8 +103,11 @@ namespace AIRefactored.Runtime
 					}
 
 					if (!cache.AIRefactoredBotOwner.HasPersonality())
+					{
 						cache.AIRefactoredBotOwner.InitProfile(cache.AIRefactoredBotOwner.PersonalityProfile, cache.AIRefactoredBotOwner.PersonalityName);
+					}
 
+					// Final step: enforce and attach brain
 					BotBrainGuardian.Enforce(go);
 					GameWorldHandler.TryAttachBotBrain(botOwner);
 				}
@@ -126,7 +119,6 @@ namespace AIRefactored.Runtime
 		}
 
 		public bool IsReady() => WorldInitState.IsInPhase(WorldPhase.WorldReady);
-
 		public WorldPhase RequiredPhase() => WorldPhase.WorldReady;
 
 		private static void IncrementRetry(string profileId)

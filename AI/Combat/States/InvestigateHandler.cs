@@ -17,10 +17,6 @@ namespace AIRefactored.AI.Combat.States
     using UnityEngine;
     using UnityEngine.AI;
 
-    /// <summary>
-    /// Handles squad/personality-aware, fallback-safe, fully NavMesh-validated investigation movement.
-    /// Zero teleport, no host gating, only ticked by BotBrain, and all movement is bulletproofed.
-    /// </summary>
     public sealed class InvestigateHandler
     {
         #region Constants
@@ -57,9 +53,6 @@ namespace AIRefactored.AI.Combat.States
 
         #region Constructor
 
-        /// <summary>
-        /// Instantiates an InvestigateHandler for the given bot cache.
-        /// </summary>
         public InvestigateHandler(BotComponentCache cache)
         {
             _cache = cache;
@@ -71,9 +64,6 @@ namespace AIRefactored.AI.Combat.States
 
         #region Public API
 
-        /// <summary>
-        /// Resets internal state for new investigation.
-        /// </summary>
         public void Clear()
         {
             _hasGivenUp = false;
@@ -82,9 +72,6 @@ namespace AIRefactored.AI.Combat.States
             _nextIdleScanTime = -1000f;
         }
 
-        /// <summary>
-        /// Gets a valid, squad/personality/humanized investigation target, always NavMesh-sampled.
-        /// </summary>
         public Vector3 GetInvestigateTarget(Vector3 visualLastKnown)
         {
             Vector3 origin = _bot?.Position ?? Vector3.zero;
@@ -99,7 +86,6 @@ namespace AIRefactored.AI.Combat.States
             else
                 result = SampleNavMesh(origin + UnityEngine.Random.insideUnitSphere * ScanRadius);
 
-            // Squad spread: personality/squad role, fully deterministic
             if (_cache?.SquadPath != null)
             {
                 try { result = _cache.SquadPath.ApplyOffsetTo(result); } catch { }
@@ -114,9 +100,6 @@ namespace AIRefactored.AI.Combat.States
             return BotMovementHelper.ApplyMicroDrift(result, _bot.ProfileId, Time.frameCount, _cache.PersonalityProfile);
         }
 
-        /// <summary>
-        /// Drives realistic investigate movement, stance, voice. Always path-based, never teleports. 
-        /// </summary>
         public void Investigate(Vector3 target)
         {
             if (_hasGivenUp || _bot == null || _cache == null) return;
@@ -174,9 +157,6 @@ namespace AIRefactored.AI.Combat.States
             }
         }
 
-        /// <summary>
-        /// Returns true if bot should currently investigate (sound heard recently, not in exit buffer, not given up).
-        /// </summary>
         public bool ShallUseNow(float now, float lastTransition)
         {
             return _cache?.AIRefactoredBotOwner?.PersonalityProfile?.Caution >= MinCaution &&
@@ -184,9 +164,6 @@ namespace AIRefactored.AI.Combat.States
                    (now - lastTransition) > ExitDelayBuffer && !_hasGivenUp;
         }
 
-        /// <summary>
-        /// Returns true if bot should exit investigate state (time expired, or gave up).
-        /// </summary>
         public bool ShouldExit(float now, float lastHit, float cooldown)
         {
             float elapsed = now - lastHit;

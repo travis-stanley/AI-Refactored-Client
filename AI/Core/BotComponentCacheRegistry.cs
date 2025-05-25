@@ -52,25 +52,25 @@ namespace AIRefactored.AI.Core
             lock (Lock)
             {
                 if (CacheMap.TryGetValue(id, out var existing))
+                {
+                    if (!PlayerMap.ContainsKey(player))
+                        PlayerMap[player] = existing;
                     return existing;
+                }
 
                 try
                 {
                     var cache = new BotComponentCache();
-                    var owner = new AIRefactoredBotOwner();
-
                     cache.Initialize(bot);
 
-                    // Atomic owner wiring: never double-assign
-                    if (cache.AIRefactoredBotOwner == null)
-                        cache.SetOwner(owner);
+                    var owner = new AIRefactoredBotOwner();
+                    cache.SetOwner(owner);
+                    owner.Initialize(bot);
 
                     CacheMap[id] = cache;
+                    PlayerMap[player] = cache;
 
-                    if (!PlayerMap.ContainsKey(player))
-                        PlayerMap[player] = cache;
-
-                    Logger.LogDebug($"[BotComponentCacheRegistry] Created new cache for bot: {id}");
+                    Logger.LogDebug($"[BotComponentCacheRegistry] Created and initialized new cache for bot: {id}");
                     return cache;
                 }
                 catch (Exception ex)

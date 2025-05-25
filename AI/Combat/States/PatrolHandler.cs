@@ -16,10 +16,6 @@ namespace AIRefactored.AI.Combat.States
     using UnityEngine;
     using UnityEngine.AI;
 
-    /// <summary>
-    /// Handles squad/personality-aware, anti-jitter, NavMesh-only patrol and fallback.
-    /// All movement is path-based, fallback-safe, no disables, error-resilient, and FSM/BotBrain compliant.
-    /// </summary>
     public sealed class PatrolHandler
     {
         #region Constants
@@ -62,9 +58,6 @@ namespace AIRefactored.AI.Combat.States
 
         #region Constructor
 
-        /// <summary>
-        /// Instantiates a PatrolHandler for the given bot cache and state duration config.
-        /// </summary>
         public PatrolHandler(BotComponentCache cache, float minStateDuration, float switchCooldownBase)
         {
             _cache = cache;
@@ -79,14 +72,8 @@ namespace AIRefactored.AI.Combat.States
 
         #region Main API
 
-        /// <summary>
-        /// True if bot and cache are valid.
-        /// </summary>
         public bool ShallUseNow() => _bot != null && _cache != null;
 
-        /// <summary>
-        /// Returns true if bot should transition to investigate (caution, sound heard, state duration).
-        /// </summary>
         public bool ShouldTransitionToInvestigate(float time)
         {
             if (_cache?.Combat == null || _cache.AIRefactoredBotOwner?.PersonalityProfile == null)
@@ -107,9 +94,6 @@ namespace AIRefactored.AI.Combat.States
             }
         }
 
-        /// <summary>
-        /// Main patrol tick, called ONLY from BotBrain. Handles idle scan, patrol move, fallback, and squad sync.
-        /// </summary>
         public void Tick(float time)
         {
             if (_bot == null || _cache == null)

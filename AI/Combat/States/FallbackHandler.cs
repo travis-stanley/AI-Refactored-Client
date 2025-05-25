@@ -17,16 +17,8 @@ namespace AIRefactored.AI.Combat.States
     using UnityEngine;
     using UnityEngine.AI;
 
-    /// <summary>
-    /// Handles bulletproof fallback/retreat logic for bots: 
-    /// - NavMesh validation, retry-safe, never teleports, never disables.
-    /// - Personality/squad-aware, squad panic contagion, and full Y/NaN/door-guarding.
-    /// - Only ticked by BotBrain.
-    /// </summary>
     public sealed class FallbackHandler : IDisposable
     {
-        #region Constants
-
         private const float MinArrivalDistance = 0.15f;
         private const float NavSampleRadius = 2.4f;
         private const int MaxRetries = 3;
@@ -38,10 +30,6 @@ namespace AIRefactored.AI.Combat.States
         private const float MinCohesion = 0.7f;
         private const float MaxCohesion = 1.3f;
 
-        #endregion
-
-        #region Fields
-
         private readonly BotOwner _bot;
         private readonly BotComponentCache _cache;
         private readonly List<Vector3> _path;
@@ -51,13 +39,6 @@ namespace AIRefactored.AI.Combat.States
         private bool _hasArrived;
         private bool _panicSpread;
 
-        #endregion
-
-        #region Lifecycle
-
-        /// <summary>
-        /// Instantiates a new FallbackHandler for the provided bot cache.
-        /// </summary>
         public FallbackHandler(BotComponentCache cache)
         {
             _cache = cache;
@@ -73,13 +54,6 @@ namespace AIRefactored.AI.Combat.States
             TempListPool.Return(_path);
         }
 
-        #endregion
-
-        #region Public API
-
-        /// <summary>
-        /// Resets all fallback state, target, path, retries.
-        /// </summary>
         public void Clear()
         {
             _target = _bot?.Position ?? Vector3.zero;
@@ -101,23 +75,16 @@ namespace AIRefactored.AI.Combat.States
         }
 
         public bool HasArrived() => _hasArrived;
-
         public bool IsAnticipating(float now) => now < _anticipateUntil;
-
         public bool IsRetrying => _retryCount > 0;
-
         public Vector3 GetFallbackPosition() => _target;
 
         public bool ShallUseNow(float now) => IsActive() && !_hasArrived && !IsAnticipating(now);
-
         public bool HasValidFallbackPath() => _path.Count >= 2 && IsValid(_target);
 
         public Vector3 GetFallbackPositionOrDefault(Vector3 defaultPos) =>
             HasValidFallbackPath() ? _target : defaultPos;
 
-        /// <summary>
-        /// Returns true if bot is suppressed long enough and not panicking/cautious.
-        /// </summary>
         public bool ShouldTriggerSuppressedFallback(float now, float lastStateChangeTime, float minStateDuration)
         {
             var suppression = _cache?.Suppression;
@@ -136,9 +103,6 @@ namespace AIRefactored.AI.Combat.States
             return false;
         }
 
-        /// <summary>
-        /// Assigns a new fallback target, with squad-aware offset and NavMesh validation.
-        /// </summary>
         public void SetFallbackTarget(Vector3 pos, float now)
         {
             if (!IsValid(pos) || !IsBotMoveCapable(_bot)) return;
@@ -155,9 +119,6 @@ namespace AIRefactored.AI.Combat.States
             _hasArrived = false;
         }
 
-        /// <summary>
-        /// Assigns a new fallback path, validating and pooling.
-        /// </summary>
         public void SetFallbackPath(List<Vector3> path, float now)
         {
             if (path == null || path.Count < 2)
@@ -175,15 +136,11 @@ namespace AIRefactored.AI.Combat.States
                 SetFallbackTarget(_path[_path.Count - 1], now);
         }
 
-        /// <summary>
-        /// Core fallback update. Fully bulletproof, NavMesh, retry, and panic-squad safe.
-        /// </summary>
         public void Tick(float deltaTime, float now, Action<CombatState, float> forceExit)
         {
             if (!IsBotMoveCapable(_bot) || !IsValid(_target) || now < _anticipateUntil)
                 return;
 
-            // One-time panic contagion on fallback entry
             if (!_panicSpread && _bot.BotsGroup != null)
             {
                 for (int i = 0; i < _bot.BotsGroup.MembersCount; i++)
@@ -200,7 +157,6 @@ namespace AIRefactored.AI.Combat.States
                 _panicSpread = true;
             }
 
-            // NavMesh validation for current fallback target
             if (!TrySampleNavMesh(_target, NavSampleRadius, out Vector3 navSafe) || !IsValid(navSafe))
             {
                 _retryCount++;
@@ -229,13 +185,6 @@ namespace AIRefactored.AI.Combat.States
             }
         }
 
-        #endregion
-
-        #region Internal Helpers
-
-        /// <summary>
-        /// Returns personality/squad-aware offset for fallback position.
-        /// </summary>
         private Vector3 GetSquadOffset()
         {
             if (_bot?.BotsGroup == null || _bot.BotsGroup.MembersCount <= 1) return Vector3.zero;
@@ -246,9 +195,6 @@ namespace AIRefactored.AI.Combat.States
             return perp * offset;
         }
 
-        /// <summary>
-        /// Fallback to patrol/backup/fuzzy position if main fallback is blocked or fails.
-        /// </summary>
         private Vector3 FindBackupFallback(Vector3 origin)
         {
             if (_bot?.PatrollingData != null)
@@ -268,9 +214,6 @@ namespace AIRefactored.AI.Combat.States
             return ClampY(origin + Vector3.forward * 0.2f, origin);
         }
 
-        /// <summary>
-        /// Clamp fallback Y to base position if out of range.
-        /// </summary>
         private static Vector3 ClampY(Vector3 v, Vector3 basePos)
         {
             if (Mathf.Abs(v.y - basePos.y) > 3f || v.y < -2.5f)
@@ -309,7 +252,5 @@ namespace AIRefactored.AI.Combat.States
                 if (bot.BotsGroup.Member(i) == bot) return i;
             return -1;
         }
-
-        #endregion
     }
 }

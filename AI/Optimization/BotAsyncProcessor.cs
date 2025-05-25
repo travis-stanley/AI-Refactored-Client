@@ -68,7 +68,6 @@ namespace AIRefactored.AI.Optimization
                 _hasInitialized = false;
                 _lastThinkTime = 0f;
 
-                // Detach task: no cancellation, bulletproof
                 Task.Run(async () =>
                 {
                     try
@@ -113,7 +112,6 @@ namespace AIRefactored.AI.Optimization
 
                 if (FikaHeadlessDetector.IsHeadless)
                 {
-                    // ThreadPool work item for true headless async
                     System.Threading.ThreadPool.QueueUserWorkItem(_ =>
                     {
                         try { Think(); }
@@ -147,7 +145,6 @@ namespace AIRefactored.AI.Optimization
 
                 string profileId = "Unknown";
                 try { profileId = bot.Profile?.Id ?? "Unknown"; } catch { }
-
                 if (string.IsNullOrEmpty(profileId))
                     return;
 

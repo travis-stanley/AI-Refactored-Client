@@ -53,7 +53,7 @@ namespace AIRefactored.AI.Optimization
 
         /// <summary>
         /// Evaluates a fallback point for tactical use.
-        /// Now with human-like reasoning: imperfect risk detection, micro-bias, and real-world edge case handling.
+        /// Human-like reasoning: imperfect risk detection, micro-bias, and real-world edge case handling.
         /// </summary>
         public static float ScoreCoverPoint(BotOwner bot, Vector3 candidate, Vector3 threatDirection)
         {
@@ -140,10 +140,11 @@ namespace AIRefactored.AI.Optimization
 
                 // Add a tiny human judgment error (sometimes misreads)
                 score += UnityEngine.Random.Range(-HumanNoise, HumanNoise);
-
-                Logger.LogDebug($"[CoverScorer] Score={score:F2} @ {candidate} | From={(bot != null ? bot.Position.ToString() : "null")} | Dir={threatDirection.normalized}");
             }
-            catch { /* No-op on log or penalty error */ }
+            catch
+            {
+                // No-op on penalty error; score will still clamp.
+            }
 
             return Mathf.Clamp(score, MinScore, MaxScore);
         }

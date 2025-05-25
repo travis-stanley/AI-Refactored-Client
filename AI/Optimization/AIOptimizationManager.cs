@@ -31,7 +31,7 @@ namespace AIRefactored.AI.Optimization
         #region Constants
 
         private const float EscalationCooldownTime = 10f;
-        private const float EscalationRandomVariance = 0.09f; // ~9% micro-variance for realism
+        private const float EscalationRandomVariance = 0.09f;
 
         #endregion
 
@@ -40,7 +40,6 @@ namespace AIRefactored.AI.Optimization
         private static readonly BotAIOptimization Optimizer = new BotAIOptimization();
         private static readonly Dictionary<int, bool> BotOptimizationState = new Dictionary<int, bool>(128);
         private static readonly Dictionary<int, float> LastEscalationTimes = new Dictionary<int, float>(128);
-
         private static readonly ManualLogSource Logger = Plugin.LoggerInstance;
 
         #endregion
@@ -57,15 +56,11 @@ namespace AIRefactored.AI.Optimization
             try
             {
                 if (!GameWorldHandler.IsLocalHost() || !IsValid(bot))
-                {
                     return;
-                }
 
                 int id = bot.GetInstanceID();
                 if (BotOptimizationState.TryGetValue(id, out bool alreadyOptimized) && alreadyOptimized)
-                {
                     return;
-                }
 
                 try
                 {
@@ -94,15 +89,11 @@ namespace AIRefactored.AI.Optimization
             try
             {
                 if (!GameWorldHandler.IsLocalHost() || !IsValid(bot))
-                {
                     return;
-                }
 
                 int id = bot.GetInstanceID();
                 if (!BotOptimizationState.TryGetValue(id, out bool wasOptimized) || !wasOptimized)
-                {
                     return;
-                }
 
                 try
                 {
@@ -131,17 +122,13 @@ namespace AIRefactored.AI.Optimization
             try
             {
                 if (!GameWorldHandler.IsLocalHost() || !IsValid(bot))
-                {
                     return;
-                }
 
                 int id = bot.GetInstanceID();
                 float now = Time.time;
 
                 if (LastEscalationTimes.TryGetValue(id, out float lastTime) && (now - lastTime) < EscalationCooldownTime)
-                {
                     return;
-                }
 
                 BotGlobalsMindSettings mind = null;
                 try
@@ -167,17 +154,12 @@ namespace AIRefactored.AI.Optimization
                     float caution = 0.5f;
                     BotComponentCache cache = null;
 
-                    string profileId = (bot != null && bot.Profile != null) ? bot.Profile.Id : null;
+                    string profileId = bot?.Profile?.Id;
                     if (!string.IsNullOrEmpty(profileId))
-                    {
                         BotComponentCacheRegistry.TryGet(profileId, out cache);
-                    }
 
-                    var profile = cache?.AIRefactoredBotOwner?.PersonalityProfile;
-                    if (profile == null && !string.IsNullOrEmpty(profileId))
-                    {
-                        profile = BotRegistry.Get(profileId);
-                    }
+                    var profile = cache?.AIRefactoredBotOwner?.PersonalityProfile ?? (!string.IsNullOrEmpty(profileId) ? BotRegistry.Get(profileId) : null);
+
                     if (profile != null)
                     {
                         aggression = Mathf.Clamp01(profile.AggressionLevel);
@@ -237,9 +219,7 @@ namespace AIRefactored.AI.Optimization
         private static BotGlobalsMindSettings GetMindSettings(BotOwner bot)
         {
             if (bot == null || bot.Settings == null || bot.Settings.FileSettings == null)
-            {
                 return null;
-            }
             return bot.Settings.FileSettings.Mind;
         }
 

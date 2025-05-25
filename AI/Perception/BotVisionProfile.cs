@@ -8,11 +8,15 @@
 
 namespace AIRefactored.AI.Perception
 {
+    using System;
+
     /// <summary>
     /// Defines a bot's visual perception profile.
     /// Simulates response to light, suppression, and temporary blindness for realism.
     /// Used by <see cref="BotPerceptionSystem"/> to adjust sensory behavior dynamically.
+    /// Fully null-free, bulletproof, and allocation-free.
     /// </summary>
+    [Serializable]
     public sealed class BotVisionProfile
     {
         #region Constants

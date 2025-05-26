@@ -143,7 +143,7 @@ namespace AIRefactored.AI.Combat.States
 
                         if (NavMesh.SamplePosition(moveTarget, out NavMeshHit hit, 0.65f, NavMesh.AllAreas))
                         {
-                            BotMovementHelper.SmoothMoveTo(_bot, hit.position, false, cohesion);
+                            BotMovementHelper.SmoothMoveToSafe(_bot, hit.position, slow: false, cohesion);
                             _lastIssuedMove = hit.position;
                             _lastMoveTime = now;
                         }

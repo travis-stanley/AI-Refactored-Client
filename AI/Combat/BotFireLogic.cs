@@ -148,7 +148,7 @@ namespace AIRefactored.AI.Combat
                         if (BotNavHelper.TryGetSafeTarget(_bot, out var advance) && IsVectorValid(advance))
                         {
                             if (UnityEngine.Random.value < 0.7f)
-                                BotMovementHelper.SmoothMoveTo(_bot, advance, false, Mathf.Clamp(profile.Cohesion, 0.65f, 1.35f));
+                                BotMovementHelper.SmoothMoveToSafe(_bot, advance, slow: false, cohesion: 1f);
                         }
                     }
                     return;

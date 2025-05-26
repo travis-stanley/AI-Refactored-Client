@@ -73,7 +73,7 @@ namespace AIRefactored.AI.Combat.States
 
                     if (isLeader || UnityEngine.Random.value > 0.22f + (mateCache?.PersonalityProfile?.Caution ?? 0.07f))
                     {
-                        BotMovementHelper.SmoothMoveTo(mate, fallbackPoint, true, cohesion);
+                        BotMovementHelper.SmoothMoveToSafe(mate, fallbackPoint, slow: true, cohesion);
 
                         if (mate.BotTalk != null && UnityEngine.Random.value < 0.7f)
                         {

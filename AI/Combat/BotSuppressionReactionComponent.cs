@@ -158,7 +158,7 @@ namespace AIRefactored.AI.Combat
 
                 if (_bot.Mover != null)
                 {
-                    BotMovementHelper.SmoothMoveTo(_bot, fallback, false, cohesion);
+                    BotMovementHelper.SmoothMoveToSafe(_bot, fallback, slow: false, cohesion);
                     _bot.Sprint(true);
                     BotCoverHelper.TrySetStanceFromNearbyCover(_cache, fallback);
                 }

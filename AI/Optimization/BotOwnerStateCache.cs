@@ -179,7 +179,8 @@ namespace AIRefactored.AI.Optimization
                     return;
 
                 Vector3 origin = BotMovementHelper.GetPosition(botOwner);
-                Vector3 shift = Vector3.zero;
+                Vector3 shift;
+
                 if (advance == true)
                 {
                     shift = botOwner.Transform.forward * length;
@@ -194,7 +195,6 @@ namespace AIRefactored.AI.Optimization
                     shift.y = 0f;
                 }
 
-                // Clamp vector to valid min/max move length (never allows zero or excessive shift).
                 float sqr = shift.sqrMagnitude;
                 if (sqr > SafeMoveMax * SafeMoveMax)
                     shift = shift.normalized * SafeMoveMax;
@@ -204,25 +204,30 @@ namespace AIRefactored.AI.Optimization
                 if (shift.sqrMagnitude > 0.02f)
                 {
                     Vector3 rawTarget = origin + shift;
-                    // NavMesh sample (always clamps to mesh, never off-mesh or invalid)
+
                     if (NavMesh.SamplePosition(rawTarget, out NavMeshHit navHit, 1.25f, NavMesh.AllAreas))
                     {
                         if (Mathf.Abs(navHit.position.y - origin.y) <= MaxNavmeshDeltaY)
                         {
-                            // Queue for main thread, after randomized delay, never instant
                             BotWorkScheduler.EnqueueToMainThreadDelayed(() =>
-                            {
-                                try
                                 {
-                                    BotMovementHelper.SmoothMoveTo(botOwner, navHit.position, false, 1.0f);
-                                }
-                                catch { }
-                            }, delay);
+                                    try
+                                    {
+                                        BotMovementHelper.SmoothMoveTo(botOwner, navHit.position, slow: false);
+                                    }
+                                    catch (Exception ex)
+                                    {
+                                        Plugin.LoggerInstance.LogWarning("[TriggerZoneShift] Delayed move failed: " + ex);
+                                    }
+                                }, delay);
                         }
                     }
                 }
             }
-            catch { }
+            catch (Exception ex)
+            {
+                Plugin.LoggerInstance.LogError("[TriggerZoneShift] Zone shift error: " + ex);
+            }
         }
 
         #endregion

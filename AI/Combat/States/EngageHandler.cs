@@ -153,7 +153,7 @@ namespace AIRefactored.AI.Combat.States
                 Vector3 humanizedTarget = _bot.Position + blended * moveDir.magnitude;
 
                 humanizedTarget = BotMovementHelper.ApplyMicroDrift(humanizedTarget, _bot.ProfileId, Time.frameCount, _cache.PersonalityProfile);
-                BotMovementHelper.SmoothMoveTo(_bot, humanizedTarget, false, cohesion);
+                BotMovementHelper.SmoothMoveToSafe(_bot, humanizedTarget, slow: false, cohesion);
                 ApplyEngagementStance(advanceSqr, safeDest);
 
                 if (_bot.BotTalk != null && UnityEngine.Random.value < 0.08f)

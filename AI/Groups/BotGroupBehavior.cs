@@ -266,7 +266,7 @@ namespace AIRefactored.AI.Groups
                 _lastMoveTarget = target;
                 _hasLastTarget = true;
                 _lastMoveTime = now;
-                BotMovementHelper.SmoothMoveTo(_bot, target, false, cohesion);
+                BotMovementHelper.SmoothMoveTo(_bot, target, slow: false);
             }
         }
 

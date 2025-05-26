@@ -128,7 +128,7 @@ namespace AIRefactored.AI.Combat.States
 
             if (_bot.Mover != null)
             {
-                BotMovementHelper.SmoothMoveTo(_bot, dest, true, cohesion);
+                BotMovementHelper.SmoothMoveToSafe(_bot, dest, slow: true, cohesion);
                 _memory?.MarkCleared(dest);
 
                 float distance = Vector3.Distance(_bot.Position, dest);

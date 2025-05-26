@@ -175,7 +175,7 @@ namespace AIRefactored.AI.Combat.States
             float cohesion = Mathf.Clamp(_cache?.PersonalityProfile?.Cohesion ?? 1f, MinCohesion, MaxCohesion);
             Vector3 adjusted = BotMovementHelper.ApplyMicroDrift(navSafe, _bot.ProfileId, Time.frameCount, _cache.PersonalityProfile);
 
-            BotMovementHelper.SmoothMoveTo(_bot, adjusted, true, cohesion);
+            BotMovementHelper.SmoothMoveToSafe(_bot, adjusted, slow: true, cohesion);
             BotCoverHelper.TrySetStanceFromNearbyCover(_cache, adjusted);
 
             if (Vector3.Distance(_bot.Position, navSafe) <= MinArrivalDistance)

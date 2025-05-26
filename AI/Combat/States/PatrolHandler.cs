@@ -164,7 +164,7 @@ namespace AIRefactored.AI.Combat.States
                 if (_isFollower && UnityEngine.Random.value < 0.15f)
                     _followerLagUntil = time + UnityEngine.Random.Range(FollowerLagSeconds, FollowerLagSeconds * 2.4f);
 
-                BotMovementHelper.SmoothMoveTo(_bot, target, slow: true, cohesionScale: patrolCohesion);
+                BotMovementHelper.SmoothMoveToSafe(_bot, target, slow: true, cohesion: patrolCohesion);
                 BotCoverHelper.TrySetStanceFromNearbyCover(_cache, target);
 
                 if (UnityEngine.Random.value < 0.17f + (_cache.PersonalityProfile?.Caution ?? 0f) * 0.11f)

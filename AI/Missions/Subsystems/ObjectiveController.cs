@@ -124,7 +124,10 @@ namespace AIRefactored.AI.Missions.Subsystems
                 return;
 
             if (BotNavHelper.TryGetSafeTarget(_bot, out Vector3 safeTarget))
-                BotMovementHelper.SmoothMoveTo(_bot, safeTarget);
+            {
+                float cohesion = _cache.AIRefactoredBotOwner?.PersonalityProfile?.Cohesion ?? 1f;
+                BotMovementHelper.SmoothMoveToSafe(_bot, safeTarget, slow: true, cohesion);
+            }
         }
 
         private Vector3 GetObjectiveTarget(MissionType type)

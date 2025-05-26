@@ -9,6 +9,7 @@ namespace AIRefactored.Runtime
 {
 	using System;
 	using System.Collections.Generic;
+	using AIRefactored.AI;
 	using AIRefactored.AI.Core;
 	using AIRefactored.AI.Navigation;
 	using AIRefactored.AI.Threads;
@@ -104,7 +105,10 @@ namespace AIRefactored.Runtime
 					}
 
 					if (!owner.HasPersonality())
-						owner.InitProfile(owner.PersonalityProfile, owner.PersonalityName);
+					{
+						var profile = BotRegistry.GetOrGenerate(profileId, PersonalityType.Balanced, botOwner.Profile?.Info?.Settings?.Role ?? WildSpawnType.assault);
+						owner.InitProfile(profile, profile?.Personality.ToString() ?? "Balanced");
+					}
 
 					BotBrainGuardian.Enforce(go);
 					GameWorldHandler.TryAttachBotBrain(botOwner);

@@ -44,10 +44,6 @@ namespace AIRefactored.AI.Movement
 
         #region Public API
 
-        /// <summary>
-        /// Returns the optimal flank side (Left/Right) for this bot in the current tactical context.
-        /// Handles rare indecision, cooldown, squad bias, personality, and suppression state.
-        /// </summary>
         public static FlankPositionPlanner.Side GetOptimalFlankSide(BotOwner bot, BotComponentCache cache)
         {
             try
@@ -63,7 +59,6 @@ namespace AIRefactored.AI.Movement
                 float lastLeft = LastLeftUse.TryGetValue(botId, out float l) ? l : -999f;
                 float lastRight = LastRightUse.TryGetValue(botId, out float r) ? r : -999f;
 
-                // Rare indecision: follow whichever flank was used last
                 if (UnityEngine.Random.value < IndecisionChance)
                 {
                     if (lastLeft > lastRight)
@@ -72,6 +67,7 @@ namespace AIRefactored.AI.Movement
                         MaybeSayFlankComms(bot, cache, FlankPositionPlanner.Side.Left);
                         return FlankPositionPlanner.Side.Left;
                     }
+
                     LastRightUse[botId] = now;
                     MaybeSayFlankComms(bot, cache, FlankPositionPlanner.Side.Right);
                     return FlankPositionPlanner.Side.Right;
@@ -113,7 +109,6 @@ namespace AIRefactored.AI.Movement
                 if (rightCooldown < RecentlyUsedFlankCooldown)
                     rightScore -= 0.82f - aggression * 0.2f;
 
-                // Final small random bias for non-robotic variance
                 float errorBias = UnityEngine.Random.Range(-0.09f, 0.09f);
                 leftScore += errorBias;
                 rightScore -= errorBias;
@@ -124,6 +119,7 @@ namespace AIRefactored.AI.Movement
                     MaybeSayFlankComms(bot, cache, FlankPositionPlanner.Side.Left);
                     return FlankPositionPlanner.Side.Left;
                 }
+
                 LastRightUse[botId] = now;
                 MaybeSayFlankComms(bot, cache, FlankPositionPlanner.Side.Right);
                 return FlankPositionPlanner.Side.Right;
@@ -138,9 +134,6 @@ namespace AIRefactored.AI.Movement
 
         #region Helpers
 
-        /// <summary>
-        /// Cleans up very old cooldown entries to avoid unbounded growth.
-        /// </summary>
         private static void CleanupCooldownsIfNeeded()
         {
             float now = Time.time;
@@ -214,9 +207,6 @@ namespace AIRefactored.AI.Movement
             }
         }
 
-        /// <summary>
-        /// Optional: triggers squad comms for flank side, for extra immersion.
-        /// </summary>
         private static void MaybeSayFlankComms(BotOwner bot, BotComponentCache cache, FlankPositionPlanner.Side side)
         {
             try

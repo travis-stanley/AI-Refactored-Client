@@ -104,18 +104,21 @@ namespace AIRefactored.AI.Movement
         }
 
         public void Crouch() => SetCrouch(false);
-
         public void Stand() => SetStand();
 
         public void SetCrouch(bool anticipate = false)
         {
-            _targetPoseLevel = anticipate ? CrouchPose + UnityEngine.Random.Range(-AnticipatePoseJitter, AnticipatePoseJitter) : CrouchPose;
+            _targetPoseLevel = anticipate
+                ? CrouchPose + UnityEngine.Random.Range(-AnticipatePoseJitter, AnticipatePoseJitter)
+                : CrouchPose;
             if (anticipate) StartAnticipation();
         }
 
         public void SetProne(bool anticipate = false)
         {
-            _targetPoseLevel = anticipate ? PronePose + UnityEngine.Random.Range(-AnticipatePoseJitter, AnticipatePoseJitter) : PronePose;
+            _targetPoseLevel = anticipate
+                ? PronePose + UnityEngine.Random.Range(-AnticipatePoseJitter, AnticipatePoseJitter)
+                : PronePose;
             if (anticipate) StartAnticipation();
         }
 

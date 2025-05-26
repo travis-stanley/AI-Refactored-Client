@@ -16,8 +16,14 @@ namespace AIRefactored.AI.Combat
     using EFT;
     using UnityEngine;
 
+    /// <summary>
+    /// Handles suppression events, composure decay, squad contagion, panic escalation, and comms.
+    /// Bulletproof: All errors are locally isolated, no disables, never allocates in hot path.
+    /// </summary>
     public sealed class BotSuppressionReactionComponent
     {
+        #region Constants
+
         private const float MinSuppressionRetreatDistance = 6.0f;
         private const float SuppressionDuration = 2.2f;
         private const float SquadSuppressionRadiusSqr = 144f;
@@ -41,12 +47,20 @@ namespace AIRefactored.AI.Combat
             EPhraseTrigger.FollowMe, EPhraseTrigger.HoldPosition, EPhraseTrigger.Spreadout
         };
 
+        #endregion
+
+        #region Fields
+
         private BotOwner _bot;
         private BotComponentCache _cache;
         private bool _isSuppressed;
         private float _suppressionStartTime = float.NegativeInfinity;
         private float _lastVoiceTime = float.NegativeInfinity;
         private static FieldInfo _composureField;
+
+        #endregion
+
+        #region Initialization
 
         public void Initialize(BotComponentCache componentCache)
         {
@@ -65,6 +79,10 @@ namespace AIRefactored.AI.Combat
             if (_composureField == null)
                 _composureField = typeof(BotPanicHandler).GetField("_composureLevel", BindingFlags.NonPublic | BindingFlags.Instance);
         }
+
+        #endregion
+
+        #region Public API
 
         public bool IsSuppressed() => _isSuppressed;
 
@@ -167,6 +185,10 @@ namespace AIRefactored.AI.Combat
             }
         }
 
+        #endregion
+
+        #region Squad Propagation
+
         private void TryPropagateSuppression()
         {
             try
@@ -210,6 +232,10 @@ namespace AIRefactored.AI.Combat
             }
         }
 
+        #endregion
+
+        #region Internal Helpers
+
         private static Vector3 GetDefaultRetreatDirection() => Vector3.back;
 
         private bool IsValid()
@@ -229,5 +255,7 @@ namespace AIRefactored.AI.Combat
         {
             return !float.IsNaN(v.x) && !float.IsNaN(v.y) && !float.IsNaN(v.z);
         }
+
+        #endregion
     }
 }

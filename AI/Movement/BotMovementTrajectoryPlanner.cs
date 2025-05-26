@@ -191,6 +191,52 @@ namespace AIRefactored.AI.Movement
 
         #region Internal Helpers
 
+        private void UpdateTargetChaosOffset(float now, BotPersonalityProfile profile)
+        {
+            try
+            {
+                float chaosBase = ChaosRadius * (1f - Mathf.Clamp01(profile.Caution));
+                float chaos = chaosBase;
+
+                if (_cache.PanicHandler?.IsPanicking == true)
+                    chaos += PanicChaosRadius;
+                if (_cache.Suppression?.IsSuppressed() == true)
+                    chaos += SuppressedChaosBonus;
+                if (_cache.CoverPlanner?.IsInCover == true)
+                    chaos *= CoverChaosScale;
+
+                chaos = Mathf.Clamp(chaos, 0.01f, 1.22f);
+
+                float x = UnityEngine.Random.Range(-chaos * 0.5f, chaos * 0.5f);
+                float z = UnityEngine.Random.Range(0.1f, chaos);
+                _targetChaosOffset = new Vector3(x, 0f, z);
+
+                _nextChaosUpdate = now + UnityEngine.Random.Range(ChaosIntervalMin, ChaosIntervalMax);
+            }
+            catch
+            {
+                _targetChaosOffset = Vector3.zero;
+                _nextChaosUpdate = now + UnityEngine.Random.Range(ChaosIntervalMin, ChaosIntervalMax);
+            }
+        }
+
+        private void TryAnticipation(Vector3 baseDir, float now, ref Vector3 adjusted)
+        {
+            if (now < _nextAnticipationTime)
+            {
+                adjusted += _anticipationDir * AnticipationMagnitude;
+                return;
+            }
+
+            float angle = Vector3.Angle(adjusted, baseDir);
+            if (angle > 29f && UnityEngine.Random.value < 0.21f)
+            {
+                _anticipationDir = Quaternion.AngleAxis(UnityEngine.Random.Range(-13f, 13f), Vector3.up) * baseDir;
+                _nextAnticipationTime = now + AnticipationInterval;
+                adjusted += _anticipationDir * AnticipationMagnitude;
+            }
+        }
+
         private Vector3 ComputeAvoidance()
         {
             try
@@ -227,54 +273,6 @@ namespace AIRefactored.AI.Movement
             catch
             {
                 return Vector3.zero;
-            }
-        }
-
-        private void UpdateTargetChaosOffset(float now, BotPersonalityProfile profile)
-        {
-            try
-            {
-                float chaosBase = ChaosRadius * (1f - Mathf.Clamp01(profile.Caution));
-                float chaos = chaosBase;
-
-                if (_cache.PanicHandler?.IsPanicking == true)
-                    chaos += PanicChaosRadius;
-
-                if (_cache.Suppression?.IsSuppressed() == true)
-                    chaos += SuppressedChaosBonus;
-
-                if (_cache.CoverPlanner?.IsInCover == true)
-                    chaos *= CoverChaosScale;
-
-                chaos = Mathf.Clamp(chaos, 0.01f, 1.22f);
-
-                float x = UnityEngine.Random.Range(-chaos * 0.5f, chaos * 0.5f);
-                float z = UnityEngine.Random.Range(0.1f, chaos);
-                _targetChaosOffset = new Vector3(x, 0f, z);
-
-                _nextChaosUpdate = now + UnityEngine.Random.Range(ChaosIntervalMin, ChaosIntervalMax);
-            }
-            catch
-            {
-                _targetChaosOffset = Vector3.zero;
-                _nextChaosUpdate = now + UnityEngine.Random.Range(ChaosIntervalMin, ChaosIntervalMax);
-            }
-        }
-
-        private void TryAnticipation(Vector3 baseDir, float now, ref Vector3 adjusted)
-        {
-            if (now < _nextAnticipationTime)
-            {
-                adjusted += _anticipationDir * AnticipationMagnitude;
-                return;
-            }
-
-            float angle = Vector3.Angle(adjusted, baseDir);
-            if (angle > 29f && UnityEngine.Random.value < 0.21f)
-            {
-                _anticipationDir = Quaternion.AngleAxis(UnityEngine.Random.Range(-13f, 13f), Vector3.up) * baseDir;
-                _nextAnticipationTime = now + AnticipationInterval;
-                adjusted += _anticipationDir * AnticipationMagnitude;
             }
         }
 

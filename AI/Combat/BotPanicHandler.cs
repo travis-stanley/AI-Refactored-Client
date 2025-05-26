@@ -56,10 +56,7 @@ namespace AIRefactored.AI.Combat
 
         #region Properties
 
-        /// <summary>True if this bot is currently panicking.</summary>
         public bool IsPanicking => _isPanicking;
-
-        /// <summary>Current composure value, 0..1.</summary>
         public float GetComposureLevel() => _composureLevel;
 
         #endregion
@@ -87,15 +84,11 @@ namespace AIRefactored.AI.Combat
             }
         }
 
-        /// <summary>
-        /// Main update; handles panic, stutter, composure, recovery, squad sync, voice, and memory.
-        /// </summary>
         public void Tick(float time)
         {
             if (!IsValid()) return;
             try
             {
-                // Idle skip for efficiency
                 if (UnityEngine.Random.value < 0.04f) return;
 
                 if (_isPanicking)
@@ -116,7 +109,6 @@ namespace AIRefactored.AI.Combat
 
                 RecoverComposure(Time.deltaTime);
 
-                // Panic can't retrigger until cooldown passes
                 if (time <= _lastPanicExitTime + PanicCooldown) return;
 
                 if (ShouldPanicFromThreat())
@@ -134,9 +126,6 @@ namespace AIRefactored.AI.Combat
             }
         }
 
-        /// <summary>
-        /// Forces bot to panic immediately (external trigger).
-        /// </summary>
         public void TriggerPanic()
         {
             if (!IsValid() || _isPanicking || Time.time < _lastPanicExitTime + PanicCooldown) return;
@@ -174,7 +163,6 @@ namespace AIRefactored.AI.Combat
                 Vector3 retreat = (_bot.Position - info.HitPoint).normalized;
                 TryStartPanic(Time.time, retreat, false);
 
-                // Register last shot, update injury system, squad comms.
                 if (_bot.Memory?.GoalEnemy?.Person is Player enemy && !string.IsNullOrEmpty(enemy.ProfileId))
                     _cache.LastShotTracker?.RegisterHit(enemy.ProfileId, part, Vector3.Distance(_bot.Position, info.HitPoint), retreat);
 
@@ -202,7 +190,6 @@ namespace AIRefactored.AI.Combat
                 ValueStruct health = _bot.HealthController?.GetBodyPartHealth(EBodyPart.Common) ?? default;
                 if (health.Current < LowHealthThreshold) return true;
 
-                // Squad panic contagion
                 if (_bot.BotsGroup != null)
                 {
                     for (int i = 0; i < _bot.BotsGroup.MembersCount; i++)
@@ -279,13 +266,11 @@ namespace AIRefactored.AI.Combat
                     BotCoverHelper.TrySetStanceFromNearbyCover(_cache, fallback);
                 }
 
-                // Add danger zone for squad/sync fallback
                 if (GameWorldHandler.TryGetValidMapName() is string mapId)
                     BotMemoryStore.AddDangerZone(mapId, _bot.Position, DangerTriggerType.Panic, DangerZonePersist);
 
                 _bot.Sprint(true);
 
-                // Voice
                 if (!FikaHeadlessDetector.IsHeadless && _bot.BotTalk != null && Time.time - _lastVoiceTime > 1.15f && UnityEngine.Random.value < 0.72f)
                 {
                     try { _bot.BotTalk.TrySay(EPhraseTrigger.OnBeingHurt); }
@@ -293,7 +278,6 @@ namespace AIRefactored.AI.Combat
                     _lastVoiceTime = Time.time;
                 }
 
-                // Squad panic sync propagation
                 if (_bot.BotsGroup != null && isSquadSync)
                 {
                     for (int i = 0; i < _bot.BotsGroup.MembersCount; i++)
@@ -323,7 +307,6 @@ namespace AIRefactored.AI.Combat
                 _isPanicking = false;
                 _lastPanicExitTime = now;
 
-                // Squad calm propagation (regain composure faster in a calm group)
                 if (_bot.BotsGroup != null)
                 {
                     for (int i = 0; i < _bot.BotsGroup.MembersCount; i++)
@@ -409,7 +392,6 @@ namespace AIRefactored.AI.Combat
             }
             catch
             {
-                // Any error means "don't fallback"
                 return false;
             }
         }

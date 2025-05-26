@@ -8,6 +8,7 @@
 namespace AIRefactored.Runtime
 {
     using System;
+    using System.Collections.Generic;
     using AIRefactored.AI.Core;
     using AIRefactored.AI.Navigation;
     using AIRefactored.Bootstrap;
@@ -16,7 +17,6 @@ namespace AIRefactored.Runtime
     using Comfort.Common;
     using EFT;
     using UnityEngine;
-    using System.Collections.Generic;
 
     /// <summary>
     /// Global AIRefactored lifecycle manager. Spawns persistent host and routes raid start/end logic and tick delegation.
@@ -97,9 +97,9 @@ namespace AIRefactored.Runtime
                 if (!s_Initialized || s_RaidActive || world == null)
                     return;
 
+                // World system attach/bootstrapping is the ONLY valid place for headless logic.
                 if (!GameWorldHandler.IsHost)
                     return;
-
                 if (FikaHeadlessDetector.IsHeadless && !FikaHeadlessDetector.HasRaidStarted())
                     return;
 
@@ -160,7 +160,9 @@ namespace AIRefactored.Runtime
             try
             {
                 if (WorldInitState.IsInitialized)
+                {
                     WorldTickDispatcher.Tick(Time.deltaTime);
+                }
             }
             catch (Exception ex)
             {

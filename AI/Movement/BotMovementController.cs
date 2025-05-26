@@ -27,30 +27,34 @@ namespace AIRefactored.AI.Movement
     {
         #region Constants
 
-        private const float MicroDriftMagnitude = 0.11f;
         private const float MoveTargetEpsilon = 0.22f;
         private const float MoveTimeCooldown = 1.15f;
-        private const float CombatStrafeBase = 1.10f, CombatStrafeJitter = 0.08f;
-        private const float CombatStrafeCooldownMin = 0.38f, CombatStrafeCooldownMax = 1.19f;
-        private const float CombatStrafeSuppressedMul = 0.44f;
-        private const float FallbackBackoffDistance = 0.39f;
-        private const float LeanCooldownMin = 0.85f, LeanCooldownMax = 1.41f, LeanLockoutSuppressed = 1.17f;
-        private const float MinLeanHold = 1.05f, MaxLeanHold = 1.65f;
-        private const float MaxStrafeAngle = 82f, StartlePause = 0.25f;
-        private const float PathUncertaintyMagnitude = 0.17f;
+        private const float MicroDriftMagnitude = 0.11f;
         private const float MinLookPause = 0.18f, MaxLookPause = 0.27f;
+        private const float CoverCheckDist = 1.85f;
         private const float MaxGroupSpacing = 2.72f;
         private const float GroupSpacingForce = 0.42f;
         private const float FormationUpdateMin = 0.91f, FormationUpdateMax = 2.25f;
-        private const float GroupTacticalPauseChance = 0.10f;
         private const float FormationHoldMin = 0.67f, FormationHoldMax = 1.8f;
         private const float HoldResumeDistance = 2.7f;
+        private const float GroupTacticalPauseChance = 0.10f;
         private const float SquadCoverSpacing = 1.22f;
-        private const float CoverCheckDist = 1.85f;
-        private const float ObstaclePauseChance = 0.13f;
+        private const float LookClampYMin = -24f, LookClampYMax = 38f;
+        private const float FallbackBackoffDistance = 0.39f;
+        private const float PathUncertaintyMagnitude = 0.17f;
         private const float MinSprintDistance = 11.7f, MaxSprintDistance = 24.5f;
         private const float SprintMinDuration = 1.35f, SprintMaxDuration = 2.87f;
-        private const float LookClampYMin = -24f, LookClampYMax = 38f;
+        private const float StartlePause = 0.25f;
+
+        private const float CombatStrafeBase = 1.10f;
+        private const float CombatStrafeJitter = 0.08f;
+        private const float CombatStrafeCooldownMin = 0.38f, CombatStrafeCooldownMax = 1.19f;
+        private const float CombatStrafeSuppressedMul = 0.44f;
+        private const float MaxStrafeAngle = 82f;
+
+        private const float LeanCooldownMin = 0.85f, LeanCooldownMax = 1.41f, LeanLockoutSuppressed = 1.17f;
+        private const float MinLeanHold = 1.05f, MaxLeanHold = 1.65f;
+        private const float ObstaclePauseChance = 0.13f;
 
         #endregion
 
@@ -128,6 +132,7 @@ namespace AIRefactored.AI.Movement
             _lastLeaderPos = Vector3.zero;
             _currentLean = BotTiltType.right;
             _leanHoldUntil = 0f;
+
             BotMovementHelper.Reset(_bot);
         }
 
@@ -141,6 +146,7 @@ namespace AIRefactored.AI.Movement
             {
                 if (_bot == null || _bot.IsDead || _bot.Mover == null)
                     return;
+
                 var player = _bot.GetPlayer;
                 if (player == null || !player.IsAI)
                     return;
@@ -155,6 +161,7 @@ namespace AIRefactored.AI.Movement
 
                 if (_cache?.Fallback != null && _cache.Fallback.IsActive())
                     _lastFallbackOrSprint = Time.time;
+
                 if (player.IsSprintEnabled || _bot.Mover.Sprinting)
                     _lastFallbackOrSprint = Time.time;
 
@@ -167,7 +174,6 @@ namespace AIRefactored.AI.Movement
                 TrySmoothLook(_bot.Mover, deltaTime);
                 TryCoverPause();
                 TryScan();
-                // No per-frame drift/jitter movement
                 TryPanicPathWobble(deltaTime);
                 TryTacticalSprint(deltaTime);
             }
@@ -181,13 +187,12 @@ namespace AIRefactored.AI.Movement
 
         #region Move Issuer (Throttled)
 
-        /// <summary>
-        /// Issues a move command only if changed or cooldown expired.
-        /// </summary>
         private void IssueMove(Vector3 target, bool slow = true, float cohesion = 1f)
         {
             if (_bot == null || _bot.Mover == null) return;
-            if ((_lastMoveTarget - target).sqrMagnitude > MoveTargetEpsilon * MoveTargetEpsilon || (Time.time - _lastMoveTime) > MoveTimeCooldown)
+
+            if ((_lastMoveTarget - target).sqrMagnitude > MoveTargetEpsilon * MoveTargetEpsilon ||
+                (Time.time - _lastMoveTime) > MoveTimeCooldown)
             {
                 _lastMoveTarget = target;
                 _lastMoveTime = Time.time;
@@ -200,7 +205,7 @@ namespace AIRefactored.AI.Movement
 
         #endregion
 
-        #region Advanced Humanized Movement Subsystems
+        #region Tactical Movement (Formation, Group, Spacing)
 
         private void TryFormationFollow(float deltaTime)
         {
@@ -211,18 +216,21 @@ namespace AIRefactored.AI.Movement
 
             int count = _bot.BotsGroup.MembersCount;
             BotOwner leader = null;
+
             for (int i = 0; i < count; i++)
             {
                 BotOwner candidate = _bot.BotsGroup.Member(i);
                 if (candidate != null && !candidate.IsDead && candidate != _bot)
                 {
-                    if (!_formationRolePriority || (candidate.Profile?.Info?.Settings?.Role ?? WildSpawnType.assault) < (_bot.Profile?.Info?.Settings?.Role ?? WildSpawnType.assault))
+                    if (!_formationRolePriority || (candidate.Profile?.Info?.Settings?.Role ?? WildSpawnType.assault)
+                        < (_bot.Profile?.Info?.Settings?.Role ?? WildSpawnType.assault))
                     {
                         leader = candidate;
                         break;
                     }
                 }
             }
+
             if (leader == null)
                 leader = _bot.BotsGroup.Member(0);
 
@@ -246,10 +254,7 @@ namespace AIRefactored.AI.Movement
                         _formationHold = false;
                         _formationHoldUntil = 0f;
                     }
-                    else
-                    {
-                        return;
-                    }
+                    else return;
                 }
 
                 if (distToLeader > 2.25f)
@@ -267,8 +272,10 @@ namespace AIRefactored.AI.Movement
         {
             if (_bot.BotsGroup == null || _bot.BotsGroup.MembersCount < 2)
                 return;
+
             Vector3 myPos = _bot.Position;
             int count = _bot.BotsGroup.MembersCount;
+
             for (int i = 0; i < count; i++)
             {
                 BotOwner mate = _bot.BotsGroup.Member(i);
@@ -281,48 +288,6 @@ namespace AIRefactored.AI.Movement
                     Vector3 away = (myPos - mate.Position).normalized * GroupSpacingForce * (MaxGroupSpacing - dist);
                     IssueMove(_bot.Position + away, false, 0.6f);
                 }
-            }
-        }
-
-        private void TryMicroDrift(float deltaTime)
-        {
-            // Disabled: drift is only added when issuing a new move, not per-tick.
-        }
-
-        private void TrySmoothLook(BotMover mover, float deltaTime)
-        {
-            if (_bot?.Transform == null || mover == null)
-                return;
-
-            Vector3 target;
-            try { target = mover._pathController.LastTargetPoint(1f); }
-            catch { return; }
-            if (!NavMesh.SamplePosition(target, out NavMeshHit navHit, 1.5f, NavMesh.AllAreas))
-                return;
-            Vector3 direction = navHit.position - _bot.Position;
-            direction.y = 0f;
-            if (direction.sqrMagnitude < 0.01f)
-                return;
-
-            Vector3 lookTarget = navHit.position;
-            Vector3 botHead = _bot.Position + Vector3.up * 1.54f;
-            Vector3 lookDir = (lookTarget - botHead).normalized;
-            float yAngle = Mathf.Asin(lookDir.y) * Mathf.Rad2Deg;
-            yAngle = Mathf.Clamp(yAngle, LookClampYMin, LookClampYMax);
-            lookDir.y = Mathf.Sin(yAngle * Mathf.Deg2Rad);
-            lookTarget = botHead + lookDir * (lookTarget - botHead).magnitude;
-
-            BotMovementHelper.SmoothLookTo(_bot, lookTarget, 0.89f);
-
-            if (Time.time > _nextRandomPause)
-            {
-                _lastRandomPause = Time.time;
-                _nextRandomPause = Time.time + UnityEngine.Random.Range(1.18f, 3.71f);
-            }
-            else if (Time.time < _lastRandomPause + UnityEngine.Random.Range(MinLookPause, MaxLookPause)
-                     && UnityEngine.Random.value < 0.09f)
-            {
-                return;
             }
         }
 
@@ -368,12 +333,13 @@ namespace AIRefactored.AI.Movement
 
             IssueMove(_bot.Position + blend, false, 0.43f);
         }
-
         private void TryLean()
         {
             if (_cache?.Tilt == null || _bot == null)
                 return;
+
             float now = Time.time;
+
             if ((_cache.Suppression != null && _cache.Suppression.IsSuppressed()) ||
                 (_cache.PanicHandler != null && _cache.PanicHandler.IsPanicking))
             {
@@ -381,16 +347,17 @@ namespace AIRefactored.AI.Movement
                 _cache.Tilt.Stop();
                 return;
             }
-            if (now < _leanLockoutUntil)
+
+            if (now < _leanLockoutUntil || now < _leanHoldUntil)
                 return;
-            if (now < _leanHoldUntil)
-                return;
+
             if (now - _lastFallbackOrSprint < 1.19f)
             {
                 _leanLockoutUntil = now + 0.62f;
                 _cache.Tilt.Stop();
                 return;
             }
+
             if (_cache.IsBlinded)
             {
                 _cache.Tilt.Stop();
@@ -403,6 +370,7 @@ namespace AIRefactored.AI.Movement
                 _cache.Tilt.Stop();
                 return;
             }
+
             var player = _bot.GetPlayer;
             if (player != null && (player.IsSprintEnabled || _bot.Mover.Sprinting || !_bot.Mover.IsMoving))
             {
@@ -410,41 +378,23 @@ namespace AIRefactored.AI.Movement
                 return;
             }
 
-            // Lean is only ever left or right; pick one, never none.
-            bool leanLeft = false, leanRight = false;
-            Vector3 head = _bot.Position + Vector3.up * 1.53f;
+            // Lean logic based on wall checks and squad
+            bool wallLeft = Physics.Raycast(_bot.Position + Vector3.up * 1.53f, -_bot.Transform.right, CoverCheckDist, AIRefactoredLayerMasks.VisionBlockers);
+            bool wallRight = Physics.Raycast(_bot.Position + Vector3.up * 1.53f, _bot.Transform.right, CoverCheckDist, AIRefactoredLayerMasks.VisionBlockers);
 
-            if (_bot.BotsGroup != null && _bot.BotsGroup.MembersCount > 1)
-            {
-                int myIndex = -1;
-                for (int i = 0; i < _bot.BotsGroup.MembersCount; i++)
-                    if (_bot.BotsGroup.Member(i) == _bot) { myIndex = i; break; }
-                if (myIndex >= 0 && myIndex % 2 == 0) leanLeft = true; else leanRight = true;
-            }
+            BotTiltType nextLean = BotTiltType.right;
 
-            bool wallLeft = Physics.Raycast(head, -_bot.Transform.right, CoverCheckDist, AIRefactoredLayerMasks.VisionBlockers);
-            bool wallRight = Physics.Raycast(head, _bot.Transform.right, CoverCheckDist, AIRefactoredLayerMasks.VisionBlockers);
-
-            BotTiltType nextLean = BotTiltType.right; // Default right for safety
             if (wallLeft && !wallRight)
                 nextLean = BotTiltType.right;
             else if (wallRight && !wallLeft)
-                nextLean = BotTiltType.left;
-            else if (leanRight)
-                nextLean = BotTiltType.right;
-            else if (leanLeft)
                 nextLean = BotTiltType.left;
             else
             {
                 Vector3 toEnemy = memory.GoalEnemy.CurrPosition - _bot.Position;
                 float dot = Vector3.Dot(toEnemy.normalized, _bot.Transform.right);
-                bool tacticalLean = UnityEngine.Random.value < 0.85f;
-                nextLean = tacticalLean
-                    ? (dot > 0f ? BotTiltType.right : BotTiltType.left)
-                    : (dot > 0f ? BotTiltType.left : BotTiltType.right);
+                nextLean = dot > 0f ? BotTiltType.right : BotTiltType.left;
             }
 
-            // Only issue new lean if changed or expired.
             if (_currentLean != nextLean || now >= _leanHoldUntil)
             {
                 _currentLean = nextLean;
@@ -458,12 +408,41 @@ namespace AIRefactored.AI.Movement
                 _cache.Tilt.Stop();
                 return;
             }
+
             if (now < _nextLeanTime)
                 return;
+
             _nextLeanTime = now + UnityEngine.Random.Range(LeanCooldownMin, LeanCooldownMax);
             _leanLockoutUntil = now + UnityEngine.Random.Range(0.41f, 0.69f);
         }
 
+        private void TrySmoothLook(BotMover mover, float deltaTime)
+        {
+            if (_bot?.Transform == null || mover == null)
+                return;
+
+            Vector3 target;
+            try { target = mover._pathController.LastTargetPoint(1f); }
+            catch { return; }
+
+            if (!NavMesh.SamplePosition(target, out NavMeshHit navHit, 1.5f, NavMesh.AllAreas))
+                return;
+
+            Vector3 direction = navHit.position - _bot.Position;
+            direction.y = 0f;
+            if (direction.sqrMagnitude < 0.01f)
+                return;
+
+            Vector3 lookTarget = navHit.position;
+            Vector3 botHead = _bot.Position + Vector3.up * 1.54f;
+            Vector3 lookDir = (lookTarget - botHead).normalized;
+            float yAngle = Mathf.Asin(lookDir.y) * Mathf.Rad2Deg;
+            yAngle = Mathf.Clamp(yAngle, LookClampYMin, LookClampYMax);
+            lookDir.y = Mathf.Sin(yAngle * Mathf.Deg2Rad);
+            lookTarget = botHead + lookDir * (lookTarget - botHead).magnitude;
+
+            BotMovementHelper.SmoothLookTo(_bot, lookTarget, 0.89f);
+        }
         private void TryCoverPause()
         {
             if (_coverPauseActive && Time.time < _coverPauseUntil)
@@ -490,6 +469,7 @@ namespace AIRefactored.AI.Movement
         {
             if (_bot == null || _bot.Mover == null || _bot.IsDead)
                 return;
+
             if (_shouldSprint && Time.time < _sprintUntil)
                 return;
 
@@ -554,26 +534,11 @@ namespace AIRefactored.AI.Movement
             }
         }
 
-        private void TryScan()
-        {
-            if (_bot?.Transform == null)
-                return;
-            if (Time.time - _lastScanTime < UnityEngine.Random.Range(1.10f, 1.47f) + _personalityScanDelay)
-                return;
-            Vector3 head = _bot.Position + Vector3.up * 1.52f;
-            Vector3 dir = _bot.Transform.forward;
-            if (Physics.SphereCast(head, 0.23f, dir, out _, 2.47f, AIRefactoredLayerMasks.VisionBlockers))
-            {
-                if (_bot.BotTalk != null && UnityEngine.Random.value < 0.19f)
-                    _bot.BotTalk.TrySay(EPhraseTrigger.Look);
-            }
-            _lastScanTime = Time.time;
-        }
-
         private void TryFallbackPathCorrection()
         {
             if (_fallbackActive && Time.time < _fallbackRetryTime)
                 return;
+
             if (_fallbackActive)
             {
                 Vector3 backoff = -_bot.Transform.forward * FallbackBackoffDistance;
@@ -586,13 +551,34 @@ namespace AIRefactored.AI.Movement
         {
             if (_cache?.PanicHandler == null || !_cache.PanicHandler.IsPanicking)
                 return;
+
             _panicPathWobbleTimer -= deltaTime;
             if (_panicPathWobbleTimer > 0f)
                 return;
+
             _panicPathWobbleTimer = UnityEngine.Random.Range(0.13f, 0.21f);
             Vector3 sidestep = UnityEngine.Random.insideUnitSphere * PathUncertaintyMagnitude;
             sidestep.y = 0f;
             IssueMove(_bot.Position + sidestep, false, 0.19f);
+        }
+
+        private void TryScan()
+        {
+            if (_bot?.Transform == null)
+                return;
+
+            if (Time.time - _lastScanTime < UnityEngine.Random.Range(1.10f, 1.47f) + _personalityScanDelay)
+                return;
+
+            Vector3 head = _bot.Position + Vector3.up * 1.52f;
+            Vector3 dir = _bot.Transform.forward;
+            if (Physics.SphereCast(head, 0.23f, dir, out _, 2.47f, AIRefactoredLayerMasks.VisionBlockers))
+            {
+                if (_bot.BotTalk != null && UnityEngine.Random.value < 0.19f)
+                    _bot.BotTalk.TrySay(EPhraseTrigger.Look);
+            }
+
+            _lastScanTime = Time.time;
         }
 
         private void UpdateStartlePause()
@@ -620,3 +606,4 @@ namespace AIRefactored.AI.Movement
         #endregion
     }
 }
+

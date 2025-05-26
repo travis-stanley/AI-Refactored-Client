@@ -44,11 +44,11 @@ namespace AIRefactored.Runtime
                 _monoHost = _host.AddComponent<TickHost>();
                 _isActive = true;
 
-                LogDebug("[WorldTickDispatcher] ✅ Host attached and ticking.");
+                Logger.LogDebug("[WorldTickDispatcher] ✅ Host attached and ticking.");
             }
             catch (Exception ex)
             {
-                LogError("[WorldTickDispatcher] ❌ Initialization failed: " + ex);
+                Logger.LogError("[WorldTickDispatcher] ❌ Initialization failed: " + ex);
             }
         }
 
@@ -67,20 +67,20 @@ namespace AIRefactored.Runtime
                 if (_monoHost != null)
                 {
                     try { UnityEngine.Object.Destroy(_monoHost); }
-                    catch (Exception ex) { LogError("[WorldTickDispatcher] ❌ Destroy _monoHost failed: " + ex); }
+                    catch (Exception ex) { Logger.LogError("[WorldTickDispatcher] ❌ Destroy _monoHost failed: " + ex); }
                 }
 
                 if (_host != null)
                 {
                     try { UnityEngine.Object.Destroy(_host); }
-                    catch (Exception ex) { LogError("[WorldTickDispatcher] ❌ Destroy _host failed: " + ex); }
+                    catch (Exception ex) { Logger.LogError("[WorldTickDispatcher] ❌ Destroy _host failed: " + ex); }
                 }
 
-                LogDebug("[WorldTickDispatcher] 🧹 Shutdown complete.");
+                Logger.LogDebug("[WorldTickDispatcher] 🧹 Shutdown complete.");
             }
             catch (Exception ex)
             {
-                LogError("[WorldTickDispatcher] ❌ Error during host destroy: " + ex);
+                Logger.LogError("[WorldTickDispatcher] ❌ Error during host destroy: " + ex);
             }
 
             _monoHost = null;
@@ -103,7 +103,7 @@ namespace AIRefactored.Runtime
             }
             catch (Exception ex)
             {
-                LogError("[WorldTickDispatcher] ❌ Tick error: " + ex);
+                Logger.LogError("[WorldTickDispatcher] ❌ Tick error: " + ex);
             }
         }
 
@@ -120,7 +120,7 @@ namespace AIRefactored.Runtime
                 }
                 catch (Exception ex)
                 {
-                    LogError("[WorldTickDispatcher] ❌ Update exception: " + ex);
+                    Logger.LogError("[WorldTickDispatcher] ❌ Update exception: " + ex);
                 }
             }
 
@@ -133,7 +133,7 @@ namespace AIRefactored.Runtime
                 }
                 catch (Exception ex)
                 {
-                    LogError("[WorldTickDispatcher] ❌ OnDestroy failed: " + ex);
+                    Logger.LogError("[WorldTickDispatcher] ❌ OnDestroy failed: " + ex);
                 }
             }
 
@@ -142,18 +142,6 @@ namespace AIRefactored.Runtime
                 _isQuitting = true;
                 Reset();
             }
-        }
-
-        private static void LogDebug(string msg)
-        {
-            if (!FikaHeadlessDetector.IsHeadless)
-                Logger.LogDebug(msg);
-        }
-
-        private static void LogError(string msg)
-        {
-            if (!FikaHeadlessDetector.IsHeadless)
-                Logger.LogError(msg);
         }
     }
 }

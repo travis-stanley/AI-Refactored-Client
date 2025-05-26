@@ -45,6 +45,9 @@ namespace AIRefactored.AI.Combat
 
         #region Public API
 
+        /// <summary>
+        /// Checks if we recently shot the given profile.
+        /// </summary>
         public bool DidRecentlyShoot(string profileId, float now = -1f, float memoryWindow = -1f)
         {
             try
@@ -60,6 +63,9 @@ namespace AIRefactored.AI.Combat
             catch { return false; }
         }
 
+        /// <summary>
+        /// Checks if we were recently shot by the given profile.
+        /// </summary>
         public bool WasRecentlyShotBy(string profileId, float now = -1f, float memoryWindow = -1f)
         {
             try
@@ -75,6 +81,9 @@ namespace AIRefactored.AI.Combat
             catch { return false; }
         }
 
+        /// <summary>
+        /// Checks if we were recently squad-suppressed by the given profile.
+        /// </summary>
         public bool WasRecentlySquadSuppressed(string profileId, float now = -1f, float memoryWindow = -1f)
         {
             try
@@ -90,6 +99,9 @@ namespace AIRefactored.AI.Combat
             catch { return false; }
         }
 
+        /// <summary>
+        /// Register a new incoming hit (from another profile).
+        /// </summary>
         public void RegisterHit(string profileId, EBodyPart hitPart = EBodyPart.Common, float distance = -1f, Vector3 direction = default)
         {
             try
@@ -104,6 +116,9 @@ namespace AIRefactored.AI.Combat
             catch { }
         }
 
+        /// <summary>
+        /// Register a new outgoing shot (to another profile).
+        /// </summary>
         public void RegisterShot(string profileId, float distance = -1f, Vector3 direction = default)
         {
             try
@@ -117,6 +132,9 @@ namespace AIRefactored.AI.Combat
             catch { }
         }
 
+        /// <summary>
+        /// Register a squad suppression event (from another profile).
+        /// </summary>
         public void RegisterSquadSuppressed(string profileId)
         {
             try
@@ -128,6 +146,9 @@ namespace AIRefactored.AI.Combat
             catch { }
         }
 
+        /// <summary>
+        /// Returns a normalized "heat" value for recent incoming hits (0 = cold, 1 = just hit).
+        /// </summary>
         public float GetRecentHitHeat(float now = -1f, float memoryWindow = -1f)
         {
             try
@@ -141,6 +162,9 @@ namespace AIRefactored.AI.Combat
             catch { return 0f; }
         }
 
+        /// <summary>
+        /// Returns a normalized "heat" value for recent outgoing shots (0 = cold, 1 = just shot).
+        /// </summary>
         public float GetRecentShotHeat(float now = -1f, float memoryWindow = -1f)
         {
             try
@@ -154,6 +178,9 @@ namespace AIRefactored.AI.Combat
             catch { return 0f; }
         }
 
+        /// <summary>
+        /// Returns a normalized "heat" value for recent squad suppression events (0 = cold, 1 = just suppressed).
+        /// </summary>
         public float GetRecentSquadSuppressionHeat(float now = -1f, float memoryWindow = -1f)
         {
             try
@@ -167,6 +194,9 @@ namespace AIRefactored.AI.Combat
             catch { return 0f; }
         }
 
+        /// <summary>
+        /// Reset all tracked shot and hit data.
+        /// </summary>
         public void Reset()
         {
             _lastAttackerId = string.Empty;

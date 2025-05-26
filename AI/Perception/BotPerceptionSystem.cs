@@ -15,15 +15,8 @@ namespace AIRefactored.AI.Perception
     using EFT;
     using UnityEngine;
 
-    /// <summary>
-    /// Handles all visual impairment, suppression, and panic state logic for bots. 
-    /// Fully null-guarded, multiplayer/headless safe, error-isolated, and never disables outside logic. 
-    /// Integrates with BotBrain tick. No allocations in hot path.
-    /// </summary>
     public sealed class BotPerceptionSystem : IFlashReactiveBot
     {
-        #region Constants
-
         private const float BlindSpeechThreshold = 0.4f;
         private const float FlareRecoverySpeed = 0.2f;
         private const float FlashRecoverySpeed = 0.5f;
@@ -33,10 +26,6 @@ namespace AIRefactored.AI.Perception
         private const float SuppressionRecoverySpeed = 0.3f;
         private const float SuppressedThreshold = 0.18f;
         private const float PanicCooldown = 2.4f;
-
-        #endregion
-
-        #region Fields
 
         private float _blindStartTime = -1f;
         private float _flashBlindness;
@@ -51,15 +40,7 @@ namespace AIRefactored.AI.Perception
         private bool _panicTriggered;
         private float _lastPanicTime;
 
-        #endregion
-
-        #region Public Properties
-
         public bool IsSuppressed => _suppressionFactor > SuppressedThreshold;
-
-        #endregion
-
-        #region Initialization
 
         public void Initialize(BotComponentCache cache)
         {
@@ -93,10 +74,6 @@ namespace AIRefactored.AI.Perception
                 Plugin.LoggerInstance.LogError($"[BotPerceptionSystem] Initialize exception: {ex}");
             }
         }
-
-        #endregion
-
-        #region Tick
 
         public void Tick(float deltaTime)
         {
@@ -132,10 +109,6 @@ namespace AIRefactored.AI.Perception
                 Plugin.LoggerInstance.LogError($"[BotPerceptionSystem] Tick exception: {ex}");
             }
         }
-
-        #endregion
-
-        #region Exposure
 
         public void ApplyFlareExposure(float strength)
         {
@@ -207,10 +180,6 @@ namespace AIRefactored.AI.Perception
                 Plugin.LoggerInstance.LogError($"[BotPerceptionSystem] OnFlashExposure exception: {ex}");
             }
         }
-
-        #endregion
-
-        #region Internal Logic
 
         private bool IsActive()
         {
@@ -319,7 +288,5 @@ namespace AIRefactored.AI.Perception
                 Plugin.LoggerInstance.LogError($"[BotPerceptionSystem] SyncEnemyIfVisible exception: {ex}");
             }
         }
-
-        #endregion
     }
 }

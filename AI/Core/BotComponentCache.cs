@@ -130,25 +130,24 @@ namespace AIRefactored.AI.Core
             if (Bot != null || InitializedBots.Contains(id))
                 return;
 
-            InitializedBots.Add(id);
             Bot = bot;
+            InitializedBots.Add(id);
             MoveCache = new BotMovementHelper.BotMoveCache();
 
             if (_owner == null)
             {
                 _owner = new AIRefactoredBotOwner();
                 SetOwner(_owner);
-                if (!_owner.IsInitialized)
-                    _owner.Initialize(bot);
-            }
-            else if (!_owner.IsInitialized)
-            {
-                _owner.Initialize(bot);
             }
 
-            PersonalityProfile = _owner?.HasPersonality() == true
-                ? _owner.PersonalityProfile
-                : BotRegistry.GetOrGenerate(id, PersonalityType.Balanced, bot.Profile?.Info?.Settings?.Role ?? WildSpawnType.assault);
+            if (!_owner.IsInitialized)
+                _owner.Initialize(bot);
+
+            if (PersonalityProfile == null)
+            {
+                WildSpawnType role = bot.Profile?.Info?.Settings?.Role ?? WildSpawnType.assault;
+                PersonalityProfile = BotRegistry.GetOrGenerate(id, PersonalityType.Balanced, role);
+            }
 
             TryInit(() => Pathing = new BotOwnerPathfindingCache(), "Pathing");
             TryInit(() => { TacticalMemory = new BotTacticalMemory(); TacticalMemory.Initialize(this); }, "TacticalMemory");

@@ -212,7 +212,7 @@ namespace AIRefactored.AI.Combat
             if (_cache.Movement != null && !_bot.Mover.IsMoving)
             {
                 if (BotNavHelper.TryGetSafeTarget(_bot, out Vector3 safePos) && IsVectorValid(safePos))
-                    BotMovementHelper.SmoothMoveTo(_bot, safePos, false, _profile.Cohesion);
+                    BotMovementHelper.SmoothMoveToSafe(_bot, safePos, slow: false, cohesion: 1f);
             }
         }
 

@@ -187,7 +187,7 @@ namespace AIRefactored.AI.Combat
                 if (_bot.Mover != null && !_bot.Mover.IsMoving)
                 {
                     float cohesion = BotRegistry.Get(_bot.ProfileId)?.Cohesion ?? 1f;
-                    BotMovementHelper.SmoothMoveTo(_bot, navTarget, false, cohesion);
+                    BotMovementHelper.SmoothMoveToSafe(_bot, navTarget, slow: false, cohesion);
                 }
             }
 

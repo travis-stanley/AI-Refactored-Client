@@ -248,7 +248,7 @@ namespace AIRefactored.AI.Combat
                 ? _bot.Position + dir * 5f
                 : safe;
 
-            if (fallback.y < -2.5f) fallback = _bot.Position;
+            if (fallback.y < -2.5f || !IsVectorValid(fallback)) fallback = _bot.Position;
 
             var path = TempListPool.Rent<Vector3>();
             path.Clear(); path.Add(_bot.Position); path.Add(fallback);

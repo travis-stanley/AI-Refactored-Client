@@ -20,7 +20,7 @@ namespace AIRefactored.AI.Navigation
     {
         private static readonly ManualLogSource Logger = Plugin.LoggerInstance;
 
-        public static bool TryGetSafeTarget(BotOwner bot, out Vector3 target)
+        public static bool TryGetSafeTarget(BotOwner bot, out Vector3 target) 
         {
             target = Vector3.zero;
             if (!HasPath(bot))
